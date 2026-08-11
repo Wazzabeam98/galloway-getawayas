@@ -7,10 +7,10 @@ import { capitializeFirst, getImageUrl } from '@/lib/utils';
 
 const FindHome = async ({ params }: { params: { id: number } }) => {
     const supabase = createServerComponentClient({ cookies });
-    const { data, error } = await supabase
-        .from('homes')
-        .select('*') users(metadata -> name)')
-        .eq('id', params.id);
+const { data, error } = await supabase
+    .from('homes')
+    .select('*')
+    .eq('id', params.id);
     const home: HomesType | null = data?.[0];
 
     return (
