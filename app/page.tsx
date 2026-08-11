@@ -1,3 +1,4 @@
+export const dynamic = "force-dynamic";
 import Categories from "@/components/common/Categories";
 import Navbar from "@/components/base/Navbar";
 import Toast from "@/components/base/Toast";
