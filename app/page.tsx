@@ -11,6 +11,13 @@ import Categories from "@/components/common/Categories";
 import Navbar from "@/components/base/Navbar";
 import Toast from "@/components/base/Toast";
 import HomeCard from "@/components/common/HomeCard";
+const supabase = createServerComponentClient(
+  { cookies },
+  {
+    supabaseUrl: Env.SUPABASE_URL,
+    supabaseKey: Env.SUPABASE_KEY,
+  }
+);
 import { cookies } from "next/headers";
 import { createServerComponentClient } from "@supabase/auth-helpers-nextjs";
 
