@@ -1,3 +1,4 @@
+export const dynamic = "force-dynamic";
 import AddHomeForm from "@/components/AddHomeForm";
 import Navbar from "@/components/base/Navbar";
 import Counter from "@/components/common/Counter";
