@@ -1,3 +1,5 @@
+export const dynamic = "force-dynamic";
+
 import Navbar from "@/components/base/Navbar";
 import Toast from "@/components/base/Toast";
 import { createServerComponentClient } from "@supabase/auth-helpers-nextjs";
@@ -17,6 +19,7 @@ import DeleteHomebtn from "@/components/DeleteHomebtn";
 import Link from "next/link";
 import { Eye } from "lucide-react";
 import { Button } from "@/components/ui/button";
+
 export default async function Dashboard() {
     const serverSupabase = createServerComponentClient({ cookies });
     const { data: user } = await serverSupabase.auth.getUser();
@@ -24,6 +27,7 @@ export default async function Dashboard() {
         .from("homes")
         .select("id ,image ,title ,country ,city ,price ,created_at")
         .eq("user_id", user.user?.id);
+
     return (
         <div>
             <Navbar />
