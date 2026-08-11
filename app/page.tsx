@@ -1,3 +1,4 @@
+import Env from "@/config/Env";
 const supabase = createServerComponentClient(
   { cookies },
   {
