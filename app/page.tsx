@@ -1,23 +1,10 @@
-import Env from "@/config/Env";
-const supabase = createServerComponentClient(
-  { cookies },
-  {
-    supabaseUrl: process.env.NEXT_PUBLIC_SUPABASE_URL,
-    supabaseKey: process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY,
-  }
-);
 export const dynamic = "force-dynamic";
+
+import Env from "@/config/Env";
 import Categories from "@/components/common/Categories";
 import Navbar from "@/components/base/Navbar";
 import Toast from "@/components/base/Toast";
 import HomeCard from "@/components/common/HomeCard";
-const supabase = createServerComponentClient(
-  { cookies },
-  {
-    supabaseUrl: Env.SUPABASE_URL,
-    supabaseKey: Env.SUPABASE_KEY,
-  }
-);
 import { cookies } from "next/headers";
 import { createServerComponentClient } from "@supabase/auth-helpers-nextjs";
 
@@ -26,10 +13,18 @@ export default async function Home({
 }: {
   searchParams?: { [key: string]: string | undefined };
 }) {
-  const supabase = createServerComponentClient({ cookies });
+  const supabase = createServerComponentClient(
+    { cookies },
+    {
+      supabaseUrl: Env.SUPABASE_URL,
+      supabaseKey: Env.SUPABASE_KEY,
+    }
+  );
+
   const query = supabase
     .from("homes")
     .select("id, image, title, country, city, price, users (metadata->name)");
+
   if (searchParams?.country) {
     query.ilike("country", `%${searchParams?.country}%`);
   }
@@ -62,42 +57,3 @@ export default async function Home({
     </div>
   );
 }
-
-/*
-import Navbar from "@/components/base/Navbar";
-import Categories from "@/components/common/Categories";
-import Toast from "@/components/base/Toast";
-import { createServerComponentClient } from "@supabase/auth-helpers-nextjs";
-import { cookies } from "next/headers";
-import HomeCard from "@/components/common/HomeCard";
-
-export default async function Home(
-  { searchParams 
-  }: { 
-    searchParams?: { [key: string]: string | undefined } 
-  }) {
-  const supabase = createServerComponentClient({ cookies });
-  const query = supabase
-    .from('homes')
-    .select('id, title, city, image, price, country, users(metadata -> name)');
-  if (searchParams?.location) {
-    query.ilike("location", `%${searchParams?.location}%`)
-  }
-  const { data:homes } = query
-  // console.log(homes)
-  return (
-    <div>
-      <Toast />
-      <Navbar />
-      <Categories />
-
-      <div className="grid grid-cols-1 md:grid-cols-3 lg:grid-cols-5 gap-5 px-10">
-        {
-          homes && homes.length > 0 && homes.map((home: any) => <HomeCard key={home.id} home={home} />)
-        }
-      </div>
-
-    </div>
-  )
-}
-*/
