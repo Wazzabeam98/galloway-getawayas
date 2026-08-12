@@ -1,3 +1,5 @@
+export const dynamic = 'force-dynamic';
+
 import './globals.css';
 import Navbar from '@/components/base/Navbar';
 

@@ -1,5 +1,3 @@
-export const dynamic = 'force-dynamic';
-
 import NavMenu from '@/components/base/NavMenu';
 import { createServerComponentClient } from "@supabase/auth-helpers-nextjs";
 import { cookies } from "next/headers";
