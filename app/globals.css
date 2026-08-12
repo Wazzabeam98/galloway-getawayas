@@ -102,4 +102,6 @@
 .rdrDayDisabled {
   background-color: transparent !important;
   color: #d6d3d1 !important;
+}.rdrDayPassive {
+  visibility: hidden !important;
 }

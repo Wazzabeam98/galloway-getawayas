@@ -244,6 +244,7 @@ export default function Hero() {
                     showMonthAndYearPickers={false}
                     minDate={new Date()}
                     rangeColors={['#047857']}
+                    weekStartsOn={1}
                     className="text-xs"
                   />
                 </div>
