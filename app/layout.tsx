@@ -1,22 +1,22 @@
-import './globals.css'
-import type { Metadata } from 'next'
-import { Inter } from 'next/font/google'
+import './globals.css';
+import Navbar from '@/components/base/Navbar';
 
-const inter = Inter({ subsets: ['latin'] })
-
-export const metadata: Metadata = {
-  title: 'Galloway Getaways | Local Stays in Dumfries & Galloway',
-  description: 'Book holiday rentals directly from local hosts in Dumfries and Galloway with lower booking fees.',
-}
+export const metadata = {
+  title: 'Galloway Getaways',
+  description: 'Handpicked holiday rentals in Dumfries & Galloway',
+};
 
 export default function RootLayout({
   children,
 }: {
-  children: React.ReactNode
+  children: React.ReactNode;
 }) {
   return (
     <html lang="en">
-      <body className={inter.className}>{children}</body>
+      <body>
+        <Navbar />
+        {children}
+      </body>
     </html>
-  )
+  );
 }
