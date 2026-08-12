@@ -1,100 +1,116 @@
-"use client"
+'use client';
 
 import React, { useState } from 'react';
 import {
-    AlertDialog,
-    AlertDialogContent,
-    AlertDialogDescription,
-    AlertDialogHeader,
-    AlertDialogTitle,
-    AlertDialogTrigger,
-} from "@/components/ui/alert-dialog"
-import { X } from 'lucide-react'
-import { Label } from '../ui/label';
-import { Input } from '../ui/input';
-import { Button } from '../ui/button';
-import { useForm } from "react-hook-form";
-import { yupResolver } from '@hookform/resolvers/yup';
-import { loginSchema, loginType } from '@/validation/authSchema';
+    Dialog,
+    DialogContent,
+    DialogHeader,
+    DialogTitle,
+    DialogTrigger,
+} from "@/components/ui/dialog";
 import { createClientComponentClient } from '@supabase/auth-helpers-nextjs';
-import { toast } from 'react-toastify';
-import { useRouter } from 'next/navigation';
-import SocialSignUp from './SocialSignUp';
+import { Button } from '../ui/button';
+import { FcGoogle } from 'react-icons/fc';
+import { AiFillApple } from 'react-icons/ai';
 
 const LoginModel = () => {
-    const [open, setOpen] = useState<boolean>(false);
-    const [loading, setLoading] = useState<boolean>(false);
+    const [email, setEmail] = useState('');
+    const [password, setPassword] = useState('');
+    const [error, setError] = useState('');
     const supabase = createClientComponentClient();
-    const router = useRouter();
 
-    const { register, handleSubmit, formState: { errors } } = useForm<loginType>({
-        resolver: yupResolver(loginSchema)
-    });
-
-    const onSubmit = async (payload: loginType) => {
-        setLoading(true);
-        const { data, error } = await supabase.auth.signInWithPassword({
-            email: payload.email,
-            password: payload.password
+    const handleLogin = async (e: React.FormEvent) => {
+        e.preventDefault();
+        setError('');
+        const { error } = await supabase.auth.signInWithPassword({
+            email,
+            password,
         });
-        setLoading(false);
-
         if (error) {
-            toast.error(error.message, { theme: 'colored' })
-        } else if (data.user) {
-            setOpen(false);
-            router.refresh();
-            toast.success('Logged in successfully', { theme: 'colored' })
+            setError(error.message);
+        } else {
+            window.location.reload();
         }
-    }
+    };
+
+    const handleSocialLogin = async (provider: 'google' | 'apple') => {
+        await supabase.auth.signInWithOAuth({
+            provider,
+            options: {
+                redirectTo: `${window.location.origin}/auth/callback`,
+            },
+        });
+    };
 
     return (
-        <AlertDialog open={open}>
-            <AlertDialogTrigger asChild>
-                <li className='hover:bg-slate-200 rounded-md p-2 cursor-pointer' onClick={() => setOpen(true)}>
+        <Dialog>
+            <DialogTrigger asChild>
+                <li className="hover:bg-slate-200 rounded-md p-2 cursor-pointer list-none">
                     Log In
                 </li>
-            </AlertDialogTrigger>
-            <AlertDialogContent>
-                <AlertDialogHeader>
-                    <AlertDialogTitle>
-                        <div className='flex justify-between items-center'>
-                            <span>Log In</span>
-                            <X className='cursor-pointer' onClick={() => setOpen(false)} />
-                        </div>
-                    </AlertDialogTitle>
-                    <AlertDialogDescription asChild>
-                        <div>
-                            <form onSubmit={handleSubmit(onSubmit)}>
-                                <h1 className='text-lg font-bold'>
-                                    Welcome to Galloway Getaways
-                                </h1>
-                                <div className='mt-5'>
-                                    <Label htmlFor='email'>Email</Label>
-                                    <Input id='email' placeholder='Enter your e-mail' type='email' {...register('email')} />
-                                    <span className='text-red-400'>{errors.email?.message}</span>
-                                </div>
-                                <div className='mt-5'>
-                                    <Label htmlFor='password'>Password</Label>
-                                    <Input id='password' placeholder='Enter strong password' type='password' {...register('password')} />
-                                    <span className='text-red-400'>{errors.password?.message}</span>
-                                </div>
-                                <div className='mt-5'>
-                                    <Button className='w-full bg-brand' disabled={loading}>
-                                        {loading ? 'Processing...' : 'Continue'}
-                                    </Button>
-                                </div>
-                                <div>
-                                    <h1 className='text-center font-bold text-xl my-2'>-- or --</h1>
-                                </div>
-                            </form>
-                            <SocialSignUp />
-                        </div>
-                    </AlertDialogDescription>
-                </AlertDialogHeader>
-            </AlertDialogContent>
-        </AlertDialog>
-    )
-}
+            </DialogTrigger>
+            <DialogContent className="sm:max-w-[425px]">
+                <DialogHeader>
+                    <DialogTitle className="text-center text-xl font-bold text-slate-900">
+                        Log In
+                        <span className="block text-sm font-normal text-slate-600 mt-1">Welcome to Galloway Getaways</span>
+                    </DialogTitle>
+                </DialogHeader>
+                <form onSubmit={handleLogin} className="space-y-4 mt-2">
+                    {error && <p className="text-red-500 text-sm text-center">{error}</p>}
+                    <div>
+                        <input
+                            type="email"
+                            placeholder="Enter your e-mail"
+                            value={email}
+                            onChange={(e) => setEmail(e.target.value)}
+                            className="w-full p-3 border rounded-xl text-sm"
+                            required
+                        />
+                    </div>
+                    <div>
+                        <input
+                            type="password"
+                            placeholder="Enter strong password"
+                            value={password}
+                            onChange={(e) => setPassword(e.target.value)}
+                            className="w-full p-3 border rounded-xl text-sm"
+                            required
+                        />
+                    </div>
+                    <Button type="submit" className="w-full py-3 bg-rose-500 hover:bg-rose-600 text-white font-bold rounded-xl">
+                        Continue
+                    </Button>
+                </form>
+
+                <div className="relative my-2">
+                    <div className="absolute inset-0 flex items-center">
+                        <span className="w-full border-t" />
+                    </div>
+                    <div className="relative flex justify-center text-xs uppercase">
+                        <span className="bg-white px-2 text-slate-500">-- or --</span>
+                    </div>
+                </div>
+
+                <div className="flex flex-col space-y-3">
+                    <button
+                        onClick={() => handleSocialLogin('google')}
+                        className="w-full py-3 px-4 border rounded-xl font-medium text-slate-700 hover:bg-slate-50 transition flex items-center justify-center space-x-2"
+                    >
+                        <FcGoogle className="w-5 h-5" />
+                        <span>Continue with Google</span>
+                    </button>
+                    <button
+                        onClick={() => handleSocialLogin('apple')}
+                        className="w-full py-3 px-4 border rounded-xl font-medium text-slate-700 hover:bg-slate-50 transition flex items-center justify-center space-x-2"
+                    >
+                        <AiFillApple className="w-5 h-5 text-black" />
+                        <span>Continue with Apple</span>
+                    </button>
+                </div>
+            </DialogContent>
+        </Dialog>
+    );
+};
 
 export default LoginModel;
