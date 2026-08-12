@@ -95,25 +95,25 @@ export default function Hero() {
       className="relative z-40 w-full h-[460px] md:h-[500px] flex items-center justify-center bg-stone-900 text-white overflow-visible"
       ref={heroRef}
     >
-      {/* Background Image: Tranquil Lochside View */}
+      {/* Background Image: Green walking path towards cozy cottage */}
       <div className="absolute inset-0 overflow-hidden pointer-events-none">
         <div
           className="absolute inset-0 bg-cover bg-center opacity-75 brightness-90"
           style={{
-            backgroundImage: `url('https://images.unsplash.com/photo-1510798831971-661eb04b3739?q=80&w=1600&auto=format&fit=crop')`,
+            backgroundImage: `url('https://images.unsplash.com/photo-1542601906990-b4d3fb778b09?q=80&w=1600&auto=format&fit=crop')`,
           }}
         />
-        {/* Vignette Gradient for Readable Text */}
-        <div className="absolute inset-0 bg-gradient-to-t from-stone-950/85 via-stone-900/40 to-stone-950/30" />
+        {/* Soft Vignette Overlay */}
+        <div className="absolute inset-0 bg-gradient-to-t from-stone-950/80 via-stone-900/30 to-stone-950/40" />
       </div>
 
       {/* Hero Content */}
       <div className="relative z-10 text-center max-w-5xl px-4 flex flex-col items-center">
         <h1 className="text-4xl md:text-6xl font-extrabold tracking-tight mb-3 drop-shadow-lg">
-          Lochside & Country Getaways
+          Galloway Getaways
         </h1>
         <p className="text-lg md:text-xl font-medium mb-8 drop-shadow text-emerald-100">
-          Discover tranquil stays across Dumfries & Galloway with zero booking fees
+          Book direct for our best rate guarantee & lower booking fees
         </p>
 
         {/* Search Bar */}
@@ -135,8 +135,7 @@ export default function Hero() {
               className="w-full bg-transparent text-sm font-medium text-stone-900 focus:outline-none cursor-pointer border-none p-0 focus:ring-0 truncate"
             >
               <option value="">Search destinations</option>
-              <option value="loch-ken">Loch Ken & Glenkens</option>
-              <option value="loch-trool">Loch Trool & Galloway Forest</option>
+              <option value="all">All Dumfries & Galloway</option>
               <option value="kirkcudbright">Kirkcudbright</option>
               <option value="castle-douglas">Castle Douglas</option>
               <option value="gatehouse-of-fleet">Gatehouse of Fleet</option>
@@ -144,6 +143,7 @@ export default function Hero() {
               <option value="dalbeattie">Dalbeattie</option>
               <option value="newton-stewart">Newton Stewart</option>
               <option value="moffat">Moffat</option>
+              <option value="stranraer">Stranraer</option>
             </select>
           </div>
 
