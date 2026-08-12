@@ -26,35 +26,60 @@ const SignupModel = () => {
     const [loading, setLoading] = useState<boolean>(false);
     const supabase = createClientComponentClient();
     const router = useRouter();
+    
     const { register, handleSubmit, formState: { errors } } = useForm<registerType>({
         resolver: yupResolver(registerSchema)
     });
+
     const onSubmit = async (payload: registerType) => {
-        // console.log(payload);
         setLoading(true);
+
+        // 1. Sign up user with Supabase Auth
         const { data, error } = await supabase.auth.signUp({
             email: payload.email,
             password: payload.password,
             options: {
                 data: {
                     name: payload.name,
-
                 },
             },
         });
-        setLoading(false);
 
         if (error) {
-            toast.error(error.message, { theme: 'colored' })
-        } else if (data.user) {
+            setLoading(false);
+            toast.error(error.message, { theme: 'colored' });
+            return;
+        }
+
+        // 2. Insert profile record into public.profiles table
+        if (data.user) {
+            const { error: profileError } = await supabase
+                .from('profiles')
+                .insert([
+                    {
+                        id: data.user.id,
+                        email: payload.email,
+                        full_name: payload.name,
+                        is_host: false, // Defaults to regular user/guest
+                    },
+                ]);
+
+            if (profileError) {
+                console.error("Profile insertion error:", profileError.message);
+            }
+
+            // 3. Log user in and close modal
             await supabase.auth.signInWithPassword({
                 email: payload.email,
                 password: payload.password
-            })
-            setOpen(false)
+            });
+
+            setOpen(false);
             router.refresh();
-            toast.success('Account created successfully', { theme: 'colored' })
+            toast.success('Account created successfully', { theme: 'colored' });
         }
+
+        setLoading(false);
     };
 
     return (
@@ -76,7 +101,7 @@ const SignupModel = () => {
                         <div>
                             <form onSubmit={handleSubmit(onSubmit)}>
                                 <h1 className='text-lg font-bold'>
-                                    Welcome to Airbnb
+                                    Welcome to Galloway Getaways
                                 </h1>
                                 <div className='mt-5'>
                                     <Label htmlFor='name'>Name</Label>
@@ -85,17 +110,17 @@ const SignupModel = () => {
                                 </div>
                                 <div className='mt-5'>
                                     <Label htmlFor='email'>Email</Label>
-                                    <Input id='email' placeholder='Enter your e-mail' {...register('email')} />
+                                    <Input id='email' type='email' placeholder='Enter your e-mail' {...register('email')} />
                                     <span className='text-red-400'>{errors.email?.message}</span>
                                 </div>
                                 <div className='mt-5'>
                                     <Label htmlFor='password'>Password</Label>
-                                    <Input id='password' placeholder='Enter strong password' {...register('password')} />
+                                    <Input id='password' type='password' placeholder='Enter strong password' {...register('password')} />
                                     <span className='text-red-400'>{errors.password?.message}</span>
                                 </div>
                                 <div className='mt-5'>
                                     <Label htmlFor='cpassword'>Confirm Password</Label>
-                                    <Input id='cpassword' placeholder='Repeat password' {...register('passwordConfirm')} />
+                                    <Input id='cpassword' type='password' placeholder='Repeat password' {...register('passwordConfirm')} />
                                     <span className='text-red-400'>{errors.passwordConfirm?.message}</span>
                                 </div>
                                 <div className='mt-5'>
@@ -113,8 +138,7 @@ const SignupModel = () => {
                 </AlertDialogHeader>
             </AlertDialogContent>
         </AlertDialog>
-
     )
 }
 
-export default SignupModel
+export default SignupModel;
