@@ -1,59 +1,50 @@
-export const dynamic = "force-dynamic";
+import Hero from '@/components/base/Hero';
+import Categories from '@/components/common/Categories';
+import HomeCard from '@/components/common/HomeCard';
+import { getHomes } from '@/lib/getHomes';
 
-import Env from "@/config/Env";
-import Categories from "@/components/common/Categories";
-import Navbar from "@/components/base/Navbar";
-import Toast from "@/components/base/Toast";
-import HomeCard from "@/components/common/HomeCard";
-import { cookies } from "next/headers";
-import { createServerComponentClient } from "@supabase/auth-helpers-nextjs";
-
-export default async function Home({
-  searchParams,
-}: {
-  searchParams?: { [key: string]: string | undefined };
-}) {
-  const supabase = createServerComponentClient(
-    { cookies },
-    {
-      supabaseUrl: Env.SUPABASE_URL,
-      supabaseKey: Env.SUPABASE_KEY,
-    }
-  );
-
-  const query = supabase
-    .from("homes")
-    .select("id, image, title, country, city, price, users (metadata->name)");
-
-  if (searchParams?.country) {
-    query.ilike("country", `%${searchParams?.country}%`);
-  }
-  if (searchParams?.category) {
-    query.contains("categories", [searchParams?.category]);
-  }
-
-  const { data: homes } = await query;
+export default async function Home() {
+  const homes = await getHomes();
 
   return (
-    <div>
-      <Navbar />
-      <Toast />
-      <Categories />
+    <main className="min-h-screen bg-stone-50">
+      {/* Hospitable-style Kirkcudbright Hero Banner */}
+      <Hero />
 
-      {/* Load the home cards */}
-      {homes && homes?.length > 0 && (
-        <div className="grid grid-cols-1 md:grid-cols-3 lg:grid-cols-5 gap-5 px-10">
-          {homes?.map((item: any) => (
-            <HomeCard home={item} key={item.id} />
-          ))}
+      <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-10">
+        {/* Category Filters */}
+        <div className="mb-10">
+          <Categories />
         </div>
-      )}
 
-      {homes && homes?.length < 1 && (
-        <div className="text-center mt-4">
-          <h1 className="text-brand font-bold text-2xl">No Airbnb found!</h1>
+        {/* Section Heading */}
+        <div className="mb-6 border-b pb-3">
+          <h2 className="text-2xl md:text-3xl font-bold text-stone-900">
+            Our Properties
+          </h2>
+          <p className="text-stone-600 text-sm mt-1">
+            Handpicked holiday rentals in Dumfries & Galloway
+          </p>
         </div>
-      )}
-    </div>
+
+        {/* Property Grid */}
+        {homes && homes.length > 0 ? (
+          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-8">
+            {homes.map((home: any) => (
+              <HomeCard key={home.id} data={home} />
+            ))}
+          </div>
+        ) : (
+          <div className="text-center py-16 bg-white rounded-2xl shadow-sm border border-stone-200">
+            <h3 className="text-lg font-semibold text-stone-800">
+              No properties listed yet
+            </h3>
+            <p className="text-stone-500 mt-1">
+              Add your first Kirkcudbright property using the "Add homes" button top right!
+            </p>
+          </div>
+        )}
+      </div>
+    </main>
   );
 }
