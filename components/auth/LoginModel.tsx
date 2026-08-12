@@ -38,6 +38,7 @@ const LoginModel = () => {
             password: payload.password
         });
         setLoading(false);
+
         if (error) {
             toast.error(error.message, { theme: 'colored' })
         } else if (data.user) {
@@ -66,7 +67,7 @@ const LoginModel = () => {
                         <div>
                             <form onSubmit={handleSubmit(onSubmit)}>
                                 <h1 className='text-lg font-bold'>
-                                    Welcome to Airbnb
+                                    Welcome to Galloway Getaways
                                 </h1>
                                 <div className='mt-5'>
                                     <Label htmlFor='email'>Email</Label>
@@ -79,7 +80,9 @@ const LoginModel = () => {
                                     <span className='text-red-400'>{errors.password?.message}</span>
                                 </div>
                                 <div className='mt-5'>
-                                    <Button className='w-full bg-brand' disabled={loading}>{loading ? 'Processing' : 'Continue'}</Button>
+                                    <Button className='w-full bg-brand' disabled={loading}>
+                                        {loading ? 'Processing...' : 'Continue'}
+                                    </Button>
                                 </div>
                                 <div>
                                     <h1 className='text-center font-bold text-xl my-2'>-- or --</h1>
@@ -91,8 +94,7 @@ const LoginModel = () => {
                 </AlertDialogHeader>
             </AlertDialogContent>
         </AlertDialog>
-
     )
 }
 
-export default LoginModel
+export default LoginModel;
