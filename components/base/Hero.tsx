@@ -95,26 +95,28 @@ export default function Hero() {
       className="relative z-40 w-full h-[460px] md:h-[500px] flex items-center justify-center bg-stone-900 text-white overflow-visible"
       ref={heroRef}
     >
-      {/* Background Image */}
+      {/* Background Image: Tranquil Lochside View */}
       <div className="absolute inset-0 overflow-hidden pointer-events-none">
         <div
-          className="absolute inset-0 bg-cover bg-center opacity-60"
+          className="absolute inset-0 bg-cover bg-center opacity-75 brightness-90"
           style={{
-            backgroundImage: `url('https://images.unsplash.com/photo-1506377247377-2a5b3b417ebb?q=80&w=1600&auto=format&fit=crop')`,
+            backgroundImage: `url('https://images.unsplash.com/photo-1510798831971-661eb04b3739?q=80&w=1600&auto=format&fit=crop')`,
           }}
         />
+        {/* Vignette Gradient for Readable Text */}
+        <div className="absolute inset-0 bg-gradient-to-t from-stone-950/85 via-stone-900/40 to-stone-950/30" />
       </div>
 
-      {/* Content Container */}
+      {/* Hero Content */}
       <div className="relative z-10 text-center max-w-5xl px-4 flex flex-col items-center">
-        <h1 className="text-4xl md:text-6xl font-extrabold tracking-tight mb-3 drop-shadow-md">
-          Galloway Getaways
+        <h1 className="text-4xl md:text-6xl font-extrabold tracking-tight mb-3 drop-shadow-lg">
+          Lochside & Country Getaways
         </h1>
         <p className="text-lg md:text-xl font-medium mb-8 drop-shadow text-emerald-100">
-          Book direct for our best rate guarantee & lower booking fees
+          Discover tranquil stays across Dumfries & Galloway with zero booking fees
         </p>
 
-        {/* Search Bar Container */}
+        {/* Search Bar */}
         <div className="w-full max-w-3xl bg-white rounded-full p-1.5 shadow-2xl text-stone-800 flex items-center relative border border-stone-100">
           
           {/* WHERE */}
@@ -133,7 +135,8 @@ export default function Hero() {
               className="w-full bg-transparent text-sm font-medium text-stone-900 focus:outline-none cursor-pointer border-none p-0 focus:ring-0 truncate"
             >
               <option value="">Search destinations</option>
-              <option value="all">All Dumfries & Galloway</option>
+              <option value="loch-ken">Loch Ken & Glenkens</option>
+              <option value="loch-trool">Loch Trool & Galloway Forest</option>
               <option value="kirkcudbright">Kirkcudbright</option>
               <option value="castle-douglas">Castle Douglas</option>
               <option value="gatehouse-of-fleet">Gatehouse of Fleet</option>
@@ -141,7 +144,6 @@ export default function Hero() {
               <option value="dalbeattie">Dalbeattie</option>
               <option value="newton-stewart">Newton Stewart</option>
               <option value="moffat">Moffat</option>
-              <option value="stranraer">Stranraer</option>
             </select>
           </div>
 
@@ -201,13 +203,9 @@ export default function Hero() {
             </button>
           </div>
 
-          {/* =========================================
-              WHEN POPOVER (Compact Airbnb Calendar)
-             ========================================= */}
+          {/* WHEN POPOVER */}
           {activePopover === 'when' && (
             <div className="absolute left-1/2 -translate-x-1/2 top-[calc(100%+10px)] bg-white rounded-3xl p-5 shadow-2xl border border-stone-200 text-stone-900 z-50 min-w-[620px]">
-              
-              {/* Tab Switcher */}
               <div className="flex justify-center mb-4">
                 <div className="bg-stone-100 p-1 rounded-full flex gap-1 border border-stone-200">
                   <button
@@ -231,7 +229,6 @@ export default function Hero() {
                 </div>
               </div>
 
-              {/* DATES TAB */}
               {dateTab === 'dates' && (
                 <div className="airbnb-compact-calendar flex justify-center">
                   <DateRangePicker
@@ -250,7 +247,6 @@ export default function Hero() {
                 </div>
               )}
 
-              {/* FLEXIBLE TAB */}
               {dateTab === 'flexible' && (
                 <div className="space-y-4 text-center max-w-md mx-auto">
                   <div>
@@ -316,9 +312,7 @@ export default function Hero() {
             </div>
           )}
 
-          {/* =========================================
-              WHO POPOVER
-             ========================================= */}
+          {/* WHO POPOVER */}
           {activePopover === 'who' && (
             <div className="absolute right-0 top-[calc(100%+10px)] w-80 bg-white rounded-3xl p-5 shadow-2xl border border-stone-200 text-stone-900 z-50">
               <div className="flex items-center justify-between py-2.5 border-b border-stone-100">
