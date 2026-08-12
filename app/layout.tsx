@@ -5,8 +5,8 @@ import { Inter } from 'next/font/google'
 const inter = Inter({ subsets: ['latin'] })
 
 export const metadata: Metadata = {
-  title: 'Holiday Homes and Apartments Rental',
-  description: 'This prject is clone of Airbnb. For Holiday Homes and Apartments Rental in all over the world with affordable price. You can book your holiday home and apartment with us. We have a lot of options for you.',
+  title: 'Galloway Getaways | Local Stays in Dumfries & Galloway',
+  description: 'Book holiday rentals directly from local hosts in Dumfries and Galloway with lower booking fees.',
 }
 
 export default function RootLayout({
