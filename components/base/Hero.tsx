@@ -117,7 +117,7 @@ export default function Hero() {
         {/* Search Bar Container */}
         <div className="w-full max-w-3xl bg-white rounded-full p-1.5 shadow-2xl text-stone-800 flex items-center relative border border-stone-100">
           
-          {/* WHERE - Restored Dropdown Menu */}
+          {/* WHERE */}
           <div
             onClick={() => setActivePopover('where')}
             className={`flex-grow px-6 py-2.5 text-left rounded-full transition cursor-pointer ${
@@ -240,10 +240,8 @@ export default function Hero() {
                     months={2}
                     direction="horizontal"
                     showDateDisplay={false}
-                    showSelectionPreview={true}
                     moveRangeOnFirstSelection={false}
                     showMonthAndYearPickers={false}
-                    showDefinedRanges={false} // Removes left sidebar ("Today", "Yesterday")
                     minDate={new Date()}
                     rangeColors={['#047857']}
                     className="text-xs"
