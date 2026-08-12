@@ -1,11 +1,7 @@
 import Hero from '@/components/base/Hero';
 import Categories from '@/components/common/Categories';
-import HomeCard from '@/components/common/HomeCard';
-import { getHomes } from '@/lib/getHomes';
 
-export default async function Home() {
-  const homes = await getHomes();
-
+export default function Home() {
   return (
     <main className="min-h-screen bg-stone-50">
       {/* Hospitable-style Kirkcudbright Hero Banner */}
@@ -27,23 +23,15 @@ export default async function Home() {
           </p>
         </div>
 
-        {/* Property Grid */}
-        {homes && homes.length > 0 ? (
-          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-8">
-            {homes.map((home: any) => (
-              <HomeCard key={home.id} data={home} />
-            ))}
-          </div>
-        ) : (
-          <div className="text-center py-16 bg-white rounded-2xl shadow-sm border border-stone-200">
-            <h3 className="text-lg font-semibold text-stone-800">
-              No properties listed yet
-            </h3>
-            <p className="text-stone-500 mt-1">
-              Add your first Kirkcudbright property using the "Add homes" button top right!
-            </p>
-          </div>
-        )}
+        {/* Empty State / Property Container */}
+        <div className="text-center py-16 bg-white rounded-2xl shadow-sm border border-stone-200">
+          <h3 className="text-lg font-semibold text-stone-800">
+            No properties listed yet
+          </h3>
+          <p className="text-stone-500 mt-1 max-w-md mx-auto">
+            Ready to list your Kirkcudbright holiday stay? Click <strong>Add homes</strong> in the top menu to publish your first property!
+          </p>
+        </div>
       </div>
     </main>
   );
