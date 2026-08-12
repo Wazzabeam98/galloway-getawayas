@@ -1,23 +1,28 @@
 export const dynamic = 'force-dynamic';
-import './globals.css';
-import Navbar from '@/components/base/Navbar';
 
-export const metadata = {
-  title: 'Galloway Getaways',
-  description: 'Handpicked holiday rentals in Dumfries & Galloway',
-};
+import NavMenu from './NavMenu'
+import { createServerComponentClient } from "@supabase/auth-helpers-nextjs";
+import { cookies } from "next/headers";
+import Link from 'next/link'
+import Logo from './Logo';
 
-export default function RootLayout({
-  children,
-}: {
-  children: React.ReactNode;
-}) {
-  return (
-    <html lang="en">
-      <body>
-        <Navbar />
-        {children}
-      </body>
-    </html>
-  );
+const Navbar = async () => {
+    const supabase = createServerComponentClient({ cookies });
+    const { data } = await supabase.auth.getSession();
+    
+    return (
+        <div className='flex items-center justify-between px-6 md:px-10 py-4 border-b-[1px] bg-white sticky top-0 z-50'>
+            <div>
+                <Logo />
+            </div>
+            <div className='flex items-center space-x-6'>
+                <Link href="/addhome" className="text-sm font-semibold hover:bg-slate-100 rounded-full py-2 px-4 transition">
+                    Become a host
+                </Link>
+                <NavMenu session={data?.session?.user} />
+            </div>
+        </div>
+    )
 }
+
+export default Navbar;
