@@ -3,41 +3,28 @@
 import React, { useState, useRef, useEffect } from 'react';
 import { DateRangePicker, Range, RangeKeyDict } from 'react-date-range';
 import { format, addMonths, isSameDay } from 'date-fns';
-import 'react-date-range/dist/styles.css'; // main style file
-import 'react-date-range/dist/theme/default.css'; // theme css file
+import 'react-date-range/dist/styles.css';
+import 'react-date-range/dist/theme/default.css';
 
-// Predefined flexible options
 const durations = ['weekend', 'week', 'month'];
-// Predefined future months (rolling 12 starting from current)
 const futureMonths = [...Array(12)].map((_, i) => addMonths(new Date(), i));
 
 export default function Hero() {
-  // Popover States
   const [activePopover, setActivePopover] = useState<'where' | 'when' | 'who' | null>(null);
 
-  // Search State
   const [location, setLocation] = useState('');
-  
-  // Date State (When)
   const [dateTab, setDateTab] = useState<'dates' | 'flexible'>('dates');
   
-  /**
-   * FIX APPLIED HERE:
-   * By setting endDate to the exact same Date object as startDate,
-   * react-date-range registers a '0-day' selection, rendering no 
-   * selected background until the user manually clicks.
-   */
   const today = new Date();
   const [dateRange, setDateRange] = useState<Range>({
     startDate: today,
-    endDate: today, // Modified to match startDate, fixing auto-select.
+    endDate: today,
     key: 'selection',
   });
 
   const [stayDuration, setStayDuration] = useState('week');
   const [selectedMonths, setSelectedMonths] = useState<Date[]>([]);
 
-  // Guest State (Who)
   const [adults, setAdults] = useState(0);
   const [children, setChildren] = useState(0);
   const [infants, setInfants] = useState(0);
@@ -45,7 +32,6 @@ export default function Hero() {
 
   const heroRef = useRef<HTMLDivElement>(null);
 
-  // Close popovers on click outside
   useEffect(() => {
     const handleClickOutside = (event: MouseEvent) => {
       if (heroRef.current && !heroRef.current.contains(event.target as Node)) {
@@ -58,8 +44,6 @@ export default function Hero() {
 
   const handleSelectDates = (ranges: RangeKeyDict) => {
     setDateRange(ranges.selection);
-    
-    // Automatically close if user has finished selection range
     if (ranges.selection.startDate && ranges.selection.endDate && !isSameDay(ranges.selection.startDate, ranges.selection.endDate)) {
         setActivePopover(null); 
     }
@@ -73,7 +57,6 @@ export default function Hero() {
     }
   };
 
-  // Format summaries for display
   const totalGuests = adults + children;
   let guestSummary = 'Add guests';
   if (totalGuests > 0 || infants > 0 || pets > 0) {
@@ -85,12 +68,6 @@ export default function Hero() {
   }
 
   let whenSummary = 'Add dates';
-  
-  /**
-   * FIX APPLIED HERE ALSO:
-   * We only display the formatted date range if the startDate and 
-   * endDate are different (meaning user made a real selection).
-   */
   if (dateTab === 'dates' && dateRange.startDate && dateRange.endDate && !isSameDay(dateRange.startDate, dateRange.endDate)) {
     whenSummary = `${format(dateRange.startDate, 'd MMM')} - ${format(dateRange.endDate, 'd MMM')}`;
   } else if (dateTab === 'flexible') {
@@ -103,12 +80,14 @@ export default function Hero() {
   }
 
   return (
-    <div className="relative w-full h-[450px] md:h-[520px] flex items-center justify-center bg-stone-900 text-white overflow-hidden" ref={heroRef}>
-      {/* Background Image */}
-      <div 
-        className="absolute inset-0 bg-cover bg-center opacity-60 pointer-events-none"
-        style={{ backgroundImage: `url('https://images.unsplash.com/photo-1506377247377-2a5b3b417ebb?q=80&w=1600&auto=format&fit=crop')` }} 
-      />
+    <div className="relative z-30 w-full h-[450px] md:h-[520px] flex items-center justify-center bg-stone-900 text-white overflow-visible" ref={heroRef}>
+      {/* Background Image Container with isolated clipping */}
+      <div className="absolute inset-0 overflow-hidden pointer-events-none">
+        <div 
+          className="absolute inset-0 bg-cover bg-center opacity-60"
+          style={{ backgroundImage: `url('https://images.unsplash.com/photo-1506377247377-2a5b3b417ebb?q=80&w=1600&auto=format&fit=crop')` }} 
+        />
+      </div>
 
       {/* Content Container */}
       <div className="relative z-10 text-center max-w-5xl px-4 flex flex-col items-center">
@@ -119,7 +98,7 @@ export default function Hero() {
           Book direct for our best rate guarantee & lower booking fees
         </p>
 
-        {/* Search Bar Container - Single Line */}
+        {/* Search Bar Container */}
         <div className="w-full max-w-3xl bg-white rounded-full p-2 shadow-2xl text-stone-800 flex items-center relative border border-stone-100">
           
           {/* Where */}
@@ -178,12 +157,9 @@ export default function Hero() {
             </button>
           </div>
 
-          {/* =========================================
-              WHEN POPOVER (Calendar / Flexible)
-             ========================================= */}
+          {/* WHEN POPOVER */}
           {activePopover === 'when' && (
             <div className="absolute left-1/2 -translate-x-1/2 top-full mt-4 w-auto bg-white rounded-3xl p-6 shadow-2xl border border-stone-100 text-stone-900 z-50">
-              {/* Tab Switcher */}
               <div className="flex justify-center mb-6">
                 <div className="bg-stone-100 p-1 rounded-full flex gap-1 border border-stone-200">
                   <button onClick={() => setDateTab('dates')} className={`px-8 py-2 rounded-full text-sm font-semibold ${dateTab === 'dates' ? 'bg-white shadow text-stone-900' : 'text-stone-600'}`}>Dates</button>
@@ -191,7 +167,6 @@ export default function Hero() {
                 </div>
               </div>
 
-              {/* DATES TAB - Integrated Real Calendar */}
               {dateTab === 'dates' && (
                 <div className="airbnb-calendar">
                     <DateRangePicker
@@ -201,13 +176,12 @@ export default function Hero() {
                         direction="horizontal"
                         showDateDisplay={false}
                         minDate={new Date()}
-                        rangeColors={['#047857']} // emerald-700
+                        rangeColors={['#047857']}
                         className="text-sm"
                     />
                 </div>
               )}
 
-              {/* FLEXIBLE TAB */}
               {dateTab === 'flexible' && (
                 <div className="space-y-6 text-center max-w-lg mx-auto">
                   <div>
@@ -224,7 +198,7 @@ export default function Hero() {
                       {futureMonths.map((month, i) => {
                         const isSelected = selectedMonths.some(m => isSameDay(m, month));
                         return (
-                          <button key={i} onClick={() => toggleMonth(month)} className={`p-3 rounded-2xl border transition flex flex-col items-center justified-center ${isSelected ? 'border-emerald-700 bg-emerald-50 text-emerald-900 ring-2 ring-emerald-700' : 'border-stone-200 hover:border-stone-400'}`}>
+                          <button key={i} onClick={() => toggleMonth(month)} className={`p-3 rounded-2xl border transition flex flex-col items-center justify-center ${isSelected ? 'border-emerald-700 bg-emerald-50 text-emerald-900 ring-2 ring-emerald-700' : 'border-stone-200 hover:border-stone-400'}`}>
                             <svg className="w-5 h-5 text-emerald-600 mb-1" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M8 7V3m8 4V3m-9 8h10M5 21h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v12a2 2 0 002 2z" /></svg>
                             <p className="text-xs font-bold">{format(month, 'MMMM')}</p>
                             <p className="text-[10px] text-stone-500">{format(month, 'yyyy')}</p>
@@ -238,43 +212,40 @@ export default function Hero() {
             </div>
           )}
 
-          {/* WHO POPOVER - Keep existing */}
+          {/* WHO POPOVER */}
           {activePopover === 'who' && (
             <div className="absolute right-0 top-full mt-4 w-80 bg-white rounded-3xl p-6 shadow-2xl border border-stone-100 text-stone-900 z-50">
-                {/* Adults */}
                 <div className="flex items-center justify-between py-3 border-b border-stone-100">
                     <div>
                         <p className="font-semibold text-sm">Adults</p>
                         <p className="text-xs text-stone-500">Ages 13 or above</p>
                     </div>
                     <div className="flex items-center gap-3">
-                        <button onClick={() => setAdults(Math.max(0, adults - 1))} className="w-8 h-8 rounded-full border border-stone-300 flex items-center justified-center disabled:opacity-30">–</button>
+                        <button onClick={() => setAdults(Math.max(0, adults - 1))} className="w-8 h-8 rounded-full border border-stone-300 flex items-center justify-center disabled:opacity-30">–</button>
                         <span className="w-4 text-center text-sm font-medium">{adults}</span>
-                        <button onClick={() => setAdults(adults + 1)} className="w-8 h-8 rounded-full border border-stone-300 flex items-center justified-center">+</button>
+                        <button onClick={() => setAdults(adults + 1)} className="w-8 h-8 rounded-full border border-stone-300 flex items-center justify-center">+</button>
                     </div>
                 </div>
-                {/* Children */}
                 <div className="flex items-center justify-between py-3 border-b border-stone-100">
                     <div>
                         <p className="font-semibold text-sm">Children</p>
                         <p className="text-xs text-stone-500">Ages 2–12</p>
                     </div>
                     <div className="flex items-center gap-3">
-                        <button onClick={() => setChildren(Math.max(0, children - 1))} className="w-8 h-8 rounded-full border border-stone-300 flex items-center justified-center disabled:opacity-30">–</button>
+                        <button onClick={() => setChildren(Math.max(0, children - 1))} className="w-8 h-8 rounded-full border border-stone-300 flex items-center justify-center disabled:opacity-30">–</button>
                         <span className="w-4 text-center text-sm font-medium">{children}</span>
-                        <button onClick={() => setChildren(children + 1)} className="w-8 h-8 rounded-full border border-stone-300 flex items-center justified-center">+</button>
+                        <button onClick={() => setChildren(children + 1)} className="w-8 h-8 rounded-full border border-stone-300 flex items-center justify-center">+</button>
                     </div>
                 </div>
-                {/* Pets */}
                 <div className="flex items-center justify-between pt-3">
                     <div>
                         <p className="font-semibold text-sm">Pets</p>
                         <p className="text-xs text-stone-500">Bringing a service animal?</p>
                     </div>
                     <div className="flex items-center gap-3">
-                        <button onClick={() => setPets(Math.max(0, pets - 1))} className="w-8 h-8 rounded-full border border-stone-300 flex items-center justified-center disabled:opacity-30">–</button>
+                        <button onClick={() => setPets(Math.max(0, pets - 1))} className="w-8 h-8 rounded-full border border-stone-300 flex items-center justify-center disabled:opacity-30">–</button>
                         <span className="w-4 text-center text-sm font-medium">{pets}</span>
-                        <button onClick={() => setPets(pets + 1)} className="w-8 h-8 rounded-full border border-stone-300 flex items-center justified-center">+</button>
+                        <button onClick={() => setPets(pets + 1)} className="w-8 h-8 rounded-full border border-stone-300 flex items-center justify-center">+</button>
                     </div>
                 </div>
             </div>
