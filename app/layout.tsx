@@ -1,10 +1,10 @@
 export const dynamic = 'force-dynamic';
 
-import NavMenu from './NavMenu'
+import NavMenu from '@/components/base/NavMenu';
 import { createServerComponentClient } from "@supabase/auth-helpers-nextjs";
 import { cookies } from "next/headers";
-import Link from 'next/link'
-import Logo from './Logo';
+import Link from 'next/link';
+import Logo from '@/components/base/Logo';
 
 const Navbar = async () => {
     const supabase = createServerComponentClient({ cookies });
