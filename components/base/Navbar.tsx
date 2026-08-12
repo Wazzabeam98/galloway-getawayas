@@ -7,8 +7,8 @@ import SearchSheet from '../common/SearchSheet';
 
 const Navbar = async () => {
     const supabase = createServerComponentClient({ cookies });
-    const { data, error } = await supabase.auth.getSession();
-    // console.log("The Sessiion: ", data)
+    const { data } = await supabase.auth.getSession();
+    
     return (
         <div className='flex items-center justify-between md:px-10 border-b-[1px]'>
             <div className='hidden md:block'>
