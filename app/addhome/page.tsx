@@ -5,7 +5,7 @@ import { createClientComponentClient } from '@supabase/auth-helpers-nextjs';
 import { useRouter } from 'next/navigation';
 import Logo from '@/components/base/Logo';
 import { HomeIcon, ChevronRightIcon } from 'lucide-react';
-import LoginModel from '@/components/base/auth/LoginModel';
+import LoginModel from '@/components/auth/LoginModel';
 
 export default function AddHome() {
     const [loading, setLoading] = useState(true);
@@ -49,7 +49,7 @@ export default function AddHome() {
         );
     }
 
-    // If not logged in, prompt login or redirect
+    // If not logged in, prompt login
     if (!session) {
         return (
             <div className="flex flex-col items-center justify-center min-h-[70vh] space-y-6 text-center px-4">
@@ -65,7 +65,7 @@ export default function AddHome() {
         );
     }
 
-    // If user clicked "Create a new listing", show the listing form (Image 2 style)
+    // If user clicked "Create a new listing", show the listing form
     if (showListingForm) {
         return (
             <div className="max-w-6xl mx-auto px-6 py-10">
