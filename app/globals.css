@@ -2,7 +2,6 @@
 @tailwind components;
 @tailwind utilities;
 
-
 @layer base {
   :root {
     --background: 0 0% 100%;
@@ -58,4 +57,49 @@
   body {
     @apply bg-background text-foreground;
   }
+}
+
+/* =========================================
+   React-Date-Range Compact Calendar Fixes
+   ========================================= */
+
+/* 1. Hide left preset sidebar ("Today", "Last Week", etc.) */
+.rdrDefinedRangesWrapper {
+  display: none !important;
+}
+
+/* 2. Transparent background for calendar wrapper */
+.rdrCalendarWrapper {
+  background: transparent !important;
+  color: #1c1917 !important;
+}
+
+/* 3. Base picker background & rounded corners */
+.rdrDateRangePickerWrapper {
+  background-color: white;
+  border-radius: 1.5rem;
+}
+
+/* 4. Compact month spacing */
+.rdrMonth {
+  width: 23em !important;
+  padding: 0 0.5em 0.5em 0.5em !important;
+}
+
+/* 5. Emerald selection colors */
+.rdrStartEdge, 
+.rdrEndEdge, 
+.rdrInRange {
+  background: #047857 !important;
+}
+
+/* 6. Text color fixes inside selected ranges */
+.rdrSelected, 
+.rdrInRange {
+  color: white !important;
+}
+
+.rdrDayDisabled {
+  background-color: transparent !important;
+  color: #d6d3d1 !important;
 }
