@@ -11,18 +11,20 @@ const Navbar = async () => {
     const { data } = await supabase.auth.getSession();
     
     return (
-        <div className='flex items-center justify-between px-6 md:px-10 py-4 border-b-[1px] bg-white sticky top-0 z-50'>
-            <div>
-                <Logo />
+        <nav className='w-full border-b bg-white sticky top-0 z-50'>
+            <div className='max-w-7xl mx-auto px-6 md:px-10 h-20 flex items-center justify-between'>
+                <div className='flex items-center'>
+                    <Logo />
+                </div>
+                <div className='flex items-center space-x-6'>
+                    <Link href="/addhome" className="text-sm font-semibold hover:bg-slate-100 rounded-full py-2 px-4 transition text-slate-800">
+                        Become a host
+                    </Link>
+                    <NavMenu session={data?.session?.user} />
+                </div>
             </div>
-            <div className='flex items-center space-x-6'>
-                <Link href="/addhome" className="text-sm font-semibold hover:bg-slate-100 rounded-full py-2 px-4 transition">
-                    Become a host
-                </Link>
-                <NavMenu session={data?.session?.user} />
-            </div>
-        </div>
-    )
-}
+        </nav>
+    );
+};
 
 export default Navbar;
