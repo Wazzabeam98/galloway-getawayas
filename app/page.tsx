@@ -36,7 +36,7 @@ const AddHome = () => {
     const [town, setTown] = useState('');
     const [postcode, setPostcode] = useState('');
 
-    // Live search using OpenStreetMap geocoding API
+    // Live search using OpenStreetMap geocoding API filtered for GB
     const handleAddressChange = async (e: React.ChangeEvent<HTMLInputElement>) => {
         const value = e.target.value;
         setAddressQuery(value);
@@ -48,7 +48,7 @@ const AddHome = () => {
                     `https://nominatim.openstreetmap.org/search?format=json&addressdetails=1&q=${encodeURIComponent(value)}&countrycodes=gb&limit=5`,
                     {
                         headers: {
-                            'User-Agent': 'GallowayGetawaysApp/1.0' // Required by map API guidelines
+                            'User-Agent': 'GallowayGetawaysApp/1.0'
                         }
                     }
                 );
@@ -68,7 +68,6 @@ const AddHome = () => {
         setAddressQuery(place.display_name);
         setSuggestions([]);
         
-        // Extract address components safely
         const addr = place.address || {};
         const streetName = [addr.house_number, addr.road].filter(Boolean).join(' ');
         
@@ -78,7 +77,6 @@ const AddHome = () => {
         setLocality(addr.state || '');
         setCountry(addr.country || 'United Kingdom');
         
-        // Open the Airbnb-style confirmation modal
         setIsModalOpen(true);
     };
 
@@ -115,7 +113,7 @@ const AddHome = () => {
                             </svg>
                             <input
                                 type="text"
-                                placeholder="Enter your postcode or address (e.g. G71)"
+                                placeholder="Enter your postcode or address (e.g. DG1)"
                                 value={addressQuery}
                                 onChange={handleAddressChange}
                                 className="w-full outline-none text-slate-800 placeholder-slate-400 text-base bg-transparent"
