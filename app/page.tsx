@@ -133,7 +133,7 @@ const AddHome = () => {
                             {loading && <div className="text-xs text-slate-400 animate-pulse ml-2">Searching...</div>}
                         </div>
 
-                        {/* Dropdown Suggestions */}
+                        {/* Dropdown Suggestions (No "Can't find your address" prompt) */}
                         {suggestions.length > 0 && (
                             <ul className="absolute left-0 right-0 mt-2 bg-white border border-slate-200 rounded-2xl shadow-xl overflow-hidden z-30 max-h-60 overflow-y-auto">
                                 {suggestions.map((item, index) => (
@@ -154,11 +154,11 @@ const AddHome = () => {
                     </div>
                 </div>
 
-                {/* Updated Picture: Scottish Countryside Cottage */}
+                {/* Verified Scottish Countryside Stone Cottage Image */}
                 <div className="relative w-full h-[450px] rounded-3xl overflow-hidden shadow-2xl">
                     <img 
-                        src="https://images.unsplash.com/photo-1509198397868-475647b2a1e5?auto=format&fit=crop&w=1000&q=80" 
-                        alt="Scottish Countryside Cottage" 
+                        src="https://images.unsplash.com/photo-1600585154340-be6161a56a0c?auto=format&fit=crop&w=1000&q=80" 
+                        alt="Scottish Countryside Stone Cottage" 
                         className="w-full h-full object-cover"
                     />
                 </div>
