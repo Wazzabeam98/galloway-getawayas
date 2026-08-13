@@ -94,18 +94,21 @@ const AddHome = () => {
 
     return (
         <div className="min-h-screen bg-white flex flex-col justify-between relative">
-            {/* Header */}
+            {/* Top Main Navigation Bar (Clean Airbnb Style - Kept Top Logo, Removed Duplicate Header) */}
             <header className="flex items-center justify-between px-6 py-4 border-b">
                 <div className="flex items-center space-x-2 cursor-pointer" onClick={() => router.push('/')}>
                     <div className="bg-rose-500 text-white font-bold p-2 rounded-xl text-lg">GG</div>
-                    <span className="font-bold text-lg text-rose-500">Galloway Getaways</span>
+                    <span className="font-bold text-lg text-slate-900">Galloway Getaways</span>
                 </div>
-                <button 
-                    onClick={() => router.push('/dashboard')} 
-                    className="text-sm font-semibold text-slate-700 hover:underline"
-                >
-                    Exit
-                </button>
+                <div className="flex items-center space-x-4">
+                    <span className="text-sm font-semibold text-slate-800">Become a host</span>
+                    <button 
+                        onClick={() => router.push('/dashboard')} 
+                        className="text-sm font-semibold text-slate-700 hover:underline px-3 py-1.5 border rounded-full"
+                    >
+                        Exit
+                    </button>
+                </div>
             </header>
 
             {/* Main Content Layout */}
@@ -133,7 +136,7 @@ const AddHome = () => {
                             {loading && <div className="text-xs text-slate-400 animate-pulse ml-2">Searching...</div>}
                         </div>
 
-                        {/* Dropdown Suggestions (No "Can't find your address" prompt) */}
+                        {/* Dropdown Suggestions */}
                         {suggestions.length > 0 && (
                             <ul className="absolute left-0 right-0 mt-2 bg-white border border-slate-200 rounded-2xl shadow-xl overflow-hidden z-30 max-h-60 overflow-y-auto">
                                 {suggestions.map((item, index) => (
@@ -154,11 +157,11 @@ const AddHome = () => {
                     </div>
                 </div>
 
-                {/* Verified Scottish Countryside Stone Cottage Image */}
-                <div className="relative w-full h-[450px] rounded-3xl overflow-hidden shadow-2xl">
+                {/* Updated Picture: Authentic Airbnb-Style Scottish Countryside Stone Cottage */}
+                <div className="relative w-full h-[480px] rounded-3xl overflow-hidden shadow-2xl">
                     <img 
-                        src="https://images.unsplash.com/photo-1600585154340-be6161a56a0c?auto=format&fit=crop&w=1000&q=80" 
-                        alt="Scottish Countryside Stone Cottage" 
+                        src="https://images.unsplash.com/photo-1513694203232-719a280e022f?auto=format&fit=crop&w=1200&q=80" 
+                        alt="Airbnb Style Scottish Countryside Cottage" 
                         className="w-full h-full object-cover"
                     />
                 </div>
