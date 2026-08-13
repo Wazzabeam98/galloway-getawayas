@@ -1,11 +1,15 @@
 'use client';
 
-import { useEffect, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { createClientComponentClient } from '@supabase/auth-helpers-nextjs';
 import { useRouter } from 'next/navigation';
 import Logo from '@/components/base/Logo';
 import { HomeIcon, ChevronRightIcon } from 'lucide-react';
 import LoginModel from '@/components/auth/LoginModel';
+import { categories } from '@/config/categories';
+import Env from '@/config/Env';
+import { generateRandomNumber } from '@/lib/utils';
+import { toast } from 'react-toastify';
 
 interface PlaceResult {
     display_name: string;
@@ -27,6 +31,10 @@ export default function AddHome() {
     const [city, setCity] = useState('');
     const [state, setState] = useState('');
     const [description, setDescription] = useState('');
+    const [homeCategories, setHomeCategories] = useState<string[]>([]);
+    const [image, setImage] = useState<File | null>(null);
+    const [submitting, setSubmitting] = useState(false);
+    const [formError, setFormError] = useState('');
 
     // Address search & modal state
     const [addressQuery, setAddressQuery] = useState('');
@@ -37,9 +45,11 @@ export default function AddHome() {
     const [street, setStreet] = useState('');
     const [locality, setLocality] = useState('Dumfries and Galloway');
     const [postcode, setPostcode] = useState('');
+    const [addressLoading, setAddressLoading] = useState(false);
 
     const router = useRouter();
     const supabase = createClientComponentClient();
+    const debounceRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
     useEffect(() => {
         const checkUser = async () => {
@@ -54,12 +64,20 @@ export default function AddHome() {
         checkUser();
     }, [supabase]);
 
-    const handleAddressChange = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const handleAddressChange = (e: React.ChangeEvent<HTMLInputElement>) => {
         const value = e.target.value;
         setAddressQuery(value);
 
-        if (value.trim().length > 1) {
-            setLoading(true);
+        if (debounceRef.current) clearTimeout(debounceRef.current);
+
+        if (value.trim().length <= 1) {
+            setSuggestions([]);
+            setAddressLoading(false);
+            return;
+        }
+
+        setAddressLoading(true);
+        debounceRef.current = setTimeout(async () => {
             try {
                 const response = await fetch(
                     `https://nominatim.openstreetmap.org/search?format=json&addressdetails=1&q=${encodeURIComponent(value)}&countrycodes=gb&limit=10`,
@@ -95,11 +113,81 @@ export default function AddHome() {
                 console.error("Live fetch error:", err);
                 setSuggestions([]);
             } finally {
-                setLoading(false);
+                setAddressLoading(false);
             }
-        } else {
-            setSuggestions([]);
+        }, 400);
+    };
+
+    const handleImageChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+        const file = e.target.files?.[0];
+        if (file) setImage(file);
+    };
+
+    const handleListingSubmit = async (e: React.FormEvent) => {
+        e.preventDefault();
+        setFormError('');
+
+        if (!image) {
+            setFormError('Please choose a photo of your place.');
+            return;
         }
+        if (homeCategories.length === 0) {
+            setFormError('Please select at least one category.');
+            return;
+        }
+        if (!['image/jpeg', 'image/jpg', 'image/png'].includes(image.type)) {
+            setFormError('Only JPEG, JPG and PNG images are allowed.');
+            return;
+        }
+        if (image.size / 1048576 >= 2) {
+            setFormError('Image size must be less than 2MB.');
+            return;
+        }
+
+        setSubmitting(true);
+
+        const user = await supabase.auth.getUser();
+        const uniquePath = Date.now() + '_' + generateRandomNumber();
+        const { data: imgData, error: imgErr } = await supabase.storage
+            .from(Env.S3_BUCKET)
+            .upload(uniquePath, image);
+
+        if (imgErr) {
+            toast.error(imgErr.message, { theme: 'colored' });
+            setSubmitting(false);
+            return;
+        }
+
+        // The homes table only has country/state/city columns today — fold the
+        // detailed street/postcode/flat info captured in the address step into
+        // the description so it isn't lost. Add real columns later if you want
+        // these queryable/filterable on their own.
+        const addressLine = [flat, propertyName, street, postcode]
+            .filter(Boolean)
+            .join(', ');
+        const fullDescription = addressLine
+            ? `Address: ${addressLine}\n\n${description}`
+            : description;
+
+        const { error: homeErr } = await supabase.from('homes').insert({
+            user_id: user.data.user?.id,
+            country,
+            state,
+            city,
+            title,
+            price: Number(price),
+            description: fullDescription,
+            categories: homeCategories,
+            image: imgData?.path,
+        });
+
+        if (homeErr) {
+            toast.error(homeErr.message, { theme: 'colored' });
+            setSubmitting(false);
+            return;
+        }
+
+        router.push('/dashboard?success=Home added successfully!');
     };
 
     const handleSelectSuggestion = (place: PlaceResult) => {
@@ -156,39 +244,44 @@ export default function AddHome() {
                 </div>
 
                 <div className="grid grid-cols-1 md:grid-cols-2 gap-10">
-                    <div className="bg-slate-50 p-6 rounded-2xl border flex flex-col justify-between">
+                    <div className="bg-slate-50 p-6 rounded-2xl border flex flex-col justify-between sticky top-6 self-start">
                         <div>
-                            <span className="text-5xl font-black text-slate-900">£697</span>
+                            <span className="text-5xl font-black text-slate-900">£{price || '—'}</span>
                             <span className="text-lg text-slate-600 ml-2">per night</span>
                         </div>
                         <div className="my-6">
                             <div className="h-80 bg-slate-200 rounded-2xl overflow-hidden shadow-lg">
-                                <img 
-                                    src="/images/garden.avif" 
-                                    alt="Property Garden with Hot Tub" 
-                                    className="w-full h-full object-cover" 
+                                <img
+                                    src={image ? URL.createObjectURL(image) : '/images/scottish-cottage.jpg'}
+                                    alt="Scottish countryside cottage"
+                                    className="w-full h-full object-cover"
                                 />
                             </div>
                         </div>
+                        {(street || postcode) && (
+                            <p className="text-sm text-slate-500">
+                                {[street, city, postcode].filter(Boolean).join(', ')}
+                            </p>
+                        )}
                     </div>
 
-                    <form className="space-y-4" onSubmit={(e) => { e.preventDefault(); alert('Listing submitted successfully!'); }}>
+                    <form className="space-y-4" onSubmit={handleListingSubmit}>
                         <div>
                             <label className="block text-sm font-medium text-slate-700">Title</label>
-                            <input 
-                                type="text" 
-                                value={title} 
-                                onChange={(e) => setTitle(e.target.value)} 
-                                placeholder="Enter your title" 
+                            <input
+                                type="text"
+                                value={title}
+                                onChange={(e) => setTitle(e.target.value)}
+                                placeholder="Enter your title"
                                 className="mt-1 w-full p-3 border rounded-xl"
-                                required 
+                                required
                             />
                         </div>
                         <div className="grid grid-cols-2 gap-4">
                             <div>
                                 <label className="block text-sm font-medium text-slate-700">Countries</label>
-                                <select 
-                                    value={country} 
+                                <select
+                                    value={country}
                                     onChange={(e) => setCountry(e.target.value)}
                                     className="mt-1 w-full p-3 border rounded-xl bg-white"
                                     required
@@ -199,55 +292,86 @@ export default function AddHome() {
                             </div>
                             <div>
                                 <label className="block text-sm font-medium text-slate-700">City</label>
-                                <input 
-                                    type="text" 
-                                    value={city} 
-                                    onChange={(e) => setCity(e.target.value)} 
-                                    placeholder="Enter your city" 
+                                <input
+                                    type="text"
+                                    value={city}
+                                    onChange={(e) => setCity(e.target.value)}
+                                    placeholder="Enter your city"
                                     className="mt-1 w-full p-3 border rounded-xl"
-                                    required 
+                                    required
                                 />
                             </div>
                         </div>
                         <div className="grid grid-cols-2 gap-4">
                             <div>
                                 <label className="block text-sm font-medium text-slate-700">State</label>
-                                <input 
-                                    type="text" 
-                                    value={state} 
-                                    onChange={(e) => setState(e.target.value)} 
-                                    placeholder="Enter your state" 
+                                <input
+                                    type="text"
+                                    value={state}
+                                    onChange={(e) => setState(e.target.value)}
+                                    placeholder="Enter your state"
                                     className="mt-1 w-full p-3 border rounded-xl"
                                 />
                             </div>
                             <div>
                                 <label className="block text-sm font-medium text-slate-700">Price</label>
-                                <input 
-                                    type="number" 
-                                    value={price} 
-                                    onChange={(e) => setPrice(e.target.value)} 
-                                    placeholder="Enter your price" 
+                                <input
+                                    type="number"
+                                    value={price}
+                                    onChange={(e) => setPrice(e.target.value)}
+                                    placeholder="Enter your price"
                                     className="mt-1 w-full p-3 border rounded-xl"
-                                    required 
+                                    required
                                 />
                             </div>
                         </div>
                         <div>
                             <label className="block text-sm font-medium text-slate-700">Image</label>
-                            <input type="file" className="mt-1 w-full p-2 border rounded-xl text-sm" />
+                            <input
+                                type="file"
+                                accept="image/png, image/jpeg"
+                                onChange={handleImageChange}
+                                className="mt-1 w-full p-2 border rounded-xl text-sm"
+                            />
                         </div>
                         <div>
                             <label className="block text-sm font-medium text-slate-700">Description</label>
-                            <textarea 
-                                value={description} 
+                            <textarea
+                                value={description}
                                 onChange={(e) => setDescription(e.target.value)}
-                                rows={4} 
-                                placeholder="Describe your place..." 
+                                rows={4}
+                                placeholder="Describe your place..."
                                 className="mt-1 w-full p-3 border rounded-xl"
                             />
                         </div>
-                        <button type="submit" className="w-full py-3 bg-rose-500 text-white font-bold rounded-xl hover:bg-rose-600 transition">
-                            Submit
+                        <div>
+                            <label className="block text-sm font-medium text-slate-700 mb-2">Categories</label>
+                            <div className="grid grid-cols-2 gap-3">
+                                {categories.map((item) => (
+                                    <label key={item.name} className="flex items-center space-x-2 text-sm">
+                                        <input
+                                            type="checkbox"
+                                            checked={homeCategories.includes(item.name)}
+                                            onChange={(e) => {
+                                                if (e.target.checked) {
+                                                    setHomeCategories([...homeCategories, item.name]);
+                                                } else {
+                                                    setHomeCategories(homeCategories.filter((c) => c !== item.name));
+                                                }
+                                            }}
+                                        />
+                                        <span>{item.name}</span>
+                                    </label>
+                                ))}
+                            </div>
+                        </div>
+                        {formError && <p className="text-red-600 text-sm">{formError}</p>}
+                        <button
+                            type="submit"
+                            disabled={submitting}
+                            className="w-full py-3 bg-rose-500 text-white font-bold rounded-xl hover:bg-rose-600 transition disabled:opacity-60"
+                        >
+                            {submitting ? 'Submitting...' : 'Submit'}
                         </button>
                     </form>
                 </div>
@@ -277,7 +401,7 @@ export default function AddHome() {
                             onChange={handleAddressChange}
                             className="w-full outline-none text-slate-800 placeholder-slate-400 text-base bg-transparent"
                         />
-                        {loading && <div className="text-xs text-slate-400 animate-pulse ml-2">Searching...</div>}
+                        {addressLoading && <div className="text-xs text-slate-400 animate-pulse ml-2">Searching...</div>}
                     </div>
 
                     {suggestions.length > 0 && (
@@ -409,6 +533,7 @@ export default function AddHome() {
                         <div className="mt-8 pt-4 border-t flex justify-end">
                             <button
                                 onClick={() => {
+                                    setState(locality);
                                     setIsModalOpen(false);
                                     setShowListingForm(true);
                                 }}
