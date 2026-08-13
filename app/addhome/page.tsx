@@ -4,7 +4,7 @@ import { useEffect, useRef, useState } from 'react';
 import { createClientComponentClient } from '@supabase/auth-helpers-nextjs';
 import { useRouter } from 'next/navigation';
 import Logo from '@/components/base/Logo';
-import { HomeIcon, ChevronRightIcon } from 'lucide-react';
+import { HomeIcon, ChevronRightIcon, ChevronLeftIcon, Trees, Waves, Compass, Building2, Sparkles, Minus, Plus, Check } from 'lucide-react';
 import LoginModel from '@/components/auth/LoginModel';
 import { categories } from '@/config/categories';
 import Env from '@/config/Env';
@@ -35,6 +35,25 @@ export default function AddHome() {
     const [image, setImage] = useState<File | null>(null);
     const [submitting, setSubmitting] = useState(false);
     const [formError, setFormError] = useState('');
+
+    // Airbnb-style wizard state
+    const [step, setStep] = useState(1);
+    const TOTAL_STEPS = 8;
+    const [propertyType, setPropertyType] = useState('');
+    const [privacyType, setPrivacyType] = useState('Entire place');
+    const [guests, setGuests] = useState(1);
+    const [bedrooms, setBedrooms] = useState(1);
+    const [beds, setBeds] = useState(1);
+    const [bathrooms, setBathrooms] = useState(1);
+    const [amenities, setAmenities] = useState<string[]>([]);
+
+    const AMENITIES = [
+        'Wifi', 'Kitchen', 'Free parking', 'Hot tub', 'Pool', 'Washer',
+        'Dryer', 'Air conditioning', 'Heating', 'TV', 'Fireplace',
+        'Workspace', 'Garden', 'BBQ grill'
+    ];
+
+    const ICON_MAP: Record<string, any> = { Home: HomeIcon, Trees, Waves, Compass, Building2, Sparkles };
 
     // Address search & modal state
     const [addressQuery, setAddressQuery] = useState('');
@@ -131,10 +150,6 @@ export default function AddHome() {
             setFormError('Please choose a photo of your place.');
             return;
         }
-        if (homeCategories.length === 0) {
-            setFormError('Please select at least one category.');
-            return;
-        }
         if (!['image/jpeg', 'image/jpg', 'image/png'].includes(image.type)) {
             setFormError('Only JPEG, JPG and PNG images are allowed.');
             return;
@@ -147,6 +162,12 @@ export default function AddHome() {
         setSubmitting(true);
 
         const user = await supabase.auth.getUser();
+        if (!user.data.user) {
+            toast.error('You need to be signed in to publish a listing.', { theme: 'colored' });
+            setSubmitting(false);
+            return;
+        }
+
         const uniquePath = Date.now() + '_' + generateRandomNumber();
         const { data: imgData, error: imgErr } = await supabase.storage
             .from(Env.S3_BUCKET)
@@ -158,31 +179,30 @@ export default function AddHome() {
             return;
         }
 
-        // The homes table only has country/state/city columns today — fold the
-        // detailed street/postcode/flat info captured in the address step into
-        // the description so it isn't lost. Add real columns later if you want
-        // these queryable/filterable on their own.
-        const addressLine = [flat, propertyName, street, postcode]
+        // Your listings table stores the address as one combined text field,
+        // not separate country/state/city columns — build that here.
+        const location = [flat, propertyName, street, city, state, postcode, country]
             .filter(Boolean)
             .join(', ');
-        const fullDescription = addressLine
-            ? `Address: ${addressLine}\n\n${description}`
-            : description;
 
-        const { error: homeErr } = await supabase.from('homes').insert({
-            user_id: user.data.user?.id,
-            country,
-            state,
-            city,
+        const { error: listingErr } = await supabase.from('listings').insert({
+            host_id: user.data.user.id,
             title,
-            price: Number(price),
-            description: fullDescription,
-            categories: homeCategories,
-            image: imgData?.path,
+            description,
+            location,
+            price_per_night: Number(price),
+            max_guests: guests,
+            images: imgData?.path ? [imgData.path] : [],
+            property_type: propertyType,
+            privacy_type: privacyType,
+            bedrooms,
+            beds,
+            bathrooms,
+            amenities,
         });
 
-        if (homeErr) {
-            toast.error(homeErr.message, { theme: 'colored' });
+        if (listingErr) {
+            toast.error(listingErr.message, { theme: 'colored' });
             setSubmitting(false);
             return;
         }
@@ -227,324 +247,59 @@ export default function AddHome() {
             </div>
         );
     }
-
     if (showListingForm) {
-        return (
-            <div className="max-w-6xl mx-auto px-6 py-10 w-full">
-                <div className="flex justify-between items-center mb-8">
-                    <h1 className="text-3xl font-extrabold text-rose-500">
-                        Galloway Getaways <span className="text-slate-900 font-normal text-xl block">You could earn per night</span>
-                    </h1>
-                    <button 
-                        onClick={() => setShowListingForm(false)}
-                        className="text-sm font-semibold underline text-slate-600 hover:text-black"
-                    >
-                        Back to dashboard
-                    </button>
-                </div>
+        const goBack = () => {
+            setFormError('');
+            if (step > 1) setStep(step - 1);
+            else setShowListingForm(false);
+        };
 
-                <div className="grid grid-cols-1 md:grid-cols-2 gap-10">
-                    <div className="bg-slate-50 p-6 rounded-2xl border flex flex-col justify-between sticky top-6 self-start">
-                        <div>
-                            <span className="text-5xl font-black text-slate-900">£{price || '—'}</span>
-                            <span className="text-lg text-slate-600 ml-2">per night</span>
-                        </div>
-                        <div className="my-6">
-                            <div className="h-80 bg-slate-200 rounded-2xl overflow-hidden shadow-lg">
-                                <img
-                                    src={image ? URL.createObjectURL(image) : '/images/scottish-cottage.jpg'}
-                                    alt="Scottish countryside cottage"
-                                    className="w-full h-full object-cover"
-                                />
-                            </div>
-                        </div>
-                        {(street || postcode) && (
-                            <p className="text-sm text-slate-500">
-                                {[street, city, postcode].filter(Boolean).join(', ')}
-                            </p>
-                        )}
-                    </div>
+        const goNext = () => {
+            setFormError('');
+            if (step === 1 && !propertyType) {
+                setFormError('Please choose a property type to continue.');
+                return;
+            }
+            if (step === 3 && (!city || !state)) {
+                setFormError('Please fill in your town/city and region.');
+                return;
+            }
+            if (step === 6 && !image) {
+                setFormError('Please add a photo of your place.');
+                return;
+            }
+            if (step === 7 && (!title || !description)) {
+                setFormError('Please add a title and description.');
+                return;
+            }
+            setStep(step + 1);
+        };
 
-                    <form className="space-y-4" onSubmit={handleListingSubmit}>
-                        <div>
-                            <label className="block text-sm font-medium text-slate-700">Title</label>
+        const toggleAmenity = (name: string) => {
+            setAmenities((prev) =>
+                prev.includes(name) ? prev.filter((a) => a !== name) : [...prev, name]
+            );
+        };
+
+        const Counter = ({ label, value, onChange, min = 0 }: { label: string; value: number; onChange: (v: number) => void; min?: number }) => (
+            <div className="flex items-center justify-between py-4 border-b">
+                <span
+                    {/* Step 8: Price + review */}
+                {step === 8 && (
+                    <form onSubmit={handleListingSubmit}>
+                        <h2 className="text-3xl font-extrabold text-slate-900 mb-2">Now, set your price</h2>
+                        <p className="text-slate-600 mb-6">You can change this anytime.</p>
+                        <div className="flex items-center border-2 rounded-2xl px-5 py-4 mb-8 max-w-xs">
+                            <span className="text-3xl font-black text-slate-900 mr-2">£</span>
                             <input
-                                type="text"
-                                value={title}
-                                onChange={(e) => setTitle(e.target.value)}
-                                placeholder="Enter your title"
-                                className="mt-1 w-full p-3 border rounded-xl"
+                                type="number"
+                                value={price}
+                                onChange={(e) => setPrice(e.target.value)}
+                                placeholder="0"
+                                className="text-3xl font-black text-slate-900 outline-none w-full"
                                 required
                             />
-                        </div>
-                        <div className="grid grid-cols-2 gap-4">
-                            <div>
-                                <label className="block text-sm font-medium text-slate-700">Countries</label>
-                                <select
-                                    value={country}
-                                    onChange={(e) => setCountry(e.target.value)}
-                                    className="mt-1 w-full p-3 border rounded-xl bg-white"
-                                    required
-                                >
-                                    <option value="">--Select a country--</option>
-                                    <option value="United Kingdom">United Kingdom</option>
-                                </select>
-                            </div>
-                            <div>
-                                <label className="block text-sm font-medium text-slate-700">City</label>
-                                <input
-                                    type="text"
-                                    value={city}
-                                    onChange={(e) => setCity(e.target.value)}
-                                    placeholder="Enter your city"
-                                    className="mt-1 w-full p-3 border rounded-xl"
-                                    required
-                                />
-                            </div>
-                        </div>
-                        <div className="grid grid-cols-2 gap-4">
-                            <div>
-                                <label className="block text-sm font-medium text-slate-700">State</label>
-                                <input
-                                    type="text"
-                                    value={state}
-                                    onChange={(e) => setState(e.target.value)}
-                                    placeholder="Enter your state"
-                                    className="mt-1 w-full p-3 border rounded-xl"
-                                />
-                            </div>
-                            <div>
-                                <label className="block text-sm font-medium text-slate-700">Price</label>
-                                <input
-                                    type="number"
-                                    value={price}
-                                    onChange={(e) => setPrice(e.target.value)}
-                                    placeholder="Enter your price"
-                                    className="mt-1 w-full p-3 border rounded-xl"
-                                    required
-                                />
-                            </div>
-                        </div>
-                        <div>
-                            <label className="block text-sm font-medium text-slate-700">Image</label>
-                            <input
-                                type="file"
-                                accept="image/png, image/jpeg"
-                                onChange={handleImageChange}
-                                className="mt-1 w-full p-2 border rounded-xl text-sm"
-                            />
-                        </div>
-                        <div>
-                            <label className="block text-sm font-medium text-slate-700">Description</label>
-                            <textarea
-                                value={description}
-                                onChange={(e) => setDescription(e.target.value)}
-                                rows={4}
-                                placeholder="Describe your place..."
-                                className="mt-1 w-full p-3 border rounded-xl"
-                            />
-                        </div>
-                        <div>
-                            <label className="block text-sm font-medium text-slate-700 mb-2">Categories</label>
-                            <div className="grid grid-cols-2 gap-3">
-                                {categories.map((item) => (
-                                    <label key={item.name} className="flex items-center space-x-2 text-sm">
-                                        <input
-                                            type="checkbox"
-                                            checked={homeCategories.includes(item.name)}
-                                            onChange={(e) => {
-                                                if (e.target.checked) {
-                                                    setHomeCategories([...homeCategories, item.name]);
-                                                } else {
-                                                    setHomeCategories(homeCategories.filter((c) => c !== item.name));
-                                                }
-                                            }}
-                                        />
-                                        <span>{item.name}</span>
-                                    </label>
-                                ))}
-                            </div>
-                        </div>
-                        {formError && <p className="text-red-600 text-sm">{formError}</p>}
-                        <button
-                            type="submit"
-                            disabled={submitting}
-                            className="w-full py-3 bg-rose-500 text-white font-bold rounded-xl hover:bg-rose-600 transition disabled:opacity-60"
-                        >
-                            {submitting ? 'Submitting...' : 'Submit'}
-                        </button>
-                    </form>
-                </div>
-            </div>
-        );
-    }
-
-    return (
-        <main className="grid grid-cols-1 lg:grid-cols-2 items-center px-8 lg:px-20 py-10 gap-12 max-w-7xl mx-auto w-full">
-            <div className="space-y-6 relative">
-                <h1 className="text-4xl lg:text-5xl font-extrabold text-slate-900 tracking-tight leading-tight">
-                    Set up your Galloway Getaways listing
-                </h1>
-                <p className="text-slate-600 text-lg">
-                    It’s easy to create a great listing – let’s start with your address.
-                </p>
-
-                <div className="relative max-w-lg">
-                    <div className="flex items-center border-2 border-slate-300 hover:border-slate-400 focus-within:border-slate-900 rounded-full px-5 py-4 shadow-sm transition bg-white">
-                        <svg className="w-5 h-5 text-slate-400 mr-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z" />
-                        </svg>
-                        <input
-                            type="text"
-                            placeholder="Enter DG postcode or street (e.g. DG1, Millburn Street)"
-                            value={addressQuery}
-                            onChange={handleAddressChange}
-                            className="w-full outline-none text-slate-800 placeholder-slate-400 text-base bg-transparent"
-                        />
-                        {addressLoading && <div className="text-xs text-slate-400 animate-pulse ml-2">Searching...</div>}
-                    </div>
-
-                    {suggestions.length > 0 && (
-                        <ul className="absolute left-0 right-0 mt-2 bg-white border border-slate-200 rounded-2xl shadow-xl overflow-hidden z-30 max-h-60 overflow-y-auto">
-                            {suggestions.map((item, index) => (
-                                <li
-                                    key={index}
-                                    onClick={() => handleSelectSuggestion(item)}
-                                    className="px-5 py-3 hover:bg-slate-100 cursor-pointer text-slate-700 text-sm flex items-center space-x-3 border-b last:border-none"
-                                >
-                                    <svg className="w-4 h-4 text-slate-400 flex-shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M17.657 16.657L13.414 20.9a1.998 1.998 0 01-2.827 0l-4.244-4.243a8 8 0 1111.314 0z" />
-                                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M15 11a3 3 0 11-6 0 3 3 0 016 0z" />
-                                    </svg>
-                                    <span className="truncate">{item.display_name}</span>
-                                </li>
-                            ))}
-                        </ul>
-                    )}
-                </div>
-
-                <div 
-                    onClick={() => setShowListingForm(true)}
-                    className="flex items-center justify-between p-4 border rounded-2xl shadow-sm hover:shadow-md transition cursor-pointer bg-white group max-w-lg mt-6"
-                >
-                    <div className="flex items-center space-x-4">
-                        <div className="p-3 bg-slate-100 rounded-xl group-hover:bg-rose-50 transition">
-                            <HomeIcon className="w-6 h-6 text-slate-700 group-hover:text-rose-500" />
-                        </div>
-                        <span className="font-semibold text-base text-slate-800">Or skip to manual listing form</span>
-                    </div>
-                    <ChevronRightIcon className="w-5 h-5 text-slate-400 group-hover:text-slate-800" />
-                </div>
-            </div>
-
-            <div className="relative w-full h-[480px] rounded-3xl overflow-hidden shadow-2xl">
-                <img 
-                    src="/images/garden.avif" 
-                    alt="Property Garden with Hot Tub" 
-                    className="w-full h-full object-cover"
-                />
-            </div>
-
-            {isModalOpen && (
-                <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 px-4">
-                    <div className="bg-white rounded-3xl max-w-xl w-full p-6 relative shadow-2xl max-h-[90vh] overflow-y-auto">
-                        <div className="flex items-center justify-between pb-4 border-b mb-6">
-                            <button 
-                                onClick={() => setIsModalOpen(false)}
-                                className="text-slate-500 hover:text-black text-xl font-bold"
-                            >
-                                &larr;
-                            </button>
-                            <h2 className="text-lg font-bold text-slate-900">Confirm your address</h2>
-                            <button 
-                                onClick={() => setIsModalOpen(false)}
-                                className="text-slate-400 hover:text-slate-600 font-bold text-xl"
-                            >
-                                &times;
-                            </button>
+                            <span className="text-slate-500 ml-2">/ night</span>
                         </div>
 
-                        <div className="space-y-4">
-                            <div>
-                                <label className="text-xs text-slate-500 font-semibold uppercase">Country/region</label>
-                                <input 
-                                    type="text"
-                                    value={country} 
-                                    onChange={(e) => setCountry(e.target.value)}
-                                    className="w-full p-3 border rounded-xl text-sm bg-white font-medium text-slate-800 mt-1"
-                                />
-                            </div>
-                            <div>
-                                <input
-                                    type="text"
-                                    placeholder="Flat, floor, bldg (if applicable)"
-                                    value={flat}
-                                    onChange={(e) => setFlat(e.target.value)}
-                                    className="w-full p-3 border rounded-xl text-sm text-slate-800 placeholder-slate-400"
-                                />
-                            </div>
-                            <div>
-                                <input
-                                    type="text"
-                                    placeholder="Property name (if applicable)"
-                                    value={propertyName}
-                                    onChange={(e) => setPropertyName(e.target.value)}
-                                    className="w-full p-3 border rounded-xl text-sm text-slate-800 placeholder-slate-400"
-                                />
-                            </div>
-                            <div>
-                                <input
-                                    type="text"
-                                    placeholder="Street address"
-                                    value={street}
-                                    onChange={(e) => setStreet(e.target.value)}
-                                    className="w-full p-3 border rounded-xl text-sm text-slate-800 placeholder-slate-400 font-medium"
-                                />
-                            </div>
-                            <div>
-                                <input
-                                    type="text"
-                                    placeholder="Locality / Region"
-                                    value={locality}
-                                    onChange={(e) => setLocality(e.target.value)}
-                                    className="w-full p-3 border rounded-xl text-sm text-slate-800 placeholder-slate-400"
-                                />
-                            </div>
-                            <div>
-                                <input
-                                    type="text"
-                                    placeholder="Town / city"
-                                    value={city}
-                                    onChange={(e) => setCity(e.target.value)}
-                                    className="w-full p-3 border rounded-xl text-sm text-slate-800 placeholder-slate-400 font-medium"
-                                />
-                            </div>
-                            <div>
-                                <input
-                                    type="text"
-                                    placeholder="Postcode"
-                                    value={postcode}
-                                    onChange={(e) => setPostcode(e.target.value)}
-                                    className="w-full p-3 border rounded-xl text-sm text-slate-800 placeholder-slate-400 font-medium"
-                                />
-                            </div>
-                        </div>
-
-                        <div className="mt-8 pt-4 border-t flex justify-end">
-                            <button
-                                onClick={() => {
-                                    setState(locality);
-                                    setIsModalOpen(false);
-                                    setShowListingForm(true);
-                                }}
-                                className="w-full py-4 bg-slate-900 hover:bg-black text-white font-bold rounded-xl transition"
-                            >
-                                Next
-                            </button>
-                        </div>
-                    </div>
-                </div>
-            )}
-        </main>
-    );
-}
+                        <div className="bg-slate-50 rounded-2xl border p-6 mb-6">
