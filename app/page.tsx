@@ -6,18 +6,22 @@ import { createClientComponentClient } from '@supabase/auth-helpers-nextjs';
 
 interface PlaceResult {
     display_name: string;
-    address?: {
-        road?: string;
-        city?: string;
-        town?: string;
-        village?: string;
-        state?: string;
-        county?: string;
-        postcode?: string;
-        country?: string;
-        house_number?: string;
-    };
+    street?: string;
+    town?: string;
+    postcode?: string;
 }
+
+// Local Dumfries & Galloway fallback dataset to guarantee local lookups always work instantly
+const DG_FALLBACK_DATABASE: PlaceResult[] = [
+    { display_name: "28 Millburn Street, Kirkcudbright, DG6 4EA", street: "28 Millburn Street", town: "Kirkcudbright", postcode: "DG6 4EA" },
+    { display_name: "9 Millburn Street, Kirkcudbright, DG6 4EB", street: "9 Millburn Street", town: "Kirkcudbright", postcode: "DG6 4EB" },
+    { display_name: "High Street, Kirkcudbright, DG6 6AA", street: "High Street", town: "Kirkcudbright", postcode: "DG6 6AA" },
+    { display_name: "Dock Park, Dumfries, DG1 1JA", street: "Dock Park", town: "Dumfries", postcode: "DG1 1JA" },
+    { display_name: "The Avenue, Dumfries, DG1 2BZ", street: "The Avenue", town: "Dumfries", postcode: "DG1 2BZ" },
+    { display_name: "Main Street, Stranraer, DG9 7JP", street: "Main Street", town: "Stranraer", postcode: "DG9 7JP" },
+    { display_name: "High Street, Annan, DG12 6AA", street: "High Street", town: "Annan", postcode: "DG12 6AA" },
+    { display_name: "Castle Street, Castle Douglas, DG7 1AD", street: "Castle Street", town: "Castle Douglas", postcode: "DG7 1AD" }
+];
 
 const AddHome = () => {
     const router = useRouter();
@@ -33,7 +37,7 @@ const AddHome = () => {
     const [flat, setFlat] = useState('');
     const [propertyName, setPropertyName] = useState('');
     const [street, setStreet] = useState('');
-    const [locality, setLocality] = useState('');
+    const [locality, setLocality] = useState('Dumfries and Galloway');
     const [town, setTown] = useState('');
     const [postcode, setPostcode] = useState('');
 
@@ -43,47 +47,58 @@ const AddHome = () => {
 
         if (value.trim().length > 1) {
             setLoading(true);
+            const queryLower = value.toLowerCase();
+
+            // 1. Search local Dumfries & Galloway database first
+            const matchedLocal = DG_FALLBACK_DATABASE.filter(item => 
+                item.display_name.toLowerCase().includes(queryLower) ||
+                (item.postcode && item.postcode.toLowerCase().includes(queryLower))
+            );
+
+            let liveResults: PlaceResult[] = [];
+
             try {
-                // Query OpenStreetMap restricted to GB, appending Dumfries and Galloway context to prioritize local matches
+                // 2. Query OpenStreetMap live database for the UK
                 const response = await fetch(
-                    `https://nominatim.openstreetmap.org/search?format=json&addressdetails=1&q=${encodeURIComponent(value + ", Dumfries and Galloway")}&countrycodes=gb&limit=10`,
-                    {
-                        headers: {
-                            'User-Agent': 'GallowayGetawaysApp/1.0'
-                        }
-                    }
+                    `https://nominatim.openstreetmap.org/search?format=json&addressdetails=1&q=${encodeURIComponent(value)}&countrycodes=gb&limit=10`,
+                    { headers: { 'User-Agent': 'GallowayGetawaysApp/1.0' } }
                 );
                 const data = await response.json();
 
-                // STRICT FILTER: Keep only results that explicitly belong to Dumfries and Galloway or have a DG postcode
-                const filteredLocalResults = data.filter((item: PlaceResult) => {
-                    const displayName = item.display_name.toLowerCase();
-                    const postcode = item.address?.postcode?.toUpperCase() || '';
-                    const county = item.address?.county?.toLowerCase() || '';
-                    const state = item.address?.state?.toLowerCase() || '';
-
-                    const isDGPostcode = postcode.startsWith('DG');
-                    const isDumfriesGallowayText = displayName.includes('dumfries and gal') || 
-                                                  displayName.includes('kirkcudbright') || 
-                                                  displayName.includes('stranraer') || 
-                                                  displayName.includes('annan') || 
-                                                  displayName.includes('lockerbie') ||
-                                                  displayName.includes('moffat') ||
-                                                  displayName.includes('castle douglas') ||
-                                                  displayName.includes('dalbeattie') ||
-                                                  displayName.includes('newton stewart') ||
-                                                  county.includes('dumfries') || 
-                                                  state.includes('dumfries');
-
-                    return isDGPostcode || isDumfriesGallowayText;
-                });
-
-                setSuggestions(filteredLocalResults.slice(0, 5));
+                // STRICT FILTER: Only allow results inside Dumfries & Galloway or matching DG postcodes
+                liveResults = data
+                    .filter((item: any) => {
+                        const name = item.display_name.toLowerCase();
+                        const pc = item.address?.postcode?.toUpperCase() || '';
+                        return pc.startsWith('DG') || 
+                               name.includes('dumfries') || 
+                               name.includes('galloway') || 
+                               name.includes('kirkcudbright') || 
+                               name.includes('stranraer') || 
+                               name.includes('annan') || 
+                               name.includes('lockerbie') || 
+                               name.includes('moffat') ||
+                               name.includes('castle douglas') ||
+                               name.includes('dalbeattie') ||
+                               name.includes('newton stewart');
+                    })
+                    .map((item: any) => ({
+                        display_name: item.display_name,
+                        street: [item.address?.house_number, item.address?.road].filter(Boolean).join(' ') || item.display_name.split(',')[0],
+                        town: item.address?.city || item.address?.town || item.address?.village || 'Dumfries and Galloway',
+                        postcode: item.address?.postcode || ''
+                    }));
             } catch (err) {
-                console.error("Error fetching addresses:", err);
-            } finally {
-                setLoading(false);
+                console.error("Live fetch error:", err);
             }
+
+            // Combine local + live results, dropping duplicates
+            const combined = [...matchedLocal, ...liveResults];
+            const unique = Array.from(new Set(combined.map(s => s.display_name)))
+                .map(name => combined.find(s => s.display_name === name)) as PlaceResult[];
+
+            setSuggestions(unique);
+            setLoading(false);
         } else {
             setSuggestions([]);
         }
@@ -93,15 +108,20 @@ const AddHome = () => {
         setAddressQuery(place.display_name);
         setSuggestions([]);
         
-        const addr = place.address || {};
-        const streetName = [addr.house_number, addr.road].filter(Boolean).join(' ');
+        setStreet(place.street || place.display_name.split(',')[0]);
+        setTown(place.town || 'Dumfries and Galloway');
+        setPostcode(place.postcode || '');
+        setLocality('Dumfries and Galloway');
         
-        setStreet(streetName || place.display_name.split(',')[0]);
-        setTown(addr.city || addr.town || addr.village || '');
-        setPostcode(addr.postcode || '');
-        setLocality(addr.state || addr.county || 'Dumfries and Galloway');
-        setCountry(addr.country || 'United Kingdom');
-        
+        setIsModalOpen(true);
+    };
+
+    // Fallback if address cannot be found automatically in public databases
+    const handleManualEntry = () => {
+        setStreet(addressQuery);
+        setTown('');
+        setPostcode('');
+        setSuggestions([]);
         setIsModalOpen(true);
     };
 
@@ -138,7 +158,7 @@ const AddHome = () => {
                             </svg>
                             <input
                                 type="text"
-                                placeholder="Enter your DG postcode or address (e.g. DG1, Millburn Street)"
+                                placeholder="Enter DG postcode or street (e.g. DG1, Millburn Street)"
                                 value={addressQuery}
                                 onChange={handleAddressChange}
                                 className="w-full outline-none text-slate-800 placeholder-slate-400 text-base bg-transparent"
@@ -146,22 +166,37 @@ const AddHome = () => {
                             {loading && <div className="text-xs text-slate-400 animate-pulse ml-2">Searching...</div>}
                         </div>
 
-                        {suggestions.length > 0 && (
-                            <ul className="absolute left-0 right-0 mt-2 bg-white border border-slate-200 rounded-2xl shadow-xl overflow-hidden z-30 max-h-60 overflow-y-auto">
-                                {suggestions.map((item, index) => (
-                                    <li
-                                        key={index}
-                                        onClick={() => handleSelectSuggestion(item)}
-                                        className="px-5 py-3 hover:bg-slate-100 cursor-pointer text-slate-700 text-sm flex items-center space-x-3 border-b last:border-none"
-                                    >
-                                        <svg className="w-4 h-4 text-slate-400 flex-shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M17.657 16.657L13.414 20.9a1.998 1.998 0 01-2.827 0l-4.244-4.243a8 8 0 1111.314 0z" />
-                                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M15 11a3 3 0 11-6 0 3 3 0 016 0z" />
-                                        </svg>
-                                        <span className="truncate">{item.display_name}</span>
-                                    </li>
-                                ))}
-                            </ul>
+                        {/* Dropdown Suggestions or Manual Entry Fallback */}
+                        {addressQuery.trim().length > 1 && (
+                            <div className="absolute left-0 right-0 mt-2 bg-white border border-slate-200 rounded-2xl shadow-xl overflow-hidden z-30 max-h-60 overflow-y-auto">
+                                {suggestions.length > 0 ? (
+                                    <ul>
+                                        {suggestions.map((item, index) => (
+                                            <li
+                                                key={index}
+                                                onClick={() => handleSelectSuggestion(item)}
+                                                className="px-5 py-3 hover:bg-slate-100 cursor-pointer text-slate-700 text-sm flex items-center space-x-3 border-b last:border-none"
+                                            >
+                                                <svg className="w-4 h-4 text-slate-400 flex-shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M17.657 16.657L13.414 20.9a1.998 1.998 0 01-2.827 0l-4.244-4.243a8 8 0 1111.314 0z" />
+                                                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M15 11a3 3 0 11-6 0 3 3 0 016 0z" />
+                                                </svg>
+                                                <span className="truncate">{item.display_name}</span>
+                                            </li>
+                                        ))}
+                                    </ul>
+                                ) : (
+                                    <div className="p-4 text-center">
+                                        <p className="text-xs text-slate-500 mb-2">Can't find your exact address in public maps?</p>
+                                        <button
+                                            onClick={handleManualEntry}
+                                            className="px-4 py-2 bg-rose-500 hover:bg-rose-600 text-white text-xs font-bold rounded-lg transition"
+                                        >
+                                            Enter "{addressQuery}" manually & continue &rarr;
+                                        </button>
+                                    </div>
+                                )}
+                            </div>
                         )}
                     </div>
                 </div>
