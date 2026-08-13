@@ -11,18 +11,6 @@ interface PlaceResult {
     postcode?: string;
 }
 
-// Local Dumfries & Galloway fallback dataset to guarantee local lookups always work instantly
-const DG_FALLBACK_DATABASE: PlaceResult[] = [
-    { display_name: "28 Millburn Street, Kirkcudbright, DG6 4EA", street: "28 Millburn Street", town: "Kirkcudbright", postcode: "DG6 4EA" },
-    { display_name: "9 Millburn Street, Kirkcudbright, DG6 4EB", street: "9 Millburn Street", town: "Kirkcudbright", postcode: "DG6 4EB" },
-    { display_name: "High Street, Kirkcudbright, DG6 6AA", street: "High Street", town: "Kirkcudbright", postcode: "DG6 6AA" },
-    { display_name: "Dock Park, Dumfries, DG1 1JA", street: "Dock Park", town: "Dumfries", postcode: "DG1 1JA" },
-    { display_name: "The Avenue, Dumfries, DG1 2BZ", street: "The Avenue", town: "Dumfries", postcode: "DG1 2BZ" },
-    { display_name: "Main Street, Stranraer, DG9 7JP", street: "Main Street", town: "Stranraer", postcode: "DG9 7JP" },
-    { display_name: "High Street, Annan, DG12 6AA", street: "High Street", town: "Annan", postcode: "DG12 6AA" },
-    { display_name: "Castle Street, Castle Douglas, DG7 1AD", street: "Castle Street", town: "Castle Douglas", postcode: "DG7 1AD" }
-];
-
 const AddHome = () => {
     const router = useRouter();
     const supabase = createClientComponentClient();
@@ -47,18 +35,9 @@ const AddHome = () => {
 
         if (value.trim().length > 1) {
             setLoading(true);
-            const queryLower = value.toLowerCase();
-
-            // 1. Search local Dumfries & Galloway database first
-            const matchedLocal = DG_FALLBACK_DATABASE.filter(item => 
-                item.display_name.toLowerCase().includes(queryLower) ||
-                (item.postcode && item.postcode.toLowerCase().includes(queryLower))
-            );
-
-            let liveResults: PlaceResult[] = [];
 
             try {
-                // 2. Query OpenStreetMap live database for the UK
+                // Query OpenStreetMap live database restricted to the UK
                 const response = await fetch(
                     `https://nominatim.openstreetmap.org/search?format=json&addressdetails=1&q=${encodeURIComponent(value)}&countrycodes=gb&limit=10`,
                     { headers: { 'User-Agent': 'GallowayGetawaysApp/1.0' } }
@@ -66,7 +45,7 @@ const AddHome = () => {
                 const data = await response.json();
 
                 // STRICT FILTER: Only allow results inside Dumfries & Galloway or matching DG postcodes
-                liveResults = data
+                const liveResults = data
                     .filter((item: any) => {
                         const name = item.display_name.toLowerCase();
                         const pc = item.address?.postcode?.toUpperCase() || '';
@@ -88,17 +67,14 @@ const AddHome = () => {
                         town: item.address?.city || item.address?.town || item.address?.village || 'Dumfries and Galloway',
                         postcode: item.address?.postcode || ''
                     }));
+
+                setSuggestions(liveResults);
             } catch (err) {
                 console.error("Live fetch error:", err);
+                setSuggestions([]);
+            } finally {
+                setLoading(false);
             }
-
-            // Combine local + live results, dropping duplicates
-            const combined = [...matchedLocal, ...liveResults];
-            const unique = Array.from(new Set(combined.map(s => s.display_name)))
-                .map(name => combined.find(s => s.display_name === name)) as PlaceResult[];
-
-            setSuggestions(unique);
-            setLoading(false);
         } else {
             setSuggestions([]);
         }
@@ -113,15 +89,6 @@ const AddHome = () => {
         setPostcode(place.postcode || '');
         setLocality('Dumfries and Galloway');
         
-        setIsModalOpen(true);
-    };
-
-    // Fallback if address cannot be found automatically in public databases
-    const handleManualEntry = () => {
-        setStreet(addressQuery);
-        setTown('');
-        setPostcode('');
-        setSuggestions([]);
         setIsModalOpen(true);
     };
 
@@ -166,45 +133,32 @@ const AddHome = () => {
                             {loading && <div className="text-xs text-slate-400 animate-pulse ml-2">Searching...</div>}
                         </div>
 
-                        {/* Dropdown Suggestions or Manual Entry Fallback */}
-                        {addressQuery.trim().length > 1 && (
-                            <div className="absolute left-0 right-0 mt-2 bg-white border border-slate-200 rounded-2xl shadow-xl overflow-hidden z-30 max-h-60 overflow-y-auto">
-                                {suggestions.length > 0 ? (
-                                    <ul>
-                                        {suggestions.map((item, index) => (
-                                            <li
-                                                key={index}
-                                                onClick={() => handleSelectSuggestion(item)}
-                                                className="px-5 py-3 hover:bg-slate-100 cursor-pointer text-slate-700 text-sm flex items-center space-x-3 border-b last:border-none"
-                                            >
-                                                <svg className="w-4 h-4 text-slate-400 flex-shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                                                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M17.657 16.657L13.414 20.9a1.998 1.998 0 01-2.827 0l-4.244-4.243a8 8 0 1111.314 0z" />
-                                                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M15 11a3 3 0 11-6 0 3 3 0 016 0z" />
-                                                </svg>
-                                                <span className="truncate">{item.display_name}</span>
-                                            </li>
-                                        ))}
-                                    </ul>
-                                ) : (
-                                    <div className="p-4 text-center">
-                                        <p className="text-xs text-slate-500 mb-2">Can't find your exact address in public maps?</p>
-                                        <button
-                                            onClick={handleManualEntry}
-                                            className="px-4 py-2 bg-rose-500 hover:bg-rose-600 text-white text-xs font-bold rounded-lg transition"
-                                        >
-                                            Enter "{addressQuery}" manually & continue &rarr;
-                                        </button>
-                                    </div>
-                                )}
-                            </div>
+                        {/* Dropdown Suggestions */}
+                        {suggestions.length > 0 && (
+                            <ul className="absolute left-0 right-0 mt-2 bg-white border border-slate-200 rounded-2xl shadow-xl overflow-hidden z-30 max-h-60 overflow-y-auto">
+                                {suggestions.map((item, index) => (
+                                    <li
+                                        key={index}
+                                        onClick={() => handleSelectSuggestion(item)}
+                                        className="px-5 py-3 hover:bg-slate-100 cursor-pointer text-slate-700 text-sm flex items-center space-x-3 border-b last:border-none"
+                                    >
+                                        <svg className="w-4 h-4 text-slate-400 flex-shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M17.657 16.657L13.414 20.9a1.998 1.998 0 01-2.827 0l-4.244-4.243a8 8 0 1111.314 0z" />
+                                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M15 11a3 3 0 11-6 0 3 3 0 016 0z" />
+                                        </svg>
+                                        <span className="truncate">{item.display_name}</span>
+                                    </li>
+                                ))}
+                            </ul>
                         )}
                     </div>
                 </div>
 
+                {/* Updated Picture: Scottish Countryside Cottage */}
                 <div className="relative w-full h-[450px] rounded-3xl overflow-hidden shadow-2xl">
                     <img 
-                        src="https://images.unsplash.com/photo-1512917774080-9991f1c4c750?auto=format&fit=crop&w=1000&q=80" 
-                        alt="Luxury property" 
+                        src="https://images.unsplash.com/photo-1509198397868-475647b2a1e5?auto=format&fit=crop&w=1000&q=80" 
+                        alt="Scottish Countryside Cottage" 
                         className="w-full h-full object-cover"
                     />
                 </div>
