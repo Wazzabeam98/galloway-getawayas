@@ -54,6 +54,10 @@ export default function AddHome() {
         'Workspace', 'Garden', 'BBQ grill'
     ];
 
+    // Hosts absorb this fee — guests always pay exactly the nightly rate the
+    // host sets, with no extra charge added at checkout.
+    const HOST_FEE_PERCENT = 10;
+
     const ICON_MAP: Record<string, any> = { Home: HomeIcon, Trees, Waves, Compass, Building2, Sparkles };
 
     // Address search & modal state
@@ -557,7 +561,7 @@ export default function AddHome() {
                     <form onSubmit={handleListingSubmit}>
                         <h2 className="text-3xl font-extrabold text-slate-900 mb-2">Now, set your price</h2>
                         <p className="text-slate-600 mb-6">You can change this anytime.</p>
-                        <div className="flex items-center border-2 rounded-2xl px-5 py-4 mb-8 max-w-xs">
+                        <div className="flex items-center border-2 rounded-2xl px-5 py-4 mb-3 max-w-xs">
                             <span className="text-3xl font-black text-slate-900 mr-2">£</span>
                             <input
                                 type="number"
@@ -569,6 +573,30 @@ export default function AddHome() {
                             />
                             <span className="text-slate-500 ml-2">/ night</span>
                         </div>
+
+                        {Number(price) > 0 && (
+                            <div className="bg-slate-50 rounded-2xl border p-5 mb-8 max-w-xs text-sm">
+                                <div className="flex justify-between text-slate-600 mb-2">
+                                    <span>Guest pays</span>
+                                    <span className="font-medium text-slate-900">£{Number(price).toFixed(2)} / night</span>
+                                </div>
+                                <div className="flex justify-between text-slate-600 mb-2">
+                                    <span>Host fee ({HOST_FEE_PERCENT}%)</span>
+                                    <span className="font-medium text-slate-900">
+                                        − £{(Number(price) * HOST_FEE_PERCENT / 100).toFixed(2)}
+                                    </span>
+                                </div>
+                                <div className="flex justify-between pt-2 border-t border-slate-200">
+                                    <span className="font-semibold text-slate-900">You receive</span>
+                                    <span className="font-bold text-rose-500">
+                                        £{(Number(price) * (1 - HOST_FEE_PERCENT / 100)).toFixed(2)} / night
+                                    </span>
+                                </div>
+                                <p className="text-xs text-slate-400 mt-3">
+                                    Guests are never charged extra — this {HOST_FEE_PERCENT}% covers payment processing and platform costs, deducted from your payout.
+                                </p>
+                            </div>
+                        )}
 
                         <div className="bg-slate-50 rounded-2xl border p-6 mb-6">
                             <h3 className="font-bold text-slate-900 mb-3">Review your listing</h3>
