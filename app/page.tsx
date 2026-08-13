@@ -4,24 +4,31 @@ import React, { useState } from 'react';
 import { useRouter } from 'next/navigation';
 import { createClientComponentClient } from '@supabase/auth-helpers-nextjs';
 
-const SAMPLE_ADDRESSES = [
-    { display: "EH17 8FD, Gilmerton Road, Edinburgh", street: "Gilmerton Road", town: "Edinburgh", postcode: "EH17 8FD" },
-    { display: "EH17 8AB, Southhouse Place, Edinburgh", street: "Southhouse Place", town: "Edinburgh", postcode: "EH17 8AB" },
-    { display: "EH1 1YZ, High Street, Edinburgh", street: "High Street", town: "Edinburgh", postcode: "EH1 1YZ" },
-    { display: "G1 1XQ, George Square, Glasgow", street: "George Square", town: "Glasgow", postcode: "G1 1XQ" },
-    { display: "AB10 1XG, Union Street, Aberdeen", street: "Union Street", town: "Aberdeen", postcode: "AB10 1XG" }
-];
+interface PlaceResult {
+    display_name: string;
+    address?: {
+        road?: string;
+        city?: string;
+        town?: string;
+        village?: string;
+        state?: string;
+        postcode?: string;
+        country?: string;
+        house_number?: string;
+    };
+}
 
 const AddHome = () => {
     const router = useRouter();
     const supabase = createClientComponentClient();
     
     const [addressQuery, setAddressQuery] = useState('');
-    const [suggestions, setSuggestions] = useState<typeof SAMPLE_ADDRESSES>([]);
+    const [suggestions, setSuggestions] = useState<PlaceResult[]>([]);
     const [isModalOpen, setIsModalOpen] = useState(false);
+    const [loading, setLoading] = useState(false);
 
     // Detailed address form fields mimicking Airbnb popup
-    const [country, setCountry] = useState('United Kingdom - GB');
+    const [country, setCountry] = useState('United Kingdom');
     const [flat, setFlat] = useState('');
     const [propertyName, setPropertyName] = useState('');
     const [street, setStreet] = useState('');
@@ -29,29 +36,47 @@ const AddHome = () => {
     const [town, setTown] = useState('');
     const [postcode, setPostcode] = useState('');
 
-    const handleAddressChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+    // Live search using OpenStreetMap geocoding API
+    const handleAddressChange = async (e: React.ChangeEvent<HTMLInputElement>) => {
         const value = e.target.value;
         setAddressQuery(value);
 
-        if (value.trim().length > 0) {
-            const filtered = SAMPLE_ADDRESSES.filter(item => 
-                item.display.toLowerCase().includes(value.toLowerCase()) ||
-                item.postcode.toLowerCase().includes(value.toLowerCase())
-            );
-            setSuggestions(filtered);
+        if (value.trim().length > 2) {
+            setLoading(true);
+            try {
+                const response = await fetch(
+                    `https://nominatim.openstreetmap.org/search?format=json&addressdetails=1&q=${encodeURIComponent(value)}&countrycodes=gb&limit=5`,
+                    {
+                        headers: {
+                            'User-Agent': 'GallowayGetawaysApp/1.0' // Required by map API guidelines
+                        }
+                    }
+                );
+                const data = await response.json();
+                setSuggestions(data);
+            } catch (err) {
+                console.error("Error fetching addresses:", err);
+            } finally {
+                setLoading(false);
+            }
         } else {
             setSuggestions([]);
         }
     };
 
-    const handleSelectSuggestion = (item: typeof SAMPLE_ADDRESSES[0]) => {
-        setAddressQuery(item.display);
+    const handleSelectSuggestion = (place: PlaceResult) => {
+        setAddressQuery(place.display_name);
         setSuggestions([]);
         
-        // Populate modal fields
-        setStreet(item.street);
-        setTown(item.town);
-        setPostcode(item.postcode);
+        // Extract address components safely
+        const addr = place.address || {};
+        const streetName = [addr.house_number, addr.road].filter(Boolean).join(' ');
+        
+        setStreet(streetName || place.display_name.split(',')[0]);
+        setTown(addr.city || addr.town || addr.village || '');
+        setPostcode(addr.postcode || '');
+        setLocality(addr.state || '');
+        setCountry(addr.country || 'United Kingdom');
         
         // Open the Airbnb-style confirmation modal
         setIsModalOpen(true);
@@ -90,11 +115,12 @@ const AddHome = () => {
                             </svg>
                             <input
                                 type="text"
-                                placeholder="Enter your address"
+                                placeholder="Enter your postcode or address (e.g. G71)"
                                 value={addressQuery}
                                 onChange={handleAddressChange}
                                 className="w-full outline-none text-slate-800 placeholder-slate-400 text-base bg-transparent"
                             />
+                            {loading && <div className="text-xs text-slate-400 animate-pulse ml-2">Searching...</div>}
                         </div>
 
                         {suggestions.length > 0 && (
@@ -103,13 +129,13 @@ const AddHome = () => {
                                     <li
                                         key={index}
                                         onClick={() => handleSelectSuggestion(item)}
-                                        className="px-5 py-3 hover:bg-slate-100 cursor-pointer text-slate-700 text-sm flex items-center space-x-2 border-b last:border-none"
+                                        className="px-5 py-3 hover:bg-slate-100 cursor-pointer text-slate-700 text-sm flex items-center space-x-3 border-b last:border-none"
                                     >
                                         <svg className="w-4 h-4 text-slate-400 flex-shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                                             <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M17.657 16.657L13.414 20.9a1.998 1.998 0 01-2.827 0l-4.244-4.243a8 8 0 1111.314 0z" />
                                             <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M15 11a3 3 0 11-6 0 3 3 0 016 0z" />
                                         </svg>
-                                        <span>{item.display}</span>
+                                        <span className="truncate">{item.display_name}</span>
                                     </li>
                                 ))}
                             </ul>
@@ -126,7 +152,7 @@ const AddHome = () => {
                 </div>
             </main>
 
-            {/* Confirm Address Modal (Mimicking Airbnb Image 2) */}
+            {/* Confirm Address Modal (Airbnb Style) */}
             {isModalOpen && (
                 <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 px-4">
                     <div className="bg-white rounded-3xl max-w-xl w-full p-6 relative shadow-2xl max-h-[90vh] overflow-y-auto">
@@ -149,15 +175,12 @@ const AddHome = () => {
                         <div className="space-y-4">
                             <div>
                                 <label className="text-xs text-slate-500 font-semibold uppercase">Country/region</label>
-                                <select 
+                                <input 
+                                    type="text"
                                     value={country} 
                                     onChange={(e) => setCountry(e.target.value)}
                                     className="w-full p-3 border rounded-xl text-sm bg-white font-medium text-slate-800 mt-1"
-                                >
-                                    <option>United Kingdom - GB</option>
-                                    <option>United States - US</option>
-                                    <option>Australia - AU</option>
-                                </select>
+                                />
                             </div>
 
                             <div>
@@ -193,7 +216,7 @@ const AddHome = () => {
                             <div>
                                 <input
                                     type="text"
-                                    placeholder="Locality (if applicable)"
+                                    placeholder="Locality / State (if applicable)"
                                     value={locality}
                                     onChange={(e) => setLocality(e.target.value)}
                                     className="w-full p-3 border rounded-xl text-sm text-slate-800 placeholder-slate-400"
