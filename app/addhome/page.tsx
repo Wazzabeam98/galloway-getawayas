@@ -271,7 +271,26 @@ export default function AddHome() {
             }
 
             const grabbed: string[] = [];
-            if (data.title) { setTitle(data.title); grabbed.push('title'); }
+            if (data.title) {
+                // Airbnb/Booking titles often look like:
+                // "Townhouse in Dumfries and Galloway · ★5.0 · 3 bedrooms · 3 beds · 2 bathrooms"
+                // Pull the counts out for the capacity step, then use just the
+                // leading location/name part as the actual listing title.
+                const bedroomsMatch = data.title.match(/(\d+)\s*bedroom/i);
+                const bedsMatch = data.title.match(/(\d+)\s*beds\b/i);
+                const bathroomsMatch = data.title.match(/([\d.]+)\s*bathroom/i);
+                const guestsMatch = data.title.match(/(\d+)\s*guests?\b/i);
+
+                if (bedroomsMatch) setBedrooms(Number(bedroomsMatch[1]));
+                if (bedsMatch) setBeds(Number(bedsMatch[1]));
+                if (bathroomsMatch) setBathrooms(Math.round(Number(bathroomsMatch[1])));
+                if (guestsMatch) setGuests(Number(guestsMatch[1]));
+
+                const cleanTitle = data.title.split('·')[0].trim();
+                setTitle(cleanTitle || data.title);
+                grabbed.push('title');
+                if (bedroomsMatch || bedsMatch || bathroomsMatch) grabbed.push('room counts');
+            }
             if (data.description) { setDescription(data.description); grabbed.push('description'); }
 
             if (data.image) {
