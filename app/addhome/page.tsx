@@ -4,7 +4,7 @@ import { useEffect, useRef, useState } from 'react';
 import { createClientComponentClient } from '@supabase/auth-helpers-nextjs';
 import { useRouter } from 'next/navigation';
 import Logo from '@/components/base/Logo';
-import { HomeIcon, ChevronRightIcon, ChevronLeftIcon, Trees, Waves, Compass, Building2, Sparkles, Minus, Plus, Check } from 'lucide-react';
+import { HomeIcon, ChevronRightIcon, ChevronLeftIcon, Trees, Waves, Compass, Building2, Sparkles, Minus, Plus, Check, Link2, Loader2 } from 'lucide-react';
 import LoginModel from '@/components/auth/LoginModel';
 import { categories } from '@/config/categories';
 import Env from '@/config/Env';
@@ -70,6 +70,12 @@ export default function AddHome() {
     const [locality, setLocality] = useState('Dumfries and Galloway');
     const [postcode, setPostcode] = useState('');
     const [addressLoading, setAddressLoading] = useState(false);
+
+    // Import-from-listing-link state
+    const [importUrl, setImportUrl] = useState('');
+    const [importLoading, setImportLoading] = useState(false);
+    const [importError, setImportError] = useState('');
+    const [importNote, setImportNote] = useState('');
 
     const router = useRouter();
     const supabase = createClientComponentClient();
@@ -239,6 +245,61 @@ export default function AddHome() {
             setFormError(msg);
         } finally {
             setSubmitting(false);
+        }
+    };
+
+    const handleImportListing = async () => {
+        setImportError('');
+        setImportNote('');
+        if (!importUrl.trim()) {
+            setImportError('Paste an Airbnb or Booking.com listing link first.');
+            return;
+        }
+
+        setImportLoading(true);
+        try {
+            const res = await fetch('/api/import-listing', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ url: importUrl.trim() }),
+            });
+            const data = await res.json();
+
+            if (!res.ok) {
+                setImportError(data.error || 'Could not import that listing.');
+                return;
+            }
+
+            const grabbed: string[] = [];
+            if (data.title) { setTitle(data.title); grabbed.push('title'); }
+            if (data.description) { setDescription(data.description); grabbed.push('description'); }
+
+            if (data.image) {
+                try {
+                    const imgRes = await fetch(`/api/import-listing/image?url=${encodeURIComponent(data.image)}`);
+                    if (imgRes.ok) {
+                        const blob = await imgRes.blob();
+                        const file = new File([blob], 'imported-cover.jpg', { type: blob.type || 'image/jpeg' });
+                        setPhotos((prev) => [file, ...prev]);
+                        setCoverIndex(0);
+                        grabbed.push('cover photo');
+                    }
+                } catch {
+                    // Photo import failing shouldn't block the title/description we did get.
+                }
+            }
+
+            if (grabbed.length === 0) {
+                setImportError('That page didn\'t have any details we could read.');
+                return;
+            }
+
+            setImportNote(`Imported ${grabbed.join(', ')} from ${data.source}. Everything else still needs filling in — review each step as you go.`);
+            setShowListingForm(true);
+        } catch {
+            setImportError('Something went wrong reaching that link.');
+        } finally {
+            setImportLoading(false);
         }
     };
 
@@ -673,6 +734,34 @@ export default function AddHome() {
                 <p className="text-slate-600 text-lg">
                     It’s easy to create a great listing – let’s start with your address.
                 </p>
+
+                <div className="border rounded-2xl p-5 max-w-lg bg-slate-50">
+                    <div className="flex items-center text-sm font-semibold text-slate-800 mb-2">
+                        <Link2 className="w-4 h-4 mr-2" /> Already listed elsewhere?
+                    </div>
+                    <p className="text-xs text-slate-500 mb-3">
+                        Paste your Airbnb or Booking.com listing link and we'll try to pull in the title, description and cover photo. Airbnb often blocks this, so it doesn't always work — Booking.com is more reliable. Anything we can't grab, you'll fill in yourself.
+                    </p>
+                    <div className="flex gap-2">
+                        <input
+                            type="text"
+                            value={importUrl}
+                            onChange={(e) => setImportUrl(e.target.value)}
+                            placeholder="https://www.airbnb.co.uk/rooms/..."
+                            className="flex-1 p-2.5 border rounded-xl text-sm outline-none focus:border-slate-900"
+                        />
+                        <button
+                            type="button"
+                            onClick={handleImportListing}
+                            disabled={importLoading}
+                            className="px-4 py-2 bg-slate-900 hover:bg-black text-white text-sm font-semibold rounded-xl transition disabled:opacity-60 flex items-center"
+                        >
+                            {importLoading ? <Loader2 className="w-4 h-4 animate-spin" /> : 'Import'}
+                        </button>
+                    </div>
+                    {importError && <p className="text-red-600 text-xs mt-2">{importError}</p>}
+                    {importNote && <p className="text-green-700 text-xs mt-2">{importNote}</p>}
+                </div>
 
                 <div className="relative max-w-lg">
                     <div className="flex items-center border-2 border-slate-300 hover:border-slate-400 focus-within:border-slate-900 rounded-full px-5 py-4 shadow-sm transition bg-white">
