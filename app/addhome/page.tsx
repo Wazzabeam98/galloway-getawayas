@@ -32,7 +32,8 @@ export default function AddHome() {
     const [state, setState] = useState('');
     const [description, setDescription] = useState('');
     const [homeCategories, setHomeCategories] = useState<string[]>([]);
-    const [image, setImage] = useState<File | null>(null);
+    const [photos, setPhotos] = useState<File[]>([]);
+    const [coverIndex, setCoverIndex] = useState(0);
     const [submitting, setSubmitting] = useState(false);
     const [formError, setFormError] = useState('');
 
@@ -137,25 +138,37 @@ export default function AddHome() {
         }, 400);
     };
 
-    const handleImageChange = (e: React.ChangeEvent<HTMLInputElement>) => {
-        const file = e.target.files?.[0];
-        if (file) setImage(file);
+    const handlePhotosChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+        const files = Array.from(e.target.files || []);
+        if (files.length) setPhotos((prev) => [...prev, ...files]);
+        e.target.value = '';
+    };
+
+    const removePhoto = (index: number) => {
+        setPhotos((prev) => prev.filter((_, i) => i !== index));
+        setCoverIndex((prev) => {
+            if (index === prev) return 0;
+            if (index < prev) return prev - 1;
+            return prev;
+        });
     };
 
     const handleListingSubmit = async (e: React.FormEvent) => {
         e.preventDefault();
         setFormError('');
 
-        if (!image) {
-            setFormError('Please choose a photo of your place.');
+        if (photos.length === 0) {
+            setFormError('Please add at least one photo of your place.');
             return;
         }
-        if (!['image/jpeg', 'image/jpg', 'image/png'].includes(image.type)) {
+        const badType = photos.find((p) => !['image/jpeg', 'image/jpg', 'image/png'].includes(p.type));
+        if (badType) {
             setFormError('Only JPEG, JPG and PNG images are allowed.');
             return;
         }
-        if (image.size / 1048576 >= 2) {
-            setFormError('Image size must be less than 2MB.');
+        const tooBig = photos.find((p) => p.size / 1048576 >= 2);
+        if (tooBig) {
+            setFormError('Each photo must be less than 2MB.');
             return;
         }
 
@@ -168,15 +181,21 @@ export default function AddHome() {
             return;
         }
 
-        const uniquePath = Date.now() + '_' + generateRandomNumber();
-        const { data: imgData, error: imgErr } = await supabase.storage
-            .from(Env.S3_BUCKET)
-            .upload(uniquePath, image);
+        // Upload every photo, cover photo first so it lands at images[0].
+        const orderedPhotos = [photos[coverIndex], ...photos.filter((_, i) => i !== coverIndex)];
+        const uploadedPaths: string[] = [];
+        for (const photo of orderedPhotos) {
+            const uniquePath = Date.now() + '_' + generateRandomNumber();
+            const { data: imgData, error: imgErr } = await supabase.storage
+                .from(Env.S3_BUCKET)
+                .upload(uniquePath, photo);
 
-        if (imgErr) {
-            toast.error(imgErr.message, { theme: 'colored' });
-            setSubmitting(false);
-            return;
+            if (imgErr) {
+                toast.error(imgErr.message, { theme: 'colored' });
+                setSubmitting(false);
+                return;
+            }
+            if (imgData?.path) uploadedPaths.push(imgData.path);
         }
 
         // Your listings table stores the address as one combined text field,
@@ -192,7 +211,7 @@ export default function AddHome() {
             location,
             price_per_night: Number(price),
             max_guests: guests,
-            images: imgData?.path ? [imgData.path] : [],
+            images: uploadedPaths,
             property_type: propertyType,
             privacy_type: privacyType,
             bedrooms,
@@ -265,8 +284,8 @@ export default function AddHome() {
                 setFormError('Please fill in your town/city and region.');
                 return;
             }
-            if (step === 6 && !image) {
-                setFormError('Please add a photo of your place.');
+            if (step === 6 && photos.length === 0) {
+                setFormError('Please add at least one photo of your place.');
                 return;
             }
             if (step === 7 && (!title || !description)) {
@@ -449,24 +468,61 @@ export default function AddHome() {
                     </div>
                 )}
 
-                {/* Step 6: Photo */}
+                {/* Step 6: Photos */}
                 {step === 6 && (
                     <div>
-                        <h2 className="text-3xl font-extrabold text-slate-900 mb-2">Add a photo of your place</h2>
-                        <p className="text-slate-600 mb-8">Listings with a great photo get more bookings. You can add more photos later.</p>
-                        <div className="h-72 bg-slate-100 rounded-2xl overflow-hidden border-2 border-dashed border-slate-300 flex items-center justify-center mb-4">
-                            {image ? (
-                                <img src={URL.createObjectURL(image)} alt="Your place" className="w-full h-full object-cover" />
-                            ) : (
-                                <span className="text-slate-400">No photo chosen yet</span>
-                            )}
-                        </div>
-                        <input
-                            type="file"
-                            accept="image/png, image/jpeg"
-                            onChange={handleImageChange}
-                            className="w-full p-2 border rounded-xl text-sm"
-                        />
+                        <h2 className="text-3xl font-extrabold text-slate-900 mb-2">Add photos of your place</h2>
+                        <p className="text-slate-600 mb-8">Upload as many as you like, then click the star on your favourite to make it the cover photo guests see first.</p>
+
+                        {photos.length > 0 && (
+                            <div className="grid grid-cols-2 md:grid-cols-3 gap-4 mb-4">
+                                {photos.map((photo, i) => (
+                                    <div
+                                        key={i}
+                                        className={`relative h-40 rounded-2xl overflow-hidden border-2 group ${i === coverIndex ? 'border-rose-500' : 'border-slate-200'}`}
+                                    >
+                                        <img
+                                            src={URL.createObjectURL(photo)}
+                                            alt={`Photo ${i + 1}`}
+                                            className="w-full h-full object-cover"
+                                        />
+                                        <button
+                                            type="button"
+                                            onClick={() => setCoverIndex(i)}
+                                            title={i === coverIndex ? 'Cover photo' : 'Make cover photo'}
+                                            className={`absolute top-2 left-2 w-8 h-8 rounded-full flex items-center justify-center text-sm shadow ${i === coverIndex ? 'bg-rose-500 text-white' : 'bg-white/90 text-slate-600 opacity-0 group-hover:opacity-100 transition'}`}
+                                        >
+                                            ★
+                                        </button>
+                                        <button
+                                            type="button"
+                                            onClick={() => removePhoto(i)}
+                                            title="Remove photo"
+                                            className="absolute top-2 right-2 w-8 h-8 rounded-full bg-white/90 text-slate-600 flex items-center justify-center text-sm shadow opacity-0 group-hover:opacity-100 transition"
+                                        >
+                                            ×
+                                        </button>
+                                        {i === coverIndex && (
+                                            <span className="absolute bottom-2 left-2 text-xs font-semibold bg-rose-500 text-white px-2 py-0.5 rounded-full">
+                                                Cover photo
+                                            </span>
+                                        )}
+                                    </div>
+                                ))}
+                            </div>
+                        )}
+
+                        <label className="h-32 rounded-2xl border-2 border-dashed border-slate-300 hover:border-slate-400 flex flex-col items-center justify-center cursor-pointer text-slate-500 text-sm">
+                            <span className="font-semibold mb-1">+ Add photos</span>
+                            <span>JPEG or PNG, up to 2MB each</span>
+                            <input
+                                type="file"
+                                accept="image/png, image/jpeg"
+                                multiple
+                                onChange={handlePhotosChange}
+                                className="hidden"
+                            />
+                        </label>
                     </div>
                 )}
 
