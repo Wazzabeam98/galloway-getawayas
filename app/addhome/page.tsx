@@ -178,59 +178,68 @@ export default function AddHome() {
 
         setSubmitting(true);
 
-        const user = await supabase.auth.getUser();
-        if (!user.data.user) {
-            toast.error('You need to be signed in to publish a listing.', { theme: 'colored' });
-            setSubmitting(false);
-            return;
-        }
-
-        // Upload every photo, cover photo first so it lands at images[0].
-        const orderedPhotos = [photos[coverIndex], ...photos.filter((_, i) => i !== coverIndex)];
-        const uploadedPaths: string[] = [];
-        for (const photo of orderedPhotos) {
-            const uniquePath = Date.now() + '_' + generateRandomNumber();
-            const { data: imgData, error: imgErr } = await supabase.storage
-                .from(Env.S3_BUCKET)
-                .upload(uniquePath, photo);
-
-            if (imgErr) {
-                toast.error(imgErr.message, { theme: 'colored' });
-                setSubmitting(false);
+        try {
+            const user = await supabase.auth.getUser();
+            if (!user.data.user) {
+                const msg = 'You need to be signed in to publish a listing.';
+                toast.error(msg, { theme: 'colored' });
+                setFormError(msg);
                 return;
             }
-            if (imgData?.path) uploadedPaths.push(imgData.path);
-        }
 
-        // Your listings table stores the address as one combined text field,
-        // not separate country/state/city columns — build that here.
-        const location = [flat, propertyName, street, city, state, postcode, country]
-            .filter(Boolean)
-            .join(', ');
+            // Upload every photo, cover photo first so it lands at images[0].
+            const orderedPhotos = [photos[coverIndex], ...photos.filter((_, i) => i !== coverIndex)];
+            const uploadedPaths: string[] = [];
+            for (const photo of orderedPhotos) {
+                const uniquePath = Date.now() + '_' + generateRandomNumber();
+                const { data: imgData, error: imgErr } = await supabase.storage
+                    .from(Env.S3_BUCKET)
+                    .upload(uniquePath, photo);
 
-        const { error: listingErr } = await supabase.from('listings').insert({
-            host_id: user.data.user.id,
-            title,
-            description,
-            location,
-            price_per_night: Number(price),
-            max_guests: guests,
-            images: uploadedPaths,
-            property_type: propertyType,
-            privacy_type: privacyType,
-            bedrooms,
-            beds,
-            bathrooms,
-            amenities,
-        });
+                if (imgErr) {
+                    toast.error(imgErr.message, { theme: 'colored' });
+                    setFormError(`Photo upload failed: ${imgErr.message}`);
+                    return;
+                }
+                if (imgData?.path) uploadedPaths.push(imgData.path);
+            }
 
-        if (listingErr) {
-            toast.error(listingErr.message, { theme: 'colored' });
+            // Your listings table stores the address as one combined text field,
+            // not separate country/state/city columns — build that here.
+            const location = [flat, propertyName, street, city, state, postcode, country]
+                .filter(Boolean)
+                .join(', ');
+
+            const { error: listingErr } = await supabase.from('listings').insert({
+                host_id: user.data.user.id,
+                title,
+                description,
+                location,
+                price_per_night: Number(price),
+                max_guests: guests,
+                images: uploadedPaths,
+                property_type: propertyType,
+                privacy_type: privacyType,
+                bedrooms,
+                beds,
+                bathrooms,
+                amenities,
+            });
+
+            if (listingErr) {
+                toast.error(listingErr.message, { theme: 'colored' });
+                setFormError(`Could not save listing: ${listingErr.message}`);
+                return;
+            }
+
+            router.push('/dashboard?success=Home added successfully!');
+        } catch (err: any) {
+            const msg = err?.message || 'Something went wrong publishing your listing. Please try again.';
+            toast.error(msg, { theme: 'colored' });
+            setFormError(msg);
+        } finally {
             setSubmitting(false);
-            return;
         }
-
-        router.push('/dashboard?success=Home added successfully!');
     };
 
     const handleSelectSuggestion = (place: PlaceResult) => {
