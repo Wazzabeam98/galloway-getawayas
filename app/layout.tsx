@@ -1,7 +1,9 @@
 export const dynamic = 'force-dynamic';
 
 import './globals.css';
+import 'react-toastify/dist/ReactToastify.css';
 import Navbar from '@/components/base/Navbar';
+import { ToastContainer } from 'react-toastify';
 
 export const metadata = {
   title: 'Galloway Getaways',
@@ -18,6 +20,7 @@ export default function RootLayout({
       <body className="bg-white text-slate-900 antialiased">
         <Navbar />
         {children}
+        <ToastContainer position="top-center" />
       </body>
     </html>
   );
