@@ -12,6 +12,7 @@ interface PlaceResult {
         town?: string;
         village?: string;
         state?: string;
+        county?: string;
         postcode?: string;
         country?: string;
         house_number?: string;
@@ -36,16 +37,16 @@ const AddHome = () => {
     const [town, setTown] = useState('');
     const [postcode, setPostcode] = useState('');
 
-    // Live search using OpenStreetMap geocoding API filtered for GB
     const handleAddressChange = async (e: React.ChangeEvent<HTMLInputElement>) => {
         const value = e.target.value;
         setAddressQuery(value);
 
-        if (value.trim().length > 2) {
+        if (value.trim().length > 1) {
             setLoading(true);
             try {
+                // Query OpenStreetMap restricted to GB, appending Dumfries and Galloway context to prioritize local matches
                 const response = await fetch(
-                    `https://nominatim.openstreetmap.org/search?format=json&addressdetails=1&q=${encodeURIComponent(value)}&countrycodes=gb&limit=5`,
+                    `https://nominatim.openstreetmap.org/search?format=json&addressdetails=1&q=${encodeURIComponent(value + ", Dumfries and Galloway")}&countrycodes=gb&limit=10`,
                     {
                         headers: {
                             'User-Agent': 'GallowayGetawaysApp/1.0'
@@ -53,7 +54,31 @@ const AddHome = () => {
                     }
                 );
                 const data = await response.json();
-                setSuggestions(data);
+
+                // STRICT FILTER: Keep only results that explicitly belong to Dumfries and Galloway or have a DG postcode
+                const filteredLocalResults = data.filter((item: PlaceResult) => {
+                    const displayName = item.display_name.toLowerCase();
+                    const postcode = item.address?.postcode?.toUpperCase() || '';
+                    const county = item.address?.county?.toLowerCase() || '';
+                    const state = item.address?.state?.toLowerCase() || '';
+
+                    const isDGPostcode = postcode.startsWith('DG');
+                    const isDumfriesGallowayText = displayName.includes('dumfries and gal') || 
+                                                  displayName.includes('kirkcudbright') || 
+                                                  displayName.includes('stranraer') || 
+                                                  displayName.includes('annan') || 
+                                                  displayName.includes('lockerbie') ||
+                                                  displayName.includes('moffat') ||
+                                                  displayName.includes('castle douglas') ||
+                                                  displayName.includes('dalbeattie') ||
+                                                  displayName.includes('newton stewart') ||
+                                                  county.includes('dumfries') || 
+                                                  state.includes('dumfries');
+
+                    return isDGPostcode || isDumfriesGallowayText;
+                });
+
+                setSuggestions(filteredLocalResults.slice(0, 5));
             } catch (err) {
                 console.error("Error fetching addresses:", err);
             } finally {
@@ -74,7 +99,7 @@ const AddHome = () => {
         setStreet(streetName || place.display_name.split(',')[0]);
         setTown(addr.city || addr.town || addr.village || '');
         setPostcode(addr.postcode || '');
-        setLocality(addr.state || '');
+        setLocality(addr.state || addr.county || 'Dumfries and Galloway');
         setCountry(addr.country || 'United Kingdom');
         
         setIsModalOpen(true);
@@ -113,7 +138,7 @@ const AddHome = () => {
                             </svg>
                             <input
                                 type="text"
-                                placeholder="Enter your postcode or address (e.g. DG1)"
+                                placeholder="Enter your DG postcode or address (e.g. DG1, Millburn Street)"
                                 value={addressQuery}
                                 onChange={handleAddressChange}
                                 className="w-full outline-none text-slate-800 placeholder-slate-400 text-base bg-transparent"
@@ -214,7 +239,7 @@ const AddHome = () => {
                             <div>
                                 <input
                                     type="text"
-                                    placeholder="Locality / State (if applicable)"
+                                    placeholder="Locality / Region"
                                     value={locality}
                                     onChange={(e) => setLocality(e.target.value)}
                                     className="w-full p-3 border rounded-xl text-sm text-slate-800 placeholder-slate-400"
