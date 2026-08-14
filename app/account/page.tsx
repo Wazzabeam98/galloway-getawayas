@@ -3,6 +3,7 @@
 import { useEffect, useState } from 'react';
 import { createClientComponentClient } from '@supabase/auth-helpers-nextjs';
 import { useRouter } from 'next/navigation';
+import Link from 'next/link';
 import Logo from '@/components/base/Logo';
 import LoginModel from '@/components/auth/LoginModel';
 import { toast } from 'react-toastify';
@@ -30,7 +31,7 @@ const SECTIONS = [
     { key: 'notifications', label: 'Notifications', icon: Bell, ready: false },
     { key: 'payments', label: 'Payments & payouts', icon: CreditCard, ready: false },
     { key: 'messaging', label: 'Messaging', icon: MessageCircle, ready: true },
-    { key: 'bookings', label: 'Booking permissions', icon: CalendarCheck, ready: false },
+    { key: 'bookings', label: 'Booking permissions', icon: CalendarCheck, ready: true },
 ];
 
 // Turns a stored schedule into the sentence shown on the button.
@@ -202,6 +203,22 @@ export default function AccountSettings() {
     const [templates, setTemplates] = useState<Record<string, Template>>({});
     const [savingTemplate, setSavingTemplate] = useState<string | null>(null);
     const [scheduleFor, setScheduleFor] = useState<string | null>(null);
+
+    // --- Booking permissions state ---
+    interface HostListing {
+        id: string;
+        title: string;
+        instant_book: boolean;
+        instant_book_requires_phone: boolean;
+        min_nights: number | null;
+        max_nights: number | null;
+        advance_notice: string | null;
+        preparation_time: string | null;
+        availability_window: string | null;
+        cancellation_policy: string | null;
+    }
+    const [hostListings, setHostListings] = useState<HostListing[]>([]);
+    const [savingListing, setSavingListing] = useState<string | null>(null);
     const [draftSchedule, setDraftSchedule] = useState<Partial<Template>>({});
 
     const supabase = createClientComponentClient();
@@ -246,6 +263,13 @@ export default function AccountSettings() {
                 const tplMap: Record<string, Template> = {};
                 (tpls || []).forEach((t) => { tplMap[t.template_type] = t; });
                 setTemplates(tplMap);
+
+                const { data: myListings } = await supabase
+                    .from('listings')
+                    .select('id, title, instant_book, instant_book_requires_phone, min_nights, max_nights, advance_notice, preparation_time, availability_window, cancellation_policy')
+                    .eq('host_id', session.user.id)
+                    .order('created_at', { ascending: true });
+                setHostListings(myListings || []);
 
                 const { data: replies } = await supabase
                     .from('quick_replies')
@@ -477,6 +501,22 @@ export default function AccountSettings() {
         }
 
         setExporting(false);
+    };
+
+    // --- Booking permissions handlers ---
+
+    const updateListingBooking = async (id: string, patch: Partial<HostListing>) => {
+        setSavingListing(id);
+        setHostListings((prev) => prev.map((l) => (l.id === id ? Object.assign({}, l, patch) : l)));
+
+        const { error } = await supabase.from('listings').update(patch).eq('id', id);
+        setSavingListing(null);
+
+        if (error) {
+            toast.error(error.message, { theme: 'colored' });
+            return;
+        }
+        toast.success('Saved.', { theme: 'colored' });
     };
 
     // --- Messaging handlers ---
@@ -1283,6 +1323,131 @@ export default function AccountSettings() {
                                     </div>
                                 </div>
                             </div>
+                        </div>
+                    ) : activeSection === 'bookings' ? (
+                        <div>
+                            <h2 className="text-2xl font-bold text-slate-900 mb-1">Booking permissions</h2>
+                            <p className="text-sm text-slate-500 mb-6">
+                                Decide how guests can book each of your places.
+                            </p>
+
+                            {hostListings.length === 0 ? (
+                                <div className="border rounded-2xl p-10 text-center">
+                                    <h3 className="text-lg font-semibold text-slate-800">No listings yet</h3>
+                                    <p className="text-slate-500 text-sm mt-1">
+                                        Once you&apos;ve added a place, its booking settings will appear here.
+                                    </p>
+                                </div>
+                            ) : (
+                                <div className="space-y-5">
+                                    {hostListings.map((l) => {
+                                        const busy = savingListing === l.id;
+                                        return (
+                                            <div key={l.id} className="border rounded-2xl p-5">
+                                                <div className="font-semibold text-slate-900 text-sm mb-4">
+                                                    {l.title || 'Untitled listing'}
+                                                </div>
+
+                                                {/* How guests book */}
+                                                <div className="space-y-2 mb-4">
+                                                    <button
+                                                        type="button"
+                                                        disabled={busy}
+                                                        onClick={() => updateListingBooking(l.id, { instant_book: false })}
+                                                        className={`w-full text-left px-4 py-3.5 rounded-xl border transition disabled:opacity-50 ${!l.instant_book ? 'border-slate-900 border-2' : 'border-slate-200 hover:border-slate-400'}`}
+                                                    >
+                                                        <div className={`text-sm ${!l.instant_book ? 'font-semibold text-slate-900' : 'text-slate-700'}`}>
+                                                            Request to book
+                                                        </div>
+                                                        <div className="text-xs text-slate-500 mt-0.5">
+                                                            You review each request and choose whether to accept. Dates aren&apos;t
+                                                            held until you do.
+                                                        </div>
+                                                    </button>
+
+                                                    <button
+                                                        type="button"
+                                                        disabled={busy}
+                                                        onClick={() => updateListingBooking(l.id, { instant_book: true })}
+                                                        className={`w-full text-left px-4 py-3.5 rounded-xl border transition disabled:opacity-50 ${l.instant_book ? 'border-slate-900 border-2' : 'border-slate-200 hover:border-slate-400'}`}
+                                                    >
+                                                        <div className={`text-sm ${l.instant_book ? 'font-semibold text-slate-900' : 'text-slate-700'}`}>
+                                                            Instant Book
+                                                        </div>
+                                                        <div className="text-xs text-slate-500 mt-0.5">
+                                                            Guests book straight away without waiting for you. The dates block
+                                                            immediately, so make sure your calendar is accurate.
+                                                        </div>
+                                                    </button>
+                                                </div>
+
+                                                {/* Requirements — only relevant for instant book */}
+                                                {l.instant_book && (
+                                                    <div className="border-t pt-4 mb-4">
+                                                        <div className="flex items-start justify-between">
+                                                            <div className="pr-6">
+                                                                <div className="font-semibold text-slate-900 text-sm mb-1">
+                                                                    Require a phone number
+                                                                </div>
+                                                                <p className="text-xs text-slate-500">
+                                                                    Guests must have a phone number saved on their profile before
+                                                                    they can book instantly.
+                                                                </p>
+                                                            </div>
+                                                            <button
+                                                                type="button"
+                                                                role="switch"
+                                                                aria-checked={l.instant_book_requires_phone}
+                                                                aria-label="Require a phone number"
+                                                                disabled={busy}
+                                                                onClick={() => updateListingBooking(l.id, { instant_book_requires_phone: !l.instant_book_requires_phone })}
+                                                                className={`relative inline-flex h-6 w-11 flex-shrink-0 rounded-full transition-colors disabled:opacity-50 ${l.instant_book_requires_phone ? 'bg-emerald-700' : 'bg-slate-300'}`}
+                                                            >
+                                                                <span
+                                                                    className={`inline-block h-5 w-5 transform rounded-full bg-white shadow transition-transform mt-0.5 ${l.instant_book_requires_phone ? 'translate-x-5' : 'translate-x-0.5'}`}
+                                                                />
+                                                            </button>
+                                                        </div>
+                                                    </div>
+                                                )}
+
+                                                {/* Read-only summary of rules that live elsewhere */}
+                                                <div className="border-t pt-4">
+                                                    <div className="text-xs font-semibold text-slate-700 mb-2">
+                                                        Current stay rules
+                                                    </div>
+                                                    <dl className="grid grid-cols-2 gap-x-4 gap-y-1.5 text-xs">
+                                                        <dt className="text-slate-500">Minimum nights</dt>
+                                                        <dd className="text-slate-800">{l.min_nights || 1}</dd>
+                                                        <dt className="text-slate-500">Maximum nights</dt>
+                                                        <dd className="text-slate-800">{l.max_nights || 'No limit'}</dd>
+                                                        <dt className="text-slate-500">Advance notice</dt>
+                                                        <dd className="text-slate-800">{l.advance_notice || 'Same day'}</dd>
+                                                        <dt className="text-slate-500">Preparation time</dt>
+                                                        <dd className="text-slate-800">{l.preparation_time || 'None'}</dd>
+                                                        <dt className="text-slate-500">Booking window</dt>
+                                                        <dd className="text-slate-800">{l.availability_window || '9 months'}</dd>
+                                                        <dt className="text-slate-500">Cancellation policy</dt>
+                                                        <dd className="text-slate-800">{l.cancellation_policy || 'Moderate'}</dd>
+                                                    </dl>
+                                                    <p className="text-xs text-slate-400 mt-3">
+                                                        These are set per listing so they stay in one place — edit nights, notice
+                                                        and booking window on your{' '}
+                                                        <Link href="/dashboard/calendar" className="underline hover:text-slate-700">
+                                                            calendar
+                                                        </Link>
+                                                        , and the cancellation policy in the{' '}
+                                                        <Link href={`/edit-listing/${l.id}`} className="underline hover:text-slate-700">
+                                                            listing editor
+                                                        </Link>
+                                                        .
+                                                    </p>
+                                                </div>
+                                            </div>
+                                        );
+                                    })}
+                                </div>
+                            )}
                         </div>
                     ) : (
                         <div className="border rounded-2xl p-10 text-center">
