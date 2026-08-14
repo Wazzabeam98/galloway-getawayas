@@ -5,6 +5,8 @@ import { cookies } from 'next/headers';
 import Image from 'next/image';
 import { capitializeFirst, getImageUrl } from '@/lib/utils';
 import BookingWidget from '@/components/BookingWidget';
+import ReviewStars from '@/components/ReviewStars';
+import HostReplyBox from '@/components/HostReplyBox';
 
 const FindHome = async ({ params }: { params: { id: string } }) => {
     const supabase = createServerComponentClient({ cookies });
@@ -50,10 +52,37 @@ const FindHome = async ({ params }: { params: { id: string } }) => {
 
     const images: string[] = home.images || [];
 
+    const { data: reviews } = await supabase
+        .from('reviews')
+        .select('*')
+        .eq('listing_id', home.id)
+        .eq('review_type', 'guest_to_host')
+        .order('created_at', { ascending: false });
+
+    const reviewerIds = Array.from(new Set((reviews || []).map((r) => r.reviewer_id)));
+    let reviewerNames: Record<string, string> = {};
+    if (reviewerIds.length) {
+        const { data: reviewers } = await supabase.from('profiles').select('id, full_name, preferred_name').in('id', reviewerIds);
+        (reviewers || []).forEach((p) => { reviewerNames[p.id] = p.preferred_name || p.full_name || 'Guest'; });
+    }
+
+    const { data: { user: viewer } } = await supabase.auth.getUser();
+    const isHostViewing = viewer?.id === home.host_id;
+
+    const avgRating = reviews && reviews.length
+        ? reviews.reduce((sum, r) => sum + r.rating, 0) / reviews.length
+        : 0;
+
     return (
         <div className='container mb-10'>
             <div className='container mt-4'>
                 <h1 className='text-2xl font-bold'>{home.title}</h1>
+                {reviews && reviews.length > 0 && (
+                    <div className='flex items-center gap-2 mt-1'>
+                        <ReviewStars value={Math.round(avgRating)} size={16} />
+                        <span className='text-sm text-slate-600'>{avgRating.toFixed(1)} · {reviews.length} review{reviews.length > 1 ? 's' : ''}</span>
+                    </div>
+                )}
                 <p className='text-slate-600'>{home.location}</p>
 
                 {images.length > 0 ? (
@@ -114,6 +143,34 @@ const FindHome = async ({ params }: { params: { id: string } }) => {
                         <div className='mt-2 whitespace-pre-line'>
                             {home.description}
                         </div>
+
+                        {reviews && reviews.length > 0 && (
+                            <div className='mt-8'>
+                                <h2 className='text-xl font-semibold mb-4 flex items-center gap-2'>
+                                    <ReviewStars value={Math.round(avgRating)} size={18} />
+                                    {avgRating.toFixed(1)} · {reviews.length} review{reviews.length > 1 ? 's' : ''}
+                                </h2>
+                                <div className='space-y-5'>
+                                    {reviews.map((r) => (
+                                        <div key={r.id} className='border-b pb-5'>
+                                            <div className='flex items-center justify-between mb-1'>
+                                                <span className='font-semibold text-slate-900'>{capitializeFirst(reviewerNames[r.reviewer_id] || 'Guest')}</span>
+                                                <ReviewStars value={r.rating} size={14} />
+                                            </div>
+                                            <p className='text-sm text-slate-700'>{r.comment}</p>
+                                            {isHostViewing ? (
+                                                <HostReplyBox reviewId={r.id} existingReply={r.host_reply} />
+                                            ) : r.host_reply ? (
+                                                <div className='mt-3 ml-4 pl-4 border-l-2 border-slate-200'>
+                                                    <p className='text-xs font-semibold text-slate-500 mb-1'>Response from the host</p>
+                                                    <p className='text-sm text-slate-700'>{r.host_reply}</p>
+                                                </div>
+                                            ) : null}
+                                        </div>
+                                    ))}
+                                </div>
+                            </div>
+                        )}
                     </div>
 
                     <div>
