@@ -22,12 +22,16 @@ export default function BookingActions({ bookingId, mode = 'pending' }: { bookin
 
             const { data: template } = await supabase
                 .from('message_templates')
-                .select('body, enabled')
+                .select('body, enabled, anchor, minutes_after')
                 .eq('user_id', session.user.id)
                 .eq('template_type', 'booking_confirmation')
                 .single();
 
             if (!template?.enabled) return;
+
+            // Only send from here when the host chose "as soon as you accept".
+            // Any delay is handled by the scheduled job instead.
+            if (template.anchor !== 'booking' || (template.minutes_after || 0) > 0) return;
             let body = (template.body || '').trim();
             if (!body) return;
 
@@ -93,7 +97,13 @@ export default function BookingActions({ bookingId, mode = 'pending' }: { bookin
 
     const updateStatus = async (status: 'confirmed' | 'declined' | 'cancelled') => {
         setUpdating(true);
-        const { error } = await supabase.from('bookings').update({ status }).eq('id', bookingId);
+        const patch: Record<string, any> = { status };
+        // Scheduled messages anchored to acceptance need to know when that was.
+        if (status === 'confirmed') {
+            patch.confirmed_at = new Date().toISOString();
+        }
+
+        const { error } = await supabase.from('bookings').update(patch).eq('id', bookingId);
 
         if (error) {
             setUpdating(false);
