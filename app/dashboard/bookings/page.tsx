@@ -15,8 +15,8 @@ export default async function BookingsPage() {
         .eq("host_id", user.user?.id)
         .order("created_at", { ascending: false });
 
-    const listingIds = [...new Set((bookings || []).map((b) => b.listing_id))];
-    const guestIds = [...new Set((bookings || []).map((b) => b.guest_id))];
+    const listingIds = Array.from(new Set((bookings || []).map((b) => b.listing_id)));
+    const guestIds = Array.from(new Set((bookings || []).map((b) => b.guest_id)));
 
     const { data: listings } = listingIds.length
         ? await supabase.from("listings").select("id, title, images").in("id", listingIds)
