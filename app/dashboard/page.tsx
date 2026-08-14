@@ -1,6 +1,5 @@
 export const dynamic = "force-dynamic";
 
-import Navbar from "@/components/base/Navbar";
 import Toast from "@/components/base/Toast";
 import { createServerComponentClient } from "@supabase/auth-helpers-nextjs";
 import { cookies } from "next/headers";
@@ -30,7 +29,6 @@ export default async function Dashboard() {
 
     return (
         <div>
-            <Navbar />
             <Toast />
             <div className="container mt-5">
                 {homes && homes.length > 0 && (
