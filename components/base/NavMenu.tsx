@@ -28,6 +28,11 @@ const NavMenu = ({ session }: { session: object | undefined }) => {
                                     Dashboard
                                 </Link>
                             </li>
+                            <li className='hover:bg-slate-200 rounded-md p-2 cursor-pointer'>
+                                <Link href='/account'>
+                                    Account settings
+                                </Link>
+                            </li>
                             <SignOut />
                             <li className="hover:bg-slate-200 rounded-md p-2 cursor-pointer">
                                 <Link href="/addhome" >
