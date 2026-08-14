@@ -15,7 +15,7 @@ import {
     RotateCw, Wifi, Coffee, Wind, Shirt, Zap, Baby, Briefcase, Car, Dumbbell, Bath,
     Flame, Armchair, Umbrella, Anchor, AlertTriangle, BellRing, PawPrint,
     LayoutGrid, MapPin, FileText, Image as ImageIcon, PoundSterling, CalendarRange,
-    RefreshCw, Percent,
+    RefreshCw, Percent, ShieldAlert, RotateCcw, X,
 } from 'lucide-react';
 
 const ICON_MAP: Record<string, any> = { Home: HomeIcon, Trees, Waves, Compass, Building2, Sparkles };
@@ -88,8 +88,17 @@ const SECTIONS = [
     { key: 'photos', label: 'Photos', icon: ImageIcon },
     { key: 'rates', label: 'Rates', icon: PoundSterling },
     { key: 'availability', label: 'Availability', icon: CalendarRange },
+    { key: 'rules', label: 'House rules', icon: ShieldAlert },
+    { key: 'cancellation', label: 'Cancellation policy', icon: RotateCcw },
     { key: 'calendar', label: 'Calendar sync', icon: RefreshCw },
     { key: 'discounts', label: 'Discounts', icon: Percent },
+];
+
+const CANCELLATION_POLICIES = [
+    { key: 'Flexible', bullets: ['Full refund at least 1 day before check-in', 'Partial refund within 1 day of check-in'] },
+    { key: 'Moderate', bullets: ['Full refund at least 5 days before check-in', 'Partial refund within 5 days of check-in'] },
+    { key: 'Limited', bullets: ['Full refund at least 14 days before check-in', 'Partial refund 7–14 days before check-in'] },
+    { key: 'Firm', bullets: ['Full refund at least 30 days before check-in', 'Partial refund 7–30 days before check-in'] },
 ];
 
 type Photo = { kind: 'existing'; path: string } | { kind: 'new'; file: File };
@@ -126,6 +135,17 @@ export default function EditListing() {
     const [icalImportUrl, setIcalImportUrl] = useState('');
     const [minNights, setMinNights] = useState('1');
     const [maxNights, setMaxNights] = useState('');
+    const [eventsAllowed, setEventsAllowed] = useState(false);
+    const [smokingAllowed, setSmokingAllowed] = useState(false);
+    const [quietHoursEnabled, setQuietHoursEnabled] = useState(false);
+    const [quietHoursStart, setQuietHoursStart] = useState('22:00');
+    const [quietHoursEnd, setQuietHoursEnd] = useState('07:00');
+    const [commercialPhotographyAllowed, setCommercialPhotographyAllowed] = useState(false);
+    const [checkinStart, setCheckinStart] = useState('15:00');
+    const [checkinEnd, setCheckinEnd] = useState('');
+    const [checkoutTime, setCheckoutTime] = useState('11:00');
+    const [additionalRules, setAdditionalRules] = useState('');
+    const [cancellationPolicy, setCancellationPolicy] = useState('Moderate');
 
     const [submitting, setSubmitting] = useState(false);
     const [formError, setFormError] = useState('');
@@ -179,6 +199,17 @@ export default function EditListing() {
             setIcalImportUrl(listing.ical_import_url || '');
             setMinNights(String(listing.min_nights ?? 1));
             setMaxNights(listing.max_nights ? String(listing.max_nights) : '');
+            setEventsAllowed(listing.events_allowed ?? false);
+            setSmokingAllowed(listing.smoking_allowed ?? false);
+            setQuietHoursEnabled(listing.quiet_hours_enabled ?? false);
+            setQuietHoursStart(listing.quiet_hours_start || '22:00');
+            setQuietHoursEnd(listing.quiet_hours_end || '07:00');
+            setCommercialPhotographyAllowed(listing.commercial_photography_allowed ?? false);
+            setCheckinStart(listing.checkin_start || '15:00');
+            setCheckinEnd(listing.checkin_end || '');
+            setCheckoutTime(listing.checkout_time || '11:00');
+            setAdditionalRules(listing.additional_rules || '');
+            setCancellationPolicy(listing.cancellation_policy || 'Moderate');
 
             setLoading(false);
         };
@@ -283,6 +314,17 @@ export default function EditListing() {
                     ical_import_url: icalImportUrl || null,
                     min_nights: Math.max(1, Number(minNights) || 1),
                     max_nights: maxNights ? Number(maxNights) : null,
+                    events_allowed: eventsAllowed,
+                    smoking_allowed: smokingAllowed,
+                    quiet_hours_enabled: quietHoursEnabled,
+                    quiet_hours_start: quietHoursStart,
+                    quiet_hours_end: quietHoursEnd,
+                    commercial_photography_allowed: commercialPhotographyAllowed,
+                    checkin_start: checkinStart,
+                    checkin_end: checkinEnd,
+                    checkout_time: checkoutTime,
+                    additional_rules: additionalRules,
+                    cancellation_policy: cancellationPolicy,
                 })
                 .eq('id', listingId)
                 .eq('host_id', session.user.id);
@@ -566,6 +608,132 @@ export default function EditListing() {
                                     </div>
                                 </div>
                                 <p className="text-xs text-slate-400 mt-2">Leave maximum nights blank for no limit.</p>
+                            </section>
+                        )}
+
+                        {activeSection === 'rules' && (
+                            <section>
+                                <h2 className="text-xl font-bold text-slate-900 mb-1">House rules</h2>
+                                <p className="text-sm text-slate-500 mb-6">
+                                    Guests are expected to follow your rules and may be removed if they don't.
+                                </p>
+
+                                <div className="border rounded-2xl divide-y">
+                                    {[
+                                        { label: 'Events allowed', value: eventsAllowed, set: setEventsAllowed },
+                                        { label: 'Smoking, vaping, e-cigarettes allowed', value: smokingAllowed, set: setSmokingAllowed },
+                                        { label: 'Commercial photography and filming allowed', value: commercialPhotographyAllowed, set: setCommercialPhotographyAllowed },
+                                    ].map((rule) => (
+                                        <div key={rule.label} className="p-4 flex items-center justify-between">
+                                            <span className="text-sm font-medium text-slate-800">{rule.label}</span>
+                                            <div className="flex gap-2">
+                                                <button
+                                                    type="button"
+                                                    onClick={() => rule.set(false)}
+                                                    className={`w-8 h-8 rounded-full flex items-center justify-center ${!rule.value ? 'bg-slate-900 text-white' : 'bg-slate-100 text-slate-400'}`}
+                                                >
+                                                    <X className="w-4 h-4" />
+                                                </button>
+                                                <button
+                                                    type="button"
+                                                    onClick={() => rule.set(true)}
+                                                    className={`w-8 h-8 rounded-full flex items-center justify-center ${rule.value ? 'bg-slate-900 text-white' : 'bg-slate-100 text-slate-400'}`}
+                                                >
+                                                    <Check className="w-4 h-4" />
+                                                </button>
+                                            </div>
+                                        </div>
+                                    ))}
+
+                                    <div className="p-4">
+                                        <div className="flex items-center justify-between mb-3">
+                                            <span className="text-sm font-medium text-slate-800">Quiet hours</span>
+                                            <div className="flex gap-2">
+                                                <button
+                                                    type="button"
+                                                    onClick={() => setQuietHoursEnabled(false)}
+                                                    className={`w-8 h-8 rounded-full flex items-center justify-center ${!quietHoursEnabled ? 'bg-slate-900 text-white' : 'bg-slate-100 text-slate-400'}`}
+                                                >
+                                                    <X className="w-4 h-4" />
+                                                </button>
+                                                <button
+                                                    type="button"
+                                                    onClick={() => setQuietHoursEnabled(true)}
+                                                    className={`w-8 h-8 rounded-full flex items-center justify-center ${quietHoursEnabled ? 'bg-slate-900 text-white' : 'bg-slate-100 text-slate-400'}`}
+                                                >
+                                                    <Check className="w-4 h-4" />
+                                                </button>
+                                            </div>
+                                        </div>
+                                        {quietHoursEnabled && (
+                                            <div className="grid grid-cols-2 gap-3">
+                                                <div>
+                                                    <label className="text-xs text-slate-500">Start time</label>
+                                                    <input type="time" value={quietHoursStart} onChange={(e) => setQuietHoursStart(e.target.value)}
+                                                        className="w-full p-2.5 border rounded-lg text-sm mt-1" />
+                                                </div>
+                                                <div>
+                                                    <label className="text-xs text-slate-500">End time</label>
+                                                    <input type="time" value={quietHoursEnd} onChange={(e) => setQuietHoursEnd(e.target.value)}
+                                                        className="w-full p-2.5 border rounded-lg text-sm mt-1" />
+                                                </div>
+                                            </div>
+                                        )}
+                                    </div>
+                                </div>
+
+                                <h3 className="font-semibold text-slate-800 mt-8 mb-3">Check-in and checkout times</h3>
+                                <div className="grid grid-cols-3 gap-3 max-w-lg">
+                                    <div>
+                                        <label className="text-xs text-slate-500">Check-in from</label>
+                                        <input type="time" value={checkinStart} onChange={(e) => setCheckinStart(e.target.value)}
+                                            className="w-full p-2.5 border rounded-lg text-sm mt-1" />
+                                    </div>
+                                    <div>
+                                        <label className="text-xs text-slate-500">Check-in until</label>
+                                        <input type="text" value={checkinEnd} onChange={(e) => setCheckinEnd(e.target.value)}
+                                            placeholder="e.g. 20:00 or Flexible" className="w-full p-2.5 border rounded-lg text-sm mt-1" />
+                                    </div>
+                                    <div>
+                                        <label className="text-xs text-slate-500">Checkout by</label>
+                                        <input type="time" value={checkoutTime} onChange={(e) => setCheckoutTime(e.target.value)}
+                                            className="w-full p-2.5 border rounded-lg text-sm mt-1" />
+                                    </div>
+                                </div>
+
+                                <h3 className="font-semibold text-slate-800 mt-8 mb-2">Additional rules</h3>
+                                <textarea
+                                    value={additionalRules}
+                                    onChange={(e) => setAdditionalRules(e.target.value)}
+                                    rows={4}
+                                    placeholder="Share anything else you expect from guests..."
+                                    className="w-full p-3 border rounded-xl text-sm"
+                                />
+                            </section>
+                        )}
+
+                        {activeSection === 'cancellation' && (
+                            <section>
+                                <h2 className="text-xl font-bold text-slate-900 mb-1">Cancellation policy</h2>
+                                <p className="text-sm text-slate-500 mb-6">Choose how flexible you want to be with cancellations.</p>
+                                <div className="space-y-3 max-w-lg">
+                                    {CANCELLATION_POLICIES.map((policy) => (
+                                        <button
+                                            key={policy.key}
+                                            type="button"
+                                            onClick={() => setCancellationPolicy(policy.key)}
+                                            className={`w-full text-left p-4 rounded-2xl border-2 transition ${cancellationPolicy === policy.key ? 'border-slate-900 bg-slate-50' : 'border-slate-200 hover:border-slate-400'}`}
+                                        >
+                                            <div className="flex items-center justify-between mb-1">
+                                                <span className="font-semibold text-slate-900">{policy.key}</span>
+                                                {cancellationPolicy === policy.key && <Check className="w-4 h-4 text-slate-900" />}
+                                            </div>
+                                            <ul className="text-xs text-slate-500 list-disc pl-4 space-y-0.5">
+                                                {policy.bullets.map((b) => <li key={b}>{b}</li>)}
+                                            </ul>
+                                        </button>
+                                    ))}
+                                </div>
                             </section>
                         )}
 
