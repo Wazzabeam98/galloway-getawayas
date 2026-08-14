@@ -779,8 +779,9 @@ export default function AccountSettings() {
                                             </p>
                                             {!showFullName && !profile.preferred_name && (
                                                 <p className="text-xs text-amber-600 mt-2">
-                                                    You haven&apos;t set a preferred name yet, so your legal name is still being
-                                                    shown. Add one under Personal information.
+                                                    You haven&apos;t set a preferred name, so other people will just see
+                                                    &quot;Host&quot; or &quot;Guest&quot; instead of a name. Add one under
+                                                    Personal information.
                                                 </p>
                                             )}
                                         </div>
