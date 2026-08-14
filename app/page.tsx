@@ -12,6 +12,7 @@ export default async function HomePage() {
   const { data: listings } = await supabase
     .from('listings')
     .select('id, title, location, price_per_night, images')
+    .eq('status', 'published')
     .order('created_at', { ascending: false });
 
   return (
