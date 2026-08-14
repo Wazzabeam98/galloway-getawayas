@@ -39,8 +39,9 @@ function describeSchedule(t: { anchor: string; minutes_after: number; days_offse
     if (!t.anchor || t.anchor === 'none') return 'Not scheduled';
     if (t.anchor === 'booking') {
         if (!t.minutes_after) return 'As soon as you accept';
-        if (t.minutes_after === 60) return '1 hour after you accept';
-        return `${t.minutes_after} minutes after you accept`;
+        if (t.minutes_after === 60) return '1 hour after booking confirmed';
+        if (t.minutes_after % 60 === 0) return `${t.minutes_after / 60} hours after booking confirmed`;
+        return `${t.minutes_after} minutes after booking confirmed`;
     }
     const when = t.anchor === 'check_in' ? 'check-in' : 'check-out';
     if (t.days_offset === 0) return `On the day of ${when} at ${hh(t.send_hour)}`;
@@ -53,14 +54,19 @@ interface Preset {
     values: { anchor: string; minutes_after: number; days_offset: number; send_hour: number };
 }
 
-const SCHEDULE_PRESETS: Preset[] = [
-    { label: "Don't schedule",                    values: { anchor: 'none',      minutes_after: 0,  days_offset: 0, send_hour: 9 } },
-    { label: 'As soon as you accept a booking',   values: { anchor: 'booking',   minutes_after: 0,  days_offset: 0, send_hour: 9 } },
-    { label: '5 minutes after you accept',        values: { anchor: 'booking',   minutes_after: 5,  days_offset: 0, send_hour: 9 } },
-    { label: '3 days before check-in at 10:00',   values: { anchor: 'check_in',  minutes_after: 0,  days_offset: 3, send_hour: 10 } },
-    { label: '1 day before check-in at 10:00',    values: { anchor: 'check_in',  minutes_after: 0,  days_offset: 1, send_hour: 10 } },
-    { label: 'On the morning of check-in at 09:00', values: { anchor: 'check_in', minutes_after: 0, days_offset: 0, send_hour: 9 } },
-    { label: '1 day before check-out at 18:00',   values: { anchor: 'check_out', minutes_after: 0,  days_offset: 1, send_hour: 18 } },
+const SCHEDULE_PRESETS: (Preset & { family: 'booking' | 'stay' | 'both' })[] = [
+    { family: 'both',    label: "Don't schedule",                       values: { anchor: 'none',      minutes_after: 0,  days_offset: 0, send_hour: 9 } },
+
+    { family: 'booking', label: 'As soon as you accept a booking',      values: { anchor: 'booking',   minutes_after: 0,  days_offset: 0, send_hour: 9 } },
+    { family: 'booking', label: '5 minutes after booking confirmed',    values: { anchor: 'booking',   minutes_after: 5,  days_offset: 0, send_hour: 9 } },
+    { family: 'booking', label: '30 minutes after booking confirmed',   values: { anchor: 'booking',   minutes_after: 30, days_offset: 0, send_hour: 9 } },
+    { family: 'booking', label: '1 hour after booking confirmed',       values: { anchor: 'booking',   minutes_after: 60, days_offset: 0, send_hour: 9 } },
+
+    { family: 'stay',    label: '3 days before check-in at 10:00',      values: { anchor: 'check_in',  minutes_after: 0,  days_offset: 3, send_hour: 10 } },
+    { family: 'stay',    label: '1 day before check-in at 10:00',       values: { anchor: 'check_in',  minutes_after: 0,  days_offset: 1, send_hour: 10 } },
+    { family: 'stay',    label: 'On the morning of check-in at 09:00',  values: { anchor: 'check_in',  minutes_after: 0,  days_offset: 0, send_hour: 9 } },
+    { family: 'stay',    label: '1 day before check-out at 18:00',      values: { anchor: 'check_out', minutes_after: 0,  days_offset: 1, send_hour: 18 } },
+    { family: 'stay',    label: 'On the morning of check-out at 09:00', values: { anchor: 'check_out', minutes_after: 0,  days_offset: 0, send_hour: 9 } },
 ];
 
 const ANCHOR_LABELS: { key: string; label: string }[] = [
@@ -88,6 +94,9 @@ interface TemplateDef {
     hint: string;
     placeholder: string;
     defaultOffset: number;
+    // Which kind of timing makes sense: hung off the booking being
+    // accepted, or off the dates of the stay itself.
+    family: 'booking' | 'stay';
     offsetLabel?: string;
     offsetChoices?: number[];
 }
@@ -95,6 +104,7 @@ interface TemplateDef {
 const TEMPLATE_TYPES: TemplateDef[] = [
     {
         key: 'booking_confirmation',
+        family: 'booking',
         label: 'Booking confirmation',
         hint: 'Sent the moment you accept a booking request.',
         placeholder: "Hi {guest_name}, thanks for booking {listing}! I've confirmed your stay from {check_in} to {check_out}. Any questions before you arrive, just reply here.",
@@ -102,6 +112,7 @@ const TEMPLATE_TYPES: TemplateDef[] = [
     },
     {
         key: 'checkin_details',
+        family: 'stay',
         label: 'Check-in details',
         hint: 'The practical stuff — address, key safe, parking, wifi.',
         placeholder: "Hi {guest_name}, you're arriving at {listing} on {check_in}. Check-in is any time after 4pm. The key safe is to the right of the front door — code 1234. Parking is on the street directly outside.",
@@ -111,6 +122,7 @@ const TEMPLATE_TYPES: TemplateDef[] = [
     },
     {
         key: 'checkin_day',
+        family: 'stay',
         label: 'Checking in with guest',
         hint: 'A friendly note on the morning of their arrival day.',
         placeholder: "Hi {guest_name}, hope the journey goes smoothly today. Everything's ready for you at {listing} — give me a shout if you need anything at all.",
@@ -118,6 +130,7 @@ const TEMPLATE_TYPES: TemplateDef[] = [
     },
     {
         key: 'checkout_details',
+        family: 'stay',
         label: 'Check-out details',
         hint: 'What you need them to do before they leave.',
         placeholder: "Hi {guest_name}, hope you've had a lovely stay. Check-out is by 10am on {check_out} — just pop the keys back in the safe and close the door behind you. Bins are round the side if you have any rubbish.",
@@ -1302,7 +1315,11 @@ export default function AccountSettings() {
                         </p>
 
                         <div className="space-y-2">
-                            {SCHEDULE_PRESETS.map((preset) => {
+                            {SCHEDULE_PRESETS.filter((preset) => {
+                                const def = TEMPLATE_TYPES.filter((d) => d.key === scheduleFor)[0];
+                                if (!def) return true;
+                                return preset.family === 'both' || preset.family === def.family;
+                            }).map((preset) => {
                                 const selected =
                                     draftSchedule.anchor === preset.values.anchor &&
                                     (draftSchedule.minutes_after || 0) === preset.values.minutes_after &&
@@ -1325,17 +1342,17 @@ export default function AccountSettings() {
                             <div className="rounded-xl border border-slate-200 p-4">
                                 <div className="text-sm font-semibold text-slate-900 mb-3">Custom time</div>
                                 <div className="flex flex-wrap items-center gap-2">
-                                    {draftSchedule.anchor === 'booking' ? (
+                                    {(TEMPLATE_TYPES.filter((d) => d.key === scheduleFor)[0]?.family === 'booking') ? (
                                         <>
                                             <input
                                                 type="number"
                                                 min={0}
                                                 max={1440}
                                                 value={draftSchedule.minutes_after || 0}
-                                                onChange={(e) => setDraftSchedule(Object.assign({}, draftSchedule, { minutes_after: parseInt(e.target.value, 10) || 0 }))}
+                                                onChange={(e) => setDraftSchedule(Object.assign({}, draftSchedule, { anchor: 'booking', minutes_after: parseInt(e.target.value, 10) || 0 }))}
                                                 className="w-20 border rounded-lg p-2 text-sm"
                                             />
-                                            <span className="text-sm text-slate-600">minutes</span>
+                                            <span className="text-sm text-slate-600">minutes after booking confirmed</span>
                                         </>
                                     ) : (
                                         <>
@@ -1344,24 +1361,26 @@ export default function AccountSettings() {
                                                 min={0}
                                                 max={30}
                                                 value={draftSchedule.days_offset || 0}
-                                                onChange={(e) => setDraftSchedule(Object.assign({}, draftSchedule, { days_offset: parseInt(e.target.value, 10) || 0 }))}
+                                                onChange={(e) => setDraftSchedule(Object.assign({}, draftSchedule, { anchor: (!draftSchedule.anchor || draftSchedule.anchor === 'none') ? 'check_in' : draftSchedule.anchor, days_offset: parseInt(e.target.value, 10) || 0 }))}
                                                 className="w-20 border rounded-lg p-2 text-sm"
                                             />
                                             <span className="text-sm text-slate-600">days</span>
                                         </>
                                     )}
 
-                                    <select
-                                        value={draftSchedule.anchor === 'none' ? 'check_in' : draftSchedule.anchor}
-                                        onChange={(e) => setDraftSchedule(Object.assign({}, draftSchedule, { anchor: e.target.value }))}
-                                        className="border rounded-lg p-2 text-sm flex-1 min-w-[180px]"
-                                    >
-                                        {ANCHOR_LABELS.map((a) => (
-                                            <option key={a.key} value={a.key}>{a.label}</option>
-                                        ))}
-                                    </select>
+                                    {(TEMPLATE_TYPES.filter((d) => d.key === scheduleFor)[0]?.family !== 'booking') && (
+                                        <select
+                                            value={draftSchedule.anchor === 'none' || draftSchedule.anchor === 'booking' ? 'check_in' : draftSchedule.anchor}
+                                            onChange={(e) => setDraftSchedule(Object.assign({}, draftSchedule, { anchor: e.target.value }))}
+                                            className="border rounded-lg p-2 text-sm flex-1 min-w-[180px]"
+                                        >
+                                            {ANCHOR_LABELS.filter((a) => a.key !== 'booking').map((a) => (
+                                                <option key={a.key} value={a.key}>{a.label}</option>
+                                            ))}
+                                        </select>
+                                    )}
 
-                                    {draftSchedule.anchor !== 'booking' && (
+                                    {(TEMPLATE_TYPES.filter((d) => d.key === scheduleFor)[0]?.family !== 'booking') && (
                                         <label className="flex items-center gap-2 text-sm text-slate-600">
                                             at
                                             <select
