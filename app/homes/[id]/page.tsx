@@ -7,6 +7,7 @@ import { capitializeFirst, getImageUrl } from '@/lib/utils';
 import BookingWidget from '@/components/BookingWidget';
 import ReviewStars from '@/components/ReviewStars';
 import HostReplyBox from '@/components/HostReplyBox';
+import ReviewsSummary from '@/components/ReviewsSummary';
 
 const FindHome = async ({ params }: { params: { id: string } }) => {
     const supabase = createServerComponentClient({ cookies });
@@ -146,7 +147,9 @@ const FindHome = async ({ params }: { params: { id: string } }) => {
 
                         {reviews && reviews.length > 0 && (
                             <div className='mt-8'>
-                                <h2 className='text-xl font-semibold mb-4 flex items-center gap-2'>
+                                <ReviewsSummary reviews={reviews} />
+
+                                <h2 className='text-xl font-semibold my-6 flex items-center gap-2'>
                                     <ReviewStars value={Math.round(avgRating)} size={18} />
                                     {avgRating.toFixed(1)} · {reviews.length} review{reviews.length > 1 ? 's' : ''}
                                 </h2>
