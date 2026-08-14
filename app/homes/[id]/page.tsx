@@ -183,6 +183,8 @@ const FindHome = async ({ params }: { params: { id: string } }) => {
                             pricePerNight={home.price_per_night}
                             maxGuests={home.max_guests || 1}
                             petsAllowed={(home.amenities || []).includes('Pets allowed')}
+                            instantBook={home.instant_book === true}
+                            instantBookRequiresPhone={home.instant_book_requires_phone === true}
                             icalImportUrl={home.ical_import_url}
                             weekendPrice={home.weekend_price}
                             cleaningFee={home.cleaning_fee || 0}
