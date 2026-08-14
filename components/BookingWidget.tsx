@@ -3,7 +3,7 @@
 import { useEffect, useState } from 'react';
 import { createClientComponentClient } from '@supabase/auth-helpers-nextjs';
 import { DateRangePicker, Range, RangeKeyDict } from 'react-date-range';
-import { differenceInCalendarDays, addDays } from 'date-fns';
+import { differenceInCalendarDays, addDays, format } from 'date-fns';
 import 'react-date-range/dist/styles.css';
 import 'react-date-range/dist/theme/default.css';
 import LoginModel from '@/components/auth/LoginModel';
@@ -24,6 +24,7 @@ export default function BookingWidget({ listingId, hostId, pricePerNight, maxGue
     const [session, setSession] = useState<any>(null);
     const [loadingSession, setLoadingSession] = useState(true);
     const [disabledDates, setDisabledDates] = useState<Date[]>([]);
+    const [priceOverrides, setPriceOverrides] = useState<Record<string, number>>({});
     const [adults, setAdults] = useState(1);
     const [children, setChildren] = useState(0);
     const [pets, setPets] = useState(0);
@@ -60,6 +61,20 @@ export default function BookingWidget({ listingId, hostId, pricePerNight, maxGue
 
             (existing || []).forEach((b) => addRange(b.check_in, b.check_out));
 
+            // Pull in the host's own manual calendar management — dates they've
+            // blocked directly, plus any custom per-date pricing they've set.
+            const { data: calOverrides } = await supabase
+                .from('calendar_overrides')
+                .select('date, is_blocked, price_override')
+                .eq('listing_id', listingId);
+
+            const prices: Record<string, number> = {};
+            (calOverrides || []).forEach((o) => {
+                if (o.is_blocked) blocked.push(new Date(o.date));
+                if (o.price_override) prices[o.date] = o.price_override;
+            });
+            setPriceOverrides(prices);
+
             // Pull in whatever's blocked on the host's external calendar (Airbnb,
             // Booking.com, etc.) too, so guests can't request dates already taken
             // elsewhere. This is only as current as that platform's own export.
@@ -85,7 +100,19 @@ export default function BookingWidget({ listingId, hostId, pricePerNight, maxGue
         dateRange.startDate && dateRange.endDate
             ? differenceInCalendarDays(dateRange.endDate, dateRange.startDate)
             : 0;
-    const total = nights * pricePerNight;
+
+    const total = (() => {
+        if (!dateRange.startDate || !dateRange.endDate || nights <= 0) return 0;
+        let sum = 0;
+        let d = new Date(dateRange.startDate);
+        for (let i = 0; i < nights; i++) {
+            const key = format(d, 'yyyy-MM-dd');
+            sum += priceOverrides[key] ?? pricePerNight;
+            d = addDays(d, 1);
+        }
+        return sum;
+    })();
+
     const totalGuests = adults + children;
 
     const handleSelect = (ranges: RangeKeyDict) => {
@@ -221,7 +248,7 @@ export default function BookingWidget({ listingId, hostId, pricePerNight, maxGue
             {nights > 0 && (
                 <div className="border-t pt-3 mb-4 text-sm">
                     <div className="flex justify-between text-slate-600">
-                        <span>£{pricePerNight} × {nights} night{nights > 1 ? 's' : ''}</span>
+                        <span>{nights} night{nights > 1 ? 's' : ''}</span>
                         <span>£{total.toFixed(2)}</span>
                     </div>
                     <div className="flex justify-between font-bold text-slate-900 mt-2 pt-2 border-t">
