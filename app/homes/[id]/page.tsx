@@ -34,6 +34,19 @@ const FindHome = async ({ params }: { params: { id: string } }) => {
         );
     }
 
+    if (home.status === 'draft') {
+        const { data: { user } } = await supabase.auth.getUser();
+        if (user?.id !== home.host_id) {
+            return (
+                <div className='container mb-10'>
+                    <div className='container mt-10 text-center text-slate-500'>
+                        This listing isn't published yet.
+                    </div>
+                </div>
+            );
+        }
+    }
+
     const images: string[] = home.images || [];
 
     return (
