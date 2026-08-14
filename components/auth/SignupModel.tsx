@@ -51,28 +51,31 @@ const SignupModel = () => {
             return;
         }
 
-        // 2. Insert profile record into public.profiles table
+        // 2. Sign in first, so the session exists before we try to write to
+        // profiles — otherwise the insert below silently gets blocked.
         if (data.user) {
+            await supabase.auth.signInWithPassword({
+                email: payload.email,
+                password: payload.password
+            });
+
+            // 3. Create (or update) the profile record, now that we're
+            // properly authenticated as this user.
             const { error: profileError } = await supabase
                 .from('profiles')
-                .insert([
+                .upsert(
                     {
                         id: data.user.id,
                         email: payload.email,
                         full_name: payload.name,
                         is_host: false, // Defaults to regular user/guest
                     },
-                ]);
+                    { onConflict: 'id' }
+                );
 
             if (profileError) {
                 console.error("Profile insertion error:", profileError.message);
             }
-
-            // 3. Log user in and close modal
-            await supabase.auth.signInWithPassword({
-                email: payload.email,
-                password: payload.password
-            });
 
             setOpen(false);
             router.refresh();
