@@ -185,6 +185,7 @@ const FindHome = async ({ params }: { params: { id: string } }) => {
                             petsAllowed={(home.amenities || []).includes('Pets allowed')}
                             instantBook={home.instant_book === true}
                             instantBookRequiresPhone={home.instant_book_requires_phone === true}
+                            instantBookRequiresVerifiedId={home.instant_book_requires_verified_id === true}
                             icalImportUrl={home.ical_import_url}
                             weekendPrice={home.weekend_price}
                             cleaningFee={home.cleaning_fee || 0}
