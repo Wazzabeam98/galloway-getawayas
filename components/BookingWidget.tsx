@@ -22,11 +22,14 @@ interface Props {
     petFee?: number;
     extraGuestFee?: number;
     availabilityWindow?: string;
+    instantBook?: boolean;
+    instantBookRequiresPhone?: boolean;
 }
 
 export default function BookingWidget({
     listingId, hostId, pricePerNight, maxGuests, petsAllowed, icalImportUrl,
     weekendPrice, cleaningFee = 0, petFee = 0, extraGuestFee = 0, availabilityWindow,
+    instantBook = false, instantBookRequiresPhone = false,
 }: Props) {
     const supabase = createClientComponentClient();
     const [session, setSession] = useState<any>(null);
@@ -197,6 +200,22 @@ export default function BookingWidget({
 
         setSubmitting(true);
         try {
+            // Instant Book can require a phone number on the guest's profile.
+            if (instantBook && instantBookRequiresPhone) {
+                const { data: myProfile } = await supabase
+                    .from('profiles')
+                    .select('phone')
+                    .eq('id', session.user.id)
+                    .single();
+
+                if (!myProfile?.phone || !myProfile.phone.trim()) {
+                    const msg = 'This host asks for a phone number before booking instantly. Add one under Account settings, then try again.';
+                    setError(msg);
+                    toast.error(msg, { theme: 'colored' });
+                    return;
+                }
+            }
+
             const { error: insertErr } = await supabase.from('bookings').insert({
                 listing_id: listingId,
                 guest_id: session.user.id,
@@ -208,7 +227,9 @@ export default function BookingWidget({
                 children,
                 pets,
                 total_price: total,
-                status: 'pending',
+                status: instantBook ? 'confirmed' : 'pending',
+                // Scheduled messages anchored to acceptance need this.
+                confirmed_at: instantBook ? new Date().toISOString() : null,
             });
 
             if (insertErr) {
@@ -218,7 +239,10 @@ export default function BookingWidget({
             }
 
             setRequested(true);
-            toast.success('Booking request sent to the host.', { theme: 'colored' });
+            toast.success(
+                instantBook ? 'Booking confirmed.' : 'Booking request sent to the host.',
+                { theme: 'colored' }
+            );
         } catch (err: any) {
             const msg = err?.message || 'Something went wrong sending your request.';
             toast.error(msg, { theme: 'colored' });
@@ -231,9 +255,13 @@ export default function BookingWidget({
     if (requested) {
         return (
             <div className="border rounded-2xl p-6 bg-slate-50 text-center">
-                <h3 className="font-bold text-lg text-slate-900 mb-1">Request sent</h3>
+                <h3 className="font-bold text-lg text-slate-900 mb-1">
+                    {instantBook ? "You're booked" : 'Request sent'}
+                </h3>
                 <p className="text-slate-600 text-sm">
-                    The host will review your dates and confirm or decline. You'll be able to see the status from your account.
+                    {instantBook
+                        ? "Your dates are confirmed. The host will be in touch with the details, and you can see your booking under Your trips."
+                        : "The host will review your dates and confirm or decline. You'll be able to see the status from your account."}
                 </p>
             </div>
         );
@@ -317,7 +345,9 @@ export default function BookingWidget({
                     disabled={submitting || nights <= 0}
                     className="w-full py-3 bg-rose-500 hover:bg-rose-600 text-white font-bold rounded-xl transition disabled:opacity-50"
                 >
-                    {submitting ? 'Sending request...' : 'Request to book'}
+                    {submitting
+                        ? (instantBook ? 'Confirming...' : 'Sending request...')
+                        : (instantBook ? 'Reserve' : 'Request to book')}
                 </button>
             )}
             <p className="text-xs text-slate-400 text-center mt-3">You won't be charged yet</p>
