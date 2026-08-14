@@ -24,12 +24,13 @@ interface Props {
     availabilityWindow?: string;
     instantBook?: boolean;
     instantBookRequiresPhone?: boolean;
+    instantBookRequiresVerifiedId?: boolean;
 }
 
 export default function BookingWidget({
     listingId, hostId, pricePerNight, maxGuests, petsAllowed, icalImportUrl,
     weekendPrice, cleaningFee = 0, petFee = 0, extraGuestFee = 0, availabilityWindow,
-    instantBook = false, instantBookRequiresPhone = false,
+    instantBook = false, instantBookRequiresPhone = false, instantBookRequiresVerifiedId = false,
 }: Props) {
     const supabase = createClientComponentClient();
     const [session, setSession] = useState<any>(null);
@@ -200,15 +201,22 @@ export default function BookingWidget({
 
         setSubmitting(true);
         try {
-            // Instant Book can require a phone number on the guest's profile.
-            if (instantBook && instantBookRequiresPhone) {
+            // Instant Book can carry requirements the guest has to meet.
+            if (instantBook && (instantBookRequiresPhone || instantBookRequiresVerifiedId)) {
                 const { data: myProfile } = await supabase
                     .from('profiles')
-                    .select('phone')
+                    .select('phone, identity_verified')
                     .eq('id', session.user.id)
                     .single();
 
-                if (!myProfile?.phone || !myProfile.phone.trim()) {
+                if (instantBookRequiresVerifiedId && myProfile?.identity_verified !== true) {
+                    const msg = 'This host only accepts instant bookings from guests with a verified ID. You can still message them or book a place that takes booking requests.';
+                    setError(msg);
+                    toast.error(msg, { theme: 'colored' });
+                    return;
+                }
+
+                if (instantBookRequiresPhone && (!myProfile?.phone || !myProfile.phone.trim())) {
                     const msg = 'This host asks for a phone number before booking instantly. Add one under Account settings, then try again.';
                     setError(msg);
                     toast.error(msg, { theme: 'colored' });
