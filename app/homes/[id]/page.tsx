@@ -2,7 +2,6 @@ export const dynamic = "force-dynamic";
 import React from 'react'
 import { createServerComponentClient } from '@supabase/auth-helpers-nextjs'
 import { cookies } from 'next/headers';
-import Navbar from '@/components/base/Navbar';
 import Image from 'next/image';
 import { capitializeFirst, getImageUrl } from '@/lib/utils';
 
@@ -28,7 +27,6 @@ const FindHome = async ({ params }: { params: { id: string } }) => {
     if (!home) {
         return (
             <div className='container mb-10'>
-                <Navbar />
                 <div className='container mt-10 text-center text-slate-500'>
                     This listing couldn't be found.
                 </div>
@@ -40,7 +38,6 @@ const FindHome = async ({ params }: { params: { id: string } }) => {
 
     return (
         <div className='container mb-10'>
-            <Navbar />
             <div className='container mt-4'>
                 <h1 className='text-2xl font-bold'>{home.title}</h1>
                 <p className='text-slate-600'>{home.location}</p>
