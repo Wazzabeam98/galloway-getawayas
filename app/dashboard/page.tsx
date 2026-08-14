@@ -24,9 +24,9 @@ export default async function Dashboard() {
     const serverSupabase = createServerComponentClient({ cookies });
     const { data: user } = await serverSupabase.auth.getUser();
     const { data: homes } = await serverSupabase
-        .from("homes")
-        .select("id ,image ,title ,country ,city ,price ,created_at")
-        .eq("user_id", user.user?.id);
+        .from("listings")
+        .select("id, images, title, location, price_per_night, created_at")
+        .eq("host_id", user.user?.id);
 
     return (
         <div>
@@ -38,8 +38,7 @@ export default async function Dashboard() {
                         <TableCaption>Your added Airbnb Homes.</TableCaption>
                         <TableHeader>
                             <TableRow>
-                                <TableHead>Country</TableHead>
-                                <TableHead>City</TableHead>
+                                <TableHead>Location</TableHead>
                                 <TableHead>Title</TableHead>
                                 <TableHead>Image</TableHead>
                                 <TableHead>Price</TableHead>
@@ -49,23 +48,27 @@ export default async function Dashboard() {
                         <TableBody>
                             {homes.map((item) => (
                                 <TableRow key={item.id}>
-                                    <TableCell>{item.country}</TableCell>
-                                    <TableCell>{item.city}</TableCell>
+                                    <TableCell>{item.location}</TableCell>
                                     <TableCell>{item.title}</TableCell>
                                     <TableCell>
-                                        <Image
-                                            src={getImageUrl(item.image)}
-                                            width={40}
-                                            height={40}
-                                            alt="Home_img"
-                                            className="rounded-full w-10 h-10"
-                                        />
+                                        {item.images && item.images.length > 0 ? (
+                                            <Image
+                                                src={getImageUrl(item.images[0])}
+                                                width={40}
+                                                height={40}
+                                                alt="Home_img"
+                                                className="rounded-full w-10 h-10"
+                                                unoptimized
+                                            />
+                                        ) : (
+                                            <div className="w-10 h-10 rounded-full bg-slate-200" />
+                                        )}
                                     </TableCell>
-                                    <TableCell>{item.price}</TableCell>
+                                    <TableCell>£{item.price_per_night}</TableCell>
                                     <TableCell>
                                         <div className="flex items-center space-x-2">
                                             <DeleteHomebtn id={item.id} />
-                                            <Link href={`/home/${item.id}`}>
+                                            <Link href={`/homes/${item.id}`}>
                                                 <Button size="icon" className="bg-green-400">
                                                     <Eye />
                                                 </Button>
