@@ -6,6 +6,7 @@ import Logo from '@/components/base/Logo';
 import LoginModel from '@/components/auth/LoginModel';
 import LeaveReviewForm from '@/components/LeaveReviewForm';
 import { getImageUrl, capitializeFirst } from '@/lib/utils';
+import Link from 'next/link';
 
 interface Booking {
     id: string;
@@ -134,6 +135,10 @@ export default function TripsPage() {
                                         {b.status}
                                     </span>
                                 </div>
+
+                                <Link href={`/messages/${b.id}`} className="text-xs font-semibold text-slate-500 underline hover:text-slate-800 mt-3 inline-block">
+                                    Message host
+                                </Link>
 
                                 {isCompleted && !alreadyReviewed && (
                                     <div className="mt-4">
