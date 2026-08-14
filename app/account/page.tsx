@@ -27,7 +27,7 @@ const SECTIONS = [
 ];
 
 interface Field {
-    key: 'full_name' | 'preferred_name' | 'phone';
+    key: 'full_name' | 'preferred_name' | 'phone' | 'residential_address';
     label: string;
 }
 
@@ -35,6 +35,7 @@ const FIELDS: Field[] = [
     { key: 'full_name', label: 'Legal name' },
     { key: 'preferred_name', label: 'Preferred name' },
     { key: 'phone', label: 'Phone number' },
+    { key: 'residential_address', label: 'Residential address' },
 ];
 
 export default function AccountSettings() {
@@ -43,10 +44,11 @@ export default function AccountSettings() {
     const [email, setEmail] = useState('');
     const [activeSection, setActiveSection] = useState('personal');
 
-    const [profile, setProfile] = useState<{ full_name: string; preferred_name: string; phone: string }>({
+    const [profile, setProfile] = useState<{ full_name: string; preferred_name: string; phone: string; residential_address: string }>({
         full_name: '',
         preferred_name: '',
         phone: '',
+        residential_address: '',
     });
     const [editingField, setEditingField] = useState<string | null>(null);
     const [draftValue, setDraftValue] = useState('');
@@ -64,7 +66,7 @@ export default function AccountSettings() {
                 setEmail(session.user.email || '');
                 const { data: profileData } = await supabase
                     .from('profiles')
-                    .select('full_name, preferred_name, phone')
+                    .select('full_name, preferred_name, phone, residential_address')
                     .eq('id', session.user.id)
                     .single();
 
@@ -73,6 +75,7 @@ export default function AccountSettings() {
                         full_name: profileData.full_name || '',
                         preferred_name: profileData.preferred_name || '',
                         phone: profileData.phone || '',
+                        residential_address: profileData.residential_address || '',
                     });
                 }
             }
@@ -165,15 +168,25 @@ export default function AccountSettings() {
                                         <div className="flex-1">
                                             <div className="font-semibold text-slate-900 text-sm mb-1">{field.label}</div>
                                             {editingField === field.key ? (
-                                                <input
-                                                    type="text"
-                                                    value={draftValue}
-                                                    onChange={(e) => setDraftValue(e.target.value)}
-                                                    autoFocus
-                                                    className="w-full max-w-sm p-2 border rounded-lg text-sm"
-                                                />
+                                                field.key === 'residential_address' ? (
+                                                    <textarea
+                                                        value={draftValue}
+                                                        onChange={(e) => setDraftValue(e.target.value)}
+                                                        autoFocus
+                                                        rows={2}
+                                                        className="w-full max-w-sm p-2 border rounded-lg text-sm"
+                                                    />
+                                                ) : (
+                                                    <input
+                                                        type="text"
+                                                        value={draftValue}
+                                                        onChange={(e) => setDraftValue(e.target.value)}
+                                                        autoFocus
+                                                        className="w-full max-w-sm p-2 border rounded-lg text-sm"
+                                                    />
+                                                )
                                             ) : (
-                                                <div className="text-slate-500 text-sm">
+                                                <div className="text-slate-500 text-sm whitespace-pre-line">
                                                     {profile[field.key] || 'Not provided'}
                                                 </div>
                                             )}
@@ -214,6 +227,16 @@ export default function AccountSettings() {
                                         <div className="text-slate-500 text-sm">{email}</div>
                                     </div>
                                     <span className="text-xs text-slate-400 ml-4">Contact support to change</span>
+                                </div>
+
+                                <div className="p-5">
+                                    <div className="font-semibold text-slate-900 text-sm mb-1">Identity verification</div>
+                                    <div className="flex items-center text-sm text-amber-600 font-medium mb-1">
+                                        <span className="w-2 h-2 rounded-full bg-amber-500 mr-2" /> Not verified
+                                    </div>
+                                    <p className="text-xs text-slate-400">
+                                        Real ID verification isn't set up yet — this needs a proper verification provider, not just a self-reported status.
+                                    </p>
                                 </div>
                             </div>
                         </div>
