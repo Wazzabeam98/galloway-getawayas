@@ -124,6 +124,10 @@ const FindHome = async ({ params }: { params: { id: string } }) => {
                             maxGuests={home.max_guests || 1}
                             petsAllowed={(home.amenities || []).includes('Pets allowed')}
                             icalImportUrl={home.ical_import_url}
+                            weekendPrice={home.weekend_price}
+                            cleaningFee={home.cleaning_fee || 0}
+                            petFee={home.pet_fee || 0}
+                            extraGuestFee={home.extra_guest_fee || 0}
                         />
                     </div>
                 </div>
