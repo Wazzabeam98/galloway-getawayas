@@ -35,7 +35,6 @@ const FIELDS: Field[] = [
     { key: 'full_name', label: 'Legal name' },
     { key: 'preferred_name', label: 'Preferred name' },
     { key: 'phone', label: 'Phone number' },
-    { key: 'residential_address', label: 'Residential address' },
 ];
 
 export default function AccountSettings() {
@@ -53,6 +52,15 @@ export default function AccountSettings() {
     const [editingField, setEditingField] = useState<string | null>(null);
     const [draftValue, setDraftValue] = useState('');
     const [saving, setSaving] = useState(false);
+
+    // Structured fields for the residential address form specifically
+    const [addrCountry, setAddrCountry] = useState('United Kingdom');
+    const [addrFlat, setAddrFlat] = useState('');
+    const [addrPropertyName, setAddrPropertyName] = useState('');
+    const [addrStreet, setAddrStreet] = useState('');
+    const [addrLocality, setAddrLocality] = useState('');
+    const [addrTown, setAddrTown] = useState('');
+    const [addrPostcode, setAddrPostcode] = useState('');
 
     const supabase = createClientComponentClient();
     const router = useRouter();
@@ -119,6 +127,33 @@ export default function AccountSettings() {
         router.refresh();
     };
 
+    const saveAddress = async () => {
+        if (!session?.user) return;
+        setSaving(true);
+
+        const combined = [addrFlat, addrPropertyName, addrStreet, addrLocality, addrTown, addrPostcode, addrCountry]
+            .filter(Boolean)
+            .join(', ');
+
+        const { error } = await supabase
+            .from('profiles')
+            .upsert(
+                { id: session.user.id, email: session.user.email, residential_address: combined },
+                { onConflict: 'id' }
+            );
+
+        setSaving(false);
+
+        if (error) {
+            toast.error(error.message, { theme: 'colored' });
+            return;
+        }
+
+        setProfile((prev) => ({ ...prev, residential_address: combined }));
+        setEditingField(null);
+        router.refresh();
+    };
+
     if (loading) {
         return (
             <div className="flex flex-col items-center justify-center min-h-[70vh] space-y-4">
@@ -168,23 +203,13 @@ export default function AccountSettings() {
                                         <div className="flex-1">
                                             <div className="font-semibold text-slate-900 text-sm mb-1">{field.label}</div>
                                             {editingField === field.key ? (
-                                                field.key === 'residential_address' ? (
-                                                    <textarea
-                                                        value={draftValue}
-                                                        onChange={(e) => setDraftValue(e.target.value)}
-                                                        autoFocus
-                                                        rows={2}
-                                                        className="w-full max-w-sm p-2 border rounded-lg text-sm"
-                                                    />
-                                                ) : (
-                                                    <input
-                                                        type="text"
-                                                        value={draftValue}
-                                                        onChange={(e) => setDraftValue(e.target.value)}
-                                                        autoFocus
-                                                        className="w-full max-w-sm p-2 border rounded-lg text-sm"
-                                                    />
-                                                )
+                                                <input
+                                                    type="text"
+                                                    value={draftValue}
+                                                    onChange={(e) => setDraftValue(e.target.value)}
+                                                    autoFocus
+                                                    className="w-full max-w-sm p-2 border rounded-lg text-sm"
+                                                />
                                             ) : (
                                                 <div className="text-slate-500 text-sm whitespace-pre-line">
                                                     {profile[field.key] || 'Not provided'}
@@ -220,6 +245,110 @@ export default function AccountSettings() {
                                         )}
                                     </div>
                                 ))}
+
+                                {/* Residential address — its own structured form, matching Airbnb's layout */}
+                                <div className="p-5">
+                                    {editingField === 'residential_address' ? (
+                                        <div>
+                                            <div className="flex items-center justify-between mb-4">
+                                                <div className="font-semibold text-slate-900 text-sm">Residential address</div>
+                                                <button
+                                                    type="button"
+                                                    onClick={() => setEditingField(null)}
+                                                    className="text-sm font-semibold underline text-slate-700 hover:text-black"
+                                                >
+                                                    Cancel
+                                                </button>
+                                            </div>
+                                            <div className="space-y-3 max-w-sm">
+                                                <div>
+                                                    <label className="text-xs text-slate-500">Country/region</label>
+                                                    <input
+                                                        type="text"
+                                                        value={addrCountry}
+                                                        onChange={(e) => setAddrCountry(e.target.value)}
+                                                        className="w-full p-2.5 border rounded-lg text-sm mt-1"
+                                                    />
+                                                </div>
+                                                <input
+                                                    type="text"
+                                                    placeholder="Flat, floor, bldg (if applicable)"
+                                                    value={addrFlat}
+                                                    onChange={(e) => setAddrFlat(e.target.value)}
+                                                    className="w-full p-2.5 border rounded-lg text-sm"
+                                                />
+                                                <input
+                                                    type="text"
+                                                    placeholder="Property name (if applicable)"
+                                                    value={addrPropertyName}
+                                                    onChange={(e) => setAddrPropertyName(e.target.value)}
+                                                    className="w-full p-2.5 border rounded-lg text-sm"
+                                                />
+                                                <input
+                                                    type="text"
+                                                    placeholder="Street address"
+                                                    value={addrStreet}
+                                                    onChange={(e) => setAddrStreet(e.target.value)}
+                                                    className="w-full p-2.5 border rounded-lg text-sm"
+                                                />
+                                                <input
+                                                    type="text"
+                                                    placeholder="Locality (if applicable)"
+                                                    value={addrLocality}
+                                                    onChange={(e) => setAddrLocality(e.target.value)}
+                                                    className="w-full p-2.5 border rounded-lg text-sm"
+                                                />
+                                                <input
+                                                    type="text"
+                                                    placeholder="Town"
+                                                    value={addrTown}
+                                                    onChange={(e) => setAddrTown(e.target.value)}
+                                                    className="w-full p-2.5 border rounded-lg text-sm"
+                                                />
+                                                <input
+                                                    type="text"
+                                                    placeholder="Postcode"
+                                                    value={addrPostcode}
+                                                    onChange={(e) => setAddrPostcode(e.target.value)}
+                                                    className="w-full p-2.5 border rounded-lg text-sm"
+                                                />
+                                                <button
+                                                    type="button"
+                                                    onClick={saveAddress}
+                                                    disabled={saving || !addrStreet || !addrTown}
+                                                    className="w-full py-2.5 bg-slate-900 hover:bg-black text-white text-sm font-semibold rounded-lg disabled:opacity-40 disabled:cursor-not-allowed"
+                                                >
+                                                    {saving ? 'Saving...' : 'Save'}
+                                                </button>
+                                            </div>
+                                        </div>
+                                    ) : (
+                                        <div className="flex items-center justify-between">
+                                            <div>
+                                                <div className="font-semibold text-slate-900 text-sm mb-1">Residential address</div>
+                                                <div className="text-slate-500 text-sm whitespace-pre-line">
+                                                    {profile.residential_address || 'Not provided'}
+                                                </div>
+                                            </div>
+                                            <button
+                                                type="button"
+                                                onClick={() => {
+                                                    setEditingField('residential_address');
+                                                    setAddrCountry('United Kingdom');
+                                                    setAddrFlat('');
+                                                    setAddrPropertyName('');
+                                                    setAddrStreet('');
+                                                    setAddrLocality('');
+                                                    setAddrTown('');
+                                                    setAddrPostcode('');
+                                                }}
+                                                className="text-sm font-semibold underline text-slate-700 hover:text-black ml-4 flex-shrink-0"
+                                            >
+                                                Edit
+                                            </button>
+                                        </div>
+                                    )}
+                                </div>
 
                                 <div className="p-5 flex items-center justify-between">
                                     <div>
