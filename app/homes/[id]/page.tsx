@@ -128,6 +128,7 @@ const FindHome = async ({ params }: { params: { id: string } }) => {
                             cleaningFee={home.cleaning_fee || 0}
                             petFee={home.pet_fee || 0}
                             extraGuestFee={home.extra_guest_fee || 0}
+                            availabilityWindow={home.availability_window}
                         />
                     </div>
                 </div>
