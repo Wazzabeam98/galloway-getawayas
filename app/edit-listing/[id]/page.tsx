@@ -124,7 +124,7 @@ export default function EditListing() {
     const [weeklyDiscount, setWeeklyDiscount] = useState(false);
     const [monthlyDiscount, setMonthlyDiscount] = useState(false);
     const [icalImportUrl, setIcalImportUrl] = useState('');
-    const [minNights, setMinNights] = useState(1);
+    const [minNights, setMinNights] = useState('1');
     const [maxNights, setMaxNights] = useState('');
 
     const [submitting, setSubmitting] = useState(false);
@@ -177,7 +177,7 @@ export default function EditListing() {
             setWeeklyDiscount(listing.weekly_discount ?? false);
             setMonthlyDiscount(listing.monthly_discount ?? false);
             setIcalImportUrl(listing.ical_import_url || '');
-            setMinNights(listing.min_nights ?? 1);
+            setMinNights(String(listing.min_nights ?? 1));
             setMaxNights(listing.max_nights ? String(listing.max_nights) : '');
 
             setLoading(false);
@@ -232,7 +232,7 @@ export default function EditListing() {
             setFormError('Please fill in a title and price.');
             return;
         }
-        if (maxNights && Number(maxNights) < minNights) {
+        if (maxNights && Number(maxNights) < Number(minNights || 1)) {
             setFormError('Maximum nights can\'t be less than minimum nights.');
             return;
         }
@@ -281,7 +281,7 @@ export default function EditListing() {
                     weekly_discount: weeklyDiscount,
                     monthly_discount: monthlyDiscount,
                     ical_import_url: icalImportUrl || null,
-                    min_nights: minNights,
+                    min_nights: Math.max(1, Number(minNights) || 1),
                     max_nights: maxNights ? Number(maxNights) : null,
                 })
                 .eq('id', listingId)
@@ -545,7 +545,11 @@ export default function EditListing() {
                                             type="number"
                                             min={1}
                                             value={minNights}
-                                            onChange={(e) => setMinNights(Math.max(1, Number(e.target.value)))}
+                                            onChange={(e) => setMinNights(e.target.value)}
+                                            onBlur={() => {
+                                                const n = Number(minNights);
+                                                if (!minNights || isNaN(n) || n < 1) setMinNights('1');
+                                            }}
                                             className="w-full p-3 border rounded-xl text-sm"
                                         />
                                     </div>
@@ -553,7 +557,7 @@ export default function EditListing() {
                                         <label className="block text-sm font-semibold text-slate-800 mb-1">Maximum nights</label>
                                         <input
                                             type="number"
-                                            min={minNights}
+                                            min={Number(minNights) || 1}
                                             value={maxNights}
                                             onChange={(e) => setMaxNights(e.target.value)}
                                             placeholder="No limit"
