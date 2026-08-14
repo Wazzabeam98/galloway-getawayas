@@ -43,6 +43,53 @@ const FIELDS: Field[] = [
     { key: 'phone', label: 'Phone number' },
 ];
 
+const HOURS = [6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19, 20];
+
+interface TemplateDef {
+    key: string;
+    label: string;
+    hint: string;
+    placeholder: string;
+    defaultOffset: number;
+    offsetLabel?: string;
+    offsetChoices?: number[];
+}
+
+const TEMPLATE_TYPES: TemplateDef[] = [
+    {
+        key: 'booking_confirmation',
+        label: 'Booking confirmation',
+        hint: 'Sent the moment you accept a booking request.',
+        placeholder: "Hi {guest_name}, thanks for booking {listing}! I've confirmed your stay from {check_in} to {check_out}. Any questions before you arrive, just reply here.",
+        defaultOffset: 0,
+    },
+    {
+        key: 'checkin_details',
+        label: 'Check-in details',
+        hint: 'The practical stuff — address, key safe, parking, wifi.',
+        placeholder: "Hi {guest_name}, you're arriving at {listing} on {check_in}. Check-in is any time after 4pm. The key safe is to the right of the front door — code 1234. Parking is on the street directly outside.",
+        defaultOffset: 3,
+        offsetLabel: 'days before arrival',
+        offsetChoices: [1, 2, 3, 4, 5, 6, 7, 10, 14],
+    },
+    {
+        key: 'checkin_day',
+        label: 'Checking in with guest',
+        hint: 'A friendly note on the morning of their arrival day.',
+        placeholder: "Hi {guest_name}, hope the journey goes smoothly today. Everything's ready for you at {listing} — give me a shout if you need anything at all.",
+        defaultOffset: 0,
+    },
+    {
+        key: 'checkout_details',
+        label: 'Check-out details',
+        hint: 'What you need them to do before they leave.',
+        placeholder: "Hi {guest_name}, hope you've had a lovely stay. Check-out is by 10am on {check_out} — just pop the keys back in the safe and close the door behind you. Bins are round the side if you have any rubbish.",
+        defaultOffset: 1,
+        offsetLabel: 'days before departure',
+        offsetChoices: [1, 2, 3],
+    },
+];
+
 export default function AccountSettings() {
     const [loading, setLoading] = useState(true);
     const [session, setSession] = useState<any>(null);
@@ -92,9 +139,16 @@ export default function AccountSettings() {
     const [qrBody, setQrBody] = useState('');
     const [qrEditingId, setQrEditingId] = useState<string | null>(null);
     const [savingQr, setSavingQr] = useState(false);
-    const [welcomeEnabled, setWelcomeEnabled] = useState(false);
-    const [welcomeMessage, setWelcomeMessage] = useState('');
-    const [savingWelcome, setSavingWelcome] = useState(false);
+
+    interface Template {
+        template_type: string;
+        body: string;
+        enabled: boolean;
+        days_offset: number;
+        send_hour: number;
+    }
+    const [templates, setTemplates] = useState<Record<string, Template>>({});
+    const [savingTemplate, setSavingTemplate] = useState<string | null>(null);
 
     const supabase = createClientComponentClient();
     const router = useRouter();
@@ -116,7 +170,7 @@ export default function AccountSettings() {
 
                 const { data: profileData } = await supabase
                     .from('profiles')
-                    .select('full_name, preferred_name, phone, residential_address, show_full_name, welcome_message, welcome_message_enabled')
+                    .select('full_name, preferred_name, phone, residential_address, show_full_name')
                     .eq('id', session.user.id)
                     .single();
 
@@ -128,9 +182,16 @@ export default function AccountSettings() {
                         residential_address: profileData.residential_address || '',
                     });
                     setShowFullName(profileData.show_full_name !== false);
-                    setWelcomeMessage(profileData.welcome_message || '');
-                    setWelcomeEnabled(profileData.welcome_message_enabled === true);
                 }
+
+                const { data: tpls } = await supabase
+                    .from('message_templates')
+                    .select('template_type, body, enabled, days_offset, send_hour')
+                    .eq('user_id', session.user.id);
+
+                const tplMap: Record<string, Template> = {};
+                (tpls || []).forEach((t) => { tplMap[t.template_type] = t; });
+                setTemplates(tplMap);
 
                 const { data: replies } = await supabase
                     .from('quick_replies')
@@ -426,30 +487,48 @@ export default function AccountSettings() {
         }
     };
 
-    const saveWelcome = async (enabled: boolean, body: string) => {
-        if (!session?.user) return;
-        setSavingWelcome(true);
+    const getTemplate = (type: string, defaultOffset: number): Template => {
+        return templates[type] || {
+            template_type: type,
+            body: '',
+            enabled: false,
+            days_offset: defaultOffset,
+            send_hour: 9,
+        };
+    };
 
+    const patchTemplate = (type: string, patch: Partial<Template>, defaultOffset: number) => {
+        const current = getTemplate(type, defaultOffset);
+        const next = Object.assign({}, current, patch);
+        setTemplates((prev) => Object.assign({}, prev, { [type]: next }));
+        return next;
+    };
+
+    const saveTemplate = async (type: string, defaultOffset: number, patch?: Partial<Template>) => {
+        if (!session?.user) return;
+        const next = patch ? patchTemplate(type, patch, defaultOffset) : getTemplate(type, defaultOffset);
+
+        setSavingTemplate(type);
         const { error } = await supabase
-            .from('profiles')
+            .from('message_templates')
             .upsert(
                 {
-                    id: session.user.id,
-                    email: session.user.email,
-                    welcome_message: body,
-                    welcome_message_enabled: enabled,
+                    user_id: session.user.id,
+                    template_type: type,
+                    body: next.body,
+                    enabled: next.enabled,
+                    days_offset: next.days_offset,
+                    send_hour: next.send_hour,
                 },
-                { onConflict: 'id' }
+                { onConflict: 'user_id,template_type' }
             );
-
-        setSavingWelcome(false);
+        setSavingTemplate(null);
 
         if (error) {
             toast.error(error.message, { theme: 'colored' });
             return;
         }
-
-        toast.success('Welcome message saved.', { theme: 'colored' });
+        toast.success('Saved.', { theme: 'colored' });
     };
 
     if (loading) {
@@ -966,62 +1045,107 @@ export default function AccountSettings() {
                         <div>
                             <h2 className="text-2xl font-bold text-slate-900 mb-1">Messaging</h2>
                             <p className="text-sm text-slate-500 mb-6">
-                                Save time on the replies you send over and over.
+                                Write your messages once and let them send themselves.
                             </p>
 
-                            {/* Automatic welcome message */}
-                            <div className="border rounded-2xl p-5 mb-6">
-                                <div className="flex items-start justify-between mb-3">
-                                    <div className="pr-6">
-                                        <div className="font-semibold text-slate-900 text-sm mb-1">
-                                            Automatic welcome message
-                                        </div>
-                                        <p className="text-xs text-slate-500">
-                                            Sent to the guest the moment you confirm their booking, so they aren&apos;t
-                                            left waiting to hear from you.
-                                        </p>
-                                    </div>
-                                    <button
-                                        type="button"
-                                        role="switch"
-                                        aria-checked={welcomeEnabled}
-                                        aria-label="Automatic welcome message"
-                                        disabled={savingWelcome}
-                                        onClick={() => {
-                                            const next = !welcomeEnabled;
-                                            setWelcomeEnabled(next);
-                                            saveWelcome(next, welcomeMessage);
-                                        }}
-                                        className={`relative inline-flex h-6 w-11 flex-shrink-0 rounded-full transition-colors disabled:opacity-50 ${welcomeEnabled ? 'bg-emerald-700' : 'bg-slate-300'}`}
-                                    >
-                                        <span
-                                            className={`inline-block h-5 w-5 transform rounded-full bg-white shadow transition-transform mt-0.5 ${welcomeEnabled ? 'translate-x-5' : 'translate-x-0.5'}`}
-                                        />
-                                    </button>
-                                </div>
+                            {/* Scheduled messages */}
+                            <div className="mb-8">
+                                <h3 className="text-base font-bold text-slate-900 mb-1">Scheduled messages</h3>
+                                <p className="text-xs text-slate-500 mb-4">
+                                    Written once, sent automatically at the right moment. Use{' '}
+                                    <code className="bg-slate-100 px-1 rounded">{'{guest_name}'}</code>,{' '}
+                                    <code className="bg-slate-100 px-1 rounded">{'{listing}'}</code>,{' '}
+                                    <code className="bg-slate-100 px-1 rounded">{'{check_in}'}</code> or{' '}
+                                    <code className="bg-slate-100 px-1 rounded">{'{check_out}'}</code> and they&apos;ll be
+                                    filled in for each guest.
+                                </p>
 
-                                <textarea
-                                    value={welcomeMessage}
-                                    onChange={(e) => setWelcomeMessage(e.target.value)}
-                                    rows={4}
-                                    placeholder="Thanks for booking! Check-in is any time after 4pm. I'll send the key details a few days before you arrive — any questions in the meantime, just reply here."
-                                    className="w-full p-3 border rounded-lg text-sm"
-                                />
+                                <div className="space-y-4">
+                                    {TEMPLATE_TYPES.map((def) => {
+                                        const tpl = getTemplate(def.key, def.defaultOffset);
+                                        const busy = savingTemplate === def.key;
 
-                                <div className="flex items-center justify-between mt-3">
-                                    <p className="text-xs text-slate-400">
-                                        {welcomeEnabled
-                                            ? 'This will be sent automatically.'
-                                            : 'Turn the switch on to start sending this.'}
-                                    </p>
-                                    <button
-                                        type="button"
-                                        onClick={() => saveWelcome(welcomeEnabled, welcomeMessage)}
-                                        disabled={savingWelcome}
-                                        className="px-4 py-2 bg-slate-900 hover:bg-black text-white text-sm font-semibold rounded-lg disabled:opacity-40"
-                                    >
-                                        {savingWelcome ? 'Saving...' : 'Save message'}
-                                    </button>
+                                        return (
+                                            <div key={def.key} className="border rounded-2xl p-5">
+                                                <div className="flex items-start justify-between mb-3">
+                                                    <div className="pr-6">
+                                                        <div className="font-semibold text-slate-900 text-sm mb-1">
+                                                            {def.label}
+                                                        </div>
+                                                        <p className="text-xs text-slate-500">{def.hint}</p>
+                                                    </div>
+                                                    <button
+                                                        type="button"
+                                                        role="switch"
+                                                        aria-checked={tpl.enabled}
+                                                        aria-label={def.label}
+                                                        disabled={busy}
+                                                        onClick={() => saveTemplate(def.key, def.defaultOffset, { enabled: !tpl.enabled })}
+                                                        className={`relative inline-flex h-6 w-11 flex-shrink-0 rounded-full transition-colors disabled:opacity-50 ${tpl.enabled ? 'bg-emerald-700' : 'bg-slate-300'}`}
+                                                    >
+                                                        <span
+                                                            className={`inline-block h-5 w-5 transform rounded-full bg-white shadow transition-transform mt-0.5 ${tpl.enabled ? 'translate-x-5' : 'translate-x-0.5'}`}
+                                                        />
+                                                    </button>
+                                                </div>
+
+                                                <textarea
+                                                    value={tpl.body}
+                                                    onChange={(e) => patchTemplate(def.key, { body: e.target.value }, def.defaultOffset)}
+                                                    rows={4}
+                                                    placeholder={def.placeholder}
+                                                    className="w-full p-3 border rounded-lg text-sm"
+                                                />
+
+                                                <div className="flex flex-wrap items-center gap-4 mt-3">
+                                                    {def.offsetLabel && (
+                                                        <label className="text-xs text-slate-600 flex items-center gap-2">
+                                                            <select
+                                                                value={tpl.days_offset}
+                                                                onChange={(e) => saveTemplate(def.key, def.defaultOffset, { days_offset: parseInt(e.target.value, 10) })}
+                                                                className="border rounded-lg p-1.5 text-xs"
+                                                            >
+                                                                {def.offsetChoices!.map((n) => (
+                                                                    <option key={n} value={n}>{n}</option>
+                                                                ))}
+                                                            </select>
+                                                            {def.offsetLabel}
+                                                        </label>
+                                                    )}
+
+                                                    {def.key !== 'booking_confirmation' && (
+                                                        <label className="text-xs text-slate-600 flex items-center gap-2">
+                                                            Send at
+                                                            <select
+                                                                value={tpl.send_hour}
+                                                                onChange={(e) => saveTemplate(def.key, def.defaultOffset, { send_hour: parseInt(e.target.value, 10) })}
+                                                                className="border rounded-lg p-1.5 text-xs"
+                                                            >
+                                                                {HOURS.map((h) => (
+                                                                    <option key={h} value={h}>{h < 10 ? `0${h}:00` : `${h}:00`}</option>
+                                                                ))}
+                                                            </select>
+                                                        </label>
+                                                    )}
+
+                                                    <button
+                                                        type="button"
+                                                        onClick={() => saveTemplate(def.key, def.defaultOffset)}
+                                                        disabled={busy}
+                                                        className="ml-auto px-4 py-2 bg-slate-900 hover:bg-black text-white text-sm font-semibold rounded-lg disabled:opacity-40"
+                                                    >
+                                                        {busy ? 'Saving...' : 'Save'}
+                                                    </button>
+                                                </div>
+
+                                                {tpl.enabled && !tpl.body.trim() && (
+                                                    <p className="text-xs text-amber-600 mt-3">
+                                                        This is switched on but has no message written, so nothing will be sent.
+                                                    </p>
+                                                )}
+                                            </div>
+                                        );
+                                    })}
                                 </div>
                             </div>
 
