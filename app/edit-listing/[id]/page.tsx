@@ -13,7 +13,7 @@ import {
     HomeIcon, Trees, Waves, Compass, Building2, Sparkles, Minus, Plus, Check,
     Snowflake, Package, Refrigerator, Thermometer, Droplet, UtensilsCrossed, Tv,
     RotateCw, Wifi, Coffee, Wind, Shirt, Zap, Baby, Briefcase, Car, Dumbbell, Bath,
-    Flame, Armchair, Umbrella, Anchor, AlertTriangle, BellRing,
+    Flame, Armchair, Umbrella, Anchor, AlertTriangle, BellRing, PawPrint,
 } from 'lucide-react';
 
 const ICON_MAP: Record<string, any> = { Home: HomeIcon, Trees, Waves, Compass, Building2, Sparkles };
@@ -57,6 +57,7 @@ const AMENITY_CATEGORIES: { category: string; items: { name: string; icon: any; 
             { name: 'Indoor fireplace', icon: Flame },
             { name: 'Outdoor furniture', icon: Armchair },
             { name: 'Pool', icon: Waves },
+            { name: 'Pets allowed', icon: PawPrint },
         ],
     },
     {
@@ -107,6 +108,7 @@ export default function EditListing() {
     const [lastMinuteDiscount, setLastMinuteDiscount] = useState(false);
     const [weeklyDiscount, setWeeklyDiscount] = useState(false);
     const [monthlyDiscount, setMonthlyDiscount] = useState(false);
+    const [icalImportUrl, setIcalImportUrl] = useState('');
 
     const [submitting, setSubmitting] = useState(false);
     const [formError, setFormError] = useState('');
@@ -157,6 +159,7 @@ export default function EditListing() {
             setLastMinuteDiscount(listing.last_minute_discount ?? false);
             setWeeklyDiscount(listing.weekly_discount ?? false);
             setMonthlyDiscount(listing.monthly_discount ?? false);
+            setIcalImportUrl(listing.ical_import_url || '');
 
             setLoading(false);
         };
@@ -254,6 +257,7 @@ export default function EditListing() {
                     last_minute_discount: lastMinuteDiscount,
                     weekly_discount: weeklyDiscount,
                     monthly_discount: monthlyDiscount,
+                    ical_import_url: icalImportUrl || null,
                 })
                 .eq('id', listingId)
                 .eq('host_id', session.user.id);
@@ -480,6 +484,53 @@ export default function EditListing() {
                             </div>
                         </div>
                     )}
+                </section>
+
+                {/* Calendar sync */}
+                <section>
+                    <h2 className="text-xl font-bold text-slate-900 mb-1">Calendar sync</h2>
+                    <p className="text-sm text-slate-500 mb-4">
+                        Keep this listing's availability in step with your calendar on other sites.
+                    </p>
+
+                    <label className="block text-sm font-semibold text-slate-800 mb-1">
+                        Import a calendar (from Airbnb, Booking.com, etc.)
+                    </label>
+                    <input
+                        type="text"
+                        value={icalImportUrl}
+                        onChange={(e) => setIcalImportUrl(e.target.value)}
+                        placeholder="https://www.airbnb.com/calendar/ical/....ics"
+                        className="w-full p-3 border rounded-xl text-sm mb-1"
+                    />
+                    <p className="text-xs text-slate-400 mb-6">
+                        Paste the export link from that platform's calendar settings. We check it each time a guest views this listing, so bookings made elsewhere stay blocked here too. Note: how current this is depends on how often that platform updates its own export — this isn't instant on their end either.
+                    </p>
+
+                    <label className="block text-sm font-semibold text-slate-800 mb-1">
+                        Your export link for other platforms
+                    </label>
+                    <div className="flex gap-2">
+                        <input
+                            type="text"
+                            readOnly
+                            value={typeof window !== 'undefined' ? `${window.location.origin}/api/ical/${listingId}` : ''}
+                            className="w-full p-3 border rounded-xl text-sm bg-slate-50 text-slate-500"
+                        />
+                        <button
+                            type="button"
+                            onClick={() => {
+                                navigator.clipboard.writeText(`${window.location.origin}/api/ical/${listingId}`);
+                                toast.success('Copied.', { theme: 'colored' });
+                            }}
+                            className="px-4 py-2 border rounded-xl text-sm font-semibold text-slate-700 hover:border-slate-500 flex-shrink-0"
+                        >
+                            Copy
+                        </button>
+                    </div>
+                    <p className="text-xs text-slate-400 mt-1">
+                        Paste this into Airbnb or Booking.com's "import calendar" setting so bookings made here block those dates there too.
+                    </p>
                 </section>
 
                 {/* Discounts */}
