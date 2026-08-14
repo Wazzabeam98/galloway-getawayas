@@ -3,7 +3,7 @@
 import { useEffect, useState } from 'react';
 import { createClientComponentClient } from '@supabase/auth-helpers-nextjs';
 import { DateRangePicker, Range, RangeKeyDict } from 'react-date-range';
-import { differenceInCalendarDays, addDays, format } from 'date-fns';
+import { differenceInCalendarDays, addDays, format, getDay } from 'date-fns';
 import 'react-date-range/dist/styles.css';
 import 'react-date-range/dist/theme/default.css';
 import LoginModel from '@/components/auth/LoginModel';
@@ -17,9 +17,16 @@ interface Props {
     maxGuests: number;
     petsAllowed?: boolean;
     icalImportUrl?: string | null;
+    weekendPrice?: number | null;
+    cleaningFee?: number;
+    petFee?: number;
+    extraGuestFee?: number;
 }
 
-export default function BookingWidget({ listingId, hostId, pricePerNight, maxGuests, petsAllowed, icalImportUrl }: Props) {
+export default function BookingWidget({
+    listingId, hostId, pricePerNight, maxGuests, petsAllowed, icalImportUrl,
+    weekendPrice, cleaningFee = 0, petFee = 0, extraGuestFee = 0,
+}: Props) {
     const supabase = createClientComponentClient();
     const [session, setSession] = useState<any>(null);
     const [loadingSession, setLoadingSession] = useState(true);
@@ -61,8 +68,6 @@ export default function BookingWidget({ listingId, hostId, pricePerNight, maxGue
 
             (existing || []).forEach((b) => addRange(b.check_in, b.check_out));
 
-            // Pull in the host's own manual calendar management — dates they've
-            // blocked directly, plus any custom per-date pricing they've set.
             const { data: calOverrides } = await supabase
                 .from('calendar_overrides')
                 .select('date, is_blocked, price_override')
@@ -75,9 +80,6 @@ export default function BookingWidget({ listingId, hostId, pricePerNight, maxGue
             });
             setPriceOverrides(prices);
 
-            // Pull in whatever's blocked on the host's external calendar (Airbnb,
-            // Booking.com, etc.) too, so guests can't request dates already taken
-            // elsewhere. This is only as current as that platform's own export.
             if (icalImportUrl) {
                 try {
                     const res = await fetch(`/api/ical-import?url=${encodeURIComponent(icalImportUrl)}`);
@@ -96,24 +98,35 @@ export default function BookingWidget({ listingId, hostId, pricePerNight, maxGue
         load();
     }, [supabase, listingId, icalImportUrl]);
 
+    const nightPrice = (d: Date) => {
+        const key = format(d, 'yyyy-MM-dd');
+        if (priceOverrides[key]) return priceOverrides[key];
+        const dow = getDay(d); // 5=Fri, 6=Sat
+        if ((dow === 5 || dow === 6) && weekendPrice) return weekendPrice;
+        return pricePerNight;
+    };
+
     const nights =
         dateRange.startDate && dateRange.endDate
             ? differenceInCalendarDays(dateRange.endDate, dateRange.startDate)
             : 0;
 
-    const total = (() => {
+    const nightsSubtotal = (() => {
         if (!dateRange.startDate || !dateRange.endDate || nights <= 0) return 0;
         let sum = 0;
         let d = new Date(dateRange.startDate);
         for (let i = 0; i < nights; i++) {
-            const key = format(d, 'yyyy-MM-dd');
-            sum += priceOverrides[key] ?? pricePerNight;
+            sum += nightPrice(d);
             d = addDays(d, 1);
         }
         return sum;
     })();
 
     const totalGuests = adults + children;
+    const extraGuestTotal = nights > 0 && totalGuests > 1 ? extraGuestFee * (totalGuests - 1) * nights : 0;
+    const petFeeTotal = pets > 0 ? petFee : 0;
+    const cleaningFeeTotal = nights > 0 ? cleaningFee : 0;
+    const total = nightsSubtotal + extraGuestTotal + petFeeTotal + cleaningFeeTotal;
 
     const handleSelect = (ranges: RangeKeyDict) => {
         setError('');
@@ -163,7 +176,6 @@ export default function BookingWidget({ listingId, hostId, pricePerNight, maxGue
             return;
         }
 
-        // Re-check for overlap right before submitting, in case someone else booked in the meantime.
         const overlap = disabledDates.some(
             (d) => dateRange.startDate! <= d && d < dateRange.endDate!
         );
@@ -221,6 +233,7 @@ export default function BookingWidget({ listingId, hostId, pricePerNight, maxGue
             <div className="mb-4">
                 <span className="text-2xl font-bold text-slate-900">£{pricePerNight}</span>
                 <span className="text-slate-500"> / night</span>
+                {weekendPrice && <span className="text-xs text-slate-400 block mt-0.5">£{weekendPrice} on Fri &amp; Sat nights</span>}
             </div>
 
             <div className="border rounded-xl overflow-hidden mb-4">
@@ -246,11 +259,29 @@ export default function BookingWidget({ listingId, hostId, pricePerNight, maxGue
             <p className="text-xs text-slate-400 -mt-3 mb-4">Max {maxGuests} guests{petsAllowed ? ' (pets don\'t count toward this)' : ''}</p>
 
             {nights > 0 && (
-                <div className="border-t pt-3 mb-4 text-sm">
+                <div className="border-t pt-3 mb-4 text-sm space-y-1.5">
                     <div className="flex justify-between text-slate-600">
                         <span>{nights} night{nights > 1 ? 's' : ''}</span>
-                        <span>£{total.toFixed(2)}</span>
+                        <span>£{nightsSubtotal.toFixed(2)}</span>
                     </div>
+                    {cleaningFeeTotal > 0 && (
+                        <div className="flex justify-between text-slate-600">
+                            <span>Cleaning fee</span>
+                            <span>£{cleaningFeeTotal.toFixed(2)}</span>
+                        </div>
+                    )}
+                    {petFeeTotal > 0 && (
+                        <div className="flex justify-between text-slate-600">
+                            <span>Pet fee</span>
+                            <span>£{petFeeTotal.toFixed(2)}</span>
+                        </div>
+                    )}
+                    {extraGuestTotal > 0 && (
+                        <div className="flex justify-between text-slate-600">
+                            <span>Extra guest fee</span>
+                            <span>£{extraGuestTotal.toFixed(2)}</span>
+                        </div>
+                    )}
                     <div className="flex justify-between font-bold text-slate-900 mt-2 pt-2 border-t">
                         <span>Total</span>
                         <span>£{total.toFixed(2)}</span>
