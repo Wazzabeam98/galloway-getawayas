@@ -90,10 +90,19 @@ export default function AccountSettings() {
         if (!session?.user) return;
         setSaving(true);
 
+        // Upsert instead of update: if this account's profiles row was never
+        // created (e.g. signup's insert got blocked before email confirmation),
+        // this creates it instead of silently updating a row that doesn't exist.
         const { error } = await supabase
             .from('profiles')
-            .update({ [field.key]: draftValue })
-            .eq('id', session.user.id);
+            .upsert(
+                {
+                    id: session.user.id,
+                    email: session.user.email,
+                    [field.key]: draftValue,
+                },
+                { onConflict: 'id' }
+            );
 
         setSaving(false);
 
