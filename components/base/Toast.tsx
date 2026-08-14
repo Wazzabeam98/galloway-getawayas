@@ -2,8 +2,7 @@
 
 import { useSearchParams } from "next/navigation";
 import { useEffect } from "react";
-import { ToastContainer, toast } from "react-toastify";
-import "react-toastify/dist/ReactToastify.css";
+import { toast } from "react-toastify";
 
 export default function Toast() {
     const params = useSearchParams();
@@ -15,9 +14,5 @@ export default function Toast() {
         }
     }, [params]);
 
-    return (
-        <>
-            <ToastContainer />
-        </>
-    );
+    return null;
 }
