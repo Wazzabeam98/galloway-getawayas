@@ -4,6 +4,7 @@ import { useState } from 'react';
 import { createClientComponentClient } from '@supabase/auth-helpers-nextjs';
 import { useRouter } from 'next/navigation';
 import { toast } from 'react-toastify';
+import { displayName } from '@/lib/utils';
 
 export default function BookingActions({ bookingId, mode = 'pending' }: { bookingId: string; mode?: 'pending' | 'confirmed' }) {
     const supabase = createClientComponentClient();
@@ -19,19 +20,20 @@ export default function BookingActions({ bookingId, mode = 'pending' }: { bookin
             const { data: { session } } = await supabase.auth.getSession();
             if (!session?.user) return;
 
-            const { data: profile } = await supabase
-                .from('profiles')
-                .select('welcome_message, welcome_message_enabled')
-                .eq('id', session.user.id)
+            const { data: template } = await supabase
+                .from('message_templates')
+                .select('body, enabled')
+                .eq('user_id', session.user.id)
+                .eq('template_type', 'booking_confirmation')
                 .single();
 
-            if (!profile?.welcome_message_enabled) return;
-            const body = (profile.welcome_message || '').trim();
+            if (!template?.enabled) return;
+            let body = (template.body || '').trim();
             if (!body) return;
 
             const { data: booking } = await supabase
                 .from('bookings')
-                .select('guest_id, host_id')
+                .select('guest_id, host_id, listing_id, check_in, check_out')
                 .eq('id', bookingId)
                 .single();
             if (!booking) return;
@@ -39,11 +41,50 @@ export default function BookingActions({ bookingId, mode = 'pending' }: { bookin
             // Only the host sends this, and only to the guest.
             if (booking.host_id !== session.user.id) return;
 
+            // Don't send it twice if the booking is confirmed more than once.
+            const { data: already } = await supabase
+                .from('sent_scheduled_messages')
+                .select('id')
+                .eq('booking_id', bookingId)
+                .eq('template_type', 'booking_confirmation')
+                .maybeSingle();
+            if (already) return;
+
+            const { data: guest } = await supabase
+                .from('profiles')
+                .select('full_name, preferred_name, show_full_name')
+                .eq('id', booking.guest_id)
+                .single();
+
+            const { data: listing } = await supabase
+                .from('listings')
+                .select('title')
+                .eq('id', booking.listing_id)
+                .single();
+
+            const guestName = displayName(guest, 'there');
+            const formatDate = (value: string | null) => {
+                if (!value) return '';
+                const d = new Date(value);
+                return d.toLocaleDateString('en-GB', { weekday: 'long', day: 'numeric', month: 'long' });
+            };
+
+            body = body
+                .split('{guest_name}').join(guestName)
+                .split('{listing}').join(listing?.title || 'your stay')
+                .split('{check_in}').join(formatDate(booking.check_in))
+                .split('{check_out}').join(formatDate(booking.check_out));
+
             await supabase.from('messages').insert({
                 booking_id: bookingId,
                 sender_id: session.user.id,
                 recipient_id: booking.guest_id,
                 body: body,
+            });
+
+            await supabase.from('sent_scheduled_messages').insert({
+                booking_id: bookingId,
+                template_type: 'booking_confirmation',
             });
         } catch (err) {
             console.error('Welcome message could not be sent:', err);
