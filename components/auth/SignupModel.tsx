@@ -11,7 +11,7 @@ import {
     AlertDialogTitle,
     AlertDialogTrigger,
 } from "@/components/ui/alert-dialog"
-import { X } from 'lucide-react'
+import { X, MailCheck } from 'lucide-react'
 import { Label } from '../ui/label';
 import { Input } from '../ui/input';
 import { Button } from '../ui/button';
@@ -25,17 +25,30 @@ import SocialSignUp from './SocialSignUp';
 const SignupModel = () => {
     const [open, setOpen] = useState<boolean>(false);
     const [loading, setLoading] = useState<boolean>(false);
+
+    // After a successful signup we swap the form out for a "check your email"
+    // panel instead of closing the dialog — the account isn't usable until the
+    // link is clicked, so closing silently just leaves people confused.
+    const [sentTo, setSentTo] = useState<string>('');
+    const [resending, setResending] = useState<boolean>(false);
+
     const supabase = createClientComponentClient();
     const router = useRouter();
-    
-    const { register, handleSubmit, formState: { errors } } = useForm<registerType>({
+
+    const { register, handleSubmit, reset, formState: { errors } } = useForm<registerType>({
         resolver: yupResolver(registerSchema)
     });
+
+    const closeAndReset = () => {
+        setOpen(false);
+        setSentTo('');
+        setResending(false);
+        reset();
+    };
 
     const onSubmit = async (payload: registerType) => {
         setLoading(true);
 
-        // 1. Sign up user with Supabase Auth
         const { data, error } = await supabase.auth.signUp({
             email: payload.email,
             password: payload.password,
@@ -52,38 +65,55 @@ const SignupModel = () => {
             return;
         }
 
-        // 2. Sign in first, so the session exists before we try to write to
-        // profiles — otherwise the insert below silently gets blocked.
-        if (data.user) {
-            await supabase.auth.signInWithPassword({
-                email: payload.email,
-                password: payload.password
-            });
-
-            // 3. Create (or update) the profile record, now that we're
-            // properly authenticated as this user.
+        // If email confirmation is switched on in Supabase, signUp returns a
+        // user but NO session. If it's switched off, we get a session straight
+        // away and can carry on as a normal login.
+        if (data.session) {
             const { error: profileError } = await supabase
                 .from('profiles')
                 .upsert(
                     {
-                        id: data.user.id,
+                        id: data.session.user.id,
                         email: payload.email,
                         full_name: payload.name,
-                        is_host: false, // Defaults to regular user/guest
+                        is_host: false,
                     },
                     { onConflict: 'id' }
                 );
 
             if (profileError) {
-                console.error("Profile insertion error:", profileError.message);
+                console.error('Profile insertion error:', profileError.message);
             }
 
-            setOpen(false);
+            setLoading(false);
+            closeAndReset();
             router.refresh();
-            toast.success('Account created successfully', { theme: 'colored' });
+            toast.success('Welcome to Galloway Getaways', { theme: 'colored' });
+            return;
         }
 
+        // No session — the confirmation email is on its way.
         setLoading(false);
+        setSentTo(payload.email);
+    };
+
+    const resendEmail = async () => {
+        if (!sentTo) return;
+        setResending(true);
+
+        const { error } = await supabase.auth.resend({
+            type: 'signup',
+            email: sentTo,
+        });
+
+        setResending(false);
+
+        if (error) {
+            toast.error(error.message, { theme: 'colored' });
+            return;
+        }
+
+        toast.success('Confirmation email sent again.', { theme: 'colored' });
     };
 
     return (
@@ -97,11 +127,55 @@ const SignupModel = () => {
                 <AlertDialogHeader>
                     <AlertDialogTitle>
                         <div className='flex justify-between items-center'>
-                            <span>Sign Up</span>
-                            <X className='cursor-pointer' onClick={() => setOpen(false)} />
+                            <span>{sentTo ? 'Confirm your email' : 'Sign Up'}</span>
+                            <X className='cursor-pointer' onClick={closeAndReset} />
                         </div>
                     </AlertDialogTitle>
                     <AlertDialogDescription asChild>
+                        {sentTo ? (
+                            <div className='py-2'>
+                                <div className='flex justify-center mb-4'>
+                                    <div className='w-14 h-14 rounded-full bg-emerald-50 flex items-center justify-center'>
+                                        <MailCheck className='w-7 h-7 text-emerald-700' />
+                                    </div>
+                                </div>
+
+                                <h1 className='text-lg font-bold text-center text-slate-900'>
+                                    Check your inbox
+                                </h1>
+
+                                <p className='text-sm text-slate-600 text-center mt-2'>
+                                    We&apos;ve sent a confirmation link to{' '}
+                                    <span className='font-semibold text-slate-900'>{sentTo}</span>.
+                                    Click the link in that email to activate your account and finish signing in.
+                                </p>
+
+                                <div className='mt-4 rounded-lg bg-slate-50 border p-3'>
+                                    <p className='text-xs text-slate-500'>
+                                        Can&apos;t find it? Give it a couple of minutes, then check your junk or spam
+                                        folder — confirmation emails often land there.
+                                    </p>
+                                </div>
+
+                                <div className='mt-5 flex flex-col space-y-2'>
+                                    <Button
+                                        type='button'
+                                        onClick={resendEmail}
+                                        disabled={resending}
+                                        className='w-full'
+                                    >
+                                        {resending ? 'Sending...' : 'Resend confirmation email'}
+                                    </Button>
+                                    <button
+                                        type='button'
+                                        onClick={closeAndReset}
+                                        className='w-full text-sm text-slate-500 hover:text-slate-800 py-2'
+                                    >
+                                        Close
+                                    </button>
+                                </div>
+                            </div>
+                        ) : (
                         <div>
                             <form onSubmit={handleSubmit(onSubmit)}>
                                 <h1 className='text-lg font-bold'>
@@ -138,6 +212,7 @@ const SignupModel = () => {
                             </form>
                             <SocialSignUp />
                         </div>
+                        )}
                     </AlertDialogDescription>
                 </AlertDialogHeader>
             </AlertDialogContent>
