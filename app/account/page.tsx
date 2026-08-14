@@ -14,11 +14,16 @@ import {
     CreditCard,
     MessageCircle,
     CalendarCheck,
+    KeyRound,
+    LogOut,
+    Trash2,
+    Smartphone,
+    CheckCircle2,
 } from 'lucide-react';
 
 const SECTIONS = [
     { key: 'personal', label: 'Personal information', icon: User, ready: true },
-    { key: 'security', label: 'Login & security', icon: Lock, ready: false },
+    { key: 'security', label: 'Login & security', icon: Lock, ready: true },
     { key: 'privacy', label: 'Privacy', icon: Shield, ready: false },
     { key: 'notifications', label: 'Notifications', icon: Bell, ready: false },
     { key: 'payments', label: 'Payments & payouts', icon: CreditCard, ready: false },
@@ -62,6 +67,17 @@ export default function AccountSettings() {
     const [addrTown, setAddrTown] = useState('');
     const [addrPostcode, setAddrPostcode] = useState('');
 
+    // --- Login & security state ---
+    const [currentPassword, setCurrentPassword] = useState('');
+    const [newPassword, setNewPassword] = useState('');
+    const [confirmPassword, setConfirmPassword] = useState('');
+    const [changingPassword, setChangingPassword] = useState(false);
+    const [signingOutAll, setSigningOutAll] = useState(false);
+    const [linkedProviders, setLinkedProviders] = useState<string[]>([]);
+    const [deleteOpen, setDeleteOpen] = useState(false);
+    const [deleteConfirmText, setDeleteConfirmText] = useState('');
+    const [deleting, setDeleting] = useState(false);
+
     const supabase = createClientComponentClient();
     const router = useRouter();
 
@@ -72,6 +88,14 @@ export default function AccountSettings() {
 
             if (session?.user) {
                 setEmail(session.user.email || '');
+
+                // Which sign-in methods are attached to this account.
+                // Supabase puts these on app_metadata; older accounts may only
+                // have the singular 'provider' key, so check both.
+                const meta: any = session.user.app_metadata || {};
+                const providers: string[] = meta.providers || (meta.provider ? [meta.provider] : []);
+                setLinkedProviders(providers);
+
                 const { data: profileData } = await supabase
                     .from('profiles')
                     .select('full_name, preferred_name, phone, residential_address')
@@ -151,6 +175,88 @@ export default function AccountSettings() {
 
         setProfile((prev) => ({ ...prev, residential_address: combined }));
         setEditingField(null);
+        router.refresh();
+    };
+
+    // --- Login & security handlers ---
+
+    const changePassword = async () => {
+        if (!session?.user?.email) return;
+
+        if (newPassword.length < 8) {
+            toast.error('Your new password needs to be at least 8 characters.', { theme: 'colored' });
+            return;
+        }
+        if (newPassword !== confirmPassword) {
+            toast.error("Those two passwords don't match.", { theme: 'colored' });
+            return;
+        }
+        if (newPassword === currentPassword) {
+            toast.error('Your new password needs to be different from your current one.', { theme: 'colored' });
+            return;
+        }
+
+        setChangingPassword(true);
+
+        // Supabase's updateUser does NOT ask for the existing password, so on its
+        // own anyone at an unlocked laptop could change it. Re-signing in first
+        // proves the person actually knows the current password.
+        const { error: checkError } = await supabase.auth.signInWithPassword({
+            email: session.user.email,
+            password: currentPassword,
+        });
+
+        if (checkError) {
+            setChangingPassword(false);
+            toast.error('Your current password is not correct.', { theme: 'colored' });
+            return;
+        }
+
+        const { error } = await supabase.auth.updateUser({ password: newPassword });
+        setChangingPassword(false);
+
+        if (error) {
+            toast.error(error.message, { theme: 'colored' });
+            return;
+        }
+
+        setCurrentPassword('');
+        setNewPassword('');
+        setConfirmPassword('');
+        toast.success('Password updated.', { theme: 'colored' });
+    };
+
+    const signOutEverywhere = async () => {
+        setSigningOutAll(true);
+        const { error } = await supabase.auth.signOut({ scope: 'global' });
+        setSigningOutAll(false);
+
+        if (error) {
+            toast.error(error.message, { theme: 'colored' });
+            return;
+        }
+
+        toast.success('Signed out on all devices.', { theme: 'colored' });
+        router.push('/');
+        router.refresh();
+    };
+
+    const deleteAccount = async () => {
+        if (deleteConfirmText !== 'DELETE') return;
+        setDeleting(true);
+
+        // Runs a database function that refuses if there are still live
+        // bookings, then removes the account. See the Supabase SQL step.
+        const { error } = await supabase.rpc('delete_own_account');
+
+        if (error) {
+            setDeleting(false);
+            toast.error(error.message, { theme: 'colored' });
+            return;
+        }
+
+        await supabase.auth.signOut();
+        router.push('/');
         router.refresh();
     };
 
@@ -367,6 +473,188 @@ export default function AccountSettings() {
                                         Real ID verification isn't set up yet — this needs a proper verification provider, not just a self-reported status.
                                     </p>
                                 </div>
+                            </div>
+                        </div>
+                    ) : activeSection === 'security' ? (
+                        <div>
+                            <h2 className="text-2xl font-bold text-slate-900 mb-6">Login &amp; security</h2>
+
+                            {/* Change password */}
+                            <div className="border rounded-2xl p-5 mb-6">
+                                <div className="flex items-center mb-1">
+                                    <KeyRound className="w-4 h-4 mr-2 text-slate-700" />
+                                    <div className="font-semibold text-slate-900 text-sm">Password</div>
+                                </div>
+                                <p className="text-xs text-slate-400 mb-4">
+                                    Use at least 8 characters. You&apos;ll need your current password to make a change.
+                                </p>
+
+                                <div className="space-y-3 max-w-sm">
+                                    <div>
+                                        <label className="text-xs text-slate-500">Current password</label>
+                                        <input
+                                            type="password"
+                                            value={currentPassword}
+                                            onChange={(e) => setCurrentPassword(e.target.value)}
+                                            autoComplete="current-password"
+                                            className="w-full p-2.5 border rounded-lg text-sm mt-1"
+                                        />
+                                    </div>
+                                    <div>
+                                        <label className="text-xs text-slate-500">New password</label>
+                                        <input
+                                            type="password"
+                                            value={newPassword}
+                                            onChange={(e) => setNewPassword(e.target.value)}
+                                            autoComplete="new-password"
+                                            className="w-full p-2.5 border rounded-lg text-sm mt-1"
+                                        />
+                                    </div>
+                                    <div>
+                                        <label className="text-xs text-slate-500">Confirm new password</label>
+                                        <input
+                                            type="password"
+                                            value={confirmPassword}
+                                            onChange={(e) => setConfirmPassword(e.target.value)}
+                                            autoComplete="new-password"
+                                            className="w-full p-2.5 border rounded-lg text-sm mt-1"
+                                        />
+                                    </div>
+                                    <button
+                                        type="button"
+                                        onClick={changePassword}
+                                        disabled={changingPassword || !currentPassword || !newPassword || !confirmPassword}
+                                        className="w-full py-2.5 bg-slate-900 hover:bg-black text-white text-sm font-semibold rounded-lg disabled:opacity-40 disabled:cursor-not-allowed"
+                                    >
+                                        {changingPassword ? 'Updating...' : 'Update password'}
+                                    </button>
+                                </div>
+                            </div>
+
+                            {/* Devices */}
+                            <div className="border rounded-2xl p-5 mb-6 flex items-start justify-between">
+                                <div className="pr-4">
+                                    <div className="flex items-center mb-1">
+                                        <LogOut className="w-4 h-4 mr-2 text-slate-700" />
+                                        <div className="font-semibold text-slate-900 text-sm">Signed-in devices</div>
+                                    </div>
+                                    <p className="text-xs text-slate-400">
+                                        Signs you out everywhere, including this device. Worth doing if you&apos;ve used a shared or public computer.
+                                    </p>
+                                </div>
+                                <button
+                                    type="button"
+                                    onClick={signOutEverywhere}
+                                    disabled={signingOutAll}
+                                    className="text-sm font-semibold underline text-slate-700 hover:text-black flex-shrink-0 disabled:opacity-40"
+                                >
+                                    {signingOutAll ? 'Signing out...' : 'Sign out everywhere'}
+                                </button>
+                            </div>
+
+                            {/* Social logins */}
+                            <div className="border rounded-2xl divide-y mb-6">
+                                <div className="p-5">
+                                    <div className="font-semibold text-slate-900 text-sm mb-1">Connected accounts</div>
+                                    <p className="text-xs text-slate-400">Other ways you can sign in to Galloway Getaways.</p>
+                                </div>
+
+                                <div className="p-5 flex items-center justify-between">
+                                    <div className="text-sm text-slate-700">Email and password</div>
+                                    <span className="flex items-center text-xs font-medium text-emerald-700">
+                                        <CheckCircle2 className="w-3.5 h-3.5 mr-1.5" /> Active
+                                    </span>
+                                </div>
+
+                                <div className="p-5 flex items-center justify-between">
+                                    <div className="text-sm text-slate-700">Google</div>
+                                    {linkedProviders.indexOf('google') !== -1 ? (
+                                        <span className="flex items-center text-xs font-medium text-emerald-700">
+                                            <CheckCircle2 className="w-3.5 h-3.5 mr-1.5" /> Connected
+                                        </span>
+                                    ) : (
+                                        <span className="text-xs text-slate-400">Not connected</span>
+                                    )}
+                                </div>
+
+                                <div className="p-5 flex items-center justify-between">
+                                    <div className="text-sm text-slate-700">Facebook</div>
+                                    {linkedProviders.indexOf('facebook') !== -1 ? (
+                                        <span className="flex items-center text-xs font-medium text-emerald-700">
+                                            <CheckCircle2 className="w-3.5 h-3.5 mr-1.5" /> Connected
+                                        </span>
+                                    ) : (
+                                        <span className="text-xs text-slate-400">Not connected</span>
+                                    )}
+                                </div>
+                            </div>
+
+                            {/* 2FA placeholder */}
+                            <div className="border rounded-2xl p-5 mb-6">
+                                <div className="flex items-center mb-1">
+                                    <Smartphone className="w-4 h-4 mr-2 text-slate-700" />
+                                    <div className="font-semibold text-slate-900 text-sm">Two-factor authentication</div>
+                                </div>
+                                <div className="flex items-center text-sm text-amber-600 font-medium mb-1">
+                                    <span className="w-2 h-2 rounded-full bg-amber-500 mr-2" /> Not set up
+                                </div>
+                                <p className="text-xs text-slate-400">
+                                    Two-factor sign-in isn&apos;t available yet. It needs an authenticator app and recovery codes to be done properly.
+                                </p>
+                            </div>
+
+                            {/* Delete account */}
+                            <div className="border border-red-200 bg-red-50/40 rounded-2xl p-5">
+                                <div className="flex items-center mb-1">
+                                    <Trash2 className="w-4 h-4 mr-2 text-red-700" />
+                                    <div className="font-semibold text-red-800 text-sm">Delete my account</div>
+                                </div>
+                                <p className="text-xs text-red-700/80 mb-4">
+                                    This permanently removes your account, your profile, your listings and your booking history. It cannot be undone. If you have upcoming or pending bookings, cancel them first — as either a guest or a host.
+                                </p>
+
+                                {!deleteOpen ? (
+                                    <button
+                                        type="button"
+                                        onClick={() => setDeleteOpen(true)}
+                                        className="text-sm font-semibold text-red-700 underline hover:text-red-900"
+                                    >
+                                        I want to delete my account
+                                    </button>
+                                ) : (
+                                    <div className="max-w-sm">
+                                        <label className="text-xs text-red-800 font-medium">
+                                            Type DELETE to confirm
+                                        </label>
+                                        <input
+                                            type="text"
+                                            value={deleteConfirmText}
+                                            onChange={(e) => setDeleteConfirmText(e.target.value)}
+                                            placeholder="DELETE"
+                                            className="w-full p-2.5 border border-red-300 rounded-lg text-sm mt-1 mb-3 bg-white"
+                                        />
+                                        <div className="flex items-center space-x-3">
+                                            <button
+                                                type="button"
+                                                onClick={() => {
+                                                    setDeleteOpen(false);
+                                                    setDeleteConfirmText('');
+                                                }}
+                                                className="text-sm text-slate-600 hover:text-slate-900"
+                                            >
+                                                Cancel
+                                            </button>
+                                            <button
+                                                type="button"
+                                                onClick={deleteAccount}
+                                                disabled={deleting || deleteConfirmText !== 'DELETE'}
+                                                className="px-4 py-2 bg-red-700 hover:bg-red-800 text-white text-sm font-semibold rounded-lg disabled:opacity-40 disabled:cursor-not-allowed"
+                                            >
+                                                {deleting ? 'Deleting...' : 'Permanently delete'}
+                                            </button>
+                                        </div>
+                                    </div>
+                                )}
                             </div>
                         </div>
                     ) : (
