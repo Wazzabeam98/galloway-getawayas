@@ -10,15 +10,61 @@ export default function BookingActions({ bookingId, mode = 'pending' }: { bookin
     const router = useRouter();
     const [updating, setUpdating] = useState(false);
 
+    // Posts the host's saved welcome message into the conversation, if they
+    // have one switched on. Deliberately silent on failure — a booking that
+    // was successfully confirmed should never look like it failed just
+    // because an optional courtesy message didn't send.
+    const sendWelcomeMessage = async () => {
+        try {
+            const { data: { session } } = await supabase.auth.getSession();
+            if (!session?.user) return;
+
+            const { data: profile } = await supabase
+                .from('profiles')
+                .select('welcome_message, welcome_message_enabled')
+                .eq('id', session.user.id)
+                .single();
+
+            if (!profile?.welcome_message_enabled) return;
+            const body = (profile.welcome_message || '').trim();
+            if (!body) return;
+
+            const { data: booking } = await supabase
+                .from('bookings')
+                .select('guest_id, host_id')
+                .eq('id', bookingId)
+                .single();
+            if (!booking) return;
+
+            // Only the host sends this, and only to the guest.
+            if (booking.host_id !== session.user.id) return;
+
+            await supabase.from('messages').insert({
+                booking_id: bookingId,
+                sender_id: session.user.id,
+                recipient_id: booking.guest_id,
+                body: body,
+            });
+        } catch (err) {
+            console.error('Welcome message could not be sent:', err);
+        }
+    };
+
     const updateStatus = async (status: 'confirmed' | 'declined' | 'cancelled') => {
         setUpdating(true);
         const { error } = await supabase.from('bookings').update({ status }).eq('id', bookingId);
-        setUpdating(false);
 
         if (error) {
+            setUpdating(false);
             toast.error(error.message, { theme: 'colored' });
             return;
         }
+
+        if (status === 'confirmed') {
+            await sendWelcomeMessage();
+        }
+
+        setUpdating(false);
 
         const messages: Record<string, string> = {
             confirmed: 'Booking confirmed.',
