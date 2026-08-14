@@ -16,7 +16,7 @@ import Image from "next/image";
 import { getImageUrl } from "@/lib/utils";
 import DeleteHomebtn from "@/components/DeleteHomebtn";
 import Link from "next/link";
-import { Eye } from "lucide-react";
+import { Eye, Pencil } from "lucide-react";
 import { Button } from "@/components/ui/button";
 
 export default async function Dashboard() {
@@ -66,6 +66,11 @@ export default async function Dashboard() {
                                     <TableCell>
                                         <div className="flex items-center space-x-2">
                                             <DeleteHomebtn id={item.id} />
+                                            <Link href={`/edit-listing/${item.id}`}>
+                                                <Button size="icon" className="bg-slate-700 hover:bg-slate-800">
+                                                    <Pencil />
+                                                </Button>
+                                            </Link>
                                             <Link href={`/homes/${item.id}`}>
                                                 <Button size="icon" className="bg-green-400">
                                                     <Eye />
