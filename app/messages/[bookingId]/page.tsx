@@ -1,141 +1,84 @@
 'use client';
 
-import { useEffect, useRef, useState } from 'react';
+import { useEffect, useState } from 'react';
 import { createClientComponentClient } from '@supabase/auth-helpers-nextjs';
-import { useParams, useRouter } from 'next/navigation';
+import Link from 'next/link';
 import Logo from '@/components/base/Logo';
 import LoginModel from '@/components/auth/LoginModel';
-import { toast } from 'react-toastify';
-import { ChevronLeft, Send } from 'lucide-react';
-import Link from 'next/link';
-import { capitializeFirst } from '@/lib/utils';
+import { getImageUrl, capitializeFirst, displayName } from '@/lib/utils';
 
-interface Message {
-    id: string;
-    sender_id: string;
-    body: string;
-    created_at: string;
-}
-
-export default function ConversationPage() {
-    const params = useParams();
-    const bookingId = params?.bookingId as string;
+export default function MessagesInboxPage() {
     const supabase = createClientComponentClient();
-    const router = useRouter();
-
     const [loading, setLoading] = useState(true);
     const [session, setSession] = useState<any>(null);
-    const [notAllowed, setNotAllowed] = useState(false);
-    const [otherName, setOtherName] = useState('');
-    const [listingTitle, setListingTitle] = useState('');
-    const [messages, setMessages] = useState<Message[]>([]);
-    const [text, setText] = useState('');
-    const [sending, setSending] = useState(false);
-
-    const bottomRef = useRef<HTMLDivElement>(null);
+    const [conversations, setConversations] = useState<any[]>([]);
 
     useEffect(() => {
         const load = async () => {
             const { data: { session } } = await supabase.auth.getSession();
             setSession(session);
-
-            if (!session?.user || !bookingId) {
+            if (!session?.user) {
                 setLoading(false);
                 return;
             }
+
             const uid = session.user.id;
 
-            const { data: booking } = await supabase
+            const { data: bookings } = await supabase
                 .from('bookings')
-                .select('id, listing_id, guest_id, host_id')
-                .eq('id', bookingId)
-                .single();
+                .select('id, listing_id, guest_id, host_id, check_in, check_out')
+                .or(`guest_id.eq.${uid},host_id.eq.${uid}`)
+                .order('created_at', { ascending: false });
 
-            if (!booking || (booking.guest_id !== uid && booking.host_id !== uid)) {
-                setNotAllowed(true);
+            if (!bookings || bookings.length === 0) {
+                setConversations([]);
                 setLoading(false);
                 return;
             }
 
-            const otherId = booking.guest_id === uid ? booking.host_id : booking.guest_id;
-            const { data: profile } = await supabase.from('profiles').select('full_name, preferred_name').eq('id', otherId).single();
-            setOtherName(profile?.preferred_name || profile?.full_name || 'User');
+            const listingIds = Array.from(new Set(bookings.map((b) => b.listing_id)));
+            const { data: listings } = await supabase.from('listings').select('id, title, images').in('id', listingIds);
+            const listingMap = new Map((listings || []).map((l) => [l.id, l]));
 
-            const { data: listing } = await supabase.from('listings').select('title').eq('id', booking.listing_id).single();
-            setListingTitle(listing?.title || 'Listing');
+            const otherPartyIds = Array.from(new Set(bookings.map((b) => (b.guest_id === uid ? b.host_id : b.guest_id))));
+            const { data: profiles } = await supabase.from('profiles').select('id, full_name, preferred_name, show_full_name').in('id', otherPartyIds);
+            const profileMap = new Map((profiles || []).map((p) => [p.id, displayName(p, 'User')]));
 
-            const { data: msgs } = await supabase
+            const bookingIds = bookings.map((b) => b.id);
+            const { data: lastMessages } = await supabase
                 .from('messages')
-                .select('id, sender_id, body, created_at')
-                .eq('booking_id', bookingId)
-                .order('created_at', { ascending: true });
-            setMessages(msgs || []);
+                .select('booking_id, body, created_at')
+                .in('booking_id', bookingIds)
+                .order('created_at', { ascending: false });
 
+            const lastMessageMap = new Map<string, any>();
+            (lastMessages || []).forEach((m) => {
+                if (!lastMessageMap.has(m.booking_id)) lastMessageMap.set(m.booking_id, m);
+            });
+
+            const convos = bookings.map((b) => {
+                const otherId = b.guest_id === uid ? b.host_id : b.guest_id;
+                return {
+                    bookingId: b.id,
+                    listing: listingMap.get(b.listing_id),
+                    otherName: profileMap.get(otherId) || 'User',
+                    checkIn: b.check_in,
+                    checkOut: b.check_out,
+                    lastMessage: lastMessageMap.get(b.id),
+                };
+            });
+
+            setConversations(convos);
             setLoading(false);
         };
         load();
-    }, [supabase, bookingId]);
-
-    // Live updates: new messages from the other person appear without a refresh.
-    useEffect(() => {
-        if (!bookingId) return;
-
-        const channel = supabase
-            .channel(`messages-${bookingId}`)
-            .on(
-                'postgres_changes',
-                { event: 'INSERT', schema: 'public', table: 'messages', filter: `booking_id=eq.${bookingId}` },
-                (payload) => {
-                    setMessages((prev) => {
-                        if (prev.some((m) => m.id === (payload.new as any).id)) return prev;
-                        return [...prev, payload.new as Message];
-                    });
-                }
-            )
-            .subscribe();
-
-        return () => {
-            supabase.removeChannel(channel);
-        };
-    }, [supabase, bookingId]);
-
-    useEffect(() => {
-        bottomRef.current?.scrollIntoView({ behavior: 'smooth' });
-    }, [messages]);
-
-    const handleSend = async () => {
-        if (!text.trim() || !session?.user) return;
-
-        const { data: booking } = await supabase
-            .from('bookings')
-            .select('guest_id, host_id')
-            .eq('id', bookingId)
-            .single();
-        if (!booking) return;
-
-        const recipientId = booking.guest_id === session.user.id ? booking.host_id : booking.guest_id;
-
-        setSending(true);
-        const { error } = await supabase.from('messages').insert({
-            booking_id: bookingId,
-            sender_id: session.user.id,
-            recipient_id: recipientId,
-            body: text.trim(),
-        });
-        setSending(false);
-
-        if (error) {
-            toast.error(error.message, { theme: 'colored' });
-            return;
-        }
-        setText('');
-    };
+    }, [supabase]);
 
     if (loading) {
         return (
             <div className="flex flex-col items-center justify-center min-h-[70vh] space-y-4">
                 <Logo />
-                <p className="text-slate-500 animate-pulse">Loading conversation...</p>
+                <p className="text-slate-500 animate-pulse">Loading your messages...</p>
             </div>
         );
     }
@@ -144,64 +87,45 @@ export default function ConversationPage() {
         return (
             <div className="flex flex-col items-center justify-center min-h-[70vh] space-y-6 text-center px-4">
                 <Logo />
-                <h1 className="text-2xl font-bold text-slate-900">Sign in to view this conversation</h1>
+                <h1 className="text-2xl font-bold text-slate-900">Sign in to see your messages</h1>
                 <LoginModel />
             </div>
         );
     }
 
-    if (notAllowed) {
-        return <div className="text-center py-20 text-slate-500">You don't have access to this conversation.</div>;
-    }
-
     return (
-        <div className="max-w-2xl mx-auto px-6 py-6 flex flex-col h-[calc(100vh-100px)]">
-            <div className="flex items-center gap-3 mb-4 pb-4 border-b">
-                <Link href="/messages" className="p-1.5 rounded-full hover:bg-slate-100">
-                    <ChevronLeft className="w-5 h-5" />
-                </Link>
-                <div>
-                    <div className="font-semibold text-slate-900">{capitializeFirst(otherName)}</div>
-                    <div className="text-xs text-slate-500">{listingTitle}</div>
+        <div className="max-w-3xl mx-auto px-6 py-10">
+            <h1 className="text-2xl md:text-3xl font-bold text-slate-900 mb-8">Messages</h1>
+
+            {conversations.length === 0 ? (
+                <div className="text-center py-20 bg-white rounded-2xl border border-slate-200">
+                    <h3 className="text-lg font-semibold text-slate-800">No conversations yet</h3>
+                    <p className="text-slate-500 mt-1">Messages tied to your bookings will show up here.</p>
                 </div>
-            </div>
-
-            <div className="flex-1 overflow-y-auto space-y-3 pr-1">
-                {messages.length === 0 ? (
-                    <p className="text-center text-sm text-slate-400 mt-10">No messages yet — say hello.</p>
-                ) : (
-                    messages.map((m) => {
-                        const mine = m.sender_id === session.user.id;
-                        return (
-                            <div key={m.id} className={`flex ${mine ? 'justify-end' : 'justify-start'}`}>
-                                <div className={`max-w-[75%] px-4 py-2.5 rounded-2xl text-sm ${mine ? 'bg-rose-500 text-white' : 'bg-slate-100 text-slate-800'}`}>
-                                    {m.body}
-                                </div>
+            ) : (
+                <div className="space-y-3">
+                    {conversations.map((c) => (
+                        <Link
+                            key={c.bookingId}
+                            href={`/messages/${c.bookingId}`}
+                            className="flex items-center gap-4 border rounded-2xl p-4 hover:border-slate-400 transition"
+                        >
+                            <div className="w-14 h-14 rounded-xl overflow-hidden bg-slate-200 flex-shrink-0">
+                                {c.listing?.images?.[0] && (
+                                    <img src={getImageUrl(c.listing.images[0])} alt={c.listing.title} className="w-full h-full object-cover" />
+                                )}
                             </div>
-                        );
-                    })
-                )}
-                <div ref={bottomRef} />
-            </div>
-
-            <div className="flex items-center gap-2 mt-4 pt-4 border-t">
-                <input
-                    type="text"
-                    value={text}
-                    onChange={(e) => setText(e.target.value)}
-                    onKeyDown={(e) => { if (e.key === 'Enter') handleSend(); }}
-                    placeholder="Write a message..."
-                    className="flex-1 p-3 border rounded-xl text-sm"
-                />
-                <button
-                    type="button"
-                    onClick={handleSend}
-                    disabled={sending || !text.trim()}
-                    className="p-3 bg-rose-500 hover:bg-rose-600 text-white rounded-xl disabled:opacity-50"
-                >
-                    <Send className="w-4 h-4" />
-                </button>
-            </div>
+                            <div className="flex-1 min-w-0">
+                                <div className="font-semibold text-slate-900">{capitializeFirst(c.otherName)}</div>
+                                <div className="text-sm text-slate-500 truncate">{c.listing?.title || 'Listing'} · {c.checkIn} → {c.checkOut}</div>
+                                {c.lastMessage && (
+                                    <div className="text-sm text-slate-400 truncate mt-0.5">{c.lastMessage.body}</div>
+                                )}
+                            </div>
+                        </Link>
+                    ))}
+                </div>
+            )}
         </div>
     );
 }
