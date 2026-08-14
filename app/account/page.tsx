@@ -19,12 +19,13 @@ import {
     Trash2,
     Smartphone,
     CheckCircle2,
+    Download,
 } from 'lucide-react';
 
 const SECTIONS = [
     { key: 'personal', label: 'Personal information', icon: User, ready: true },
     { key: 'security', label: 'Login & security', icon: Lock, ready: true },
-    { key: 'privacy', label: 'Privacy', icon: Shield, ready: false },
+    { key: 'privacy', label: 'Privacy', icon: Shield, ready: true },
     { key: 'notifications', label: 'Notifications', icon: Bell, ready: false },
     { key: 'payments', label: 'Payments & payouts', icon: CreditCard, ready: false },
     { key: 'messaging', label: 'Messaging', icon: MessageCircle, ready: false },
@@ -78,6 +79,12 @@ export default function AccountSettings() {
     const [deleteConfirmText, setDeleteConfirmText] = useState('');
     const [deleting, setDeleting] = useState(false);
 
+    // --- Privacy state ---
+    const [privacyTab, setPrivacyTab] = useState<'sharing' | 'data'>('sharing');
+    const [showFullName, setShowFullName] = useState(true);
+    const [savingPrivacy, setSavingPrivacy] = useState(false);
+    const [exporting, setExporting] = useState(false);
+
     const supabase = createClientComponentClient();
     const router = useRouter();
 
@@ -98,7 +105,7 @@ export default function AccountSettings() {
 
                 const { data: profileData } = await supabase
                     .from('profiles')
-                    .select('full_name, preferred_name, phone, residential_address')
+                    .select('full_name, preferred_name, phone, residential_address, show_full_name')
                     .eq('id', session.user.id)
                     .single();
 
@@ -109,6 +116,7 @@ export default function AccountSettings() {
                         phone: profileData.phone || '',
                         residential_address: profileData.residential_address || '',
                     });
+                    setShowFullName(profileData.show_full_name !== false);
                 }
             }
             setLoading(false);
@@ -258,6 +266,82 @@ export default function AccountSettings() {
         await supabase.auth.signOut();
         router.push('/');
         router.refresh();
+    };
+
+    // --- Privacy handlers ---
+
+    const toggleShowFullName = async (next: boolean) => {
+        if (!session?.user) return;
+        setSavingPrivacy(true);
+        setShowFullName(next);
+
+        const { error } = await supabase
+            .from('profiles')
+            .upsert(
+                { id: session.user.id, email: session.user.email, show_full_name: next },
+                { onConflict: 'id' }
+            );
+
+        setSavingPrivacy(false);
+
+        if (error) {
+            setShowFullName(!next);
+            toast.error(error.message, { theme: 'colored' });
+            return;
+        }
+
+        toast.success('Privacy setting saved.', { theme: 'colored' });
+    };
+
+    const downloadMyData = async () => {
+        if (!session?.user) return;
+        setExporting(true);
+
+        try {
+            const uid = session.user.id;
+
+            const profileRes = await supabase.from('profiles').select('*').eq('id', uid).single();
+            const listingsRes = await supabase.from('listings').select('*').eq('host_id', uid);
+            const guestBookingsRes = await supabase.from('bookings').select('*').eq('guest_id', uid);
+            const hostBookingsRes = await supabase.from('bookings').select('*').eq('host_id', uid);
+            const reviewsWrittenRes = await supabase.from('reviews').select('*').eq('reviewer_id', uid);
+            const reviewsAboutRes = await supabase.from('reviews').select('*').eq('reviewee_id', uid);
+            const messagesSentRes = await supabase.from('messages').select('*').eq('sender_id', uid);
+
+            const output = {
+                exported_at: new Date().toISOString(),
+                exported_from: 'Galloway Getaways',
+                account: {
+                    id: uid,
+                    email: session.user.email,
+                    created_at: session.user.created_at,
+                    last_sign_in_at: session.user.last_sign_in_at,
+                },
+                profile: profileRes.data || null,
+                listings: listingsRes.data || [],
+                bookings_as_guest: guestBookingsRes.data || [],
+                bookings_as_host: hostBookingsRes.data || [],
+                reviews_you_wrote: reviewsWrittenRes.data || [],
+                reviews_about_you: reviewsAboutRes.data || [],
+                messages_you_sent: messagesSentRes.data || [],
+            };
+
+            const blob = new Blob([JSON.stringify(output, null, 2)], { type: 'application/json' });
+            const url = URL.createObjectURL(blob);
+            const link = document.createElement('a');
+            link.href = url;
+            link.download = 'galloway-getaways-my-data.json';
+            document.body.appendChild(link);
+            link.click();
+            document.body.removeChild(link);
+            URL.revokeObjectURL(url);
+
+            toast.success('Your data has been downloaded.', { theme: 'colored' });
+        } catch (err: any) {
+            toast.error('Could not build your data file. Please try again.', { theme: 'colored' });
+        }
+
+        setExporting(false);
     };
 
     if (loading) {
@@ -656,6 +740,117 @@ export default function AccountSettings() {
                                     </div>
                                 )}
                             </div>
+                        </div>
+                    ) : activeSection === 'privacy' ? (
+                        <div>
+                            <h2 className="text-2xl font-bold text-slate-900 mb-1">Privacy &amp; sharing</h2>
+                            <p className="text-sm text-slate-500 mb-6">
+                                Control what other people see, and manage the information we hold about you.
+                            </p>
+
+                            <div className="flex border-b mb-6">
+                                <button
+                                    type="button"
+                                    onClick={() => setPrivacyTab('sharing')}
+                                    className={`px-1 pb-3 mr-6 text-sm font-semibold border-b-2 -mb-px transition ${privacyTab === 'sharing' ? 'border-slate-900 text-slate-900' : 'border-transparent text-slate-500 hover:text-slate-800'}`}
+                                >
+                                    Sharing
+                                </button>
+                                <button
+                                    type="button"
+                                    onClick={() => setPrivacyTab('data')}
+                                    className={`px-1 pb-3 text-sm font-semibold border-b-2 -mb-px transition ${privacyTab === 'data' ? 'border-slate-900 text-slate-900' : 'border-transparent text-slate-500 hover:text-slate-800'}`}
+                                >
+                                    Data
+                                </button>
+                            </div>
+
+                            {privacyTab === 'sharing' ? (
+                                <div className="border rounded-2xl divide-y">
+                                    <div className="p-5 flex items-start justify-between">
+                                        <div className="pr-6">
+                                            <div className="font-semibold text-slate-900 text-sm mb-1">
+                                                Show my full legal name
+                                            </div>
+                                            <p className="text-xs text-slate-500">
+                                                When this is on, hosts and guests you book with see your legal name. Turn it off
+                                                and they&apos;ll only ever see your preferred name
+                                                {profile.preferred_name ? ` (${profile.preferred_name})` : ''}.
+                                            </p>
+                                            {!profile.preferred_name && (
+                                                <p className="text-xs text-amber-600 mt-2">
+                                                    Add a preferred name under Personal information first, or there&apos;s nothing to show instead.
+                                                </p>
+                                            )}
+                                        </div>
+                                        <button
+                                            type="button"
+                                            role="switch"
+                                            aria-checked={showFullName}
+                                            aria-label="Show my full legal name"
+                                            disabled={savingPrivacy}
+                                            onClick={() => toggleShowFullName(!showFullName)}
+                                            className={`relative inline-flex h-6 w-11 flex-shrink-0 rounded-full transition-colors disabled:opacity-50 ${showFullName ? 'bg-emerald-700' : 'bg-slate-300'}`}
+                                        >
+                                            <span
+                                                className={`inline-block h-5 w-5 transform rounded-full bg-white shadow transition-transform mt-0.5 ${showFullName ? 'translate-x-5' : 'translate-x-0.5'}`}
+                                            />
+                                        </button>
+                                    </div>
+
+                                    <div className="p-5">
+                                        <div className="font-semibold text-slate-900 text-sm mb-1">
+                                            Public profile page
+                                        </div>
+                                        <div className="flex items-center text-sm text-slate-500 font-medium mb-1">
+                                            <span className="w-2 h-2 rounded-full bg-slate-300 mr-2" /> Not applicable yet
+                                        </div>
+                                        <p className="text-xs text-slate-400">
+                                            Galloway Getaways doesn&apos;t have public profile pages, so nothing about you appears
+                                            in search engines. If that changes, a setting to control it will appear here.
+                                        </p>
+                                    </div>
+                                </div>
+                            ) : (
+                                <div>
+                                    <div className="border rounded-2xl p-5 mb-6">
+                                        <div className="flex items-center mb-1">
+                                            <Download className="w-4 h-4 mr-2 text-slate-700" />
+                                            <div className="font-semibold text-slate-900 text-sm">Download your data</div>
+                                        </div>
+                                        <p className="text-xs text-slate-500 mb-4">
+                                            Get a copy of everything we hold about you — your profile, listings, bookings,
+                                            reviews and messages. The file downloads straight to this device. You have the
+                                            right to request this under UK data protection law.
+                                        </p>
+                                        <button
+                                            type="button"
+                                            onClick={downloadMyData}
+                                            disabled={exporting}
+                                            className="px-4 py-2.5 bg-slate-900 hover:bg-black text-white text-sm font-semibold rounded-lg disabled:opacity-40"
+                                        >
+                                            {exporting ? 'Preparing your file...' : 'Download my data'}
+                                        </button>
+                                    </div>
+
+                                    <div className="border rounded-2xl p-5">
+                                        <div className="flex items-center mb-1">
+                                            <Trash2 className="w-4 h-4 mr-2 text-slate-700" />
+                                            <div className="font-semibold text-slate-900 text-sm">Delete your account</div>
+                                        </div>
+                                        <p className="text-xs text-slate-500 mb-4">
+                                            Permanently remove your account and everything attached to it. This can&apos;t be undone.
+                                        </p>
+                                        <button
+                                            type="button"
+                                            onClick={() => setActiveSection('security')}
+                                            className="text-sm font-semibold underline text-slate-700 hover:text-black"
+                                        >
+                                            Go to Login &amp; security to delete
+                                        </button>
+                                    </div>
+                                </div>
+                            )}
                         </div>
                     ) : (
                         <div className="border rounded-2xl p-10 text-center">
