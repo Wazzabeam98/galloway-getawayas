@@ -3,6 +3,7 @@ export const dynamic = "force-dynamic";
 import { createServerComponentClient } from "@supabase/auth-helpers-nextjs";
 import { cookies } from "next/headers";
 import BookingsView from "@/components/BookingsView";
+import { displayName } from "@/lib/utils";
 
 export default async function BookingsPage() {
     const supabase = createServerComponentClient({ cookies });
@@ -22,7 +23,7 @@ export default async function BookingsPage() {
         : { data: [] };
 
     const { data: guests } = guestIds.length
-        ? await supabase.from("profiles").select("id, full_name, preferred_name, email").in("id", guestIds)
+        ? await supabase.from("profiles").select("id, full_name, preferred_name, show_full_name, email").in("id", guestIds)
         : { data: [] };
 
     // Build plain objects (not Maps) since only serializable data can cross
@@ -34,7 +35,7 @@ export default async function BookingsPage() {
 
     const guestNameMap: Record<string, string> = {};
     (guests || []).forEach((g) => {
-        guestNameMap[g.id] = g.preferred_name || g.full_name || g.email || "Guest";
+        guestNameMap[g.id] = displayName(g, "Guest");
     });
 
     const { data: myGuestReviews } = await supabase
