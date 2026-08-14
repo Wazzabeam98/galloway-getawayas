@@ -32,13 +32,16 @@ export default function BookingsView({
     bookings,
     listingMap,
     guestNameMap,
+    reviewedBookingIds,
 }: {
     bookings: Booking[];
     listingMap: Record<string, ListingInfo>;
     guestNameMap: Record<string, string>;
+    reviewedBookingIds: string[];
 }) {
     const [tab, setTab] = useState<'upcoming' | 'past'>('upcoming');
     const today = new Date();
+    const reviewedSet = new Set(reviewedBookingIds);
 
     const isUpcoming = (b: Booking) =>
         (b.status === 'pending' || b.status === 'confirmed') && new Date(b.check_in) >= today;
@@ -53,6 +56,8 @@ export default function BookingsView({
         const guestName = guestNameMap[booking.guest_id] || 'Guest';
         const showConfirmDecline = booking.status === 'pending';
         const showCancel = booking.status === 'confirmed' && new Date(booking.check_in) >= today;
+        const isReviewable = booking.status === 'confirmed' && new Date(booking.check_out) < today;
+        const alreadyReviewed = reviewedSet.has(booking.id);
 
         return (
             <div className="border rounded-2xl p-5 flex items-center justify-between gap-4 flex-wrap">
@@ -68,9 +73,19 @@ export default function BookingsView({
                             {capitializeFirst(guestName)} · {booking.check_in} → {booking.check_out} · {booking.guests} guest{booking.guests > 1 ? 's' : ''}
                         </div>
                         <div className="text-sm font-medium text-slate-700">£{booking.total_price}</div>
-                        <Link href={`/messages/${booking.id}`} className="text-xs font-semibold text-slate-500 underline hover:text-slate-800">
-                            Message guest
-                        </Link>
+                        {isReviewable ? (
+                            alreadyReviewed ? (
+                                <span className="text-xs text-slate-400">You've reviewed this guest</span>
+                            ) : (
+                                <Link href="/dashboard/reviews" className="text-xs font-semibold text-rose-500 underline hover:text-rose-600">
+                                    Leave a review
+                                </Link>
+                            )
+                        ) : (
+                            <Link href={`/messages/${booking.id}`} className="text-xs font-semibold text-slate-500 underline hover:text-slate-800">
+                                Message guest
+                            </Link>
+                        )}
                     </div>
                 </div>
 
