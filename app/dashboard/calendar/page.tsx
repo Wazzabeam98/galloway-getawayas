@@ -10,6 +10,7 @@ import {
     isSameDay, isBefore, startOfDay, getDay,
 } from 'date-fns';
 import { ChevronLeft, ChevronRight, X } from 'lucide-react';
+import { displayName } from "@/lib/utils";
 
 interface Listing {
     id: string;
@@ -138,10 +139,10 @@ export default function CalendarPage() {
             if (guestIds.length > 0) {
                 const { data: profiles } = await supabase
                     .from('profiles')
-                    .select('id, full_name, preferred_name')
+                    .select('id, full_name, preferred_name, show_full_name')
                     .in('id', guestIds);
                 const names: Record<string, string> = {};
-                (profiles || []).forEach((p) => { names[p.id] = p.preferred_name || p.full_name || 'Guest'; });
+                (profiles || []).forEach((p) => { names[p.id] = displayName(p, 'Guest'); });
                 setGuestNames(names);
             }
         };
