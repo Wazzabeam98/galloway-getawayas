@@ -93,21 +93,21 @@ export default function BookingsView({
             <div className="flex gap-3 mb-8">
                 <button
                     type="button"
-                    onClick={() => setTab('upcoming')}
-                    className={`flex-1 flex flex-col items-center gap-2 p-5 rounded-2xl border-2 transition ${tab === 'upcoming' ? 'border-slate-900 bg-slate-50' : 'border-slate-200 hover:border-slate-400'}`}
-                >
-                    <CalendarClock className="w-6 h-6 text-slate-700" />
-                    <span className="font-semibold text-sm text-slate-900">Upcoming bookings</span>
-                    <span className="text-xs text-slate-500">{upcoming.length} booking{upcoming.length !== 1 ? 's' : ''}</span>
-                </button>
-                <button
-                    type="button"
                     onClick={() => setTab('past')}
                     className={`flex-1 flex flex-col items-center gap-2 p-5 rounded-2xl border-2 transition ${tab === 'past' ? 'border-slate-900 bg-slate-50' : 'border-slate-200 hover:border-slate-400'}`}
                 >
                     <History className="w-6 h-6 text-slate-700" />
                     <span className="font-semibold text-sm text-slate-900">Past bookings</span>
                     <span className="text-xs text-slate-500">{past.length} booking{past.length !== 1 ? 's' : ''}</span>
+                </button>
+                <button
+                    type="button"
+                    onClick={() => setTab('upcoming')}
+                    className={`flex-1 flex flex-col items-center gap-2 p-5 rounded-2xl border-2 transition ${tab === 'upcoming' ? 'border-slate-900 bg-slate-50' : 'border-slate-200 hover:border-slate-400'}`}
+                >
+                    <CalendarClock className="w-6 h-6 text-slate-700" />
+                    <span className="font-semibold text-sm text-slate-900">Upcoming bookings</span>
+                    <span className="text-xs text-slate-500">{upcoming.length} booking{upcoming.length !== 1 ? 's' : ''}</span>
                 </button>
             </div>
 
