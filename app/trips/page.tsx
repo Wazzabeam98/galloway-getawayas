@@ -5,7 +5,7 @@ import { createClientComponentClient } from '@supabase/auth-helpers-nextjs';
 import Logo from '@/components/base/Logo';
 import LoginModel from '@/components/auth/LoginModel';
 import LeaveReviewForm from '@/components/LeaveReviewForm';
-import { getImageUrl, capitializeFirst } from '@/lib/utils';
+import { getImageUrl, capitializeFirst, displayName } from '@/lib/utils';
 import Link from 'next/link';
 
 interface Booking {
@@ -55,9 +55,9 @@ export default function TripsPage() {
 
             const hostIds = Array.from(new Set((bookingRows || []).map((b) => b.host_id)));
             if (hostIds.length) {
-                const { data: hosts } = await supabase.from('profiles').select('id, full_name, preferred_name').in('id', hostIds);
+                const { data: hosts } = await supabase.from('profiles').select('id, full_name, preferred_name, show_full_name').in('id', hostIds);
                 const names: Record<string, string> = {};
-                (hosts || []).forEach((h) => { names[h.id] = h.preferred_name || h.full_name || 'Host'; });
+                (hosts || []).forEach((h) => { names[h.id] = displayName(h, 'Host'); });
                 setHostNames(names);
             }
 
