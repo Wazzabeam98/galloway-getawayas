@@ -3,25 +3,30 @@
 import { useEffect, useState } from 'react';
 import { createClientComponentClient } from '@supabase/auth-helpers-nextjs';
 import { DateRangePicker, Range, RangeKeyDict } from 'react-date-range';
-import { differenceInCalendarDays, addDays, isSameDay } from 'date-fns';
+import { differenceInCalendarDays, addDays } from 'date-fns';
 import 'react-date-range/dist/styles.css';
 import 'react-date-range/dist/theme/default.css';
 import LoginModel from '@/components/auth/LoginModel';
 import { toast } from 'react-toastify';
+import { Minus, Plus } from 'lucide-react';
 
 interface Props {
     listingId: string;
     hostId: string;
     pricePerNight: number;
     maxGuests: number;
+    petsAllowed?: boolean;
+    icalImportUrl?: string | null;
 }
 
-export default function BookingWidget({ listingId, hostId, pricePerNight, maxGuests }: Props) {
+export default function BookingWidget({ listingId, hostId, pricePerNight, maxGuests, petsAllowed, icalImportUrl }: Props) {
     const supabase = createClientComponentClient();
     const [session, setSession] = useState<any>(null);
     const [loadingSession, setLoadingSession] = useState(true);
     const [disabledDates, setDisabledDates] = useState<Date[]>([]);
-    const [guests, setGuests] = useState(1);
+    const [adults, setAdults] = useState(1);
+    const [children, setChildren] = useState(0);
+    const [pets, setPets] = useState(0);
     const [dateRange, setDateRange] = useState<Range>({
         startDate: undefined,
         endDate: undefined,
@@ -44,29 +49,76 @@ export default function BookingWidget({ listingId, hostId, pricePerNight, maxGue
                 .in('status', ['pending', 'confirmed']);
 
             const blocked: Date[] = [];
-            (existing || []).forEach((b) => {
-                let d = new Date(b.check_in);
-                const end = new Date(b.check_out);
+            const addRange = (startStr: string, endStr: string) => {
+                let d = new Date(startStr);
+                const end = new Date(endStr);
                 while (d < end) {
                     blocked.push(new Date(d));
                     d = addDays(d, 1);
                 }
-            });
+            };
+
+            (existing || []).forEach((b) => addRange(b.check_in, b.check_out));
+
+            // Pull in whatever's blocked on the host's external calendar (Airbnb,
+            // Booking.com, etc.) too, so guests can't request dates already taken
+            // elsewhere. This is only as current as that platform's own export.
+            if (icalImportUrl) {
+                try {
+                    const res = await fetch(`/api/ical-import?url=${encodeURIComponent(icalImportUrl)}`);
+                    if (res.ok) {
+                        const data = await res.json();
+                        (data.events || []).forEach((ev: { start: string; end: string }) => addRange(ev.start, ev.end));
+                    }
+                } catch {
+                    // If the external calendar can't be reached, we simply don't
+                    // block those dates — it shouldn't break booking altogether.
+                }
+            }
+
             setDisabledDates(blocked);
         };
         load();
-    }, [supabase, listingId]);
+    }, [supabase, listingId, icalImportUrl]);
 
     const nights =
         dateRange.startDate && dateRange.endDate
             ? differenceInCalendarDays(dateRange.endDate, dateRange.startDate)
             : 0;
     const total = nights * pricePerNight;
+    const totalGuests = adults + children;
 
     const handleSelect = (ranges: RangeKeyDict) => {
         setError('');
         setDateRange(ranges.selection);
     };
+
+    const Counter = ({ label, sub, value, onChange, min = 0 }: { label: string; sub?: string; value: number; onChange: (v: number) => void; min?: number }) => (
+        <div className="flex items-center justify-between py-2.5">
+            <div>
+                <div className="text-sm font-medium text-slate-800">{label}</div>
+                {sub && <div className="text-xs text-slate-400">{sub}</div>}
+            </div>
+            <div className="flex items-center space-x-3">
+                <button
+                    type="button"
+                    onClick={() => onChange(Math.max(min, value - 1))}
+                    disabled={value <= min}
+                    className="w-7 h-7 rounded-full border flex items-center justify-center text-slate-600 hover:border-slate-900 disabled:opacity-30"
+                >
+                    <Minus className="w-3.5 h-3.5" />
+                </button>
+                <span className="w-4 text-center text-sm">{value}</span>
+                <button
+                    type="button"
+                    onClick={() => onChange(value + 1)}
+                    className="w-7 h-7 rounded-full border flex items-center justify-center text-slate-600 hover:border-slate-900"
+                >
+                    <Plus className="w-3.5 h-3.5" />
+                </button>
+            </div>
+        </div>
+    );
 
     const handleRequest = async () => {
         setError('');
@@ -79,7 +131,7 @@ export default function BookingWidget({ listingId, hostId, pricePerNight, maxGue
             setError('Please select your check-in and check-out dates.');
             return;
         }
-        if (guests > maxGuests) {
+        if (totalGuests > maxGuests) {
             setError(`This place sleeps up to ${maxGuests} guests.`);
             return;
         }
@@ -101,7 +153,10 @@ export default function BookingWidget({ listingId, hostId, pricePerNight, maxGue
                 host_id: hostId,
                 check_in: dateRange.startDate.toISOString().split('T')[0],
                 check_out: dateRange.endDate.toISOString().split('T')[0],
-                guests,
+                guests: totalGuests,
+                adults,
+                children,
+                pets,
                 total_price: total,
                 status: 'pending',
             });
@@ -154,18 +209,14 @@ export default function BookingWidget({ listingId, hostId, pricePerNight, maxGue
                 />
             </div>
 
-            <div className="mb-4">
-                <label className="text-xs font-semibold text-slate-500 uppercase">Guests</label>
-                <input
-                    type="number"
-                    min={1}
-                    max={maxGuests}
-                    value={guests}
-                    onChange={(e) => setGuests(Math.max(1, Math.min(maxGuests, Number(e.target.value))))}
-                    className="w-full p-2.5 border rounded-lg text-sm mt-1"
-                />
-                <p className="text-xs text-slate-400 mt-1">Max {maxGuests} guests</p>
+            <div className="mb-4 border rounded-xl px-3 divide-y">
+                <Counter label="Adults" sub="Ages 13+" value={adults} onChange={setAdults} min={1} />
+                <Counter label="Children" sub="Ages 2–12" value={children} onChange={setChildren} min={0} />
+                {petsAllowed && (
+                    <Counter label="Pets" sub="This place allows pets" value={pets} onChange={setPets} min={0} />
+                )}
             </div>
+            <p className="text-xs text-slate-400 -mt-3 mb-4">Max {maxGuests} guests{petsAllowed ? ' (pets don\'t count toward this)' : ''}</p>
 
             {nights > 0 && (
                 <div className="border-t pt-3 mb-4 text-sm">
