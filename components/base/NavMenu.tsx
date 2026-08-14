@@ -24,6 +24,11 @@ const NavMenu = ({ session }: { session: object | undefined }) => {
                     {session != null ? (
                         <>
                             <li className='hover:bg-slate-200 rounded-md p-2 cursor-pointer'>
+                                <Link href='/trips'>
+                                    Your trips
+                                </Link>
+                            </li>
+                            <li className='hover:bg-slate-200 rounded-md p-2 cursor-pointer'>
                                 <Link href='/dashboard'>
                                     Listings
                                 </Link>
@@ -36,6 +41,11 @@ const NavMenu = ({ session }: { session: object | undefined }) => {
                             <li className='hover:bg-slate-200 rounded-md p-2 cursor-pointer'>
                                 <Link href='/dashboard/calendar'>
                                     Calendar
+                                </Link>
+                            </li>
+                            <li className='hover:bg-slate-200 rounded-md p-2 cursor-pointer'>
+                                <Link href='/dashboard/reviews'>
+                                    Reviews
                                 </Link>
                             </li>
                             <li className='hover:bg-slate-200 rounded-md p-2 cursor-pointer'>
