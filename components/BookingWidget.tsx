@@ -3,7 +3,7 @@
 import { useEffect, useState } from 'react';
 import { createClientComponentClient } from '@supabase/auth-helpers-nextjs';
 import { DateRangePicker, Range, RangeKeyDict } from 'react-date-range';
-import { differenceInCalendarDays, addDays, format, getDay } from 'date-fns';
+import { differenceInCalendarDays, addDays, format, getDay, addMonths } from 'date-fns';
 import 'react-date-range/dist/styles.css';
 import 'react-date-range/dist/theme/default.css';
 import LoginModel from '@/components/auth/LoginModel';
@@ -21,11 +21,12 @@ interface Props {
     cleaningFee?: number;
     petFee?: number;
     extraGuestFee?: number;
+    availabilityWindow?: string;
 }
 
 export default function BookingWidget({
     listingId, hostId, pricePerNight, maxGuests, petsAllowed, icalImportUrl,
-    weekendPrice, cleaningFee = 0, petFee = 0, extraGuestFee = 0,
+    weekendPrice, cleaningFee = 0, petFee = 0, extraGuestFee = 0, availabilityWindow,
 }: Props) {
     const supabase = createClientComponentClient();
     const [session, setSession] = useState<any>(null);
@@ -43,6 +44,12 @@ export default function BookingWidget({
     const [submitting, setSubmitting] = useState(false);
     const [error, setError] = useState('');
     const [requested, setRequested] = useState(false);
+
+    const maxBookableDate = (() => {
+        const map: Record<string, number> = { '3 months': 3, '6 months': 6, '9 months': 9, '12 months': 12 };
+        const months = availabilityWindow ? map[availabilityWindow] : undefined;
+        return months ? addMonths(new Date(), months) : undefined;
+    })();
 
     useEffect(() => {
         const load = async () => {
@@ -171,6 +178,10 @@ export default function BookingWidget({
             setError('Please select your check-in and check-out dates.');
             return;
         }
+        if (maxBookableDate && dateRange.endDate > maxBookableDate) {
+            setError('This host only accepts bookings within their availability window. Please pick earlier dates.');
+            return;
+        }
         if (totalGuests > maxGuests) {
             setError(`This place sleeps up to ${maxGuests} guests.`);
             return;
@@ -241,6 +252,7 @@ export default function BookingWidget({
                     ranges={[dateRange]}
                     onChange={handleSelect}
                     minDate={new Date()}
+                    maxDate={maxBookableDate}
                     disabledDates={disabledDates}
                     months={1}
                     direction="vertical"
