@@ -24,7 +24,7 @@ const LoginModel = () => {
         }
     };
 
-    const handleSocialLogin = async (provider: 'google' | 'apple') => {
+    const handleSocialLogin = async (provider: 'google' | 'facebook') => {
         await supabase.auth.signInWithOAuth({
             provider,
             options: {
@@ -107,13 +107,13 @@ const LoginModel = () => {
                                 <span>Continue with Google</span>
                             </button>
                             <button
-                                onClick={() => handleSocialLogin('apple')}
+                                onClick={() => handleSocialLogin('facebook')}
                                 className="w-full py-3 px-4 border rounded-xl font-medium text-slate-700 hover:bg-slate-50 transition flex items-center justify-center space-x-2"
                             >
-                                <svg className="w-5 h-5 fill-current" viewBox="0 0 24 24">
-                                    <path d="M18.71 19.5c-.83 1.24-1.71 2.45-3.05 2.47-1.34.03-1.77-.79-3.29-.79-1.53 0-2 .77-3.27.82-1.31.05-2.3-1.32-3.14-2.53C4.25 17 2.94 12.45 4.7 9.39c.87-1.52 2.43-2.48 4.12-2.51 1.28-.02 2.5.87 3.29.87.78 0 2.26-1.07 3.81-.91.65.03 2.47.26 3.64 1.98-.09.06-2.17 1.28-2.15 3.81.03 3.02 2.65 4.03 2.68 4.04-.03.07-.42 1.44-1.38 2.83M15.97 5.31c.57-.69.96-1.65.86-2.61-.84.04-1.87.56-2.45 1.25-.53.61-.99 1.59-.87 2.54 94 .04 1.9-.49 2.46-1.18z"/>
+                                <svg className="w-5 h-5" viewBox="0 0 24 24">
+                                    <path fill="#1877F2" d="M24 12.07C24 5.4 18.63 0 12 0S0 5.4 0 12.07C0 18.1 4.39 23.1 10.13 24v-8.44H7.08v-3.49h3.05V9.41c0-3.02 1.79-4.69 4.53-4.69 1.31 0 2.68.24 2.68.24v2.97h-1.51c-1.49 0-1.96.93-1.96 1.89v2.25h3.33l-.53 3.49h-2.8V24C19.61 23.1 24 18.1 24 12.07z"/>
                                 </svg>
-                                <span>Continue with Apple</span>
+                                <span>Continue with Facebook</span>
                             </button>
                         </div>
                     </div>
