@@ -4,7 +4,7 @@ import { useEffect, useRef, useState } from 'react';
 import { createClientComponentClient } from '@supabase/auth-helpers-nextjs';
 import { useRouter } from 'next/navigation';
 import Logo from '@/components/base/Logo';
-import { HomeIcon, ChevronRightIcon, ChevronLeftIcon, Trees, Waves, Compass, Building2, Sparkles, Minus, Plus, Check, Link2, Loader2 } from 'lucide-react';
+import { HomeIcon, ChevronRightIcon, ChevronLeftIcon, Trees, Waves, Compass, Building2, Sparkles, Minus, Plus, Check, Link2, Loader2, Snowflake, Package, Refrigerator, Thermometer, Droplet, UtensilsCrossed, Tv, RotateCw, Wifi, Coffee, Wind, Shirt, Zap, Baby, Briefcase, Car, Dumbbell, Bath, Flame, Armchair, Umbrella, Anchor, AlertTriangle, BellRing, Feather, Users, Gem, MapPin, Maximize2 } from 'lucide-react';
 import LoginModel from '@/components/auth/LoginModel';
 import { categories } from '@/config/categories';
 import Env from '@/config/Env';
@@ -39,7 +39,7 @@ export default function AddHome() {
 
     // Airbnb-style wizard state
     const [step, setStep] = useState(1);
-    const TOTAL_STEPS = 8;
+    const TOTAL_STEPS = 9;
     const [propertyType, setPropertyType] = useState('');
     const [privacyType, setPrivacyType] = useState('Entire place');
     const [guests, setGuests] = useState(1);
@@ -47,11 +47,76 @@ export default function AddHome() {
     const [beds, setBeds] = useState(1);
     const [bathrooms, setBathrooms] = useState(1);
     const [amenities, setAmenities] = useState<string[]>([]);
+    const [selectedHighlights, setSelectedHighlights] = useState<string[]>([]);
+    const [newListingPromo, setNewListingPromo] = useState(true);
+    const [lastMinuteDiscount, setLastMinuteDiscount] = useState(false);
+    const [weeklyDiscount, setWeeklyDiscount] = useState(false);
+    const [monthlyDiscount, setMonthlyDiscount] = useState(false);
 
-    const AMENITIES = [
-        'Wifi', 'Kitchen', 'Free parking', 'Hot tub', 'Pool', 'Washer',
-        'Dryer', 'Air conditioning', 'Heating', 'TV', 'Fireplace',
-        'Workspace', 'Garden', 'BBQ grill'
+    const AMENITY_CATEGORIES: { category: string; items: { name: string; icon: any; note?: string }[] }[] = [
+        {
+            category: 'Basics',
+            items: [
+                { name: 'Air conditioning', icon: Snowflake },
+                { name: 'Essentials', icon: Package, note: 'Towels, bed sheets, soap and toilet paper' },
+                { name: 'Fridge', icon: Refrigerator },
+                { name: 'Heating', icon: Thermometer },
+                { name: 'Hot water', icon: Droplet },
+                { name: 'Kitchen', icon: UtensilsCrossed },
+                { name: 'TV', icon: Tv },
+                { name: 'Tumble dryer', icon: Wind },
+                { name: 'Washing machine', icon: RotateCw },
+                { name: 'Wifi', icon: Wifi },
+            ],
+        },
+        {
+            category: 'Popular',
+            items: [
+                { name: 'Coffee maker', icon: Coffee },
+                { name: 'Cooking basics', icon: Package, note: 'Pots and pans, oil, salt and pepper' },
+                { name: 'Hairdryer', icon: Wind },
+                { name: 'Hangers', icon: Shirt },
+                { name: 'Iron', icon: Zap },
+                { name: 'Shampoo', icon: Droplet },
+            ],
+        },
+        {
+            category: 'Features',
+            items: [
+                { name: 'Cot', icon: Baby },
+                { name: 'Dedicated workspace', icon: Briefcase },
+                { name: 'EV charger', icon: Zap },
+                { name: 'Free parking on premises', icon: Car },
+                { name: 'Gym', icon: Dumbbell },
+                { name: 'Hot tub', icon: Bath },
+                { name: 'Indoor fireplace', icon: Flame },
+                { name: 'Outdoor furniture', icon: Armchair },
+                { name: 'Pool', icon: Waves },
+            ],
+        },
+        {
+            category: 'Location',
+            items: [
+                { name: 'Beach access', icon: Umbrella },
+                { name: 'Waterfront', icon: Anchor },
+            ],
+        },
+        {
+            category: 'Safety',
+            items: [
+                { name: 'Carbon monoxide alarm', icon: AlertTriangle },
+                { name: 'Smoke alarm', icon: BellRing },
+            ],
+        },
+    ];
+
+    const HIGHLIGHTS: { label: string; icon: any; phrase: string }[] = [
+        { label: 'Peaceful', icon: Feather, phrase: 'a peaceful retreat' },
+        { label: 'Unique', icon: Sparkles, phrase: 'a truly unique stay' },
+        { label: 'Family-friendly', icon: Users, phrase: 'perfect for families' },
+        { label: 'Stylish', icon: Gem, phrase: 'a stylish space' },
+        { label: 'Central', icon: MapPin, phrase: 'in a central location' },
+        { label: 'Spacious', icon: Maximize2, phrase: 'with plenty of space' },
     ];
 
     // Hosts absorb this fee — guests always pay exactly the nightly rate the
@@ -230,6 +295,10 @@ export default function AddHome() {
                 beds,
                 bathrooms,
                 amenities,
+                new_listing_promo: newListingPromo,
+                last_minute_discount: lastMinuteDiscount,
+                weekly_discount: weeklyDiscount,
+                monthly_discount: monthlyDiscount,
             });
 
             if (listingErr) {
@@ -541,22 +610,33 @@ export default function AddHome() {
                 {step === 5 && (
                     <div>
                         <h2 className="text-3xl font-extrabold text-slate-900 mb-2">Tell guests what your place offers</h2>
-                        <p className="text-slate-600 mb-8">Select all the amenities you provide.</p>
-                        <div className="grid grid-cols-2 md:grid-cols-3 gap-3">
-                            {AMENITIES.map((item) => {
-                                const selected = amenities.includes(item);
-                                return (
-                                    <button
-                                        key={item}
-                                        type="button"
-                                        onClick={() => toggleAmenity(item)}
-                                        className={`p-4 rounded-2xl border-2 text-left text-sm font-medium transition flex items-center justify-between ${selected ? 'border-slate-900 bg-slate-50' : 'border-slate-200 hover:border-slate-400'}`}
-                                    >
-                                        {item}
-                                        {selected && <Check className="w-4 h-4 text-slate-900" />}
-                                    </button>
-                                );
-                            })}
+                        <p className="text-slate-600 mb-2">Select all the amenities you provide.</p>
+                        <p className="text-sm text-slate-400 mb-8">{amenities.length} selected</p>
+
+                        <div className="space-y-8">
+                            {AMENITY_CATEGORIES.map(({ category, items }) => (
+                                <div key={category}>
+                                    <h3 className="font-bold text-slate-900 mb-3">{category}</h3>
+                                    <div className="grid grid-cols-2 md:grid-cols-3 gap-3">
+                                        {items.map(({ name, icon: Icon, note }) => {
+                                            const selected = amenities.includes(name);
+                                            return (
+                                                <button
+                                                    key={name}
+                                                    type="button"
+                                                    onClick={() => toggleAmenity(name)}
+                                                    className={`p-4 rounded-2xl border-2 text-left transition relative ${selected ? 'border-slate-900 bg-slate-50' : 'border-slate-200 hover:border-slate-400'}`}
+                                                >
+                                                    <Icon className="w-5 h-5 mb-3 text-slate-700" />
+                                                    <div className="text-sm font-semibold text-slate-900">{name}</div>
+                                                    {note && <div className="text-xs text-slate-400 mt-0.5">{note}</div>}
+                                                    {selected && <Check className="w-4 h-4 text-slate-900 absolute top-4 right-4" />}
+                                                </button>
+                                            );
+                                        })}
+                                    </div>
+                                </div>
+                            ))}
                         </div>
                     </div>
                 )}
@@ -633,7 +713,42 @@ export default function AddHome() {
                             />
                         </div>
                         <div>
-                            <h2 className="text-2xl font-extrabold text-slate-900 mb-2">Describe your place</h2>
+                            <h2 className="text-2xl font-extrabold text-slate-900 mb-2">Next, let's describe your house</h2>
+                            <p className="text-slate-600 text-sm mb-4">Choose up to 2 highlights — we'll suggest a line for your description.</p>
+                            <div className="flex flex-wrap gap-3 mb-4">
+                                {HIGHLIGHTS.map(({ label, icon: Icon }) => {
+                                    const selected = selectedHighlights.includes(label);
+                                    return (
+                                        <button
+                                            key={label}
+                                            type="button"
+                                            onClick={() => {
+                                                if (selected) {
+                                                    setSelectedHighlights(selectedHighlights.filter((h) => h !== label));
+                                                } else if (selectedHighlights.length < 2) {
+                                                    setSelectedHighlights([...selectedHighlights, label]);
+                                                }
+                                            }}
+                                            className={`flex items-center px-4 py-2.5 rounded-full border-2 text-sm font-semibold transition ${selected ? 'border-slate-900 bg-slate-50' : 'border-slate-200 hover:border-slate-400'}`}
+                                        >
+                                            <Icon className="w-4 h-4 mr-2" /> {label}
+                                        </button>
+                                    );
+                                })}
+                            </div>
+                            {selectedHighlights.length > 0 && (
+                                <button
+                                    type="button"
+                                    onClick={() => {
+                                        const phrases = HIGHLIGHTS.filter((h) => selectedHighlights.includes(h.label)).map((h) => h.phrase);
+                                        const suggestion = `This is ${phrases.join(' and ')}.`;
+                                        setDescription((prev) => (prev ? `${prev}\n\n${suggestion}` : suggestion));
+                                    }}
+                                    className="text-sm font-semibold text-rose-500 hover:text-rose-600 mb-4"
+                                >
+                                    + Add this to my description
+                                </button>
+                            )}
                             <textarea
                                 value={description}
                                 onChange={(e) => setDescription(e.target.value)}
@@ -645,8 +760,43 @@ export default function AddHome() {
                     </div>
                 )}
 
-                {/* Step 8: Price + review */}
+                {/* Step 8: Discounts */}
                 {step === 8 && (
+                    <div>
+                        <h2 className="text-3xl font-extrabold text-slate-900 mb-2">Add discounts</h2>
+                        <p className="text-slate-600 mb-8">Help your place stand out to get booked faster and earn your first reviews.</p>
+                        <div className="space-y-4">
+                            {[
+                                { key: 'newListingPromo', percent: '20%', title: 'New listing promotion', note: 'Available until your listing has 3 reviews or gets booked 10 times', value: newListingPromo, set: setNewListingPromo },
+                                { key: 'lastMinuteDiscount', percent: '5%', title: 'Last-minute discount', note: 'For stays booked 14 days or less before arrival', value: lastMinuteDiscount, set: setLastMinuteDiscount },
+                                { key: 'weeklyDiscount', percent: '10%', title: 'Weekly discount', note: 'For stays of 7 nights or more', value: weeklyDiscount, set: setWeeklyDiscount },
+                                { key: 'monthlyDiscount', percent: '20%', title: 'Monthly discount', note: 'For stays of 28 nights or more', value: monthlyDiscount, set: setMonthlyDiscount },
+                            ].map((d) => (
+                                <button
+                                    key={d.key}
+                                    type="button"
+                                    onClick={() => d.set(!d.value)}
+                                    className={`w-full flex items-center justify-between p-5 rounded-2xl border-2 text-left transition ${d.value ? 'border-slate-900 bg-slate-50' : 'border-slate-200 hover:border-slate-400'}`}
+                                >
+                                    <div className="flex items-center">
+                                        <span className="text-lg font-bold text-slate-900 w-14">{d.percent}</span>
+                                        <div>
+                                            <div className="font-semibold text-slate-900">{d.title}</div>
+                                            <div className="text-sm text-slate-500">{d.note}</div>
+                                        </div>
+                                    </div>
+                                    <div className={`w-6 h-6 rounded-md flex items-center justify-center flex-shrink-0 ml-4 ${d.value ? 'bg-slate-900' : 'border-2 border-slate-300'}`}>
+                                        {d.value && <Check className="w-4 h-4 text-white" />}
+                                    </div>
+                                </button>
+                            ))}
+                        </div>
+                        <p className="text-xs text-slate-400 mt-4">Only one discount is applied per stay.</p>
+                    </div>
+                )}
+
+                {/* Step 9: Price + review */}
+                {step === 9 && (
                     <form onSubmit={handleListingSubmit}>
                         <h2 className="text-3xl font-extrabold text-slate-900 mb-2">Now, set your price</h2>
                         <p className="text-slate-600 mb-6">You can change this anytime.</p>
@@ -695,6 +845,12 @@ export default function AddHome() {
                                 <li><span className="font-medium text-slate-800">Guests:</span> {guests} · {bedrooms} bedrooms · {beds} beds · {bathrooms} bathrooms</li>
                                 <li><span className="font-medium text-slate-800">Amenities:</span> {amenities.length ? amenities.join(', ') : 'None selected'}</li>
                                 <li><span className="font-medium text-slate-800">Title:</span> {title || '—'}</li>
+                                <li><span className="font-medium text-slate-800">Discounts:</span> {[
+                                    newListingPromo && 'New listing 20%',
+                                    lastMinuteDiscount && 'Last-minute 5%',
+                                    weeklyDiscount && 'Weekly 10%',
+                                    monthlyDiscount && 'Monthly 20%',
+                                ].filter(Boolean).join(', ') || 'None selected'}</li>
                             </ul>
                         </div>
 
@@ -710,10 +866,10 @@ export default function AddHome() {
                     </form>
                 )}
 
-                {formError && step !== 8 && <p className="text-red-600 text-sm mt-6">{formError}</p>}
+                {formError && step !== TOTAL_STEPS && <p className="text-red-600 text-sm mt-6">{formError}</p>}
 
-                {/* Nav buttons (steps 1-7; step 8 has its own submit button above) */}
-                {step !== 8 && (
+                {/* Nav buttons (all steps except the last, which has its own submit button above) */}
+                {step !== TOTAL_STEPS && (
                     <div className="flex justify-between items-center mt-10 pt-6 border-t">
                         <button
                             type="button"
@@ -731,7 +887,7 @@ export default function AddHome() {
                         </button>
                     </div>
                 )}
-                {step === 8 && (
+                {step === TOTAL_STEPS && (
                     <button
                         type="button"
                         onClick={goBack}
