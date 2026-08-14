@@ -6,7 +6,7 @@ import { cookies } from "next/headers";
 import { getImageUrl } from "@/lib/utils";
 import DeleteHomebtn from "@/components/DeleteHomebtn";
 import Link from "next/link";
-import { Eye, Home } from "lucide-react";
+import { Eye, Home, Plus } from "lucide-react";
 
 function ListingCard({ item, isDraft }: { item: any; isDraft: boolean }) {
     const editHref = isDraft ? `/addhome?draft=${item.id}` : `/edit-listing/${item.id}`;
@@ -73,7 +73,16 @@ export default async function Dashboard() {
         <div>
             <Toast />
             <div className="max-w-7xl mx-auto px-6 py-10">
-                <h1 className="text-2xl md:text-3xl font-bold text-slate-900 mb-8">Your listings</h1>
+                <div className="flex items-center justify-between mb-8">
+                    <h1 className="text-2xl md:text-3xl font-bold text-slate-900">Your listings</h1>
+                    <Link
+                        href="/addhome"
+                        title="Create a new listing"
+                        className="w-10 h-10 rounded-full border border-slate-300 hover:bg-slate-100 flex items-center justify-center text-slate-800 transition flex-shrink-0"
+                    >
+                        <Plus className="w-5 h-5" />
+                    </Link>
+                </div>
 
                 {drafts.length > 0 && (
                     <div className="mb-10">
@@ -100,7 +109,13 @@ export default async function Dashboard() {
                 {published.length === 0 && drafts.length === 0 && (
                     <div className="text-center py-20 bg-white rounded-2xl border border-slate-200">
                         <h3 className="text-lg font-semibold text-slate-800">No listings yet</h3>
-                        <p className="text-slate-500 mt-1">Click "Become a host" to publish your first property.</p>
+                        <p className="text-slate-500 mt-1 mb-5">Add your first property to start taking bookings.</p>
+                        <Link
+                            href="/addhome"
+                            className="inline-flex items-center px-5 py-2.5 bg-slate-900 hover:bg-black text-white text-sm font-semibold rounded-lg transition"
+                        >
+                            <Plus className="w-4 h-4 mr-2" /> Create a listing
+                        </Link>
                     </div>
                 )}
             </div>
