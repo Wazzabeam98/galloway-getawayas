@@ -777,9 +777,10 @@ export default function AccountSettings() {
                                                 and they&apos;ll only ever see your preferred name
                                                 {profile.preferred_name ? ` (${profile.preferred_name})` : ''}.
                                             </p>
-                                            {!profile.preferred_name && (
+                                            {!showFullName && !profile.preferred_name && (
                                                 <p className="text-xs text-amber-600 mt-2">
-                                                    Add a preferred name under Personal information first, or there&apos;s nothing to show instead.
+                                                    You haven&apos;t set a preferred name yet, so your legal name is still being
+                                                    shown. Add one under Personal information.
                                                 </p>
                                             )}
                                         </div>
