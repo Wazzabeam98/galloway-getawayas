@@ -23,7 +23,7 @@ export default function DeleteHomebtn({ id }: { id: number }) {
 
     const deleteHome = async () => {
         // * Delete the post
-        await supabaseClient.from("homes").delete().eq("id", id);
+        await supabaseClient.from("listings").delete().eq("id", id);
 
         router.refresh();
     };
