@@ -25,7 +25,7 @@ const NavMenu = ({ session }: { session: object | undefined }) => {
                         <>
                             <li className='hover:bg-slate-200 rounded-md p-2 cursor-pointer'>
                                 <Link href='/dashboard'>
-                                    Dashboard
+                                    Listings
                                 </Link>
                             </li>
                             <li className='hover:bg-slate-200 rounded-md p-2 cursor-pointer'>
