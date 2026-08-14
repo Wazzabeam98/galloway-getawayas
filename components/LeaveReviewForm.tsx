@@ -15,22 +15,50 @@ interface Props {
     onDone?: () => void;
 }
 
+const STAY_CATEGORIES = [
+    { key: 'cleanliness', label: 'Cleanliness' },
+    { key: 'accuracy', label: 'Accuracy' },
+    { key: 'checkin', label: 'Check-in' },
+    { key: 'communication', label: 'Communication' },
+    { key: 'location', label: 'Location' },
+    { key: 'value', label: 'Value' },
+] as const;
+
 export default function LeaveReviewForm({ bookingId, listingId, revieweeId, reviewType, revieweeName, onDone }: Props) {
     const supabase = createClientComponentClient();
     const router = useRouter();
-    const [rating, setRating] = useState(0);
+    const isStayReview = reviewType === 'guest_to_host';
+
+    // For host reviews, a single overall rating is enough. For stay reviews,
+    // guests rate each category and the overall score is the average.
+    const [overallRating, setOverallRating] = useState(0);
+    const [categoryRatings, setCategoryRatings] = useState<Record<string, number>>({});
     const [comment, setComment] = useState('');
     const [submitting, setSubmitting] = useState(false);
     const [error, setError] = useState('');
 
+    const setCategory = (key: string, value: number) => {
+        setCategoryRatings((prev) => ({ ...prev, [key]: value }));
+    };
+
+    const allCategoriesRated = STAY_CATEGORIES.every((c) => categoryRatings[c.key] > 0);
+    const computedOverall = isStayReview
+        ? STAY_CATEGORIES.reduce((sum, c) => sum + (categoryRatings[c.key] || 0), 0) / STAY_CATEGORIES.length
+        : overallRating;
+
     const handleSubmit = async () => {
         setError('');
-        if (rating === 0) {
+
+        if (isStayReview && !allCategoriesRated) {
+            setError('Please rate every category.');
+            return;
+        }
+        if (!isStayReview && overallRating === 0) {
             setError('Please choose a star rating.');
             return;
         }
         if (!comment.trim()) {
-            setError('Please add a few words about your stay.');
+            setError('Please add a few words.');
             return;
         }
 
@@ -42,15 +70,26 @@ export default function LeaveReviewForm({ bookingId, listingId, revieweeId, revi
             return;
         }
 
-        const { error: insertErr } = await supabase.from('reviews').insert({
+        const payload: Record<string, any> = {
             booking_id: bookingId,
             listing_id: listingId || null,
             reviewer_id: user.id,
             reviewee_id: revieweeId,
             review_type: reviewType,
-            rating,
+            rating: Math.round(computedOverall),
             comment: comment.trim(),
-        });
+        };
+
+        if (isStayReview) {
+            payload.cleanliness_rating = categoryRatings.cleanliness;
+            payload.accuracy_rating = categoryRatings.accuracy;
+            payload.checkin_rating = categoryRatings.checkin;
+            payload.communication_rating = categoryRatings.communication;
+            payload.location_rating = categoryRatings.location;
+            payload.value_rating = categoryRatings.value;
+        }
+
+        const { error: insertErr } = await supabase.from('reviews').insert(payload);
 
         setSubmitting(false);
 
@@ -67,17 +106,30 @@ export default function LeaveReviewForm({ bookingId, listingId, revieweeId, revi
 
     return (
         <div className="border rounded-2xl p-5">
-            <h3 className="font-semibold text-slate-900 mb-3">
-                {reviewType === 'guest_to_host' ? `Review your stay with ${revieweeName}` : `Review ${revieweeName} as a guest`}
+            <h3 className="font-semibold text-slate-900 mb-4">
+                {isStayReview ? `Review your stay with ${revieweeName}` : `Review ${revieweeName} as a guest`}
             </h3>
-            <div className="mb-3">
-                <ReviewStars value={rating} onChange={setRating} />
-            </div>
+
+            {isStayReview ? (
+                <div className="space-y-3 mb-4">
+                    {STAY_CATEGORIES.map((c) => (
+                        <div key={c.key} className="flex items-center justify-between">
+                            <span className="text-sm text-slate-700">{c.label}</span>
+                            <ReviewStars value={categoryRatings[c.key] || 0} onChange={(v) => setCategory(c.key, v)} size={18} />
+                        </div>
+                    ))}
+                </div>
+            ) : (
+                <div className="mb-4">
+                    <ReviewStars value={overallRating} onChange={setOverallRating} />
+                </div>
+            )}
+
             <textarea
                 value={comment}
                 onChange={(e) => setComment(e.target.value)}
                 rows={4}
-                placeholder={reviewType === 'guest_to_host' ? 'What was your stay like?' : 'What was this guest like to host?'}
+                placeholder={isStayReview ? 'What was your stay like?' : 'What was this guest like to host?'}
                 className="w-full p-3 border rounded-xl text-sm mb-3"
             />
             {error && <p className="text-red-600 text-xs mb-3">{error}</p>}
