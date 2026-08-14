@@ -14,6 +14,8 @@ import {
     Snowflake, Package, Refrigerator, Thermometer, Droplet, UtensilsCrossed, Tv,
     RotateCw, Wifi, Coffee, Wind, Shirt, Zap, Baby, Briefcase, Car, Dumbbell, Bath,
     Flame, Armchair, Umbrella, Anchor, AlertTriangle, BellRing, PawPrint,
+    LayoutGrid, MapPin, FileText, Image as ImageIcon, PoundSterling, CalendarRange,
+    RefreshCw, Percent,
 } from 'lucide-react';
 
 const ICON_MAP: Record<string, any> = { Home: HomeIcon, Trees, Waves, Compass, Building2, Sparkles };
@@ -78,6 +80,18 @@ const AMENITY_CATEGORIES: { category: string; items: { name: string; icon: any; 
 
 const HOST_FEE_PERCENT = 10;
 
+const SECTIONS = [
+    { key: 'basics', label: 'Basics & guests', icon: LayoutGrid },
+    { key: 'location', label: 'Location', icon: MapPin },
+    { key: 'description', label: 'Description', icon: FileText },
+    { key: 'amenities', label: 'Amenities', icon: Sparkles },
+    { key: 'photos', label: 'Photos', icon: ImageIcon },
+    { key: 'rates', label: 'Rates', icon: PoundSterling },
+    { key: 'availability', label: 'Availability', icon: CalendarRange },
+    { key: 'calendar', label: 'Calendar sync', icon: RefreshCw },
+    { key: 'discounts', label: 'Discounts', icon: Percent },
+];
+
 type Photo = { kind: 'existing'; path: string } | { kind: 'new'; file: File };
 
 export default function EditListing() {
@@ -90,6 +104,7 @@ export default function EditListing() {
     const [session, setSession] = useState<any>(null);
     const [notFound, setNotFound] = useState(false);
     const [notOwner, setNotOwner] = useState(false);
+    const [activeSection, setActiveSection] = useState('basics');
 
     const [title, setTitle] = useState('');
     const [description, setDescription] = useState('');
@@ -109,6 +124,8 @@ export default function EditListing() {
     const [weeklyDiscount, setWeeklyDiscount] = useState(false);
     const [monthlyDiscount, setMonthlyDiscount] = useState(false);
     const [icalImportUrl, setIcalImportUrl] = useState('');
+    const [minNights, setMinNights] = useState(1);
+    const [maxNights, setMaxNights] = useState('');
 
     const [submitting, setSubmitting] = useState(false);
     const [formError, setFormError] = useState('');
@@ -160,6 +177,8 @@ export default function EditListing() {
             setWeeklyDiscount(listing.weekly_discount ?? false);
             setMonthlyDiscount(listing.monthly_discount ?? false);
             setIcalImportUrl(listing.ical_import_url || '');
+            setMinNights(listing.min_nights ?? 1);
+            setMaxNights(listing.max_nights ? String(listing.max_nights) : '');
 
             setLoading(false);
         };
@@ -213,6 +232,10 @@ export default function EditListing() {
             setFormError('Please fill in a title and price.');
             return;
         }
+        if (maxNights && Number(maxNights) < minNights) {
+            setFormError('Maximum nights can\'t be less than minimum nights.');
+            return;
+        }
 
         setSubmitting(true);
         try {
@@ -258,6 +281,8 @@ export default function EditListing() {
                     weekly_discount: weeklyDiscount,
                     monthly_discount: monthlyDiscount,
                     ical_import_url: icalImportUrl || null,
+                    min_nights: minNights,
+                    max_nights: maxNights ? Number(maxNights) : null,
                 })
                 .eq('id', listingId)
                 .eq('host_id', session.user.id);
@@ -324,7 +349,7 @@ export default function EditListing() {
     }
 
     return (
-        <div className="max-w-3xl mx-auto px-6 py-10 w-full">
+        <div className="max-w-5xl mx-auto px-6 py-10 w-full">
             <div className="flex justify-between items-center mb-8">
                 <h1 className="text-2xl font-extrabold text-rose-500">Edit listing</h1>
                 <button type="button" onClick={() => router.push('/dashboard')} className="text-sm font-semibold underline text-slate-600 hover:text-black">
@@ -332,240 +357,298 @@ export default function EditListing() {
                 </button>
             </div>
 
-            <form onSubmit={handleSubmit} className="space-y-10">
-                {/* Property type */}
-                <section>
-                    <h2 className="text-xl font-bold text-slate-900 mb-4">Property type</h2>
-                    <div className="grid grid-cols-2 md:grid-cols-3 gap-3">
-                        {categories.map((item) => {
-                            const Icon = ICON_MAP[item.icon] || HomeIcon;
-                            const selected = propertyType === item.name;
-                            return (
-                                <button key={item.name} type="button" onClick={() => setPropertyType(item.name)}
-                                    className={`p-4 rounded-2xl border-2 text-left transition ${selected ? 'border-slate-900 bg-slate-50' : 'border-slate-200 hover:border-slate-400'}`}>
-                                    <Icon className="w-5 h-5 mb-2 text-slate-700" />
-                                    <div className="font-semibold text-sm text-slate-900">{item.name}</div>
-                                </button>
-                            );
-                        })}
-                    </div>
-                </section>
-
-                {/* Privacy type */}
-                <section>
-                    <h2 className="text-xl font-bold text-slate-900 mb-4">What guests get</h2>
-                    <div className="space-y-3">
-                        {['Entire place', 'A private room', 'A shared room'].map((option) => (
-                            <button key={option} type="button" onClick={() => setPrivacyType(option)}
-                                className={`w-full p-4 rounded-2xl border-2 text-left transition flex items-center justify-between ${privacyType === option ? 'border-slate-900 bg-slate-50' : 'border-slate-200 hover:border-slate-400'}`}>
-                                <span className="font-semibold text-slate-900 text-sm">{option}</span>
-                                {privacyType === option && <Check className="w-5 h-5 text-slate-900" />}
+            <form onSubmit={handleSubmit}>
+                <div className="grid grid-cols-1 md:grid-cols-[220px_1fr] gap-10">
+                    {/* Sidebar */}
+                    <div className="space-y-1">
+                        {SECTIONS.map(({ key, label, icon: Icon }) => (
+                            <button
+                                key={key}
+                                type="button"
+                                onClick={() => setActiveSection(key)}
+                                className={`w-full flex items-center px-3 py-2.5 rounded-xl text-sm font-medium transition ${activeSection === key ? 'bg-slate-100 text-slate-900' : 'text-slate-600 hover:bg-slate-50'}`}
+                            >
+                                <Icon className="w-4 h-4 mr-3" /> {label}
                             </button>
                         ))}
                     </div>
-                </section>
 
-                {/* Location */}
-                <section>
-                    <h2 className="text-xl font-bold text-slate-900 mb-4">Location</h2>
-                    <textarea value={location} onChange={(e) => setLocation(e.target.value)} rows={2}
-                        className="w-full p-3 border rounded-xl text-sm" />
-                </section>
+                    {/* Content */}
+                    <div>
+                        {activeSection === 'basics' && (
+                            <div className="space-y-10">
+                                <section>
+                                    <h2 className="text-xl font-bold text-slate-900 mb-4">Property type</h2>
+                                    <div className="grid grid-cols-2 md:grid-cols-3 gap-3">
+                                        {categories.map((item) => {
+                                            const Icon = ICON_MAP[item.icon] || HomeIcon;
+                                            const selected = propertyType === item.name;
+                                            return (
+                                                <button key={item.name} type="button" onClick={() => setPropertyType(item.name)}
+                                                    className={`p-4 rounded-2xl border-2 text-left transition ${selected ? 'border-slate-900 bg-slate-50' : 'border-slate-200 hover:border-slate-400'}`}>
+                                                    <Icon className="w-5 h-5 mb-2 text-slate-700" />
+                                                    <div className="font-semibold text-sm text-slate-900">{item.name}</div>
+                                                </button>
+                                            );
+                                        })}
+                                    </div>
+                                </section>
 
-                {/* Capacity */}
-                <section>
-                    <h2 className="text-xl font-bold text-slate-900 mb-2">Capacity</h2>
-                    <Counter label="Guests" value={guests} onChange={setGuests} min={1} />
-                    <Counter label="Bedrooms" value={bedrooms} onChange={setBedrooms} min={0} />
-                    <Counter label="Beds" value={beds} onChange={setBeds} min={1} />
-                    <Counter label="Bathrooms" value={bathrooms} onChange={setBathrooms} min={0.5} />
-                </section>
-
-                {/* Amenities */}
-                <section>
-                    <h2 className="text-xl font-bold text-slate-900 mb-1">Amenities</h2>
-                    <p className="text-sm text-slate-400 mb-4">{amenities.length} selected</p>
-                    <div className="space-y-6">
-                        {AMENITY_CATEGORIES.map(({ category, items }) => (
-                            <div key={category}>
-                                <h3 className="font-semibold text-slate-800 text-sm mb-2">{category}</h3>
-                                <div className="grid grid-cols-2 md:grid-cols-3 gap-3">
-                                    {items.map(({ name, icon: Icon, note }) => {
-                                        const selected = amenities.includes(name);
-                                        return (
-                                            <button key={name} type="button" onClick={() => toggleAmenity(name)}
-                                                className={`p-3 rounded-2xl border-2 text-left transition relative ${selected ? 'border-slate-900 bg-slate-50' : 'border-slate-200 hover:border-slate-400'}`}>
-                                                <Icon className="w-4 h-4 mb-2 text-slate-700" />
-                                                <div className="text-xs font-semibold text-slate-900">{name}</div>
-                                                {note && <div className="text-[10px] text-slate-400 mt-0.5">{note}</div>}
-                                                {selected && <Check className="w-4 h-4 text-slate-900 absolute top-3 right-3" />}
+                                <section>
+                                    <h2 className="text-xl font-bold text-slate-900 mb-4">What guests get</h2>
+                                    <div className="space-y-3">
+                                        {['Entire place', 'A private room', 'A shared room'].map((option) => (
+                                            <button key={option} type="button" onClick={() => setPrivacyType(option)}
+                                                className={`w-full p-4 rounded-2xl border-2 text-left transition flex items-center justify-between ${privacyType === option ? 'border-slate-900 bg-slate-50' : 'border-slate-200 hover:border-slate-400'}`}>
+                                                <span className="font-semibold text-slate-900 text-sm">{option}</span>
+                                                {privacyType === option && <Check className="w-5 h-5 text-slate-900" />}
                                             </button>
-                                        );
-                                    })}
+                                        ))}
+                                    </div>
+                                </section>
+
+                                <section>
+                                    <h2 className="text-xl font-bold text-slate-900 mb-2">Capacity</h2>
+                                    <Counter label="Guests" value={guests} onChange={setGuests} min={1} />
+                                    <Counter label="Bedrooms" value={bedrooms} onChange={setBedrooms} min={0} />
+                                    <Counter label="Beds" value={beds} onChange={setBeds} min={1} />
+                                    <Counter label="Bathrooms" value={bathrooms} onChange={setBathrooms} min={0.5} />
+                                </section>
+                            </div>
+                        )}
+
+                        {activeSection === 'location' && (
+                            <section>
+                                <h2 className="text-xl font-bold text-slate-900 mb-4">Location</h2>
+                                <textarea value={location} onChange={(e) => setLocation(e.target.value)} rows={3}
+                                    className="w-full p-3 border rounded-xl text-sm" />
+                            </section>
+                        )}
+
+                        {activeSection === 'description' && (
+                            <section>
+                                <h2 className="text-xl font-bold text-slate-900 mb-2">Title</h2>
+                                <input type="text" value={title} onChange={(e) => setTitle(e.target.value)} className="w-full p-3 border rounded-xl mb-6" />
+                                <h2 className="text-xl font-bold text-slate-900 mb-2">Description</h2>
+                                <textarea value={description} onChange={(e) => setDescription(e.target.value)} rows={8} className="w-full p-3 border rounded-xl" />
+                            </section>
+                        )}
+
+                        {activeSection === 'amenities' && (
+                            <section>
+                                <h2 className="text-xl font-bold text-slate-900 mb-1">Amenities</h2>
+                                <p className="text-sm text-slate-400 mb-4">{amenities.length} selected</p>
+                                <div className="space-y-6">
+                                    {AMENITY_CATEGORIES.map(({ category, items }) => (
+                                        <div key={category}>
+                                            <h3 className="font-semibold text-slate-800 text-sm mb-2">{category}</h3>
+                                            <div className="grid grid-cols-2 md:grid-cols-3 gap-3">
+                                                {items.map(({ name, icon: Icon, note }) => {
+                                                    const selected = amenities.includes(name);
+                                                    return (
+                                                        <button key={name} type="button" onClick={() => toggleAmenity(name)}
+                                                            className={`p-3 rounded-2xl border-2 text-left transition relative ${selected ? 'border-slate-900 bg-slate-50' : 'border-slate-200 hover:border-slate-400'}`}>
+                                                            <Icon className="w-4 h-4 mb-2 text-slate-700" />
+                                                            <div className="text-xs font-semibold text-slate-900">{name}</div>
+                                                            {note && <div className="text-[10px] text-slate-400 mt-0.5">{note}</div>}
+                                                            {selected && <Check className="w-4 h-4 text-slate-900 absolute top-3 right-3" />}
+                                                        </button>
+                                                    );
+                                                })}
+                                            </div>
+                                        </div>
+                                    ))}
                                 </div>
-                            </div>
-                        ))}
-                    </div>
-                </section>
+                            </section>
+                        )}
 
-                {/* Photos */}
-                <section>
-                    <h2 className="text-xl font-bold text-slate-900 mb-1">Photos</h2>
-                    <p className="text-xs text-slate-400 mb-4">Drag to reorder. Click the star to set the cover photo.</p>
-                    {photos.length > 0 && (
-                        <div className="grid grid-cols-2 md:grid-cols-3 gap-4 mb-4">
-                            {photos.map((photo, i) => (
-                                <div key={i}
-                                    draggable
-                                    onDragStart={() => setDraggedIndex(i)}
-                                    onDragEnter={() => { if (draggedIndex !== null && draggedIndex !== i) setDragOverIndex(i); }}
-                                    onDragOver={(e) => e.preventDefault()}
-                                    onDrop={() => { if (draggedIndex !== null) reorderPhotos(draggedIndex, i); setDraggedIndex(null); setDragOverIndex(null); }}
-                                    onDragEnd={() => { setDraggedIndex(null); setDragOverIndex(null); }}
-                                    className={`relative h-40 rounded-2xl overflow-hidden border-2 group cursor-grab active:cursor-grabbing transition ${
-                                        i === coverIndex ? 'border-rose-500' : 'border-slate-200'
-                                    } ${dragOverIndex === i ? 'ring-2 ring-slate-900 scale-95' : ''} ${draggedIndex === i ? 'opacity-40' : ''}`}
-                                >
-                                    <img
-                                        src={photo.kind === 'existing' ? getImageUrl(photo.path) : URL.createObjectURL(photo.file)}
-                                        alt={`Photo ${i + 1}`}
-                                        className="w-full h-full object-cover pointer-events-none"
-                                    />
-                                    <button type="button" onClick={() => setCoverIndex(i)}
-                                        title={i === coverIndex ? 'Cover photo' : 'Make cover photo'}
-                                        className={`absolute bottom-2 left-2 w-8 h-8 rounded-full flex items-center justify-center text-sm shadow ${i === coverIndex ? 'bg-rose-500 text-white' : 'bg-white/90 text-slate-600 opacity-0 group-hover:opacity-100 transition'}`}>
-                                        ★
-                                    </button>
-                                    <button type="button" onClick={() => removePhoto(i)} title="Remove photo"
-                                        className="absolute bottom-2 right-2 w-8 h-8 rounded-full bg-white/90 text-slate-600 flex items-center justify-center text-sm shadow opacity-0 group-hover:opacity-100 transition">
-                                        ×
-                                    </button>
-                                    {i === coverIndex && (
-                                        <span className="absolute top-2 left-2 text-xs font-semibold bg-rose-500 text-white px-2 py-0.5 rounded-full">Cover</span>
-                                    )}
+                        {activeSection === 'photos' && (
+                            <section>
+                                <h2 className="text-xl font-bold text-slate-900 mb-1">Photos</h2>
+                                <p className="text-xs text-slate-400 mb-4">Drag to reorder. Click the star to set the cover photo.</p>
+                                {photos.length > 0 && (
+                                    <div className="grid grid-cols-2 md:grid-cols-3 gap-4 mb-4">
+                                        {photos.map((photo, i) => (
+                                            <div key={i}
+                                                draggable
+                                                onDragStart={() => setDraggedIndex(i)}
+                                                onDragEnter={() => { if (draggedIndex !== null && draggedIndex !== i) setDragOverIndex(i); }}
+                                                onDragOver={(e) => e.preventDefault()}
+                                                onDrop={() => { if (draggedIndex !== null) reorderPhotos(draggedIndex, i); setDraggedIndex(null); setDragOverIndex(null); }}
+                                                onDragEnd={() => { setDraggedIndex(null); setDragOverIndex(null); }}
+                                                className={`relative h-40 rounded-2xl overflow-hidden border-2 group cursor-grab active:cursor-grabbing transition ${
+                                                    i === coverIndex ? 'border-rose-500' : 'border-slate-200'
+                                                } ${dragOverIndex === i ? 'ring-2 ring-slate-900 scale-95' : ''} ${draggedIndex === i ? 'opacity-40' : ''}`}
+                                            >
+                                                <img
+                                                    src={photo.kind === 'existing' ? getImageUrl(photo.path) : URL.createObjectURL(photo.file)}
+                                                    alt={`Photo ${i + 1}`}
+                                                    className="w-full h-full object-cover pointer-events-none"
+                                                />
+                                                <button type="button" onClick={() => setCoverIndex(i)}
+                                                    title={i === coverIndex ? 'Cover photo' : 'Make cover photo'}
+                                                    className={`absolute bottom-2 left-2 w-8 h-8 rounded-full flex items-center justify-center text-sm shadow ${i === coverIndex ? 'bg-rose-500 text-white' : 'bg-white/90 text-slate-600 opacity-0 group-hover:opacity-100 transition'}`}>
+                                                    ★
+                                                </button>
+                                                <button type="button" onClick={() => removePhoto(i)} title="Remove photo"
+                                                    className="absolute bottom-2 right-2 w-8 h-8 rounded-full bg-white/90 text-slate-600 flex items-center justify-center text-sm shadow opacity-0 group-hover:opacity-100 transition">
+                                                    ×
+                                                </button>
+                                                {i === coverIndex && (
+                                                    <span className="absolute top-2 left-2 text-xs font-semibold bg-rose-500 text-white px-2 py-0.5 rounded-full">Cover</span>
+                                                )}
+                                            </div>
+                                        ))}
+                                    </div>
+                                )}
+                                <label className="h-24 rounded-2xl border-2 border-dashed border-slate-300 hover:border-slate-400 flex flex-col items-center justify-center cursor-pointer text-slate-500 text-sm">
+                                    <span className="font-semibold">+ Add photos</span>
+                                    <input type="file" accept="image/png, image/jpeg" multiple onChange={handlePhotosChange} className="hidden" />
+                                </label>
+                            </section>
+                        )}
+
+                        {activeSection === 'rates' && (
+                            <section>
+                                <h2 className="text-xl font-bold text-slate-900 mb-4">Rates</h2>
+                                <div className="flex items-center border-2 rounded-2xl px-5 py-4 mb-3 max-w-xs">
+                                    <span className="text-2xl font-black text-slate-900 mr-2">£</span>
+                                    <input type="number" value={price} onChange={(e) => setPrice(e.target.value)} className="text-2xl font-black text-slate-900 outline-none w-full" />
+                                    <span className="text-slate-500 ml-2">/ night</span>
                                 </div>
-                            ))}
-                        </div>
-                    )}
-                    <label className="h-24 rounded-2xl border-2 border-dashed border-slate-300 hover:border-slate-400 flex flex-col items-center justify-center cursor-pointer text-slate-500 text-sm">
-                        <span className="font-semibold">+ Add photos</span>
-                        <input type="file" accept="image/png, image/jpeg" multiple onChange={handlePhotosChange} className="hidden" />
-                    </label>
-                </section>
+                                {Number(price) > 0 && (
+                                    <div className="bg-slate-50 rounded-2xl border p-4 max-w-xs text-sm">
+                                        <div className="flex justify-between text-slate-600 mb-1">
+                                            <span>Guest pays</span><span className="font-medium text-slate-900">£{Number(price).toFixed(2)}</span>
+                                        </div>
+                                        <div className="flex justify-between text-slate-600 mb-1">
+                                            <span>Host fee ({HOST_FEE_PERCENT}%)</span>
+                                            <span className="font-medium text-slate-900">− £{(Number(price) * HOST_FEE_PERCENT / 100).toFixed(2)}</span>
+                                        </div>
+                                        <div className="flex justify-between pt-1 border-t border-slate-200">
+                                            <span className="font-semibold text-slate-900">You receive</span>
+                                            <span className="font-bold text-rose-500">£{(Number(price) * (1 - HOST_FEE_PERCENT / 100)).toFixed(2)}</span>
+                                        </div>
+                                    </div>
+                                )}
+                            </section>
+                        )}
 
-                {/* Title & description */}
-                <section>
-                    <h2 className="text-xl font-bold text-slate-900 mb-2">Title</h2>
-                    <input type="text" value={title} onChange={(e) => setTitle(e.target.value)} className="w-full p-3 border rounded-xl mb-6" />
-                    <h2 className="text-xl font-bold text-slate-900 mb-2">Description</h2>
-                    <textarea value={description} onChange={(e) => setDescription(e.target.value)} rows={5} className="w-full p-3 border rounded-xl" />
-                </section>
-
-                {/* Price */}
-                <section>
-                    <h2 className="text-xl font-bold text-slate-900 mb-4">Price</h2>
-                    <div className="flex items-center border-2 rounded-2xl px-5 py-4 mb-3 max-w-xs">
-                        <span className="text-2xl font-black text-slate-900 mr-2">£</span>
-                        <input type="number" value={price} onChange={(e) => setPrice(e.target.value)} className="text-2xl font-black text-slate-900 outline-none w-full" />
-                        <span className="text-slate-500 ml-2">/ night</span>
-                    </div>
-                    {Number(price) > 0 && (
-                        <div className="bg-slate-50 rounded-2xl border p-4 max-w-xs text-sm">
-                            <div className="flex justify-between text-slate-600 mb-1">
-                                <span>Guest pays</span><span className="font-medium text-slate-900">£{Number(price).toFixed(2)}</span>
-                            </div>
-                            <div className="flex justify-between text-slate-600 mb-1">
-                                <span>Host fee ({HOST_FEE_PERCENT}%)</span>
-                                <span className="font-medium text-slate-900">− £{(Number(price) * HOST_FEE_PERCENT / 100).toFixed(2)}</span>
-                            </div>
-                            <div className="flex justify-between pt-1 border-t border-slate-200">
-                                <span className="font-semibold text-slate-900">You receive</span>
-                                <span className="font-bold text-rose-500">£{(Number(price) * (1 - HOST_FEE_PERCENT / 100)).toFixed(2)}</span>
-                            </div>
-                        </div>
-                    )}
-                </section>
-
-                {/* Calendar sync */}
-                <section>
-                    <h2 className="text-xl font-bold text-slate-900 mb-1">Calendar sync</h2>
-                    <p className="text-sm text-slate-500 mb-4">
-                        Keep this listing's availability in step with your calendar on other sites.
-                    </p>
-
-                    <label className="block text-sm font-semibold text-slate-800 mb-1">
-                        Import a calendar (from Airbnb, Booking.com, etc.)
-                    </label>
-                    <input
-                        type="text"
-                        value={icalImportUrl}
-                        onChange={(e) => setIcalImportUrl(e.target.value)}
-                        placeholder="https://www.airbnb.com/calendar/ical/....ics"
-                        className="w-full p-3 border rounded-xl text-sm mb-1"
-                    />
-                    <p className="text-xs text-slate-400 mb-6">
-                        Paste the export link from that platform's calendar settings. We check it each time a guest views this listing, so bookings made elsewhere stay blocked here too. Note: how current this is depends on how often that platform updates its own export — this isn't instant on their end either.
-                    </p>
-
-                    <label className="block text-sm font-semibold text-slate-800 mb-1">
-                        Your export link for other platforms
-                    </label>
-                    <div className="flex gap-2">
-                        <input
-                            type="text"
-                            readOnly
-                            value={typeof window !== 'undefined' ? `${window.location.origin}/api/ical/${listingId}` : ''}
-                            className="w-full p-3 border rounded-xl text-sm bg-slate-50 text-slate-500"
-                        />
-                        <button
-                            type="button"
-                            onClick={() => {
-                                navigator.clipboard.writeText(`${window.location.origin}/api/ical/${listingId}`);
-                                toast.success('Copied.', { theme: 'colored' });
-                            }}
-                            className="px-4 py-2 border rounded-xl text-sm font-semibold text-slate-700 hover:border-slate-500 flex-shrink-0"
-                        >
-                            Copy
-                        </button>
-                    </div>
-                    <p className="text-xs text-slate-400 mt-1">
-                        Paste this into Airbnb or Booking.com's "import calendar" setting so bookings made here block those dates there too.
-                    </p>
-                </section>
-
-                {/* Discounts */}
-                <section>
-                    <h2 className="text-xl font-bold text-slate-900 mb-4">Discounts</h2>
-                    <div className="space-y-3">
-                        {[
-                            { percent: '20%', title: 'New listing promotion', note: 'Available until your listing has 3 reviews or gets booked 10 times', value: newListingPromo, set: setNewListingPromo },
-                            { percent: '5%', title: 'Last-minute discount', note: 'For stays booked 14 days or less before arrival', value: lastMinuteDiscount, set: setLastMinuteDiscount },
-                            { percent: '10%', title: 'Weekly discount', note: 'For stays of 7 nights or more', value: weeklyDiscount, set: setWeeklyDiscount },
-                            { percent: '20%', title: 'Monthly discount', note: 'For stays of 28 nights or more', value: monthlyDiscount, set: setMonthlyDiscount },
-                        ].map((d) => (
-                            <button key={d.title} type="button" onClick={() => d.set(!d.value)}
-                                className={`w-full flex items-center justify-between p-4 rounded-2xl border-2 text-left transition ${d.value ? 'border-slate-900 bg-slate-50' : 'border-slate-200 hover:border-slate-400'}`}>
-                                <div className="flex items-center">
-                                    <span className="text-sm font-bold text-slate-900 w-12">{d.percent}</span>
+                        {activeSection === 'availability' && (
+                            <section>
+                                <h2 className="text-xl font-bold text-slate-900 mb-1">Availability</h2>
+                                <p className="text-sm text-slate-500 mb-6">Control how short or long a stay can be.</p>
+                                <div className="grid grid-cols-2 gap-4 max-w-md">
                                     <div>
-                                        <div className="font-semibold text-sm text-slate-900">{d.title}</div>
-                                        <div className="text-xs text-slate-500">{d.note}</div>
+                                        <label className="block text-sm font-semibold text-slate-800 mb-1">Minimum nights</label>
+                                        <input
+                                            type="number"
+                                            min={1}
+                                            value={minNights}
+                                            onChange={(e) => setMinNights(Math.max(1, Number(e.target.value)))}
+                                            className="w-full p-3 border rounded-xl text-sm"
+                                        />
+                                    </div>
+                                    <div>
+                                        <label className="block text-sm font-semibold text-slate-800 mb-1">Maximum nights</label>
+                                        <input
+                                            type="number"
+                                            min={minNights}
+                                            value={maxNights}
+                                            onChange={(e) => setMaxNights(e.target.value)}
+                                            placeholder="No limit"
+                                            className="w-full p-3 border rounded-xl text-sm"
+                                        />
                                     </div>
                                 </div>
-                                <div className={`w-6 h-6 rounded-md flex items-center justify-center flex-shrink-0 ml-4 ${d.value ? 'bg-slate-900' : 'border-2 border-slate-300'}`}>
-                                    {d.value && <Check className="w-4 h-4 text-white" />}
+                                <p className="text-xs text-slate-400 mt-2">Leave maximum nights blank for no limit.</p>
+                            </section>
+                        )}
+
+                        {activeSection === 'calendar' && (
+                            <section>
+                                <h2 className="text-xl font-bold text-slate-900 mb-1">Calendar sync</h2>
+                                <p className="text-sm text-slate-500 mb-4">
+                                    Keep this listing's availability in step with your calendar on other sites.
+                                </p>
+
+                                <label className="block text-sm font-semibold text-slate-800 mb-1">
+                                    Import a calendar (from Airbnb, Booking.com, etc.)
+                                </label>
+                                <input
+                                    type="text"
+                                    value={icalImportUrl}
+                                    onChange={(e) => setIcalImportUrl(e.target.value)}
+                                    placeholder="https://www.airbnb.com/calendar/ical/....ics"
+                                    className="w-full p-3 border rounded-xl text-sm mb-1"
+                                />
+                                <p className="text-xs text-slate-400 mb-6">
+                                    Paste the export link from that platform's calendar settings. We check it each time a guest views this listing, so bookings made elsewhere stay blocked here too. Note: how current this is depends on how often that platform updates its own export — this isn't instant on their end either.
+                                </p>
+
+                                <label className="block text-sm font-semibold text-slate-800 mb-1">
+                                    Your export link for other platforms
+                                </label>
+                                <div className="flex gap-2">
+                                    <input
+                                        type="text"
+                                        readOnly
+                                        value={typeof window !== 'undefined' ? `${window.location.origin}/api/ical/${listingId}` : ''}
+                                        className="w-full p-3 border rounded-xl text-sm bg-slate-50 text-slate-500"
+                                    />
+                                    <button
+                                        type="button"
+                                        onClick={() => {
+                                            navigator.clipboard.writeText(`${window.location.origin}/api/ical/${listingId}`);
+                                            toast.success('Copied.', { theme: 'colored' });
+                                        }}
+                                        className="px-4 py-2 border rounded-xl text-sm font-semibold text-slate-700 hover:border-slate-500 flex-shrink-0"
+                                    >
+                                        Copy
+                                    </button>
                                 </div>
-                            </button>
-                        ))}
+                                <p className="text-xs text-slate-400 mt-1">
+                                    Paste this into Airbnb or Booking.com's "import calendar" setting so bookings made here block those dates there too.
+                                </p>
+                            </section>
+                        )}
+
+                        {activeSection === 'discounts' && (
+                            <section>
+                                <h2 className="text-xl font-bold text-slate-900 mb-4">Discounts</h2>
+                                <div className="space-y-3">
+                                    {[
+                                        { percent: '20%', title: 'New listing promotion', note: 'Available until your listing has 3 reviews or gets booked 10 times', value: newListingPromo, set: setNewListingPromo },
+                                        { percent: '5%', title: 'Last-minute discount', note: 'For stays booked 14 days or less before arrival', value: lastMinuteDiscount, set: setLastMinuteDiscount },
+                                        { percent: '10%', title: 'Weekly discount', note: 'For stays of 7 nights or more', value: weeklyDiscount, set: setWeeklyDiscount },
+                                        { percent: '20%', title: 'Monthly discount', note: 'For stays of 28 nights or more', value: monthlyDiscount, set: setMonthlyDiscount },
+                                    ].map((d) => (
+                                        <button key={d.title} type="button" onClick={() => d.set(!d.value)}
+                                            className={`w-full flex items-center justify-between p-4 rounded-2xl border-2 text-left transition ${d.value ? 'border-slate-900 bg-slate-50' : 'border-slate-200 hover:border-slate-400'}`}>
+                                            <div className="flex items-center">
+                                                <span className="text-sm font-bold text-slate-900 w-12">{d.percent}</span>
+                                                <div>
+                                                    <div className="font-semibold text-sm text-slate-900">{d.title}</div>
+                                                    <div className="text-xs text-slate-500">{d.note}</div>
+                                                </div>
+                                            </div>
+                                            <div className={`w-6 h-6 rounded-md flex items-center justify-center flex-shrink-0 ml-4 ${d.value ? 'bg-slate-900' : 'border-2 border-slate-300'}`}>
+                                                {d.value && <Check className="w-4 h-4 text-white" />}
+                                            </div>
+                                        </button>
+                                    ))}
+                                </div>
+                            </section>
+                        )}
+
+                        {formError && <p className="text-red-600 text-sm mt-8">{formError}</p>}
+
+                        <button type="submit" disabled={submitting}
+                            className="w-full mt-8 py-4 bg-rose-500 text-white font-bold rounded-xl hover:bg-rose-600 transition disabled:opacity-60">
+                            {submitting ? 'Saving...' : 'Save changes'}
+                        </button>
                     </div>
-                </section>
-
-                {formError && <p className="text-red-600 text-sm">{formError}</p>}
-
-                <button type="submit" disabled={submitting}
-                    className="w-full py-4 bg-rose-500 text-white font-bold rounded-xl hover:bg-rose-600 transition disabled:opacity-60">
-                    {submitting ? 'Saving...' : 'Save changes'}
-                </button>
+                </div>
             </form>
         </div>
     );
