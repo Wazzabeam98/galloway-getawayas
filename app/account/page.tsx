@@ -20,6 +20,7 @@ import {
     Smartphone,
     CheckCircle2,
     Download,
+    Clock,
 } from 'lucide-react';
 
 const SECTIONS = [
@@ -30,6 +31,42 @@ const SECTIONS = [
     { key: 'payments', label: 'Payments & payouts', icon: CreditCard, ready: false },
     { key: 'messaging', label: 'Messaging', icon: MessageCircle, ready: true },
     { key: 'bookings', label: 'Booking permissions', icon: CalendarCheck, ready: false },
+];
+
+// Turns a stored schedule into the sentence shown on the button.
+function describeSchedule(t: { anchor: string; minutes_after: number; days_offset: number; send_hour: number }): string {
+    const hh = (h: number) => (h < 10 ? `0${h}:00` : `${h}:00`);
+    if (!t.anchor || t.anchor === 'none') return 'Not scheduled';
+    if (t.anchor === 'booking') {
+        if (!t.minutes_after) return 'As soon as you accept';
+        if (t.minutes_after === 60) return '1 hour after you accept';
+        return `${t.minutes_after} minutes after you accept`;
+    }
+    const when = t.anchor === 'check_in' ? 'check-in' : 'check-out';
+    if (t.days_offset === 0) return `On the day of ${when} at ${hh(t.send_hour)}`;
+    if (t.days_offset === 1) return `1 day before ${when} at ${hh(t.send_hour)}`;
+    return `${t.days_offset} days before ${when} at ${hh(t.send_hour)}`;
+}
+
+interface Preset {
+    label: string;
+    values: { anchor: string; minutes_after: number; days_offset: number; send_hour: number };
+}
+
+const SCHEDULE_PRESETS: Preset[] = [
+    { label: "Don't schedule",                    values: { anchor: 'none',      minutes_after: 0,  days_offset: 0, send_hour: 9 } },
+    { label: 'As soon as you accept a booking',   values: { anchor: 'booking',   minutes_after: 0,  days_offset: 0, send_hour: 9 } },
+    { label: '5 minutes after you accept',        values: { anchor: 'booking',   minutes_after: 5,  days_offset: 0, send_hour: 9 } },
+    { label: '3 days before check-in at 10:00',   values: { anchor: 'check_in',  minutes_after: 0,  days_offset: 3, send_hour: 10 } },
+    { label: '1 day before check-in at 10:00',    values: { anchor: 'check_in',  minutes_after: 0,  days_offset: 1, send_hour: 10 } },
+    { label: 'On the morning of check-in at 09:00', values: { anchor: 'check_in', minutes_after: 0, days_offset: 0, send_hour: 9 } },
+    { label: '1 day before check-out at 18:00',   values: { anchor: 'check_out', minutes_after: 0,  days_offset: 1, send_hour: 18 } },
+];
+
+const ANCHOR_LABELS: { key: string; label: string }[] = [
+    { key: 'booking',   label: 'after you accept a booking' },
+    { key: 'check_in',  label: 'before check-in' },
+    { key: 'check_out', label: 'before check-out' },
 ];
 
 interface Field {
@@ -146,9 +183,13 @@ export default function AccountSettings() {
         enabled: boolean;
         days_offset: number;
         send_hour: number;
+        anchor: string;
+        minutes_after: number;
     }
     const [templates, setTemplates] = useState<Record<string, Template>>({});
     const [savingTemplate, setSavingTemplate] = useState<string | null>(null);
+    const [scheduleFor, setScheduleFor] = useState<string | null>(null);
+    const [draftSchedule, setDraftSchedule] = useState<Partial<Template>>({});
 
     const supabase = createClientComponentClient();
     const router = useRouter();
@@ -186,7 +227,7 @@ export default function AccountSettings() {
 
                 const { data: tpls } = await supabase
                     .from('message_templates')
-                    .select('template_type, body, enabled, days_offset, send_hour')
+                    .select('template_type, body, enabled, days_offset, send_hour, anchor, minutes_after')
                     .eq('user_id', session.user.id);
 
                 const tplMap: Record<string, Template> = {};
@@ -494,6 +535,8 @@ export default function AccountSettings() {
             enabled: false,
             days_offset: defaultOffset,
             send_hour: 9,
+            anchor: 'none',
+            minutes_after: 0,
         };
     };
 
@@ -519,6 +562,8 @@ export default function AccountSettings() {
                     enabled: next.enabled,
                     days_offset: next.days_offset,
                     send_hour: next.send_hour,
+                    anchor: next.anchor,
+                    minutes_after: next.minutes_after,
                 },
                 { onConflict: 'user_id,template_type' }
             );
@@ -1097,36 +1142,23 @@ export default function AccountSettings() {
                                                     className="w-full p-3 border rounded-lg text-sm"
                                                 />
 
-                                                <div className="flex flex-wrap items-center gap-4 mt-3">
-                                                    {def.offsetLabel && (
-                                                        <label className="text-xs text-slate-600 flex items-center gap-2">
-                                                            <select
-                                                                value={tpl.days_offset}
-                                                                onChange={(e) => saveTemplate(def.key, def.defaultOffset, { days_offset: parseInt(e.target.value, 10) })}
-                                                                className="border rounded-lg p-1.5 text-xs"
-                                                            >
-                                                                {def.offsetChoices!.map((n) => (
-                                                                    <option key={n} value={n}>{n}</option>
-                                                                ))}
-                                                            </select>
-                                                            {def.offsetLabel}
-                                                        </label>
-                                                    )}
-
-                                                    {def.key !== 'booking_confirmation' && (
-                                                        <label className="text-xs text-slate-600 flex items-center gap-2">
-                                                            Send at
-                                                            <select
-                                                                value={tpl.send_hour}
-                                                                onChange={(e) => saveTemplate(def.key, def.defaultOffset, { send_hour: parseInt(e.target.value, 10) })}
-                                                                className="border rounded-lg p-1.5 text-xs"
-                                                            >
-                                                                {HOURS.map((h) => (
-                                                                    <option key={h} value={h}>{h < 10 ? `0${h}:00` : `${h}:00`}</option>
-                                                                ))}
-                                                            </select>
-                                                        </label>
-                                                    )}
+                                                <div className="flex flex-wrap items-center gap-3 mt-3">
+                                                    <button
+                                                        type="button"
+                                                        onClick={() => {
+                                                            setScheduleFor(def.key);
+                                                            setDraftSchedule({
+                                                                anchor: tpl.anchor,
+                                                                minutes_after: tpl.minutes_after,
+                                                                days_offset: tpl.days_offset,
+                                                                send_hour: tpl.send_hour,
+                                                            });
+                                                        }}
+                                                        className="flex items-center gap-2 text-xs font-semibold text-slate-700 border rounded-lg px-3 py-2 hover:bg-slate-50"
+                                                    >
+                                                        <Clock className="w-3.5 h-3.5" />
+                                                        {describeSchedule(tpl)}
+                                                    </button>
 
                                                     <button
                                                         type="button"
@@ -1141,6 +1173,11 @@ export default function AccountSettings() {
                                                 {tpl.enabled && !tpl.body.trim() && (
                                                     <p className="text-xs text-amber-600 mt-3">
                                                         This is switched on but has no message written, so nothing will be sent.
+                                                    </p>
+                                                )}
+                                                {tpl.enabled && tpl.body.trim() && tpl.anchor === 'none' && (
+                                                    <p className="text-xs text-amber-600 mt-3">
+                                                        This is switched on but isn&apos;t scheduled, so nothing will be sent. Pick a time above.
                                                     </p>
                                                 )}
                                             </div>
@@ -1244,6 +1281,130 @@ export default function AccountSettings() {
                     )}
                 </div>
             </div>
+
+            {/* Schedule picker */}
+            {scheduleFor && (
+                <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 px-4">
+                    <div className="bg-white rounded-2xl shadow-xl w-full max-w-md max-h-[85vh] overflow-y-auto p-6">
+                        <div className="flex items-start justify-between mb-1">
+                            <h3 className="text-xl font-bold text-slate-900">Schedule message</h3>
+                            <button
+                                type="button"
+                                onClick={() => setScheduleFor(null)}
+                                aria-label="Close"
+                                className="text-slate-400 hover:text-slate-800 text-xl leading-none"
+                            >
+                                &times;
+                            </button>
+                        </div>
+                        <p className="text-sm text-slate-500 mb-5">
+                            Times are UK local, and adjust automatically for British Summer Time.
+                        </p>
+
+                        <div className="space-y-2">
+                            {SCHEDULE_PRESETS.map((preset) => {
+                                const selected =
+                                    draftSchedule.anchor === preset.values.anchor &&
+                                    (draftSchedule.minutes_after || 0) === preset.values.minutes_after &&
+                                    (draftSchedule.days_offset || 0) === preset.values.days_offset &&
+                                    (draftSchedule.send_hour || 0) === preset.values.send_hour;
+
+                                return (
+                                    <button
+                                        key={preset.label}
+                                        type="button"
+                                        onClick={() => setDraftSchedule(preset.values)}
+                                        className={`w-full text-left px-4 py-3.5 rounded-xl border text-sm transition ${selected ? 'border-slate-900 border-2 font-semibold text-slate-900' : 'border-slate-200 text-slate-700 hover:border-slate-400'}`}
+                                    >
+                                        {preset.label}
+                                    </button>
+                                );
+                            })}
+
+                            {/* Custom */}
+                            <div className="rounded-xl border border-slate-200 p-4">
+                                <div className="text-sm font-semibold text-slate-900 mb-3">Custom time</div>
+                                <div className="flex flex-wrap items-center gap-2">
+                                    {draftSchedule.anchor === 'booking' ? (
+                                        <>
+                                            <input
+                                                type="number"
+                                                min={0}
+                                                max={1440}
+                                                value={draftSchedule.minutes_after || 0}
+                                                onChange={(e) => setDraftSchedule(Object.assign({}, draftSchedule, { minutes_after: parseInt(e.target.value, 10) || 0 }))}
+                                                className="w-20 border rounded-lg p-2 text-sm"
+                                            />
+                                            <span className="text-sm text-slate-600">minutes</span>
+                                        </>
+                                    ) : (
+                                        <>
+                                            <input
+                                                type="number"
+                                                min={0}
+                                                max={30}
+                                                value={draftSchedule.days_offset || 0}
+                                                onChange={(e) => setDraftSchedule(Object.assign({}, draftSchedule, { days_offset: parseInt(e.target.value, 10) || 0 }))}
+                                                className="w-20 border rounded-lg p-2 text-sm"
+                                            />
+                                            <span className="text-sm text-slate-600">days</span>
+                                        </>
+                                    )}
+
+                                    <select
+                                        value={draftSchedule.anchor === 'none' ? 'check_in' : draftSchedule.anchor}
+                                        onChange={(e) => setDraftSchedule(Object.assign({}, draftSchedule, { anchor: e.target.value }))}
+                                        className="border rounded-lg p-2 text-sm flex-1 min-w-[180px]"
+                                    >
+                                        {ANCHOR_LABELS.map((a) => (
+                                            <option key={a.key} value={a.key}>{a.label}</option>
+                                        ))}
+                                    </select>
+
+                                    {draftSchedule.anchor !== 'booking' && (
+                                        <label className="flex items-center gap-2 text-sm text-slate-600">
+                                            at
+                                            <select
+                                                value={draftSchedule.send_hour || 9}
+                                                onChange={(e) => setDraftSchedule(Object.assign({}, draftSchedule, { send_hour: parseInt(e.target.value, 10) }))}
+                                                className="border rounded-lg p-2 text-sm"
+                                            >
+                                                {HOURS.map((h) => (
+                                                    <option key={h} value={h}>{h < 10 ? `0${h}:00` : `${h}:00`}</option>
+                                                ))}
+                                            </select>
+                                        </label>
+                                    )}
+                                </div>
+                            </div>
+                        </div>
+
+                        <div className="flex items-center justify-between mt-6">
+                            <button
+                                type="button"
+                                onClick={() => setScheduleFor(null)}
+                                className="text-sm font-semibold underline text-slate-700 hover:text-black"
+                            >
+                                Cancel
+                            </button>
+                            <button
+                                type="button"
+                                onClick={() => {
+                                    const key = scheduleFor;
+                                    const def = TEMPLATE_TYPES.filter((d) => d.key === key)[0];
+                                    if (key && def) {
+                                        saveTemplate(key, def.defaultOffset, draftSchedule);
+                                    }
+                                    setScheduleFor(null);
+                                }}
+                                className="px-6 py-2.5 bg-slate-900 hover:bg-black text-white text-sm font-semibold rounded-lg"
+                            >
+                                Apply
+                            </button>
+                        </div>
+                    </div>
+                </div>
+            )}
         </div>
     );
 }
