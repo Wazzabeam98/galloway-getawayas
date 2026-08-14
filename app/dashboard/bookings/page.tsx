@@ -63,9 +63,14 @@ export default async function BookingsPage() {
                 {showActions ? (
                     <BookingActions bookingId={booking.id} />
                 ) : (
-                    <span className={`text-xs font-semibold px-3 py-1 rounded-full capitalize ${statusStyles[booking.status] || "bg-slate-100 text-slate-600"}`}>
-                        {booking.status}
-                    </span>
+                    <div className="flex items-center gap-3">
+                        <span className={`text-xs font-semibold px-3 py-1 rounded-full capitalize ${statusStyles[booking.status] || "bg-slate-100 text-slate-600"}`}>
+                            {booking.status}
+                        </span>
+                        {booking.status === "confirmed" && new Date(booking.check_in) >= new Date() && (
+                            <BookingActions bookingId={booking.id} mode="confirmed" />
+                        )}
+                    </div>
                 )}
             </div>
         );
