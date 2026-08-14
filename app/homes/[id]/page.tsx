@@ -122,6 +122,8 @@ const FindHome = async ({ params }: { params: { id: string } }) => {
                             hostId={home.host_id}
                             pricePerNight={home.price_per_night}
                             maxGuests={home.max_guests || 1}
+                            petsAllowed={(home.amenities || []).includes('Pets allowed')}
+                            icalImportUrl={home.ical_import_url}
                         />
                     </div>
                 </div>
