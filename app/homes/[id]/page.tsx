@@ -4,6 +4,7 @@ import { createServerComponentClient } from '@supabase/auth-helpers-nextjs'
 import { cookies } from 'next/headers';
 import Image from 'next/image';
 import { capitializeFirst, getImageUrl } from '@/lib/utils';
+import BookingWidget from '@/components/BookingWidget';
 
 const FindHome = async ({ params }: { params: { id: string } }) => {
     const supabase = createServerComponentClient({ cookies });
@@ -86,34 +87,43 @@ const FindHome = async ({ params }: { params: { id: string } }) => {
                     </div>
                 )}
 
-                <h1 className='mt-5 text-2xl font-bold text-brand'>
-                    Hosted by {capitializeFirst(hostName)}
-                </h1>
+                <div className='grid grid-cols-1 lg:grid-cols-3 gap-10 mt-5'>
+                    <div className='lg:col-span-2'>
+                        <h1 className='text-2xl font-bold text-brand'>
+                            Hosted by {capitializeFirst(hostName)}
+                        </h1>
 
-                <p className='mt-2 text-slate-600'>
-                    {home.max_guests} guests · {home.bedrooms} bedrooms · {home.beds} beds · {home.bathrooms} bathrooms
-                </p>
+                        <p className='mt-2 text-slate-600'>
+                            {home.max_guests} guests · {home.bedrooms} bedrooms · {home.beds} beds · {home.bathrooms} bathrooms
+                        </p>
 
-                <p className='mt-3 text-2xl font-bold'>
-                    £{home.price_per_night} <span className='text-base font-normal text-slate-500'>/ night</span>
-                </p>
+                        {home.amenities && home.amenities.length > 0 && (
+                            <div className='mt-5'>
+                                <h2 className='text-xl font-semibold mb-2'>What this place offers</h2>
+                                <div className='flex flex-wrap gap-2'>
+                                    {home.amenities.map((a: string) => (
+                                        <span key={a} className='text-sm bg-slate-100 px-3 py-1 rounded-full'>{a}</span>
+                                    ))}
+                                </div>
+                            </div>
+                        )}
 
-                {home.amenities && home.amenities.length > 0 && (
-                    <div className='mt-5'>
-                        <h2 className='text-xl font-semibold mb-2'>What this place offers</h2>
-                        <div className='flex flex-wrap gap-2'>
-                            {home.amenities.map((a: string) => (
-                                <span key={a} className='text-sm bg-slate-100 px-3 py-1 rounded-full'>{a}</span>
-                            ))}
+                        <h1 className='mt-5 font-semibold text-2xl'>
+                            About this place
+                        </h1>
+                        <div className='mt-2 whitespace-pre-line'>
+                            {home.description}
                         </div>
                     </div>
-                )}
 
-                <h1 className='mt-5 font-semibold text-2xl'>
-                    About this place
-                </h1>
-                <div className='mt-2 whitespace-pre-line'>
-                    {home.description}
+                    <div>
+                        <BookingWidget
+                            listingId={home.id}
+                            hostId={home.host_id}
+                            pricePerNight={home.price_per_night}
+                            maxGuests={home.max_guests || 1}
+                        />
+                    </div>
                 </div>
             </div>
         </div>
