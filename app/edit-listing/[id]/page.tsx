@@ -146,6 +146,7 @@ export default function EditListing() {
     const [checkoutTime, setCheckoutTime] = useState('11:00');
     const [additionalRules, setAdditionalRules] = useState('');
     const [cancellationPolicy, setCancellationPolicy] = useState('Moderate');
+    const [nonRefundableOption, setNonRefundableOption] = useState(false);
 
     const [submitting, setSubmitting] = useState(false);
     const [formError, setFormError] = useState('');
@@ -210,6 +211,7 @@ export default function EditListing() {
             setCheckoutTime(listing.checkout_time || '11:00');
             setAdditionalRules(listing.additional_rules || '');
             setCancellationPolicy(listing.cancellation_policy || 'Moderate');
+            setNonRefundableOption(listing.non_refundable_option ?? false);
 
             setLoading(false);
         };
@@ -325,6 +327,7 @@ export default function EditListing() {
                     checkout_time: checkoutTime,
                     additional_rules: additionalRules,
                     cancellation_policy: cancellationPolicy,
+                    non_refundable_option: nonRefundableOption,
                 })
                 .eq('id', listingId)
                 .eq('host_id', session.user.id);
@@ -733,6 +736,22 @@ export default function EditListing() {
                                             </ul>
                                         </button>
                                     ))}
+                                </div>
+
+                                <div className="mt-6 p-4 border rounded-2xl flex items-start justify-between max-w-lg gap-4">
+                                    <div>
+                                        <div className="font-semibold text-slate-900 text-sm mb-1">Non-refundable option</div>
+                                        <p className="text-xs text-slate-500">
+                                            For short-term stays, guests pay 10% less in exchange for you keeping your full payout if they cancel.
+                                        </p>
+                                    </div>
+                                    <button
+                                        type="button"
+                                        onClick={() => setNonRefundableOption(!nonRefundableOption)}
+                                        className={`flex-shrink-0 w-11 h-6 rounded-full relative transition ${nonRefundableOption ? 'bg-slate-900' : 'bg-slate-300'}`}
+                                    >
+                                        <span className={`absolute top-0.5 w-5 h-5 rounded-full bg-white transition-all ${nonRefundableOption ? 'left-5' : 'left-0.5'}`} />
+                                    </button>
                                 </div>
                             </section>
                         )}
