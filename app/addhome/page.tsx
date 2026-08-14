@@ -228,6 +228,26 @@ export default function AddHome() {
         });
     };
 
+    const [draggedIndex, setDraggedIndex] = useState<number | null>(null);
+    const [dragOverIndex, setDragOverIndex] = useState<number | null>(null);
+
+    const reorderPhotos = (fromIndex: number, toIndex: number) => {
+        if (fromIndex === toIndex) return;
+        setPhotos((prev) => {
+            const next = [...prev];
+            const [moved] = next.splice(fromIndex, 1);
+            next.splice(toIndex, 0, moved);
+            return next;
+        });
+        // Keep the cover photo pointing at the same actual photo after reordering.
+        setCoverIndex((prev) => {
+            if (prev === fromIndex) return toIndex;
+            if (fromIndex < prev && toIndex >= prev) return prev - 1;
+            if (fromIndex > prev && toIndex <= prev) return prev + 1;
+            return prev;
+        });
+    };
+
     const handleListingSubmit = async (e: React.FormEvent) => {
         e.preventDefault();
         setFormError('');
@@ -645,25 +665,48 @@ export default function AddHome() {
                 {step === 6 && (
                     <div>
                         <h2 className="text-3xl font-extrabold text-slate-900 mb-2">Add photos of your place</h2>
-                        <p className="text-slate-600 mb-8">Upload as many as you like, then click the star on your favourite to make it the cover photo guests see first.</p>
+                        <p className="text-slate-600 mb-2">Upload as many as you like, then click the star on your favourite to make it the cover photo guests see first.</p>
+                        <p className="text-xs text-slate-400 mb-8">Drag photos to reorder them — the order here is the order guests see them in.</p>
 
                         {photos.length > 0 && (
                             <div className="grid grid-cols-2 md:grid-cols-3 gap-4 mb-4">
                                 {photos.map((photo, i) => (
                                     <div
                                         key={i}
-                                        className={`relative h-40 rounded-2xl overflow-hidden border-2 group ${i === coverIndex ? 'border-rose-500' : 'border-slate-200'}`}
+                                        draggable
+                                        onDragStart={() => setDraggedIndex(i)}
+                                        onDragEnter={() => {
+                                            if (draggedIndex !== null && draggedIndex !== i) setDragOverIndex(i);
+                                        }}
+                                        onDragOver={(e) => e.preventDefault()}
+                                        onDrop={() => {
+                                            if (draggedIndex !== null) reorderPhotos(draggedIndex, i);
+                                            setDraggedIndex(null);
+                                            setDragOverIndex(null);
+                                        }}
+                                        onDragEnd={() => {
+                                            setDraggedIndex(null);
+                                            setDragOverIndex(null);
+                                        }}
+                                        className={`relative h-40 rounded-2xl overflow-hidden border-2 group cursor-grab active:cursor-grabbing transition ${
+                                            i === coverIndex ? 'border-rose-500' : 'border-slate-200'
+                                        } ${dragOverIndex === i ? 'ring-2 ring-slate-900 scale-95' : ''} ${
+                                            draggedIndex === i ? 'opacity-40' : ''
+                                        }`}
                                     >
                                         <img
                                             src={URL.createObjectURL(photo)}
                                             alt={`Photo ${i + 1}`}
-                                            className="w-full h-full object-cover"
+                                            className="w-full h-full object-cover pointer-events-none"
                                         />
+                                        <div className="absolute top-2 left-1/2 -translate-x-1/2 px-2 py-0.5 rounded-full bg-black/40 text-white text-xs opacity-0 group-hover:opacity-100 transition flex items-center gap-1">
+                                            <span>⠿</span> Drag to reorder
+                                        </div>
                                         <button
                                             type="button"
                                             onClick={() => setCoverIndex(i)}
                                             title={i === coverIndex ? 'Cover photo' : 'Make cover photo'}
-                                            className={`absolute top-2 left-2 w-8 h-8 rounded-full flex items-center justify-center text-sm shadow ${i === coverIndex ? 'bg-rose-500 text-white' : 'bg-white/90 text-slate-600 opacity-0 group-hover:opacity-100 transition'}`}
+                                            className={`absolute bottom-2 left-2 w-8 h-8 rounded-full flex items-center justify-center text-sm shadow ${i === coverIndex ? 'bg-rose-500 text-white' : 'bg-white/90 text-slate-600 opacity-0 group-hover:opacity-100 transition'}`}
                                         >
                                             ★
                                         </button>
@@ -671,12 +714,12 @@ export default function AddHome() {
                                             type="button"
                                             onClick={() => removePhoto(i)}
                                             title="Remove photo"
-                                            className="absolute top-2 right-2 w-8 h-8 rounded-full bg-white/90 text-slate-600 flex items-center justify-center text-sm shadow opacity-0 group-hover:opacity-100 transition"
+                                            className="absolute bottom-2 right-2 w-8 h-8 rounded-full bg-white/90 text-slate-600 flex items-center justify-center text-sm shadow opacity-0 group-hover:opacity-100 transition"
                                         >
                                             ×
                                         </button>
                                         {i === coverIndex && (
-                                            <span className="absolute bottom-2 left-2 text-xs font-semibold bg-rose-500 text-white px-2 py-0.5 rounded-full">
+                                            <span className="absolute top-2 left-2 text-xs font-semibold bg-rose-500 text-white px-2 py-0.5 rounded-full">
                                                 Cover photo
                                             </span>
                                         )}
