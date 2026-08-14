@@ -1,118 +1,76 @@
-'use client';
-
-import { useState, useEffect } from 'react';
-import { createClientComponentClient } from '@supabase/auth-helpers-nextjs';
-import { useRouter } from 'next/navigation';
-import { Search, Home } from 'lucide-react';
+import Hero from '@/components/base/Hero';
+import { createServerComponentClient } from '@supabase/auth-helpers-nextjs';
+import { cookies } from 'next/headers';
 import { getImageUrl } from '@/lib/utils';
+import Link from 'next/link';
+import { Home } from 'lucide-react';
 
-interface Property {
-    id: string;
-    title: string;
-    location: string;
-    price_per_night: number;
-    images: string[] | null;
-}
+export const dynamic = 'force-dynamic';
 
-export default function HomeExplore() {
-    const [properties, setProperties] = useState<Property[]>([]);
-    const [loading, setLoading] = useState(true);
-    const [searchLocation, setSearchLocation] = useState('');
-    const router = useRouter();
-    const supabase = createClientComponentClient();
+export default async function HomePage() {
+  const supabase = createServerComponentClient({ cookies });
+  const { data: listings } = await supabase
+    .from('listings')
+    .select('id, title, location, price_per_night, images')
+    .order('created_at', { ascending: false });
 
-    useEffect(() => {
-        const fetchProperties = async () => {
-            const { data, error } = await supabase
-                .from('listings')
-                .select('id, title, location, price_per_night, images')
-                .order('created_at', { ascending: false });
-            if (error) {
-                console.error('Error fetching properties:', error);
-            } else {
-                setProperties(data || []);
-            }
-            setLoading(false);
-        };
+  return (
+    <main className="min-h-screen bg-stone-50">
+      {/* Kirkcudbright Hero Banner */}
+      <Hero />
 
-        fetchProperties();
-    }, [supabase]);
-
-    return (
-        <div className="min-h-screen bg-white">
-            {/* Search Bar Header Section */}
-            <div className="max-w-4xl mx-auto px-6 py-6">
-                <div className="flex items-center justify-between border rounded-full shadow-lg py-3 px-6 bg-white hover:shadow-xl transition cursor-pointer">
-                    <div className="flex flex-col border-r pr-6 flex-1">
-                        <span className="text-xs font-bold text-slate-800">Where</span>
-                        <input 
-                            type="text" 
-                            placeholder="Search destinations (e.g. Dumfries)" 
-                            value={searchLocation}
-                            onChange={(e) => setSearchLocation(e.target.value)}
-                            className="outline-none text-sm text-slate-600 bg-transparent placeholder-slate-400"
-                        />
-                    </div>
-                    <div className="flex flex-col border-r px-6 flex-1">
-                        <span className="text-xs font-bold text-slate-800">Check in</span>
-                        <span className="text-sm text-slate-400">Add dates</span>
-                    </div>
-                    <div className="flex flex-col border-r px-6 flex-1">
-                        <span className="text-xs font-bold text-slate-800">Check out</span>
-                        <span className="text-sm text-slate-400">Add dates</span>
-                    </div>
-                    <div className="flex items-center justify-between pl-6 flex-1">
-                        <div className="flex flex-col">
-                            <span className="text-xs font-bold text-slate-800">Who</span>
-                            <span className="text-sm text-slate-400">Add guests</span>
-                        </div>
-                        <button className="bg-rose-500 text-white p-3 rounded-full hover:bg-rose-600 transition flex items-center justify-center">
-                            <Search className="w-4 h-4" />
-                        </button>
-                    </div>
-                </div>
-            </div>
-
-            {/* Properties Grid */}
-            <div className="max-w-7xl mx-auto px-6 py-10">
-                <h2 className="text-2xl font-bold text-slate-900 mb-6">Explore Galloway Getaways</h2>
-                {loading ? (
-                    <div className="text-center py-20 text-slate-500 animate-pulse">Loading amazing places...</div>
-                ) : properties.length === 0 ? (
-                    <div className="text-center py-20 text-slate-500">No properties found yet. Be the first to host!</div>
-                ) : (
-                    <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-6">
-                        {properties.map((property) => (
-                            <div 
-                                key={property.id} 
-                                onClick={() => router.push(`/homes/${property.id}`)}
-                                className="group cursor-pointer flex flex-col space-y-2"
-                            >
-                                <div className="w-full h-64 rounded-2xl overflow-hidden bg-slate-200 relative">
-                                    {property.images && property.images.length > 0 ? (
-                                        <img 
-                                            src={getImageUrl(property.images[0])} 
-                                            alt={property.title} 
-                                            className="w-full h-full object-cover group-hover:scale-105 transition duration-300"
-                                        />
-                                    ) : (
-                                        <div className="flex items-center justify-center h-full text-slate-400">
-                                            <Home className="w-10 h-10" />
-                                        </div>
-                                    )}
-                                </div>
-                                <div className="flex justify-between items-start">
-                                    <h3 className="font-bold text-slate-900 text-base truncate">{property.location}</h3>
-                                </div>
-                                <p className="text-sm text-slate-500 truncate">{property.title}</p>
-                                <p className="text-sm font-semibold text-slate-900">
-                                    £{property.price_per_night} <span className="font-normal text-slate-500">night</span>
-                                </p>
-                            </div>
-                        ))}
-                    </div>
-                )}
-            </div>
+      <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-12">
+        {/* Section Heading */}
+        <div className="mb-8 border-b border-stone-200 pb-4">
+          <h2 className="text-2xl md:text-3xl font-bold text-stone-900">
+            Our Properties
+          </h2>
+          <p className="text-stone-600 text-sm md:text-base mt-1">
+            Handpicked holiday rentals in Dumfries & Galloway
+          </p>
         </div>
-    );
+
+        {/* Property Grid */}
+        {listings && listings.length > 0 ? (
+          <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-6">
+            {listings.map((property) => (
+              <Link
+                key={property.id}
+                href={`/homes/${property.id}`}
+                className="group flex flex-col space-y-2"
+              >
+                <div className="w-full h-64 rounded-2xl overflow-hidden bg-stone-200 relative">
+                  {property.images && property.images.length > 0 ? (
+                    <img
+                      src={getImageUrl(property.images[0])}
+                      alt={property.title}
+                      className="w-full h-full object-cover group-hover:scale-105 transition duration-300"
+                    />
+                  ) : (
+                    <div className="flex items-center justify-center h-full text-stone-400">
+                      <Home className="w-10 h-10" />
+                    </div>
+                  )}
+                </div>
+                <h3 className="font-bold text-stone-900 text-base truncate">{property.location}</h3>
+                <p className="text-sm text-stone-500 truncate">{property.title}</p>
+                <p className="text-sm font-semibold text-stone-900">
+                  £{property.price_per_night} <span className="font-normal text-stone-500">night</span>
+                </p>
+              </Link>
+            ))}
+          </div>
+        ) : (
+          <div className="text-center py-16 bg-white rounded-2xl shadow-sm border border-stone-200">
+            <h3 className="text-lg font-semibold text-stone-800">
+              No properties listed yet
+            </h3>
+            <p className="text-stone-500 mt-1 max-w-md mx-auto">
+              Ready to list your Kirkcudbright holiday stay? Click <strong>Add homes</strong> in the top menu to publish your first property!
+            </p>
+          </div>
+        )}
+      </div>
+    </main>
+  );
 }
