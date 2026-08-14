@@ -16,6 +16,14 @@ interface Listing {
     title: string;
     price_per_night: number;
     min_nights: number;
+    max_nights: number | null;
+    weekend_price: number | null;
+    cleaning_fee: number;
+    pet_fee: number;
+    extra_guest_fee: number;
+    advance_notice: string;
+    preparation_time: string;
+    availability_window: string;
 }
 
 interface Override {
@@ -31,6 +39,10 @@ interface Booking {
     guest_id: string;
 }
 
+const ADVANCE_NOTICE_OPTIONS = ['Same day', '1 day', '2 days', '3 days', '7 days'];
+const PREP_TIME_OPTIONS = ['None', '1 day', '2 days', '3 days'];
+const AVAILABILITY_WINDOW_OPTIONS = ['3 months', '6 months', '9 months', '12 months', 'All future dates'];
+
 export default function CalendarPage() {
     const supabase = createClientComponentClient();
     const [loading, setLoading] = useState(true);
@@ -43,6 +55,8 @@ export default function CalendarPage() {
     const [bookings, setBookings] = useState<Booking[]>([]);
     const [guestNames, setGuestNames] = useState<Record<string, string>>({});
 
+    const [rightTab, setRightTab] = useState<'manage' | 'pricing' | 'fees' | 'availability'>('manage');
+
     const [selectionStart, setSelectionStart] = useState<Date | null>(null);
     const [selectionEnd, setSelectionEnd] = useState<Date | null>(null);
     const [panelOpen, setPanelOpen] = useState(false);
@@ -50,6 +64,19 @@ export default function CalendarPage() {
     const [panelPrice, setPanelPrice] = useState('');
     const [panelMinNights, setPanelMinNights] = useState('');
     const [saving, setSaving] = useState(false);
+
+    // Listing-wide settings form state (Pricing / Fees / Availability tabs)
+    const [basePrice, setBasePrice] = useState('');
+    const [weekendPrice, setWeekendPrice] = useState('');
+    const [cleaningFee, setCleaningFee] = useState('0');
+    const [petFee, setPetFee] = useState('0');
+    const [extraGuestFee, setExtraGuestFee] = useState('0');
+    const [minNightsGlobal, setMinNightsGlobal] = useState('1');
+    const [maxNightsGlobal, setMaxNightsGlobal] = useState('');
+    const [advanceNotice, setAdvanceNotice] = useState('Same day');
+    const [preparationTime, setPreparationTime] = useState('None');
+    const [availabilityWindow, setAvailabilityWindow] = useState('9 months');
+    const [savingSettings, setSavingSettings] = useState(false);
 
     const selectedListing = listings.find((l) => l.id === selectedListingId);
 
@@ -61,7 +88,7 @@ export default function CalendarPage() {
             if (session?.user) {
                 const { data } = await supabase
                     .from('listings')
-                    .select('id, title, price_per_night, min_nights')
+                    .select('id, title, price_per_night, min_nights, max_nights, weekend_price, cleaning_fee, pet_fee, extra_guest_fee, advance_notice, preparation_time, availability_window')
                     .eq('host_id', session.user.id)
                     .eq('status', 'published');
                 setListings(data || []);
@@ -71,6 +98,21 @@ export default function CalendarPage() {
         };
         load();
     }, [supabase]);
+
+    // Whenever the selected listing changes, sync the settings form fields to it.
+    useEffect(() => {
+        if (!selectedListing) return;
+        setBasePrice(String(selectedListing.price_per_night ?? ''));
+        setWeekendPrice(selectedListing.weekend_price ? String(selectedListing.weekend_price) : '');
+        setCleaningFee(String(selectedListing.cleaning_fee ?? 0));
+        setPetFee(String(selectedListing.pet_fee ?? 0));
+        setExtraGuestFee(String(selectedListing.extra_guest_fee ?? 0));
+        setMinNightsGlobal(String(selectedListing.min_nights ?? 1));
+        setMaxNightsGlobal(selectedListing.max_nights ? String(selectedListing.max_nights) : '');
+        setAdvanceNotice(selectedListing.advance_notice || 'Same day');
+        setPreparationTime(selectedListing.preparation_time || 'None');
+        setAvailabilityWindow(selectedListing.availability_window || '9 months');
+    }, [selectedListingId, selectedListing]);
 
     useEffect(() => {
         if (!selectedListingId) return;
@@ -112,10 +154,9 @@ export default function CalendarPage() {
         return eachDayOfInterval({ start, end });
     }, [month]);
 
-    // Pad the start of the grid so the 1st lands under the correct weekday (Mon-first).
     const leadingBlanks = useMemo(() => {
-        const firstDay = getDay(startOfMonth(month)); // 0=Sun
-        return (firstDay + 6) % 7; // convert to Mon=0
+        const firstDay = getDay(startOfMonth(month));
+        return (firstDay + 6) % 7;
     }, [month]);
 
     const bookingForDate = (date: Date) => {
@@ -129,13 +170,19 @@ export default function CalendarPage() {
     const isInSelection = (date: Date) => {
         if (!selectionStart) return false;
         const end = selectionEnd || selectionStart;
-        const [lo, hi] = date < end ? [selectionStart, end] : [end, selectionStart];
         return date >= (selectionStart < end ? selectionStart : end) && date <= (selectionStart < end ? end : selectionStart);
+    };
+
+    const dayPrice = (date: Date, key: string, override?: Override) => {
+        if (override?.price_override) return override.price_override;
+        const dow = getDay(date); // 0=Sun, 5=Fri, 6=Sat
+        if ((dow === 5 || dow === 6) && selectedListing?.weekend_price) return selectedListing.weekend_price;
+        return selectedListing?.price_per_night ?? 0;
     };
 
     const handleDayClick = (date: Date) => {
         if (isBefore(date, startOfDay(new Date()))) return;
-        if (bookingForDate(date)) return; // can't edit already-booked dates here
+        if (bookingForDate(date)) return;
 
         if (!selectionStart || selectionEnd) {
             setSelectionStart(date);
@@ -148,13 +195,13 @@ export default function CalendarPage() {
         setSelectionStart(start);
         setSelectionEnd(end);
 
-        // Pre-fill the panel from the first selected date's existing override, if any.
         const key = format(start, 'yyyy-MM-dd');
         const existing = overrides[key];
         setPanelBlocked(existing?.is_blocked || false);
         setPanelPrice(existing?.price_override ? String(existing.price_override) : '');
         setPanelMinNights(existing?.min_nights_override ? String(existing.min_nights_override) : '');
         setPanelOpen(true);
+        setRightTab('manage');
     };
 
     const closePanel = () => {
@@ -226,6 +273,20 @@ export default function CalendarPage() {
         closePanel();
     };
 
+    const saveListingSettings = async (fields: Record<string, any>) => {
+        setSavingSettings(true);
+        const { error } = await supabase.from('listings').update(fields).eq('id', selectedListingId);
+        setSavingSettings(false);
+
+        if (error) {
+            toast.error(error.message, { theme: 'colored' });
+            return;
+        }
+
+        setListings((prev) => prev.map((l) => (l.id === selectedListingId ? { ...l, ...fields } : l)));
+        toast.success('Saved.', { theme: 'colored' });
+    };
+
     if (loading) {
         return (
             <div className="flex flex-col items-center justify-center min-h-[70vh] space-y-4">
@@ -253,6 +314,13 @@ export default function CalendarPage() {
         );
     }
 
+    const TABS = [
+        { key: 'manage', label: 'Manage dates' },
+        { key: 'pricing', label: 'Pricing' },
+        { key: 'fees', label: 'Fees' },
+        { key: 'availability', label: 'Availability' },
+    ] as const;
+
     return (
         <div className="max-w-6xl mx-auto px-6 py-10">
             <div className="flex items-center justify-between mb-8 flex-wrap gap-4">
@@ -268,7 +336,7 @@ export default function CalendarPage() {
                 )}
             </div>
 
-            <div className="grid grid-cols-1 lg:grid-cols-[1fr_320px] gap-8">
+            <div className="grid grid-cols-1 lg:grid-cols-[1fr_340px] gap-8">
                 <div>
                     <div className="flex items-center justify-between mb-4">
                         <button type="button" onClick={() => setMonth(subMonths(month, 1))} className="p-2 rounded-full hover:bg-slate-100">
@@ -292,7 +360,7 @@ export default function CalendarPage() {
                             const booking = bookingForDate(day);
                             const isPast = isBefore(day, startOfDay(new Date()));
                             const selected = isInSelection(day);
-                            const price = override?.price_override ?? selectedListing?.price_per_night ?? 0;
+                            const price = dayPrice(day, key, override);
 
                             return (
                                 <button
@@ -328,72 +396,209 @@ export default function CalendarPage() {
                         <div className="flex items-center gap-1.5"><span className="w-3 h-3 rounded bg-slate-100 border border-slate-300" /> Blocked</div>
                         <div className="flex items-center gap-1.5"><span className="w-3 h-3 rounded border-2 border-slate-200" /> Available</div>
                     </div>
-                    <p className="text-xs text-slate-400 mt-3">Click a date to select it, then click another date to select a range — you'll be able to block it, set a custom price, or a minimum stay for those dates.</p>
+                    <p className="text-xs text-slate-400 mt-3">Click a date to select it, then click another date to select a range for date-specific overrides.</p>
                 </div>
 
-                {/* Side panel */}
+                {/* Right column: tabs + panel */}
                 <div>
-                    {panelOpen && selectionStart ? (
-                        <div className="border rounded-2xl p-5 sticky top-6">
-                            <div className="flex items-center justify-between mb-4">
-                                <h3 className="font-bold text-slate-900">
-                                    {selectionEnd && !isSameDay(selectionStart, selectionEnd)
-                                        ? `${format(selectionStart, 'd MMM')} – ${format(selectionEnd, 'd MMM')}`
-                                        : format(selectionStart, 'd MMM yyyy')}
-                                </h3>
-                                <button type="button" onClick={closePanel}><X className="w-4 h-4 text-slate-400" /></button>
-                            </div>
+                    <div className="flex flex-wrap gap-1 mb-4 border-b">
+                        {TABS.map((t) => (
+                            <button
+                                key={t.key}
+                                type="button"
+                                onClick={() => setRightTab(t.key)}
+                                className={`px-3 py-2 text-sm font-semibold border-b-2 -mb-px transition ${rightTab === t.key ? 'border-slate-900 text-slate-900' : 'border-transparent text-slate-400 hover:text-slate-600'}`}
+                            >
+                                {t.label}
+                            </button>
+                        ))}
+                    </div>
 
-                            <div className="flex items-center justify-between mb-4 p-3 border rounded-xl">
-                                <span className="text-sm font-medium text-slate-800">Block these dates</span>
+                    {rightTab === 'manage' && (
+                        panelOpen && selectionStart ? (
+                            <div className="border rounded-2xl p-5">
+                                <div className="flex items-center justify-between mb-4">
+                                    <h3 className="font-bold text-slate-900">
+                                        {selectionEnd && !isSameDay(selectionStart, selectionEnd)
+                                            ? `${format(selectionStart, 'd MMM')} – ${format(selectionEnd, 'd MMM')}`
+                                            : format(selectionStart, 'd MMM yyyy')}
+                                    </h3>
+                                    <button type="button" onClick={closePanel}><X className="w-4 h-4 text-slate-400" /></button>
+                                </div>
+
+                                <div className="flex items-center justify-between mb-4 p-3 border rounded-xl">
+                                    <span className="text-sm font-medium text-slate-800">Block these dates</span>
+                                    <button
+                                        type="button"
+                                        onClick={() => setPanelBlocked(!panelBlocked)}
+                                        className={`w-11 h-6 rounded-full relative transition ${panelBlocked ? 'bg-slate-900' : 'bg-slate-300'}`}
+                                    >
+                                        <span className={`absolute top-0.5 w-5 h-5 rounded-full bg-white transition-all ${panelBlocked ? 'left-5' : 'left-0.5'}`} />
+                                    </button>
+                                </div>
+
+                                <label className="block text-xs font-semibold text-slate-500 uppercase mb-1">Custom price</label>
+                                <input
+                                    type="number"
+                                    value={panelPrice}
+                                    onChange={(e) => setPanelPrice(e.target.value)}
+                                    placeholder={`Default: £${selectedListing?.price_per_night}`}
+                                    className="w-full p-2.5 border rounded-lg text-sm mb-4"
+                                />
+
+                                <label className="block text-xs font-semibold text-slate-500 uppercase mb-1">Minimum stay override</label>
+                                <input
+                                    type="number"
+                                    min={1}
+                                    value={panelMinNights}
+                                    onChange={(e) => setPanelMinNights(e.target.value)}
+                                    placeholder={`Default: ${selectedListing?.min_nights || 1} night(s)`}
+                                    className="w-full p-2.5 border rounded-lg text-sm mb-6"
+                                />
+
                                 <button
                                     type="button"
-                                    onClick={() => setPanelBlocked(!panelBlocked)}
-                                    className={`w-11 h-6 rounded-full relative transition ${panelBlocked ? 'bg-slate-900' : 'bg-slate-300'}`}
+                                    onClick={saveOverrides}
+                                    disabled={saving}
+                                    className="w-full py-3 bg-rose-500 hover:bg-rose-600 text-white font-bold rounded-xl transition disabled:opacity-50 mb-2"
                                 >
-                                    <span className={`absolute top-0.5 w-5 h-5 rounded-full bg-white transition-all ${panelBlocked ? 'left-5' : 'left-0.5'}`} />
+                                    {saving ? 'Saving...' : 'Save'}
+                                </button>
+                                <button
+                                    type="button"
+                                    onClick={clearOverrides}
+                                    disabled={saving}
+                                    className="w-full py-3 border rounded-xl text-sm font-semibold text-slate-600 hover:border-slate-500"
+                                >
+                                    Reset to default
                                 </button>
                             </div>
+                        ) : (
+                            <div className="border rounded-2xl p-6 text-center text-sm text-slate-400">
+                                Select a date (or a range) on the calendar to manage it.
+                            </div>
+                        )
+                    )}
 
-                            <label className="block text-xs font-semibold text-slate-500 uppercase mb-1">Custom price</label>
-                            <input
-                                type="number"
-                                value={panelPrice}
-                                onChange={(e) => setPanelPrice(e.target.value)}
-                                placeholder={`Default: £${selectedListing?.price_per_night}`}
-                                className="w-full p-2.5 border rounded-lg text-sm mb-4"
-                            />
-
-                            <label className="block text-xs font-semibold text-slate-500 uppercase mb-1">Minimum stay override</label>
-                            <input
-                                type="number"
-                                min={1}
-                                value={panelMinNights}
-                                onChange={(e) => setPanelMinNights(e.target.value)}
-                                placeholder={`Default: ${selectedListing?.min_nights || 1} night(s)`}
-                                className="w-full p-2.5 border rounded-lg text-sm mb-6"
-                            />
-
+                    {rightTab === 'pricing' && (
+                        <div className="border rounded-2xl p-5 space-y-5">
+                            <p className="text-xs text-slate-500">These apply to all nights, unless overridden by a specific date.</p>
+                            <div>
+                                <label className="block text-sm font-semibold text-slate-800 mb-1">Base price</label>
+                                <div className="flex items-center border rounded-xl px-3 py-2">
+                                    <span className="text-slate-500 mr-1">£</span>
+                                    <input type="number" value={basePrice} onChange={(e) => setBasePrice(e.target.value)} className="w-full outline-none text-sm" />
+                                </div>
+                            </div>
+                            <div>
+                                <label className="block text-sm font-semibold text-slate-800 mb-1">Custom weekend price</label>
+                                <p className="text-xs text-slate-400 mb-1">Friday and Saturday nights</p>
+                                <div className="flex items-center border rounded-xl px-3 py-2">
+                                    <span className="text-slate-500 mr-1">£</span>
+                                    <input type="number" value={weekendPrice} onChange={(e) => setWeekendPrice(e.target.value)} placeholder="Same as base price" className="w-full outline-none text-sm" />
+                                </div>
+                            </div>
                             <button
                                 type="button"
-                                onClick={saveOverrides}
-                                disabled={saving}
-                                className="w-full py-3 bg-rose-500 hover:bg-rose-600 text-white font-bold rounded-xl transition disabled:opacity-50 mb-2"
+                                disabled={savingSettings}
+                                onClick={() => saveListingSettings({
+                                    price_per_night: Number(basePrice) || 0,
+                                    weekend_price: weekendPrice ? Number(weekendPrice) : null,
+                                })}
+                                className="w-full py-3 bg-rose-500 hover:bg-rose-600 text-white font-bold rounded-xl transition disabled:opacity-50"
                             >
-                                {saving ? 'Saving...' : 'Save'}
-                            </button>
-                            <button
-                                type="button"
-                                onClick={clearOverrides}
-                                disabled={saving}
-                                className="w-full py-3 border rounded-xl text-sm font-semibold text-slate-600 hover:border-slate-500"
-                            >
-                                Reset to default
+                                {savingSettings ? 'Saving...' : 'Save'}
                             </button>
                         </div>
-                    ) : (
-                        <div className="border rounded-2xl p-6 text-center text-sm text-slate-400">
-                            Select a date (or a range) on the calendar to manage it.
+                    )}
+
+                    {rightTab === 'fees' && (
+                        <div className="border rounded-2xl p-5 space-y-5">
+                            <div>
+                                <label className="block text-sm font-semibold text-slate-800 mb-1">Cleaning fee</label>
+                                <p className="text-xs text-slate-400 mb-1">Charged once per stay</p>
+                                <div className="flex items-center border rounded-xl px-3 py-2">
+                                    <span className="text-slate-500 mr-1">£</span>
+                                    <input type="number" value={cleaningFee} onChange={(e) => setCleaningFee(e.target.value)} className="w-full outline-none text-sm" />
+                                </div>
+                            </div>
+                            <div>
+                                <label className="block text-sm font-semibold text-slate-800 mb-1">Pet fee</label>
+                                <p className="text-xs text-slate-400 mb-1">Charged once per stay, if the guest brings a pet</p>
+                                <div className="flex items-center border rounded-xl px-3 py-2">
+                                    <span className="text-slate-500 mr-1">£</span>
+                                    <input type="number" value={petFee} onChange={(e) => setPetFee(e.target.value)} className="w-full outline-none text-sm" />
+                                </div>
+                            </div>
+                            <div>
+                                <label className="block text-sm font-semibold text-slate-800 mb-1">Extra guest fee</label>
+                                <p className="text-xs text-slate-400 mb-1">Per night, per guest after the first</p>
+                                <div className="flex items-center border rounded-xl px-3 py-2">
+                                    <span className="text-slate-500 mr-1">£</span>
+                                    <input type="number" value={extraGuestFee} onChange={(e) => setExtraGuestFee(e.target.value)} className="w-full outline-none text-sm" />
+                                </div>
+                            </div>
+                            <button
+                                type="button"
+                                disabled={savingSettings}
+                                onClick={() => saveListingSettings({
+                                    cleaning_fee: Number(cleaningFee) || 0,
+                                    pet_fee: Number(petFee) || 0,
+                                    extra_guest_fee: Number(extraGuestFee) || 0,
+                                })}
+                                className="w-full py-3 bg-rose-500 hover:bg-rose-600 text-white font-bold rounded-xl transition disabled:opacity-50"
+                            >
+                                {savingSettings ? 'Saving...' : 'Save'}
+                            </button>
+                        </div>
+                    )}
+
+                    {rightTab === 'availability' && (
+                        <div className="border rounded-2xl p-5 space-y-5">
+                            <div className="grid grid-cols-2 gap-3">
+                                <div>
+                                    <label className="block text-xs font-semibold text-slate-500 uppercase mb-1">Min nights</label>
+                                    <input type="number" min={1} value={minNightsGlobal} onChange={(e) => setMinNightsGlobal(e.target.value)} className="w-full p-2.5 border rounded-lg text-sm" />
+                                </div>
+                                <div>
+                                    <label className="block text-xs font-semibold text-slate-500 uppercase mb-1">Max nights</label>
+                                    <input type="number" value={maxNightsGlobal} onChange={(e) => setMaxNightsGlobal(e.target.value)} placeholder="No limit" className="w-full p-2.5 border rounded-lg text-sm" />
+                                </div>
+                            </div>
+                            <div>
+                                <label className="block text-sm font-semibold text-slate-800 mb-1">Advance notice</label>
+                                <select value={advanceNotice} onChange={(e) => setAdvanceNotice(e.target.value)} className="w-full p-2.5 border rounded-lg text-sm bg-white">
+                                    {ADVANCE_NOTICE_OPTIONS.map((o) => <option key={o} value={o}>{o}</option>)}
+                                </select>
+                            </div>
+                            <div>
+                                <label className="block text-sm font-semibold text-slate-800 mb-1">Preparation time</label>
+                                <p className="text-xs text-slate-400 mb-1">Buffer between bookings</p>
+                                <select value={preparationTime} onChange={(e) => setPreparationTime(e.target.value)} className="w-full p-2.5 border rounded-lg text-sm bg-white">
+                                    {PREP_TIME_OPTIONS.map((o) => <option key={o} value={o}>{o}</option>)}
+                                </select>
+                            </div>
+                            <div>
+                                <label className="block text-sm font-semibold text-slate-800 mb-1">Availability window</label>
+                                <p className="text-xs text-slate-400 mb-1">How far ahead guests can book</p>
+                                <select value={availabilityWindow} onChange={(e) => setAvailabilityWindow(e.target.value)} className="w-full p-2.5 border rounded-lg text-sm bg-white">
+                                    {AVAILABILITY_WINDOW_OPTIONS.map((o) => <option key={o} value={o}>{o}</option>)}
+                                </select>
+                            </div>
+                            <button
+                                type="button"
+                                disabled={savingSettings}
+                                onClick={() => saveListingSettings({
+                                    min_nights: Math.max(1, Number(minNightsGlobal) || 1),
+                                    max_nights: maxNightsGlobal ? Number(maxNightsGlobal) : null,
+                                    advance_notice: advanceNotice,
+                                    preparation_time: preparationTime,
+                                    availability_window: availabilityWindow,
+                                })}
+                                className="w-full py-3 bg-rose-500 hover:bg-rose-600 text-white font-bold rounded-xl transition disabled:opacity-50"
+                            >
+                                {savingSettings ? 'Saving...' : 'Save'}
+                            </button>
                         </div>
                     )}
                 </div>
