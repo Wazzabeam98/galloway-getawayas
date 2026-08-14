@@ -4,6 +4,7 @@ import { createServerComponentClient } from "@supabase/auth-helpers-nextjs";
 import { cookies } from "next/headers";
 import { getImageUrl, capitializeFirst } from "@/lib/utils";
 import BookingActions from "@/components/BookingActions";
+import Link from "next/link";
 
 export default async function BookingsPage() {
     const supabase = createServerComponentClient({ cookies });
@@ -57,6 +58,9 @@ export default async function BookingsPage() {
                             {capitializeFirst(guestName)} · {booking.check_in} → {booking.check_out} · {booking.guests} guest{booking.guests > 1 ? "s" : ""}
                         </div>
                         <div className="text-sm font-medium text-slate-700">£{booking.total_price}</div>
+                        <Link href={`/messages/${booking.id}`} className="text-xs font-semibold text-slate-500 underline hover:text-slate-800">
+                            Message guest
+                        </Link>
                     </div>
                 </div>
 
