@@ -1,8 +1,10 @@
 'use client';
 
+export const dynamic = 'force-dynamic';
+
 import { useEffect, useRef, useState } from 'react';
 import { createClientComponentClient } from '@supabase/auth-helpers-nextjs';
-import { useRouter } from 'next/navigation';
+import { useRouter, useSearchParams } from 'next/navigation';
 import Logo from '@/components/base/Logo';
 import { HomeIcon, ChevronRightIcon, ChevronLeftIcon, Trees, Waves, Compass, Building2, Sparkles, Minus, Plus, Check, Link2, Loader2, Snowflake, Package, Refrigerator, Thermometer, Droplet, UtensilsCrossed, Tv, RotateCw, Wifi, Coffee, Wind, Shirt, Zap, Baby, Briefcase, Car, Dumbbell, Bath, Flame, Armchair, Umbrella, Anchor, AlertTriangle, BellRing, Feather, Users, Gem, MapPin, Maximize2 } from 'lucide-react';
 import LoginModel from '@/components/auth/LoginModel';
@@ -143,8 +145,11 @@ export default function AddHome() {
     const [importNote, setImportNote] = useState('');
 
     const router = useRouter();
+    const searchParams = useSearchParams();
     const supabase = createClientComponentClient();
     const debounceRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+    const [draftId, setDraftId] = useState<string | null>(null);
+    const [savingDraft, setSavingDraft] = useState(false);
 
     useEffect(() => {
         const checkUser = async () => {
@@ -153,11 +158,86 @@ export default function AddHome() {
             if (session?.user) {
                 setUserName(session.user.user_metadata?.name || session.user.email?.split('@')[0] || 'Host');
             }
+
+            const resumeId = searchParams?.get('draft');
+            if (resumeId && session?.user) {
+                const { data: draft } = await supabase
+                    .from('listings')
+                    .select('*')
+                    .eq('id', resumeId)
+                    .eq('host_id', session.user.id)
+                    .single();
+
+                if (draft) {
+                    setDraftId(draft.id);
+                    setTitle(draft.title || '');
+                    setDescription(draft.description || '');
+                    setPrice(draft.price_per_night ? String(draft.price_per_night) : '');
+                    setPropertyType(draft.property_type || '');
+                    setPrivacyType(draft.privacy_type || 'Entire place');
+                    setGuests(draft.max_guests || 1);
+                    setBedrooms(draft.bedrooms ?? 1);
+                    setBeds(draft.beds ?? 1);
+                    setBathrooms(draft.bathrooms ?? 1);
+                    setAmenities(draft.amenities || []);
+                    setCity(draft.location?.split(',')[0]?.trim() || '');
+                    setState(draft.location || '');
+                    setNewListingPromo(draft.new_listing_promo ?? true);
+                    setLastMinuteDiscount(draft.last_minute_discount ?? false);
+                    setWeeklyDiscount(draft.weekly_discount ?? false);
+                    setMonthlyDiscount(draft.monthly_discount ?? false);
+                    setShowListingForm(true);
+                }
+            }
+
             setLoading(false);
         };
 
         checkUser();
     }, [supabase]);
+
+    const saveDraft = async () => {
+        const user = await supabase.auth.getUser();
+        if (!user.data.user) return;
+
+        setSavingDraft(true);
+        try {
+            const location = [flat, propertyName, street, city, state, postcode, country].filter(Boolean).join(', ');
+            const payload = {
+                host_id: user.data.user.id,
+                title: title || 'Untitled listing',
+                description,
+                location,
+                price_per_night: price ? Number(price) : 0,
+                max_guests: guests,
+                property_type: propertyType,
+                privacy_type: privacyType,
+                bedrooms,
+                beds,
+                bathrooms,
+                amenities,
+                new_listing_promo: newListingPromo,
+                last_minute_discount: lastMinuteDiscount,
+                weekly_discount: weeklyDiscount,
+                monthly_discount: monthlyDiscount,
+                status: 'draft',
+            };
+
+            if (draftId) {
+                await supabase.from('listings').update(payload).eq('id', draftId);
+            } else {
+                const { data } = await supabase.from('listings').insert(payload).select('id').single();
+                if (data?.id) setDraftId(data.id);
+            }
+
+            toast.success('Saved — you can finish this listing later from your dashboard.', { theme: 'colored' });
+            router.push('/dashboard');
+        } catch (err: any) {
+            toast.error(err?.message || 'Could not save your progress.', { theme: 'colored' });
+        } finally {
+            setSavingDraft(false);
+        }
+    };
 
     const handleAddressChange = (e: React.ChangeEvent<HTMLInputElement>) => {
         const value = e.target.value;
@@ -301,25 +381,46 @@ export default function AddHome() {
                 .filter(Boolean)
                 .join(', ');
 
-            const { error: listingErr } = await supabase.from('listings').insert({
-                host_id: user.data.user.id,
-                title,
-                description,
-                location,
-                price_per_night: Number(price),
-                max_guests: guests,
-                images: uploadedPaths,
-                property_type: propertyType,
-                privacy_type: privacyType,
-                bedrooms,
-                beds,
-                bathrooms,
-                amenities,
-                new_listing_promo: newListingPromo,
-                last_minute_discount: lastMinuteDiscount,
-                weekly_discount: weeklyDiscount,
-                monthly_discount: monthlyDiscount,
-            });
+            const { error: listingErr } = draftId
+                ? await supabase.from('listings').update({
+                    title,
+                    description,
+                    location,
+                    price_per_night: Number(price),
+                    max_guests: guests,
+                    images: uploadedPaths,
+                    property_type: propertyType,
+                    privacy_type: privacyType,
+                    bedrooms,
+                    beds,
+                    bathrooms,
+                    amenities,
+                    new_listing_promo: newListingPromo,
+                    last_minute_discount: lastMinuteDiscount,
+                    weekly_discount: weeklyDiscount,
+                    monthly_discount: monthlyDiscount,
+                    status: 'published',
+                }).eq('id', draftId)
+                : await supabase.from('listings').insert({
+                    host_id: user.data.user.id,
+                    title,
+                    description,
+                    location,
+                    price_per_night: Number(price),
+                    max_guests: guests,
+                    images: uploadedPaths,
+                    property_type: propertyType,
+                    privacy_type: privacyType,
+                    bedrooms,
+                    beds,
+                    bathrooms,
+                    amenities,
+                    new_listing_promo: newListingPromo,
+                    last_minute_discount: lastMinuteDiscount,
+                    weekly_discount: weeklyDiscount,
+                    monthly_discount: monthlyDiscount,
+                    status: 'published',
+                });
 
             if (listingErr) {
                 toast.error(listingErr.message, { theme: 'colored' });
@@ -511,12 +612,21 @@ export default function AddHome() {
             <div className="max-w-3xl mx-auto px-6 py-10 w-full">
                 <div className="flex justify-between items-center mb-6">
                     <h1 className="text-2xl font-extrabold text-rose-500">Galloway Getaways</h1>
-                    <button
-                        onClick={() => setShowListingForm(false)}
-                        className="text-sm font-semibold underline text-slate-600 hover:text-black"
-                    >
-                        Back to dashboard
-                    </button>
+                    <div className="flex items-center gap-4">
+                        <button
+                            onClick={saveDraft}
+                            disabled={savingDraft}
+                            className="text-sm font-semibold underline text-slate-600 hover:text-black disabled:opacity-50"
+                        >
+                            {savingDraft ? 'Saving...' : 'Save & finish later'}
+                        </button>
+                        <button
+                            onClick={() => setShowListingForm(false)}
+                            className="text-sm font-semibold underline text-slate-600 hover:text-black"
+                        >
+                            Back to dashboard
+                        </button>
+                    </div>
                 </div>
 
                 {/* Progress bar */}
