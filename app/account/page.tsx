@@ -28,7 +28,7 @@ const SECTIONS = [
     { key: 'privacy', label: 'Privacy', icon: Shield, ready: true },
     { key: 'notifications', label: 'Notifications', icon: Bell, ready: false },
     { key: 'payments', label: 'Payments & payouts', icon: CreditCard, ready: false },
-    { key: 'messaging', label: 'Messaging', icon: MessageCircle, ready: false },
+    { key: 'messaging', label: 'Messaging', icon: MessageCircle, ready: true },
     { key: 'bookings', label: 'Booking permissions', icon: CalendarCheck, ready: false },
 ];
 
@@ -85,6 +85,17 @@ export default function AccountSettings() {
     const [savingPrivacy, setSavingPrivacy] = useState(false);
     const [exporting, setExporting] = useState(false);
 
+    // --- Messaging state ---
+    interface QuickReply { id: string; title: string; body: string }
+    const [quickReplies, setQuickReplies] = useState<QuickReply[]>([]);
+    const [qrTitle, setQrTitle] = useState('');
+    const [qrBody, setQrBody] = useState('');
+    const [qrEditingId, setQrEditingId] = useState<string | null>(null);
+    const [savingQr, setSavingQr] = useState(false);
+    const [welcomeEnabled, setWelcomeEnabled] = useState(false);
+    const [welcomeMessage, setWelcomeMessage] = useState('');
+    const [savingWelcome, setSavingWelcome] = useState(false);
+
     const supabase = createClientComponentClient();
     const router = useRouter();
 
@@ -105,7 +116,7 @@ export default function AccountSettings() {
 
                 const { data: profileData } = await supabase
                     .from('profiles')
-                    .select('full_name, preferred_name, phone, residential_address, show_full_name')
+                    .select('full_name, preferred_name, phone, residential_address, show_full_name, welcome_message, welcome_message_enabled')
                     .eq('id', session.user.id)
                     .single();
 
@@ -117,7 +128,16 @@ export default function AccountSettings() {
                         residential_address: profileData.residential_address || '',
                     });
                     setShowFullName(profileData.show_full_name !== false);
+                    setWelcomeMessage(profileData.welcome_message || '');
+                    setWelcomeEnabled(profileData.welcome_message_enabled === true);
                 }
+
+                const { data: replies } = await supabase
+                    .from('quick_replies')
+                    .select('id, title, body')
+                    .eq('user_id', session.user.id)
+                    .order('created_at', { ascending: true });
+                setQuickReplies(replies || []);
             }
             setLoading(false);
         };
@@ -342,6 +362,94 @@ export default function AccountSettings() {
         }
 
         setExporting(false);
+    };
+
+    // --- Messaging handlers ---
+
+    const saveQuickReply = async () => {
+        if (!session?.user || !qrTitle.trim() || !qrBody.trim()) return;
+        setSavingQr(true);
+
+        if (qrEditingId) {
+            const { error } = await supabase
+                .from('quick_replies')
+                .update({ title: qrTitle.trim(), body: qrBody.trim() })
+                .eq('id', qrEditingId);
+
+            setSavingQr(false);
+            if (error) {
+                toast.error(error.message, { theme: 'colored' });
+                return;
+            }
+
+            setQuickReplies((prev) =>
+                prev.map((r) => (r.id === qrEditingId ? { id: r.id, title: qrTitle.trim(), body: qrBody.trim() } : r))
+            );
+        } else {
+            const { data, error } = await supabase
+                .from('quick_replies')
+                .insert({ user_id: session.user.id, title: qrTitle.trim(), body: qrBody.trim() })
+                .select('id, title, body')
+                .single();
+
+            setSavingQr(false);
+            if (error) {
+                toast.error(error.message, { theme: 'colored' });
+                return;
+            }
+            if (data) setQuickReplies((prev) => prev.concat([data]));
+        }
+
+        setQrTitle('');
+        setQrBody('');
+        setQrEditingId(null);
+        toast.success('Quick reply saved.', { theme: 'colored' });
+    };
+
+    const editQuickReply = (reply: QuickReply) => {
+        setQrEditingId(reply.id);
+        setQrTitle(reply.title);
+        setQrBody(reply.body);
+    };
+
+    const deleteQuickReply = async (id: string) => {
+        const { error } = await supabase.from('quick_replies').delete().eq('id', id);
+        if (error) {
+            toast.error(error.message, { theme: 'colored' });
+            return;
+        }
+        setQuickReplies((prev) => prev.filter((r) => r.id !== id));
+        if (qrEditingId === id) {
+            setQrEditingId(null);
+            setQrTitle('');
+            setQrBody('');
+        }
+    };
+
+    const saveWelcome = async (enabled: boolean, body: string) => {
+        if (!session?.user) return;
+        setSavingWelcome(true);
+
+        const { error } = await supabase
+            .from('profiles')
+            .upsert(
+                {
+                    id: session.user.id,
+                    email: session.user.email,
+                    welcome_message: body,
+                    welcome_message_enabled: enabled,
+                },
+                { onConflict: 'id' }
+            );
+
+        setSavingWelcome(false);
+
+        if (error) {
+            toast.error(error.message, { theme: 'colored' });
+            return;
+        }
+
+        toast.success('Welcome message saved.', { theme: 'colored' });
     };
 
     if (loading) {
@@ -853,6 +961,154 @@ export default function AccountSettings() {
                                     </div>
                                 </div>
                             )}
+                        </div>
+                    ) : activeSection === 'messaging' ? (
+                        <div>
+                            <h2 className="text-2xl font-bold text-slate-900 mb-1">Messaging</h2>
+                            <p className="text-sm text-slate-500 mb-6">
+                                Save time on the replies you send over and over.
+                            </p>
+
+                            {/* Automatic welcome message */}
+                            <div className="border rounded-2xl p-5 mb-6">
+                                <div className="flex items-start justify-between mb-3">
+                                    <div className="pr-6">
+                                        <div className="font-semibold text-slate-900 text-sm mb-1">
+                                            Automatic welcome message
+                                        </div>
+                                        <p className="text-xs text-slate-500">
+                                            Sent to the guest the moment you confirm their booking, so they aren&apos;t
+                                            left waiting to hear from you.
+                                        </p>
+                                    </div>
+                                    <button
+                                        type="button"
+                                        role="switch"
+                                        aria-checked={welcomeEnabled}
+                                        aria-label="Automatic welcome message"
+                                        disabled={savingWelcome}
+                                        onClick={() => {
+                                            const next = !welcomeEnabled;
+                                            setWelcomeEnabled(next);
+                                            saveWelcome(next, welcomeMessage);
+                                        }}
+                                        className={`relative inline-flex h-6 w-11 flex-shrink-0 rounded-full transition-colors disabled:opacity-50 ${welcomeEnabled ? 'bg-emerald-700' : 'bg-slate-300'}`}
+                                    >
+                                        <span
+                                            className={`inline-block h-5 w-5 transform rounded-full bg-white shadow transition-transform mt-0.5 ${welcomeEnabled ? 'translate-x-5' : 'translate-x-0.5'}`}
+                                        />
+                                    </button>
+                                </div>
+
+                                <textarea
+                                    value={welcomeMessage}
+                                    onChange={(e) => setWelcomeMessage(e.target.value)}
+                                    rows={4}
+                                    placeholder="Thanks for booking! Check-in is any time after 4pm. I'll send the key details a few days before you arrive — any questions in the meantime, just reply here."
+                                    className="w-full p-3 border rounded-lg text-sm"
+                                />
+
+                                <div className="flex items-center justify-between mt-3">
+                                    <p className="text-xs text-slate-400">
+                                        {welcomeEnabled
+                                            ? 'This will be sent automatically.'
+                                            : 'Turn the switch on to start sending this.'}
+                                    </p>
+                                    <button
+                                        type="button"
+                                        onClick={() => saveWelcome(welcomeEnabled, welcomeMessage)}
+                                        disabled={savingWelcome}
+                                        className="px-4 py-2 bg-slate-900 hover:bg-black text-white text-sm font-semibold rounded-lg disabled:opacity-40"
+                                    >
+                                        {savingWelcome ? 'Saving...' : 'Save message'}
+                                    </button>
+                                </div>
+                            </div>
+
+                            {/* Quick replies */}
+                            <div className="border rounded-2xl p-5">
+                                <div className="font-semibold text-slate-900 text-sm mb-1">Quick replies</div>
+                                <p className="text-xs text-slate-500 mb-4">
+                                    Snippets you can drop into any conversation with one tap — parking, wifi, check-in
+                                    times, and anything else you find yourself typing repeatedly.
+                                </p>
+
+                                {quickReplies.length > 0 && (
+                                    <div className="border rounded-xl divide-y mb-5">
+                                        {quickReplies.map((reply) => (
+                                            <div key={reply.id} className="p-4 flex items-start justify-between">
+                                                <div className="pr-4 min-w-0">
+                                                    <div className="font-semibold text-slate-900 text-sm">{reply.title}</div>
+                                                    <p className="text-xs text-slate-500 mt-1 whitespace-pre-line">{reply.body}</p>
+                                                </div>
+                                                <div className="flex items-center space-x-3 flex-shrink-0">
+                                                    <button
+                                                        type="button"
+                                                        onClick={() => editQuickReply(reply)}
+                                                        className="text-sm font-semibold underline text-slate-700 hover:text-black"
+                                                    >
+                                                        Edit
+                                                    </button>
+                                                    <button
+                                                        type="button"
+                                                        onClick={() => deleteQuickReply(reply.id)}
+                                                        className="text-slate-400 hover:text-red-600"
+                                                        aria-label={`Delete ${reply.title}`}
+                                                    >
+                                                        <Trash2 className="w-4 h-4" />
+                                                    </button>
+                                                </div>
+                                            </div>
+                                        ))}
+                                    </div>
+                                )}
+
+                                <div className="space-y-3 max-w-lg">
+                                    <div>
+                                        <label className="text-xs text-slate-500">Shortcut name</label>
+                                        <input
+                                            type="text"
+                                            value={qrTitle}
+                                            onChange={(e) => setQrTitle(e.target.value)}
+                                            placeholder="Wifi details"
+                                            className="w-full p-2.5 border rounded-lg text-sm mt-1"
+                                        />
+                                    </div>
+                                    <div>
+                                        <label className="text-xs text-slate-500">Message</label>
+                                        <textarea
+                                            value={qrBody}
+                                            onChange={(e) => setQrBody(e.target.value)}
+                                            rows={3}
+                                            placeholder="The wifi network is GallowayCottage and the password is on the fridge door."
+                                            className="w-full p-2.5 border rounded-lg text-sm mt-1"
+                                        />
+                                    </div>
+                                    <div className="flex items-center space-x-3">
+                                        <button
+                                            type="button"
+                                            onClick={saveQuickReply}
+                                            disabled={savingQr || !qrTitle.trim() || !qrBody.trim()}
+                                            className="px-4 py-2.5 bg-slate-900 hover:bg-black text-white text-sm font-semibold rounded-lg disabled:opacity-40 disabled:cursor-not-allowed"
+                                        >
+                                            {savingQr ? 'Saving...' : qrEditingId ? 'Update quick reply' : 'Add quick reply'}
+                                        </button>
+                                        {qrEditingId && (
+                                            <button
+                                                type="button"
+                                                onClick={() => {
+                                                    setQrEditingId(null);
+                                                    setQrTitle('');
+                                                    setQrBody('');
+                                                }}
+                                                className="text-sm text-slate-500 hover:text-slate-900"
+                                            >
+                                                Cancel
+                                            </button>
+                                        )}
+                                    </div>
+                                </div>
+                            </div>
                         </div>
                     ) : (
                         <div className="border rounded-2xl p-10 text-center">
