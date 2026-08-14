@@ -3,7 +3,7 @@ import React from 'react'
 import { createServerComponentClient } from '@supabase/auth-helpers-nextjs'
 import { cookies } from 'next/headers';
 import Image from 'next/image';
-import { capitializeFirst, getImageUrl } from '@/lib/utils';
+import { capitializeFirst, getImageUrl, displayName } from '@/lib/utils';
 import BookingWidget from '@/components/BookingWidget';
 import ReviewStars from '@/components/ReviewStars';
 import HostReplyBox from '@/components/HostReplyBox';
@@ -22,10 +22,10 @@ const FindHome = async ({ params }: { params: { id: string } }) => {
     if (home?.host_id) {
         const { data: hostProfile } = await supabase
             .from('profiles')
-            .select('full_name, preferred_name')
+            .select('full_name, preferred_name, show_full_name')
             .eq('id', home.host_id)
             .single();
-        hostName = hostProfile?.preferred_name || hostProfile?.full_name || 'Host';
+        hostName = displayName(hostProfile, 'Host');
     }
 
     if (!home) {
@@ -63,8 +63,8 @@ const FindHome = async ({ params }: { params: { id: string } }) => {
     const reviewerIds = Array.from(new Set((reviews || []).map((r) => r.reviewer_id)));
     let reviewerNames: Record<string, string> = {};
     if (reviewerIds.length) {
-        const { data: reviewers } = await supabase.from('profiles').select('id, full_name, preferred_name').in('id', reviewerIds);
-        (reviewers || []).forEach((p) => { reviewerNames[p.id] = p.preferred_name || p.full_name || 'Guest'; });
+        const { data: reviewers } = await supabase.from('profiles').select('id, full_name, preferred_name, show_full_name').in('id', reviewerIds);
+        (reviewers || []).forEach((p) => { reviewerNames[p.id] = displayName(p, 'Guest'); });
     }
 
     const { data: { user: viewer } } = await supabase.auth.getUser();
