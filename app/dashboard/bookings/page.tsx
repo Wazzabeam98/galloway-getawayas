@@ -37,10 +37,22 @@ export default async function BookingsPage() {
         guestNameMap[g.id] = g.preferred_name || g.full_name || g.email || "Guest";
     });
 
+    const { data: myGuestReviews } = await supabase
+        .from("reviews")
+        .select("booking_id")
+        .eq("reviewer_id", user.user?.id)
+        .eq("review_type", "host_to_guest");
+    const reviewedBookingIds = (myGuestReviews || []).map((r) => r.booking_id);
+
     return (
         <div className="max-w-4xl mx-auto px-6 py-10">
             <h1 className="text-2xl md:text-3xl font-bold text-slate-900 mb-8">Bookings</h1>
-            <BookingsView bookings={bookings || []} listingMap={listingMap} guestNameMap={guestNameMap} />
+            <BookingsView
+                bookings={bookings || []}
+                listingMap={listingMap}
+                guestNameMap={guestNameMap}
+                reviewedBookingIds={reviewedBookingIds}
+            />
         </div>
     );
 }
