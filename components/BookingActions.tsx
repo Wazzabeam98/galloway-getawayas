@@ -22,7 +22,7 @@ export default function BookingActions({ bookingId, mode = 'pending' }: { bookin
 
             const { data: template } = await supabase
                 .from('message_templates')
-                .select('body, enabled, anchor, minutes_after')
+                .select('body, enabled, anchor, minutes_after, listing_ids')
                 .eq('user_id', session.user.id)
                 .eq('template_type', 'booking_confirmation')
                 .single();
@@ -44,6 +44,11 @@ export default function BookingActions({ bookingId, mode = 'pending' }: { bookin
 
             // Only the host sends this, and only to the guest.
             if (booking.host_id !== session.user.id) return;
+
+            // Respect which listings this template was set up for.
+            // An empty selection means all of them.
+            const targeted: string[] = template.listing_ids || [];
+            if (targeted.length > 0 && targeted.indexOf(booking.listing_id) === -1) return;
 
             // Don't send it twice if the booking is confirmed more than once.
             const { data: already } = await supabase
