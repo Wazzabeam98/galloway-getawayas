@@ -76,6 +76,98 @@ const ANCHOR_LABELS: { key: string; label: string }[] = [
     { key: 'check_out', label: 'before check-out' },
 ];
 
+// Every template opens with this. Hosts can edit or remove it, but it's
+// there by default so a guest is always greeted by name.
+const GREETING = 'Hi {guest_name},\n\n';
+
+const PLACEHOLDERS = [
+    { token: '{guest_name}', label: 'Guest first name' },
+    { token: '{listing}',    label: 'Listing name' },
+    { token: '{check_in}',   label: 'Check-in date' },
+    { token: '{check_out}',  label: 'Check-out date' },
+];
+
+// True only if the host has written something beyond the stock greeting.
+function hasRealContent(body: string): boolean {
+    return body.split(GREETING).join('').trim().length > 0;
+}
+
+// A textarea can't colour parts of its own text, so we lay a styled
+// copy of the text directly behind a textarea whose own text is
+// transparent. The caret and selection still work normally, and the
+// value stays plain text — the database never sees any markup.
+function TemplateEditor({
+    value,
+    onChange,
+    placeholder,
+    rows = 5,
+}: {
+    value: string;
+    onChange: (next: string) => void;
+    placeholder?: string;
+    rows?: number;
+}) {
+    const shared =
+        'w-full p-3 text-sm leading-6 font-sans whitespace-pre-wrap break-words';
+
+    const parts: React.ReactNode[] = [];
+    const tokens = PLACEHOLDERS.map((ph) => ph.token);
+    let remaining = value;
+    let guard = 0;
+
+    while (remaining.length > 0 && guard < 500) {
+        guard += 1;
+
+        let nextAt = -1;
+        let nextToken = '';
+        tokens.forEach((tok) => {
+            const at = remaining.indexOf(tok);
+            if (at !== -1 && (nextAt === -1 || at < nextAt)) {
+                nextAt = at;
+                nextToken = tok;
+            }
+        });
+
+        if (nextAt === -1) {
+            parts.push(remaining);
+            break;
+        }
+
+        if (nextAt > 0) parts.push(remaining.slice(0, nextAt));
+        const label = PLACEHOLDERS.filter((ph) => ph.token === nextToken)[0];
+        parts.push(
+            <span
+                key={`${guard}-${nextAt}`}
+                className="bg-blue-100 text-blue-800 rounded px-1 py-0.5 font-medium"
+            >
+                {label ? label.label : nextToken}
+            </span>
+        );
+        remaining = remaining.slice(nextAt + nextToken.length);
+    }
+
+    return (
+        <div className="relative border rounded-lg overflow-hidden bg-white">
+            <div
+                aria-hidden="true"
+                className={`${shared} pointer-events-none text-slate-800`}
+                style={{ minHeight: `${rows * 1.5 + 1.5}rem` }}
+            >
+                {value ? parts : <span className="text-slate-400">{placeholder}</span>}
+                {'\n'}
+            </div>
+            <textarea
+                value={value}
+                onChange={(e) => onChange(e.target.value)}
+                rows={rows}
+                spellCheck
+                className={`${shared} absolute inset-0 h-full bg-transparent text-transparent caret-slate-900 resize-none outline-none focus:ring-2 focus:ring-slate-900 rounded-lg`}
+            />
+        </div>
+    );
+}
+
+
 interface Field {
     key: 'full_name' | 'preferred_name' | 'phone' | 'residential_address';
     label: string;
@@ -108,7 +200,7 @@ const TEMPLATE_TYPES: TemplateDef[] = [
         family: 'booking',
         label: 'Booking confirmation',
         hint: 'Sent the moment you accept a booking request.',
-        placeholder: "Hi {guest_name}, thanks for booking {listing}! I've confirmed your stay from {check_in} to {check_out}. Any questions before you arrive, just reply here.",
+        placeholder: "Thanks for booking {listing}! I've confirmed your stay from {check_in} to {check_out}. Any questions before you arrive, just reply here.",
         defaultOffset: 0,
     },
     {
@@ -116,7 +208,7 @@ const TEMPLATE_TYPES: TemplateDef[] = [
         family: 'stay',
         label: 'Check-in details',
         hint: 'The practical stuff — address, key safe, parking, wifi.',
-        placeholder: "Hi {guest_name}, you're arriving at {listing} on {check_in}. Check-in is any time after 4pm. The key safe is to the right of the front door — code 1234. Parking is on the street directly outside.",
+        placeholder: "You're arriving at {listing} on {check_in}. Check-in is any time after 4pm. The key safe is to the right of the front door — code 1234. Parking is on the street directly outside.",
         defaultOffset: 3,
         offsetLabel: 'days before arrival',
         offsetChoices: [1, 2, 3, 4, 5, 6, 7, 10, 14],
@@ -126,7 +218,7 @@ const TEMPLATE_TYPES: TemplateDef[] = [
         family: 'stay',
         label: 'Checking in with guest',
         hint: 'A friendly note on the morning of their arrival day.',
-        placeholder: "Hi {guest_name}, hope the journey goes smoothly today. Everything's ready for you at {listing} — give me a shout if you need anything at all.",
+        placeholder: "Hope the journey goes smoothly today. Everything's ready for you at {listing} — give me a shout if you need anything at all.",
         defaultOffset: 0,
     },
     {
@@ -134,7 +226,7 @@ const TEMPLATE_TYPES: TemplateDef[] = [
         family: 'stay',
         label: 'Check-out details',
         hint: 'What you need them to do before they leave.',
-        placeholder: "Hi {guest_name}, hope you've had a lovely stay. Check-out is by 10am on {check_out} — just pop the keys back in the safe and close the door behind you. Bins are round the side if you have any rubbish.",
+        placeholder: "Hope you've had a lovely stay. Check-out is by 10am on {check_out} — just pop the keys back in the safe and close the door behind you. Bins are round the side if you have any rubbish.",
         defaultOffset: 1,
         offsetLabel: 'days before departure',
         offsetChoices: [1, 2, 3],
@@ -585,7 +677,7 @@ export default function AccountSettings() {
     const getTemplate = (type: string, defaultOffset: number): Template => {
         return templates[type] || {
             template_type: type,
-            body: '',
+            body: GREETING,
             enabled: false,
             days_offset: defaultOffset,
             send_hour: 9,
@@ -1151,12 +1243,9 @@ export default function AccountSettings() {
                             <div className="mb-8">
                                 <h3 className="text-base font-bold text-slate-900 mb-1">Scheduled messages</h3>
                                 <p className="text-xs text-slate-500 mb-4">
-                                    Written once, sent automatically at the right moment. Use{' '}
-                                    <code className="bg-slate-100 px-1 rounded">{'{guest_name}'}</code>,{' '}
-                                    <code className="bg-slate-100 px-1 rounded">{'{listing}'}</code>,{' '}
-                                    <code className="bg-slate-100 px-1 rounded">{'{check_in}'}</code> or{' '}
-                                    <code className="bg-slate-100 px-1 rounded">{'{check_out}'}</code> and they&apos;ll be
-                                    filled in for each guest.
+                                    Written once, sent automatically at the right moment. The blue labels are filled
+                                    in for each guest — so <span className="bg-blue-100 text-blue-800 rounded px-1 py-0.5 font-medium">Guest first name</span> becomes
+                                    their actual first name when the message goes out.
                                 </p>
 
                                 <div className="space-y-4">
@@ -1188,13 +1277,26 @@ export default function AccountSettings() {
                                                     </button>
                                                 </div>
 
-                                                <textarea
+                                                <TemplateEditor
                                                     value={tpl.body}
-                                                    onChange={(e) => patchTemplate(def.key, { body: e.target.value }, def.defaultOffset)}
-                                                    rows={4}
+                                                    onChange={(next) => patchTemplate(def.key, { body: next }, def.defaultOffset)}
                                                     placeholder={def.placeholder}
-                                                    className="w-full p-3 border rounded-lg text-sm"
+                                                    rows={5}
                                                 />
+
+                                                <div className="flex flex-wrap items-center gap-1.5 mt-2">
+                                                    <span className="text-xs text-slate-400 mr-1">Insert:</span>
+                                                    {PLACEHOLDERS.map((ph) => (
+                                                        <button
+                                                            key={ph.token}
+                                                            type="button"
+                                                            onClick={() => patchTemplate(def.key, { body: `${tpl.body}${ph.token}` }, def.defaultOffset)}
+                                                            className="text-xs bg-blue-50 text-blue-700 hover:bg-blue-100 border border-blue-200 rounded px-2 py-1 transition"
+                                                        >
+                                                            + {ph.label}
+                                                        </button>
+                                                    ))}
+                                                </div>
 
                                                 <div className="flex flex-wrap items-center gap-3 mt-3">
                                                     <button
@@ -1224,12 +1326,12 @@ export default function AccountSettings() {
                                                     </button>
                                                 </div>
 
-                                                {tpl.enabled && !tpl.body.trim() && (
+                                                {tpl.enabled && !hasRealContent(tpl.body) && (
                                                     <p className="text-xs text-amber-600 mt-3">
                                                         This is switched on but has no message written, so nothing will be sent.
                                                     </p>
                                                 )}
-                                                {tpl.enabled && tpl.body.trim() && tpl.anchor === 'none' && (
+                                                {tpl.enabled && hasRealContent(tpl.body) && tpl.anchor === 'none' && (
                                                     <p className="text-xs text-amber-600 mt-3">
                                                         This is switched on but isn&apos;t scheduled, so nothing will be sent. Pick a time above.
                                                     </p>
