@@ -532,11 +532,11 @@ export default function EditListing() {
                                                 />
                                                 <button type="button" onClick={() => setCoverIndex(i)}
                                                     title={i === coverIndex ? 'Cover photo' : 'Make cover photo'}
-                                                    className={`absolute bottom-2 left-2 w-8 h-8 rounded-full flex items-center justify-center text-sm shadow ${i === coverIndex ? 'bg-rose-500 text-white' : 'bg-white/90 text-slate-600 opacity-0 group-hover:opacity-100 transition'}`}>
+                                                    className={`absolute top-2 right-11 w-8 h-8 rounded-full flex items-center justify-center text-sm shadow ${i === coverIndex ? 'bg-rose-500 text-white' : 'bg-white/90 text-slate-600 opacity-0 group-hover:opacity-100 transition'}`}>
                                                     ★
                                                 </button>
                                                 <button type="button" onClick={() => removePhoto(i)} title="Remove photo"
-                                                    className="absolute bottom-2 right-2 w-8 h-8 rounded-full bg-white/90 text-slate-600 flex items-center justify-center text-sm shadow opacity-0 group-hover:opacity-100 transition">
+                                                    className="absolute top-2 right-2 w-8 h-8 rounded-full bg-white/90 text-slate-600 flex items-center justify-center text-sm shadow opacity-0 group-hover:opacity-100 transition">
                                                     ×
                                                 </button>
                                                 {i === coverIndex && (
