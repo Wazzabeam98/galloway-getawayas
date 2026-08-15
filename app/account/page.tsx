@@ -8,6 +8,7 @@ import Logo from '@/components/base/Logo';
 import LoginModel from '@/components/auth/LoginModel';
 import { toast } from 'react-toastify';
 import { getImageUrl } from '@/lib/utils';
+import Env from '@/config/Env';
 import {
     User,
     Shield,
@@ -379,6 +380,8 @@ export default function AccountSettings() {
     const [showFullName, setShowFullName] = useState(true);
     const [savingPrivacy, setSavingPrivacy] = useState(false);
     const [exporting, setExporting] = useState(false);
+    const [avatarUrl, setAvatarUrl] = useState<string | null>(null);
+    const [uploadingAvatar, setUploadingAvatar] = useState(false);
 
     // --- Messaging state ---
     interface QuickReply { id: string; title: string; body: string }
@@ -452,7 +455,7 @@ export default function AccountSettings() {
 
                 const { data: profileData } = await supabase
                     .from('profiles')
-                    .select('full_name, preferred_name, phone, residential_address, show_full_name')
+                    .select('full_name, preferred_name, phone, residential_address, show_full_name, avatar_url')
                     .eq('id', session.user.id)
                     .single();
 
@@ -464,6 +467,7 @@ export default function AccountSettings() {
                         residential_address: profileData.residential_address || '',
                     });
                     setShowFullName(profileData.show_full_name !== false);
+                    setAvatarUrl(profileData.avatar_url || null);
                 }
 
                 const { data: tpls } = await supabase
@@ -635,6 +639,71 @@ export default function AccountSettings() {
 
         await supabase.auth.signOut();
         router.push('/');
+        router.refresh();
+    };
+
+    // --- Profile photo ---
+
+    const uploadAvatar = async (file: File) => {
+        if (!session?.user) return;
+
+        if (file.size > 5 * 1024 * 1024) {
+            toast.error('That image is over 5MB — please pick a smaller one.', { theme: 'colored' });
+            return;
+        }
+
+        setUploadingAvatar(true);
+
+        // Stored alongside listing photos, in an avatars/ folder.
+        const ext = (file.name.split('.').pop() || 'jpg').toLowerCase();
+        const path = `avatars/${session.user.id}-${Date.now()}.${ext}`;
+
+        const { error: uploadError } = await supabase.storage
+            .from(Env.S3_BUCKET)
+            .upload(path, file, { upsert: true });
+
+        if (uploadError) {
+            setUploadingAvatar(false);
+            toast.error(uploadError.message, { theme: 'colored' });
+            return;
+        }
+
+        const { error } = await supabase
+            .from('profiles')
+            .upsert(
+                { id: session.user.id, email: session.user.email, avatar_url: path },
+                { onConflict: 'id' }
+            );
+
+        setUploadingAvatar(false);
+
+        if (error) {
+            toast.error(error.message, { theme: 'colored' });
+            return;
+        }
+
+        setAvatarUrl(path);
+        router.refresh();
+        toast.success('Profile photo updated.', { theme: 'colored' });
+    };
+
+    const removeAvatar = async () => {
+        if (!session?.user) return;
+        setUploadingAvatar(true);
+
+        const { error } = await supabase
+            .from('profiles')
+            .upsert(
+                { id: session.user.id, email: session.user.email, avatar_url: null },
+                { onConflict: 'id' }
+            );
+
+        setUploadingAvatar(false);
+        if (error) {
+            toast.error(error.message, { theme: 'colored' });
+            return;
+        }
+        setAvatarUrl(null);
         router.refresh();
     };
 
@@ -915,6 +984,50 @@ export default function AccountSettings() {
                     {activeSection === 'personal' ? (
                         <div>
                             <h2 className="text-2xl font-bold text-slate-900 mb-6">Personal information</h2>
+
+                            <div className="border rounded-2xl p-5 mb-5 flex items-center gap-5">
+                                <div className="w-20 h-20 rounded-full overflow-hidden bg-slate-900 text-white flex items-center justify-center text-2xl font-semibold flex-shrink-0">
+                                    {avatarUrl ? (
+                                        <img src={getImageUrl(avatarUrl)} alt="Your profile photo" className="w-full h-full object-cover" />
+                                    ) : (
+                                        (profile.preferred_name || profile.full_name || 'G').charAt(0).toUpperCase()
+                                    )}
+                                </div>
+                                <div>
+                                    <div className="font-semibold text-slate-900 text-sm mb-1">Profile photo</div>
+                                    <p className="text-xs text-slate-500 mb-3">
+                                        Shown to hosts and guests you book with. A clear photo of your face helps
+                                        people know who they&apos;re dealing with.
+                                    </p>
+                                    <div className="flex items-center gap-3">
+                                        <label className={`px-4 py-2 text-sm font-semibold rounded-lg cursor-pointer ${uploadingAvatar ? 'bg-slate-300 text-white' : 'bg-slate-900 hover:bg-black text-white'}`}>
+                                            {uploadingAvatar ? 'Uploading...' : avatarUrl ? 'Change photo' : 'Upload photo'}
+                                            <input
+                                                type="file"
+                                                accept="image/png, image/jpeg, image/webp"
+                                                disabled={uploadingAvatar}
+                                                onChange={(e) => {
+                                                    const file = e.target.files && e.target.files[0];
+                                                    if (file) uploadAvatar(file);
+                                                    e.target.value = '';
+                                                }}
+                                                className="hidden"
+                                            />
+                                        </label>
+                                        {avatarUrl && (
+                                            <button
+                                                type="button"
+                                                onClick={removeAvatar}
+                                                disabled={uploadingAvatar}
+                                                className="text-sm text-slate-500 hover:text-red-600 disabled:opacity-40"
+                                            >
+                                                Remove
+                                            </button>
+                                        )}
+                                    </div>
+                                </div>
+                            </div>
+
                             <div className="border rounded-2xl divide-y">
                                 {FIELDS.map((field) => (
                                     <div key={field.key} className="p-5 flex items-center justify-between">
