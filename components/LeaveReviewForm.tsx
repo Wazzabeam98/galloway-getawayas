@@ -137,7 +137,7 @@ export default function LeaveReviewForm({ bookingId, listingId, revieweeId, revi
                 type="button"
                 onClick={handleSubmit}
                 disabled={submitting}
-                className="px-5 py-2.5 bg-rose-500 hover:bg-rose-600 text-white text-sm font-semibold rounded-xl transition disabled:opacity-50"
+                className="px-5 py-2.5 bg-emerald-700 hover:bg-emerald-800 text-white text-sm font-semibold rounded-xl transition disabled:opacity-50"
             >
                 {submitting ? 'Posting...' : 'Post review'}
             </button>
