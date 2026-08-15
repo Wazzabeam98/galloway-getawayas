@@ -1,6 +1,6 @@
 'use client';
 
-import React, { useEffect, useState } from 'react';
+import React, { useEffect, useState, useRef } from 'react';
 import { createClientComponentClient } from '@supabase/auth-helpers-nextjs';
 import { useRouter } from 'next/navigation';
 import Link from 'next/link';
@@ -327,6 +327,8 @@ export default function AccountSettings() {
     const [savingTemplate, setSavingTemplate] = useState<string | null>(null);
     const [scheduleFor, setScheduleFor] = useState<string | null>(null);
     const [listingsFor, setListingsFor] = useState<string | null>(null);
+    const templateRefs = useRef<Record<string, HTMLTextAreaElement | null>>({});
+    const caretRefs = useRef<Record<string, number>>({});
     const [draftListingIds, setDraftListingIds] = useState<string[]>([]);
 
     // --- Booking permissions state ---
@@ -633,6 +635,32 @@ export default function AccountSettings() {
         }
 
         setExporting(false);
+    };
+
+    // Drops a placeholder in at the cursor rather than tacking it on the end.
+    const insertPlaceholder = (key: string, defaultOffset: number, token: string) => {
+        const el = templateRefs.current[key];
+        const current = getTemplate(key, defaultOffset).body;
+
+        // Where the caret was. Falls back to the end of the text if the box
+        // hasn't been clicked into yet.
+        const start = el ? el.selectionStart : (caretRefs.current[key] ?? current.length);
+        const end = el ? el.selectionEnd : start;
+
+        const next = current.slice(0, start) + token + current.slice(end);
+        patchTemplate(key, { body: next }, defaultOffset);
+
+        // Put the caret straight after what we just inserted, once React has
+        // re-rendered with the new value.
+        const caret = start + token.length;
+        caretRefs.current[key] = caret;
+        setTimeout(() => {
+            const box = templateRefs.current[key];
+            if (box) {
+                box.focus();
+                box.setSelectionRange(caret, caret);
+            }
+        }, 0);
     };
 
     // --- Booking permissions handlers ---
@@ -1323,8 +1351,15 @@ export default function AccountSettings() {
                                                 </div>
 
                                                 <textarea
+                                                    ref={(el) => { templateRefs.current[def.key] = el; }}
                                                     value={tpl.body}
-                                                    onChange={(e) => patchTemplate(def.key, { body: e.target.value }, def.defaultOffset)}
+                                                    onChange={(e) => {
+                                                        caretRefs.current[def.key] = e.target.selectionStart;
+                                                        patchTemplate(def.key, { body: e.target.value }, def.defaultOffset);
+                                                    }}
+                                                    onSelect={(e) => { caretRefs.current[def.key] = e.currentTarget.selectionStart; }}
+                                                    onKeyUp={(e) => { caretRefs.current[def.key] = e.currentTarget.selectionStart; }}
+                                                    onClick={(e) => { caretRefs.current[def.key] = e.currentTarget.selectionStart; }}
                                                     rows={5}
                                                     placeholder={def.placeholder}
                                                     className="w-full p-3 border rounded-lg text-sm leading-6"
@@ -1336,7 +1371,8 @@ export default function AccountSettings() {
                                                         <button
                                                             key={ph.token}
                                                             type="button"
-                                                            onClick={() => patchTemplate(def.key, { body: `${tpl.body}${ph.token}` }, def.defaultOffset)}
+                                                            onMouseDown={(e) => e.preventDefault()}
+                                                            onClick={() => insertPlaceholder(def.key, def.defaultOffset, ph.token)}
                                                             className="text-xs bg-blue-50 text-blue-700 hover:bg-blue-100 border border-blue-200 rounded px-2 py-1 transition"
                                                         >
                                                             + {ph.label}
