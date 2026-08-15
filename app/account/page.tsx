@@ -1,6 +1,6 @@
 'use client';
 
-import React, { useEffect, useState, useRef } from 'react';
+import React, { useEffect, useState } from 'react';
 import { createClientComponentClient } from '@supabase/auth-helpers-nextjs';
 import { useRouter } from 'next/navigation';
 import Link from 'next/link';
@@ -35,7 +35,7 @@ const SECTIONS = [
 ];
 
 // Turns a stored schedule into the sentence shown on the button.
-function describeSchedule(t: { anchor: string; minutes_after: number; days_offset: number; send_hour: number }): string {
+function describeSchedule(t: { anchor: string; minutes_after: number; days_offset: number; send_hour: number; hours_after: number }): string {
     const hh = (h: number) => (h < 10 ? `0${h}:00` : `${h}:00`);
     if (!t.anchor || t.anchor === 'none') return 'Not scheduled';
     if (t.anchor === 'booking') {
@@ -43,6 +43,10 @@ function describeSchedule(t: { anchor: string; minutes_after: number; days_offse
         if (t.minutes_after === 60) return '1 hour after booking confirmed';
         if (t.minutes_after % 60 === 0) return `${t.minutes_after / 60} hours after booking confirmed`;
         return `${t.minutes_after} minutes after booking confirmed`;
+    }
+    if (t.anchor === 'after_check_in') {
+        if (t.hours_after === 1) return '1 hour after check-in';
+        return `${t.hours_after} hours after check-in`;
     }
     const when = t.anchor === 'check_in' ? 'check-in' : 'check-out';
     if (t.days_offset === 0) return `On the day of ${when} at ${hh(t.send_hour)}`;
@@ -52,22 +56,25 @@ function describeSchedule(t: { anchor: string; minutes_after: number; days_offse
 
 interface Preset {
     label: string;
-    values: { anchor: string; minutes_after: number; days_offset: number; send_hour: number };
+    values: { anchor: string; minutes_after: number; days_offset: number; send_hour: number; hours_after: number };
 }
 
-const SCHEDULE_PRESETS: (Preset & { family: 'booking' | 'stay' | 'both' })[] = [
-    { family: 'both',    label: "Don't schedule",                       values: { anchor: 'none',      minutes_after: 0,  days_offset: 0, send_hour: 9 } },
+const SCHEDULE_PRESETS: (Preset & { family: 'booking' | 'stay' | 'settled' | 'both' })[] = [
+    { family: 'both',    label: "Don't schedule",                       values: { anchor: 'none',      minutes_after: 0,  days_offset: 0, send_hour: 9, hours_after: 0 } },
 
-    { family: 'booking', label: 'As soon as you accept a booking',      values: { anchor: 'booking',   minutes_after: 0,  days_offset: 0, send_hour: 9 } },
-    { family: 'booking', label: '5 minutes after booking confirmed',    values: { anchor: 'booking',   minutes_after: 5,  days_offset: 0, send_hour: 9 } },
-    { family: 'booking', label: '30 minutes after booking confirmed',   values: { anchor: 'booking',   minutes_after: 30, days_offset: 0, send_hour: 9 } },
-    { family: 'booking', label: '1 hour after booking confirmed',       values: { anchor: 'booking',   minutes_after: 60, days_offset: 0, send_hour: 9 } },
+    { family: 'booking', label: 'As soon as you accept a booking',      values: { anchor: 'booking',   minutes_after: 0,  days_offset: 0, send_hour: 9, hours_after: 0 } },
+    { family: 'booking', label: '5 minutes after booking confirmed',    values: { anchor: 'booking',   minutes_after: 5,  days_offset: 0, send_hour: 9, hours_after: 0 } },
+    { family: 'booking', label: '30 minutes after booking confirmed',   values: { anchor: 'booking',   minutes_after: 30, days_offset: 0, send_hour: 9, hours_after: 0 } },
+    { family: 'booking', label: '1 hour after booking confirmed',       values: { anchor: 'booking',   minutes_after: 60, days_offset: 0, send_hour: 9, hours_after: 0 } },
 
-    { family: 'stay',    label: '3 days before check-in at 10:00',      values: { anchor: 'check_in',  minutes_after: 0,  days_offset: 3, send_hour: 10 } },
-    { family: 'stay',    label: '1 day before check-in at 10:00',       values: { anchor: 'check_in',  minutes_after: 0,  days_offset: 1, send_hour: 10 } },
-    { family: 'stay',    label: 'On the morning of check-in at 09:00',  values: { anchor: 'check_in',  minutes_after: 0,  days_offset: 0, send_hour: 9 } },
-    { family: 'stay',    label: '1 day before check-out at 18:00',      values: { anchor: 'check_out', minutes_after: 0,  days_offset: 1, send_hour: 18 } },
-    { family: 'stay',    label: 'On the morning of check-out at 09:00', values: { anchor: 'check_out', minutes_after: 0,  days_offset: 0, send_hour: 9 } },
+    { family: 'stay',    label: '3 days before check-in at 10:00',      values: { anchor: 'check_in',  minutes_after: 0,  days_offset: 3, send_hour: 10, hours_after: 0 } },
+    { family: 'stay',    label: '1 day before check-in at 10:00',       values: { anchor: 'check_in',  minutes_after: 0,  days_offset: 1, send_hour: 10, hours_after: 0 } },
+    { family: 'settled', label: '1 hour after check-in',                values: { anchor: 'after_check_in', minutes_after: 0, days_offset: 0, send_hour: 9, hours_after: 1 } },
+    { family: 'settled', label: '3 hours after check-in',               values: { anchor: 'after_check_in', minutes_after: 0, days_offset: 0, send_hour: 9, hours_after: 3 } },
+    { family: 'settled', label: '5 hours after check-in',               values: { anchor: 'after_check_in', minutes_after: 0, days_offset: 0, send_hour: 9, hours_after: 5 } },
+
+    { family: 'stay',    label: '1 day before check-out at 18:00',      values: { anchor: 'check_out', minutes_after: 0,  days_offset: 1, send_hour: 18, hours_after: 0 } },
+    { family: 'stay',    label: 'On the morning of check-out at 09:00', values: { anchor: 'check_out', minutes_after: 0,  days_offset: 0, send_hour: 9, hours_after: 0 } },
 ];
 
 const ANCHOR_LABELS: { key: string; label: string }[] = [
@@ -92,30 +99,14 @@ function hasRealContent(body: string): boolean {
     return body.split(GREETING).join('').trim().length > 0;
 }
 
-// A textarea can't colour parts of its own text, so we lay a styled
-// copy of the text directly behind a textarea whose own text is
-// transparent. The caret and selection still work normally, and the
-// value stays plain text — the database never sees any markup.
-function TemplateEditor({
-    value,
-    onChange,
-    placeholder,
-    rows = 5,
-}: {
-    value: string;
-    onChange: (next: string) => void;
-    placeholder?: string;
-    rows?: number;
-}) {
-    const backdropRef = useRef<HTMLDivElement>(null);
+// Shows how a template will read, with the automatic bits highlighted.
+// This is display only — deliberately separate from the box you type in,
+// because overlaying styled text on a textarea makes the cursor drift.
+function TemplatePreview({ value }: { value: string }) {
+    if (!hasRealContent(value)) return null;
 
-    // Both layers must render text identically — same font, size, spacing,
-    // padding and wrapping — or the caret and the highlight drift apart.
-    const shared =
-        'w-full p-3 text-sm leading-6 font-sans whitespace-pre-wrap break-words tracking-normal';
-
-    const parts: React.ReactNode[] = [];
     const tokens = PLACEHOLDERS.map((ph) => ph.token);
+    const parts: React.ReactNode[] = [];
     let remaining = value;
     let guard = 0;
 
@@ -138,44 +129,26 @@ function TemplateEditor({
         }
 
         if (nextAt > 0) parts.push(remaining.slice(0, nextAt));
-        // The highlighted span must contain exactly the same characters as
-        // the textarea underneath, with no extra padding or weight — any
-        // difference in width pushes the visible caret out of step with
-        // where typing actually lands.
+        const label = PLACEHOLDERS.filter((ph) => ph.token === nextToken)[0];
         parts.push(
             <span
                 key={`${guard}-${nextAt}`}
-                className="bg-blue-100 text-blue-800 rounded"
+                className="bg-blue-100 text-blue-800 rounded px-1.5 py-0.5 font-medium"
             >
-                {nextToken}
+                {label ? label.label : nextToken}
             </span>
         );
         remaining = remaining.slice(nextAt + nextToken.length);
     }
 
     return (
-        <div className="relative border rounded-lg overflow-hidden bg-white">
-            <div
-                ref={backdropRef}
-                aria-hidden="true"
-                className={`${shared} pointer-events-none text-slate-800 overflow-hidden`}
-                style={{ minHeight: `${rows * 1.5 + 1.5}rem` }}
-            >
-                {value ? parts : <span className="text-slate-400">{placeholder}</span>}
-                {'\n'}
+        <div className="mt-3 rounded-lg bg-slate-50 border p-3">
+            <div className="text-xs font-semibold text-slate-500 mb-2">
+                How your guest will see it
             </div>
-            <textarea
-                value={value}
-                onChange={(e) => onChange(e.target.value)}
-                onScroll={(e) => {
-                    if (backdropRef.current) {
-                        backdropRef.current.scrollTop = e.currentTarget.scrollTop;
-                    }
-                }}
-                rows={rows}
-                spellCheck={false}
-                className={`${shared} absolute inset-0 h-full bg-transparent text-transparent caret-slate-900 resize-none outline-none focus:ring-2 focus:ring-slate-900 rounded-lg overflow-auto`}
-            />
+            <div className="text-sm text-slate-800 whitespace-pre-wrap leading-6">
+                {parts}
+            </div>
         </div>
     );
 }
@@ -202,7 +175,7 @@ interface TemplateDef {
     defaultOffset: number;
     // Which kind of timing makes sense: hung off the booking being
     // accepted, or off the dates of the stay itself.
-    family: 'booking' | 'stay';
+    family: 'booking' | 'stay' | 'settled';
     offsetLabel?: string;
     offsetChoices?: number[];
 }
@@ -221,17 +194,17 @@ const TEMPLATE_TYPES: TemplateDef[] = [
         family: 'stay',
         label: 'Check-in details',
         hint: 'The practical stuff — address, key safe, parking, wifi.',
-        placeholder: "You're arriving at {listing} on {check_in}. Check-in is any time after 4pm. The key safe is to the right of the front door — code 1234. Parking is on the street directly outside.",
+        placeholder: "You're arriving at {listing} on {check_in}. Check-in is any time after 3pm. The key safe is to the right of the front door — code 1234. Parking is on the street directly outside.",
         defaultOffset: 3,
         offsetLabel: 'days before arrival',
         offsetChoices: [1, 2, 3, 4, 5, 6, 7, 10, 14],
     },
     {
         key: 'checkin_day',
-        family: 'stay',
+        family: 'settled',
         label: 'Checking in with guest',
-        hint: 'A friendly note on the morning of their arrival day.',
-        placeholder: "Hope the journey goes smoothly today. Everything's ready for you at {listing} — give me a shout if you need anything at all.",
+        hint: 'A friendly note once they\'ve arrived and had a chance to settle in.',
+        placeholder: "Just checking you got in alright and everything's as you expected at {listing}. Any problems at all, give me a shout and I'll sort it.",
         defaultOffset: 0,
     },
     {
@@ -239,7 +212,7 @@ const TEMPLATE_TYPES: TemplateDef[] = [
         family: 'stay',
         label: 'Check-out details',
         hint: 'What you need them to do before they leave.',
-        placeholder: "Hope you've had a lovely stay. Check-out is by 10am on {check_out} — just pop the keys back in the safe and close the door behind you. Bins are round the side if you have any rubbish.",
+        placeholder: "Hope you've had a lovely stay. Check-out is by 11am on {check_out} — just pop the keys back in the safe and close the door behind you. Bins are round the side if you have any rubbish.",
         defaultOffset: 1,
         offsetLabel: 'days before departure',
         offsetChoices: [1, 2, 3],
@@ -304,6 +277,7 @@ export default function AccountSettings() {
         send_hour: number;
         anchor: string;
         minutes_after: number;
+        hours_after: number;
     }
     const [templates, setTemplates] = useState<Record<string, Template>>({});
     const [savingTemplate, setSavingTemplate] = useState<string | null>(null);
@@ -322,6 +296,8 @@ export default function AccountSettings() {
         preparation_time: string | null;
         availability_window: string | null;
         cancellation_policy: string | null;
+        check_in_time: string | null;
+        check_out_time: string | null;
     }
     const [hostListings, setHostListings] = useState<HostListing[]>([]);
     const [savingListing, setSavingListing] = useState<string | null>(null);
@@ -363,7 +339,7 @@ export default function AccountSettings() {
 
                 const { data: tpls } = await supabase
                     .from('message_templates')
-                    .select('template_type, body, enabled, days_offset, send_hour, anchor, minutes_after')
+                    .select('template_type, body, enabled, days_offset, send_hour, anchor, minutes_after, hours_after')
                     .eq('user_id', session.user.id);
 
                 const tplMap: Record<string, Template> = {};
@@ -372,7 +348,7 @@ export default function AccountSettings() {
 
                 const { data: myListings } = await supabase
                     .from('listings')
-                    .select('id, title, instant_book, instant_book_requires_phone, instant_book_requires_verified_id, min_nights, max_nights, advance_notice, preparation_time, availability_window, cancellation_policy')
+                    .select('id, title, instant_book, instant_book_requires_phone, instant_book_requires_verified_id, min_nights, max_nights, advance_notice, preparation_time, availability_window, cancellation_policy, check_in_time, check_out_time')
                     .eq('host_id', session.user.id)
                     .order('created_at', { ascending: true });
                 setHostListings(myListings || []);
@@ -696,6 +672,7 @@ export default function AccountSettings() {
             send_hour: 9,
             anchor: 'none',
             minutes_after: 0,
+            hours_after: 0,
         };
     };
 
@@ -723,6 +700,7 @@ export default function AccountSettings() {
                     send_hour: next.send_hour,
                     anchor: next.anchor,
                     minutes_after: next.minutes_after,
+                    hours_after: next.hours_after,
                 },
                 { onConflict: 'user_id,template_type' }
             );
@@ -1256,9 +1234,9 @@ export default function AccountSettings() {
                             <div className="mb-8">
                                 <h3 className="text-base font-bold text-slate-900 mb-1">Scheduled messages</h3>
                                 <p className="text-xs text-slate-500 mb-4">
-                                    Written once, sent automatically at the right moment. Anything highlighted in
-                                    blue is filled in for each guest — <span className="bg-blue-100 text-blue-800 rounded">{'{guest_name}'}</span> becomes
-                                    their actual first name when the message goes out.
+                                    Written once, sent automatically at the right moment. Anything in curly braces is
+                                    swapped for the real thing when the message goes out — the preview under each box
+                                    shows you exactly how it&apos;ll read.
                                 </p>
 
                                 <div className="space-y-4">
@@ -1290,11 +1268,12 @@ export default function AccountSettings() {
                                                     </button>
                                                 </div>
 
-                                                <TemplateEditor
+                                                <textarea
                                                     value={tpl.body}
-                                                    onChange={(next) => patchTemplate(def.key, { body: next }, def.defaultOffset)}
-                                                    placeholder={def.placeholder}
+                                                    onChange={(e) => patchTemplate(def.key, { body: e.target.value }, def.defaultOffset)}
                                                     rows={5}
+                                                    placeholder={def.placeholder}
+                                                    className="w-full p-3 border rounded-lg text-sm leading-6"
                                                 />
 
                                                 <div className="flex flex-wrap items-center gap-1.5 mt-2">
@@ -1311,6 +1290,8 @@ export default function AccountSettings() {
                                                     ))}
                                                 </div>
 
+                                                <TemplatePreview value={tpl.body} />
+
                                                 <div className="flex flex-wrap items-center gap-3 mt-3">
                                                     <button
                                                         type="button"
@@ -1321,6 +1302,7 @@ export default function AccountSettings() {
                                                                 minutes_after: tpl.minutes_after,
                                                                 days_offset: tpl.days_offset,
                                                                 send_hour: tpl.send_hour,
+                                                                hours_after: tpl.hours_after,
                                                             });
                                                         }}
                                                         className="flex items-center gap-2 text-xs font-semibold text-slate-700 border rounded-lg px-3 py-2 hover:bg-slate-50"
@@ -1562,6 +1544,55 @@ export default function AccountSettings() {
                                                 )}
 
                                                 {/* Read-only summary of rules that live elsewhere */}
+                                                <div className="border-t pt-4 mb-4">
+                                                    <div className="flex items-start justify-between mb-4">
+                                                        <div className="pr-6">
+                                                            <div className="font-semibold text-slate-900 text-sm mb-1">
+                                                                Check-in from
+                                                            </div>
+                                                            <p className="text-xs text-slate-500">
+                                                                When guests can arrive. Messages timed after check-in count
+                                                                forward from this.
+                                                            </p>
+                                                        </div>
+                                                        <select
+                                                            value={(l.check_in_time || '15:00').slice(0, 5)}
+                                                            disabled={busy}
+                                                            onChange={(e) => updateListingBooking(l.id, { check_in_time: e.target.value })}
+                                                            className="border rounded-lg p-2 text-sm flex-shrink-0 disabled:opacity-50"
+                                                        >
+                                                            {HOURS.map((h) => (
+                                                                <option key={h} value={h < 10 ? `0${h}:00` : `${h}:00`}>
+                                                                    {h < 10 ? `0${h}:00` : `${h}:00`}
+                                                                </option>
+                                                            ))}
+                                                        </select>
+                                                    </div>
+
+                                                    <div className="flex items-start justify-between">
+                                                        <div className="pr-6">
+                                                            <div className="font-semibold text-slate-900 text-sm mb-1">
+                                                                Check-out by
+                                                            </div>
+                                                            <p className="text-xs text-slate-500">
+                                                                When guests need to be out on their last morning.
+                                                            </p>
+                                                        </div>
+                                                        <select
+                                                            value={(l.check_out_time || '11:00').slice(0, 5)}
+                                                            disabled={busy}
+                                                            onChange={(e) => updateListingBooking(l.id, { check_out_time: e.target.value })}
+                                                            className="border rounded-lg p-2 text-sm flex-shrink-0 disabled:opacity-50"
+                                                        >
+                                                            {HOURS.map((h) => (
+                                                                <option key={h} value={h < 10 ? `0${h}:00` : `${h}:00`}>
+                                                                    {h < 10 ? `0${h}:00` : `${h}:00`}
+                                                                </option>
+                                                            ))}
+                                                        </select>
+                                                    </div>
+                                                </div>
+
                                                 <div className="border-t pt-4">
                                                     <div className="text-xs font-semibold text-slate-700 mb-2">
                                                         Current stay rules
@@ -1639,7 +1670,8 @@ export default function AccountSettings() {
                                     draftSchedule.anchor === preset.values.anchor &&
                                     (draftSchedule.minutes_after || 0) === preset.values.minutes_after &&
                                     (draftSchedule.days_offset || 0) === preset.values.days_offset &&
-                                    (draftSchedule.send_hour || 0) === preset.values.send_hour;
+                                    (draftSchedule.send_hour || 0) === preset.values.send_hour &&
+                                    (draftSchedule.hours_after || 0) === preset.values.hours_after;
 
                                 return (
                                     <button
@@ -1657,7 +1689,19 @@ export default function AccountSettings() {
                             <div className="rounded-xl border border-slate-200 p-4">
                                 <div className="text-sm font-semibold text-slate-900 mb-3">Custom time</div>
                                 <div className="flex flex-wrap items-center gap-2">
-                                    {(TEMPLATE_TYPES.filter((d) => d.key === scheduleFor)[0]?.family === 'booking') ? (
+                                    {(TEMPLATE_TYPES.filter((d) => d.key === scheduleFor)[0]?.family === 'settled') ? (
+                                        <>
+                                            <input
+                                                type="number"
+                                                min={0}
+                                                max={12}
+                                                value={draftSchedule.hours_after || 0}
+                                                onChange={(e) => setDraftSchedule(Object.assign({}, draftSchedule, { anchor: 'after_check_in', hours_after: parseInt(e.target.value, 10) || 0 }))}
+                                                className="w-20 border rounded-lg p-2 text-sm"
+                                            />
+                                            <span className="text-sm text-slate-600">hours after check-in</span>
+                                        </>
+                                    ) : (TEMPLATE_TYPES.filter((d) => d.key === scheduleFor)[0]?.family === 'booking') ? (
                                         <>
                                             <input
                                                 type="number"
@@ -1683,7 +1727,7 @@ export default function AccountSettings() {
                                         </>
                                     )}
 
-                                    {(TEMPLATE_TYPES.filter((d) => d.key === scheduleFor)[0]?.family !== 'booking') && (
+                                    {(TEMPLATE_TYPES.filter((d) => d.key === scheduleFor)[0]?.family === 'stay') && (
                                         <select
                                             value={draftSchedule.anchor === 'none' || draftSchedule.anchor === 'booking' ? 'check_in' : draftSchedule.anchor}
                                             onChange={(e) => setDraftSchedule(Object.assign({}, draftSchedule, { anchor: e.target.value }))}
@@ -1695,7 +1739,7 @@ export default function AccountSettings() {
                                         </select>
                                     )}
 
-                                    {(TEMPLATE_TYPES.filter((d) => d.key === scheduleFor)[0]?.family !== 'booking') && (
+                                    {(TEMPLATE_TYPES.filter((d) => d.key === scheduleFor)[0]?.family === 'stay') && (
                                         <label className="flex items-center gap-2 text-sm text-slate-600">
                                             at
                                             <select
