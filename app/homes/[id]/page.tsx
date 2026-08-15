@@ -2,12 +2,13 @@ export const dynamic = "force-dynamic";
 import React from 'react'
 import { createServerComponentClient } from '@supabase/auth-helpers-nextjs'
 import { cookies } from 'next/headers';
-import { capitializeFirst, displayName } from '@/lib/utils';
+import { capitializeFirst, displayName, getImageUrl } from '@/lib/utils';
 import BookingWidget from '@/components/BookingWidget';
 import ReviewStars from '@/components/ReviewStars';
 import PhotoGallery from '@/components/PhotoGallery';
 import HostReplyBox from '@/components/HostReplyBox';
 import ReviewsSummary from '@/components/ReviewsSummary';
+import { KeyRound, Zap, Car, Bath, Waves, Flame, PawPrint, Briefcase, Plug, Users, MapPin, DoorOpen } from 'lucide-react';
 
 // Turns the wizard's plural category into a noun that reads naturally in
 // a sentence: "Entire townhouse in ..." rather than "Entire Townhouses".
@@ -48,10 +49,10 @@ function placeSummary(location: string | null): string {
 
 // Things worth calling out at a glance. Every one is derived from real
 // data on the listing — nothing here is decorative.
-function propertyHighlights(home: any): { title: string; detail: string }[] {
+function propertyHighlights(home: any): { title: string; detail: string; icon: any }[] {
     const amenities: string[] = (home && home.amenities) || [];
     const has = (name: string) => amenities.indexOf(name) !== -1;
-    const out: { title: string; detail: string }[] = [];
+    const out: { title: string; detail: string; icon: any }[] = [];
 
     // How guests get in — worth showing high up, it's one of the first
     // things people want to know.
@@ -66,9 +67,18 @@ function propertyHighlights(home: any): { title: string; detail: string }[] {
 
     if (home && home.check_in_method) {
         const selfServe = ['Lockbox', 'Smart lock', 'Keypad'].indexOf(home.check_in_method) !== -1;
+        const methodIcons: Record<string, any> = {
+            'Lockbox': KeyRound,
+            'Smart lock': KeyRound,
+            'Keypad': KeyRound,
+            'Host greets you': Users,
+            'Keys collected nearby': MapPin,
+            'Building staff': DoorOpen,
+        };
         out.push({
             title: selfServe ? 'Self check-in' : home.check_in_method,
             detail: CHECKIN_BLURBS[home.check_in_method] || '',
+            icon: methodIcons[home.check_in_method] || KeyRound,
         });
     }
 
@@ -76,28 +86,29 @@ function propertyHighlights(home: any): { title: string; detail: string }[] {
         out.push({
             title: 'Instant Book',
             detail: 'Your dates are confirmed straight away, with no wait for approval.',
+            icon: Zap,
         });
     }
     if (has('Free parking on premises')) {
-        out.push({ title: 'Park for free', detail: 'Free parking at the property.' });
+        out.push({ title: 'Park for free', detail: 'Free parking at the property.', icon: Car });
     }
     if (has('Hot tub')) {
-        out.push({ title: 'Hot tub', detail: 'Unwind in the hot tub after a day out.' });
+        out.push({ title: 'Hot tub', detail: 'Unwind in the hot tub after a day out.', icon: Bath });
     }
     if (has('Waterfront') || has('Beach access')) {
-        out.push({ title: 'By the water', detail: 'Right by the shore on the Solway coast.' });
+        out.push({ title: 'By the water', detail: 'Right by the shore on the Solway coast.', icon: Waves });
     }
     if (has('Indoor fireplace')) {
-        out.push({ title: 'Real fire', detail: 'An indoor fireplace for the colder months.' });
+        out.push({ title: 'Real fire', detail: 'An indoor fireplace for the colder months.', icon: Flame });
     }
     if (has('Pets allowed')) {
-        out.push({ title: 'Pets welcome', detail: 'Bring the dog along for the trip.' });
+        out.push({ title: 'Pets welcome', detail: 'Bring the dog along for the trip.', icon: PawPrint });
     }
     if (has('Dedicated workspace')) {
-        out.push({ title: 'Room to work', detail: 'A dedicated desk if you need to log on.' });
+        out.push({ title: 'Room to work', detail: 'A dedicated desk if you need to log on.', icon: Briefcase });
     }
     if (has('EV charger')) {
-        out.push({ title: 'EV charging', detail: 'Charge your car on site overnight.' });
+        out.push({ title: 'EV charging', detail: 'Charge your car on site overnight.', icon: Plug });
     }
 
     return out.slice(0, 4);
@@ -113,13 +124,15 @@ const FindHome = async ({ params }: { params: { id: string } }) => {
         .single();
 
     let hostName = 'Host';
+    let hostAvatar: string | null = null;
     if (home?.host_id) {
         const { data: hostProfile } = await supabase
             .from('profiles')
-            .select('full_name, preferred_name, show_full_name')
+            .select('full_name, preferred_name, show_full_name, avatar_url')
             .eq('id', home.host_id)
             .single();
         hostName = displayName(hostProfile, 'Host');
+        hostAvatar = hostProfile?.avatar_url || null;
     }
 
     // Guests see a first name only — a surname on a public page is more
@@ -206,8 +219,16 @@ const FindHome = async ({ params }: { params: { id: string } }) => {
                         </p>
 
                         <div className='flex items-center gap-3 mt-5 pt-5 border-t'>
-                            <div className='w-11 h-11 rounded-full bg-slate-900 text-white flex items-center justify-center font-semibold flex-shrink-0'>
-                                {hostFirstName.charAt(0)}
+                            <div className='w-11 h-11 rounded-full overflow-hidden bg-slate-900 text-white flex items-center justify-center font-semibold flex-shrink-0'>
+                                {hostAvatar ? (
+                                    <img
+                                        src={getImageUrl(hostAvatar)}
+                                        alt={`${hostFirstName}, host`}
+                                        className='w-full h-full object-cover'
+                                    />
+                                ) : (
+                                    hostFirstName.charAt(0)
+                                )}
                             </div>
                             <div>
                                 <div className='font-semibold text-slate-900'>
@@ -224,8 +245,8 @@ const FindHome = async ({ params }: { params: { id: string } }) => {
                         {highlights.length > 0 && (
                             <div className='mt-5 pt-5 border-t space-y-4'>
                                 {highlights.map((h) => (
-                                    <div key={h.title} className='flex items-start gap-3'>
-                                        <span className='w-2 h-2 rounded-full bg-slate-900 mt-2 flex-shrink-0' />
+                                    <div key={h.title} className='flex items-start gap-4'>
+                                        <h.icon className='w-6 h-6 text-slate-700 flex-shrink-0 mt-0.5' strokeWidth={1.5} />
                                         <div>
                                             <div className='font-semibold text-slate-900 text-sm'>{h.title}</div>
                                             <div className='text-sm text-slate-500'>{h.detail}</div>
