@@ -53,6 +53,25 @@ function propertyHighlights(home: any): { title: string; detail: string }[] {
     const has = (name: string) => amenities.indexOf(name) !== -1;
     const out: { title: string; detail: string }[] = [];
 
+    // How guests get in — worth showing high up, it's one of the first
+    // things people want to know.
+    const CHECKIN_BLURBS: Record<string, string> = {
+        'Lockbox': 'Check yourself in with the lockbox.',
+        'Smart lock': 'Let yourself in with a smart lock code.',
+        'Keypad': 'Let yourself in using the door keypad.',
+        'Host greets you': 'Your host will meet you at the property.',
+        'Keys collected nearby': 'Keys are collected from a nearby address.',
+        'Building staff': 'Building staff will let you in.',
+    };
+
+    if (home && home.check_in_method) {
+        const selfServe = ['Lockbox', 'Smart lock', 'Keypad'].indexOf(home.check_in_method) !== -1;
+        out.push({
+            title: selfServe ? 'Self check-in' : home.check_in_method,
+            detail: CHECKIN_BLURBS[home.check_in_method] || '',
+        });
+    }
+
     if (home && home.instant_book) {
         out.push({
             title: 'Instant Book',
