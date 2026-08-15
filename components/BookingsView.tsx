@@ -77,7 +77,7 @@ export default function BookingsView({
                             alreadyReviewed ? (
                                 <span className="text-xs text-slate-400">You've reviewed this guest</span>
                             ) : (
-                                <Link href="/dashboard/reviews" className="text-xs font-semibold text-rose-500 underline hover:text-rose-600">
+                                <Link href="/dashboard/reviews" className="text-xs font-semibold text-emerald-700 underline hover:text-emerald-800">
                                     Leave a review
                                 </Link>
                             )
