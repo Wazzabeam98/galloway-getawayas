@@ -36,7 +36,7 @@ const SECTIONS = [
 ];
 
 // Turns a stored schedule into the sentence shown on the button.
-function describeSchedule(t: { anchor: string; minutes_after: number; days_offset: number; send_hour: number; hours_after: number }): string {
+function describeSchedule(t: { anchor: string; minutes_after: number; days_offset: number; send_hour: number; hours_after: number; hours_before: number }): string {
     const hh = (h: number) => (h < 10 ? `0${h}:00` : `${h}:00`);
     if (!t.anchor || t.anchor === 'none') return 'Not scheduled';
     if (t.anchor === 'booking') {
@@ -44,6 +44,10 @@ function describeSchedule(t: { anchor: string; minutes_after: number; days_offse
         if (t.minutes_after === 60) return '1 hour after booking confirmed';
         if (t.minutes_after % 60 === 0) return `${t.minutes_after / 60} hours after booking confirmed`;
         return `${t.minutes_after} minutes after booking confirmed`;
+    }
+    if (t.anchor === 'before_check_out') {
+        if (t.hours_before === 1) return '1 hour before check-out';
+        return `${t.hours_before} hours before check-out`;
     }
     if (t.anchor === 'after_check_in') {
         if (t.hours_after === 1) return '1 hour after check-in';
@@ -57,25 +61,27 @@ function describeSchedule(t: { anchor: string; minutes_after: number; days_offse
 
 interface Preset {
     label: string;
-    values: { anchor: string; minutes_after: number; days_offset: number; send_hour: number; hours_after: number };
+    values: { anchor: string; minutes_after: number; days_offset: number; send_hour: number; hours_after: number; hours_before: number };
 }
 
-const SCHEDULE_PRESETS: (Preset & { family: 'booking' | 'stay' | 'settled' | 'both' })[] = [
-    { family: 'both',    label: "Don't schedule",                       values: { anchor: 'none',      minutes_after: 0,  days_offset: 0, send_hour: 9, hours_after: 0 } },
+const SCHEDULE_PRESETS: (Preset & { family: 'booking' | 'stay' | 'settled' | 'checkout' | 'both' })[] = [
+    { family: 'both',    label: "Don't schedule",                       values: { anchor: 'none',      minutes_after: 0,  days_offset: 0, send_hour: 9, hours_after: 0, hours_before: 0 } },
 
-    { family: 'booking', label: 'As soon as you accept a booking',      values: { anchor: 'booking',   minutes_after: 0,  days_offset: 0, send_hour: 9, hours_after: 0 } },
-    { family: 'booking', label: '5 minutes after booking confirmed',    values: { anchor: 'booking',   minutes_after: 5,  days_offset: 0, send_hour: 9, hours_after: 0 } },
-    { family: 'booking', label: '30 minutes after booking confirmed',   values: { anchor: 'booking',   minutes_after: 30, days_offset: 0, send_hour: 9, hours_after: 0 } },
-    { family: 'booking', label: '1 hour after booking confirmed',       values: { anchor: 'booking',   minutes_after: 60, days_offset: 0, send_hour: 9, hours_after: 0 } },
+    { family: 'booking', label: 'As soon as you accept a booking',      values: { anchor: 'booking',   minutes_after: 0,  days_offset: 0, send_hour: 9, hours_after: 0, hours_before: 0 } },
+    { family: 'booking', label: '5 minutes after booking confirmed',    values: { anchor: 'booking',   minutes_after: 5,  days_offset: 0, send_hour: 9, hours_after: 0, hours_before: 0 } },
+    { family: 'booking', label: '30 minutes after booking confirmed',   values: { anchor: 'booking',   minutes_after: 30, days_offset: 0, send_hour: 9, hours_after: 0, hours_before: 0 } },
+    { family: 'booking', label: '1 hour after booking confirmed',       values: { anchor: 'booking',   minutes_after: 60, days_offset: 0, send_hour: 9, hours_after: 0, hours_before: 0 } },
 
-    { family: 'stay',    label: '3 days before check-in at 10:00',      values: { anchor: 'check_in',  minutes_after: 0,  days_offset: 3, send_hour: 10, hours_after: 0 } },
-    { family: 'stay',    label: '1 day before check-in at 10:00',       values: { anchor: 'check_in',  minutes_after: 0,  days_offset: 1, send_hour: 10, hours_after: 0 } },
-    { family: 'settled', label: '1 hour after check-in',                values: { anchor: 'after_check_in', minutes_after: 0, days_offset: 0, send_hour: 9, hours_after: 1 } },
-    { family: 'settled', label: '3 hours after check-in',               values: { anchor: 'after_check_in', minutes_after: 0, days_offset: 0, send_hour: 9, hours_after: 3 } },
-    { family: 'settled', label: '5 hours after check-in',               values: { anchor: 'after_check_in', minutes_after: 0, days_offset: 0, send_hour: 9, hours_after: 5 } },
+    { family: 'stay',    label: '3 days before check-in at 10:00',      values: { anchor: 'check_in',  minutes_after: 0,  days_offset: 3, send_hour: 10, hours_after: 0, hours_before: 0 } },
+    { family: 'stay',    label: '1 day before check-in at 10:00',       values: { anchor: 'check_in',  minutes_after: 0,  days_offset: 1, send_hour: 10, hours_after: 0, hours_before: 0 } },
+    { family: 'settled', label: '1 hour after check-in',                values: { anchor: 'after_check_in', minutes_after: 0, days_offset: 0, send_hour: 9, hours_after: 1, hours_before: 0 } },
+    { family: 'settled', label: '3 hours after check-in',               values: { anchor: 'after_check_in', minutes_after: 0, days_offset: 0, send_hour: 9, hours_after: 3, hours_before: 0 } },
+    { family: 'settled', label: '5 hours after check-in',               values: { anchor: 'after_check_in', minutes_after: 0, days_offset: 0, send_hour: 9, hours_after: 5, hours_before: 0 } },
 
-    { family: 'stay',    label: '1 day before check-out at 18:00',      values: { anchor: 'check_out', minutes_after: 0,  days_offset: 1, send_hour: 18, hours_after: 0 } },
-    { family: 'stay',    label: 'On the morning of check-out at 09:00', values: { anchor: 'check_out', minutes_after: 0,  days_offset: 0, send_hour: 9, hours_after: 0 } },
+    { family: 'checkout', label: '24 hours before check-out',           values: { anchor: 'before_check_out', minutes_after: 0, days_offset: 0, send_hour: 9, hours_after: 0, hours_before: 24 } },
+    { family: 'checkout', label: '18 hours before check-out',           values: { anchor: 'before_check_out', minutes_after: 0, days_offset: 0, send_hour: 9, hours_after: 0, hours_before: 18 } },
+    { family: 'checkout', label: '12 hours before check-out',           values: { anchor: 'before_check_out', minutes_after: 0, days_offset: 0, send_hour: 9, hours_after: 0, hours_before: 12 } },
+    { family: 'checkout', label: '4 hours before check-out',            values: { anchor: 'before_check_out', minutes_after: 0, days_offset: 0, send_hour: 9, hours_after: 0, hours_before: 4 } },
 ];
 
 const ANCHOR_LABELS: { key: string; label: string }[] = [
@@ -182,7 +188,7 @@ interface TemplateDef {
     defaultOffset: number;
     // Which kind of timing makes sense: hung off the booking being
     // accepted, or off the dates of the stay itself.
-    family: 'booking' | 'stay' | 'settled';
+    family: 'booking' | 'stay' | 'settled' | 'checkout';
     offsetLabel?: string;
     offsetChoices?: number[];
 }
@@ -216,9 +222,9 @@ const TEMPLATE_TYPES: TemplateDef[] = [
     },
     {
         key: 'checkout_details',
-        family: 'stay',
+        family: 'checkout',
         label: 'Check-out details',
-        hint: 'What you need them to do before they leave.',
+        hint: 'What you need them to do before they leave — counted back from your check-out time.',
         placeholder: "Hope you've had a lovely stay. Check-out is by 11am on {check_out} — just pop the keys back in the safe and close the door behind you. Bins are round the side if you have any rubbish.",
         defaultOffset: 1,
         offsetLabel: 'days before departure',
@@ -286,6 +292,7 @@ export default function AccountSettings() {
         minutes_after: number;
         hours_after: number;
         listing_ids: string[];
+        hours_before: number;
     }
     const [templates, setTemplates] = useState<Record<string, Template>>({});
     const [savingTemplate, setSavingTemplate] = useState<string | null>(null);
@@ -350,7 +357,7 @@ export default function AccountSettings() {
 
                 const { data: tpls } = await supabase
                     .from('message_templates')
-                    .select('template_type, body, enabled, days_offset, send_hour, anchor, minutes_after, hours_after, listing_ids')
+                    .select('template_type, body, enabled, days_offset, send_hour, anchor, minutes_after, hours_after, listing_ids, hours_before')
                     .eq('user_id', session.user.id);
 
                 const tplMap: Record<string, Template> = {};
@@ -685,6 +692,7 @@ export default function AccountSettings() {
             minutes_after: 0,
             hours_after: 0,
             listing_ids: [],
+            hours_before: 0,
         };
     };
 
@@ -714,6 +722,7 @@ export default function AccountSettings() {
                     minutes_after: next.minutes_after,
                     hours_after: next.hours_after,
                     listing_ids: next.listing_ids,
+                    hours_before: next.hours_before,
                 },
                 { onConflict: 'user_id,template_type' }
             );
@@ -1339,6 +1348,7 @@ export default function AccountSettings() {
                                                                 days_offset: tpl.days_offset,
                                                                 send_hour: tpl.send_hour,
                                                                 hours_after: tpl.hours_after,
+                                                                hours_before: tpl.hours_before,
                                                             });
                                                         }}
                                                         className="flex items-center gap-2 text-xs font-semibold text-slate-700 border rounded-lg px-3 py-2 hover:bg-slate-50"
@@ -1817,7 +1827,8 @@ export default function AccountSettings() {
                                     (draftSchedule.minutes_after || 0) === preset.values.minutes_after &&
                                     (draftSchedule.days_offset || 0) === preset.values.days_offset &&
                                     (draftSchedule.send_hour || 0) === preset.values.send_hour &&
-                                    (draftSchedule.hours_after || 0) === preset.values.hours_after;
+                                    (draftSchedule.hours_after || 0) === preset.values.hours_after &&
+                                    (draftSchedule.hours_before || 0) === preset.values.hours_before;
 
                                 return (
                                     <button
@@ -1835,7 +1846,19 @@ export default function AccountSettings() {
                             <div className="rounded-xl border border-slate-200 p-4">
                                 <div className="text-sm font-semibold text-slate-900 mb-3">Custom time</div>
                                 <div className="flex flex-wrap items-center gap-2">
-                                    {(TEMPLATE_TYPES.filter((d) => d.key === scheduleFor)[0]?.family === 'settled') ? (
+                                    {(TEMPLATE_TYPES.filter((d) => d.key === scheduleFor)[0]?.family === 'checkout') ? (
+                                        <>
+                                            <input
+                                                type="number"
+                                                min={1}
+                                                max={72}
+                                                value={draftSchedule.hours_before || 0}
+                                                onChange={(e) => setDraftSchedule(Object.assign({}, draftSchedule, { anchor: 'before_check_out', hours_before: parseInt(e.target.value, 10) || 0 }))}
+                                                className="w-20 border rounded-lg p-2 text-sm"
+                                            />
+                                            <span className="text-sm text-slate-600">hours before check-out</span>
+                                        </>
+                                    ) : (TEMPLATE_TYPES.filter((d) => d.key === scheduleFor)[0]?.family === 'settled') ? (
                                         <>
                                             <input
                                                 type="number"
