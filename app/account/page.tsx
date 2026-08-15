@@ -1533,78 +1533,120 @@ export default function AccountSettings() {
                                 {quickReplies.length > 0 && (
                                     <div className="border rounded-xl divide-y mb-5">
                                         {quickReplies.map((reply) => (
-                                            <div key={reply.id} className="p-4 flex items-start justify-between">
-                                                <div className="pr-4 min-w-0">
-                                                    <div className="font-semibold text-slate-900 text-sm">{reply.title}</div>
-                                                    <p className="text-xs text-slate-500 mt-1 whitespace-pre-line">{reply.body}</p>
+                                            qrEditingId === reply.id ? (
+                                                /* Editing happens right here, in the row you clicked */
+                                                <div key={reply.id} className="p-4 bg-slate-50">
+                                                    <div className="text-xs font-semibold text-slate-500 mb-3">
+                                                        Editing this quick reply
+                                                    </div>
+                                                    <div className="space-y-3">
+                                                        <div>
+                                                            <label className="text-xs text-slate-500">Shortcut name</label>
+                                                            <input
+                                                                type="text"
+                                                                value={qrTitle}
+                                                                onChange={(e) => setQrTitle(e.target.value)}
+                                                                className="w-full p-2.5 border rounded-lg text-sm mt-1 bg-white"
+                                                            />
+                                                        </div>
+                                                        <div>
+                                                            <label className="text-xs text-slate-500">Message</label>
+                                                            <textarea
+                                                                value={qrBody}
+                                                                onChange={(e) => setQrBody(e.target.value)}
+                                                                rows={4}
+                                                                className="w-full p-2.5 border rounded-lg text-sm mt-1 bg-white"
+                                                            />
+                                                        </div>
+                                                        <div className="flex items-center space-x-3">
+                                                            <button
+                                                                type="button"
+                                                                onClick={saveQuickReply}
+                                                                disabled={savingQr || !qrTitle.trim() || !qrBody.trim()}
+                                                                className="px-4 py-2.5 bg-slate-900 hover:bg-black text-white text-sm font-semibold rounded-lg disabled:opacity-40 disabled:cursor-not-allowed"
+                                                            >
+                                                                {savingQr ? 'Saving...' : 'Save changes'}
+                                                            </button>
+                                                            <button
+                                                                type="button"
+                                                                onClick={() => {
+                                                                    setQrEditingId(null);
+                                                                    setQrTitle('');
+                                                                    setQrBody('');
+                                                                }}
+                                                                className="text-sm text-slate-500 hover:text-slate-900"
+                                                            >
+                                                                Cancel
+                                                            </button>
+                                                        </div>
+                                                    </div>
                                                 </div>
-                                                <div className="flex items-center space-x-3 flex-shrink-0">
-                                                    <button
-                                                        type="button"
-                                                        onClick={() => editQuickReply(reply)}
-                                                        className="text-sm font-semibold underline text-slate-700 hover:text-black"
-                                                    >
-                                                        Edit
-                                                    </button>
-                                                    <button
-                                                        type="button"
-                                                        onClick={() => deleteQuickReply(reply.id)}
-                                                        className="text-slate-400 hover:text-red-600"
-                                                        aria-label={`Delete ${reply.title}`}
-                                                    >
-                                                        <Trash2 className="w-4 h-4" />
-                                                    </button>
+                                            ) : (
+                                                <div key={reply.id} className="p-4 flex items-start justify-between">
+                                                    <div className="pr-4 min-w-0">
+                                                        <div className="font-semibold text-slate-900 text-sm">{reply.title}</div>
+                                                        <p className="text-xs text-slate-500 mt-1 whitespace-pre-line">{reply.body}</p>
+                                                    </div>
+                                                    <div className="flex items-center space-x-3 flex-shrink-0">
+                                                        <button
+                                                            type="button"
+                                                            onClick={() => editQuickReply(reply)}
+                                                            className="text-sm font-semibold underline text-slate-700 hover:text-black"
+                                                        >
+                                                            Edit
+                                                        </button>
+                                                        <button
+                                                            type="button"
+                                                            onClick={() => deleteQuickReply(reply.id)}
+                                                            className="text-slate-400 hover:text-red-600"
+                                                            aria-label={`Delete ${reply.title}`}
+                                                        >
+                                                            <Trash2 className="w-4 h-4" />
+                                                        </button>
+                                                    </div>
                                                 </div>
-                                            </div>
+                                            )
                                         ))}
                                     </div>
                                 )}
 
-                                <div className="space-y-3 max-w-lg">
-                                    <div>
-                                        <label className="text-xs text-slate-500">Shortcut name</label>
-                                        <input
-                                            type="text"
-                                            value={qrTitle}
-                                            onChange={(e) => setQrTitle(e.target.value)}
-                                            placeholder="Wifi details"
-                                            className="w-full p-2.5 border rounded-lg text-sm mt-1"
-                                        />
-                                    </div>
-                                    <div>
-                                        <label className="text-xs text-slate-500">Message</label>
-                                        <textarea
-                                            value={qrBody}
-                                            onChange={(e) => setQrBody(e.target.value)}
-                                            rows={3}
-                                            placeholder="The wifi network is GallowayCottage and the password is on the fridge door."
-                                            className="w-full p-2.5 border rounded-lg text-sm mt-1"
-                                        />
-                                    </div>
-                                    <div className="flex items-center space-x-3">
+                                {/* Adding a new one — hidden while editing an existing one,
+                                    so there's never two forms open at once */}
+                                {!qrEditingId && (
+                                    <div className="space-y-3 max-w-lg">
+                                        <div className="text-xs font-semibold text-slate-500">
+                                            Add a new quick reply
+                                        </div>
+                                        <div>
+                                            <label className="text-xs text-slate-500">Shortcut name</label>
+                                            <input
+                                                type="text"
+                                                value={qrTitle}
+                                                onChange={(e) => setQrTitle(e.target.value)}
+                                                placeholder="Wifi details"
+                                                className="w-full p-2.5 border rounded-lg text-sm mt-1"
+                                            />
+                                        </div>
+                                        <div>
+                                            <label className="text-xs text-slate-500">Message</label>
+                                            <textarea
+                                                value={qrBody}
+                                                onChange={(e) => setQrBody(e.target.value)}
+                                                rows={3}
+                                                placeholder="The wifi network is GallowayCottage and the password is on the fridge door."
+                                                className="w-full p-2.5 border rounded-lg text-sm mt-1"
+                                            />
+                                        </div>
                                         <button
                                             type="button"
                                             onClick={saveQuickReply}
                                             disabled={savingQr || !qrTitle.trim() || !qrBody.trim()}
                                             className="px-4 py-2.5 bg-slate-900 hover:bg-black text-white text-sm font-semibold rounded-lg disabled:opacity-40 disabled:cursor-not-allowed"
                                         >
-                                            {savingQr ? 'Saving...' : qrEditingId ? 'Update quick reply' : 'Add quick reply'}
+                                            {savingQr ? 'Saving...' : 'Add quick reply'}
                                         </button>
-                                        {qrEditingId && (
-                                            <button
-                                                type="button"
-                                                onClick={() => {
-                                                    setQrEditingId(null);
-                                                    setQrTitle('');
-                                                    setQrBody('');
-                                                }}
-                                                className="text-sm text-slate-500 hover:text-slate-900"
-                                            >
-                                                Cancel
-                                            </button>
-                                        )}
                                     </div>
-                                </div>
+                                )}
                             </div>
                         </div>
                     ) : activeSection === 'bookings' ? (
