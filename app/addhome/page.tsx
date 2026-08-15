@@ -646,7 +646,7 @@ export default function AddHome() {
         return (
             <div className="max-w-3xl mx-auto px-6 py-10 w-full">
                 <div className="flex justify-between items-center mb-6">
-                    <h1 className="text-2xl font-extrabold text-rose-500">Galloway Getaways</h1>
+                    <h1 className="text-2xl font-extrabold text-emerald-800">Galloway Getaways</h1>
                     <div className="flex items-center gap-4">
                         <button
                             onClick={saveDraft}
@@ -669,7 +669,7 @@ export default function AddHome() {
                     {Array.from({ length: TOTAL_STEPS }).map((_, i) => (
                         <div
                             key={i}
-                            className={`h-1.5 flex-1 rounded-full ${i < step ? 'bg-rose-500' : 'bg-slate-200'}`}
+                            className={`h-1.5 flex-1 rounded-full ${i < step ? 'bg-emerald-700' : 'bg-slate-200'}`}
                         />
                     ))}
                 </div>
@@ -859,7 +859,7 @@ export default function AddHome() {
                                             setDragOverIndex(null);
                                         }}
                                         className={`relative h-40 rounded-2xl overflow-hidden border-2 group cursor-grab active:cursor-grabbing transition ${
-                                            i === coverIndex ? 'border-rose-500' : 'border-slate-200'
+                                            i === coverIndex ? 'border-emerald-700' : 'border-slate-200'
                                         } ${dragOverIndex === i ? 'ring-2 ring-slate-900 scale-95' : ''} ${
                                             draggedIndex === i ? 'opacity-40' : ''
                                         }`}
@@ -876,7 +876,7 @@ export default function AddHome() {
                                             type="button"
                                             onClick={() => setCoverIndex(i)}
                                             title={i === coverIndex ? 'Cover photo' : 'Make cover photo'}
-                                            className={`absolute bottom-2 left-2 w-8 h-8 rounded-full flex items-center justify-center text-sm shadow ${i === coverIndex ? 'bg-rose-500 text-white' : 'bg-white/90 text-slate-600 opacity-0 group-hover:opacity-100 transition'}`}
+                                            className={`absolute bottom-2 left-2 w-8 h-8 rounded-full flex items-center justify-center text-sm shadow ${i === coverIndex ? 'bg-emerald-700 text-white' : 'bg-white/90 text-slate-600 opacity-0 group-hover:opacity-100 transition'}`}
                                         >
                                             ★
                                         </button>
@@ -889,7 +889,7 @@ export default function AddHome() {
                                             ×
                                         </button>
                                         {i === coverIndex && (
-                                            <span className="absolute top-2 left-2 text-xs font-semibold bg-rose-500 text-white px-2 py-0.5 rounded-full">
+                                            <span className="absolute top-2 left-2 text-xs font-semibold bg-emerald-700 text-white px-2 py-0.5 rounded-full">
                                                 Cover photo
                                             </span>
                                         )}
@@ -957,7 +957,7 @@ export default function AddHome() {
                                         const suggestion = `This is ${phrases.join(' and ')}.`;
                                         setDescription((prev) => (prev ? `${prev}\n\n${suggestion}` : suggestion));
                                     }}
-                                    className="text-sm font-semibold text-rose-500 hover:text-rose-600 mb-4"
+                                    className="text-sm font-semibold text-emerald-700 hover:text-emerald-800 mb-4"
                                 >
                                     + Add this to my description
                                 </button>
@@ -1040,7 +1040,7 @@ export default function AddHome() {
                                 </div>
                                 <div className="flex justify-between pt-2 border-t border-slate-200">
                                     <span className="font-semibold text-slate-900">You receive</span>
-                                    <span className="font-bold text-rose-500">
+                                    <span className="font-bold text-emerald-700">
                                         £{(Number(price) * (1 - HOST_FEE_PERCENT / 100)).toFixed(2)} / night
                                     </span>
                                 </div>
@@ -1072,7 +1072,7 @@ export default function AddHome() {
                         <button
                             type="submit"
                             disabled={submitting}
-                            className="w-full py-4 bg-rose-500 text-white font-bold rounded-xl hover:bg-rose-600 transition disabled:opacity-60"
+                            className="w-full py-4 bg-emerald-700 text-white font-bold rounded-xl hover:bg-emerald-800 transition disabled:opacity-60"
                         >
                             {submitting ? 'Publishing...' : 'Publish listing'}
                         </button>
@@ -1190,8 +1190,8 @@ export default function AddHome() {
                     className="flex items-center justify-between p-4 border rounded-2xl shadow-sm hover:shadow-md transition cursor-pointer bg-white group max-w-lg mt-6"
                 >
                     <div className="flex items-center space-x-4">
-                        <div className="p-3 bg-slate-100 rounded-xl group-hover:bg-rose-50 transition">
-                            <HomeIcon className="w-6 h-6 text-slate-700 group-hover:text-rose-500" />
+                        <div className="p-3 bg-slate-100 rounded-xl group-hover:bg-emerald-50 transition">
+                            <HomeIcon className="w-6 h-6 text-slate-700 group-hover:text-emerald-700" />
                         </div>
                         <span className="font-semibold text-base text-slate-800">Or skip to manual listing form</span>
                     </div>
