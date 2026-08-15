@@ -2,10 +2,10 @@ export const dynamic = "force-dynamic";
 import React from 'react'
 import { createServerComponentClient } from '@supabase/auth-helpers-nextjs'
 import { cookies } from 'next/headers';
-import Image from 'next/image';
-import { capitializeFirst, getImageUrl, displayName } from '@/lib/utils';
+import { capitializeFirst, displayName } from '@/lib/utils';
 import BookingWidget from '@/components/BookingWidget';
 import ReviewStars from '@/components/ReviewStars';
+import PhotoGallery from '@/components/PhotoGallery';
 import HostReplyBox from '@/components/HostReplyBox';
 import ReviewsSummary from '@/components/ReviewsSummary';
 
@@ -77,51 +77,28 @@ const FindHome = async ({ params }: { params: { id: string } }) => {
     return (
         <div className='container mb-10'>
             <div className='container mt-4'>
-                <h1 className='text-2xl font-bold'>{home.title}</h1>
-                {reviews && reviews.length > 0 && (
-                    <div className='flex items-center gap-2 mt-1'>
-                        <ReviewStars value={Math.round(avgRating)} size={16} />
-                        <span className='text-sm text-slate-600'>{avgRating.toFixed(1)} · {reviews.length} review{reviews.length > 1 ? 's' : ''}</span>
-                    </div>
-                )}
-                <p className='text-slate-600'>{home.location}</p>
+                <h1 className='text-2xl md:text-3xl font-bold text-slate-900'>{home.title}</h1>
+                <div className='flex flex-wrap items-center gap-x-3 gap-y-1 mt-1.5 text-sm text-slate-600'>
+                    {reviews && reviews.length > 0 && (
+                        <>
+                            <span className='flex items-center gap-1.5'>
+                                <ReviewStars value={Math.round(avgRating)} size={15} />
+                                <span className='font-semibold text-slate-900'>{avgRating.toFixed(1)}</span>
+                                <span>· {reviews.length} review{reviews.length > 1 ? 's' : ''}</span>
+                            </span>
+                            <span className='text-slate-300'>|</span>
+                        </>
+                    )}
+                    <span>{home.location}</span>
+                </div>
 
-                {images.length > 0 ? (
-                    <Image
-                        src={getImageUrl(images[0])}
-                        width={100}
-                        height={100}
-                        alt='home_image'
-                        className='rounded-lg w-full h-[500px] object-cover object-center my-3'
-                        unoptimized
-                    />
-                ) : (
-                    <div className='rounded-lg w-full h-[500px] bg-slate-100 flex items-center justify-center text-slate-400 my-3'>
-                        No photo available
-                    </div>
-                )}
-
-                {images.length > 1 && (
-                    <div className='grid grid-cols-4 gap-2 mb-5'>
-                        {images.slice(1).map((img, i) => (
-                            <Image
-                                key={i}
-                                src={getImageUrl(img)}
-                                width={100}
-                                height={100}
-                                alt={`home_image_${i + 2}`}
-                                className='rounded-lg w-full h-24 object-cover'
-                                unoptimized
-                            />
-                        ))}
-                    </div>
-                )}
+                <PhotoGallery images={images} title={home.title} />
 
                 <div className='grid grid-cols-1 lg:grid-cols-3 gap-10 mt-5'>
                     <div className='lg:col-span-2'>
-                        <h1 className='text-2xl font-bold text-brand'>
+                        <h2 className='text-xl md:text-2xl font-bold text-slate-900'>
                             Hosted by {capitializeFirst(hostName)}
-                        </h1>
+                        </h2>
 
                         <p className='mt-2 text-slate-600'>
                             {home.max_guests} guests · {home.bedrooms} bedrooms · {home.beds} beds · {home.bathrooms} bathrooms
@@ -134,19 +111,6 @@ const FindHome = async ({ params }: { params: { id: string } }) => {
                                     {home.amenities.map((a: string) => (
                                         <span key={a} className='text-sm bg-slate-100 px-3 py-1 rounded-full'>{a}</span>
                                     ))}
-                                </div>
-                            </div>
-                        )}
-
-                        {(home.stl_licence_number || home.stl_licence_status === 'applied') && (
-                            <div className='mt-5 border rounded-xl p-4 bg-slate-50'>
-                                <div className='text-sm font-semibold text-slate-900'>
-                                    Short-term let licence
-                                </div>
-                                <div className='text-sm text-slate-600 mt-1'>
-                                    {home.stl_licence_number
-                                        ? <>Licence number: <span className='font-mono font-semibold text-slate-900'>{home.stl_licence_number}</span></>
-                                        : 'Licence application submitted and awaiting a decision.'}
                                 </div>
                             </div>
                         )}
