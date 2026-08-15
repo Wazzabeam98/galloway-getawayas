@@ -8,6 +8,7 @@ import ReviewStars from '@/components/ReviewStars';
 import PhotoGallery from '@/components/PhotoGallery';
 import HostReplyBox from '@/components/HostReplyBox';
 import ReviewsSummary from '@/components/ReviewsSummary';
+import PropertyMap from '@/components/PropertyMap';
 import { KeyRound, Zap, Car, Bath, Waves, Flame, PawPrint, Briefcase, Plug, Users, MapPin, DoorOpen } from 'lucide-react';
 
 // Turns the wizard's plural category into a noun that reads naturally in
@@ -114,6 +115,35 @@ function propertyHighlights(home: any): { title: string; detail: string; icon: a
     return out.slice(0, 4);
 }
 
+// Listings created before coordinates were captured don't have any, so
+// look them up from the stored address instead. Next caches the result,
+// so this is one lookup per listing rather than one per visitor.
+async function lookupCoordinates(location: string | null) {
+    if (!location) return null;
+
+    try {
+        const res = await fetch(
+            `https://nominatim.openstreetmap.org/search?format=json&limit=1&countrycodes=gb&q=${encodeURIComponent(location)}`,
+            {
+                headers: { 'User-Agent': 'GallowayGetawaysApp/1.0' },
+                next: { revalidate: 60 * 60 * 24 * 30 },
+            }
+        );
+        if (!res.ok) return null;
+
+        const data = await res.json();
+        if (!data || data.length === 0) return null;
+
+        return {
+            latitude: parseFloat(data[0].lat),
+            longitude: parseFloat(data[0].lon),
+        };
+    } catch (err) {
+        console.error('Could not look up coordinates:', err);
+        return null;
+    }
+}
+
 const FindHome = async ({ params }: { params: { id: string } }) => {
     const supabase = createServerComponentClient({ cookies });
 
@@ -139,6 +169,14 @@ const FindHome = async ({ params }: { params: { id: string } }) => {
     // than anyone needs, and it's how the big platforms do it.
     const hostFirstName = capitializeFirst((hostName || 'Host').split(' ')[0]);
     const highlights = propertyHighlights(home);
+
+    let coords: { latitude: number; longitude: number } | null =
+        home?.latitude && home?.longitude
+            ? { latitude: home.latitude, longitude: home.longitude }
+            : null;
+    if (!coords && home?.location) {
+        coords = await lookupCoordinates(home.location);
+    }
 
     if (!home) {
         return (
@@ -273,6 +311,14 @@ const FindHome = async ({ params }: { params: { id: string } }) => {
                         <div className='mt-2 whitespace-pre-line'>
                             {home.description}
                         </div>
+
+                        {coords && (
+                            <PropertyMap
+                                latitude={coords.latitude}
+                                longitude={coords.longitude}
+                                area={placeSummary(home.location)}
+                            />
+                        )}
 
                         {(!reviews || reviews.length === 0) && (
                             <div className='mt-8 pt-8 border-t'>
