@@ -13,11 +13,12 @@ const Navbar = async () => {
 
     let firstName: string | null = null;
     let isHost = false;
+    let avatarUrl: string | null = null;
 
     if (data?.session?.user) {
         const { data: profile } = await supabase
             .from('profiles')
-            .select('full_name, preferred_name')
+            .select('full_name, preferred_name, avatar_url')
             .eq('id', data.session.user.id)
             .single();
 
@@ -28,6 +29,7 @@ const Navbar = async () => {
             profile?.full_name ||
             data.session.user.email?.split('@')[0];
         firstName = rawName ? rawName.split(' ')[0] : null;
+        avatarUrl = profile?.avatar_url || null;
 
         // You're a host if you actually have a listing — drafts count, since
         // you're mid-way through becoming one. Deriving it this way means it
@@ -67,7 +69,13 @@ const Navbar = async () => {
                         </Link>
                     )}
 
-                    <NavMenu session={data?.session?.user} isHost={isHost} mode={mode} />
+                    <NavMenu
+                        session={data?.session?.user}
+                        isHost={isHost}
+                        mode={mode}
+                        avatarUrl={avatarUrl}
+                        initial={firstName ? firstName.charAt(0).toUpperCase() : ''}
+                    />
                 </div>
             </div>
         </nav>
