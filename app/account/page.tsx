@@ -7,6 +7,7 @@ import Link from 'next/link';
 import Logo from '@/components/base/Logo';
 import LoginModel from '@/components/auth/LoginModel';
 import { toast } from 'react-toastify';
+import { getImageUrl } from '@/lib/utils';
 import {
     User,
     Shield,
@@ -97,6 +98,12 @@ const PLACEHOLDERS = [
 // True only if the host has written something beyond the stock greeting.
 function hasRealContent(body: string): boolean {
     return body.split(GREETING).join('').trim().length > 0;
+}
+
+// "4 selected", or "All listings" when nothing specific is chosen.
+function describeListings(ids: string[] | null | undefined): string {
+    if (!ids || ids.length === 0) return 'All listings';
+    return `${ids.length} selected`;
 }
 
 // Shows how a template will read, with the automatic bits highlighted.
@@ -278,10 +285,13 @@ export default function AccountSettings() {
         anchor: string;
         minutes_after: number;
         hours_after: number;
+        listing_ids: string[];
     }
     const [templates, setTemplates] = useState<Record<string, Template>>({});
     const [savingTemplate, setSavingTemplate] = useState<string | null>(null);
     const [scheduleFor, setScheduleFor] = useState<string | null>(null);
+    const [listingsFor, setListingsFor] = useState<string | null>(null);
+    const [draftListingIds, setDraftListingIds] = useState<string[]>([]);
 
     // --- Booking permissions state ---
     interface HostListing {
@@ -298,6 +308,7 @@ export default function AccountSettings() {
         cancellation_policy: string | null;
         check_in_time: string | null;
         check_out_time: string | null;
+        images: string[] | null;
     }
     const [hostListings, setHostListings] = useState<HostListing[]>([]);
     const [savingListing, setSavingListing] = useState<string | null>(null);
@@ -339,7 +350,7 @@ export default function AccountSettings() {
 
                 const { data: tpls } = await supabase
                     .from('message_templates')
-                    .select('template_type, body, enabled, days_offset, send_hour, anchor, minutes_after, hours_after')
+                    .select('template_type, body, enabled, days_offset, send_hour, anchor, minutes_after, hours_after, listing_ids')
                     .eq('user_id', session.user.id);
 
                 const tplMap: Record<string, Template> = {};
@@ -348,7 +359,7 @@ export default function AccountSettings() {
 
                 const { data: myListings } = await supabase
                     .from('listings')
-                    .select('id, title, instant_book, instant_book_requires_phone, instant_book_requires_verified_id, min_nights, max_nights, advance_notice, preparation_time, availability_window, cancellation_policy, check_in_time, check_out_time')
+                    .select('id, title, instant_book, instant_book_requires_phone, instant_book_requires_verified_id, min_nights, max_nights, advance_notice, preparation_time, availability_window, cancellation_policy, check_in_time, check_out_time, images')
                     .eq('host_id', session.user.id)
                     .order('created_at', { ascending: true });
                 setHostListings(myListings || []);
@@ -673,6 +684,7 @@ export default function AccountSettings() {
             anchor: 'none',
             minutes_after: 0,
             hours_after: 0,
+            listing_ids: [],
         };
     };
 
@@ -701,6 +713,7 @@ export default function AccountSettings() {
                     anchor: next.anchor,
                     minutes_after: next.minutes_after,
                     hours_after: next.hours_after,
+                    listing_ids: next.listing_ids,
                 },
                 { onConflict: 'user_id,template_type' }
             );
@@ -1292,6 +1305,29 @@ export default function AccountSettings() {
 
                                                 <TemplatePreview value={tpl.body} />
 
+                                                <div className="flex items-center justify-between border rounded-xl p-4 mt-3">
+                                                    <div>
+                                                        <div className="text-xs text-slate-500">Choose listings</div>
+                                                        <div className="text-sm font-semibold text-slate-900">
+                                                            {describeListings(tpl.listing_ids)}
+                                                        </div>
+                                                    </div>
+                                                    <button
+                                                        type="button"
+                                                        onClick={() => {
+                                                            setListingsFor(def.key);
+                                                            setDraftListingIds(
+                                                                tpl.listing_ids && tpl.listing_ids.length > 0
+                                                                    ? tpl.listing_ids.slice()
+                                                                    : hostListings.map((l) => l.id)
+                                                            );
+                                                        }}
+                                                        className="px-4 py-2 bg-slate-100 hover:bg-slate-200 text-slate-900 text-sm font-semibold rounded-lg"
+                                                    >
+                                                        Edit
+                                                    </button>
+                                                </div>
+
                                                 <div className="flex flex-wrap items-center gap-3 mt-3">
                                                     <button
                                                         type="button"
@@ -1640,6 +1676,116 @@ export default function AccountSettings() {
                     )}
                 </div>
             </div>
+
+
+            {/* Choose listings */}
+            {listingsFor && (
+                <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 px-4">
+                    <div className="bg-white rounded-2xl shadow-xl w-full max-w-md flex flex-col max-h-[85vh]">
+                        <div className="p-6 pb-3">
+                            <div className="flex items-start justify-between mb-1">
+                                <h3 className="text-xl font-bold text-slate-900">Choose listings</h3>
+                                <button
+                                    type="button"
+                                    onClick={() => setListingsFor(null)}
+                                    aria-label="Close"
+                                    className="text-slate-400 hover:text-slate-800 text-xl leading-none"
+                                >
+                                    &times;
+                                </button>
+                            </div>
+                            <p className="text-sm text-slate-500">
+                                Choose which listings this template will be used for.
+                            </p>
+                        </div>
+
+                        <div className="overflow-y-auto px-6 divide-y">
+                            {/* Select all */}
+                            <label className="flex items-center gap-4 py-3 cursor-pointer">
+                                <div className="w-12 h-12 rounded-lg bg-emerald-950 flex items-center justify-center flex-shrink-0">
+                                    <span className="text-emerald-400 font-serif font-black text-lg tracking-tighter select-none -mr-1">G</span>
+                                    <span className="text-emerald-200 font-serif font-black text-lg tracking-tighter select-none opacity-70">G</span>
+                                </div>
+                                <span className="flex-1 text-sm font-semibold text-slate-900">Select all</span>
+                                <input
+                                    type="checkbox"
+                                    checked={draftListingIds.length === hostListings.length && hostListings.length > 0}
+                                    onChange={(e) =>
+                                        setDraftListingIds(e.target.checked ? hostListings.map((l) => l.id) : [])
+                                    }
+                                    className="w-5 h-5 rounded accent-slate-900 flex-shrink-0"
+                                />
+                            </label>
+
+                            {hostListings.map((l) => {
+                                const checked = draftListingIds.indexOf(l.id) !== -1;
+                                return (
+                                    <label key={l.id} className="flex items-center gap-4 py-3 cursor-pointer">
+                                        <div className="w-12 h-12 rounded-lg overflow-hidden bg-slate-200 flex-shrink-0">
+                                            {l.images && l.images.length > 0 ? (
+                                                <img
+                                                    src={getImageUrl(l.images[0])}
+                                                    alt=""
+                                                    className="w-full h-full object-cover"
+                                                />
+                                            ) : null}
+                                        </div>
+                                        <span className="flex-1 text-sm text-slate-800">
+                                            {l.title || 'Untitled listing'}
+                                        </span>
+                                        <input
+                                            type="checkbox"
+                                            checked={checked}
+                                            onChange={() =>
+                                                setDraftListingIds((prev) =>
+                                                    checked ? prev.filter((id) => id !== l.id) : prev.concat([l.id])
+                                                )
+                                            }
+                                            className="w-5 h-5 rounded accent-slate-900 flex-shrink-0"
+                                        />
+                                    </label>
+                                );
+                            })}
+
+                            {hostListings.length === 0 && (
+                                <p className="text-sm text-slate-500 py-6 text-center">
+                                    You haven&apos;t added any listings yet.
+                                </p>
+                            )}
+                        </div>
+
+                        <div className="flex items-center justify-between p-6 pt-4 border-t">
+                            <button
+                                type="button"
+                                onClick={() => setDraftListingIds([])}
+                                className="text-sm font-semibold underline text-slate-700 hover:text-black"
+                            >
+                                Deselect all
+                            </button>
+                            <button
+                                type="button"
+                                onClick={() => {
+                                    const key = listingsFor;
+                                    const def = TEMPLATE_TYPES.filter((d) => d.key === key)[0];
+                                    if (key && def) {
+                                        // Everything selected is the same as "all", so store it
+                                        // as empty — that way a template stays applied to any
+                                        // new listing added later.
+                                        const all = draftListingIds.length === hostListings.length;
+                                        saveTemplate(key, def.defaultOffset, {
+                                            listing_ids: all ? [] : draftListingIds,
+                                        });
+                                    }
+                                    setListingsFor(null);
+                                }}
+                                className="px-6 py-2.5 bg-slate-900 hover:bg-black text-white text-sm font-semibold rounded-lg"
+                            >
+                                Apply
+                            </button>
+                        </div>
+                    </div>
+                </div>
+            )}
 
             {/* Schedule picker */}
             {scheduleFor && (
