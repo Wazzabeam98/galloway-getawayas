@@ -138,15 +138,18 @@ export default function Hero() {
           <div
             key={src}
             aria-hidden="true"
-            className="absolute inset-0 bg-cover bg-center brightness-90 transition-opacity duration-1000 ease-in-out"
+            className="absolute inset-0 bg-cover bg-center transition-opacity duration-1000 ease-in-out"
             style={{
               backgroundImage: `url('${src}')`,
-              opacity: i === heroIndex ? 0.75 : 0,
+              opacity: i === heroIndex ? 1 : 0,
             }}
           />
         ))}
         {/* Soft Vignette Overlay */}
-        <div className="absolute inset-0 bg-gradient-to-t from-stone-950/80 via-stone-900/30 to-stone-950/40" />
+        <div className="absolute inset-0 bg-gradient-to-t from-stone-950/45 via-stone-900/5 to-stone-950/20" />
+        {/* A soft pool of shade behind the heading only, so the photo stays
+            bright at the edges but the white text still holds up. */}
+        <div className="absolute inset-0 bg-[radial-gradient(ellipse_at_center,rgba(0,0,0,0.35)_0%,rgba(0,0,0,0.12)_45%,transparent_75%)]" />
       </div>
 
       {/* Which image you're on — also lets people skip ahead */}
