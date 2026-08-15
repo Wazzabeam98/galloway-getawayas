@@ -66,7 +66,9 @@ export default function BookingActions({ bookingId, mode = 'pending' }: { bookin
                 .eq('id', booking.listing_id)
                 .single();
 
-            const guestName = displayName(guest, 'there');
+            // First name only, to match how {guest_name} renders elsewhere.
+            const fullGuestName = displayName(guest, 'there');
+            const guestName = fullGuestName.split(' ')[0] || 'there';
             const formatDate = (value: string | null) => {
                 if (!value) return '';
                 const d = new Date(value);
