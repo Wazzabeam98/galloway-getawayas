@@ -9,6 +9,13 @@ import 'react-date-range/dist/theme/default.css';
 const durations = ['weekend', 'week', 'month'];
 const futureMonths = [...Array(12)].map((_, i) => addMonths(new Date(), i));
 
+const HERO_IMAGES = [
+  '/images/hero-1.jpg',
+  '/images/hero-2.jpg',
+  '/images/hero-3.jpg',
+  '/images/hero-4.jpg',
+];
+
 export default function Hero() {
   const [activePopover, setActivePopover] = useState<'where' | 'when' | 'who' | null>(null);
 
@@ -33,6 +40,36 @@ export default function Hero() {
   const [pets, setPets] = useState(0);
 
   const heroRef = useRef<HTMLDivElement>(null);
+
+  // Rotating hero images
+  const [heroIndex, setHeroIndex] = useState(0);
+
+  useEffect(() => {
+    // Load the next images up front, so the first change doesn't flash.
+    HERO_IMAGES.forEach((src) => {
+      const img = new Image();
+      img.src = src;
+    });
+  }, []);
+
+  useEffect(() => {
+    // Respect the system setting — auto-moving content makes some people
+    // genuinely unwell, so hold on the first image if they've asked for
+    // reduced motion.
+    if (
+      typeof window !== 'undefined' &&
+      window.matchMedia &&
+      window.matchMedia('(prefers-reduced-motion: reduce)').matches
+    ) {
+      return;
+    }
+
+    const timer = setInterval(() => {
+      setHeroIndex((prev) => (prev + 1) % HERO_IMAGES.length);
+    }, 4500);
+
+    return () => clearInterval(timer);
+  }, []);
 
   useEffect(() => {
     const handleClickOutside = (event: MouseEvent) => {
@@ -95,17 +132,39 @@ export default function Hero() {
       className="relative z-40 w-full h-[460px] md:h-[500px] flex items-center justify-center bg-stone-900 text-white overflow-visible"
       ref={heroRef}
     >
-      {/* Background Image: Green walking path towards cozy cottage */}
+      {/* Rotating background images */}
       <div className="absolute inset-0 overflow-hidden pointer-events-none">
-        <div
-          className="absolute inset-0 bg-cover bg-center opacity-75 brightness-90"
-          style={{
-            backgroundImage: `url('https://images.unsplash.com/photo-1542601906990-b4d3fb778b09?q=80&w=1600&auto=format&fit=crop')`,
-          }}
-        />
+        {HERO_IMAGES.map((src, i) => (
+          <div
+            key={src}
+            aria-hidden="true"
+            className="absolute inset-0 bg-cover bg-center brightness-90 transition-opacity duration-1000 ease-in-out"
+            style={{
+              backgroundImage: `url('${src}')`,
+              opacity: i === heroIndex ? 0.75 : 0,
+            }}
+          />
+        ))}
         {/* Soft Vignette Overlay */}
         <div className="absolute inset-0 bg-gradient-to-t from-stone-950/80 via-stone-900/30 to-stone-950/40" />
       </div>
+
+      {/* Which image you're on — also lets people skip ahead */}
+      {HERO_IMAGES.length > 1 && (
+        <div className="absolute bottom-5 left-1/2 -translate-x-1/2 z-20 flex items-center gap-2">
+          {HERO_IMAGES.map((src, i) => (
+            <button
+              key={src}
+              type="button"
+              onClick={() => setHeroIndex(i)}
+              aria-label={`Show image ${i + 1}`}
+              className={`h-2 rounded-full transition-all ${
+                i === heroIndex ? 'w-6 bg-white' : 'w-2 bg-white/50 hover:bg-white/80'
+              }`}
+            />
+          ))}
+        </div>
+      )}
 
       {/* Hero Content */}
       <div className="relative z-10 text-center max-w-5xl px-4 flex flex-col items-center">
