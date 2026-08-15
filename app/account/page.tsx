@@ -1,6 +1,6 @@
 'use client';
 
-import { useEffect, useState } from 'react';
+import React, { useEffect, useState, useRef } from 'react';
 import { createClientComponentClient } from '@supabase/auth-helpers-nextjs';
 import { useRouter } from 'next/navigation';
 import Link from 'next/link';
@@ -107,8 +107,12 @@ function TemplateEditor({
     placeholder?: string;
     rows?: number;
 }) {
+    const backdropRef = useRef<HTMLDivElement>(null);
+
+    // Both layers must render text identically — same font, size, spacing,
+    // padding and wrapping — or the caret and the highlight drift apart.
     const shared =
-        'w-full p-3 text-sm leading-6 font-sans whitespace-pre-wrap break-words';
+        'w-full p-3 text-sm leading-6 font-sans whitespace-pre-wrap break-words tracking-normal';
 
     const parts: React.ReactNode[] = [];
     const tokens = PLACEHOLDERS.map((ph) => ph.token);
@@ -134,13 +138,16 @@ function TemplateEditor({
         }
 
         if (nextAt > 0) parts.push(remaining.slice(0, nextAt));
-        const label = PLACEHOLDERS.filter((ph) => ph.token === nextToken)[0];
+        // The highlighted span must contain exactly the same characters as
+        // the textarea underneath, with no extra padding or weight — any
+        // difference in width pushes the visible caret out of step with
+        // where typing actually lands.
         parts.push(
             <span
                 key={`${guard}-${nextAt}`}
-                className="bg-blue-100 text-blue-800 rounded px-1 py-0.5 font-medium"
+                className="bg-blue-100 text-blue-800 rounded"
             >
-                {label ? label.label : nextToken}
+                {nextToken}
             </span>
         );
         remaining = remaining.slice(nextAt + nextToken.length);
@@ -149,8 +156,9 @@ function TemplateEditor({
     return (
         <div className="relative border rounded-lg overflow-hidden bg-white">
             <div
+                ref={backdropRef}
                 aria-hidden="true"
-                className={`${shared} pointer-events-none text-slate-800`}
+                className={`${shared} pointer-events-none text-slate-800 overflow-hidden`}
                 style={{ minHeight: `${rows * 1.5 + 1.5}rem` }}
             >
                 {value ? parts : <span className="text-slate-400">{placeholder}</span>}
@@ -159,9 +167,14 @@ function TemplateEditor({
             <textarea
                 value={value}
                 onChange={(e) => onChange(e.target.value)}
+                onScroll={(e) => {
+                    if (backdropRef.current) {
+                        backdropRef.current.scrollTop = e.currentTarget.scrollTop;
+                    }
+                }}
                 rows={rows}
-                spellCheck
-                className={`${shared} absolute inset-0 h-full bg-transparent text-transparent caret-slate-900 resize-none outline-none focus:ring-2 focus:ring-slate-900 rounded-lg`}
+                spellCheck={false}
+                className={`${shared} absolute inset-0 h-full bg-transparent text-transparent caret-slate-900 resize-none outline-none focus:ring-2 focus:ring-slate-900 rounded-lg overflow-auto`}
             />
         </div>
     );
@@ -1243,8 +1256,8 @@ export default function AccountSettings() {
                             <div className="mb-8">
                                 <h3 className="text-base font-bold text-slate-900 mb-1">Scheduled messages</h3>
                                 <p className="text-xs text-slate-500 mb-4">
-                                    Written once, sent automatically at the right moment. The blue labels are filled
-                                    in for each guest — so <span className="bg-blue-100 text-blue-800 rounded px-1 py-0.5 font-medium">Guest first name</span> becomes
+                                    Written once, sent automatically at the right moment. Anything highlighted in
+                                    blue is filled in for each guest — <span className="bg-blue-100 text-blue-800 rounded">{'{guest_name}'}</span> becomes
                                     their actual first name when the message goes out.
                                 </p>
 
