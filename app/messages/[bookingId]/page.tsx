@@ -190,7 +190,7 @@ export default function ConversationPage() {
                         const mine = m.sender_id === session.user.id;
                         return (
                             <div key={m.id} className={`flex ${mine ? 'justify-end' : 'justify-start'}`}>
-                                <div className={`max-w-[75%] px-4 py-2.5 rounded-2xl text-sm ${mine ? 'bg-rose-500 text-white' : 'bg-slate-100 text-slate-800'}`}>
+                                <div className={`max-w-[75%] px-4 py-2.5 rounded-2xl text-sm ${mine ? 'bg-emerald-700 text-white' : 'bg-slate-100 text-slate-800'}`}>
                                     {m.body}
                                 </div>
                             </div>
@@ -243,7 +243,7 @@ export default function ConversationPage() {
                     type="button"
                     onClick={handleSend}
                     disabled={sending || !text.trim()}
-                    className="p-3 bg-rose-500 hover:bg-rose-600 text-white rounded-xl disabled:opacity-50"
+                    className="p-3 bg-emerald-700 hover:bg-emerald-800 text-white rounded-xl disabled:opacity-50"
                 >
                     <Send className="w-4 h-4" />
                 </button>
