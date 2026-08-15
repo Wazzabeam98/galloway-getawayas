@@ -1,13 +1,13 @@
 "use client"
 
 import React from 'react';
+import { Home } from 'lucide-react';
 
 // Shows roughly where a property is, without giving away the exact door.
 //
-// The map is centred on a point deliberately shifted a short distance from
-// the real one, with no marker, and a translucent circle drawn over the
-// middle. A guest can see the street and what's nearby; nobody can work
-// out which house is empty next week.
+// The pin marks a point deliberately shifted a short distance from the
+// real address, so a guest can see which street and what's nearby, but
+// nobody can work out precisely which house is empty next week.
 export default function PropertyMap({
     latitude,
     longitude,
@@ -18,22 +18,24 @@ export default function PropertyMap({
     area?: string;
 }) {
     // A fixed offset derived from the coordinates themselves, so the same
-    // property always shows the same circle rather than jumping about on
-    // every page load.
+    // property always shows the same pin rather than shifting on every
+    // page load — otherwise repeated reloads would give the real spot away.
     const seed = Math.abs(Math.sin(latitude * 1000 + longitude * 1000));
-    const offsetLat = (seed - 0.5) * 0.0016;      // roughly 90m
-    const offsetLon = (seed - 0.5) * 0.0026;
+    const offsetLat = (seed - 0.5) * 0.0011;      // roughly 60m
+    const offsetLon = (seed - 0.5) * 0.0018;
 
     const centreLat = latitude + offsetLat;
     const centreLon = longitude + offsetLon;
 
-    // Box around the centre point — about a 600m view.
-    const pad = 0.006;
+    // Tighter box than before — about a 350m view, so street names read
+    // clearly and nearby places are recognisable.
+    const padLon = 0.0032;
+    const padLat = 0.0016;
     const bbox = [
-        centreLon - pad,
-        centreLat - pad / 2,
-        centreLon + pad,
-        centreLat + pad / 2,
+        centreLon - padLon,
+        centreLat - padLat,
+        centreLon + padLon,
+        centreLat + padLat,
     ].join(',');
 
     const src = `https://www.openstreetmap.org/export/embed.html?bbox=${bbox}&layer=mapnik`;
@@ -49,19 +51,24 @@ export default function PropertyMap({
                 <iframe
                     title="Approximate location"
                     src={src}
-                    className="w-full h-[280px] md:h-[360px] border-0"
+                    className="w-full h-[280px] md:h-[380px] border-0"
                     loading="lazy"
                 />
 
-                {/* Approximate-area circle, centred on the map */}
+                {/* Approximate location pin, centred on the map */}
                 <div className="absolute inset-0 flex items-center justify-center pointer-events-none">
-                    <div className="w-40 h-40 md:w-52 md:h-52 rounded-full bg-emerald-600/20 border-2 border-emerald-700/60" />
+                    <div className="relative">
+                        <span className="absolute inset-0 -m-3 rounded-full bg-emerald-600/15" />
+                        <span className="w-12 h-12 rounded-full bg-slate-900 shadow-lg flex items-center justify-center relative">
+                            <Home className="w-5 h-5 text-white" strokeWidth={2} />
+                        </span>
+                    </div>
                 </div>
             </div>
 
             <p className="text-xs text-slate-400 mt-2">
-                Map data from OpenStreetMap contributors. The circle shows the general area,
-                not the property itself.
+                Map data from OpenStreetMap contributors. The pin shows the approximate area,
+                not the exact property.
             </p>
         </div>
     );
