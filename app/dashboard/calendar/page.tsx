@@ -461,7 +461,7 @@ export default function CalendarPage() {
                                     type="button"
                                     onClick={saveOverrides}
                                     disabled={saving}
-                                    className="w-full py-3 bg-rose-500 hover:bg-rose-600 text-white font-bold rounded-xl transition disabled:opacity-50 mb-2"
+                                    className="w-full py-3 bg-emerald-700 hover:bg-emerald-800 text-white font-bold rounded-xl transition disabled:opacity-50 mb-2"
                                 >
                                     {saving ? 'Saving...' : 'Save'}
                                 </button>
@@ -506,7 +506,7 @@ export default function CalendarPage() {
                                     price_per_night: Number(basePrice) || 0,
                                     weekend_price: weekendPrice ? Number(weekendPrice) : null,
                                 })}
-                                className="w-full py-3 bg-rose-500 hover:bg-rose-600 text-white font-bold rounded-xl transition disabled:opacity-50"
+                                className="w-full py-3 bg-emerald-700 hover:bg-emerald-800 text-white font-bold rounded-xl transition disabled:opacity-50"
                             >
                                 {savingSettings ? 'Saving...' : 'Save'}
                             </button>
@@ -547,7 +547,7 @@ export default function CalendarPage() {
                                     pet_fee: Number(petFee) || 0,
                                     extra_guest_fee: Number(extraGuestFee) || 0,
                                 })}
-                                className="w-full py-3 bg-rose-500 hover:bg-rose-600 text-white font-bold rounded-xl transition disabled:opacity-50"
+                                className="w-full py-3 bg-emerald-700 hover:bg-emerald-800 text-white font-bold rounded-xl transition disabled:opacity-50"
                             >
                                 {savingSettings ? 'Saving...' : 'Save'}
                             </button>
@@ -596,7 +596,7 @@ export default function CalendarPage() {
                                     preparation_time: preparationTime,
                                     availability_window: availabilityWindow,
                                 })}
-                                className="w-full py-3 bg-rose-500 hover:bg-rose-600 text-white font-bold rounded-xl transition disabled:opacity-50"
+                                className="w-full py-3 bg-emerald-700 hover:bg-emerald-800 text-white font-bold rounded-xl transition disabled:opacity-50"
                             >
                                 {savingSettings ? 'Saving...' : 'Save'}
                             </button>
