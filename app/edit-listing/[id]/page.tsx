@@ -11,7 +11,7 @@ import { generateRandomNumber, getImageUrl } from '@/lib/utils';
 import { toast } from 'react-toastify';
 import {
     HomeIcon, Trees, Waves, Compass, Building2, Sparkles, Minus, Plus, Check,
-    KeyRound, Lock, DoorOpen, Hash, Users, MapPin,
+    KeyRound, Lock, DoorOpen, Hash, Users,
     Snowflake, Package, Refrigerator, Thermometer, Droplet, UtensilsCrossed, Tv,
     RotateCw, Wifi, Coffee, Wind, Shirt, Zap, Baby, Briefcase, Car, Dumbbell, Bath,
     Flame, Armchair, Umbrella, Anchor, AlertTriangle, BellRing, PawPrint,
