@@ -6,7 +6,7 @@ import { useEffect, useRef, useState } from 'react';
 import { createClientComponentClient } from '@supabase/auth-helpers-nextjs';
 import { useRouter, useSearchParams } from 'next/navigation';
 import Logo from '@/components/base/Logo';
-import { HomeIcon, ChevronRightIcon, ChevronLeftIcon, Trees, Waves, Compass, Building2, Sparkles, Minus, Plus, Check, Link2, Loader2, Snowflake, Package, Refrigerator, Thermometer, Droplet, UtensilsCrossed, Tv, RotateCw, Wifi, Coffee, Wind, Shirt, Zap, Baby, Briefcase, Car, Dumbbell, Bath, Flame, Armchair, Umbrella, Anchor, AlertTriangle, BellRing, Feather, Users, Gem, MapPin, Maximize2, PawPrint } from 'lucide-react';
+import { HomeIcon, ChevronRightIcon, ChevronLeftIcon, Trees, Waves, Compass, Building2, Sparkles, Minus, Plus, Check, Link2, Loader2, Snowflake, Package, Refrigerator, Thermometer, Droplet, UtensilsCrossed, Tv, RotateCw, Wifi, Coffee, Wind, Shirt, Zap, Baby, Briefcase, Car, Dumbbell, Bath, Flame, Armchair, Umbrella, Anchor, AlertTriangle, BellRing, Feather, Users, Gem, MapPin, Maximize2, PawPrint, KeyRound, Lock, DoorOpen, Hash } from 'lucide-react';
 import LoginModel from '@/components/auth/LoginModel';
 import { categories } from '@/config/categories';
 import Env from '@/config/Env';
@@ -49,6 +49,7 @@ export default function AddHome() {
     const [beds, setBeds] = useState(1);
     const [bathrooms, setBathrooms] = useState(1);
     const [amenities, setAmenities] = useState<string[]>([]);
+    const [checkInMethod, setCheckInMethod] = useState('');
     const [selectedHighlights, setSelectedHighlights] = useState<string[]>([]);
     const [newListingPromo, setNewListingPromo] = useState(true);
     const [lastMinuteDiscount, setLastMinuteDiscount] = useState(false);
@@ -111,6 +112,17 @@ export default function AddHome() {
                 { name: 'Smoke alarm', icon: BellRing },
             ],
         },
+    ];
+
+    // How guests get in. The method is public; the actual codes and key
+    // locations belong in the check-in message, not on the listing.
+    const CHECKIN_METHODS: { label: string; icon: any; note: string }[] = [
+        { label: 'Lockbox', icon: KeyRound, note: 'Guests collect a key from a lockbox at the property.' },
+        { label: 'Smart lock', icon: Lock, note: 'Guests let themselves in with a code on a smart lock.' },
+        { label: 'Keypad', icon: Hash, note: 'A keypad on the door with a code you provide.' },
+        { label: 'Host greets you', icon: Users, note: "You'll meet guests at the property to hand over keys." },
+        { label: 'Keys collected nearby', icon: MapPin, note: 'Guests pick keys up from a nearby address.' },
+        { label: 'Building staff', icon: DoorOpen, note: 'A concierge or building staff let guests in.' },
     ];
 
     const HIGHLIGHTS: { label: string; icon: any; phrase: string }[] = [
@@ -176,6 +188,7 @@ export default function AddHome() {
                     setPrice(draft.price_per_night ? String(draft.price_per_night) : '');
                     setPropertyType(draft.property_type || '');
                     setPrivacyType(draft.privacy_type || 'Entire place');
+                    setCheckInMethod(draft.check_in_method || '');
                     setGuests(draft.max_guests || 1);
                     setBedrooms(draft.bedrooms ?? 1);
                     setBeds(draft.beds ?? 1);
@@ -217,6 +230,7 @@ export default function AddHome() {
                 beds,
                 bathrooms,
                 amenities,
+                check_in_method: checkInMethod || null,
                 new_listing_promo: newListingPromo,
                 last_minute_discount: lastMinuteDiscount,
                 weekly_discount: weeklyDiscount,
@@ -396,6 +410,7 @@ export default function AddHome() {
                     beds,
                     bathrooms,
                     amenities,
+                    check_in_method: checkInMethod || null,
                     new_listing_promo: newListingPromo,
                     last_minute_discount: lastMinuteDiscount,
                     weekly_discount: weeklyDiscount,
@@ -416,6 +431,7 @@ export default function AddHome() {
                     beds,
                     bathrooms,
                     amenities,
+                    check_in_method: checkInMethod || null,
                     new_listing_promo: newListingPromo,
                     last_minute_discount: lastMinuteDiscount,
                     weekly_discount: weeklyDiscount,
@@ -734,6 +750,31 @@ export default function AddHome() {
                             <Counter label="Beds" value={beds} onChange={setBeds} min={1} />
                             <Counter label="Bathrooms" value={bathrooms} onChange={setBathrooms} min={0.5} />
                         </div>
+
+                        <div className="mt-10 pt-8 border-t">
+                            <h3 className="text-xl font-bold text-slate-900 mb-1">How will guests get in?</h3>
+                            <p className="text-slate-600 text-sm mb-5">
+                                Guests see this before they book. You&apos;ll send the actual codes and key
+                                details privately once a booking is confirmed.
+                            </p>
+                            <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                                {CHECKIN_METHODS.map(({ label, icon: Icon, note }) => {
+                                    const selected = checkInMethod === label;
+                                    return (
+                                        <button
+                                            key={label}
+                                            type="button"
+                                            onClick={() => setCheckInMethod(selected ? '' : label)}
+                                            className={`text-left border-2 rounded-2xl p-4 transition ${selected ? 'border-slate-900 bg-slate-50' : 'border-slate-200 hover:border-slate-400'}`}
+                                        >
+                                            <Icon className="w-5 h-5 text-slate-700 mb-2" />
+                                            <div className="font-semibold text-slate-900 text-sm">{label}</div>
+                                            <div className="text-xs text-slate-500 mt-0.5">{note}</div>
+                                        </button>
+                                    );
+                                })}
+                            </div>
+                        </div>
                     </div>
                 )}
 
@@ -817,7 +858,7 @@ export default function AddHome() {
                                             type="button"
                                             onClick={() => setCoverIndex(i)}
                                             title={i === coverIndex ? 'Cover photo' : 'Make cover photo'}
-                                            className={`absolute top-2 right-11 w-8 h-8 rounded-full flex items-center justify-center text-sm shadow ${i === coverIndex ? 'bg-rose-500 text-white' : 'bg-white/90 text-slate-600 opacity-0 group-hover:opacity-100 transition'}`}
+                                            className={`absolute bottom-2 left-2 w-8 h-8 rounded-full flex items-center justify-center text-sm shadow ${i === coverIndex ? 'bg-rose-500 text-white' : 'bg-white/90 text-slate-600 opacity-0 group-hover:opacity-100 transition'}`}
                                         >
                                             ★
                                         </button>
@@ -825,7 +866,7 @@ export default function AddHome() {
                                             type="button"
                                             onClick={() => removePhoto(i)}
                                             title="Remove photo"
-                                            className="absolute top-2 right-2 w-8 h-8 rounded-full bg-white/90 text-slate-600 flex items-center justify-center text-sm shadow opacity-0 group-hover:opacity-100 transition"
+                                            className="absolute bottom-2 right-2 w-8 h-8 rounded-full bg-white/90 text-slate-600 flex items-center justify-center text-sm shadow opacity-0 group-hover:opacity-100 transition"
                                         >
                                             ×
                                         </button>
