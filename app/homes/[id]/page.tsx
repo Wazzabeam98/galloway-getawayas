@@ -312,6 +312,25 @@ const FindHome = async ({ params }: { params: { id: string } }) => {
                             {home.description}
                         </div>
 
+                        {Array.isArray(home.nearby) && home.nearby.length > 0 && (
+                            <div className='mt-8 pt-8 border-t'>
+                                <h2 className='text-xl font-semibold mb-1'>What&apos;s nearby</h2>
+                                <p className='text-sm text-slate-500 mb-4'>
+                                    Local spots your host recommends.
+                                </p>
+                                <div className='border rounded-2xl divide-y'>
+                                    {home.nearby.map((item: any, i: number) => (
+                                        <div key={i} className='flex items-center justify-between p-4'>
+                                            <span className='text-sm text-slate-800 pr-4'>{item.name}</span>
+                                            {item.time && (
+                                                <span className='text-sm text-slate-500 flex-shrink-0'>{item.time}</span>
+                                            )}
+                                        </div>
+                                    ))}
+                                </div>
+                            </div>
+                        )}
+
                         {coords && (
                             <PropertyMap
                                 latitude={coords.latitude}
