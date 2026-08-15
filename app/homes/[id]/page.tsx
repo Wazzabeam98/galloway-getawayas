@@ -9,6 +9,43 @@ import PhotoGallery from '@/components/PhotoGallery';
 import HostReplyBox from '@/components/HostReplyBox';
 import ReviewsSummary from '@/components/ReviewsSummary';
 
+// Turns the wizard's plural category into a noun that reads naturally in
+// a sentence: "Entire townhouse in ..." rather than "Entire Townhouses".
+const PROPERTY_NOUNS: Record<string, string> = {
+    'Cottages': 'cottage',
+    'Farmhouses': 'farmhouse',
+    'Coastal Stays': 'coastal home',
+    'Cabins & Pods': 'cabin',
+    'Townhouses': 'townhouse',
+    'Luxury Stays': 'home',
+};
+
+function describePlace(privacyType: string | null, propertyType: string | null): string {
+    const noun = (propertyType && PROPERTY_NOUNS[propertyType]) || 'place';
+
+    if (privacyType === 'A private room') return `Private room in a ${noun}`;
+    if (privacyType === 'A shared room') return `Shared room in a ${noun}`;
+    return `Entire ${noun}`;
+}
+
+// The stored location is a full address including street and postcode.
+// Guests browsing shouldn't see the exact door number, so this keeps the
+// town, region and country and drops the rest.
+function placeSummary(location: string | null): string {
+    if (!location) return '';
+
+    const parts = location.split(',').map((p) => p.trim()).filter(Boolean);
+    const postcode = /^[A-Z]{1,2}[0-9][A-Z0-9]?\s*[0-9][A-Z]{2}$/i;
+
+    const kept = parts.filter((part, i) => {
+        if (postcode.test(part)) return false;
+        if (i === 0 && /^[0-9]/.test(part)) return false;
+        return true;
+    });
+
+    return kept.join(', ');
+}
+
 const FindHome = async ({ params }: { params: { id: string } }) => {
     const supabase = createServerComponentClient({ cookies });
 
@@ -78,31 +115,35 @@ const FindHome = async ({ params }: { params: { id: string } }) => {
         <div className='container mb-10'>
             <div className='container mt-4'>
                 <h1 className='text-2xl md:text-3xl font-bold text-slate-900'>{home.title}</h1>
-                <div className='flex flex-wrap items-center gap-x-3 gap-y-1 mt-1.5 text-sm text-slate-600'>
-                    {reviews && reviews.length > 0 && (
-                        <>
-                            <span className='flex items-center gap-1.5'>
-                                <ReviewStars value={Math.round(avgRating)} size={15} />
-                                <span className='font-semibold text-slate-900'>{avgRating.toFixed(1)}</span>
-                                <span>· {reviews.length} review{reviews.length > 1 ? 's' : ''}</span>
-                            </span>
-                            <span className='text-slate-300'>|</span>
-                        </>
-                    )}
-                    <span>{home.location}</span>
-                </div>
+                {reviews && reviews.length > 0 && (
+                    <div className='flex items-center gap-1.5 mt-1.5 text-sm text-slate-600'>
+                        <ReviewStars value={Math.round(avgRating)} size={15} />
+                        <span className='font-semibold text-slate-900'>{avgRating.toFixed(1)}</span>
+                        <span>· {reviews.length} review{reviews.length > 1 ? 's' : ''}</span>
+                    </div>
+                )}
 
                 <PhotoGallery images={images} title={home.title} />
 
                 <div className='grid grid-cols-1 lg:grid-cols-3 gap-10 mt-5'>
                     <div className='lg:col-span-2'>
                         <h2 className='text-xl md:text-2xl font-bold text-slate-900'>
-                            Hosted by {capitializeFirst(hostName)}
+                            {describePlace(home.privacy_type, home.property_type)}
+                            {placeSummary(home.location) ? ` in ${placeSummary(home.location)}` : ''}
                         </h2>
 
-                        <p className='mt-2 text-slate-600'>
+                        <p className='mt-1 text-slate-600'>
                             {home.max_guests} guests · {home.bedrooms} bedrooms · {home.beds} beds · {home.bathrooms} bathrooms
                         </p>
+
+                        <div className='flex items-center gap-3 mt-5 pt-5 border-t'>
+                            <div className='w-10 h-10 rounded-full bg-slate-900 text-white flex items-center justify-center font-semibold text-sm flex-shrink-0'>
+                                {capitializeFirst(hostName).charAt(0)}
+                            </div>
+                            <div className='font-semibold text-slate-900'>
+                                Hosted by {capitializeFirst(hostName)}
+                            </div>
+                        </div>
 
                         {home.amenities && home.amenities.length > 0 && (
                             <div className='mt-5'>
