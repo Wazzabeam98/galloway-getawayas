@@ -409,7 +409,7 @@ export default function EditListing() {
     return (
         <div className="max-w-5xl mx-auto px-6 py-10 w-full">
             <div className="flex justify-between items-center mb-8">
-                <h1 className="text-2xl font-extrabold text-rose-500">Edit listing</h1>
+                <h1 className="text-2xl font-extrabold text-emerald-800">Edit listing</h1>
                 <button type="button" onClick={() => router.push('/dashboard')} className="text-sm font-semibold underline text-slate-600 hover:text-black">
                     Back to dashboard
                 </button>
@@ -556,7 +556,7 @@ export default function EditListing() {
                                                 onDrop={() => { if (draggedIndex !== null) reorderPhotos(draggedIndex, i); setDraggedIndex(null); setDragOverIndex(null); }}
                                                 onDragEnd={() => { setDraggedIndex(null); setDragOverIndex(null); }}
                                                 className={`relative h-40 rounded-2xl overflow-hidden border-2 group cursor-grab active:cursor-grabbing transition ${
-                                                    i === coverIndex ? 'border-rose-500' : 'border-slate-200'
+                                                    i === coverIndex ? 'border-emerald-700' : 'border-slate-200'
                                                 } ${dragOverIndex === i ? 'ring-2 ring-slate-900 scale-95' : ''} ${draggedIndex === i ? 'opacity-40' : ''}`}
                                             >
                                                 <img
@@ -566,7 +566,7 @@ export default function EditListing() {
                                                 />
                                                 <button type="button" onClick={() => setCoverIndex(i)}
                                                     title={i === coverIndex ? 'Cover photo' : 'Make cover photo'}
-                                                    className={`absolute top-2 right-11 w-8 h-8 rounded-full flex items-center justify-center text-sm shadow ${i === coverIndex ? 'bg-rose-500 text-white' : 'bg-white/90 text-slate-600 opacity-0 group-hover:opacity-100 transition'}`}>
+                                                    className={`absolute top-2 right-11 w-8 h-8 rounded-full flex items-center justify-center text-sm shadow ${i === coverIndex ? 'bg-emerald-700 text-white' : 'bg-white/90 text-slate-600 opacity-0 group-hover:opacity-100 transition'}`}>
                                                     ★
                                                 </button>
                                                 <button type="button" onClick={() => removePhoto(i)} title="Remove photo"
@@ -574,7 +574,7 @@ export default function EditListing() {
                                                     ×
                                                 </button>
                                                 {i === coverIndex && (
-                                                    <span className="absolute top-2 left-2 text-xs font-semibold bg-rose-500 text-white px-2 py-0.5 rounded-full">Cover</span>
+                                                    <span className="absolute top-2 left-2 text-xs font-semibold bg-emerald-700 text-white px-2 py-0.5 rounded-full">Cover</span>
                                                 )}
                                             </div>
                                         ))}
@@ -606,7 +606,7 @@ export default function EditListing() {
                                         </div>
                                         <div className="flex justify-between pt-1 border-t border-slate-200">
                                             <span className="font-semibold text-slate-900">You receive</span>
-                                            <span className="font-bold text-rose-500">£{(Number(price) * (1 - HOST_FEE_PERCENT / 100)).toFixed(2)}</span>
+                                            <span className="font-bold text-emerald-700">£{(Number(price) * (1 - HOST_FEE_PERCENT / 100)).toFixed(2)}</span>
                                         </div>
                                     </div>
                                 )}
@@ -869,7 +869,7 @@ export default function EditListing() {
                         {formError && <p className="text-red-600 text-sm mt-8">{formError}</p>}
 
                         <button type="submit" disabled={submitting}
-                            className="w-full mt-8 py-4 bg-rose-500 text-white font-bold rounded-xl hover:bg-rose-600 transition disabled:opacity-60">
+                            className="w-full mt-8 py-4 bg-emerald-700 text-white font-bold rounded-xl hover:bg-emerald-800 transition disabled:opacity-60">
                             {submitting ? 'Saving...' : 'Save changes'}
                         </button>
                     </div>
