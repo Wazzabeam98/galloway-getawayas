@@ -79,10 +79,19 @@ export default function PropertyMap({
             });
             mapRef.current = map;
 
-            L.tileLayer('https://tile.openstreetmap.org/{z}/{x}/{y}.png', {
-                maxZoom: 18,
-                attribution: '&copy; OpenStreetMap contributors',
-            }).addTo(map);
+            // CARTO's Voyager style — same OpenStreetMap data, but a far
+            // cleaner look than the default tiles. Free, no API key.
+            // For a plainer, near-greyscale map, swap 'rastertiles/voyager'
+            // for 'light_all' below.
+            L.tileLayer(
+                'https://{s}.basemaps.cartocdn.com/rastertiles/voyager/{z}/{x}/{y}{r}.png',
+                {
+                    maxZoom: 19,
+                    subdomains: 'abcd',
+                    detectRetina: true,
+                    attribution: '&copy; OpenStreetMap contributors &copy; CARTO',
+                }
+            ).addTo(map);
 
             // A house in a dark circle, matching the site rather than
             // Leaflet's default blue teardrop.
@@ -128,8 +137,8 @@ export default function PropertyMap({
             />
 
             <p className="text-xs text-slate-400 mt-2">
-                Map data from OpenStreetMap contributors. The pin shows the approximate area,
-                not the exact property.
+                Map data from OpenStreetMap contributors, tiles by CARTO. The pin shows the
+                approximate area, not the exact property.
             </p>
         </div>
     );
