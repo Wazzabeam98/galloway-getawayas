@@ -120,7 +120,7 @@ export default async function EarningsPage({ searchParams }: { searchParams?: { 
                     {months.map((m, i) => (
                         <div key={`${m.label}-${i}`} className="flex-1 min-w-[28px] flex flex-col items-center justify-end h-full">
                             <div
-                                className="w-full bg-rose-500 rounded-t-lg min-h-[2px]"
+                                className="w-full bg-emerald-700 rounded-t-lg min-h-[2px]"
                                 style={{ height: `${(m.net / maxMonth) * 100}%` }}
                                 title={`£${m.net.toFixed(2)}`}
                             />
