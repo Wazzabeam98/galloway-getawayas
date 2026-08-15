@@ -106,6 +106,35 @@ function hasRealContent(body: string): boolean {
     return body.split(GREETING).join('').trim().length > 0;
 }
 
+// Flags anything that would leave a listing advertised unlawfully.
+// Deliberately worded as a prompt, not legal advice.
+function licenceWarning(l: {
+    stl_licence_status: string | null;
+    stl_licence_number: string | null;
+    stl_licence_expiry: string | null;
+}): string | null {
+    const status = l.stl_licence_status || 'none';
+    const number = (l.stl_licence_number || '').trim();
+
+    if (status === 'none') {
+        return 'No licence details yet. Short-term lets in Scotland need a licence, and the number has to appear on the listing.';
+    }
+    if (status === 'licensed' && !number) {
+        return 'Add your licence number — it has to be shown on the listing.';
+    }
+    if (status === 'licensed' && !/^[A-Z]{3}[0-9]{5}$/.test(number)) {
+        return 'Scottish licence numbers are usually three letters followed by five digits, like ABC12345. Worth double-checking this one.';
+    }
+    if (l.stl_licence_expiry) {
+        const days = Math.round(
+            (new Date(l.stl_licence_expiry).getTime() - Date.now()) / 86400000
+        );
+        if (days < 0) return 'This licence has expired. Renew it before taking further bookings.';
+        if (days < 60) return `This licence expires in ${days} days. Renewals can take a while — worth starting now.`;
+    }
+    return null;
+}
+
 // "4 selected", or "All listings" when nothing specific is chosen.
 function describeListings(ids: string[] | null | undefined): string {
     if (!ids || ids.length === 0) return 'All listings';
@@ -316,6 +345,9 @@ export default function AccountSettings() {
         check_in_time: string | null;
         check_out_time: string | null;
         images: string[] | null;
+        stl_licence_number: string | null;
+        stl_licence_expiry: string | null;
+        stl_licence_status: string | null;
     }
     const [hostListings, setHostListings] = useState<HostListing[]>([]);
     const [savingListing, setSavingListing] = useState<string | null>(null);
@@ -366,7 +398,7 @@ export default function AccountSettings() {
 
                 const { data: myListings } = await supabase
                     .from('listings')
-                    .select('id, title, instant_book, instant_book_requires_phone, instant_book_requires_verified_id, min_nights, max_nights, advance_notice, preparation_time, availability_window, cancellation_policy, check_in_time, check_out_time, images')
+                    .select('id, title, instant_book, instant_book_requires_phone, instant_book_requires_verified_id, min_nights, max_nights, advance_notice, preparation_time, availability_window, cancellation_policy, check_in_time, check_out_time, images, stl_licence_number, stl_licence_expiry, stl_licence_status')
                     .eq('host_id', session.user.id)
                     .order('created_at', { ascending: true });
                 setHostListings(myListings || []);
@@ -1490,6 +1522,71 @@ export default function AccountSettings() {
                                             <div key={l.id} className="border rounded-2xl p-5">
                                                 <div className="font-semibold text-slate-900 text-sm mb-4">
                                                     {l.title || 'Untitled listing'}
+                                                </div>
+
+                                                {/* Scottish short-term let licence */}
+                                                <div className="border rounded-xl p-4 mb-5 bg-slate-50">
+                                                    <div className="font-semibold text-slate-900 text-sm mb-1">
+                                                        Short-term let licence
+                                                    </div>
+                                                    <p className="text-xs text-slate-500 mb-3">
+                                                        Required by law in Scotland. Your licence number is shown on this
+                                                        listing, as the rules require it to appear on any advert.
+                                                    </p>
+
+                                                    <div className="flex flex-wrap gap-3">
+                                                        <label className="text-xs text-slate-600 flex-1 min-w-[150px]">
+                                                            Status
+                                                            <select
+                                                                value={l.stl_licence_status || 'none'}
+                                                                disabled={busy}
+                                                                onChange={(e) => updateListingBooking(l.id, { stl_licence_status: e.target.value })}
+                                                                className="w-full border rounded-lg p-2 text-sm mt-1 bg-white disabled:opacity-50"
+                                                            >
+                                                                <option value="none">Not provided</option>
+                                                                <option value="licensed">Licensed</option>
+                                                                <option value="applied">Application submitted</option>
+                                                                <option value="exempt">Exempt</option>
+                                                            </select>
+                                                        </label>
+
+                                                        <label className="text-xs text-slate-600 flex-1 min-w-[150px]">
+                                                            Licence number
+                                                            <input
+                                                                type="text"
+                                                                defaultValue={l.stl_licence_number || ''}
+                                                                disabled={busy}
+                                                                placeholder="ABC12345"
+                                                                maxLength={20}
+                                                                onBlur={(e) => {
+                                                                    const next = e.target.value.trim().toUpperCase();
+                                                                    if (next !== (l.stl_licence_number || '')) {
+                                                                        updateListingBooking(l.id, { stl_licence_number: next });
+                                                                    }
+                                                                }}
+                                                                className="w-full border rounded-lg p-2 text-sm mt-1 bg-white disabled:opacity-50"
+                                                            />
+                                                        </label>
+
+                                                        <label className="text-xs text-slate-600 flex-1 min-w-[150px]">
+                                                            Expires
+                                                            <input
+                                                                type="date"
+                                                                defaultValue={(l.stl_licence_expiry || '').slice(0, 10)}
+                                                                disabled={busy}
+                                                                onBlur={(e) => {
+                                                                    if (e.target.value !== (l.stl_licence_expiry || '')) {
+                                                                        updateListingBooking(l.id, { stl_licence_expiry: e.target.value || null });
+                                                                    }
+                                                                }}
+                                                                className="w-full border rounded-lg p-2 text-sm mt-1 bg-white disabled:opacity-50"
+                                                            />
+                                                        </label>
+                                                    </div>
+
+                                                    {licenceWarning(l) && (
+                                                        <p className="text-xs text-amber-600 mt-3">{licenceWarning(l)}</p>
+                                                    )}
                                                 </div>
 
                                                 {/* How guests book */}
