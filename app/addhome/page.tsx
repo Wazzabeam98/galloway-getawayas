@@ -18,6 +18,8 @@ interface PlaceResult {
     street?: string;
     town?: string;
     postcode?: string;
+    lat?: string;
+    lon?: string;
 }
 
 export default function AddHome() {
@@ -50,6 +52,8 @@ export default function AddHome() {
     const [bathrooms, setBathrooms] = useState(1);
     const [amenities, setAmenities] = useState<string[]>([]);
     const [checkInMethod, setCheckInMethod] = useState('');
+    const [latitude, setLatitude] = useState<number | null>(null);
+    const [longitude, setLongitude] = useState<number | null>(null);
     const [selectedHighlights, setSelectedHighlights] = useState<string[]>([]);
     const [newListingPromo, setNewListingPromo] = useState(true);
     const [lastMinuteDiscount, setLastMinuteDiscount] = useState(false);
@@ -189,6 +193,8 @@ export default function AddHome() {
                     setPropertyType(draft.property_type || '');
                     setPrivacyType(draft.privacy_type || 'Entire place');
                     setCheckInMethod(draft.check_in_method || '');
+                    setLatitude(draft.latitude ?? null);
+                    setLongitude(draft.longitude ?? null);
                     setGuests(draft.max_guests || 1);
                     setBedrooms(draft.bedrooms ?? 1);
                     setBeds(draft.beds ?? 1);
@@ -231,6 +237,8 @@ export default function AddHome() {
                 bathrooms,
                 amenities,
                 check_in_method: checkInMethod || null,
+                latitude,
+                longitude,
                 new_listing_promo: newListingPromo,
                 last_minute_discount: lastMinuteDiscount,
                 weekly_discount: weeklyDiscount,
@@ -295,7 +303,11 @@ export default function AddHome() {
                         display_name: item.display_name,
                         street: [item.address?.house_number, item.address?.road].filter(Boolean).join(' ') || item.display_name.split(',')[0],
                         town: item.address?.city || item.address?.town || item.address?.village || 'Dumfries and Galloway',
-                        postcode: item.address?.postcode || ''
+                        postcode: item.address?.postcode || '',
+                        // Nominatim returns these with every result — worth keeping
+                        // so the listing can show an approximate-location map.
+                        lat: item.lat,
+                        lon: item.lon
                     }));
 
                 setSuggestions(liveResults);
@@ -411,6 +423,8 @@ export default function AddHome() {
                     bathrooms,
                     amenities,
                     check_in_method: checkInMethod || null,
+                    latitude,
+                    longitude,
                     new_listing_promo: newListingPromo,
                     last_minute_discount: lastMinuteDiscount,
                     weekly_discount: weeklyDiscount,
@@ -432,6 +446,8 @@ export default function AddHome() {
                     bathrooms,
                     amenities,
                     check_in_method: checkInMethod || null,
+                    latitude,
+                    longitude,
                     new_listing_promo: newListingPromo,
                     last_minute_discount: lastMinuteDiscount,
                     weekly_discount: weeklyDiscount,
@@ -537,7 +553,9 @@ export default function AddHome() {
         setCity(place.town || 'Dumfries and Galloway');
         setPostcode(place.postcode || '');
         setLocality('Dumfries and Galloway');
-        
+        setLatitude(place.lat ? parseFloat(place.lat) : null);
+        setLongitude(place.lon ? parseFloat(place.lon) : null);
+
         setIsModalOpen(true);
     };
 
