@@ -138,6 +138,19 @@ const FindHome = async ({ params }: { params: { id: string } }) => {
                             </div>
                         )}
 
+                        {(home.stl_licence_number || home.stl_licence_status === 'applied') && (
+                            <div className='mt-5 border rounded-xl p-4 bg-slate-50'>
+                                <div className='text-sm font-semibold text-slate-900'>
+                                    Short-term let licence
+                                </div>
+                                <div className='text-sm text-slate-600 mt-1'>
+                                    {home.stl_licence_number
+                                        ? <>Licence number: <span className='font-mono font-semibold text-slate-900'>{home.stl_licence_number}</span></>
+                                        : 'Licence application submitted and awaiting a decision.'}
+                                </div>
+                            </div>
+                        )}
+
                         <h1 className='mt-5 font-semibold text-2xl'>
                             About this place
                         </h1>
