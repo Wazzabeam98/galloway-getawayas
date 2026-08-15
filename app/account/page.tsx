@@ -141,18 +141,54 @@ function describeListings(ids: string[] | null | undefined): string {
     return `${ids.length} selected`;
 }
 
-// Shows how a template will read, with the automatic bits highlighted.
-// This is display only — deliberately separate from the box you type in,
-// because overlaying styled text on a textarea makes the cursor drift.
-function TemplatePreview({ value }: { value: string }) {
-    if (!hasRealContent(value)) return null;
+// Highlights the placeholders inside the box you actually type in.
+//
+// A textarea can't colour parts of its own text, so a styled copy of the
+// text sits directly behind one whose own text is transparent. The catch
+// is that both layers must lay text out identically down to the pixel —
+// so every property that affects text metrics is set inline here, on
+// both, rather than through classes that might resolve differently for a
+// div and a textarea.
+const EDITOR_TEXT_STYLE: React.CSSProperties = {
+    margin: 0,
+    padding: '12px',
+    border: '1px solid transparent',
+    fontFamily: 'inherit',
+    fontSize: '14px',
+    lineHeight: '24px',
+    letterSpacing: 'normal',
+    whiteSpace: 'pre-wrap',
+    overflowWrap: 'break-word',
+    wordBreak: 'normal',
+    tabSize: 4,
+    boxSizing: 'border-box',
+    width: '100%',
+};
+
+function HighlightedTemplate({
+    value,
+    onChange,
+    onCaret,
+    innerRef,
+    placeholder,
+    rows = 6,
+}: {
+    value: string;
+    onChange: (next: string, caret: number) => void;
+    onCaret: (caret: number) => void;
+    innerRef: (el: HTMLTextAreaElement | null) => void;
+    placeholder?: string;
+    rows?: number;
+}) {
+    const backdropRef = React.useRef<HTMLDivElement>(null);
+    const height = `${rows * 24 + 26}px`;
 
     const tokens = PLACEHOLDERS.map((ph) => ph.token);
     const parts: React.ReactNode[] = [];
     let remaining = value;
     let guard = 0;
 
-    while (remaining.length > 0 && guard < 500) {
+    while (remaining.length > 0 && guard < 800) {
         guard += 1;
 
         let nextAt = -1;
@@ -171,26 +207,67 @@ function TemplatePreview({ value }: { value: string }) {
         }
 
         if (nextAt > 0) parts.push(remaining.slice(0, nextAt));
-        const label = PLACEHOLDERS.filter((ph) => ph.token === nextToken)[0];
         parts.push(
             <span
                 key={`${guard}-${nextAt}`}
-                className="bg-blue-100 text-blue-800 rounded px-1.5 py-0.5 font-medium"
+                style={{
+                    backgroundColor: '#dbeafe',
+                    color: '#1e40af',
+                    borderRadius: '3px',
+                }}
             >
-                {label ? label.label : nextToken}
+                {nextToken}
             </span>
         );
         remaining = remaining.slice(nextAt + nextToken.length);
     }
 
     return (
-        <div className="mt-3 rounded-lg bg-slate-50 border p-3">
-            <div className="text-xs font-semibold text-slate-500 mb-2">
-                How your guest will see it
+        <div
+            style={{ position: 'relative', height }}
+            className="border rounded-lg bg-white overflow-hidden"
+        >
+            <div
+                ref={backdropRef}
+                aria-hidden="true"
+                style={Object.assign({}, EDITOR_TEXT_STYLE, {
+                    position: 'absolute',
+                    inset: 0,
+                    height: '100%',
+                    overflow: 'hidden',
+                    color: '#1e293b',
+                    pointerEvents: 'none',
+                })}
+            >
+                {value ? parts : <span style={{ color: '#94a3b8' }}>{placeholder}</span>}
+                {'\n'}
             </div>
-            <div className="text-sm text-slate-800 whitespace-pre-wrap leading-6">
-                {parts}
-            </div>
+
+            <textarea
+                ref={innerRef}
+                value={value}
+                onChange={(e) => onChange(e.target.value, e.target.selectionStart)}
+                onSelect={(e) => onCaret(e.currentTarget.selectionStart)}
+                onKeyUp={(e) => onCaret(e.currentTarget.selectionStart)}
+                onClick={(e) => onCaret(e.currentTarget.selectionStart)}
+                onScroll={(e) => {
+                    if (backdropRef.current) {
+                        backdropRef.current.scrollTop = e.currentTarget.scrollTop;
+                    }
+                }}
+                spellCheck={false}
+                style={Object.assign({}, EDITOR_TEXT_STYLE, {
+                    position: 'absolute',
+                    inset: 0,
+                    height: '100%',
+                    resize: 'none',
+                    background: 'transparent',
+                    color: 'transparent',
+                    caretColor: '#0f172a',
+                    outline: 'none',
+                    overflowY: 'auto',
+                })}
+            />
         </div>
     );
 }
@@ -1316,9 +1393,8 @@ export default function AccountSettings() {
                             <div className="mb-8">
                                 <h3 className="text-base font-bold text-slate-900 mb-1">Scheduled messages</h3>
                                 <p className="text-xs text-slate-500 mb-4">
-                                    Written once, sent automatically at the right moment. Anything in curly braces is
-                                    swapped for the real thing when the message goes out — the preview under each box
-                                    shows you exactly how it&apos;ll read.
+                                    Written once, sent automatically at the right moment. Anything highlighted in blue
+                                    is swapped for the real thing when the message goes out.
                                 </p>
 
                                 <div className="space-y-4">
@@ -1350,19 +1426,16 @@ export default function AccountSettings() {
                                                     </button>
                                                 </div>
 
-                                                <textarea
-                                                    ref={(el) => { templateRefs.current[def.key] = el; }}
+                                                <HighlightedTemplate
+                                                    innerRef={(el) => { templateRefs.current[def.key] = el; }}
                                                     value={tpl.body}
-                                                    onChange={(e) => {
-                                                        caretRefs.current[def.key] = e.target.selectionStart;
-                                                        patchTemplate(def.key, { body: e.target.value }, def.defaultOffset);
-                                                    }}
-                                                    onSelect={(e) => { caretRefs.current[def.key] = e.currentTarget.selectionStart; }}
-                                                    onKeyUp={(e) => { caretRefs.current[def.key] = e.currentTarget.selectionStart; }}
-                                                    onClick={(e) => { caretRefs.current[def.key] = e.currentTarget.selectionStart; }}
-                                                    rows={5}
                                                     placeholder={def.placeholder}
-                                                    className="w-full p-3 border rounded-lg text-sm leading-6"
+                                                    rows={6}
+                                                    onCaret={(caret) => { caretRefs.current[def.key] = caret; }}
+                                                    onChange={(next, caret) => {
+                                                        caretRefs.current[def.key] = caret;
+                                                        patchTemplate(def.key, { body: next }, def.defaultOffset);
+                                                    }}
                                                 />
 
                                                 <div className="flex flex-wrap items-center gap-1.5 mt-2">
@@ -1379,8 +1452,6 @@ export default function AccountSettings() {
                                                         </button>
                                                     ))}
                                                 </div>
-
-                                                <TemplatePreview value={tpl.body} />
 
                                                 <div className="flex items-center justify-between border rounded-xl p-4 mt-3">
                                                     <div>
