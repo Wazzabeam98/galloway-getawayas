@@ -11,6 +11,7 @@ import { generateRandomNumber, getImageUrl } from '@/lib/utils';
 import { toast } from 'react-toastify';
 import {
     HomeIcon, Trees, Waves, Compass, Building2, Sparkles, Minus, Plus, Check,
+    KeyRound, Lock, DoorOpen, Hash, Users, MapPin,
     Snowflake, Package, Refrigerator, Thermometer, Droplet, UtensilsCrossed, Tv,
     RotateCw, Wifi, Coffee, Wind, Shirt, Zap, Baby, Briefcase, Car, Dumbbell, Bath,
     Flame, Armchair, Umbrella, Anchor, AlertTriangle, BellRing, PawPrint,
@@ -128,6 +129,16 @@ export default function EditListing() {
     const [amenities, setAmenities] = useState<string[]>([]);
     const [photos, setPhotos] = useState<Photo[]>([]);
     const [coverIndex, setCoverIndex] = useState(0);
+    const [checkInMethod, setCheckInMethod] = useState('');
+
+    const CHECKIN_METHODS: { label: string; icon: any; note: string }[] = [
+        { label: 'Lockbox', icon: KeyRound, note: 'Guests collect a key from a lockbox at the property.' },
+        { label: 'Smart lock', icon: Lock, note: 'Guests let themselves in with a code on a smart lock.' },
+        { label: 'Keypad', icon: Hash, note: 'A keypad on the door with a code you provide.' },
+        { label: 'Host greets you', icon: Users, note: "You'll meet guests at the property to hand over keys." },
+        { label: 'Keys collected nearby', icon: MapPin, note: 'Guests pick keys up from a nearby address.' },
+        { label: 'Building staff', icon: DoorOpen, note: 'A concierge or building staff let guests in.' },
+    ];
     const [newListingPromo, setNewListingPromo] = useState(true);
     const [lastMinuteDiscount, setLastMinuteDiscount] = useState(false);
     const [weeklyDiscount, setWeeklyDiscount] = useState(false);
@@ -203,6 +214,7 @@ export default function EditListing() {
             setEventsAllowed(listing.events_allowed ?? false);
             setSmokingAllowed(listing.smoking_allowed ?? false);
             setQuietHoursEnabled(listing.quiet_hours_enabled ?? false);
+            setCheckInMethod(listing.check_in_method || '');
             setQuietHoursStart(listing.quiet_hours_start || '22:00');
             setQuietHoursEnd(listing.quiet_hours_end || '07:00');
             setCommercialPhotographyAllowed(listing.commercial_photography_allowed ?? false);
@@ -319,6 +331,7 @@ export default function EditListing() {
                     events_allowed: eventsAllowed,
                     smoking_allowed: smokingAllowed,
                     quiet_hours_enabled: quietHoursEnabled,
+                    check_in_method: checkInMethod || null,
                     quiet_hours_start: quietHoursStart,
                     quiet_hours_end: quietHoursEnd,
                     commercial_photography_allowed: commercialPhotographyAllowed,
@@ -449,6 +462,27 @@ export default function EditListing() {
                                                 {privacyType === option && <Check className="w-5 h-5 text-slate-900" />}
                                             </button>
                                         ))}
+                                    </div>
+                                </section>
+
+                                <section>
+                                    <h2 className="text-xl font-bold text-slate-900 mb-1">How guests get in</h2>
+                                    <p className="text-sm text-slate-500 mb-4">
+                                        Shown on your listing. Send the actual codes privately once a booking is confirmed.
+                                    </p>
+                                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                                        {CHECKIN_METHODS.map(({ label, icon: Icon, note }) => {
+                                            const selected = checkInMethod === label;
+                                            return (
+                                                <button key={label} type="button"
+                                                    onClick={() => setCheckInMethod(selected ? '' : label)}
+                                                    className={`text-left border-2 rounded-2xl p-4 transition ${selected ? 'border-slate-900 bg-slate-50' : 'border-slate-200 hover:border-slate-400'}`}>
+                                                    <Icon className="w-5 h-5 text-slate-700 mb-2" />
+                                                    <div className="font-semibold text-slate-900 text-sm">{label}</div>
+                                                    <div className="text-xs text-slate-500 mt-0.5">{note}</div>
+                                                </button>
+                                            );
+                                        })}
                                     </div>
                                 </section>
 
