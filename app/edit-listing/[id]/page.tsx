@@ -130,6 +130,7 @@ export default function EditListing() {
     const [photos, setPhotos] = useState<Photo[]>([]);
     const [coverIndex, setCoverIndex] = useState(0);
     const [checkInMethod, setCheckInMethod] = useState('');
+    const [nearby, setNearby] = useState<{ name: string; time: string }[]>([]);
 
     const CHECKIN_METHODS: { label: string; icon: any; note: string }[] = [
         { label: 'Lockbox', icon: KeyRound, note: 'Guests collect a key from a lockbox at the property.' },
@@ -215,6 +216,7 @@ export default function EditListing() {
             setSmokingAllowed(listing.smoking_allowed ?? false);
             setQuietHoursEnabled(listing.quiet_hours_enabled ?? false);
             setCheckInMethod(listing.check_in_method || '');
+            setNearby(Array.isArray(listing.nearby) ? listing.nearby : []);
             setQuietHoursStart(listing.quiet_hours_start || '22:00');
             setQuietHoursEnd(listing.quiet_hours_end || '07:00');
             setCommercialPhotographyAllowed(listing.commercial_photography_allowed ?? false);
@@ -332,6 +334,7 @@ export default function EditListing() {
                     smoking_allowed: smokingAllowed,
                     quiet_hours_enabled: quietHoursEnabled,
                     check_in_method: checkInMethod || null,
+                    nearby: nearby.filter((n) => n.name.trim()),
                     quiet_hours_start: quietHoursStart,
                     quiet_hours_end: quietHoursEnd,
                     commercial_photography_allowed: commercialPhotographyAllowed,
@@ -497,11 +500,68 @@ export default function EditListing() {
                         )}
 
                         {activeSection === 'location' && (
-                            <section>
-                                <h2 className="text-xl font-bold text-slate-900 mb-4">Location</h2>
-                                <textarea value={location} onChange={(e) => setLocation(e.target.value)} rows={3}
-                                    className="w-full p-3 border rounded-xl text-sm" />
-                            </section>
+                            <div className="space-y-10">
+                                <section>
+                                    <h2 className="text-xl font-bold text-slate-900 mb-4">Location</h2>
+                                    <textarea value={location} onChange={(e) => setLocation(e.target.value)} rows={3}
+                                        className="w-full p-3 border rounded-xl text-sm" />
+                                </section>
+
+                                <section>
+                                    <h2 className="text-xl font-bold text-slate-900 mb-1">What&apos;s nearby</h2>
+                                    <p className="text-sm text-slate-500 mb-4">
+                                        The places you&apos;d tell a friend about — the harbour, the good bakery, the
+                                        beach. Guests care about this far more than a map can show them.
+                                    </p>
+
+                                    <div className="space-y-3">
+                                        {nearby.map((item, i) => (
+                                            <div key={i} className="flex gap-2 items-start">
+                                                <input
+                                                    type="text"
+                                                    value={item.name}
+                                                    placeholder="Kirkcudbright harbour"
+                                                    onChange={(e) => {
+                                                        const next = nearby.slice();
+                                                        next[i] = { name: e.target.value, time: next[i].time };
+                                                        setNearby(next);
+                                                    }}
+                                                    className="flex-1 p-3 border rounded-xl text-sm"
+                                                />
+                                                <input
+                                                    type="text"
+                                                    value={item.time}
+                                                    placeholder="3 min walk"
+                                                    onChange={(e) => {
+                                                        const next = nearby.slice();
+                                                        next[i] = { name: next[i].name, time: e.target.value };
+                                                        setNearby(next);
+                                                    }}
+                                                    className="w-40 p-3 border rounded-xl text-sm"
+                                                />
+                                                <button
+                                                    type="button"
+                                                    onClick={() => setNearby(nearby.filter((_, j) => j !== i))}
+                                                    aria-label="Remove"
+                                                    className="p-3 text-slate-400 hover:text-red-600"
+                                                >
+                                                    &times;
+                                                </button>
+                                            </div>
+                                        ))}
+                                    </div>
+
+                                    {nearby.length < 8 && (
+                                        <button
+                                            type="button"
+                                            onClick={() => setNearby(nearby.concat([{ name: '', time: '' }]))}
+                                            className="mt-3 text-sm font-semibold text-emerald-700 hover:text-emerald-800"
+                                        >
+                                            + Add a place
+                                        </button>
+                                    )}
+                                </section>
+                            </div>
                         )}
 
                         {activeSection === 'description' && (
