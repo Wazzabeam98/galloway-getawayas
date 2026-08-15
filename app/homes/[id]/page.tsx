@@ -46,6 +46,44 @@ function placeSummary(location: string | null): string {
     return kept.join(', ');
 }
 
+// Things worth calling out at a glance. Every one is derived from real
+// data on the listing — nothing here is decorative.
+function propertyHighlights(home: any): { title: string; detail: string }[] {
+    const amenities: string[] = (home && home.amenities) || [];
+    const has = (name: string) => amenities.indexOf(name) !== -1;
+    const out: { title: string; detail: string }[] = [];
+
+    if (home && home.instant_book) {
+        out.push({
+            title: 'Instant Book',
+            detail: 'Your dates are confirmed straight away, with no wait for approval.',
+        });
+    }
+    if (has('Free parking on premises')) {
+        out.push({ title: 'Park for free', detail: 'Free parking at the property.' });
+    }
+    if (has('Hot tub')) {
+        out.push({ title: 'Hot tub', detail: 'Unwind in the hot tub after a day out.' });
+    }
+    if (has('Waterfront') || has('Beach access')) {
+        out.push({ title: 'By the water', detail: 'Right by the shore on the Solway coast.' });
+    }
+    if (has('Indoor fireplace')) {
+        out.push({ title: 'Real fire', detail: 'An indoor fireplace for the colder months.' });
+    }
+    if (has('Pets allowed')) {
+        out.push({ title: 'Pets welcome', detail: 'Bring the dog along for the trip.' });
+    }
+    if (has('Dedicated workspace')) {
+        out.push({ title: 'Room to work', detail: 'A dedicated desk if you need to log on.' });
+    }
+    if (has('EV charger')) {
+        out.push({ title: 'EV charging', detail: 'Charge your car on site overnight.' });
+    }
+
+    return out.slice(0, 4);
+}
+
 const FindHome = async ({ params }: { params: { id: string } }) => {
     const supabase = createServerComponentClient({ cookies });
 
@@ -64,6 +102,11 @@ const FindHome = async ({ params }: { params: { id: string } }) => {
             .single();
         hostName = displayName(hostProfile, 'Host');
     }
+
+    // Guests see a first name only — a surname on a public page is more
+    // than anyone needs, and it's how the big platforms do it.
+    const hostFirstName = capitializeFirst((hostName || 'Host').split(' ')[0]);
+    const highlights = propertyHighlights(home);
 
     if (!home) {
         return (
@@ -115,13 +158,20 @@ const FindHome = async ({ params }: { params: { id: string } }) => {
         <div className='container mb-10'>
             <div className='container mt-4'>
                 <h1 className='text-2xl md:text-3xl font-bold text-slate-900'>{home.title}</h1>
-                {reviews && reviews.length > 0 && (
-                    <div className='flex items-center gap-1.5 mt-1.5 text-sm text-slate-600'>
-                        <ReviewStars value={Math.round(avgRating)} size={15} />
-                        <span className='font-semibold text-slate-900'>{avgRating.toFixed(1)}</span>
-                        <span>· {reviews.length} review{reviews.length > 1 ? 's' : ''}</span>
-                    </div>
-                )}
+                <div className='flex items-center gap-1.5 mt-1.5 text-sm text-slate-600'>
+                    {reviews && reviews.length > 0 ? (
+                        <>
+                            <ReviewStars value={Math.round(avgRating)} size={15} />
+                            <span className='font-semibold text-slate-900'>{avgRating.toFixed(1)}</span>
+                            <span>· {reviews.length} review{reviews.length > 1 ? 's' : ''}</span>
+                        </>
+                    ) : (
+                        <span className='inline-flex items-center gap-1.5 font-semibold text-slate-900'>
+                            <span className='bg-emerald-50 text-emerald-800 text-xs px-2 py-0.5 rounded-full'>New</span>
+                            Newly listed
+                        </span>
+                    )}
+                </div>
 
                 <PhotoGallery images={images} title={home.title} />
 
@@ -137,13 +187,34 @@ const FindHome = async ({ params }: { params: { id: string } }) => {
                         </p>
 
                         <div className='flex items-center gap-3 mt-5 pt-5 border-t'>
-                            <div className='w-10 h-10 rounded-full bg-slate-900 text-white flex items-center justify-center font-semibold text-sm flex-shrink-0'>
-                                {capitializeFirst(hostName).charAt(0)}
+                            <div className='w-11 h-11 rounded-full bg-slate-900 text-white flex items-center justify-center font-semibold flex-shrink-0'>
+                                {hostFirstName.charAt(0)}
                             </div>
-                            <div className='font-semibold text-slate-900'>
-                                Hosted by {capitializeFirst(hostName)}
+                            <div>
+                                <div className='font-semibold text-slate-900'>
+                                    Hosted by {hostFirstName}
+                                </div>
+                                {reviews && reviews.length > 0 && (
+                                    <div className='text-sm text-slate-500'>
+                                        {reviews.length} review{reviews.length > 1 ? 's' : ''} from guests
+                                    </div>
+                                )}
                             </div>
                         </div>
+
+                        {highlights.length > 0 && (
+                            <div className='mt-5 pt-5 border-t space-y-4'>
+                                {highlights.map((h) => (
+                                    <div key={h.title} className='flex items-start gap-3'>
+                                        <span className='w-2 h-2 rounded-full bg-slate-900 mt-2 flex-shrink-0' />
+                                        <div>
+                                            <div className='font-semibold text-slate-900 text-sm'>{h.title}</div>
+                                            <div className='text-sm text-slate-500'>{h.detail}</div>
+                                        </div>
+                                    </div>
+                                ))}
+                            </div>
+                        )}
 
                         {home.amenities && home.amenities.length > 0 && (
                             <div className='mt-5'>
@@ -162,6 +233,23 @@ const FindHome = async ({ params }: { params: { id: string } }) => {
                         <div className='mt-2 whitespace-pre-line'>
                             {home.description}
                         </div>
+
+                        {(!reviews || reviews.length === 0) && (
+                            <div className='mt-8 pt-8 border-t'>
+                                <h2 className='text-xl font-semibold mb-2'>Reviews</h2>
+                                <div className='border rounded-2xl p-6 bg-slate-50'>
+                                    <div className='font-semibold text-slate-900 mb-1'>
+                                        No reviews yet
+                                    </div>
+                                    <p className='text-sm text-slate-600'>
+                                        This place is newly listed, so nobody has stayed and reviewed it
+                                        through Galloway Getaways yet. Reviews appear here once guests
+                                        have checked out — and being one of the first to stay means
+                                        yours will be the one others read.
+                                    </p>
+                                </div>
+                            </div>
+                        )}
 
                         {reviews && reviews.length > 0 && (
                             <div className='mt-8'>
