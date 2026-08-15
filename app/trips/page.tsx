@@ -155,7 +155,7 @@ export default function TripsPage() {
                                             <button
                                                 type="button"
                                                 onClick={() => setOpenReviewFor(b.id)}
-                                                className="text-sm font-semibold text-rose-500 hover:text-rose-600"
+                                                className="text-sm font-semibold text-emerald-700 hover:text-emerald-800"
                                             >
                                                 Leave a review
                                             </button>
