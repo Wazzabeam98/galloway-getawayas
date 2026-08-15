@@ -79,7 +79,7 @@ const LoginModel = () => {
                                     required
                                 />
                             </div>
-                            <button type="submit" className="w-full py-3 bg-rose-500 hover:bg-rose-600 text-white font-bold rounded-xl transition">
+                            <button type="submit" className="w-full py-3 bg-emerald-700 hover:bg-emerald-800 text-white font-bold rounded-xl transition">
                                 Continue
                             </button>
                         </form>
