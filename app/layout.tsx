@@ -3,6 +3,7 @@ export const dynamic = 'force-dynamic';
 import './globals.css';
 import 'react-toastify/dist/ReactToastify.css';
 import Navbar from '@/components/base/Navbar';
+import Footer from '@/components/base/Footer';
 import { ToastContainer } from 'react-toastify';
 import type { Metadata } from 'next';
 
@@ -106,6 +107,7 @@ export default function RootLayout({
         />
         <Navbar />
         {children}
+        <Footer />
         <ToastContainer position="top-center" />
       </body>
     </html>
