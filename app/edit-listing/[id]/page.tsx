@@ -96,10 +96,10 @@ const SECTIONS = [
 ];
 
 const CANCELLATION_POLICIES = [
-    { key: 'Flexible', bullets: ['Full refund at least 1 day before check-in', 'Partial refund within 1 day of check-in'] },
-    { key: 'Moderate', bullets: ['Full refund at least 5 days before check-in', 'Partial refund within 5 days of check-in'] },
-    { key: 'Limited', bullets: ['Full refund at least 14 days before check-in', 'Partial refund 7–14 days before check-in'] },
-    { key: 'Firm', bullets: ['Full refund at least 30 days before check-in', 'Partial refund 7–30 days before check-in'] },
+    { key: 'Flexible', bullets: ['Full refund up to 1 day before check-in', '50% refund inside 1 day of check-in'] },
+    { key: 'Moderate', bullets: ['Full refund up to 5 days before check-in', '50% refund inside 5 days of check-in'] },
+    { key: 'Limited', bullets: ['Full refund up to 14 days before check-in', '50% refund 7–14 days before', 'No refund inside 7 days'] },
+    { key: 'Firm', bullets: ['Full refund up to 30 days before check-in', '50% refund 7–30 days before', 'No refund inside 7 days'] },
 ];
 
 type Photo = { kind: 'existing'; path: string } | { kind: 'new'; file: File };
@@ -812,7 +812,11 @@ export default function EditListing() {
                         {activeSection === 'cancellation' && (
                             <section>
                                 <h2 className="text-xl font-bold text-slate-900 mb-1">Cancellation policy</h2>
-                                <p className="text-sm text-slate-500 mb-6">Choose how flexible you want to be with cancellations.</p>
+                                <p className="text-sm text-slate-500 mb-2">Choose how flexible you want to be with cancellations.</p>
+                                <p className="text-xs text-slate-500 mb-6">
+                                    All refunds exclude the Galloway Getaways service fee. Cleaning fees are always
+                                    returned in full, since the clean doesn&apos;t happen.
+                                </p>
                                 <div className="space-y-3 max-w-lg">
                                     {CANCELLATION_POLICIES.map((policy) => (
                                         <button
