@@ -1,5 +1,6 @@
 export const dynamic = "force-dynamic";
 import React from 'react'
+import type { Metadata } from 'next';
 import { createServerComponentClient } from '@supabase/auth-helpers-nextjs'
 import { cookies } from 'next/headers';
 import { capitializeFirst, displayName, getImageUrl } from '@/lib/utils';
@@ -144,6 +145,75 @@ async function lookupCoordinates(location: string | null) {
     }
 }
 
+
+const SITE_URL = 'https://gallowaygetaways.co.uk';
+
+// Per-listing page title and description. Without this every property
+// shares one title and Google can't tell them apart — which is the
+// single biggest thing holding back a site like this in search.
+export async function generateMetadata({ params }: { params: { id: string } }): Promise<Metadata> {
+    const supabase = createServerComponentClient({ cookies });
+
+    const { data: home } = await supabase
+        .from('listings')
+        .select('title, description, location, images, price_per_night, max_guests, bedrooms, property_type, privacy_type, amenities')
+        .eq('id', params.id)
+        .single();
+
+    if (!home) {
+        return {
+            title: 'Property not found',
+            description: 'This listing is no longer available.',
+        };
+    }
+
+    const area = placeSummary(home.location) || 'Dumfries & Galloway';
+    const town = area.split(',')[0].trim();
+    const kind = describePlace(home.privacy_type, home.property_type).toLowerCase();
+
+    // Built to match how people actually search: type of place, town, then
+    // the detail that narrows it down.
+    const title = `${home.title} | Self Catering in ${town}`;
+
+    const amenities: string[] = home.amenities || [];
+    const highlights: string[] = [];
+    if (amenities.indexOf('Hot tub') !== -1) highlights.push('hot tub');
+    if (amenities.indexOf('Pets allowed') !== -1) highlights.push('dog friendly');
+    if (amenities.indexOf('Wifi') !== -1) highlights.push('wifi');
+    const extras = highlights.length ? ` Features ${highlights.join(', ')}.` : '';
+
+    const description =
+        `${kind.charAt(0).toUpperCase()}${kind.slice(1)} in ${area}. ` +
+        `Sleeps ${home.max_guests}, ${home.bedrooms} bedroom${home.bedrooms === 1 ? '' : 's'}, ` +
+        `from £${home.price_per_night} per night.${extras} ` +
+        `Book direct with a local host.`;
+
+    const image = home.images && home.images.length > 0
+        ? getImageUrl(home.images[0])
+        : `${SITE_URL}/images/hero-1.jpg`;
+
+    return {
+        title,
+        description,
+        alternates: { canonical: `/homes/${params.id}` },
+        openGraph: {
+            type: 'website',
+            locale: 'en_GB',
+            url: `${SITE_URL}/homes/${params.id}`,
+            siteName: 'Galloway Getaways',
+            title: `${home.title} — from £${home.price_per_night} per night`,
+            description,
+            images: [{ url: image, width: 1200, height: 630, alt: home.title }],
+        },
+        twitter: {
+            card: 'summary_large_image',
+            title: home.title,
+            description,
+            images: [image],
+        },
+    };
+}
+
 const FindHome = async ({ params }: { params: { id: string } }) => {
     const supabase = createServerComponentClient({ cookies });
 
@@ -242,6 +312,67 @@ const FindHome = async ({ params }: { params: { id: string } }) => {
                         </span>
                     )}
                 </div>
+
+                {/* Structured data. This is what lets Google show a price,
+                    star rating and photo directly in the search result —
+                    the thing that makes a listing stand out against the
+                    big agencies. */}
+                <script
+                    type="application/ld+json"
+                    dangerouslySetInnerHTML={{
+                        __html: JSON.stringify({
+                            '@context': 'https://schema.org',
+                            '@type': 'VacationRental',
+                            name: home.title,
+                            description: home.description,
+                            url: `${SITE_URL}/homes/${home.id}`,
+                            image: (home.images || []).slice(0, 6).map((img: string) => getImageUrl(img)),
+                            address: {
+                                '@type': 'PostalAddress',
+                                addressLocality: (placeSummary(home.location) || '').split(',')[0].trim(),
+                                addressRegion: 'Dumfries & Galloway',
+                                addressCountry: 'GB',
+                            },
+                            ...(home.latitude && home.longitude
+                                ? {
+                                      geo: {
+                                          '@type': 'GeoCoordinates',
+                                          latitude: home.latitude,
+                                          longitude: home.longitude,
+                                      },
+                                  }
+                                : {}),
+                            numberOfRooms: home.bedrooms,
+                            occupancy: {
+                                '@type': 'QuantitativeValue',
+                                maxValue: home.max_guests,
+                            },
+                            amenityFeature: (home.amenities || []).map((a: string) => ({
+                                '@type': 'LocationFeatureSpecification',
+                                name: a,
+                                value: true,
+                            })),
+                            ...(reviews && reviews.length > 0
+                                ? {
+                                      aggregateRating: {
+                                          '@type': 'AggregateRating',
+                                          ratingValue: avgRating.toFixed(1),
+                                          reviewCount: reviews.length,
+                                          bestRating: 5,
+                                          worstRating: 1,
+                                      },
+                                  }
+                                : {}),
+                            offers: {
+                                '@type': 'Offer',
+                                price: home.price_per_night,
+                                priceCurrency: 'GBP',
+                                availability: 'https://schema.org/InStock',
+                                url: `${SITE_URL}/homes/${home.id}`,
+                            },
+                        }),
+                    }}
+                />
 
                 <PhotoGallery images={images} title={home.title} />
 
