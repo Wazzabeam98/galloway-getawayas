@@ -4,9 +4,10 @@ import Env from '@/config/Env';
 
 const SITE_URL = 'https://gallowaygetaways.co.uk';
 
-// Rebuilt every hour rather than on every request, so a crawler hitting
-// this repeatedly doesn't hammer the database.
-export const revalidate = 3600;
+// The root layout sets force-dynamic, which cascades to every route.
+// Setting revalidate here as well is a conflict, so this matches the
+// layout instead and is generated per request.
+export const dynamic = 'force-dynamic';
 
 export default async function sitemap(): Promise<MetadataRoute.Sitemap> {
   const staticPages: MetadataRoute.Sitemap = [
@@ -16,6 +17,10 @@ export default async function sitemap(): Promise<MetadataRoute.Sitemap> {
       changeFrequency: 'daily',
       priority: 1,
     },
+    { url: `${SITE_URL}/contact`, lastModified: new Date(), changeFrequency: 'yearly', priority: 0.4 },
+    { url: `${SITE_URL}/terms`, lastModified: new Date(), changeFrequency: 'yearly', priority: 0.3 },
+    { url: `${SITE_URL}/privacy`, lastModified: new Date(), changeFrequency: 'yearly', priority: 0.3 },
+    { url: `${SITE_URL}/cancellation-policy`, lastModified: new Date(), changeFrequency: 'yearly', priority: 0.4 },
   ];
 
   try {
