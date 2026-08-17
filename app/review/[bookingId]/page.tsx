@@ -185,7 +185,7 @@ export default function ReviewPage() {
 
             const { data: l } = await supabase
                 .from('listings')
-                .select('id, title, images, town, region')
+                .select('id, title, images')
                 .eq('id', b.listing_id)
                 .maybeSingle();
             setListing(l);
