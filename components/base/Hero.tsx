@@ -154,7 +154,7 @@ export default function Hero() {
 
       {/* Which image you're on — also lets people skip ahead */}
       {HERO_IMAGES.length > 1 && (
-        <div className="absolute bottom-5 left-1/2 -translate-x-1/2 z-20 flex items-center gap-2">
+        <div className="absolute bottom-5 left-1/2 -translate-x-1/2 z-0 flex items-center gap-2">
           {HERO_IMAGES.map((src, i) => (
             <button
               key={src}
@@ -170,7 +170,7 @@ export default function Hero() {
       )}
 
       {/* Hero Content */}
-      <div className="relative z-10 text-center max-w-5xl px-4 flex flex-col items-center">
+      <div className="relative z-30 text-center max-w-5xl px-4 flex flex-col items-center">
         <h1 className="text-4xl md:text-6xl font-extrabold tracking-tight mb-3 drop-shadow-lg">
           Galloway Getaways
         </h1>
