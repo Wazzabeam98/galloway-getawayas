@@ -10,6 +10,7 @@ import { HomeIcon, ChevronRightIcon, ChevronLeftIcon, Trees, Waves, Compass, Bui
 import LoginModel from '@/components/auth/LoginModel';
 import { categories } from '@/config/categories';
 import Env from '@/config/Env';
+import { compressImage } from '@/lib/compressImage';
 import { generateRandomNumber } from '@/lib/utils';
 import { toast } from 'react-toastify';
 
@@ -320,10 +321,30 @@ export default function AddHome() {
         }, 400);
     };
 
-    const handlePhotosChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const [processingPhotos, setProcessingPhotos] = useState(false);
+
+    const handlePhotosChange = async (e: React.ChangeEvent<HTMLInputElement>) => {
         const files = Array.from(e.target.files || []);
-        if (files.length) setPhotos((prev) => [...prev, ...files]);
         e.target.value = '';
+        if (!files.length) return;
+
+        // Photos straight off a phone are far too big to upload, and iPhones
+        // often hand over HEIC. Shrinking and re-encoding here means the
+        // guest never sees a size error.
+        setProcessingPhotos(true);
+        setFormError('');
+
+        const ready: File[] = [];
+        for (const file of files) {
+            try {
+                ready.push(await compressImage(file));
+            } catch (err) {
+                setFormError('One of those photos couldn\u2019t be read. Try a different one.');
+            }
+        }
+
+        if (ready.length) setPhotos((prev) => [...prev, ...ready]);
+        setProcessingPhotos(false);
     };
 
     const removePhoto = (index: number) => {
@@ -363,14 +384,9 @@ export default function AddHome() {
             setFormError('Please add at least one photo of your place.');
             return;
         }
-        const badType = photos.find((p) => !['image/jpeg', 'image/jpg', 'image/png'].includes(p.type));
-        if (badType) {
-            setFormError('Only JPEG, JPG and PNG images are allowed.');
-            return;
-        }
-        const tooBig = photos.find((p) => p.size / 1048576 >= 2);
+        const tooBig = photos.find((p) => p.size / 1048576 >= 5);
         if (tooBig) {
-            setFormError('Each photo must be less than 2MB.');
+            setFormError('One of those photos is still too large. Please try a different one.');
             return;
         }
 
@@ -900,10 +916,10 @@ export default function AddHome() {
 
                         <label className="h-32 rounded-2xl border-2 border-dashed border-slate-300 hover:border-slate-400 flex flex-col items-center justify-center cursor-pointer text-slate-500 text-sm">
                             <span className="font-semibold mb-1">+ Add photos</span>
-                            <span>JPEG or PNG, up to 2MB each</span>
+                            <span>{processingPhotos ? 'Preparing your photos...' : 'Straight from your phone is fine'}</span>
                             <input
                                 type="file"
-                                accept="image/png, image/jpeg"
+                                accept="image/*"
                                 multiple
                                 onChange={handlePhotosChange}
                                 className="hidden"
