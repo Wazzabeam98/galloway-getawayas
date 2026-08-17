@@ -76,7 +76,7 @@ export default function LeaveReviewForm({ bookingId, listingId, revieweeId, revi
             reviewer_id: user.id,
             reviewee_id: revieweeId,
             review_type: reviewType,
-            rating: Math.round(computedOverall),
+            rating: Number(computedOverall.toFixed(2)),
             comment: comment.trim(),
         };
 
@@ -99,7 +99,12 @@ export default function LeaveReviewForm({ bookingId, listingId, revieweeId, revi
             return;
         }
 
-        toast.success('Review posted.', { theme: 'colored' });
+        toast.success(
+            isStayReview
+                ? 'Review posted. It stays hidden until your host reviews you too.'
+                : 'Review posted. It stays hidden until your guest reviews you too.',
+            { theme: 'colored' }
+        );
         router.refresh();
         if (onDone) onDone();
     };
