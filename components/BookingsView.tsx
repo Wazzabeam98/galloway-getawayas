@@ -28,6 +28,10 @@ const statusStyles: Record<string, string> = {
     cancelled: 'bg-slate-100 text-slate-500',
 };
 
+// Kept in step with the same figure shown in the listing wizard and the
+// earnings page.
+const HOST_FEE_PERCENT = 10;
+
 export default function BookingsView({
     bookings,
     listingMap,
@@ -72,7 +76,15 @@ export default function BookingsView({
                         <div className="text-sm text-slate-600">
                             {capitializeFirst(guestName)} · {booking.check_in} → {booking.check_out} · {booking.guests} guest{booking.guests > 1 ? 's' : ''}
                         </div>
-                        <div className="text-sm font-medium text-slate-700">£{booking.total_price}</div>
+                        <div className="text-sm text-slate-700 mt-0.5">
+                            <span className="font-semibold text-slate-900">
+                                £{(Number(booking.total_price) * (1 - HOST_FEE_PERCENT / 100)).toFixed(2)}
+                            </span>
+                            <span className="text-slate-500"> to you</span>
+                            <span className="text-slate-400">
+                                {' '}&middot; £{Number(booking.total_price).toFixed(2)} guest total, less {HOST_FEE_PERCENT}% fee
+                            </span>
+                        </div>
                         {isReviewable ? (
                             alreadyReviewed ? (
                                 <span className="text-xs text-slate-400">You've reviewed this guest</span>
