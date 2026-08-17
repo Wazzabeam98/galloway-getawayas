@@ -105,3 +105,69 @@
 }.rdrDayPassive {
   visibility: hidden !important;
 }
+
+
+/* 7. Toast styling
+   react-toastify's "colored" theme paints the whole box solid green or red.
+   That's used in ~60 places across the app, so rather than edit every call,
+   these rules restyle the result everywhere: a white card with a coloured
+   edge instead of a slab of colour. */
+.Toastify__toast-container {
+  width: auto !important;
+  max-width: 420px !important;
+  padding: 0 12px !important;
+}
+
+.Toastify__toast {
+  border-radius: 12px !important;
+  box-shadow: 0 6px 24px rgba(15, 23, 42, 0.12) !important;
+  border: 1px solid #e5e7eb !important;
+  background: #ffffff !important;
+  color: #111827 !important;
+  font-size: 14px !important;
+  line-height: 1.5 !important;
+  min-height: 0 !important;
+  padding: 12px 14px !important;
+}
+
+.Toastify__toast--success {
+  border-left: 4px solid #047857 !important;
+}
+
+.Toastify__toast--error {
+  border-left: 4px solid #dc2626 !important;
+}
+
+.Toastify__toast--info,
+.Toastify__toast--warning {
+  border-left: 4px solid #64748b !important;
+}
+
+.Toastify__toast-body {
+  color: #111827 !important;
+  padding: 0 !important;
+  margin: 0 8px 0 0 !important;
+}
+
+.Toastify__toast-icon svg {
+  fill: #047857 !important;
+}
+
+.Toastify__toast--error .Toastify__toast-icon svg {
+  fill: #dc2626 !important;
+}
+
+.Toastify__close-button {
+  color: #94a3b8 !important;
+  opacity: 1 !important;
+  align-self: center !important;
+}
+
+.Toastify__progress-bar {
+  background: #047857 !important;
+  height: 2px !important;
+}
+
+.Toastify__toast--error .Toastify__progress-bar {
+  background: #dc2626 !important;
+}
