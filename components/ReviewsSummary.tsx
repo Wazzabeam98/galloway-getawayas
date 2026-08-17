@@ -1,4 +1,4 @@
-import { Sparkles, CheckCircle, Key, MessageSquare, Map, Tag } from 'lucide-react';
+import { Sparkles, CheckCircle, Key, MessageSquare, Map, Tag, Star } from 'lucide-react';
 
 interface Review {
     rating: number;
@@ -33,70 +33,52 @@ export default function ReviewsSummary({ reviews }: { reviews: Review[] }) {
 
     const avgOverall = reviews.reduce((sum, r) => sum + Number(r.rating), 0) / reviews.length;
 
-    const distribution = [5, 4, 3, 2, 1].map((star) => {
-        const count = reviews.filter((r) => Math.round(Number(r.rating)) === star).length;
-        return { star, count, pct: (count / reviews.length) * 100 };
-    });
-
     const categoryKeys = ['cleanliness', 'accuracy', 'checkin', 'communication', 'location', 'value'] as const;
     const categoryAverages = categoryKeys.map((key) => {
         const field = `${key}_rating` as keyof Review;
         const values = reviews.map((r) => r[field]).filter((v): v is number => typeof v === 'number');
-        const avg = values.length ? values.reduce((sum, v) => sum + v, 0) / values.length : null;
+        const avg = values.length ? values.reduce((sum, v) => sum + Number(v), 0) / values.length : null;
         return { key, avg };
     }).filter((c) => c.avg !== null);
 
     const isGuestFavourite = avgOverall >= 4.8 && reviews.length >= 5;
 
     return (
-        <div className="border rounded-2xl p-6 md:p-10">
-            <div className="text-center mb-8">
-                <div className="flex items-center justify-center gap-4">
-                    <span className="text-2xl">🌿</span>
-                    <span className="text-6xl font-bold text-slate-900">{avgOverall.toFixed(2)}</span>
-                    <span className="text-2xl scale-x-[-1]">🌿</span>
+        <div className="border rounded-2xl p-5 md:p-6">
+            <div className="flex items-center justify-between gap-4 flex-wrap">
+                <div className="flex items-baseline gap-2.5">
+                    <Star className="w-5 h-5 fill-amber-400 text-amber-400 self-center" />
+                    <span className="text-3xl font-bold text-slate-900 leading-none">{avgOverall.toFixed(2)}</span>
+                    <span className="text-slate-500 text-sm">
+                        {reviews.length} review{reviews.length > 1 ? 's' : ''}
+                    </span>
                 </div>
+
                 {isGuestFavourite && (
-                    <>
-                        <h3 className="text-xl font-bold text-slate-900 mt-3">Guest favourite</h3>
-                        <p className="text-slate-500 max-w-sm mx-auto mt-1 text-sm">
-                            This home is a guest favourite based on ratings, reviews and reliability
-                        </p>
-                    </>
+                    <span className="text-xs font-semibold text-emerald-800 bg-emerald-50 border border-emerald-200 px-3 py-1 rounded-full">
+                        Guest favourite
+                    </span>
                 )}
             </div>
 
-            <div className="grid grid-cols-1 md:grid-cols-2 gap-10 mb-8">
-                <div>
-                    <h4 className="font-semibold text-slate-800 mb-3 text-sm">Overall rating</h4>
-                    <div className="space-y-1.5">
-                        {distribution.map((d) => (
-                            <div key={d.star} className="flex items-center gap-2 text-xs text-slate-500">
-                                <span className="w-2">{d.star}</span>
-                                <div className="flex-1 h-1.5 bg-slate-100 rounded-full overflow-hidden">
-                                    <div className="h-full bg-emerald-700 rounded-full transition-all" style={{ width: `${d.pct}%` }} />
-                                </div>
-                                <span className="w-6 text-right tabular-nums">{d.count}</span>
-                            </div>
-                        ))}
-                    </div>
-                </div>
-            </div>
-
             {categoryAverages.length > 0 && (
-                <div className="grid grid-cols-2 md:grid-cols-3 gap-x-6 gap-y-6 pt-6 border-t">
+                <div className="grid grid-cols-2 md:grid-cols-3 gap-x-8 gap-y-4 mt-6 pt-5 border-t">
                     {categoryAverages.map(({ key, avg }) => {
                         const Icon = CATEGORY_ICONS[key];
                         return (
                             <div key={key}>
-                                <div className="flex items-center gap-2 mb-1">
-                                    <Icon className="w-4 h-4 text-slate-500" />
-                                    <span className="text-sm font-medium text-slate-800">{CATEGORY_LABELS[key]}</span>
+                                <div className="flex items-center justify-between gap-2">
+                                    <span className="flex items-center gap-1.5 text-sm text-slate-600 truncate">
+                                        <Icon className="w-3.5 h-3.5 text-slate-400 shrink-0" />
+                                        {CATEGORY_LABELS[key]}
+                                    </span>
+                                    <span className="text-sm font-semibold text-slate-900 tabular-nums">
+                                        {avg!.toFixed(1)}
+                                    </span>
                                 </div>
-                                <div className="text-lg font-bold text-slate-900">{avg!.toFixed(1)}</div>
                                 <div className="h-1 bg-slate-100 rounded-full overflow-hidden mt-1.5">
                                     <div
-                                        className="h-full bg-emerald-700 rounded-full transition-all"
+                                        className="h-full bg-emerald-700 rounded-full"
                                         style={{ width: `${(avg! / 5) * 100}%` }}
                                     />
                                 </div>
