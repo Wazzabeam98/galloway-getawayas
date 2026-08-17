@@ -1,3 +1,7 @@
+// WHERE THIS GOES: GitHub -> app/account/page.tsx  (REPLACE the whole file)
+// Changed: Notifications marked ready, new import, new render branch.
+// Everything else is byte-for-byte what you already had.
+
 'use client';
 
 import React, { useEffect, useState, useRef } from 'react';
@@ -9,6 +13,7 @@ import LoginModel from '@/components/auth/LoginModel';
 import { toast } from 'react-toastify';
 import { getImageUrl } from '@/lib/utils';
 import Env from '@/config/Env';
+import NotificationsSection from '@/components/account/NotificationsSection';
 import {
     User,
     Shield,
@@ -30,7 +35,7 @@ const SECTIONS = [
     { key: 'personal', label: 'Personal information', icon: User, ready: true },
     { key: 'security', label: 'Login & security', icon: Lock, ready: true },
     { key: 'privacy', label: 'Privacy', icon: Shield, ready: true },
-    { key: 'notifications', label: 'Notifications', icon: Bell, ready: false },
+    { key: 'notifications', label: 'Notifications', icon: Bell, ready: true },
     { key: 'payments', label: 'Payments & payouts', icon: CreditCard, ready: false },
     { key: 'messaging', label: 'Messaging', icon: MessageCircle, ready: true },
     { key: 'bookings', label: 'Booking permissions', icon: CalendarCheck, ready: true },
@@ -2035,6 +2040,8 @@ export default function AccountSettings() {
                                 </div>
                             )}
                         </div>
+                    ) : activeSection === 'notifications' ? (
+                        <NotificationsSection />
                     ) : (
                         <div className="border rounded-2xl p-10 text-center">
                             <h2 className="text-xl font-bold text-slate-900 mb-2">
