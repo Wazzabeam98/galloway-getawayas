@@ -1,3 +1,6 @@
+// WHERE THIS GOES: GitHub -> app/messages/[bookingId]/page.tsx  (REPLACE the whole file)
+// Changed: emails the other person when you send a message.
+
 'use client';
 
 import { useEffect, useRef, useState } from 'react';
@@ -9,6 +12,7 @@ import { toast } from 'react-toastify';
 import { ChevronLeft, Send, Zap } from 'lucide-react';
 import Link from 'next/link';
 import { capitializeFirst, displayName } from '@/lib/utils';
+import { notify } from '@/lib/notify';
 
 interface QuickReply {
     id: string;
@@ -131,12 +135,14 @@ export default function ConversationPage() {
 
         const recipientId = booking.guest_id === session.user.id ? booking.host_id : booking.guest_id;
 
+        const outgoing = text.trim();
+
         setSending(true);
         const { error } = await supabase.from('messages').insert({
             booking_id: bookingId,
             sender_id: session.user.id,
             recipient_id: recipientId,
-            body: text.trim(),
+            body: outgoing,
         });
         setSending(false);
 
@@ -144,6 +150,11 @@ export default function ConversationPage() {
             toast.error(error.message, { theme: 'colored' });
             return;
         }
+
+        // Email the other person, if they have message alerts switched on.
+        // The route decides that — this just asks.
+        notify('new_message', bookingId, outgoing);
+
         setText('');
     };
 
