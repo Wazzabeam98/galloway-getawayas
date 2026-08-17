@@ -3,15 +3,25 @@ import { createServerComponentClient } from '@supabase/auth-helpers-nextjs';
 import { cookies } from 'next/headers';
 import { getImageUrl } from '@/lib/utils';
 import Link from 'next/link';
-import { Home } from 'lucide-react';
+import { Home, Star } from 'lucide-react';
 
 export const dynamic = 'force-dynamic';
+
+// The stored location is a full address, e.g.
+// "57 St Cuthbert Street, Kirkcudbright, Dumfries and Galloway".
+// Guests should only see the area, so the first part is dropped.
+function publicArea(location: string | null): string {
+  if (!location) return 'Dumfries & Galloway';
+  const parts = location.split(',').map((p) => p.trim()).filter(Boolean);
+  if (parts.length <= 1) return location;
+  return parts.slice(1).join(', ');
+}
 
 export default async function HomePage() {
   const supabase = createServerComponentClient({ cookies });
   const { data: listings } = await supabase
     .from('listings')
-    .select('id, title, location, price_per_night, images')
+    .select('id, title, location, price_per_night, images, rating_avg, rating_count')
     .eq('status', 'published')
     .order('created_at', { ascending: false });
 
@@ -27,39 +37,64 @@ export default async function HomePage() {
             Our Properties
           </h2>
           <p className="text-stone-600 text-sm md:text-base mt-1">
-            Handpicked holiday rentals in Dumfries & Galloway
+            Handpicked holiday rentals in Dumfries &amp; Galloway
           </p>
         </div>
 
         {/* Property Grid */}
         {listings && listings.length > 0 ? (
           <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-6">
-            {listings.map((property) => (
-              <Link
-                key={property.id}
-                href={`/homes/${property.id}`}
-                className="group flex flex-col space-y-2"
-              >
-                <div className="w-full h-64 rounded-2xl overflow-hidden bg-stone-200 relative">
-                  {property.images && property.images.length > 0 ? (
-                    <img
-                      src={getImageUrl(property.images[0])}
-                      alt={property.title}
-                      className="w-full h-full object-cover group-hover:scale-105 transition duration-300"
-                    />
-                  ) : (
-                    <div className="flex items-center justify-center h-full text-stone-400">
-                      <Home className="w-10 h-10" />
-                    </div>
-                  )}
-                </div>
-                <h3 className="font-bold text-stone-900 text-base truncate">{property.location}</h3>
-                <p className="text-sm text-stone-500 truncate">{property.title}</p>
-                <p className="text-sm font-semibold text-stone-900">
-                  £{property.price_per_night} <span className="font-normal text-stone-500">night</span>
-                </p>
-              </Link>
-            ))}
+            {listings.map((property) => {
+              const rating = property.rating_avg ? Number(property.rating_avg) : null;
+              const count = property.rating_count || 0;
+
+              return (
+                <Link
+                  key={property.id}
+                  href={`/homes/${property.id}`}
+                  className="group flex flex-col space-y-2"
+                >
+                  <div className="w-full h-64 rounded-2xl overflow-hidden bg-stone-200 relative">
+                    {property.images && property.images.length > 0 ? (
+                      <img
+                        src={getImageUrl(property.images[0])}
+                        alt={property.title}
+                        className="w-full h-full object-cover group-hover:scale-105 transition duration-300"
+                      />
+                    ) : (
+                      <div className="flex items-center justify-center h-full text-stone-400">
+                        <Home className="w-10 h-10" />
+                      </div>
+                    )}
+                  </div>
+
+                  <div className="flex items-start justify-between gap-2">
+                    <h3 className="font-bold text-stone-900 text-base truncate">
+                      {property.title}
+                    </h3>
+
+                    {rating && count > 0 ? (
+                      <span className="flex items-center gap-1 text-sm text-stone-900 shrink-0">
+                        <Star className="w-3.5 h-3.5 fill-amber-400 text-amber-400" />
+                        <span className="font-semibold">{rating.toFixed(2)}</span>
+                        <span className="text-stone-400 font-normal">({count})</span>
+                      </span>
+                    ) : (
+                      <span className="text-xs text-emerald-700 font-semibold shrink-0 mt-0.5">
+                        New
+                      </span>
+                    )}
+                  </div>
+
+                  <p className="text-sm text-stone-500 truncate">
+                    {publicArea(property.location)}
+                  </p>
+                  <p className="text-sm font-semibold text-stone-900">
+                    £{property.price_per_night} <span className="font-normal text-stone-500">night</span>
+                  </p>
+                </Link>
+              );
+            })}
           </div>
         ) : (
           <div className="text-center py-16 bg-white rounded-2xl shadow-sm border border-stone-200">
