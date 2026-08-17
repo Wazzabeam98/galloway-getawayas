@@ -4,7 +4,6 @@ import { useEffect, useState } from 'react';
 import { createClientComponentClient } from '@supabase/auth-helpers-nextjs';
 import Logo from '@/components/base/Logo';
 import LoginModel from '@/components/auth/LoginModel';
-import LeaveReviewForm from '@/components/LeaveReviewForm';
 import { getImageUrl, capitializeFirst, displayName } from '@/lib/utils';
 import Link from 'next/link';
 
@@ -26,7 +25,6 @@ export default function TripsPage() {
     const [listingMap, setListingMap] = useState<Record<string, any>>({});
     const [hostNames, setHostNames] = useState<Record<string, string>>({});
     const [reviewedBookingIds, setReviewedBookingIds] = useState<Set<string>>(new Set());
-    const [openReviewFor, setOpenReviewFor] = useState<string | null>(null);
 
     useEffect(() => {
         const load = async () => {
@@ -140,28 +138,34 @@ export default function TripsPage() {
                                     Message host
                                 </Link>
 
-                                {isCompleted && !alreadyReviewed && (
-                                    <div className="mt-4">
-                                        {openReviewFor === b.id ? (
-                                            <LeaveReviewForm
-                                                bookingId={b.id}
-                                                listingId={b.listing_id}
-                                                revieweeId={b.host_id}
-                                                reviewType="guest_to_host"
-                                                revieweeName={hostNames[b.host_id] || 'the host'}
-                                                onDone={() => setOpenReviewFor(null)}
-                                            />
-                                        ) : (
-                                            <button
-                                                type="button"
-                                                onClick={() => setOpenReviewFor(b.id)}
-                                                className="text-sm font-semibold text-emerald-700 hover:text-emerald-800"
+                                {isCompleted && !alreadyReviewed && (() => {
+                                    // Reviews close 14 days after check-out.
+                                    const deadline = new Date(b.check_out);
+                                    deadline.setDate(deadline.getDate() + 14);
+                                    const daysLeft = Math.ceil((deadline.getTime() - today.getTime()) / 86400000);
+
+                                    if (daysLeft < 0) {
+                                        return (
+                                            <p className="text-xs text-slate-400 mt-4">
+                                                The review window for this stay has closed.
+                                            </p>
+                                        );
+                                    }
+
+                                    return (
+                                        <div className="mt-4 flex items-center gap-3">
+                                            <Link
+                                                href={`/review/${b.id}`}
+                                                className="px-4 py-2 bg-emerald-700 hover:bg-emerald-800 text-white text-sm font-semibold rounded-xl transition"
                                             >
                                                 Leave a review
-                                            </button>
-                                        )}
-                                    </div>
-                                )}
+                                            </Link>
+                                            <span className={`text-xs ${daysLeft <= 3 ? 'text-amber-700 font-medium' : 'text-slate-400'}`}>
+                                                {daysLeft === 0 ? 'Last day' : `${daysLeft} days left`}
+                                            </span>
+                                        </div>
+                                    );
+                                })()}
                                 {isCompleted && alreadyReviewed && (
                                     <p className="text-xs text-slate-400 mt-3">You've reviewed this stay.</p>
                                 )}
