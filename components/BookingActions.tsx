@@ -1,3 +1,6 @@
+// WHERE THIS GOES: GitHub -> components/BookingActions.tsx  (REPLACE the whole file)
+// Changed: emails the guest when you confirm, decline or cancel.
+
 'use client';
 
 import { useState } from 'react';
@@ -5,6 +8,7 @@ import { createClientComponentClient } from '@supabase/auth-helpers-nextjs';
 import { useRouter } from 'next/navigation';
 import { toast } from 'react-toastify';
 import { displayName } from '@/lib/utils';
+import { notify } from '@/lib/notify';
 
 export default function BookingActions({ bookingId, mode = 'pending' }: { bookingId: string; mode?: 'pending' | 'confirmed' }) {
     const supabase = createClientComponentClient();
@@ -121,6 +125,10 @@ export default function BookingActions({ bookingId, mode = 'pending' }: { bookin
         if (status === 'confirmed') {
             await sendWelcomeMessage();
         }
+
+        // Let the guest know the outcome by email. Not awaited, and it
+        // can't fail loudly — the status change has already been saved.
+        notify('booking_status', bookingId);
 
         setUpdating(false);
 
