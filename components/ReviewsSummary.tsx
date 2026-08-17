@@ -31,10 +31,10 @@ const CATEGORY_LABELS: Record<string, string> = {
 export default function ReviewsSummary({ reviews }: { reviews: Review[] }) {
     if (!reviews || reviews.length === 0) return null;
 
-    const avgOverall = reviews.reduce((sum, r) => sum + r.rating, 0) / reviews.length;
+    const avgOverall = reviews.reduce((sum, r) => sum + Number(r.rating), 0) / reviews.length;
 
     const distribution = [5, 4, 3, 2, 1].map((star) => {
-        const count = reviews.filter((r) => Math.round(r.rating) === star).length;
+        const count = reviews.filter((r) => Math.round(Number(r.rating)) === star).length;
         return { star, count, pct: (count / reviews.length) * 100 };
     });
 
@@ -74,8 +74,9 @@ export default function ReviewsSummary({ reviews }: { reviews: Review[] }) {
                             <div key={d.star} className="flex items-center gap-2 text-xs text-slate-500">
                                 <span className="w-2">{d.star}</span>
                                 <div className="flex-1 h-1.5 bg-slate-100 rounded-full overflow-hidden">
-                                    <div className="h-full bg-slate-900 rounded-full" style={{ width: `${d.pct}%` }} />
+                                    <div className="h-full bg-emerald-700 rounded-full transition-all" style={{ width: `${d.pct}%` }} />
                                 </div>
+                                <span className="w-6 text-right tabular-nums">{d.count}</span>
                             </div>
                         ))}
                     </div>
@@ -88,9 +89,17 @@ export default function ReviewsSummary({ reviews }: { reviews: Review[] }) {
                         const Icon = CATEGORY_ICONS[key];
                         return (
                             <div key={key}>
-                                <div className="text-sm font-medium text-slate-800">{CATEGORY_LABELS[key]}</div>
-                                <div className="text-lg font-bold text-slate-900 mb-1">{avg!.toFixed(1)}</div>
-                                <Icon className="w-5 h-5 text-slate-700" />
+                                <div className="flex items-center gap-2 mb-1">
+                                    <Icon className="w-4 h-4 text-slate-500" />
+                                    <span className="text-sm font-medium text-slate-800">{CATEGORY_LABELS[key]}</span>
+                                </div>
+                                <div className="text-lg font-bold text-slate-900">{avg!.toFixed(1)}</div>
+                                <div className="h-1 bg-slate-100 rounded-full overflow-hidden mt-1.5">
+                                    <div
+                                        className="h-full bg-emerald-700 rounded-full transition-all"
+                                        style={{ width: `${(avg! / 5) * 100}%` }}
+                                    />
+                                </div>
                             </div>
                         );
                     })}
