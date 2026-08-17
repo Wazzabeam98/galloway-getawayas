@@ -267,8 +267,8 @@ export default function Hero() {
 
           {/* WHEN POPOVER */}
           {activePopover === 'when' && (
-            <div className="absolute left-1/2 -translate-x-1/2 top-[calc(100%+10px)] bg-white rounded-3xl p-5 shadow-2xl border border-stone-200 text-stone-900 z-50 min-w-[620px]">
-              <div className="flex justify-center mb-4">
+            <div className="absolute left-1/2 -translate-x-1/2 top-[calc(100%+10px)] bg-white rounded-3xl p-4 shadow-2xl border border-stone-200 text-stone-900 z-50 w-[min(92vw,600px)] max-h-[min(70vh,520px)] overflow-y-auto overscroll-contain">
+              <div className="flex justify-center mb-3">
                 <div className="bg-stone-100 p-1 rounded-full flex gap-1 border border-stone-200">
                   <button
                     type="button"
@@ -376,7 +376,7 @@ export default function Hero() {
 
           {/* WHO POPOVER */}
           {activePopover === 'who' && (
-            <div className="absolute right-0 top-[calc(100%+10px)] w-80 bg-white rounded-3xl p-5 shadow-2xl border border-stone-200 text-stone-900 z-50">
+            <div className="absolute right-0 top-[calc(100%+10px)] w-[min(92vw,20rem)] bg-white rounded-3xl p-5 shadow-2xl border border-stone-200 text-stone-900 z-50 max-h-[min(70vh,520px)] overflow-y-auto overscroll-contain">
               <div className="flex items-center justify-between py-2.5 border-b border-stone-100">
                 <div>
                   <p className="font-semibold text-sm">Adults</p>
