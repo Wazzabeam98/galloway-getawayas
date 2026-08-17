@@ -273,11 +273,14 @@ const FindHome = async ({ params }: { params: { id: string } }) => {
 
     const images: string[] = home.images || [];
 
+    // Only published reviews are public. An unpublished one is still
+    // waiting on the other side, or on the 14 day window closing.
     const { data: reviews } = await supabase
         .from('reviews')
         .select('*')
         .eq('listing_id', home.id)
         .eq('review_type', 'guest_to_host')
+        .eq('is_published', true)
         .order('created_at', { ascending: false });
 
     const reviewerIds = Array.from(new Set((reviews || []).map((r) => r.reviewer_id)));
@@ -290,9 +293,14 @@ const FindHome = async ({ params }: { params: { id: string } }) => {
     const { data: { user: viewer } } = await supabase.auth.getUser();
     const isHostViewing = viewer?.id === home.host_id;
 
-    const avgRating = reviews && reviews.length
-        ? reviews.reduce((sum, r) => sum + r.rating, 0) / reviews.length
-        : 0;
+    // The stored average is maintained by a database trigger, so it's the
+    // same number everywhere. Falls back to computing it if a listing
+    // predates that trigger.
+    const avgRating = home.rating_avg
+        ? Number(home.rating_avg)
+        : reviews && reviews.length
+            ? reviews.reduce((sum, r) => sum + Number(r.rating), 0) / reviews.length
+            : 0;
 
     return (
         <div className='container mb-10'>
@@ -356,7 +364,7 @@ const FindHome = async ({ params }: { params: { id: string } }) => {
                                 ? {
                                       aggregateRating: {
                                           '@type': 'AggregateRating',
-                                          ratingValue: avgRating.toFixed(1),
+                                          ratingValue: avgRating.toFixed(2),
                                           reviewCount: reviews.length,
                                           bestRating: 5,
                                           worstRating: 1,
