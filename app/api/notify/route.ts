@@ -1,0 +1,244 @@
+// =====================================================================
+// GALLOWAY GETAWAYS — notification sender
+// WHERE THIS GOES: GitHub → app/api/notify/route.ts   (NEW FILE)
+//
+// The browser asks this route to send a notification. It never trusts
+// what it's told: it works out the recipient itself from the booking,
+// and refuses if the caller isn't part of that booking.
+// =====================================================================
+
+import { createRouteHandlerClient } from '@supabase/auth-helpers-nextjs';
+import { createClient } from '@supabase/supabase-js';
+import { cookies } from 'next/headers';
+import { NextResponse } from 'next/server';
+import {
+    sendEmail,
+    emailLayout,
+    escapeHtml,
+    formatDate,
+    button,
+    detailRows,
+    SITE_URL,
+} from '@/lib/email';
+
+export const dynamic = 'force-dynamic';
+
+// Reads auth.users and other people's rows, so it uses the service role
+// key. This only ever runs on the server.
+function adminClient() {
+    return createClient(
+        process.env.NEXT_PUBLIC_SUPABASE_URL || '',
+        process.env.SUPABASE_SERVICE_ROLE_KEY || '',
+        { auth: { persistSession: false } }
+    );
+}
+
+async function emailFor(admin: any, userId: string): Promise<string> {
+    const { data } = await admin.auth.admin.getUserById(userId);
+    return (data && data.user && data.user.email) || '';
+}
+
+async function firstNameFor(admin: any, userId: string, fallback: string): Promise<string> {
+    const { data } = await admin
+        .from('profiles')
+        .select('full_name, preferred_name')
+        .eq('id', userId)
+        .maybeSingle();
+
+    const name = (data && (data.preferred_name || data.full_name)) || '';
+    const first = name.trim().split(' ')[0];
+    return first || fallback;
+}
+
+// Optional emails only. Transactional ones ignore this entirely.
+async function wants(admin: any, userId: string, column: string): Promise<boolean> {
+    const { data } = await admin
+        .from('notification_preferences')
+        .select(column)
+        .eq('user_id', userId)
+        .maybeSingle();
+
+    // No row yet means they've never opted out — default to sending.
+    if (!data) return true;
+    return (data as any)[column] !== false;
+}
+
+export async function POST(request: Request) {
+    try {
+        const supabase = createRouteHandlerClient({ cookies });
+        const { data: { session } } = await supabase.auth.getSession();
+
+        if (!session || !session.user) {
+            return NextResponse.json({ ok: false, error: 'Not signed in' }, { status: 401 });
+        }
+
+        const body = await request.json();
+        const type: string = body && body.type;
+        const bookingId: string = body && body.bookingId;
+
+        if (!type || !bookingId) {
+            return NextResponse.json({ ok: false, error: 'Missing type or bookingId' }, { status: 400 });
+        }
+
+        const admin = adminClient();
+        const uid = session.user.id;
+
+        const { data: booking } = await admin
+            .from('bookings')
+            .select('id, listing_id, guest_id, host_id, check_in, check_out, guests, total_price, status')
+            .eq('id', bookingId)
+            .maybeSingle();
+
+        if (!booking) {
+            return NextResponse.json({ ok: false, error: 'Booking not found' }, { status: 404 });
+        }
+
+        // Hard gate: you must be one of the two people on this booking.
+        if (booking.guest_id !== uid && booking.host_id !== uid) {
+            return NextResponse.json({ ok: false, error: 'Not your booking' }, { status: 403 });
+        }
+
+        const { data: listing } = await admin
+            .from('listings')
+            .select('title')
+            .eq('id', booking.listing_id)
+            .maybeSingle();
+
+        const listingTitle = escapeHtml((listing && listing.title) || 'your listing');
+        const nights = escapeHtml(
+            formatDate(booking.check_in) + ' to ' + formatDate(booking.check_out)
+        );
+
+        // -------------------------------------------------------------
+        // A guest has just booked or requested. The HOST is told.
+        // Transactional — always sends.
+        // -------------------------------------------------------------
+        if (type === 'booking_created') {
+            if (booking.guest_id !== uid) {
+                return NextResponse.json({ ok: false, error: 'Only the guest can trigger this' }, { status: 403 });
+            }
+
+            const to = await emailFor(admin, booking.host_id);
+            const hostFirst = escapeHtml(await firstNameFor(admin, booking.host_id, 'there'));
+            const guestFirst = escapeHtml(await firstNameFor(admin, booking.guest_id, 'A guest'));
+            const instant = booking.status === 'confirmed';
+
+            const heading = instant ? 'New booking' : 'New booking request';
+            const intro = instant
+                ? guestFirst + ' has booked ' + listingTitle + ' using Instant Book. The dates are already confirmed and blocked out on your calendar.'
+                : guestFirst + ' would like to book ' + listingTitle + '. Have a look and confirm or decline — until you do, the dates are held but not confirmed.';
+
+            const html = emailLayout(
+                '<h1 style="margin:0 0 16px 0;font-size:22px;font-weight:700;color:#111827;">' + heading + '</h1>' +
+                '<p style="margin:0;">Hi ' + hostFirst + ' &mdash; ' + intro + '</p>' +
+                detailRows([
+                    { label: 'Property', value: listingTitle },
+                    { label: 'Guest', value: guestFirst },
+                    { label: 'Dates', value: nights },
+                    { label: 'Guests', value: String(booking.guests || 1) },
+                    { label: 'Total', value: '&pound;' + Number(booking.total_price || 0).toFixed(2) },
+                ]) +
+                button(SITE_URL + '/dashboard/bookings', instant ? 'View the booking' : 'Review this request'),
+                "You're receiving this because you host on Galloway Getaways. Booking emails can't be switched off."
+            );
+
+            await sendEmail(to, heading + ' \u2014 ' + ((listing && listing.title) || 'Galloway Getaways'), html);
+            return NextResponse.json({ ok: true });
+        }
+
+        // -------------------------------------------------------------
+        // A host has confirmed, declined or cancelled. The GUEST is told.
+        // Transactional — always sends.
+        // -------------------------------------------------------------
+        if (type === 'booking_status') {
+            if (booking.host_id !== uid) {
+                return NextResponse.json({ ok: false, error: 'Only the host can trigger this' }, { status: 403 });
+            }
+
+            const to = await emailFor(admin, booking.guest_id);
+            const guestFirst = escapeHtml(await firstNameFor(admin, booking.guest_id, 'there'));
+
+            let heading = '';
+            let intro = '';
+
+            if (booking.status === 'confirmed') {
+                heading = "You're booked";
+                intro = 'Good news &mdash; your stay at ' + listingTitle + ' is confirmed. Your host will be in touch with the check-in details before you arrive.';
+            } else if (booking.status === 'declined') {
+                heading = 'Your booking request wasn&rsquo;t accepted';
+                intro = 'Unfortunately the host can&rsquo;t take your booking at ' + listingTitle + ' for these dates. Nothing has been charged, and there are other places to stay across Dumfries &amp; Galloway.';
+            } else if (booking.status === 'cancelled') {
+                heading = 'Your booking has been cancelled';
+                intro = 'Your booking at ' + listingTitle + ' has been cancelled by the host. If you have questions about this, reply to this email and we&rsquo;ll help.';
+            } else {
+                return NextResponse.json({ ok: true, skipped: 'no email for this status' });
+            }
+
+            const html = emailLayout(
+                '<h1 style="margin:0 0 16px 0;font-size:22px;font-weight:700;color:#111827;">' + heading + '</h1>' +
+                '<p style="margin:0;">Hi ' + guestFirst + ' &mdash; ' + intro + '</p>' +
+                detailRows([
+                    { label: 'Property', value: listingTitle },
+                    { label: 'Dates', value: nights },
+                    { label: 'Guests', value: String(booking.guests || 1) },
+                    { label: 'Total', value: '&pound;' + Number(booking.total_price || 0).toFixed(2) },
+                ]) +
+                button(SITE_URL + '/trips', 'View your trip'),
+                "You're receiving this because you have a booking with Galloway Getaways. Booking emails can't be switched off."
+            );
+
+            await sendEmail(to, heading.split('&rsquo;').join("'") + ' \u2014 Galloway Getaways', html);
+            return NextResponse.json({ ok: true });
+        }
+
+        // -------------------------------------------------------------
+        // Somebody sent a message. The OTHER party is told.
+        // Optional — respects the new_message toggle.
+        // -------------------------------------------------------------
+        if (type === 'new_message') {
+            const recipientId = booking.guest_id === uid ? booking.host_id : booking.guest_id;
+
+            const allowed = await wants(admin, recipientId, 'new_message');
+            if (!allowed) {
+                return NextResponse.json({ ok: true, skipped: 'opted out' });
+            }
+
+            const to = await emailFor(admin, recipientId);
+            const recipientFirst = escapeHtml(await firstNameFor(admin, recipientId, 'there'));
+            const senderFirst = escapeHtml(await firstNameFor(admin, uid, 'Someone'));
+
+            const rawPreview = String((body && body.preview) || '').slice(0, 180);
+            const preview = escapeHtml(rawPreview) + (rawPreview.length >= 180 ? '&hellip;' : '');
+
+            const { data: prefs } = await admin
+                .from('notification_preferences')
+                .select('unsubscribe_token')
+                .eq('user_id', recipientId)
+                .maybeSingle();
+
+            const html = emailLayout(
+                '<h1 style="margin:0 0 16px 0;font-size:22px;font-weight:700;color:#111827;">New message from ' + senderFirst + '</h1>' +
+                '<p style="margin:0 0 4px 0;">Hi ' + recipientFirst + ' &mdash; you have a new message about ' + listingTitle + '.</p>' +
+                '<div style="margin:20px 0;padding:16px 18px;background-color:#f9fafb;border-left:3px solid #047857;border-radius:6px;color:#374151;font-size:15px;">' +
+                (preview || '<em>No message text</em>') +
+                '</div>' +
+                button(SITE_URL + '/messages/' + booking.id, 'Read and reply') +
+                '<p style="margin:0;font-size:14px;color:#6b7280;">Reply on Galloway Getaways rather than by email, so the whole conversation stays in one place.</p>',
+                "You're receiving this because message alerts are switched on in your notification settings.",
+                prefs && prefs.unsubscribe_token
+                    ? SITE_URL + '/unsubscribe?token=' + prefs.unsubscribe_token + '&type=new_message'
+                    : undefined
+            );
+
+            await sendEmail(to, 'New message from ' + senderFirst + ' \u2014 Galloway Getaways', html);
+            return NextResponse.json({ ok: true });
+        }
+
+        return NextResponse.json({ ok: false, error: 'Unknown notification type' }, { status: 400 });
+    } catch (err: any) {
+        // Never surface a failure to the browser — the booking or message
+        // itself already succeeded.
+        console.error('[notify] failed:', err && err.message);
+        return NextResponse.json({ ok: false }, { status: 200 });
+    }
+}
