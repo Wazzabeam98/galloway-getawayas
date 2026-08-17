@@ -171,3 +171,65 @@
 .Toastify__toast--error .Toastify__progress-bar {
   background: #dc2626 !important;
 }
+
+
+/* 8. Compact search calendar
+   The .airbnb-compact-calendar class was on the markup but had no rules
+   behind it, so react-date-range rendered at full size and the two-month
+   view ran off the bottom of the screen. These shrink it to fit. */
+.airbnb-compact-calendar .rdrCalendarWrapper {
+  font-size: 12px;
+}
+
+.airbnb-compact-calendar .rdrMonth {
+  width: 15.5em;
+  padding: 0 0.5em 0.5em 0.5em;
+}
+
+.airbnb-compact-calendar .rdrMonthAndYearWrapper {
+  height: 40px;
+  padding-top: 4px;
+}
+
+.airbnb-compact-calendar .rdrMonthName {
+  font-size: 12px;
+  font-weight: 600;
+  padding: 0.3em 0.5em;
+  text-align: center;
+}
+
+.airbnb-compact-calendar .rdrWeekDay {
+  font-size: 11px;
+  line-height: 2.1em;
+  height: 2.1em;
+  color: #78716c;
+}
+
+.airbnb-compact-calendar .rdrDay {
+  height: 2.6em;
+  line-height: 2.6em;
+}
+
+.airbnb-compact-calendar .rdrDayNumber {
+  font-size: 12px;
+}
+
+.airbnb-compact-calendar .rdrNextPrevButton {
+  width: 26px;
+  height: 26px;
+  margin: 0 4px;
+}
+
+.airbnb-compact-calendar .rdrDayToday .rdrDayNumber span:after {
+  background: #047857;
+}
+
+/* One month only on narrower screens, so the popover never overflows. */
+@media (max-width: 860px) {
+  .airbnb-compact-calendar .rdrMonth:nth-of-type(2) {
+    display: none;
+  }
+  .airbnb-compact-calendar .rdrMonth {
+    width: 17em;
+  }
+}
