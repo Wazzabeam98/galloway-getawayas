@@ -1,3 +1,7 @@
+// WHERE THIS GOES: GitHub -> components/BookingWidget.tsx  (REPLACE the whole file)
+// Changed: emails the host on a new booking, and the leftover Airbnb
+// rose calendar colour is now emerald.
+
 'use client';
 
 import { useEffect, useState } from 'react';
@@ -9,6 +13,7 @@ import 'react-date-range/dist/theme/default.css';
 import LoginModel from '@/components/auth/LoginModel';
 import { toast } from 'react-toastify';
 import { Minus, Plus } from 'lucide-react';
+import { notify } from '@/lib/notify';
 
 interface Props {
     listingId: string;
@@ -224,7 +229,7 @@ export default function BookingWidget({
                 }
             }
 
-            const { error: insertErr } = await supabase.from('bookings').insert({
+            const { data: created, error: insertErr } = await supabase.from('bookings').insert({
                 listing_id: listingId,
                 guest_id: session.user.id,
                 host_id: hostId,
@@ -238,12 +243,19 @@ export default function BookingWidget({
                 status: instantBook ? 'confirmed' : 'pending',
                 // Scheduled messages anchored to acceptance need this.
                 confirmed_at: instantBook ? new Date().toISOString() : null,
-            });
+            }).select('id').single();
 
             if (insertErr) {
                 toast.error(insertErr.message, { theme: 'colored' });
                 setError(insertErr.message);
                 return;
+            }
+
+            // Tell the host by email. Deliberately not awaited — the
+            // booking is already saved, and a slow mail server must never
+            // hold up the confirmation the guest is looking at.
+            if (created && created.id) {
+                notify('booking_created', created.id);
             }
 
             setRequested(true);
@@ -292,7 +304,7 @@ export default function BookingWidget({
                     disabledDates={disabledDates}
                     months={1}
                     direction="vertical"
-                    rangeColors={['#f43f5e']}
+                    rangeColors={['#047857']}
                     showDateDisplay={false}
                 />
             </div>
