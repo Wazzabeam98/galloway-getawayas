@@ -15,6 +15,9 @@ interface Booking {
     check_out: string;
     status: string;
     total_price: number;
+    payment_status: string | null;
+    balance_amount: number | null;
+    balance_due_date: string | null;
 }
 
 export default function TripsPage() {
@@ -25,6 +28,32 @@ export default function TripsPage() {
     const [listingMap, setListingMap] = useState<Record<string, any>>({});
     const [hostNames, setHostNames] = useState<Record<string, string>>({});
     const [reviewedBookingIds, setReviewedBookingIds] = useState<Set<string>>(new Set());
+    const [payingId, setPayingId] = useState<string | null>(null);
+    const [payError, setPayError] = useState('');
+
+    // Sends the guest to Stripe to settle what's left on a booking. Reached
+    // either from the button below or from the link in a payment reminder
+    // email, which arrives as ?pay=<booking id>.
+    const payBalance = async (bookingId: string) => {
+        setPayError('');
+        setPayingId(bookingId);
+        try {
+            const res = await fetch('/api/stripe/balance-checkout', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ bookingId: bookingId }),
+            });
+            const data = await res.json();
+            if (data && data.ok && data.url) {
+                window.location.href = data.url;
+                return;
+            }
+            setPayError((data && data.error) || 'Could not open the payment page. Please try again.');
+        } catch (err: any) {
+            setPayError('Could not open the payment page. Please try again.');
+        }
+        setPayingId(null);
+    };
 
     useEffect(() => {
         const load = async () => {
@@ -38,7 +67,7 @@ export default function TripsPage() {
 
             const { data: bookingRows } = await supabase
                 .from('bookings')
-                .select('id, listing_id, host_id, check_in, check_out, status, total_price')
+                .select('id, listing_id, host_id, check_in, check_out, status, total_price, payment_status, balance_amount, balance_due_date')
                 .eq('guest_id', session.user.id)
                 .order('check_in', { ascending: false });
             setBookings(bookingRows || []);
@@ -49,6 +78,15 @@ export default function TripsPage() {
                 const map: Record<string, any> = {};
                 (listings || []).forEach((l) => { map[l.id] = l; });
                 setListingMap(map);
+            }
+
+            // Arrived from a payment reminder email — go straight to Stripe.
+            if (typeof window !== 'undefined') {
+                const wanted = new URLSearchParams(window.location.search).get('pay');
+                const target = (bookingRows || []).filter(function (b) { return b.id === wanted; })[0];
+                if (target && target.payment_status === 'deposit_paid') {
+                    payBalance(target.id);
+                }
             }
 
             const hostIds = Array.from(new Set((bookingRows || []).map((b) => b.host_id)));
@@ -137,6 +175,33 @@ export default function TripsPage() {
                                 <Link href={`/messages/${b.id}`} className="text-xs font-semibold text-slate-500 underline hover:text-slate-800 mt-3 inline-block">
                                     Message host
                                 </Link>
+
+                                {b.payment_status === 'deposit_paid'
+                                    && Number(b.balance_amount || 0) > 0
+                                    && b.status !== 'cancelled'
+                                    && b.status !== 'declined' && (
+                                    <div className="mt-4 rounded-xl border border-amber-200 bg-amber-50 p-3">
+                                        <div className="text-sm font-semibold text-amber-900">
+                                            £{Number(b.balance_amount).toFixed(2)} still to pay
+                                        </div>
+                                        <p className="text-xs text-amber-800 mt-0.5">
+                                            {b.balance_due_date
+                                                ? 'This is taken from your card automatically on ' + b.balance_due_date + '. You can pay it sooner if you prefer.'
+                                                : 'You can settle this at any time.'}
+                                        </p>
+                                        <button
+                                            type="button"
+                                            onClick={() => payBalance(b.id)}
+                                            disabled={payingId === b.id}
+                                            className="mt-2 px-4 py-2 bg-emerald-700 hover:bg-emerald-800 text-white text-sm font-semibold rounded-xl transition disabled:opacity-50"
+                                        >
+                                            {payingId === b.id ? 'Opening payment…' : 'Pay the balance now'}
+                                        </button>
+                                        {payError && payingId === null && (
+                                            <p className="text-xs text-red-600 mt-2">{payError}</p>
+                                        )}
+                                    </div>
+                                )}
 
                                 {isCompleted && !alreadyReviewed && (() => {
                                     // Reviews close 14 days after check-out.
