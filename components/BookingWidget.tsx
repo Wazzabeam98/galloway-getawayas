@@ -14,6 +14,7 @@ import LoginModel from '@/components/auth/LoginModel';
 import { toast } from 'react-toastify';
 import { Minus, Plus } from 'lucide-react';
 import { notify } from '@/lib/notify';
+import { freeCancelUntil, formatUk } from '@/lib/cancellation';
 
 interface Props {
     listingId: string;
@@ -30,13 +31,16 @@ interface Props {
     instantBook?: boolean;
     instantBookRequiresPhone?: boolean;
     instantBookRequiresVerifiedId?: boolean;
+    cancellationPolicy?: string | null;
 }
 
 export default function BookingWidget({
     listingId, hostId, pricePerNight, maxGuests, petsAllowed, icalImportUrl,
     weekendPrice, cleaningFee = 0, petFee = 0, extraGuestFee = 0, availabilityWindow,
     instantBook = false, instantBookRequiresPhone = false, instantBookRequiresVerifiedId = false,
+    cancellationPolicy,
 }: Props) {
+    const [payPlan, setPayPlan] = useState<'deposit' | 'full'>('deposit');
     const supabase = createClientComponentClient();
     const [session, setSession] = useState<any>(null);
     const [loadingSession, setLoadingSession] = useState(true);
@@ -240,9 +244,10 @@ export default function BookingWidget({
                 children,
                 pets,
                 total_price: total,
-                status: instantBook ? 'confirmed' : 'pending',
-                // Scheduled messages anchored to acceptance need this.
-                confirmed_at: instantBook ? new Date().toISOString() : null,
+                // Nothing is confirmed until the payment lands. The webhook
+                // moves this on once Stripe says the money arrived.
+                status: 'pending_payment',
+                confirmed_at: null,
             }).select('id').single();
 
             if (insertErr) {
@@ -251,18 +256,23 @@ export default function BookingWidget({
                 return;
             }
 
-            // Tell the host by email. Deliberately not awaited — the
-            // booking is already saved, and a slow mail server must never
-            // hold up the confirmation the guest is looking at.
-            if (created && created.id) {
-                notify('booking_created', created.id);
+            // Hand over to Stripe's payment page. The host is told by
+            // email from the webhook, once the money has actually arrived.
+            const res = await fetch('/api/stripe/checkout', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ bookingId: created.id, plan: payPlan }),
+            });
+            const data = await res.json();
+
+            if (data && data.ok && data.url) {
+                window.location.href = data.url;
+                return;
             }
 
-            setRequested(true);
-            toast.success(
-                instantBook ? 'Booking confirmed.' : 'Booking request sent to the host.',
-                { theme: 'colored' }
-            );
+            const msg = (data && data.error) || 'Could not open the payment page. Please try again.';
+            toast.error(msg, { theme: 'colored' });
+            setError(msg);
         } catch (err: any) {
             const msg = err?.message || 'Something went wrong sending your request.';
             toast.error(msg, { theme: 'colored' });
@@ -271,6 +281,16 @@ export default function BookingWidget({
             setSubmitting(false);
         }
     };
+
+    // Payment split, shown to the guest before they commit.
+    const balanceDate = dateRange.startDate ? new Date(dateRange.startDate) : new Date();
+    balanceDate.setDate(balanceDate.getDate() - 30);
+    const depositAvailable = nights > 0 && balanceDate.getTime() > Date.now();
+    const dueNow = depositAvailable && payPlan === 'deposit'
+        ? Math.round(total * 0.25 * 100) / 100
+        : total;
+    const dueLater = Math.round((total - dueNow) * 100) / 100;
+    const freeUntil = freeCancelUntil(dateRange.startDate || new Date(), cancellationPolicy);
 
     if (requested) {
         return (
@@ -349,6 +369,43 @@ export default function BookingWidget({
                 </div>
             )}
 
+            {nights > 0 && depositAvailable && (
+                <div className="mb-4 space-y-2">
+                    <button
+                        type="button"
+                        onClick={() => setPayPlan('deposit')}
+                        className={`w-full text-left border rounded-xl p-3 transition ${payPlan === 'deposit' ? 'border-emerald-700 bg-emerald-50/60 ring-1 ring-emerald-700' : 'border-slate-200 hover:border-slate-300'}`}
+                    >
+                        <div className="flex items-center justify-between">
+                            <span className="text-sm font-semibold text-slate-900">Book now, pay the rest later</span>
+                            <span className="text-sm font-bold text-slate-900">£{dueNow.toFixed(2)}</span>
+                        </div>
+                        <p className="text-xs text-slate-500 mt-1">
+                            £{dueNow.toFixed(2)} now &middot; £{dueLater.toFixed(2)} on {formatUk(balanceDate)}
+                        </p>
+                        <p className="text-xs text-slate-400 mt-0.5">No fees, no interest.</p>
+                    </button>
+
+                    <button
+                        type="button"
+                        onClick={() => setPayPlan('full')}
+                        className={`w-full text-left border rounded-xl p-3 transition ${payPlan === 'full' ? 'border-emerald-700 bg-emerald-50/60 ring-1 ring-emerald-700' : 'border-slate-200 hover:border-slate-300'}`}
+                    >
+                        <div className="flex items-center justify-between">
+                            <span className="text-sm font-semibold text-slate-900">Pay in full today</span>
+                            <span className="text-sm font-bold text-slate-900">£{total.toFixed(2)}</span>
+                        </div>
+                        <p className="text-xs text-slate-500 mt-1">Settled in one go, nothing more to pay.</p>
+                    </button>
+                </div>
+            )}
+
+            {nights > 0 && (
+                <p className="text-xs text-emerald-800 bg-emerald-50 border border-emerald-100 rounded-lg px-3 py-2 mb-4">
+                    Free cancellation until {formatUk(freeUntil)} &mdash; full refund
+                </p>
+            )}
+
             {error && <p className="text-red-600 text-xs mb-3">{error}</p>}
 
             {loadingSession ? (
@@ -366,11 +423,17 @@ export default function BookingWidget({
                     className="w-full py-3 bg-emerald-700 hover:bg-emerald-800 text-white font-bold rounded-xl transition disabled:opacity-50"
                 >
                     {submitting
-                        ? (instantBook ? 'Confirming...' : 'Sending request...')
-                        : (instantBook ? 'Reserve' : 'Request to book')}
+                        ? 'Taking you to payment...'
+                        : nights > 0
+                            ? 'Secure your dates for £' + dueNow.toFixed(2)
+                            : (instantBook ? 'Reserve' : 'Request to book')}
                 </button>
             )}
-            <p className="text-xs text-slate-400 text-center mt-3">You won't be charged yet</p>
+            <p className="text-xs text-slate-400 text-center mt-3">
+                {instantBook
+                    ? 'Payment is taken securely by Stripe. Your dates are confirmed straight away.'
+                    : 'Payment is taken securely by Stripe. If the host declines, you get it all back.'}
+            </p>
         </div>
     );
 }
