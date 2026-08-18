@@ -199,7 +199,10 @@ export async function POST(request: Request) {
             // Forced on the deposit path so there is always a customer to
             // charge the balance against later.
             customer_creation: useDeposit ? 'always' : 'if_required',
-            success_url: SITE_URL + '/trips?paid=' + booking.id,
+            // Lands on a page that confirms the payment from the booking id
+            // alone, so a session lost on the way back from Stripe never leaves
+            // a guest staring at a login screen.
+            success_url: SITE_URL + '/booking-confirmed/' + booking.id,
             cancel_url: SITE_URL + '/homes/' + booking.listing_id + '?cancelled=1',
             line_items: [
                 {
