@@ -43,12 +43,20 @@ function encodeForm(obj: Record<string, any>, prefix?: string): string {
 export async function stripeRequest(
     method: 'GET' | 'POST',
     path: string,
-    body?: Record<string, any>
+    body?: Record<string, any>,
+    idempotencyKey?: string
 ): Promise<any> {
     const headers: Record<string, string> = {
         Authorization: 'Bearer ' + stripeKey(),
         'Stripe-Version': '2024-06-20',
     };
+
+    // Stripe takes this as a header, not a field. Send the same key twice and
+    // it replays the original response instead of charging again — which is
+    // what protects a guest from a double charge if a job repeats.
+    if (idempotencyKey) {
+        headers['Idempotency-Key'] = idempotencyKey;
+    }
 
     let url = STRIPE_API + path;
     let payload: string | undefined;
