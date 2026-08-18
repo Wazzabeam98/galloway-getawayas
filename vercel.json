@@ -3,6 +3,10 @@
     {
       "path": "/api/cron/review-reminders",
       "schedule": "0 10 * * *"
+    },
+    {
+      "path": "/api/cron/balance-charges",
+      "schedule": "0 9 * * *"
     }
   ]
 }
