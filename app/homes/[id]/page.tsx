@@ -542,6 +542,7 @@ const FindHome = async ({ params }: { params: { id: string } }) => {
                             petFee={home.pet_fee || 0}
                             extraGuestFee={home.extra_guest_fee || 0}
                             availabilityWindow={home.availability_window}
+                            cancellationPolicy={home.cancellation_policy}
                         />
                     </div>
                 </div>
