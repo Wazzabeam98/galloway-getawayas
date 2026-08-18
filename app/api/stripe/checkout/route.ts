@@ -5,6 +5,7 @@ import { NextResponse } from 'next/server';
 import { stripeRequest } from '@/lib/stripe';
 import { SITE_URL } from '@/lib/email';
 import { freeCancelDateOrNull } from '@/lib/cancellation';
+import { quoteBooking, totalsMatch, dateFromKey, dateKey } from '@/lib/pricing';
 
 export const dynamic = 'force-dynamic';
 
@@ -44,7 +45,7 @@ export async function POST(request: Request) {
 
         const { data: booking } = await admin
             .from('bookings')
-            .select('id, listing_id, guest_id, host_id, check_in, check_out, total_price, status, payment_status')
+            .select('id, listing_id, guest_id, host_id, check_in, check_out, total_price, status, payment_status, adults, children, pets')
             .eq('id', bookingId)
             .maybeSingle();
 
@@ -60,11 +61,112 @@ export async function POST(request: Request) {
 
         const { data: listing } = await admin
             .from('listings')
-            .select('title, cancellation_policy')
+            .select('title, cancellation_policy, price_per_night, weekend_price, cleaning_fee, pet_fee, extra_guest_fee, max_guests')
             .eq('id', booking.listing_id)
             .maybeSingle();
 
-        const total = Number(booking.total_price);
+        if (!listing) {
+            return NextResponse.json({ ok: false, error: 'Listing not found' }, { status: 404 });
+        }
+
+        const checkIn = dateFromKey(booking.check_in);
+        const checkOut = dateFromKey(booking.check_out);
+
+        // ------------------------------------------------------------------
+        // Nothing the browser sent about money is trusted. The price is worked
+        // out again here, from the listing and the dates, and the payment is
+        // only ever for this figure.
+        // ------------------------------------------------------------------
+        const { data: overrideRows } = await admin
+            .from('calendar_overrides')
+            .select('date, is_blocked, price_override')
+            .eq('listing_id', booking.listing_id);
+
+        const overrides: Record<string, number> = {};
+        const blockedDates: Record<string, boolean> = {};
+        (overrideRows || []).forEach(function (row: any) {
+            const key = String(row.date).split('T')[0];
+            if (row.price_override) overrides[key] = Number(row.price_override);
+            if (row.is_blocked) blockedDates[key] = true;
+        });
+
+        const quote = quoteBooking(
+            listing,
+            overrides,
+            checkIn,
+            checkOut,
+            Number(booking.adults || 0),
+            Number(booking.children || 0),
+            Number(booking.pets || 0)
+        );
+
+        if (quote.nights <= 0) {
+            return NextResponse.json(
+                { ok: false, error: 'Those dates don\u2019t make a valid stay.' },
+                { status: 400 }
+            );
+        }
+
+        const guestCount = Number(booking.adults || 0) + Number(booking.children || 0);
+        if (listing.max_guests && guestCount > Number(listing.max_guests)) {
+            return NextResponse.json(
+                { ok: false, error: 'That is more guests than this place allows.' },
+                { status: 400 }
+            );
+        }
+
+        // The price shown in the browser is what the guest agreed to. If it no
+        // longer matches, the booking stops rather than quietly charging a
+        // different amount.
+        if (!totalsMatch(quote.total, Number(booking.total_price))) {
+            await admin
+                .from('bookings')
+                .update({ total_price: quote.total })
+                .eq('id', booking.id);
+
+            return NextResponse.json(
+                {
+                    ok: false,
+                    error: 'The price for these dates has changed to \u00A3'
+                        + quote.total.toFixed(2)
+                        + '. Please refresh the page and book again.',
+                },
+                { status: 409 }
+            );
+        }
+
+        // ------------------------------------------------------------------
+        // Availability, settled here rather than in the browser — two guests
+        // can be looking at the same free dates at the same time.
+        // ------------------------------------------------------------------
+        const cursor = new Date(checkIn.getTime());
+        for (let i = 0; i < quote.nights; i++) {
+            if (blockedDates[dateKey(cursor)]) {
+                return NextResponse.json(
+                    { ok: false, error: 'Those dates are no longer available.' },
+                    { status: 409 }
+                );
+            }
+            cursor.setDate(cursor.getDate() + 1);
+        }
+
+        const { data: clashes } = await admin
+            .from('bookings')
+            .select('id')
+            .eq('listing_id', booking.listing_id)
+            .neq('id', booking.id)
+            .in('status', ['pending', 'confirmed'])
+            .lt('check_in', booking.check_out)
+            .gt('check_out', booking.check_in);
+
+        if (clashes && clashes.length > 0) {
+            return NextResponse.json(
+                { ok: false, error: 'Sorry \u2014 those dates have just been booked by someone else.' },
+                { status: 409 }
+            );
+        }
+
+        const total = quote.total;
 
         // A deposit only makes sense while there's time to collect the
         // balance. Inside the balance window it's the full amount.
