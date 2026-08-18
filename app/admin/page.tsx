@@ -35,6 +35,11 @@ const tools = [
         title: 'Earnings by property',
         blurb: 'Every property ranked by what it has taken this year.',
     },
+    {
+        href: '/admin/payouts',
+        title: 'Payouts',
+        blurb: 'What each host is owed, and what has already been sent.',
+    },
 ];
 
 export default async function AdminHome() {
