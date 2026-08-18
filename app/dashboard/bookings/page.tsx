@@ -19,7 +19,7 @@ export default async function BookingsPage() {
     const guestIds = Array.from(new Set((bookings || []).map((b) => b.guest_id)));
 
     const { data: listings } = listingIds.length
-        ? await supabase.from("listings").select("id, title, images").in("id", listingIds)
+        ? await supabase.from("listings").select("id, title, images, commission_rate").in("id", listingIds)
         : { data: [] };
 
     const { data: guests } = guestIds.length
@@ -28,9 +28,16 @@ export default async function BookingsPage() {
 
     // Build plain objects (not Maps) since only serializable data can cross
     // from a Server Component into a Client Component.
-    const listingMap: Record<string, { title: string; images: string[] | null }> = {};
+    const listingMap: Record<
+        string,
+        { title: string; images: string[] | null; commission_rate: number | null }
+    > = {};
     (listings || []).forEach((l) => {
-        listingMap[l.id] = { title: l.title, images: l.images };
+        listingMap[l.id] = {
+            title: l.title,
+            images: l.images,
+            commission_rate: l.commission_rate,
+        };
     });
 
     const guestNameMap: Record<string, string> = {};
