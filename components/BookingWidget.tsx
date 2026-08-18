@@ -31,6 +31,51 @@ interface Props {
     cancellationPolicy?: string | null;
 }
 
+// Defined out here on purpose. A component declared inside another one is a
+// brand new type on every render, so React throws the old counters away and
+// builds fresh ones each time anything changes — which is why the guest and
+// pet counts used to stop feeding into the price once dates were picked.
+function Counter({
+    label,
+    sub,
+    value,
+    onChange,
+    min = 0,
+}: {
+    label: string;
+    sub?: string;
+    value: number;
+    onChange: (v: number) => void;
+    min?: number;
+}) {
+    return (
+        <div className="flex items-center justify-between py-2.5">
+            <div>
+                <div className="text-sm font-medium text-slate-800">{label}</div>
+                {sub && <div className="text-xs text-slate-400">{sub}</div>}
+            </div>
+            <div className="flex items-center space-x-3">
+                <button
+                    type="button"
+                    onClick={() => onChange(Math.max(min, value - 1))}
+                    disabled={value <= min}
+                    className="w-7 h-7 rounded-full border flex items-center justify-center text-slate-600 hover:border-slate-900 disabled:opacity-30"
+                >
+                    <Minus className="w-3.5 h-3.5" />
+                </button>
+                <span className="w-4 text-center text-sm">{value}</span>
+                <button
+                    type="button"
+                    onClick={() => onChange(value + 1)}
+                    className="w-7 h-7 rounded-full border flex items-center justify-center text-slate-600 hover:border-slate-900"
+                >
+                    <Plus className="w-3.5 h-3.5" />
+                </button>
+            </div>
+        </div>
+    );
+}
+
 export default function BookingWidget({
     listingId, hostId, pricePerNight, maxGuests, petsAllowed, icalImportUrl,
     weekendPrice, cleaningFee = 0, petFee = 0, extraGuestFee = 0, availabilityWindow,
@@ -146,33 +191,6 @@ export default function BookingWidget({
         setError('');
         setDateRange(ranges.selection);
     };
-
-    const Counter = ({ label, sub, value, onChange, min = 0 }: { label: string; sub?: string; value: number; onChange: (v: number) => void; min?: number }) => (
-        <div className="flex items-center justify-between py-2.5">
-            <div>
-                <div className="text-sm font-medium text-slate-800">{label}</div>
-                {sub && <div className="text-xs text-slate-400">{sub}</div>}
-            </div>
-            <div className="flex items-center space-x-3">
-                <button
-                    type="button"
-                    onClick={() => onChange(Math.max(min, value - 1))}
-                    disabled={value <= min}
-                    className="w-7 h-7 rounded-full border flex items-center justify-center text-slate-600 hover:border-slate-900 disabled:opacity-30"
-                >
-                    <Minus className="w-3.5 h-3.5" />
-                </button>
-                <span className="w-4 text-center text-sm">{value}</span>
-                <button
-                    type="button"
-                    onClick={() => onChange(value + 1)}
-                    className="w-7 h-7 rounded-full border flex items-center justify-center text-slate-600 hover:border-slate-900"
-                >
-                    <Plus className="w-3.5 h-3.5" />
-                </button>
-            </div>
-        </div>
-    );
 
     const handleRequest = async () => {
         setError('');
