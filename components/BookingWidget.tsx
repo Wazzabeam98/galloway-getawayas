@@ -14,7 +14,7 @@ import LoginModel from '@/components/auth/LoginModel';
 import { toast } from 'react-toastify';
 import { Minus, Plus } from 'lucide-react';
 import { notify } from '@/lib/notify';
-import { freeCancelUntil, formatUk } from '@/lib/cancellation';
+import { freeCancelUntil, formatUk, cancellationSummary } from '@/lib/cancellation';
 
 interface Props {
     listingId: string;
@@ -290,7 +290,9 @@ export default function BookingWidget({
         ? Math.round(total * 0.25 * 100) / 100
         : total;
     const dueLater = Math.round((total - dueNow) * 100) / 100;
-    const freeUntil = freeCancelUntil(dateRange.startDate || new Date(), cancellationPolicy);
+    const cancelInfo = nights > 0
+        ? cancellationSummary(dateRange.startDate, cancellationPolicy)
+        : null;
 
     if (requested) {
         return (
@@ -400,10 +402,19 @@ export default function BookingWidget({
                 </div>
             )}
 
-            {nights > 0 && (
-                <p className="text-xs text-emerald-800 bg-emerald-50 border border-emerald-100 rounded-lg px-3 py-2 mb-4">
-                    Free cancellation until {formatUk(freeUntil)} &mdash; full refund
-                </p>
+            {cancelInfo && (
+                <div
+                    className={`text-xs rounded-lg px-3 py-2 mb-4 border ${
+                        cancelInfo.kind === 'free'
+                            ? 'text-emerald-800 bg-emerald-50 border-emerald-100'
+                            : cancelInfo.kind === 'partial'
+                                ? 'text-amber-800 bg-amber-50 border-amber-100'
+                                : 'text-slate-600 bg-slate-50 border-slate-200'
+                    }`}
+                >
+                    <span className="font-semibold">{cancelInfo.headline}</span>
+                    <span className="block mt-0.5 opacity-90">{cancelInfo.detail}</span>
+                </div>
             )}
 
             {error && <p className="text-red-600 text-xs mb-3">{error}</p>}
