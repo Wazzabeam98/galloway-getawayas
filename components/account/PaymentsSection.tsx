@@ -181,7 +181,7 @@ export default function PaymentsSection() {
                                     'Takes about five minutes',
                                     'You\u2019ll need photo ID and your bank details',
                                     'Galloway Getaways never sees your bank details',
-                                    'Your 10% service fee is deducted before payout',
+                                    'Any service fee is deducted before payout',
                                 ].map((line) => (
                                     <li key={line} className="flex items-start gap-2 text-sm text-slate-600">
                                         <Check className="w-4 h-4 text-emerald-700 mt-0.5 shrink-0" />
@@ -225,7 +225,7 @@ export default function PaymentsSection() {
                         'A guest books and pays through Galloway Getaways.',
                         'We hold the money until the stay begins, so refunds are always covered.',
                         'Your share is released after check-in and paid to your bank by Stripe.',
-                        'Our 10% service fee is deducted before the payout, so nothing to invoice.',
+                        'Any service fee is deducted before the payout, so nothing to invoice.',
                     ].map((line, i) => (
                         <li key={line} className="flex gap-3 text-sm text-slate-600">
                             <span className="w-5 h-5 rounded-full bg-slate-100 text-slate-600 text-xs font-semibold flex items-center justify-center shrink-0 mt-0.5">
