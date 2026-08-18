@@ -286,10 +286,12 @@ export default function BookingWidget({
     const balanceDate = dateRange.startDate ? new Date(dateRange.startDate) : new Date();
     balanceDate.setDate(balanceDate.getDate() - 30);
     const depositAvailable = nights > 0 && balanceDate.getTime() > Date.now();
-    const dueNow = depositAvailable && payPlan === 'deposit'
-        ? Math.round(total * 0.25 * 100) / 100
-        : total;
-    const dueLater = Math.round((total - dueNow) * 100) / 100;
+    // The 25%/75% split is a property of the stay, not of which option is
+    // currently highlighted, so it is worked out once and never changes as
+    // the guest clicks between the two cards.
+    const depositNow = Math.round(total * 0.25 * 100) / 100;
+    const depositLater = Math.round((total - depositNow) * 100) / 100;
+    const dueNow = depositAvailable && payPlan === 'deposit' ? depositNow : total;
     const cancelInfo = nights > 0
         ? cancellationSummary(dateRange.startDate, cancellationPolicy)
         : null;
@@ -380,10 +382,10 @@ export default function BookingWidget({
                     >
                         <div className="flex items-center justify-between">
                             <span className="text-sm font-semibold text-slate-900">Book now, pay the rest later</span>
-                            <span className="text-sm font-bold text-slate-900">£{dueNow.toFixed(2)}</span>
+                            <span className="text-sm font-bold text-slate-900">£{depositNow.toFixed(2)}</span>
                         </div>
                         <p className="text-xs text-slate-500 mt-1">
-                            £{dueNow.toFixed(2)} now &middot; £{dueLater.toFixed(2)} on {formatUk(balanceDate)}
+                            £{depositNow.toFixed(2)} now &middot; £{depositLater.toFixed(2)} on {formatUk(balanceDate)}
                         </p>
                         <p className="text-xs text-slate-400 mt-0.5">No fees, no interest.</p>
                     </button>
