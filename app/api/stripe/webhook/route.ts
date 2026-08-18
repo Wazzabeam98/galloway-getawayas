@@ -17,9 +17,26 @@ export async function POST(request: Request) {
     // text before anything parses it.
     const rawBody = await request.text();
     const signature = request.headers.get('stripe-signature');
-    const secret = process.env.STRIPE_WEBHOOK_SECRET || '';
 
-    const valid = await verifyStripeSignature(rawBody, signature, secret);
+    // Stripe gives every event destination its own signing secret. Platform
+    // payments and connected-account updates can therefore arrive at this one
+    // URL signed with different secrets, so each configured secret is tried.
+    const secrets = [
+        process.env.STRIPE_WEBHOOK_SECRET || '',
+        process.env.STRIPE_WEBHOOK_SECRET_2 || '',
+    ].filter(function (value) {
+        return value.length > 0;
+    });
+
+    let valid = false;
+    for (let i = 0; i < secrets.length; i++) {
+        const matched = await verifyStripeSignature(rawBody, signature, secrets[i]);
+        if (matched) {
+            valid = true;
+            break;
+        }
+    }
+
     if (!valid) {
         console.error('[stripe/webhook] bad signature');
         return NextResponse.json({ ok: false }, { status: 400 });
