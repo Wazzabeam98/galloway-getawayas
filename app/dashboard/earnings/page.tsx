@@ -3,12 +3,13 @@ export const dynamic = "force-dynamic";
 import { createServerComponentClient } from "@supabase/auth-helpers-nextjs";
 import { cookies } from "next/headers";
 import EarningsDateFilter from "@/components/EarningsDateFilter";
+import { DEFAULT_COMMISSION_PERCENT, rateFor, netOfFee, feeAmount } from '@/lib/fees';
 
-const HOST_FEE_PERCENT = 10;
 
 export default async function EarningsPage({ searchParams }: { searchParams?: { from?: string; to?: string } }) {
     const supabase = createServerComponentClient({ cookies });
     const { data: user } = await supabase.auth.getUser();
+
 
     const currentYear = new Date().getFullYear();
     const from = searchParams?.from || `${currentYear}-01-01`;
@@ -25,9 +26,17 @@ export default async function EarningsPage({ searchParams }: { searchParams?: { 
 
     const listingIds = Array.from(new Set(bookings.map((b) => b.listing_id)));
     const { data: listings } = listingIds.length
-        ? await supabase.from("listings").select("id, title").in("id", listingIds)
+        ? await supabase.from("listings").select("id, title, commission_rate").in("id", listingIds)
         : { data: [] };
     const listingMap = new Map((listings || []).map((l) => [l.id, l.title]));
+    const rateMap = new Map((listings || []).map((l) => [l.id, rateFor(l)]));
+
+    // Each booking is netted using its own listing's rate, since different
+    // properties can be on different arrangements.
+    const rateOfBooking = (b: any) =>
+        b.commission_rate !== null && b.commission_rate !== undefined
+            ? Number(b.commission_rate)
+            : rateMap.get(b.listing_id) ?? DEFAULT_COMMISSION_PERCENT;
 
     const today = new Date();
     const confirmed = bookings.filter((b) => b.status === "confirmed");
@@ -37,14 +46,22 @@ export default async function EarningsPage({ searchParams }: { searchParams?: { 
     const upcoming = confirmed.filter((b) => new Date(b.check_in) >= today);
     const completed = confirmed.filter((b) => new Date(b.check_out) < today);
 
-    const netOf = (gross: number) => gross * (1 - HOST_FEE_PERCENT / 100);
+    // Sums a set of bookings after each one's own listing rate.
+    const netOfBookings = (rows: any[]) =>
+        rows.reduce((sum, b) => sum + netOfFee(Number(b.total_price), rateOfBooking(b)), 0);
 
     const grossTotal = confirmed.reduce((sum, b) => sum + Number(b.total_price), 0);
-    const netTotal = netOf(grossTotal);
+    const netTotal = netOfBookings(confirmed);
     const feeTotal = grossTotal - netTotal;
 
-    const upcomingNet = netOf(upcoming.reduce((sum, b) => sum + Number(b.total_price), 0));
-    const completedNet = netOf(completed.reduce((sum, b) => sum + Number(b.total_price), 0));
+    // The headline percentage is what was actually taken across the period,
+    // which is the standard rate unless a listing is on its own arrangement.
+    const effectivePercent = grossTotal > 0
+        ? Math.round((feeTotal / grossTotal) * 1000) / 10
+        : DEFAULT_COMMISSION_PERCENT;
+
+    const upcomingNet = netOfBookings(upcoming);
+    const completedNet = netOfBookings(completed);
     const pendingGross = pending.reduce((sum, b) => sum + Number(b.total_price), 0);
 
     // Cancellation rate: of bookings that were ever accepted (confirmed or
@@ -64,13 +81,11 @@ export default async function EarningsPage({ searchParams }: { searchParams?: { 
     for (let i = 0; i < monthCount; i++) {
         const d = new Date(startDate.getFullYear(), startDate.getMonth() + i, 1);
         const label = d.toLocaleDateString('en-GB', { month: 'short' });
-        const monthNet = netOf(
-            confirmed
-                .filter((b) => {
-                    const bd = new Date(b.check_in);
-                    return bd.getFullYear() === d.getFullYear() && bd.getMonth() === d.getMonth();
-                })
-                .reduce((sum, b) => sum + Number(b.total_price), 0)
+        const monthNet = netOfBookings(
+            confirmed.filter((b) => {
+                const bd = new Date(b.check_in);
+                return bd.getFullYear() === d.getFullYear() && bd.getMonth() === d.getMonth();
+            })
         );
         months.push({ label, net: monthNet });
     }
@@ -78,7 +93,10 @@ export default async function EarningsPage({ searchParams }: { searchParams?: { 
 
     const byListing = new Map<string, number>();
     confirmed.forEach((b) => {
-        byListing.set(b.listing_id, (byListing.get(b.listing_id) || 0) + netOf(Number(b.total_price)));
+        byListing.set(
+            b.listing_id,
+            (byListing.get(b.listing_id) || 0) + netOfFee(Number(b.total_price), rateOfBooking(b))
+        );
     });
     const listingBreakdown = Array.from(byListing.entries())
         .map(([id, net]) => ({ id, title: listingMap.get(id) || 'Listing', net }))
@@ -99,7 +117,7 @@ export default async function EarningsPage({ searchParams }: { searchParams?: { 
                 <EarningsDateFilter from={from} to={to} />
             </div>
             <p className="text-slate-500 mb-8">
-                {new Date(from).toLocaleDateString('en-GB', { day: 'numeric', month: 'short', year: 'numeric' })} – {new Date(to).toLocaleDateString('en-GB', { day: 'numeric', month: 'short', year: 'numeric' })} · after your {HOST_FEE_PERCENT}% host fee
+                {new Date(from).toLocaleDateString('en-GB', { day: 'numeric', month: 'short', year: 'numeric' })} – {new Date(to).toLocaleDateString('en-GB', { day: 'numeric', month: 'short', year: 'numeric' })} · after your host fee
             </p>
 
             <div className="grid grid-cols-2 md:grid-cols-3 gap-4 mb-4">
@@ -138,7 +156,7 @@ export default async function EarningsPage({ searchParams }: { searchParams?: { 
                         <span>£{grossTotal.toFixed(2)}</span>
                     </div>
                     <div className="flex justify-between text-slate-600">
-                        <span>Host fee ({HOST_FEE_PERCENT}%)</span>
+                        <span>Host fee ({effectivePercent}%)</span>
                         <span>− £{feeTotal.toFixed(2)}</span>
                     </div>
                     <div className="flex justify-between font-bold text-slate-900 pt-2 border-t">
