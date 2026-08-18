@@ -214,6 +214,33 @@ export default function TripsPage() {
                                     Message host
                                 </Link>
 
+                                {b.payment_status === 'deposit_paid'
+                                    && Number(b.balance_amount || 0) > 0
+                                    && b.status !== 'cancelled'
+                                    && b.status !== 'declined' && (
+                                    <div className="mt-4 rounded-xl border border-amber-200 bg-amber-50 p-3">
+                                        <div className="text-sm font-semibold text-amber-900">
+                                            £{Number(b.balance_amount).toFixed(2)} still to pay
+                                        </div>
+                                        <p className="text-xs text-amber-800 mt-0.5">
+                                            {b.balance_due_date
+                                                ? 'This is taken from your card automatically on ' + b.balance_due_date + '. You can pay it sooner if you prefer.'
+                                                : 'You can settle this at any time.'}
+                                        </p>
+                                        <button
+                                            type="button"
+                                            onClick={() => payBalance(b.id)}
+                                            disabled={payingId === b.id}
+                                            className="mt-2 px-4 py-2 bg-emerald-700 hover:bg-emerald-800 text-white text-sm font-semibold rounded-xl transition disabled:opacity-50"
+                                        >
+                                            {payingId === b.id ? 'Opening payment…' : 'Pay the balance now'}
+                                        </button>
+                                        {payError && payingId === null && (
+                                            <p className="text-xs text-red-600 mt-2">{payError}</p>
+                                        )}
+                                    </div>
+                                )}
+
                                 {b.status !== 'cancelled'
                                     && b.status !== 'declined'
                                     && new Date(b.check_in) > today && (() => {
@@ -243,6 +270,8 @@ export default function TripsPage() {
                                             <p className="text-sm text-slate-600 mt-1">
                                                 {paidSoFar <= 0
                                                     ? 'You haven’t paid anything for this stay, so there’s nothing to refund.'
+                                                    : refund >= paidSoFar
+                                                        ? 'You’ll get your full £' + paidSoFar.toFixed(2) + ' back to your card, usually within five to ten days.'
                                                     : refund > 0
                                                         ? 'You’ll get £' + refund.toFixed(2) + ' of the £' + paidSoFar.toFixed(2) + ' you’ve paid back to your card, usually within five to ten days.'
                                                         : 'These dates are inside the non-refundable period for this place, so no refund is due on the £' + paidSoFar.toFixed(2) + ' you’ve paid.'}
@@ -275,33 +304,6 @@ export default function TripsPage() {
                                         </div>
                                     );
                                 })()}
-
-                                {b.payment_status === 'deposit_paid'
-                                    && Number(b.balance_amount || 0) > 0
-                                    && b.status !== 'cancelled'
-                                    && b.status !== 'declined' && (
-                                    <div className="mt-4 rounded-xl border border-amber-200 bg-amber-50 p-3">
-                                        <div className="text-sm font-semibold text-amber-900">
-                                            £{Number(b.balance_amount).toFixed(2)} still to pay
-                                        </div>
-                                        <p className="text-xs text-amber-800 mt-0.5">
-                                            {b.balance_due_date
-                                                ? 'This is taken from your card automatically on ' + b.balance_due_date + '. You can pay it sooner if you prefer.'
-                                                : 'You can settle this at any time.'}
-                                        </p>
-                                        <button
-                                            type="button"
-                                            onClick={() => payBalance(b.id)}
-                                            disabled={payingId === b.id}
-                                            className="mt-2 px-4 py-2 bg-emerald-700 hover:bg-emerald-800 text-white text-sm font-semibold rounded-xl transition disabled:opacity-50"
-                                        >
-                                            {payingId === b.id ? 'Opening payment…' : 'Pay the balance now'}
-                                        </button>
-                                        {payError && payingId === null && (
-                                            <p className="text-xs text-red-600 mt-2">{payError}</p>
-                                        )}
-                                    </div>
-                                )}
 
                                 {isCompleted && !alreadyReviewed && (() => {
                                     // Reviews close 14 days after check-out.
