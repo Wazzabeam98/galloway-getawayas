@@ -1,13 +1,9 @@
-// WHERE THIS GOES: GitHub -> components/BookingWidget.tsx  (REPLACE the whole file)
-// Changed: emails the host on a new booking, and the leftover Airbnb
-// rose calendar colour is now emerald.
-
 'use client';
 
 import { useEffect, useState } from 'react';
 import { createClientComponentClient } from '@supabase/auth-helpers-nextjs';
 import { DateRangePicker, Range, RangeKeyDict } from 'react-date-range';
-import { differenceInCalendarDays, addDays, format, getDay, addMonths } from 'date-fns';
+import { addDays, addMonths } from 'date-fns';
 import 'react-date-range/dist/styles.css';
 import 'react-date-range/dist/theme/default.css';
 import LoginModel from '@/components/auth/LoginModel';
@@ -15,6 +11,7 @@ import { toast } from 'react-toastify';
 import { Minus, Plus } from 'lucide-react';
 import { notify } from '@/lib/notify';
 import { freeCancelUntil, formatUk, cancellationSummary } from '@/lib/cancellation';
+import { quoteBooking } from '@/lib/pricing';
 
 interface Props {
     listingId: string;
@@ -118,35 +115,32 @@ export default function BookingWidget({
         load();
     }, [supabase, listingId, icalImportUrl]);
 
-    const nightPrice = (d: Date) => {
-        const key = format(d, 'yyyy-MM-dd');
-        if (priceOverrides[key]) return priceOverrides[key];
-        const dow = getDay(d); // 5=Fri, 6=Sat
-        if ((dow === 5 || dow === 6) && weekendPrice) return weekendPrice;
-        return pricePerNight;
-    };
-
-    const nights =
-        dateRange.startDate && dateRange.endDate
-            ? differenceInCalendarDays(dateRange.endDate, dateRange.startDate)
-            : 0;
-
-    const nightsSubtotal = (() => {
-        if (!dateRange.startDate || !dateRange.endDate || nights <= 0) return 0;
-        let sum = 0;
-        let d = new Date(dateRange.startDate);
-        for (let i = 0; i < nights; i++) {
-            sum += nightPrice(d);
-            d = addDays(d, 1);
-        }
-        return sum;
-    })();
+    // Priced by the shared module, which is the same code the server runs
+    // before taking any money — so what the guest is shown here and what
+    // they are charged cannot come apart.
+    const quote = quoteBooking(
+        {
+            price_per_night: pricePerNight,
+            weekend_price: weekendPrice,
+            cleaning_fee: cleaningFee,
+            pet_fee: petFee,
+            extra_guest_fee: extraGuestFee,
+        },
+        priceOverrides,
+        dateRange.startDate || new Date(),
+        dateRange.endDate || (dateRange.startDate || new Date()),
+        adults,
+        children,
+        pets
+    );
 
     const totalGuests = adults + children;
-    const extraGuestTotal = nights > 0 && totalGuests > 1 ? extraGuestFee * (totalGuests - 1) * nights : 0;
-    const petFeeTotal = pets > 0 ? petFee : 0;
-    const cleaningFeeTotal = nights > 0 ? cleaningFee : 0;
-    const total = nightsSubtotal + extraGuestTotal + petFeeTotal + cleaningFeeTotal;
+    const nights = quote.nights;
+    const nightsSubtotal = quote.nightsSubtotal;
+    const extraGuestTotal = quote.extraGuestTotal;
+    const petFeeTotal = quote.petFeeTotal;
+    const cleaningFeeTotal = quote.cleaningFeeTotal;
+    const total = quote.total;
 
     const handleSelect = (ranges: RangeKeyDict) => {
         setError('');
