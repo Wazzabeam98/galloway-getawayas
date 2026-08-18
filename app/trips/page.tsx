@@ -6,6 +6,7 @@ import Logo from '@/components/base/Logo';
 import LoginModel from '@/components/auth/LoginModel';
 import { getImageUrl, capitializeFirst, displayName } from '@/lib/utils';
 import Link from 'next/link';
+import { refundFraction } from '@/lib/cancellation';
 
 interface Booking {
     id: string;
@@ -18,6 +19,8 @@ interface Booking {
     payment_status: string | null;
     balance_amount: number | null;
     balance_due_date: string | null;
+    amount_paid: number | null;
+    amount_refunded: number | null;
 }
 
 export default function TripsPage() {
@@ -30,6 +33,38 @@ export default function TripsPage() {
     const [reviewedBookingIds, setReviewedBookingIds] = useState<Set<string>>(new Set());
     const [payingId, setPayingId] = useState<string | null>(null);
     const [payError, setPayError] = useState('');
+    const [confirmingId, setConfirmingId] = useState<string | null>(null);
+    const [cancellingId, setCancellingId] = useState<string | null>(null);
+    const [cancelError, setCancelError] = useState('');
+
+    const cancelBooking = async (bookingId: string) => {
+        setCancelError('');
+        setCancellingId(bookingId);
+        try {
+            const res = await fetch('/api/bookings/cancel', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ bookingId: bookingId }),
+            });
+            const data = await res.json();
+
+            if (data && data.ok) {
+                setBookings((prev) =>
+                    prev.map((b) =>
+                        b.id === bookingId
+                            ? { ...b, status: 'cancelled', balance_amount: 0 }
+                            : b
+                    )
+                );
+                setConfirmingId(null);
+            } else {
+                setCancelError((data && data.error) || 'Could not cancel. Please try again.');
+            }
+        } catch (err) {
+            setCancelError('Could not cancel. Please try again.');
+        }
+        setCancellingId(null);
+    };
 
     // Sends the guest to Stripe to settle what's left on a booking. Reached
     // either from the button below or from the link in a payment reminder
@@ -67,14 +102,17 @@ export default function TripsPage() {
 
             const { data: bookingRows } = await supabase
                 .from('bookings')
-                .select('id, listing_id, host_id, check_in, check_out, status, total_price, payment_status, balance_amount, balance_due_date')
+                .select('id, listing_id, host_id, check_in, check_out, status, total_price, payment_status, balance_amount, balance_due_date, amount_paid, amount_refunded')
                 .eq('guest_id', session.user.id)
                 .order('check_in', { ascending: false });
             setBookings(bookingRows || []);
 
             const listingIds = Array.from(new Set((bookingRows || []).map((b) => b.listing_id)));
             if (listingIds.length) {
-                const { data: listings } = await supabase.from('listings').select('id, title, images').in('id', listingIds);
+                const { data: listings } = await supabase
+                    .from('listings')
+                    .select('id, title, images, cancellation_policy')
+                    .in('id', listingIds);
                 const map: Record<string, any> = {};
                 (listings || []).forEach((l) => { map[l.id] = l; });
                 setListingMap(map);
@@ -175,6 +213,68 @@ export default function TripsPage() {
                                 <Link href={`/messages/${b.id}`} className="text-xs font-semibold text-slate-500 underline hover:text-slate-800 mt-3 inline-block">
                                     Message host
                                 </Link>
+
+                                {b.status !== 'cancelled'
+                                    && b.status !== 'declined'
+                                    && new Date(b.check_in) > today && (() => {
+                                    const paidSoFar = Number(b.amount_paid || 0) - Number(b.amount_refunded || 0);
+                                    const fraction = refundFraction(b.check_in, listing?.cancellation_policy);
+                                    const refund = Math.round(paidSoFar * fraction * 100) / 100;
+
+                                    if (confirmingId !== b.id) {
+                                        return (
+                                            <div className="mt-3">
+                                                <button
+                                                    type="button"
+                                                    onClick={() => { setConfirmingId(b.id); setCancelError(''); }}
+                                                    className="text-xs font-semibold text-slate-500 underline hover:text-slate-800"
+                                                >
+                                                    Cancel booking
+                                                </button>
+                                            </div>
+                                        );
+                                    }
+
+                                    return (
+                                        <div className="mt-4 rounded-xl border border-slate-200 bg-slate-50 p-4">
+                                            <div className="text-sm font-semibold text-slate-900">
+                                                Cancel this booking?
+                                            </div>
+                                            <p className="text-sm text-slate-600 mt-1">
+                                                {paidSoFar <= 0
+                                                    ? 'You haven’t paid anything for this stay, so there’s nothing to refund.'
+                                                    : refund > 0
+                                                        ? 'You’ll get £' + refund.toFixed(2) + ' of the £' + paidSoFar.toFixed(2) + ' you’ve paid back to your card, usually within five to ten days.'
+                                                        : 'These dates are inside the non-refundable period for this place, so no refund is due on the £' + paidSoFar.toFixed(2) + ' you’ve paid.'}
+                                            </p>
+                                            <p className="text-xs text-slate-500 mt-2">
+                                                The dates will be released for someone else, and this can’t be undone.
+                                            </p>
+
+                                            {cancelError && (
+                                                <p className="text-xs text-red-600 mt-2">{cancelError}</p>
+                                            )}
+
+                                            <div className="mt-3 flex items-center gap-2">
+                                                <button
+                                                    type="button"
+                                                    onClick={() => cancelBooking(b.id)}
+                                                    disabled={cancellingId === b.id}
+                                                    className="px-4 py-2 bg-red-700 hover:bg-red-800 text-white text-sm font-semibold rounded-xl transition disabled:opacity-50"
+                                                >
+                                                    {cancellingId === b.id ? 'Cancelling…' : 'Yes, cancel it'}
+                                                </button>
+                                                <button
+                                                    type="button"
+                                                    onClick={() => setConfirmingId(null)}
+                                                    className="px-4 py-2 text-sm font-semibold text-slate-600 hover:text-slate-900"
+                                                >
+                                                    Keep my booking
+                                                </button>
+                                            </div>
+                                        </div>
+                                    );
+                                })()}
 
                                 {b.payment_status === 'deposit_paid'
                                     && Number(b.balance_amount || 0) > 0
