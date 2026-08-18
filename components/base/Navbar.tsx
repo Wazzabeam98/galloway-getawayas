@@ -14,11 +14,12 @@ const Navbar = async () => {
     let firstName: string | null = null;
     let isHost = false;
     let avatarUrl: string | null = null;
+    let isAdmin = false;
 
     if (data?.session?.user) {
         const { data: profile } = await supabase
             .from('profiles')
-            .select('full_name, preferred_name, avatar_url')
+            .select('full_name, preferred_name, avatar_url, is_admin')
             .eq('id', data.session.user.id)
             .single();
 
@@ -30,6 +31,7 @@ const Navbar = async () => {
             data.session.user.email?.split('@')[0];
         firstName = rawName ? rawName.split(' ')[0] : null;
         avatarUrl = profile?.avatar_url || null;
+        isAdmin = profile?.is_admin === true;
 
         // You're a host if you actually have a listing — drafts count, since
         // you're mid-way through becoming one. Deriving it this way means it
@@ -72,6 +74,7 @@ const Navbar = async () => {
                     <NavMenu
                         session={data?.session?.user}
                         isHost={isHost}
+                        isAdmin={isAdmin}
                         mode={mode}
                         avatarUrl={avatarUrl}
                         initial={firstName ? firstName.charAt(0).toUpperCase() : ''}
