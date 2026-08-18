@@ -115,9 +115,34 @@ export async function POST(request: Request) {
 
                 const { data: booking } = await admin
                     .from('bookings')
-                    .select('id, status, total_price, listing_id')
+                    .select('id, status, total_price, listing_id, amount_paid')
                     .eq('id', bookingId)
                     .maybeSingle();
+
+                // A balance paid by hand from the reminder email. The booking
+                // is already live, so only the money changes — the status and
+                // the deposit already recorded are left alone.
+                if (kind === 'balance') {
+                    await admin
+                        .from('bookings')
+                        .update({
+                            payment_status: 'paid',
+                            amount_paid: Math.round((Number((booking && booking.amount_paid) || 0) + amount) * 100) / 100,
+                            balance_amount: 0,
+                            stripe_payment_intent_id: cs.payment_intent || null,
+                        })
+                        .eq('id', bookingId);
+
+                    await admin.from('payments').insert({
+                        booking_id: bookingId,
+                        kind: 'balance',
+                        amount: amount,
+                        status: 'succeeded',
+                        stripe_payment_intent_id: cs.payment_intent || null,
+                    });
+
+                    return NextResponse.json({ ok: true });
+                }
 
                 // Instant Book listings confirm on payment; request
                 // bookings go back to pending for the host to accept.
