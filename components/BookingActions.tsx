@@ -126,8 +126,32 @@ export default function BookingActions({ bookingId, mode = 'pending' }: { bookin
             await sendWelcomeMessage();
         }
 
-        // Let the guest know the outcome by email. Not awaited, and it
-        // can't fail loudly — the status change has already been saved.
+        // A declined or cancelled booking must give the guest their money
+        // back. Awaited, because this one genuinely matters — if it fails
+        // the host needs to know rather than assume it's handled.
+        if (status === 'declined' || status === 'cancelled') {
+            try {
+                const res = await fetch('/api/stripe/refund', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ bookingId: bookingId, reason: status }),
+                });
+                const data = await res.json();
+                if (!data || !data.ok) {
+                    toast.error(
+                        'The booking was updated, but the refund did not go through. Please check Stripe.',
+                        { theme: 'colored' }
+                    );
+                }
+            } catch (err) {
+                toast.error(
+                    'The booking was updated, but the refund did not go through. Please check Stripe.',
+                    { theme: 'colored' }
+                );
+            }
+        }
+
+        // Let the guest know the outcome by email.
         notify('booking_status', bookingId);
 
         setUpdating(false);
