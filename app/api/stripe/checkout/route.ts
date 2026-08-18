@@ -4,7 +4,7 @@ import { cookies } from 'next/headers';
 import { NextResponse } from 'next/server';
 import { stripeRequest } from '@/lib/stripe';
 import { SITE_URL } from '@/lib/email';
-import { freeCancelUntil } from '@/lib/cancellation';
+import { freeCancelDateOrNull } from '@/lib/cancellation';
 
 export const dynamic = 'force-dynamic';
 
@@ -76,7 +76,9 @@ export async function POST(request: Request) {
         const dueNow = useDeposit ? Math.round(total * DEPOSIT_FRACTION * 100) / 100 : total;
         const balance = Math.round((total - dueNow) * 100) / 100;
 
-        const freeUntil = freeCancelUntil(booking.check_in, listing && listing.cancellation_policy);
+        // null when the free-cancellation window has already closed for
+        // these dates, so nothing stores a date in the past.
+        const freeUntil = freeCancelDateOrNull(booking.check_in, listing && listing.cancellation_policy);
 
         const checkout = await stripeRequest('POST', '/checkout/sessions', {
             mode: 'payment',
@@ -122,7 +124,7 @@ export async function POST(request: Request) {
                 deposit_amount: useDeposit ? dueNow : null,
                 balance_amount: useDeposit ? balance : null,
                 balance_due_date: useDeposit ? balanceDue.toISOString().split('T')[0] : null,
-                free_cancel_until: freeUntil.toISOString().split('T')[0],
+                free_cancel_until: freeUntil ? freeUntil.toISOString().split('T')[0] : null,
                 status: 'pending_payment',
             })
             .eq('id', booking.id);
