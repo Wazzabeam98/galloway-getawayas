@@ -5,6 +5,7 @@ import Link from 'next/link';
 import { getImageUrl, capitializeFirst } from '@/lib/utils';
 import BookingActions from '@/components/BookingActions';
 import { CalendarClock, History } from 'lucide-react';
+import { rateFor, netOfFee } from '@/lib/fees';
 
 interface Booking {
     id: string;
@@ -15,11 +16,13 @@ interface Booking {
     guests: number;
     total_price: number;
     status: string;
+    commission_rate?: number | null;
 }
 
 interface ListingInfo {
     title: string;
     images: string[] | null;
+    commission_rate?: number | null;
 }
 
 const statusStyles: Record<string, string> = {
@@ -27,10 +30,6 @@ const statusStyles: Record<string, string> = {
     declined: 'bg-slate-100 text-slate-500',
     cancelled: 'bg-slate-100 text-slate-500',
 };
-
-// Kept in step with the same figure shown in the listing wizard and the
-// earnings page.
-const HOST_FEE_PERCENT = 10;
 
 export default function BookingsView({
     bookings,
@@ -57,6 +56,11 @@ export default function BookingsView({
 
     const BookingRow = ({ booking }: { booking: Booking }) => {
         const listing = listingMap[booking.listing_id];
+        // The rate agreed when the booking was made wins. Older bookings
+        // predating that were all on the listing's rate.
+        const commission = booking.commission_rate !== null && booking.commission_rate !== undefined
+            ? Number(booking.commission_rate)
+            : rateFor(listing);
         const guestName = guestNameMap[booking.guest_id] || 'Guest';
         const showConfirmDecline = booking.status === 'pending';
         const showCancel = booking.status === 'confirmed' && new Date(booking.check_in) >= today;
@@ -78,11 +82,12 @@ export default function BookingsView({
                         </div>
                         <div className="text-sm text-slate-700 mt-0.5">
                             <span className="font-semibold text-slate-900">
-                                £{(Number(booking.total_price) * (1 - HOST_FEE_PERCENT / 100)).toFixed(2)}
+                                £{netOfFee(Number(booking.total_price), commission).toFixed(2)}
                             </span>
                             <span className="text-slate-500"> to you</span>
                             <span className="text-slate-400">
-                                {' '}&middot; £{Number(booking.total_price).toFixed(2)} guest total, less {HOST_FEE_PERCENT}% fee
+                                {' '}&middot; £{Number(booking.total_price).toFixed(2)} guest total
+                                {commission > 0 ? ', less ' + commission + '% fee' : ', no fee'}
                             </span>
                         </div>
                         {isReviewable ? (
