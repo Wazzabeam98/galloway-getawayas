@@ -17,12 +17,14 @@ const itemClass = 'hover:bg-slate-200 rounded-md p-2 cursor-pointer';
 const NavMenu = ({
     session,
     isHost = false,
+    isAdmin = false,
     mode = 'travel',
     avatarUrl = null,
     initial = '',
 }: {
     session: object | undefined;
     isHost?: boolean;
+    isAdmin?: boolean;
     mode?: 'host' | 'travel';
     avatarUrl?: string | null;
     initial?: string;
@@ -95,6 +97,17 @@ const NavMenu = ({
                             <li className={itemClass}>
                                 <Link href='/account'>Account settings</Link>
                             </li>
+
+                            {isAdmin && (
+                                <>
+                                    <div className='border-t my-1' />
+                                    <li className={itemClass}>
+                                        <Link href='/admin' className='font-semibold text-emerald-800'>
+                                            Owner tools
+                                        </Link>
+                                    </li>
+                                </>
+                            )}
 
                             <div className='border-t my-1' />
 
