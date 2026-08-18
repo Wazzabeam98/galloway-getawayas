@@ -120,6 +120,8 @@ export async function GET(request: Request) {
                         status: 'cancelled',
                         payment_status: totalRefunded >= round2(paid) ? 'refunded' : 'partially_refunded',
                         amount_refunded: totalRefunded,
+                        // The stay is off, so nothing is owed on it any more.
+                        balance_amount: 0,
                     })
                     .eq('id', booking.id);
 
