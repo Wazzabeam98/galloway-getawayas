@@ -216,6 +216,9 @@ export async function GET(request: Request) {
                     .update({
                         payment_status: 'paid',
                         amount_paid: round2(Number(booking.amount_paid || 0) + amount),
+                        // Nothing is outstanding any more, so the column that
+                        // says what is outstanding has to say zero.
+                        balance_amount: 0,
                         balance_attempts: attempts + 1,
                         balance_last_attempt_at: new Date().toISOString(),
                     })
