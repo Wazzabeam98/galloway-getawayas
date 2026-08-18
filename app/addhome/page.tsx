@@ -13,6 +13,7 @@ import Env from '@/config/Env';
 import { compressImage } from '@/lib/compressImage';
 import { generateRandomNumber } from '@/lib/utils';
 import { toast } from 'react-toastify';
+import { DEFAULT_COMMISSION_PERCENT } from '@/lib/fees';
 
 interface PlaceResult {
     display_name: string;
@@ -141,7 +142,7 @@ export default function AddHome() {
 
     // Hosts absorb this fee — guests always pay exactly the nightly rate the
     // host sets, with no extra charge added at checkout.
-    const HOST_FEE_PERCENT = 10;
+    const HOST_FEE_PERCENT = DEFAULT_COMMISSION_PERCENT;
 
     const ICON_MAP: Record<string, any> = { Home: HomeIcon, Trees, Waves, Compass, Building2, Sparkles };
 
