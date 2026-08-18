@@ -80,10 +80,22 @@ export async function POST(request: Request) {
         // these dates, so nothing stores a date in the past.
         const freeUntil = freeCancelDateOrNull(booking.check_in, listing && listing.cancellation_policy);
 
+        // A deposit is only workable if the balance can be taken automatically
+        // 30 days before check-in, and only a card can be charged that way.
+        // Klarna and the wallets are one-off agreements for the amount shown,
+        // so they are offered on the pay-in-full path only.
+        const methods = useDeposit
+            ? ['card']
+            : ['card', 'klarna', 'link'];
+
         const checkout = await stripeRequest('POST', '/checkout/sessions', {
             mode: 'payment',
             customer_email: session.user.email,
             client_reference_id: booking.id,
+            payment_method_types: methods,
+            // Forced on the deposit path so there is always a customer to
+            // charge the balance against later.
+            customer_creation: useDeposit ? 'always' : 'if_required',
             success_url: SITE_URL + '/trips?paid=' + booking.id,
             cancel_url: SITE_URL + '/homes/' + booking.listing_id + '?cancelled=1',
             line_items: [
@@ -103,8 +115,10 @@ export async function POST(request: Request) {
             ],
             payment_intent_data: {
                 // Saving the card is what lets the balance be taken later
-                // without the guest having to do anything.
-                setup_future_usage: 'off_session',
+                // without the guest having to do anything. Nothing further is
+                // ever charged on a paid-in-full booking, so it is not saved
+                // there.
+                setup_future_usage: useDeposit ? 'off_session' : undefined,
                 description: 'Galloway Getaways booking ' + booking.id,
                 metadata: {
                     booking_id: booking.id,
