@@ -10,6 +10,7 @@ import Env from '@/config/Env';
 import { generateRandomNumber, getImageUrl } from '@/lib/utils';
 import { toast } from 'react-toastify';
 import {
+import { rateFor } from '@/lib/fees';
     HomeIcon, Trees, Waves, Compass, Building2, Sparkles, Minus, Plus, Check,
     KeyRound, Lock, DoorOpen, Hash, Users,
     Snowflake, Package, Refrigerator, Thermometer, Droplet, UtensilsCrossed, Tv,
@@ -79,7 +80,6 @@ const AMENITY_CATEGORIES: { category: string; items: { name: string; icon: any; 
     },
 ];
 
-const HOST_FEE_PERCENT = 10;
 
 const SECTIONS = [
     { key: 'basics', label: 'Basics & guests', icon: LayoutGrid },
@@ -105,6 +105,8 @@ const CANCELLATION_POLICIES = [
 type Photo = { kind: 'existing'; path: string } | { kind: 'new'; file: File };
 
 export default function EditListing() {
+    const [commissionRate, setCommissionRate] = useState<number | null>(null);
+    const HOST_FEE_PERCENT = rateFor({ commission_rate: commissionRate });
     const params = useParams();
     const listingId = params?.id as string;
     const router = useRouter();
@@ -197,6 +199,7 @@ export default function EditListing() {
             setDescription(listing.description || '');
             setLocation(listing.location || '');
             setPrice(String(listing.price_per_night ?? ''));
+            setCommissionRate(listing.commission_rate ?? null);
             setPropertyType(listing.property_type || '');
             setPrivacyType(listing.privacy_type || 'Entire place');
             setGuests(listing.max_guests || 1);
