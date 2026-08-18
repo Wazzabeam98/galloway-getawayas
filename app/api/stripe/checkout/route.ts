@@ -6,6 +6,7 @@ import { stripeRequest } from '@/lib/stripe';
 import { SITE_URL } from '@/lib/email';
 import { freeCancelDateOrNull } from '@/lib/cancellation';
 import { quoteBooking, totalsMatch, dateFromKey, dateKey } from '@/lib/pricing';
+import { rateFor } from '@/lib/fees';
 
 export const dynamic = 'force-dynamic';
 
@@ -61,7 +62,7 @@ export async function POST(request: Request) {
 
         const { data: listing } = await admin
             .from('listings')
-            .select('title, cancellation_policy, price_per_night, weekend_price, cleaning_fee, pet_fee, extra_guest_fee, max_guests')
+            .select('title, cancellation_policy, price_per_night, weekend_price, cleaning_fee, pet_fee, extra_guest_fee, max_guests, commission_rate')
             .eq('id', booking.listing_id)
             .maybeSingle();
 
@@ -241,6 +242,10 @@ export async function POST(request: Request) {
                 balance_amount: useDeposit ? balance : null,
                 balance_due_date: useDeposit ? balanceDue.toISOString().split('T')[0] : null,
                 free_cancel_until: freeUntil ? freeUntil.toISOString().split('T')[0] : null,
+                // Stamped on now and never changed. If the listing's rate is
+                // altered later, this booking's history stays true to what
+                // was actually agreed at the time.
+                commission_rate: rateFor(listing),
                 status: 'pending_payment',
             })
             .eq('id', booking.id);
