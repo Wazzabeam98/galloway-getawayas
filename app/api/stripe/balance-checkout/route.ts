@@ -79,7 +79,10 @@ export async function POST(request: Request) {
             customer_email: session.user.email,
             client_reference_id: booking.id,
             payment_method_types: ['card', 'klarna', 'link'],
-            success_url: SITE_URL + '/trips?paid=' + booking.id,
+            // Lands on a page that confirms the payment from the booking id
+            // alone, so a session lost on the way back from Stripe never leaves
+            // a guest staring at a login screen.
+            success_url: SITE_URL + '/booking-confirmed/' + booking.id,
             cancel_url: SITE_URL + '/trips?cancelled=' + booking.id,
             line_items: [
                 {
