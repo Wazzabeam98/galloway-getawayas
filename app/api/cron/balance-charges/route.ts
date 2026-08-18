@@ -178,10 +178,15 @@ export async function GET(request: Request) {
 
             if (booking.stripe_customer_id && booking.stripe_payment_method_id) {
                 try {
-                    // The key at the end is what stops a guest being charged
-                    // twice if this job somehow runs twice for the same
-                    // attempt. Stripe recognises the repeat and returns the
-                    // original charge rather than making a new one.
+                    // The key at the end is what stops a guest ever being
+                    // charged twice for the same balance. It is built from
+                    // things that don't move — the booking and its due date —
+                    // and deliberately not from the attempt count, because a
+                    // restore, a repair script or a stray database edit can
+                    // reset a counter, and this has to hold even then.
+                    //
+                    // A genuine retry after a decline is unaffected: a failed
+                    // charge leaves nothing for Stripe to replay.
                     const intent = await stripeRequest('POST', '/payment_intents', {
                         amount: Math.round(amount * 100),
                         currency: 'gbp',
@@ -194,7 +199,7 @@ export async function GET(request: Request) {
                             booking_id: booking.id,
                             kind: 'balance',
                         },
-                    }, 'balance-' + booking.id + '-' + attempts);
+                    }, 'balance-' + booking.id + '-' + String(booking.balance_due_date || ''));
 
                     succeeded = intent && intent.status === 'succeeded';
                     if (!succeeded) {
