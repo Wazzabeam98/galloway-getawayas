@@ -5,6 +5,7 @@ import { NextResponse } from 'next/server';
 import { stripeRequest } from '@/lib/stripe';
 import { refundFraction } from '@/lib/cancellation';
 import { clawBackPayout } from '@/lib/clawback';
+import { logError } from '@/lib/logError';
 
 export const dynamic = 'force-dynamic';
 
@@ -159,6 +160,7 @@ export async function POST(request: Request) {
         return NextResponse.json({ ok: true, refunded: amount, refundId: refund && refund.id });
     } catch (err: any) {
         console.error('[stripe/refund]', err && err.message);
+        await logError('[stripe/refund] ' + ((err && err.message) || 'failed'), err, { path: 'stripe/refund' });
         return NextResponse.json(
             { ok: false, error: (err && err.message) || 'Refund failed' },
             { status: 500 }
