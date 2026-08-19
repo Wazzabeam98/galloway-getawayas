@@ -7,10 +7,65 @@ import { toast } from 'react-toastify';
 import { displayName } from '@/lib/utils';
 import { notify } from '@/lib/notify';
 
-export default function BookingActions({ bookingId, mode = 'pending' }: { bookingId: string; mode?: 'pending' | 'confirmed' }) {
+export default function BookingActions({
+    bookingId,
+    mode = 'pending',
+    totalPrice = 0,
+    amountPaid = 0,
+    amountRefunded = 0,
+}: {
+    bookingId: string;
+    mode?: 'pending' | 'confirmed';
+    totalPrice?: number;
+    amountPaid?: number;
+    amountRefunded?: number;
+}) {
     const supabase = createClientComponentClient();
     const router = useRouter();
     const [updating, setUpdating] = useState(false);
+    const [panel, setPanel] = useState<'none' | 'cancel' | 'refund'>('none');
+    const [refundAmount, setRefundAmount] = useState('');
+    const [panelError, setPanelError] = useState('');
+
+    const refundable = Math.round((Number(amountPaid) - Number(amountRefunded)) * 100) / 100;
+    const penalty = Math.round(Number(totalPrice) * 0.05 * 100) / 100;
+
+    // Giving money back without calling the stay off.
+    const sendRefund = async () => {
+        setPanelError('');
+        const value = Number(refundAmount);
+
+        if (!value || isNaN(value) || value <= 0) {
+            setPanelError('Enter how much to refund.');
+            return;
+        }
+        if (value > refundable) {
+            setPanelError('The guest has only paid £' + refundable.toFixed(2) + '.');
+            return;
+        }
+
+        setUpdating(true);
+        try {
+            const res = await fetch('/api/bookings/host-refund', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ bookingId: bookingId, amount: value }),
+            });
+            const data = await res.json();
+
+            if (data && data.ok) {
+                toast.success('£' + value.toFixed(2) + ' refunded to your guest.', { theme: 'colored' });
+                setPanel('none');
+                setRefundAmount('');
+                router.refresh();
+            } else {
+                setPanelError((data && data.error) || 'Could not process the refund.');
+            }
+        } catch (err) {
+            setPanelError('Could not process the refund.');
+        }
+        setUpdating(false);
+    };
 
     // Posts the host's saved welcome message into the conversation, if they
     // have one switched on. Deliberately silent on failure — a booking that
@@ -173,19 +228,115 @@ export default function BookingActions({ bookingId, mode = 'pending' }: { bookin
     };
 
     if (mode === 'confirmed') {
+        if (panel === 'cancel') {
+            return (
+                <div className="rounded-xl border border-red-200 bg-red-50 p-4 text-left max-w-md">
+                    <div className="text-sm font-semibold text-red-900">
+                        Cancel this booking?
+                    </div>
+                    <p className="text-sm text-red-800 mt-1">
+                        Your guest has this stay confirmed and may have arranged travel around it.
+                        They&apos;ll be refunded the full £{refundable.toFixed(2)} they have paid,
+                        whatever your cancellation policy says, and the dates go back on sale.
+                    </p>
+                    {penalty > 0 && (
+                        <p className="text-sm text-red-800 mt-2">
+                            A cancellation fee of <strong>£{penalty.toFixed(2)}</strong> (5% of the
+                            booking) will be taken off your next payout.
+                        </p>
+                    )}
+                    <p className="text-xs text-red-700 mt-2">
+                        If you only want to give some money back and still host the stay, close this
+                        and choose Refund guest instead.
+                    </p>
+
+                    <div className="mt-3 flex items-center gap-2">
+                        <button
+                            type="button"
+                            onClick={() => updateStatus('cancelled')}
+                            disabled={updating}
+                            className="px-4 py-2 bg-red-700 hover:bg-red-800 text-white text-sm font-semibold rounded-lg disabled:opacity-50"
+                        >
+                            {updating ? 'Cancelling…' : 'Yes, cancel it'}
+                        </button>
+                        <button
+                            type="button"
+                            onClick={() => setPanel('none')}
+                            className="px-4 py-2 text-sm font-semibold text-slate-600 hover:text-slate-900"
+                        >
+                            Keep the booking
+                        </button>
+                    </div>
+                </div>
+            );
+        }
+
+        if (panel === 'refund') {
+            return (
+                <div className="rounded-xl border border-slate-200 bg-slate-50 p-4 text-left max-w-md">
+                    <div className="text-sm font-semibold text-slate-900">Refund your guest</div>
+                    <p className="text-sm text-slate-600 mt-1">
+                        For when something wasn&apos;t right but the stay is still going ahead. The
+                        booking stays confirmed and the amount comes off what you&apos;re paid.
+                    </p>
+                    <p className="text-xs text-slate-500 mt-1">
+                        Up to £{refundable.toFixed(2)} available.
+                    </p>
+
+                    <div className="mt-3 flex items-center gap-2">
+                        <span className="text-slate-500">£</span>
+                        <input
+                            type="number"
+                            min="0"
+                            step="0.01"
+                            value={refundAmount}
+                            onChange={(e) => setRefundAmount(e.target.value)}
+                            placeholder="0.00"
+                            className="w-28 border rounded-lg px-3 py-2 text-sm outline-none focus:border-slate-900"
+                        />
+                        <button
+                            type="button"
+                            onClick={sendRefund}
+                            disabled={updating}
+                            className="px-4 py-2 bg-slate-900 hover:bg-black text-white text-sm font-semibold rounded-lg disabled:opacity-50"
+                        >
+                            {updating ? 'Refunding…' : 'Send refund'}
+                        </button>
+                        <button
+                            type="button"
+                            onClick={() => { setPanel('none'); setPanelError(''); }}
+                            className="px-3 py-2 text-sm font-semibold text-slate-600 hover:text-slate-900"
+                        >
+                            Cancel
+                        </button>
+                    </div>
+
+                    {panelError && <p className="text-xs text-red-600 mt-2">{panelError}</p>}
+                </div>
+            );
+        }
+
         return (
-            <button
-                type="button"
-                onClick={() => {
-                    if (confirm('Cancel this confirmed booking? The guest will need to be told separately, since this only updates your records here.')) {
-                        updateStatus('cancelled');
-                    }
-                }}
-                disabled={updating}
-                className="px-4 py-1.5 border border-slate-300 hover:border-red-400 hover:text-red-600 text-slate-700 text-sm font-semibold rounded-lg disabled:opacity-50"
-            >
-                Cancel booking
-            </button>
+            <div className="flex gap-2">
+                {refundable > 0 && (
+                    <button
+                        type="button"
+                        onClick={() => { setPanel('refund'); setPanelError(''); }}
+                        disabled={updating}
+                        className="px-4 py-1.5 border border-slate-300 hover:border-slate-500 text-slate-700 text-sm font-semibold rounded-lg disabled:opacity-50"
+                    >
+                        Refund guest
+                    </button>
+                )}
+                <button
+                    type="button"
+                    onClick={() => setPanel('cancel')}
+                    disabled={updating}
+                    className="px-4 py-1.5 border border-slate-300 hover:border-red-400 hover:text-red-600 text-slate-700 text-sm font-semibold rounded-lg disabled:opacity-50"
+                >
+                    Cancel booking
+                </button>
+            </div>
         );
     }
 
