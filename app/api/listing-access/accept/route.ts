@@ -96,7 +96,7 @@ export async function POST(request: Request) {
                             + (invite.role === 'staff' ? 'staff' : 'a co-host')
                             + '.</p>'
                             + '<p style="margin:0 0 16px;font-size:16px;">You can change what they can do, or remove them, at any time.</p>'
-                            + button(SITE_URL + '/dashboard/people', 'Manage access'),
+                            + button(SITE_URL + '/dashboard/people', 'Manage co-hosts'),
                         'You\u2019re receiving this because you host on Galloway Getaways.'
                     )
                 );
