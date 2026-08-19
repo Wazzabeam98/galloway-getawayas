@@ -80,7 +80,7 @@ export default function ContactPage() {
                     <p className="text-sm text-slate-600">
                         Galloway Getaways Ltd, registered in Scotland.
                         <br />
-                        Company number to be confirmed.
+                        Company number SC899385.
                     </p>
                 </div>
             </div>
