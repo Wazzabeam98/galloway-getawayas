@@ -7,6 +7,10 @@
     {
       "path": "/api/cron/balance-charges",
       "schedule": "0 9 * * *"
+    },
+    {
+      "path": "/api/cron/host-payouts",
+      "schedule": "0 11 * * *"
     }
   ]
 }
