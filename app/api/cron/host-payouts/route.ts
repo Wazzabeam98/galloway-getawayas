@@ -3,6 +3,7 @@ import { NextResponse } from 'next/server';
 import { stripeRequest } from '@/lib/stripe';
 import { DEFAULT_COMMISSION_PERCENT, netOfFee, feeAmount } from '@/lib/fees';
 import { sendEmail, emailLayout, escapeHtml, formatDate, button, SITE_URL } from '@/lib/email';
+import { logError } from '@/lib/logError';
 
 export const dynamic = 'force-dynamic';
 export const maxDuration = 60;
