@@ -89,11 +89,22 @@ export default function CalendarPage() {
             setSession(session);
 
             if (session?.user) {
-                const { data } = await supabase
-                    .from('listings')
-                    .select('id, title, price_per_night, min_nights, max_nights, weekend_price, cleaning_fee, pet_fee, extra_guest_fee, damage_deposit, advance_notice, preparation_time, availability_window')
-                    .eq('host_id', session.user.id)
-                    .eq('status', 'published');
+                // Properties they own, plus any they co-host with permission
+                // to manage the calendar.
+                const res = await fetch('/api/my-listings?permission=can_calendar');
+                const allowed = res.ok ? (await res.json()).listings || [] : [];
+                const ids = allowed.map((a: any) => a.id);
+
+                const { data } = ids.length
+                    ? await supabase
+                        .from('listings')
+                        .select('id, title, price_per_night, min_nights, max_nights, weekend_price, cleaning_fee, pet_fee, extra_guest_fee, damage_deposit, advance_notice, preparation_time, availability_window')
+                        .in('id', ids)
+                        // A hidden listing still has guests arriving, so its
+                        // calendar has to stay reachable.
+                        .neq('status', 'draft')
+                    : { data: [] };
+
                 setListings(data || []);
                 if (data && data.length > 0) setSelectedListingId(data[0].id);
             }
