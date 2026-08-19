@@ -120,11 +120,17 @@ export default async function EarningsPage({ searchParams }: { searchParams?: { 
     todayStart.setHours(0, 0, 0, 0);
 
     const schedule = payoutRows.map((b) => {
-        const collected = Math.round(
-            (Number(b.amount_paid || 0) - Number(b.amount_refunded || 0)) * 100
-        ) / 100;
         const rate = rateOfBooking(b);
         const due = payoutDay(b.check_in);
+        const refunded = Number(b.amount_refunded || 0);
+
+        // The whole stay, less anything already refunded — a guest paying in
+        // two parts still results in one payout for the full amount, the day
+        // after they check in.
+        const expectedGross = Math.round(
+            (Number(b.total_price || 0) - refunded) * 100
+        ) / 100;
+
         return {
             id: b.id,
             title: listingMap.get(b.listing_id) || 'Listing',
@@ -132,7 +138,7 @@ export default async function EarningsPage({ searchParams }: { searchParams?: { 
             due: due,
             paidOutAt: b.paid_out_at,
             payoutAmount: b.payout_amount,
-            expected: netOfFee(collected > 0 ? collected : Number(b.total_price || 0), rate),
+            expected: netOfFee(expectedGross > 0 ? expectedGross : 0, rate),
             fullyPaid: b.payment_status === 'paid',
             outstanding: Number(b.balance_amount || 0),
         };
@@ -216,8 +222,8 @@ export default async function EarningsPage({ searchParams }: { searchParams?: { 
                                     </div>
                                     {!r.fullyPaid && r.outstanding > 0 && (
                                         <div className="text-xs text-amber-700 mt-0.5">
-                                            £{r.outstanding.toFixed(2)} of the guest&apos;s balance is
-                                            still to be collected
+                                            Includes £{r.outstanding.toFixed(2)} of the guest&apos;s
+                                            balance still to be collected before check-in
                                         </div>
                                     )}
                                 </div>
