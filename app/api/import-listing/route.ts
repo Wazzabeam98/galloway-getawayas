@@ -1,4 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
+import { createRouteHandlerClient } from '@supabase/auth-helpers-nextjs';
+import { cookies } from 'next/headers';
 
 // Pulls out the content of a <meta property="..."> or <meta name="..."> tag,
 // trying both attribute orders since sites vary.
@@ -27,6 +29,16 @@ function decodeHtmlEntities(text: string): string {
 
 export async function POST(req: NextRequest) {
     try {
+        // Signed in only. This fetches a page from our server on the caller's
+        // behalf, and an open endpoint that does that can be used to make
+        // requests look like they came from us.
+        const supabase = createRouteHandlerClient({ cookies });
+        const { data: { session } } = await supabase.auth.getSession();
+
+        if (!session || !session.user) {
+            return NextResponse.json({ error: 'Please sign in first.' }, { status: 401 });
+        }
+
         const { url } = await req.json();
 
         if (!url || typeof url !== 'string') {
@@ -38,6 +50,12 @@ export async function POST(req: NextRequest) {
             target = new URL(url);
         } catch {
             return NextResponse.json({ error: 'That doesn\'t look like a valid URL.' }, { status: 400 });
+        }
+
+        // Only these two, and only over https — enough on its own to keep this
+        // away from internal addresses.
+        if (target.protocol !== 'https:') {
+            return NextResponse.json({ error: 'That link needs to start with https.' }, { status: 400 });
         }
 
         const allowedHosts = ['airbnb.', 'booking.com'];
