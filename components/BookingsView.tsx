@@ -17,6 +17,8 @@ interface Booking {
     total_price: number;
     status: string;
     commission_rate?: number | null;
+    amount_paid?: number | null;
+    amount_refunded?: number | null;
 }
 
 interface ListingInfo {
@@ -107,13 +109,26 @@ export default function BookingsView({
                 </div>
 
                 {showConfirmDecline ? (
-                    <BookingActions bookingId={booking.id} />
+                    <BookingActions
+                        bookingId={booking.id}
+                        totalPrice={Number(booking.total_price || 0)}
+                        amountPaid={Number(booking.amount_paid || 0)}
+                        amountRefunded={Number(booking.amount_refunded || 0)}
+                    />
                 ) : (
                     <div className="flex items-center gap-3">
                         <span className={`text-xs font-semibold px-3 py-1 rounded-full capitalize ${statusStyles[booking.status] || 'bg-slate-100 text-slate-600'}`}>
                             {booking.status}
                         </span>
-                        {showCancel && <BookingActions bookingId={booking.id} mode="confirmed" />}
+                        {showCancel && (
+                            <BookingActions
+                                bookingId={booking.id}
+                                mode="confirmed"
+                                totalPrice={Number(booking.total_price || 0)}
+                                amountPaid={Number(booking.amount_paid || 0)}
+                                amountRefunded={Number(booking.amount_refunded || 0)}
+                            />
+                        )}
                     </div>
                 )}
             </div>
