@@ -38,7 +38,6 @@ export default function PeopleManager({
 
     const [listingId, setListingId] = useState(listings[0]?.id || '');
     const [email, setEmail] = useState('');
-    const [role, setRole] = useState<'co_host' | 'staff'>('co_host');
     const [perms, setPerms] = useState<Record<string, boolean>>({
         can_calendar: true,
         can_messages: true,
@@ -84,7 +83,7 @@ export default function PeopleManager({
             action: 'invite',
             listingId: listingId,
             email: email,
-            role: role,
+            role: 'co_host',
             ...perms,
         });
         setInviting(false);
@@ -182,43 +181,6 @@ export default function PeopleManager({
                     </div>
 
                     <div>
-                        <label className="block text-sm font-semibold text-slate-800 mb-2">
-                            What they are
-                        </label>
-                        <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
-                            <button
-                                type="button"
-                                onClick={() => setRole('co_host')}
-                                className={
-                                    'text-left border rounded-xl p-3 transition ' +
-                                    (role === 'co_host' ? 'border-slate-900 bg-slate-50' : 'hover:border-slate-400')
-                                }
-                            >
-                                <div className="text-sm font-semibold text-slate-900">Co-host</div>
-                                <div className="text-xs text-slate-500 mt-0.5">
-                                    Helps you run the property. You choose what they can do.
-                                </div>
-                            </button>
-                            <button
-                                type="button"
-                                onClick={() => setRole('staff')}
-                                className={
-                                    'text-left border rounded-xl p-3 transition ' +
-                                    (role === 'staff' ? 'border-slate-900 bg-slate-50' : 'hover:border-slate-400')
-                                }
-                            >
-                                <div className="text-sm font-semibold text-slate-900">
-                                    Cleaner or other staff
-                                </div>
-                                <div className="text-xs text-slate-500 mt-0.5">
-                                    Sees arrival and departure dates only. Nothing else.
-                                </div>
-                            </button>
-                        </div>
-                    </div>
-
-                    {role === 'co_host' && (
-                        <div>
                             <label className="block text-sm font-semibold text-slate-800 mb-2">
                                 What they can do
                             </label>
@@ -245,13 +207,12 @@ export default function PeopleManager({
                                     </label>
                                 ))}
                             </div>
-                            <p className="text-xs text-slate-400 mt-3">
-                                Whatever you tick, only you can cancel a confirmed booking, refund a
-                                guest, change payout details, delete the listing, or invite anyone
-                                else.
-                            </p>
-                        </div>
-                    )}
+                        <p className="text-xs text-slate-400 mt-3">
+                            Whatever you tick, only you can cancel a confirmed booking, refund a
+                            guest, change payout details, delete the listing, or invite anyone
+                            else.
+                        </p>
+                    </div>
 
                     <button
                         type="button"
@@ -283,8 +244,7 @@ export default function PeopleManager({
                                         {row.email}
                                     </div>
                                     <div className="text-sm text-slate-500">
-                                        {titleOf(row.listing_id)} &middot;{' '}
-                                        {row.role === 'staff' ? 'Cleaner or staff' : 'Co-host'}
+                                        {titleOf(row.listing_id)}
                                     </div>
                                     {row.status === 'invited' && (
                                         <div className="text-xs text-amber-700 mt-1 flex items-center gap-1">
@@ -303,8 +263,7 @@ export default function PeopleManager({
                                 </button>
                             </div>
 
-                            {row.role === 'co_host' ? (
-                                <div className="flex flex-wrap gap-2">
+                            <div className="flex flex-wrap gap-2">
                                     {PERMISSIONS.map((p) => {
                                         const on = !!(row as any)[p.key];
                                         return (
@@ -323,12 +282,7 @@ export default function PeopleManager({
                                             </button>
                                         );
                                     })}
-                                </div>
-                            ) : (
-                                <p className="text-xs text-slate-500">
-                                    Sees arrival and departure dates only.
-                                </p>
-                            )}
+                            </div>
                         </div>
                     ))}
                 </div>
