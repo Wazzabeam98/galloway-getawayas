@@ -1,42 +1,119 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { createClient } from '@supabase/supabase-js';
-import Env from '@/config/Env';
 
-function formatDate(dateStr: string): string {
-    // Turn "2026-06-15" into the "20260615" format iCal expects for whole-day events.
-    return dateStr.replace(/-/g, '');
+export const dynamic = 'force-dynamic';
+
+function icalDate(dateStr: string): string {
+    // "2026-06-15" becomes "20260615", the whole-day format iCal expects.
+    return String(dateStr).split('T')[0].replace(/-/g, '');
 }
 
 export async function GET(req: NextRequest, { params }: { params: { id: string } }) {
-    const supabase = createClient(Env.SUPABASE_URL, Env.SUPABASE_KEY);
+    // Read with the service key. Bookings are protected by row-level security,
+    // so the public key would return an empty calendar and quietly tell other
+    // platforms every date was free.
+    const supabase = createClient(
+        process.env.NEXT_PUBLIC_SUPABASE_URL || '',
+        process.env.SUPABASE_SERVICE_ROLE_KEY || '',
+        { auth: { persistSession: false } }
+    );
 
-    const { data: bookings, error } = await supabase
-        .from('bookings')
-        .select('check_in, check_out')
-        .eq('listing_id', params.id)
-        .eq('status', 'confirmed');
+    const token = req.nextUrl.searchParams.get('token');
 
-    if (error) {
-        return NextResponse.json({ error: error.message }, { status: 500 });
+    const { data: listing } = await supabase
+        .from('listings')
+        .select('id, ical_token')
+        .eq('id', params.id)
+        .maybeSingle();
+
+    // The link is a secret. Without it anyone holding a listing id could read
+    // when a property is occupied.
+    if (!listing || !listing.ical_token || token !== listing.ical_token) {
+        return new NextResponse('Not found', { status: 404 });
     }
+
+    // Everything that makes a date unavailable here has to be unavailable
+    // everywhere else too. A booking awaiting the host's answer still holds
+    // the dates, so it counts.
+    const { data: bookings } = await supabase
+        .from('bookings')
+        .select('id, check_in, check_out, status')
+        .eq('listing_id', params.id)
+        .in('status', ['confirmed', 'pending', 'pending_payment']);
+
+    const { data: blocks } = await supabase
+        .from('calendar_overrides')
+        .select('date')
+        .eq('listing_id', params.id)
+        .eq('is_blocked', true);
 
     const lines = [
         'BEGIN:VCALENDAR',
         'VERSION:2.0',
         'PRODID:-//Galloway Getaways//Booking Calendar//EN',
         'CALSCALE:GREGORIAN',
+        'METHOD:PUBLISH',
+        'X-WR-CALNAME:Galloway Getaways',
     ];
 
-    (bookings || []).forEach((b, i) => {
+    (bookings || []).forEach((b: any) => {
         lines.push(
             'BEGIN:VEVENT',
-            `UID:galloway-getaways-${params.id}-${i}@galloway-getaways`,
-            `DTSTART;VALUE=DATE:${formatDate(b.check_in)}`,
-            `DTEND;VALUE=DATE:${formatDate(b.check_out)}`,
-            'SUMMARY:Reserved',
+            // Tied to the booking, so the same stay keeps the same identifier
+            // however the list is ordered next time.
+            'UID:booking-' + b.id + '@gallowaygetaways.co.uk',
+            'DTSTART;VALUE=DATE:' + icalDate(b.check_in),
+            'DTEND;VALUE=DATE:' + icalDate(b.check_out),
+            'SUMMARY:' + (b.status === 'confirmed' ? 'Reserved' : 'Reserved (pending)'),
             'END:VEVENT'
         );
     });
+
+    // Runs of blocked days are joined into one entry each. A fortnight held
+    // back would otherwise arrive in someone's calendar as fourteen separate
+    // items.
+    const days = (blocks || [])
+        .map((row: any) => String(row.date).split('T')[0])
+        .sort();
+
+    let runStart: string | null = null;
+    let runEnd: string | null = null;
+
+    const pushRun = () => {
+        if (!runStart || !runEnd) return;
+        const after = new Date(runEnd);
+        after.setDate(after.getDate() + 1);
+
+        lines.push(
+            'BEGIN:VEVENT',
+            'UID:blocked-' + runStart + '-' + params.id + '@gallowaygetaways.co.uk',
+            'DTSTART;VALUE=DATE:' + icalDate(runStart),
+            'DTEND;VALUE=DATE:' + icalDate(after.toISOString().split('T')[0]),
+            'SUMMARY:Unavailable',
+            'END:VEVENT'
+        );
+    };
+
+    days.forEach((day: string) => {
+        if (!runStart) {
+            runStart = day;
+            runEnd = day;
+            return;
+        }
+
+        const expected = new Date(runEnd as string);
+        expected.setDate(expected.getDate() + 1);
+
+        if (day === expected.toISOString().split('T')[0]) {
+            runEnd = day;
+        } else {
+            pushRun();
+            runStart = day;
+            runEnd = day;
+        }
+    });
+
+    pushRun();
 
     lines.push('END:VCALENDAR');
 
