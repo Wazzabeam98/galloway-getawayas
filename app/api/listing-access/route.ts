@@ -44,7 +44,7 @@ export async function POST(request: Request) {
         if (action === 'invite') {
             const listingId: string = body.listingId;
             const email: string = ((body.email || '') as string).trim().toLowerCase();
-            const role: string = body.role === 'staff' ? 'staff' : 'co_host';
+            const role = 'co_host';
 
             if (!listingId || !email) {
                 return NextResponse.json(
@@ -65,9 +65,14 @@ export async function POST(request: Request) {
                 return NextResponse.json({ ok: false, error: 'Not your listing' }, { status: 403 });
             }
 
-            if (email === (session.user.email || '').toLowerCase()) {
+            // Whether it's their own address or someone else's, the owner of a
+            // listing already has everything a co-host could be given.
+            const { data: ownerUser } = await admin.auth.admin.getUserById(listing.host_id);
+            const ownerEmail = ((ownerUser && ownerUser.user && ownerUser.user.email) || '').toLowerCase();
+
+            if (email === ownerEmail) {
                 return NextResponse.json(
-                    { ok: false, error: 'You already own this listing.' },
+                    { ok: false, error: 'They already own this property.' },
                     { status: 400 }
                 );
             }
@@ -203,6 +208,57 @@ export async function POST(request: Request) {
                 .from('listing_access')
                 .update({ status: 'revoked' })
                 .eq('id', accessId);
+
+            return NextResponse.json({ ok: true });
+        }
+
+        // ---- Step away from a property you help with ------------------------
+        if (action === 'leave') {
+            const accessId: string = body.accessId;
+
+            const { data: row } = await admin
+                .from('listing_access')
+                .select('id, listing_id, user_id, email')
+                .eq('id', accessId)
+                .maybeSingle();
+
+            if (!row || row.user_id !== session.user.id) {
+                return NextResponse.json({ ok: false, error: 'Not yours to leave' }, { status: 403 });
+            }
+
+            await admin
+                .from('listing_access')
+                .update({ status: 'revoked' })
+                .eq('id', accessId);
+
+            // The owner needs to know they've lost a pair of hands.
+            const { data: listing } = await admin
+                .from('listings')
+                .select('title, host_id')
+                .eq('id', row.listing_id)
+                .maybeSingle();
+
+            if (listing) {
+                const { data: ownerUser } = await admin.auth.admin.getUserById(listing.host_id);
+                const ownerEmail = (ownerUser && ownerUser.user && ownerUser.user.email) || '';
+
+                if (ownerEmail) {
+                    await sendEmail(
+                        ownerEmail,
+                        row.email + ' has stepped down as a co-host',
+                        emailLayout(
+                            '<p style="margin:0 0 16px;font-size:16px;"><strong>'
+                                + escapeHtml(row.email)
+                                + '</strong> no longer helps with <strong>'
+                                + escapeHtml(listing.title || 'your property')
+                                + '</strong>. They removed themselves.</p>'
+                                + '<p style="margin:0 0 16px;font-size:16px;">Nothing else has changed, and you can invite someone else whenever you like.</p>'
+                                + button(SITE_URL + '/dashboard/people', 'Manage co-hosts'),
+                            'You\u2019re receiving this because you host on Galloway Getaways.'
+                        )
+                    );
+                }
+            }
 
             return NextResponse.json({ ok: true });
         }
