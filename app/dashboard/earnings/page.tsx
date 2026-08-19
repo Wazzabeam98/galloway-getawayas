@@ -188,24 +188,6 @@ export default async function EarningsPage({ searchParams }: { searchParams?: { 
                 </div>
             </div>
 
-            <div className="border rounded-2xl p-6 mb-10">
-                <h2 className="font-bold text-slate-900 mb-4">Fee breakdown</h2>
-                <div className="space-y-2 text-sm max-w-sm">
-                    <div className="flex justify-between text-slate-600">
-                        <span>Gross bookings (confirmed)</span>
-                        <span>£{grossTotal.toFixed(2)}</span>
-                    </div>
-                    <div className="flex justify-between text-slate-600">
-                        <span>Host fee ({effectivePercent}%)</span>
-                        <span>− £{feeTotal.toFixed(2)}</span>
-                    </div>
-                    <div className="flex justify-between font-bold text-slate-900 pt-2 border-t">
-                        <span>Net earnings</span>
-                        <span>£{netTotal.toFixed(2)}</span>
-                    </div>
-                </div>
-            </div>
-
             <div className="border rounded-2xl p-6 mb-8">
                 <div className="flex items-baseline justify-between flex-wrap gap-2 mb-1">
                     <h2 className="font-bold text-slate-900">Your payouts</h2>
@@ -270,6 +252,24 @@ export default async function EarningsPage({ searchParams }: { searchParams?: { 
                         </div>
                     </div>
                 )}
+            </div>
+
+            <div className="border rounded-2xl p-6 mb-10">
+                <h2 className="font-bold text-slate-900 mb-4">Fee breakdown</h2>
+                <div className="space-y-2 text-sm max-w-sm">
+                    <div className="flex justify-between text-slate-600">
+                        <span>Gross bookings (confirmed)</span>
+                        <span>£{grossTotal.toFixed(2)}</span>
+                    </div>
+                    <div className="flex justify-between text-slate-600">
+                        <span>Host fee ({effectivePercent}%)</span>
+                        <span>− £{feeTotal.toFixed(2)}</span>
+                    </div>
+                    <div className="flex justify-between font-bold text-slate-900 pt-2 border-t">
+                        <span>Net earnings</span>
+                        <span>£{netTotal.toFixed(2)}</span>
+                    </div>
+                </div>
             </div>
 
             <div className="border rounded-2xl p-6">
