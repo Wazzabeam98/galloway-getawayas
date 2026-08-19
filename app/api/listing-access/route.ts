@@ -129,20 +129,15 @@ export async function POST(request: Request) {
             }
 
             const link = SITE_URL + '/invite/' + created.invite_token;
-            const who = role === 'staff' ? 'to help look after' : 'as a co-host for';
 
             await sendEmail(
                 email,
-                'You\u2019ve been invited ' + who + ' ' + (listing.title || 'a property'),
+                'You\u2019ve been invited to co-host ' + (listing.title || 'a property'),
                 emailLayout(
-                    '<p style="margin:0 0 16px;font-size:16px;">You\u2019ve been invited '
-                        + who
-                        + ' <strong>'
+                    '<p style="margin:0 0 16px;font-size:16px;">You\u2019ve been invited to help look after <strong>'
                         + escapeHtml(listing.title || 'a property')
                         + '</strong> on Galloway Getaways.</p>'
-                        + (role === 'staff'
-                            ? '<p style="margin:0 0 16px;font-size:16px;">You\u2019ll be able to see when guests are arriving and leaving, so you know when the place needs turning around. You won\u2019t see prices, messages or earnings.</p>'
-                            : '<p style="margin:0 0 16px;font-size:16px;">You\u2019ll be able to help manage it. Exactly what you can do is up to the owner, and you\u2019ll see it when you accept.</p>')
+                        + '<p style="margin:0 0 16px;font-size:16px;">Exactly what you can do is up to the owner, and you\u2019ll see it when you accept.</p>'
                         + '<p style="margin:0 0 16px;font-size:16px;">If you don\u2019t already have an account, you\u2019ll be asked to make one first. Use this same email address.</p>'
                         + button(link, 'Accept the invitation'),
                     'You\u2019re receiving this because someone invited you to help with their property.'
