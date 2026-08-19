@@ -4,6 +4,7 @@ import { cookies } from 'next/headers';
 import { NextResponse } from 'next/server';
 import { stripeRequest } from '@/lib/stripe';
 import { refundFraction } from '@/lib/cancellation';
+import { logError } from '@/lib/logError';
 
 export const dynamic = 'force-dynamic';
 
@@ -146,6 +147,7 @@ export async function POST(request: Request) {
         return NextResponse.json({ ok: true, refunded: amount });
     } catch (err: any) {
         console.error('[bookings/cancel]', err && err.message);
+        await logError('[bookings/cancel] ' + ((err && err.message) || 'failed'), err, { path: 'bookings/cancel' });
         return NextResponse.json(
             { ok: false, error: (err && err.message) || 'Could not cancel' },
             { status: 500 }
