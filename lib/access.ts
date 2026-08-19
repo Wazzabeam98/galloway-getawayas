@@ -9,6 +9,8 @@ export type Permission =
 
 export interface ListingAccess {
     listingId: string;
+    // The listing_access row, when they got in through one. Null for an owner.
+    accessId: string | null;
     isOwner: boolean;
     role: 'owner' | 'co_host' | 'staff';
     can_calendar: boolean;
@@ -49,6 +51,7 @@ export async function accessibleListings(userId: string): Promise<ListingAccess[
     (owned || []).forEach((l: any) => {
         out.push({
             listingId: l.id,
+            accessId: null,
             isOwner: true,
             role: 'owner',
             can_calendar: true,
@@ -61,7 +64,7 @@ export async function accessibleListings(userId: string): Promise<ListingAccess[
 
     const { data: granted } = await admin
         .from('listing_access')
-        .select('listing_id, role, can_calendar, can_messages, can_bookings, can_listing, can_earnings')
+        .select('id, listing_id, role, can_calendar, can_messages, can_bookings, can_listing, can_earnings')
         .eq('user_id', userId)
         .eq('status', 'active');
 
@@ -71,6 +74,7 @@ export async function accessibleListings(userId: string): Promise<ListingAccess[
 
         out.push({
             listingId: a.listing_id,
+            accessId: a.id,
             isOwner: false,
             role: a.role === 'staff' ? 'staff' : 'co_host',
             can_calendar: !!a.can_calendar,
@@ -112,6 +116,7 @@ export async function checkListing(
     if (listing.host_id === userId) {
         return {
             listingId: listingId,
+            accessId: null,
             isOwner: true,
             role: 'owner',
             can_calendar: true,
@@ -124,7 +129,7 @@ export async function checkListing(
 
     const { data: access } = await admin
         .from('listing_access')
-        .select('role, can_calendar, can_messages, can_bookings, can_listing, can_earnings')
+        .select('id, role, can_calendar, can_messages, can_bookings, can_listing, can_earnings')
         .eq('listing_id', listingId)
         .eq('user_id', userId)
         .eq('status', 'active')
@@ -136,6 +141,7 @@ export async function checkListing(
     // the values above it.
     return {
         listingId: listingId,
+        accessId: access.id,
         isOwner: false,
         role: access.role === 'staff' ? 'staff' : 'co_host',
         can_calendar: !!access.can_calendar,
