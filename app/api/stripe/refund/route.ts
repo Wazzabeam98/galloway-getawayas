@@ -41,7 +41,7 @@ export async function POST(request: Request) {
 
         const { data: booking } = await admin
             .from('bookings')
-            .select('id, listing_id, guest_id, host_id, check_in, status, payment_status, amount_paid, amount_refunded, stripe_payment_intent_id, payout_transfer_id, payout_amount')
+            .select('id, listing_id, guest_id, host_id, check_in, status, payment_status, total_price, amount_paid, amount_refunded, stripe_payment_intent_id, payout_transfer_id, payout_amount')
             .eq('id', bookingId)
             .maybeSingle();
 
@@ -100,6 +100,40 @@ export async function POST(request: Request) {
 
         const totalRefunded = round2(alreadyRefunded + amount);
         const fullyRefunded = totalRefunded >= round2(paid);
+
+        // Cancelling a stay a guest has already had confirmed is the most
+        // damaging thing a host can do — they may have travel booked. A
+        // declined request costs nothing, but a cancellation carries a fee,
+        // taken off the host's next payout rather than invoiced.
+        if (isHost && reason === 'cancelled' && booking.status === 'confirmed') {
+            const penalty = round2(Number(booking.total_price || 0) * 0.05);
+
+            if (penalty > 0) {
+                const { data: hostProfile } = await admin
+                    .from('profiles')
+                    .select('payout_balance_owed')
+                    .eq('id', booking.host_id)
+                    .maybeSingle();
+
+                await admin
+                    .from('profiles')
+                    .update({
+                        payout_balance_owed: round2(
+                            Number((hostProfile && hostProfile.payout_balance_owed) || 0) + penalty
+                        ),
+                    })
+                    .eq('id', booking.host_id);
+
+                await admin.from('payouts').insert({
+                    booking_id: booking.id,
+                    host_id: booking.host_id,
+                    amount: -penalty,
+                    kind: 'penalty',
+                    status: 'owed',
+                    note: 'Host cancelled a confirmed booking',
+                });
+            }
+        }
 
         await admin
             .from('bookings')
