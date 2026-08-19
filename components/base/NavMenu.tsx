@@ -77,7 +77,7 @@ const NavMenu = ({
                                         <Link href='/dashboard/earnings'>Earnings</Link>
                                     </li>
                                     <li className={itemClass}>
-                                        <Link href='/dashboard/people'>People</Link>
+                                        <Link href='/dashboard/people'>Co-hosts</Link>
                                     </li>
                                     <li className={itemClass}>
                                         <Link href='/services'>Services</Link>
