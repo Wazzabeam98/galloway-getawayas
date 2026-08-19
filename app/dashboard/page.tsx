@@ -7,6 +7,7 @@ import { getImageUrl } from "@/lib/utils";
 import DeleteHomebtn from "@/components/DeleteHomebtn";
 import { createClient } from "@supabase/supabase-js";
 import { accessibleListings } from "@/lib/access";
+import LeaveListingBtn from "@/components/LeaveListingBtn";
 import HideListingBtn from "@/components/HideListingBtn";
 import Link from "next/link";
 import { Eye, Home, Plus } from "lucide-react";
@@ -96,6 +97,9 @@ export default async function Dashboard() {
     const owned = (homes || []).filter((h) => ownedIds.indexOf(h.id) !== -1);
     const helping = (homes || []).filter((h) => helpingIds.indexOf(h.id) !== -1);
 
+    const accessIdOf = (listingId: string) =>
+        access.find((a) => a.listingId === listingId && !a.isOwner)?.accessId || null;
+
     const published = owned.filter((h) => h.status === 'published' || h.status === 'hidden');
     const drafts = owned.filter((h) => h.status === 'draft');
 
@@ -149,6 +153,12 @@ export default async function Dashboard() {
                                             </p>
                                         </div>
                                     </Link>
+                                    {accessIdOf(item.id) && (
+                                        <LeaveListingBtn
+                                            accessId={accessIdOf(item.id) as string}
+                                            title={item.title}
+                                        />
+                                    )}
                                 </div>
                             ))}
                         </div>
