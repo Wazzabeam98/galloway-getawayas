@@ -85,7 +85,7 @@ export function emailLayout(bodyHtml: string, footnote: string, unsubscribeUrl?:
 
         '<tr><td style="background-color:#f9fafb;border-top:1px solid #e5e7eb;padding:22px 32px;color:#6b7280;font-size:12px;line-height:1.7;">' +
         '<strong style="color:#374151;">Galloway Getaways Ltd</strong><br>' +
-        'Dumfries &amp; Galloway, Scotland &middot; Company number to be confirmed<br>' +
+        'Dumfries &amp; Galloway, Scotland &middot; Company number SC899385<br>' +
         '<a href="' + SITE_URL + '" style="color:#047857;text-decoration:none;">gallowaygetaways.co.uk</a>' +
         '&nbsp;&middot;&nbsp;' +
         '<a href="mailto:' + REPLY_TO + '" style="color:#047857;text-decoration:none;">' + REPLY_TO + '</a>' +
