@@ -24,6 +24,7 @@ interface Props {
     cleaningFee?: number;
     petFee?: number;
     extraGuestFee?: number;
+    damageDeposit?: number;
     availabilityWindow?: string;
     instantBook?: boolean;
     instantBookRequiresPhone?: boolean;
@@ -80,6 +81,7 @@ export default function BookingWidget({
     listingId, hostId, pricePerNight, maxGuests, petsAllowed, icalImportUrl,
     weekendPrice, cleaningFee = 0, petFee = 0, extraGuestFee = 0, availabilityWindow,
     instantBook = false, instantBookRequiresPhone = false, instantBookRequiresVerifiedId = false,
+    damageDeposit = 0,
     cancellationPolicy,
 }: Props) {
     const [payPlan, setPayPlan] = useState<'deposit' | 'full'>('deposit');
@@ -223,19 +225,18 @@ export default function BookingWidget({
         setSubmitting(true);
         try {
             // Instant Book can carry requirements the guest has to meet.
-            if (instantBook && (instantBookRequiresPhone || instantBookRequiresVerifiedId)) {
+            //
+            // Verified ID is deliberately NOT checked here. Nothing in the site
+            // ever marks a guest as verified — profiles.identity_verified is set
+            // only for hosts, by Stripe Connect — so honouring the flag would
+            // turn away every guest with no way for them to fix it. The column
+            // stays for when identity checks are actually connected.
+            if (instantBook && instantBookRequiresPhone) {
                 const { data: myProfile } = await supabase
                     .from('profiles')
-                    .select('phone, identity_verified')
+                    .select('phone')
                     .eq('id', session.user.id)
                     .single();
-
-                if (instantBookRequiresVerifiedId && myProfile?.identity_verified !== true) {
-                    const msg = 'This host only accepts instant bookings from guests with a verified ID. You can still message them or book a place that takes booking requests.';
-                    setError(msg);
-                    toast.error(msg, { theme: 'colored' });
-                    return;
-                }
 
                 if (instantBookRequiresPhone && (!myProfile?.phone || !myProfile.phone.trim())) {
                     const msg = 'This host asks for a phone number before booking instantly. Add one under Account settings, then try again.';
@@ -428,6 +429,18 @@ export default function BookingWidget({
                 >
                     <span className="font-semibold">{cancelInfo.headline}</span>
                     <span className="block mt-0.5 opacity-90">{cancelInfo.detail}</span>
+                </div>
+            )}
+
+            {Number(damageDeposit) > 0 && nights > 0 && (
+                <div className="mb-3 rounded-xl border border-slate-200 bg-slate-50 px-3 py-2.5 text-xs text-slate-600">
+                    <span className="font-semibold text-slate-800">
+                        £{Number(damageDeposit).toFixed(2)} damage deposit
+                    </span>
+                    <span className="block mt-0.5">
+                        Collected by your host at the property and returned after your stay. It
+                        isn&apos;t part of the total above and we don&apos;t take it.
+                    </span>
                 </div>
             )}
 
