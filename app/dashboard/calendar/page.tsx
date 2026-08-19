@@ -20,6 +20,7 @@ interface Listing {
     max_nights: number | null;
     weekend_price: number | null;
     cleaning_fee: number;
+    damage_deposit: number;
     pet_fee: number;
     extra_guest_fee: number;
     advance_notice: string;
@@ -70,6 +71,7 @@ export default function CalendarPage() {
     const [basePrice, setBasePrice] = useState('');
     const [weekendPrice, setWeekendPrice] = useState('');
     const [cleaningFee, setCleaningFee] = useState('0');
+    const [damageDeposit, setDamageDeposit] = useState('0');
     const [petFee, setPetFee] = useState('0');
     const [extraGuestFee, setExtraGuestFee] = useState('0');
     const [minNightsGlobal, setMinNightsGlobal] = useState('1');
@@ -89,7 +91,7 @@ export default function CalendarPage() {
             if (session?.user) {
                 const { data } = await supabase
                     .from('listings')
-                    .select('id, title, price_per_night, min_nights, max_nights, weekend_price, cleaning_fee, pet_fee, extra_guest_fee, advance_notice, preparation_time, availability_window')
+                    .select('id, title, price_per_night, min_nights, max_nights, weekend_price, cleaning_fee, pet_fee, extra_guest_fee, damage_deposit, advance_notice, preparation_time, availability_window')
                     .eq('host_id', session.user.id)
                     .eq('status', 'published');
                 setListings(data || []);
@@ -106,6 +108,7 @@ export default function CalendarPage() {
         setBasePrice(String(selectedListing.price_per_night ?? ''));
         setWeekendPrice(selectedListing.weekend_price ? String(selectedListing.weekend_price) : '');
         setCleaningFee(String(selectedListing.cleaning_fee ?? 0));
+        setDamageDeposit(String(selectedListing.damage_deposit ?? 0));
         setPetFee(String(selectedListing.pet_fee ?? 0));
         setExtraGuestFee(String(selectedListing.extra_guest_fee ?? 0));
         setMinNightsGlobal(String(selectedListing.min_nights ?? 1));
@@ -539,6 +542,19 @@ export default function CalendarPage() {
                                     <input type="number" value={extraGuestFee} onChange={(e) => setExtraGuestFee(e.target.value)} className="w-full outline-none text-sm" />
                                 </div>
                             </div>
+
+                            <div className="border-t pt-5">
+                                <label className="block text-sm font-semibold text-slate-800 mb-1">Damage deposit</label>
+                                <p className="text-xs text-slate-400 mb-1">
+                                    Shown to guests before they book. You collect and return this
+                                    yourself at the property — we don&apos;t take it or hold it.
+                                    Leave at 0 for none.
+                                </p>
+                                <div className="flex items-center border rounded-xl px-3 py-2">
+                                    <span className="text-slate-500 mr-1">£</span>
+                                    <input type="number" value={damageDeposit} onChange={(e) => setDamageDeposit(e.target.value)} className="w-full outline-none text-sm" />
+                                </div>
+                            </div>
                             <button
                                 type="button"
                                 disabled={savingSettings}
@@ -546,6 +562,7 @@ export default function CalendarPage() {
                                     cleaning_fee: Number(cleaningFee) || 0,
                                     pet_fee: Number(petFee) || 0,
                                     extra_guest_fee: Number(extraGuestFee) || 0,
+                                    damage_deposit: Number(damageDeposit) || 0,
                                 })}
                                 className="w-full py-3 bg-emerald-700 hover:bg-emerald-800 text-white font-bold rounded-xl transition disabled:opacity-50"
                             >
