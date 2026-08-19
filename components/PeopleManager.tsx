@@ -265,7 +265,7 @@ export default function PeopleManager({
                 </div>
             </div>
 
-            <h2 className="font-bold text-slate-900 mb-3">People with access</h2>
+            <h2 className="font-bold text-slate-900 mb-3">Who has access</h2>
 
             {loading ? (
                 <p className="text-sm text-slate-400">Loading…</p>
