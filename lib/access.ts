@@ -26,14 +26,6 @@ function adminClient() {
     );
 }
 
-const NONE = {
-    can_calendar: false,
-    can_messages: false,
-    can_bookings: false,
-    can_listing: false,
-    can_earnings: false,
-};
-
 // Every listing this person can act on, and what they may do with each.
 //
 // An owner can do everything. A co-host can do what they were given. Staff see
@@ -140,13 +132,18 @@ export async function checkListing(
 
     if (!access || !access[permission]) return null;
 
+    // Written out rather than spread, so the stored row can never overwrite
+    // the values above it.
     return {
         listingId: listingId,
         isOwner: false,
         role: access.role === 'staff' ? 'staff' : 'co_host',
-        ...NONE,
-        ...access,
-    } as ListingAccess;
+        can_calendar: !!access.can_calendar,
+        can_messages: !!access.can_messages,
+        can_bookings: !!access.can_bookings,
+        can_listing: !!access.can_listing,
+        can_earnings: !!access.can_earnings,
+    };
 }
 
 // Ownership, for the things that are never delegated.
