@@ -42,7 +42,7 @@ export default async function AdminPayouts() {
     const { data: listings } = await admin.from('listings').select('id, title, commission_rate');
     const { data: hosts } = await admin
         .from('profiles')
-        .select('id, full_name, preferred_name, show_full_name, stripe_account_id, stripe_payouts_enabled');
+        .select('id, full_name, preferred_name, show_full_name, stripe_account_id, stripe_payouts_enabled, payout_balance_owed');
 
     const listingTitle: Record<string, string> = {};
     const listingRate: Record<string, number> = {};
@@ -60,6 +60,7 @@ export default async function AdminPayouts() {
             name: displayName(h, 'Host'),
             connected: !!h.stripe_account_id,
             payoutsOn: h.stripe_payouts_enabled === true,
+            owed: Number(h.payout_balance_owed || 0),
         };
     });
 
@@ -170,6 +171,27 @@ export default async function AdminPayouts() {
                 What each host is owed on confirmed, fully paid stays. Payouts are due the day
                 after check-in.
             </p>
+
+            {(hosts || []).some((h: any) => Number(h.payout_balance_owed || 0) > 0) && (
+                <div className="border border-amber-300 bg-amber-50 rounded-2xl p-5 mb-8">
+                    <div className="font-semibold text-amber-900 mb-1">Owed back by hosts</div>
+                    <p className="text-sm text-amber-800 mb-3">
+                        A refund went out after these hosts had been paid, and it couldn&apos;t be
+                        taken back from their Stripe balance. It comes off their next payout
+                        automatically.
+                    </p>
+                    <ul className="text-sm text-amber-900 space-y-1">
+                        {(hosts || [])
+                            .filter((h: any) => Number(h.payout_balance_owed || 0) > 0)
+                            .map((h: any) => (
+                                <li key={h.id}>
+                                    {displayName(h, 'Host')} &mdash;{' '}
+                                    <strong>£{Number(h.payout_balance_owed).toFixed(2)}</strong>
+                                </li>
+                            ))}
+                    </ul>
+                </div>
+            )}
 
             <div className="grid grid-cols-3 gap-4 mb-10">
                 <div className="border rounded-2xl p-5">
