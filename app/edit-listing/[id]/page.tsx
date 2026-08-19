@@ -11,6 +11,7 @@ import { generateRandomNumber, getImageUrl } from '@/lib/utils';
 import { toast } from 'react-toastify';
 import { rateFor } from '@/lib/fees';
 import {
+import IcalFeeds from '@/components/IcalFeeds';
     HomeIcon, Trees, Waves, Compass, Building2, Sparkles, Minus, Plus, Check,
     KeyRound, Lock, DoorOpen, Hash, Users,
     Snowflake, Package, Refrigerator, Thermometer, Droplet, UtensilsCrossed, Tv,
@@ -146,7 +147,7 @@ export default function EditListing() {
     const [lastMinuteDiscount, setLastMinuteDiscount] = useState(false);
     const [weeklyDiscount, setWeeklyDiscount] = useState(false);
     const [monthlyDiscount, setMonthlyDiscount] = useState(false);
-    const [icalImportUrl, setIcalImportUrl] = useState('');
+    const [icalToken, setIcalToken] = useState('');
     const [minNights, setMinNights] = useState('1');
     const [maxNights, setMaxNights] = useState('');
     const [eventsAllowed, setEventsAllowed] = useState(false);
@@ -212,7 +213,7 @@ export default function EditListing() {
             setLastMinuteDiscount(listing.last_minute_discount ?? false);
             setWeeklyDiscount(listing.weekly_discount ?? false);
             setMonthlyDiscount(listing.monthly_discount ?? false);
-            setIcalImportUrl(listing.ical_import_url || '');
+            setIcalToken(listing.ical_token || '');
             setMinNights(String(listing.min_nights ?? 1));
             setMaxNights(listing.max_nights ? String(listing.max_nights) : '');
             setEventsAllowed(listing.events_allowed ?? false);
@@ -330,7 +331,6 @@ export default function EditListing() {
                     last_minute_discount: lastMinuteDiscount,
                     weekly_discount: weeklyDiscount,
                     monthly_discount: monthlyDiscount,
-                    ical_import_url: icalImportUrl || null,
                     min_nights: Math.max(1, Number(minNights) || 1),
                     max_nights: maxNights ? Number(maxNights) : null,
                     events_allowed: eventsAllowed,
@@ -865,18 +865,11 @@ export default function EditListing() {
                                 </p>
 
                                 <label className="block text-sm font-semibold text-slate-800 mb-1">
-                                    Import a calendar (from Airbnb, Booking.com, etc.)
+                                    Calendars you import (Airbnb, Booking.com, Vrbo…)
                                 </label>
-                                <input
-                                    type="text"
-                                    value={icalImportUrl}
-                                    onChange={(e) => setIcalImportUrl(e.target.value)}
-                                    placeholder="https://www.airbnb.com/calendar/ical/....ics"
-                                    className="w-full p-3 border rounded-xl text-sm mb-1"
-                                />
-                                <p className="text-xs text-slate-400 mb-6">
-                                    Paste the export link from that platform's calendar settings. We check it each time a guest views this listing, so bookings made elsewhere stay blocked here too. Note: how current this is depends on how often that platform updates its own export — this isn't instant on their end either.
-                                </p>
+                                <div className="mb-6">
+                                    <IcalFeeds listingId={listingId} />
+                                </div>
 
                                 <label className="block text-sm font-semibold text-slate-800 mb-1">
                                     Your export link for other platforms
@@ -885,13 +878,17 @@ export default function EditListing() {
                                     <input
                                         type="text"
                                         readOnly
-                                        value={typeof window !== 'undefined' ? `${window.location.origin}/api/ical/${listingId}` : ''}
+                                        value={typeof window !== 'undefined' && icalToken ? `${window.location.origin}/api/ical/${listingId}?token=${icalToken}` : 'Save this listing to generate your link'}
                                         className="w-full p-3 border rounded-xl text-sm bg-slate-50 text-slate-500"
                                     />
                                     <button
                                         type="button"
                                         onClick={() => {
-                                            navigator.clipboard.writeText(`${window.location.origin}/api/ical/${listingId}`);
+                                            if (!icalToken) {
+                                                toast.error('Save this listing first.', { theme: 'colored' });
+                                                return;
+                                            }
+                                            navigator.clipboard.writeText(`${window.location.origin}/api/ical/${listingId}?token=${icalToken}`);
                                             toast.success('Copied.', { theme: 'colored' });
                                         }}
                                         className="px-4 py-2 border rounded-xl text-sm font-semibold text-slate-700 hover:border-slate-500 flex-shrink-0"
@@ -900,7 +897,7 @@ export default function EditListing() {
                                     </button>
                                 </div>
                                 <p className="text-xs text-slate-400 mt-1">
-                                    Paste this into Airbnb or Booking.com's "import calendar" setting so bookings made here block those dates there too.
+                                    Paste this into Airbnb or Booking.com's "import calendar" setting so bookings made here block those dates there too. It works with your own website too. Keep it to yourself — anyone with this link can see when your place is occupied.
                                 </p>
                             </section>
                         )}
