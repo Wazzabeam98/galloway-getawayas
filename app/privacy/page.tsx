@@ -17,7 +17,7 @@ export default function PrivacyPage() {
                 <h2 className="text-xl font-bold text-slate-900 pt-4">Who we are</h2>
                 <p>
                     Galloway Getaways Ltd is the data controller for the information described here. We are
-                    registered in Scotland (company number to be confirmed). For anything about your data,
+                    registered in Scotland (company number SC899385). For anything about your data,
                     email{' '}
                     <a href="mailto:hello@gallowaygetaways.co.uk" className="text-emerald-700 underline">
                         hello@gallowaygetaways.co.uk
