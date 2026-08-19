@@ -4,6 +4,7 @@ import { createServerComponentClient } from "@supabase/auth-helpers-nextjs";
 import { cookies } from "next/headers";
 import EarningsDateFilter from "@/components/EarningsDateFilter";
 import { DEFAULT_COMMISSION_PERCENT, rateFor, netOfFee, feeAmount } from '@/lib/fees';
+import { formatUk } from '@/lib/cancellation';
 
 
 export default async function EarningsPage({ searchParams }: { searchParams?: { from?: string; to?: string } }) {
@@ -24,7 +25,13 @@ export default async function EarningsPage({ searchParams }: { searchParams?: { 
     // within the selected period.
     const bookings = (allBookings || []).filter((b) => b.check_in >= from && b.check_in <= to);
 
-    const listingIds = Array.from(new Set(bookings.map((b) => b.listing_id)));
+    // The payout schedule ignores the date filter: a host wants to see money
+    // that is coming whatever period they happen to be looking at.
+    const payoutRows = (allBookings || [])
+        .filter((b) => b.status === 'confirmed')
+        .sort((a, b) => (a.check_in < b.check_in ? -1 : 1));
+
+    const listingIds = Array.from(new Set(bookings.map((b) => b.listing_id).concat(payoutRows.map((b) => b.listing_id))));
     const { data: listings } = listingIds.length
         ? await supabase.from("listings").select("id, title, commission_rate").in("id", listingIds)
         : { data: [] };
@@ -102,6 +109,39 @@ export default async function EarningsPage({ searchParams }: { searchParams?: { 
         .map(([id, net]) => ({ id, title: listingMap.get(id) || 'Listing', net }))
         .sort((a, b) => b.net - a.net);
 
+    // A stay pays out the day after check-in.
+    const payoutDay = (checkIn: string) => {
+        const d = new Date(checkIn);
+        d.setDate(d.getDate() + 1);
+        return d;
+    };
+
+    const todayStart = new Date();
+    todayStart.setHours(0, 0, 0, 0);
+
+    const schedule = payoutRows.map((b) => {
+        const collected = Math.round(
+            (Number(b.amount_paid || 0) - Number(b.amount_refunded || 0)) * 100
+        ) / 100;
+        const rate = rateOfBooking(b);
+        const due = payoutDay(b.check_in);
+        return {
+            id: b.id,
+            title: listingMap.get(b.listing_id) || 'Listing',
+            checkIn: b.check_in,
+            due: due,
+            paidOutAt: b.paid_out_at,
+            payoutAmount: b.payout_amount,
+            expected: netOfFee(collected > 0 ? collected : Number(b.total_price || 0), rate),
+            fullyPaid: b.payment_status === 'paid',
+            outstanding: Number(b.balance_amount || 0),
+        };
+    });
+
+    const awaiting = schedule.filter((r) => !r.paidOutAt);
+    const alreadyPaid = schedule.filter((r) => r.paidOutAt).reverse();
+    const awaitingTotal = awaiting.reduce((sum, r) => sum + r.expected, 0);
+
     const StatCard = ({ label, value, sub }: { label: string; value: string; sub?: string }) => (
         <div className="border rounded-2xl p-5">
             <div className="text-sm text-slate-500 mb-1">{label}</div>
@@ -164,6 +204,72 @@ export default async function EarningsPage({ searchParams }: { searchParams?: { 
                         <span>£{netTotal.toFixed(2)}</span>
                     </div>
                 </div>
+            </div>
+
+            <div className="border rounded-2xl p-6 mb-8">
+                <div className="flex items-baseline justify-between flex-wrap gap-2 mb-1">
+                    <h2 className="font-bold text-slate-900">Your payouts</h2>
+                    <div className="text-sm text-slate-500">
+                        £{awaitingTotal.toFixed(2)} still to come
+                    </div>
+                </div>
+                <p className="text-sm text-slate-500 mb-5">
+                    Each stay is paid into your bank account the day after your guest checks in.
+                    It usually lands within a couple of working days.
+                </p>
+
+                {awaiting.length === 0 ? (
+                    <p className="text-sm text-slate-400">No payouts on the way.</p>
+                ) : (
+                    <div className="space-y-3">
+                        {awaiting.map((r) => (
+                            <div
+                                key={r.id}
+                                className="flex items-start justify-between gap-4 flex-wrap border-b last:border-b-0 pb-3 last:pb-0"
+                            >
+                                <div className="min-w-0">
+                                    <div className="font-medium text-slate-800 truncate">{r.title}</div>
+                                    <div className="text-sm text-slate-500">
+                                        Guest arrives {formatUk(new Date(r.checkIn))}
+                                    </div>
+                                    {!r.fullyPaid && r.outstanding > 0 && (
+                                        <div className="text-xs text-amber-700 mt-0.5">
+                                            £{r.outstanding.toFixed(2)} of the guest&apos;s balance is
+                                            still to be collected
+                                        </div>
+                                    )}
+                                </div>
+                                <div className="text-right">
+                                    <div className="font-semibold text-slate-900">
+                                        £{r.expected.toFixed(2)}
+                                    </div>
+                                    <div className="text-xs text-slate-500">
+                                        {r.due <= todayStart ? 'Due now' : 'Pays ' + formatUk(r.due)}
+                                    </div>
+                                </div>
+                            </div>
+                        ))}
+                    </div>
+                )}
+
+                {alreadyPaid.length > 0 && (
+                    <div className="mt-6 pt-5 border-t">
+                        <h3 className="text-sm font-semibold text-slate-900 mb-3">Already paid</h3>
+                        <div className="space-y-2">
+                            {alreadyPaid.slice(0, 10).map((r) => (
+                                <div key={r.id} className="flex justify-between text-sm">
+                                    <span className="text-slate-600 truncate">
+                                        {r.title} &middot; {formatUk(new Date(r.checkIn))}
+                                    </span>
+                                    <span className="text-slate-900 font-medium whitespace-nowrap ml-3">
+                                        £{Number(r.payoutAmount || 0).toFixed(2)} on{' '}
+                                        {formatUk(new Date(r.paidOutAt))}
+                                    </span>
+                                </div>
+                            ))}
+                        </div>
+                    </div>
+                )}
             </div>
 
             <div className="border rounded-2xl p-6">
