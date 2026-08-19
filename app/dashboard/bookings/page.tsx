@@ -4,26 +4,41 @@ import { createServerComponentClient } from "@supabase/auth-helpers-nextjs";
 import { cookies } from "next/headers";
 import BookingsView from "@/components/BookingsView";
 import { displayName } from "@/lib/utils";
+import { createClient } from "@supabase/supabase-js";
+import { listingIdsFor } from "@/lib/access";
 
 export default async function BookingsPage() {
     const supabase = createServerComponentClient({ cookies });
     const { data: user } = await supabase.auth.getUser();
 
-    const { data: bookings } = await supabase
-        .from("bookings")
-        .select("*")
-        .eq("host_id", user.user?.id)
-        .order("check_in", { ascending: true });
+    // Bookings on properties they own, plus any they co-host with permission
+    // to handle bookings. Read with the service key because a co-host is not
+    // the host_id on these rows, so row-level security would hide them.
+    const allowed = await listingIdsFor(user.user?.id || '', 'can_bookings');
+
+    const admin = createClient(
+        process.env.NEXT_PUBLIC_SUPABASE_URL || '',
+        process.env.SUPABASE_SERVICE_ROLE_KEY || '',
+        { auth: { persistSession: false } }
+    );
+
+    const { data: bookings } = allowed.length
+        ? await admin
+            .from("bookings")
+            .select("*")
+            .in("listing_id", allowed)
+            .order("check_in", { ascending: true })
+        : { data: [] };
 
     const listingIds = Array.from(new Set((bookings || []).map((b) => b.listing_id)));
     const guestIds = Array.from(new Set((bookings || []).map((b) => b.guest_id)));
 
     const { data: listings } = listingIds.length
-        ? await supabase.from("listings").select("id, title, images, commission_rate").in("id", listingIds)
+        ? await admin.from("listings").select("id, title, images, commission_rate").in("id", listingIds)
         : { data: [] };
 
     const { data: guests } = guestIds.length
-        ? await supabase.from("profiles").select("id, full_name, preferred_name, show_full_name, email").in("id", guestIds)
+        ? await admin.from("profiles").select("id, full_name, preferred_name, show_full_name, email").in("id", guestIds)
         : { data: [] };
 
     // Build plain objects (not Maps) since only serializable data can cross
