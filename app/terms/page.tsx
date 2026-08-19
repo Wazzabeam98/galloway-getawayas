@@ -17,7 +17,7 @@ export default function TermsPage() {
                 <h2 className="text-xl font-bold text-slate-900 pt-4">1. Who we are</h2>
                 <p>
                     Galloway Getaways is operated by Galloway Getaways Ltd, a company registered in
-                    Scotland (company number to be confirmed). You can reach us at{' '}
+                    Scotland (company number SC899385). You can reach us at{' '}
                     <a href="mailto:hello@gallowaygetaways.co.uk" className="text-emerald-700 underline">
                         hello@gallowaygetaways.co.uk
                     </a>
