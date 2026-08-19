@@ -21,7 +21,7 @@ export default async function PeoplePage() {
 
     return (
         <div className="max-w-3xl mx-auto px-6 py-10">
-            <h1 className="text-2xl font-bold text-slate-900 mb-1">People</h1>
+            <h1 className="text-2xl font-bold text-slate-900 mb-1">Co-hosts</h1>
             <p className="text-sm text-slate-500 mb-8">
                 Co-hosts help you run a property. Cleaners and other staff just need to know when
                 guests come and go. Either way, the money stays with you.
