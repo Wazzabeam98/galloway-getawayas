@@ -22,51 +22,11 @@ export default function MessagesInboxPage() {
                 return;
             }
 
-            const uid = session.user.id;
-
-            const { data: bookings } = await supabase
-                .from('bookings')
-                .select('id, listing_id, guest_id, host_id, check_in, check_out')
-                .or(`guest_id.eq.${uid},host_id.eq.${uid}`)
-                .order('created_at', { ascending: false });
-
-            if (!bookings || bookings.length === 0) {
-                setConversations([]);
-                setLoading(false);
-                return;
-            }
-
-            const listingIds = Array.from(new Set(bookings.map((b) => b.listing_id)));
-            const { data: listings } = await supabase.from('listings').select('id, title, images').in('id', listingIds);
-            const listingMap = new Map((listings || []).map((l) => [l.id, l]));
-
-            const otherPartyIds = Array.from(new Set(bookings.map((b) => (b.guest_id === uid ? b.host_id : b.guest_id))));
-            const { data: profiles } = await supabase.from('profiles').select('id, full_name, preferred_name').in('id', otherPartyIds);
-            const profileMap = new Map((profiles || []).map((p) => [p.id, p.preferred_name || p.full_name || 'User']));
-
-            const bookingIds = bookings.map((b) => b.id);
-            const { data: lastMessages } = await supabase
-                .from('messages')
-                .select('booking_id, body, created_at')
-                .in('booking_id', bookingIds)
-                .order('created_at', { ascending: false });
-
-            const lastMessageMap = new Map<string, any>();
-            (lastMessages || []).forEach((m) => {
-                if (!lastMessageMap.has(m.booking_id)) lastMessageMap.set(m.booking_id, m);
-            });
-
-            const convos = bookings.map((b) => {
-                const otherId = b.guest_id === uid ? b.host_id : b.guest_id;
-                return {
-                    bookingId: b.id,
-                    listing: listingMap.get(b.listing_id),
-                    otherName: profileMap.get(otherId) || 'User',
-                    checkIn: b.check_in,
-                    checkOut: b.check_out,
-                    lastMessage: lastMessageMap.get(b.id),
-                };
-            });
+            // Fetched on the server, which is the only place that knows
+            // whether this person co-hosts a property as well as owning or
+            // booking one.
+            const res = await fetch('/api/messages/threads');
+            const convos = res.ok ? (await res.json()).conversations || [] : [];
 
             setConversations(convos);
             setLoading(false);
