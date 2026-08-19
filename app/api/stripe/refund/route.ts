@@ -4,6 +4,7 @@ import { cookies } from 'next/headers';
 import { NextResponse } from 'next/server';
 import { stripeRequest } from '@/lib/stripe';
 import { refundFraction } from '@/lib/cancellation';
+import { clawBackPayout } from '@/lib/clawback';
 
 export const dynamic = 'force-dynamic';
 
@@ -40,7 +41,7 @@ export async function POST(request: Request) {
 
         const { data: booking } = await admin
             .from('bookings')
-            .select('id, listing_id, guest_id, host_id, check_in, status, payment_status, amount_paid, amount_refunded, stripe_payment_intent_id')
+            .select('id, listing_id, guest_id, host_id, check_in, status, payment_status, amount_paid, amount_refunded, stripe_payment_intent_id, payout_transfer_id, payout_amount')
             .eq('id', bookingId)
             .maybeSingle();
 
@@ -115,6 +116,11 @@ export async function POST(request: Request) {
             status: 'succeeded',
             stripe_payment_intent_id: booking.stripe_payment_intent_id,
         });
+
+        // Recover the host's share if they have already been paid.
+        if (booking.payout_transfer_id) {
+            await clawBackPayout(admin, booking, amount);
+        }
 
         return NextResponse.json({ ok: true, refunded: amount, refundId: refund && refund.id });
     } catch (err: any) {
