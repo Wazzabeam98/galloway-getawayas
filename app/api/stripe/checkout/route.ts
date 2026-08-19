@@ -7,6 +7,7 @@ import { SITE_URL } from '@/lib/email';
 import { freeCancelDateOrNull } from '@/lib/cancellation';
 import { quoteBooking, totalsMatch, dateFromKey, dateKey } from '@/lib/pricing';
 import { rateFor } from '@/lib/fees';
+import { logError } from '@/lib/logError';
 
 export const dynamic = 'force-dynamic';
 
@@ -295,6 +296,7 @@ export async function POST(request: Request) {
         return NextResponse.json({ ok: true, url: checkout.url });
     } catch (err: any) {
         console.error('[stripe/checkout]', err && err.message);
+        await logError('[stripe/checkout] ' + ((err && err.message) || 'failed'), err, { path: 'stripe/checkout' });
         return NextResponse.json(
             { ok: false, error: (err && err.message) || 'Could not start checkout' },
             { status: 500 }
