@@ -5,6 +5,7 @@ import { NextResponse } from 'next/server';
 import { stripeRequest } from '@/lib/stripe';
 import { clawBackPayout } from '@/lib/clawback';
 import { sendEmail, emailLayout, escapeHtml, button, SITE_URL } from '@/lib/email';
+import { logError } from '@/lib/logError';
 
 export const dynamic = 'force-dynamic';
 
@@ -161,6 +162,7 @@ export async function POST(request: Request) {
         return NextResponse.json({ ok: true, refunded: amount, remaining: round2(refundable - amount) });
     } catch (err: any) {
         console.error('[bookings/host-refund]', err && err.message);
+        await logError('[bookings/host-refund] ' + ((err && err.message) || 'failed'), err, { path: 'bookings/host-refund' });
         return NextResponse.json(
             { ok: false, error: (err && err.message) || 'Could not process the refund' },
             { status: 500 }
