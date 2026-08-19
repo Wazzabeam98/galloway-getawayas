@@ -234,7 +234,7 @@ export default function PeopleManager({
                                             onChange={(e) =>
                                                 setPerms({ ...perms, [p.key as string]: e.target.checked })
                                             }
-                                            className="mt-0.5"
+                                            className="mt-0.5 w-4 h-4 rounded accent-emerald-700"
                                         />
                                         <span>
                                             <span className="block text-sm font-medium text-slate-800">
