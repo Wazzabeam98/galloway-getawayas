@@ -71,12 +71,22 @@ export default function ConversationPage() {
                 .eq('id', bookingId)
                 .single();
 
-            if (!booking || (booking.guest_id !== uid && booking.host_id !== uid)) {
+            let allowed = !!booking && (booking.guest_id === uid || booking.host_id === uid);
+
+            // A co-host the owner trusted with messages can also reply here.
+            if (booking && !allowed) {
+                const res = await fetch('/api/my-listings?permission=can_messages');
+                const list = res.ok ? (await res.json()).listings || [] : [];
+                allowed = list.some((a: any) => a.id === booking.listing_id);
+            }
+
+            if (!booking || !allowed) {
                 setNotAllowed(true);
                 setLoading(false);
                 return;
             }
 
+            // Talking to the guest, unless this person is the guest.
             const otherId = booking.guest_id === uid ? booking.host_id : booking.guest_id;
             const { data: profile } = await supabase.from('profiles').select('full_name, preferred_name, show_full_name').eq('id', otherId).single();
             setOtherName(displayName(profile, 'User'));
@@ -133,7 +143,9 @@ export default function ConversationPage() {
             .single();
         if (!booking) return;
 
-        const recipientId = booking.guest_id === session.user.id ? booking.host_id : booking.guest_id;
+        // A co-host replying is writing to the guest, not to the owner.
+        const recipientId =
+            booking.guest_id === session.user.id ? booking.host_id : booking.guest_id;
 
         const outgoing = text.trim();
 
