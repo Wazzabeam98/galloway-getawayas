@@ -49,16 +49,19 @@ function ListingCard({ item, isDraft }: { item: any; isDraft: boolean }) {
             </Link>
 
             <div className="absolute top-3 right-3 z-10 flex gap-2 opacity-0 group-hover:opacity-100 transition">
-                {!isDraft && (
+                {!isDraft && !isHidden && (
                     <Link
                         href={`/homes/${item.id}`}
-                        title="View live listing"
-                        className="w-8 h-8 rounded-full bg-white/95 shadow-sm flex items-center justify-center text-slate-700 hover:text-slate-900"
+                        title="See how guests see it"
+                        className="h-8 px-3 rounded-full bg-white/95 hover:bg-white shadow-sm flex items-center gap-1.5 text-xs font-semibold text-slate-700"
                     >
-                        <Eye className="w-4 h-4" />
+                        <Eye className="w-3.5 h-3.5" />
+                        View
                     </Link>
                 )}
-                {!isDraft && <HideListingBtn id={item.id} hidden={isHidden} />}
+                {!isDraft && (
+                    <HideListingBtn id={item.id} hidden={isHidden} title={item.title} />
+                )}
                 <DeleteHomebtn id={item.id} />
             </div>
         </div>
