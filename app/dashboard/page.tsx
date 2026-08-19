@@ -5,11 +5,13 @@ import { createServerComponentClient } from "@supabase/auth-helpers-nextjs";
 import { cookies } from "next/headers";
 import { getImageUrl } from "@/lib/utils";
 import DeleteHomebtn from "@/components/DeleteHomebtn";
+import HideListingBtn from "@/components/HideListingBtn";
 import Link from "next/link";
 import { Eye, Home, Plus } from "lucide-react";
 
 function ListingCard({ item, isDraft }: { item: any; isDraft: boolean }) {
     const editHref = isDraft ? `/addhome?draft=${item.id}` : `/edit-listing/${item.id}`;
+    const isHidden = item.status === 'hidden';
 
     return (
         <div className="relative group">
@@ -26,9 +28,9 @@ function ListingCard({ item, isDraft }: { item: any; isDraft: boolean }) {
                             <Home className="w-10 h-10" />
                         </div>
                     )}
-                    <span className={`absolute top-3 left-3 text-xs font-semibold px-2.5 py-1 rounded-full flex items-center gap-1.5 shadow-sm ${isDraft ? 'bg-amber-100 text-amber-800' : 'bg-white/95'}`}>
-                        <span className={`w-1.5 h-1.5 rounded-full ${isDraft ? 'bg-amber-500' : 'bg-green-500'}`} />
-                        {isDraft ? 'In progress' : 'Listed'}
+                    <span className={`absolute top-3 left-3 text-xs font-semibold px-2.5 py-1 rounded-full flex items-center gap-1.5 shadow-sm ${isDraft ? 'bg-amber-100 text-amber-800' : isHidden ? 'bg-slate-200 text-slate-700' : 'bg-white/95'}`}>
+                        <span className={`w-1.5 h-1.5 rounded-full ${isDraft ? 'bg-amber-500' : isHidden ? 'bg-slate-500' : 'bg-green-500'}`} />
+                        {isDraft ? 'In progress' : isHidden ? 'Hidden' : 'Listed'}
                     </span>
                 </div>
                 <h3 className="font-semibold text-slate-900 mt-3 truncate">{item.title || 'Untitled listing'}</h3>
@@ -38,6 +40,11 @@ function ListingCard({ item, isDraft }: { item: any; isDraft: boolean }) {
                 )}
                 {isDraft && (
                     <p className="text-sm font-medium text-amber-700 mt-0.5">Click to finish setting up</p>
+                )}
+                {isHidden && (
+                    <p className="text-sm font-medium text-slate-600 mt-0.5">
+                        Not taking new bookings
+                    </p>
                 )}
             </Link>
 
@@ -51,6 +58,7 @@ function ListingCard({ item, isDraft }: { item: any; isDraft: boolean }) {
                         <Eye className="w-4 h-4" />
                     </Link>
                 )}
+                {!isDraft && <HideListingBtn id={item.id} hidden={isHidden} />}
                 <DeleteHomebtn id={item.id} />
             </div>
         </div>
@@ -66,7 +74,7 @@ export default async function Dashboard() {
         .eq("host_id", user.user?.id)
         .order("created_at", { ascending: false });
 
-    const published = homes?.filter((h) => h.status === 'published') || [];
+    const published = homes?.filter((h) => h.status === 'published' || h.status === 'hidden') || [];
     const drafts = homes?.filter((h) => h.status === 'draft') || [];
 
     return (
