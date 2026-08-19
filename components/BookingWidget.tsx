@@ -144,23 +144,24 @@ export default function BookingWidget({
             });
             setPriceOverrides(prices);
 
-            if (icalImportUrl) {
-                try {
-                    const res = await fetch(`/api/ical-import?url=${encodeURIComponent(icalImportUrl)}`);
-                    if (res.ok) {
-                        const data = await res.json();
-                        (data.events || []).forEach((ev: { start: string; end: string }) => addRange(ev.start, ev.end));
-                    }
-                } catch {
-                    // If the external calendar can't be reached, we simply don't
-                    // block those dates — it shouldn't break booking altogether.
+            // The server merges every calendar this listing syncs with. It
+            // takes the listing id rather than a URL, so the host's private
+            // export links never reach the browser.
+            try {
+                const res = await fetch('/api/ical-import?listing=' + encodeURIComponent(listingId));
+                if (res.ok) {
+                    const data = await res.json();
+                    (data.events || []).forEach((ev: { start: string; end: string }) => addRange(ev.start, ev.end));
                 }
+            } catch {
+                // If an external calendar can't be reached, we simply don't
+                // block those dates — it shouldn't break booking altogether.
             }
 
             setDisabledDates(blocked);
         };
         load();
-    }, [supabase, listingId, icalImportUrl]);
+    }, [supabase, listingId]);
 
     // Priced by the shared module, which is the same code the server runs
     // before taking any money — so what the guest is shown here and what
