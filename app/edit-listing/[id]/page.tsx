@@ -148,6 +148,7 @@ export default function EditListing() {
     const [weeklyDiscount, setWeeklyDiscount] = useState(false);
     const [monthlyDiscount, setMonthlyDiscount] = useState(false);
     const [icalToken, setIcalToken] = useState('');
+    const [isCoHost, setIsCoHost] = useState(false);
     const [minNights, setMinNights] = useState('1');
     const [maxNights, setMaxNights] = useState('');
     const [eventsAllowed, setEventsAllowed] = useState(false);
@@ -190,10 +191,18 @@ export default function EditListing() {
                 return;
             }
 
+            // The owner, or a co-host they've allowed to edit the listing.
             if (listing.host_id !== session.user.id) {
-                setNotOwner(true);
-                setLoading(false);
-                return;
+                const res = await fetch('/api/my-listings?permission=can_listing');
+                const allowed = res.ok ? (await res.json()).listings || [] : [];
+
+                if (!allowed.some((a: any) => a.id === listingId)) {
+                    setNotOwner(true);
+                    setLoading(false);
+                    return;
+                }
+
+                setIsCoHost(true);
             }
 
             setTitle(listing.title || '');
@@ -312,9 +321,9 @@ export default function EditListing() {
                 }
             }
 
-            const { error: updateErr } = await supabase
-                .from('listings')
-                .update({
+            // Saved through the server so a co-host the owner trusted can
+            // edit too — row-level security would block them otherwise.
+            const patch = {
                     title,
                     description,
                     location,
@@ -347,9 +356,15 @@ export default function EditListing() {
                     additional_rules: additionalRules,
                     cancellation_policy: cancellationPolicy,
                     non_refundable_option: nonRefundableOption,
-                })
-                .eq('id', listingId)
-                .eq('host_id', session.user.id);
+            };
+
+            const saveRes = await fetch('/api/listings/save', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ listingId: listingId, patch: patch }),
+            });
+            const saveData = await saveRes.json();
+            const updateErr = saveData && saveData.ok ? null : { message: (saveData && saveData.error) || 'Could not save' };
 
             if (updateErr) {
                 toast.error(updateErr.message, { theme: 'colored' });
