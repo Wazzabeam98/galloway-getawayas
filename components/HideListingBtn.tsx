@@ -1,7 +1,6 @@
 'use client';
 
 import { useState } from 'react';
-import { createClientComponentClient } from '@supabase/auth-helpers-nextjs';
 import { useRouter } from 'next/navigation';
 import { EyeOff, Undo2 } from 'lucide-react';
 import { toast } from 'react-toastify';
@@ -18,7 +17,6 @@ export default function HideListingBtn({
     hidden: boolean;
     title?: string;
 }) {
-    const supabase = createClientComponentClient();
     const router = useRouter();
     const [working, setWorking] = useState(false);
     const [confirming, setConfirming] = useState(false);
@@ -26,16 +24,20 @@ export default function HideListingBtn({
     const apply = async () => {
         setWorking(true);
 
-        const { error } = await supabase
-            .from('listings')
-            .update({ status: hidden ? 'published' : 'hidden' })
-            .eq('id', id);
+        // Through the server, because a co-host the owner trusted with the
+        // listing can do this too and row-level security would refuse them.
+        const res = await fetch('/api/listings/visibility', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ listingId: id, hidden: !hidden }),
+        });
+        const data = await res.json();
 
         setWorking(false);
         setConfirming(false);
 
-        if (error) {
-            toast.error(error.message, { theme: 'colored' });
+        if (!data || !data.ok) {
+            toast.error((data && data.error) || 'Could not change that.', { theme: 'colored' });
             return;
         }
 
