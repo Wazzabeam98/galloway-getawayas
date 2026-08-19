@@ -5,6 +5,8 @@ import { cookies } from "next/headers";
 import EarningsDateFilter from "@/components/EarningsDateFilter";
 import { DEFAULT_COMMISSION_PERCENT, rateFor, netOfFee, feeAmount } from '@/lib/fees';
 import { formatUk } from '@/lib/cancellation';
+import { createClient } from '@supabase/supabase-js';
+import { listingIdsFor } from '@/lib/access';
 
 
 export default async function EarningsPage({ searchParams }: { searchParams?: { from?: string; to?: string } }) {
@@ -16,10 +18,19 @@ export default async function EarningsPage({ searchParams }: { searchParams?: { 
     const from = searchParams?.from || `${currentYear}-01-01`;
     const to = searchParams?.to || `${currentYear}-12-31`;
 
-    const { data: allBookings } = await supabase
-        .from("bookings")
-        .select("*")
-        .eq("host_id", user.user?.id);
+    // Only properties they may see money for. A co-host without the earnings
+    // permission sees nothing here, even for a listing they otherwise manage.
+    const allowed = await listingIdsFor(user.user?.id || '', 'can_earnings');
+
+    const admin = createClient(
+        process.env.NEXT_PUBLIC_SUPABASE_URL || '',
+        process.env.SUPABASE_SERVICE_ROLE_KEY || '',
+        { auth: { persistSession: false } }
+    );
+
+    const { data: allBookings } = allowed.length
+        ? await admin.from("bookings").select("*").in("listing_id", allowed)
+        : { data: [] };
 
     // Everything on this page is scoped to bookings whose check-in falls
     // within the selected period.
@@ -33,7 +44,7 @@ export default async function EarningsPage({ searchParams }: { searchParams?: { 
 
     const listingIds = Array.from(new Set(bookings.map((b) => b.listing_id).concat(payoutRows.map((b) => b.listing_id))));
     const { data: listings } = listingIds.length
-        ? await supabase.from("listings").select("id, title, commission_rate").in("id", listingIds)
+        ? await admin.from("listings").select("id, title, commission_rate").in("id", listingIds)
         : { data: [] };
     const listingMap = new Map((listings || []).map((l) => [l.id, l.title]));
     const rateMap = new Map((listings || []).map((l) => [l.id, rateFor(l)]));
