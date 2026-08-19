@@ -5,6 +5,8 @@ import { createServerComponentClient } from "@supabase/auth-helpers-nextjs";
 import { cookies } from "next/headers";
 import { getImageUrl } from "@/lib/utils";
 import DeleteHomebtn from "@/components/DeleteHomebtn";
+import { createClient } from "@supabase/supabase-js";
+import { accessibleListings } from "@/lib/access";
 import HideListingBtn from "@/components/HideListingBtn";
 import Link from "next/link";
 import { Eye, Home, Plus } from "lucide-react";
@@ -71,14 +73,31 @@ function ListingCard({ item, isDraft }: { item: any; isDraft: boolean }) {
 export default async function Dashboard() {
     const serverSupabase = createServerComponentClient({ cookies });
     const { data: user } = await serverSupabase.auth.getUser();
-    const { data: homes } = await serverSupabase
-        .from("listings")
-        .select("id, images, title, location, price_per_night, created_at, status")
-        .eq("host_id", user.user?.id)
-        .order("created_at", { ascending: false });
+    const access = await accessibleListings(user.user?.id || '');
+    const ownedIds = access.filter((a) => a.isOwner).map((a) => a.listingId);
+    const helpingIds = access.filter((a) => !a.isOwner).map((a) => a.listingId);
 
-    const published = homes?.filter((h) => h.status === 'published' || h.status === 'hidden') || [];
-    const drafts = homes?.filter((h) => h.status === 'draft') || [];
+    const admin = createClient(
+        process.env.NEXT_PUBLIC_SUPABASE_URL || '',
+        process.env.SUPABASE_SERVICE_ROLE_KEY || '',
+        { auth: { persistSession: false } }
+    );
+
+    const allIds = ownedIds.concat(helpingIds);
+
+    const { data: homes } = allIds.length
+        ? await admin
+            .from("listings")
+            .select("id, images, title, location, price_per_night, created_at, status")
+            .in("id", allIds)
+            .order("created_at", { ascending: false })
+        : { data: [] };
+
+    const owned = (homes || []).filter((h) => ownedIds.indexOf(h.id) !== -1);
+    const helping = (homes || []).filter((h) => helpingIds.indexOf(h.id) !== -1);
+
+    const published = owned.filter((h) => h.status === 'published' || h.status === 'hidden');
+    const drafts = owned.filter((h) => h.status === 'draft');
 
     return (
         <div>
@@ -94,6 +113,47 @@ export default async function Dashboard() {
                         <Plus className="w-5 h-5" />
                     </Link>
                 </div>
+
+                {helping.length > 0 && (
+                    <div className="mt-14">
+                        <h2 className="text-xl font-bold text-slate-900 mb-1">
+                            Properties you help with
+                        </h2>
+                        <p className="text-sm text-slate-500 mb-6">
+                            These belong to someone else. What you can do with each depends on what
+                            they&apos;ve given you.
+                        </p>
+                        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-8">
+                            {helping.map((item) => (
+                                <div key={item.id} className="relative group">
+                                    <Link href={`/homes/${item.id}`} className="block">
+                                        <div className="w-full h-56 rounded-2xl overflow-hidden bg-slate-200 relative">
+                                            {item.images && item.images.length > 0 ? (
+                                                <img
+                                                    src={getImageUrl(item.images[0])}
+                                                    alt={item.title}
+                                                    className="w-full h-full object-cover"
+                                                />
+                                            ) : (
+                                                <div className="w-full h-full flex items-center justify-center text-slate-400">
+                                                    <Home className="w-10 h-10" />
+                                                </div>
+                                            )}
+                                        </div>
+                                        <div className="mt-3">
+                                            <h3 className="font-bold text-slate-900 truncate">
+                                                {item.title}
+                                            </h3>
+                                            <p className="text-slate-500 text-sm truncate">
+                                                {item.location}
+                                            </p>
+                                        </div>
+                                    </Link>
+                                </div>
+                            ))}
+                        </div>
+                    </div>
+                )}
 
                 {drafts.length > 0 && (
                     <div className="mb-10">
