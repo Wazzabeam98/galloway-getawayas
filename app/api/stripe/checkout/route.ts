@@ -62,7 +62,7 @@ export async function POST(request: Request) {
 
         const { data: listing } = await admin
             .from('listings')
-            .select('title, cancellation_policy, price_per_night, weekend_price, cleaning_fee, pet_fee, extra_guest_fee, max_guests, commission_rate')
+            .select('title, cancellation_policy, price_per_night, weekend_price, cleaning_fee, pet_fee, extra_guest_fee, max_guests, commission_rate, damage_deposit')
             .eq('id', booking.listing_id)
             .maybeSingle();
 
@@ -140,11 +140,46 @@ export async function POST(request: Request) {
         // Availability, settled here rather than in the browser — two guests
         // can be looking at the same free dates at the same time.
         // ------------------------------------------------------------------
+
+        // Dates taken on Airbnb, Booking.com and the like. The calendar a
+        // guest saw may be up to a few hours old, since those platforms only
+        // publish a file for us to read rather than telling us anything. This
+        // is the last chance to catch a stay that was sold elsewhere while
+        // this guest was deciding.
+        const { data: icalFeeds } = await admin
+            .from('listing_ical_feeds')
+            .select('id, label, events')
+            .eq('listing_id', booking.listing_id);
+
+        (icalFeeds || []).forEach(function (feed: any) {
+            (feed.events || []).forEach(function (ev: any) {
+                if (!ev || !ev.start || !ev.end) return;
+
+                const from = dateFromKey(ev.start);
+                const to = dateFromKey(ev.end);
+
+                // An iCal event runs to its checkout date, which is itself
+                // free — the same convention as a booking here.
+                const day = new Date(from.getTime());
+                while (day < to) {
+                    blockedDates[dateKey(day)] = true;
+                    day.setDate(day.getDate() + 1);
+                }
+            });
+        });
+
         const cursor = new Date(checkIn.getTime());
         for (let i = 0; i < quote.nights; i++) {
             if (blockedDates[dateKey(cursor)]) {
+                // Logged because a feed that blocks dates it shouldn't turns
+                // guests away silently, and nobody would otherwise notice.
+                console.log('[checkout] blocked date', booking.listing_id, dateKey(cursor));
+
                 return NextResponse.json(
-                    { ok: false, error: 'Those dates are no longer available.' },
+                    {
+                        ok: false,
+                        error: 'Sorry — those dates have just been taken. Please pick different ones.',
+                    },
                     { status: 409 }
                 );
             }
@@ -187,7 +222,11 @@ export async function POST(request: Request) {
         // 30 days before check-in, and only a card can be charged that way.
         // Klarna and the wallets are one-off agreements for the amount shown,
         // so they are offered on the pay-in-full path only.
-        const methods = useDeposit
+        // A damage deposit means the card has to be kept on file, and only a
+        // card can be. Klarna and the wallets can't be charged later.
+        const keepCard = useDeposit || Number(listing.damage_deposit || 0) > 0;
+
+        const methods = keepCard
             ? ['card']
             : ['card', 'klarna', 'link'];
 
@@ -198,7 +237,7 @@ export async function POST(request: Request) {
             payment_method_types: methods,
             // Forced on the deposit path so there is always a customer to
             // charge the balance against later.
-            customer_creation: useDeposit ? 'always' : 'if_required',
+            customer_creation: keepCard ? 'always' : 'if_required',
             // Lands on a page that confirms the payment from the booking id
             // alone, so a session lost on the way back from Stripe never leaves
             // a guest staring at a login screen.
@@ -224,7 +263,7 @@ export async function POST(request: Request) {
                 // without the guest having to do anything. Nothing further is
                 // ever charged on a paid-in-full booking, so it is not saved
                 // there.
-                setup_future_usage: useDeposit ? 'off_session' : undefined,
+                setup_future_usage: keepCard ? 'off_session' : undefined,
                 description: 'Galloway Getaways booking ' + booking.id,
                 metadata: {
                     booking_id: booking.id,
