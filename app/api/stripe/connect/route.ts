@@ -71,7 +71,11 @@ export async function POST(request: Request) {
                 },
                 settings: {
                     payouts: {
-                        schedule: { interval: 'manual' },
+                        // Daily, so money reaches a host's bank a day or two
+                        // after we transfer it. On manual they would have to
+                        // log into Stripe and release it themselves, which no
+                        // host expects to do.
+                        schedule: { interval: 'daily', delay_days: 'minimum' },
                     },
                 },
                 metadata: {
