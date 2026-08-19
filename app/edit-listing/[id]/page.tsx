@@ -10,8 +10,8 @@ import Env from '@/config/Env';
 import { generateRandomNumber, getImageUrl } from '@/lib/utils';
 import { toast } from 'react-toastify';
 import { rateFor } from '@/lib/fees';
-import {
 import IcalFeeds from '@/components/IcalFeeds';
+import {
     HomeIcon, Trees, Waves, Compass, Building2, Sparkles, Minus, Plus, Check,
     KeyRound, Lock, DoorOpen, Hash, Users,
     Snowflake, Package, Refrigerator, Thermometer, Droplet, UtensilsCrossed, Tv,
