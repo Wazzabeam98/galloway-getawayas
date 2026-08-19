@@ -40,6 +40,11 @@ const tools = [
         title: 'Payouts',
         blurb: 'What each host is owed, and what has already been sent.',
     },
+    {
+        href: '/admin/errors',
+        title: 'Errors',
+        blurb: 'Anything that broke, whether or not anyone told us.',
+    },
 ];
 
 export default async function AdminHome() {
