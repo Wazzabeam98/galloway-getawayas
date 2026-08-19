@@ -95,7 +95,7 @@ export default function HideListingBtn({
                         </p>
                         <p className="text-sm text-slate-600 mb-4">
                             Bookings you have already accepted are not affected — you still need to
-                            host those guests. Cancelling them counts as a host cancellation.
+                            host those guests.
                         </p>
                         <p className="text-xs text-slate-400 mb-5">
                             You can put it back whenever you like.
