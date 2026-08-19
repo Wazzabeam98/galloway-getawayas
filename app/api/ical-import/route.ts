@@ -1,64 +1,45 @@
 import { NextRequest, NextResponse } from 'next/server';
+import { createClient } from '@supabase/supabase-js';
 
-// Minimal iCal parser: pulls DTSTART/DTEND out of each VEVENT block.
-// Handles whole-day values (DTSTART;VALUE=DATE:20260615) and
-// timestamp values (DTSTART:20260615T140000Z) — for blocking purposes
-// we only need the date portion either way.
-function parseICS(text: string): { start: string; end: string }[] {
-    const events: { start: string; end: string }[] = [];
-    const blocks = text.split('BEGIN:VEVENT').slice(1);
+export const dynamic = 'force-dynamic';
 
-    for (const block of blocks) {
-        const startMatch = block.match(/DTSTART[^:]*:(\d{8})/);
-        const endMatch = block.match(/DTEND[^:]*:(\d{8})/);
-        if (!startMatch || !endMatch) continue;
-
-        const toISO = (raw: string) => {
-            const y = raw.slice(0, 4);
-            const m = raw.slice(4, 6);
-            const d = raw.slice(6, 8);
-            return `${y}-${m}-${d}`;
-        };
-
-        events.push({ start: toISO(startMatch[1]), end: toISO(endMatch[1]) });
-    }
-
-    return events;
+function adminClient() {
+    return createClient(
+        process.env.NEXT_PUBLIC_SUPABASE_URL || '',
+        process.env.SUPABASE_SERVICE_ROLE_KEY || '',
+        { auth: { persistSession: false } }
+    );
 }
 
+// Returns the dates other platforms have already taken, for one listing.
+//
+// The calendars themselves are fetched by the scheduled job, not here — a
+// guest shouldn't wait on three external websites before they can see which
+// dates are free, and an external site being slow shouldn't slow us down.
+//
+// It takes a listing id rather than a URL on purpose: export links are private
+// to the host, and an Airbnb one lets anyone read that host's bookings.
 export async function GET(req: NextRequest) {
-    const url = req.nextUrl.searchParams.get('url');
+    const listingId = req.nextUrl.searchParams.get('listing');
 
-    if (!url) {
-        return NextResponse.json({ error: 'Missing calendar URL.' }, { status: 400 });
+    if (!listingId) {
+        return NextResponse.json({ error: 'Missing listing.' }, { status: 400 });
     }
 
-    let target: URL;
-    try {
-        target = new URL(url);
-        if (target.protocol !== 'https:' && target.protocol !== 'http:') {
-            throw new Error('Invalid protocol');
-        }
-    } catch {
-        return NextResponse.json({ error: 'That doesn\'t look like a valid calendar URL.' }, { status: 400 });
-    }
+    const admin = adminClient();
 
-    try {
-        const response = await fetch(target.toString(), {
-            headers: { 'User-Agent': 'GallowayGetawaysCalendarSync/1.0' },
-            signal: AbortSignal.timeout(10000),
+    const { data: feeds } = await admin
+        .from('listing_ical_feeds')
+        .select('events')
+        .eq('listing_id', listingId);
+
+    const all: { start: string; end: string }[] = [];
+
+    (feeds || []).forEach((feed: any) => {
+        (feed.events || []).forEach((e: any) => {
+            if (e && e.start && e.end) all.push({ start: e.start, end: e.end });
         });
+    });
 
-        if (!response.ok) {
-            return NextResponse.json({ error: `Could not reach that calendar (status ${response.status}).` }, { status: 502 });
-        }
-
-        const text = await response.text();
-        const events = parseICS(text);
-
-        return NextResponse.json({ events });
-    } catch (err: any) {
-        const message = err?.name === 'TimeoutError' ? 'That calendar took too long to respond.' : 'Could not read that calendar.';
-        return NextResponse.json({ error: message }, { status: 500 });
-    }
+    return NextResponse.json({ events: all });
 }
