@@ -37,6 +37,22 @@ export async function GET() {
         .select('id, listing_id, guest_id, host_id, check_in, check_out, created_at')
         .or('guest_id.eq.' + uid + ',host_id.eq.' + uid);
 
+    // Trips someone has added them to.
+    const { data: companionRows } = await admin
+        .from('booking_guests')
+        .select('booking_id')
+        .eq('user_id', uid)
+        .eq('status', 'active');
+
+    const companionIds = (companionRows || []).map((r: any) => r.booking_id);
+
+    const { data: companionBookings } = companionIds.length
+        ? await admin
+            .from('bookings')
+            .select('id, listing_id, guest_id, host_id, check_in, check_out, created_at')
+            .in('id', companionIds)
+        : { data: [] };
+
     // Bookings at properties they help with.
     const { data: helping } = messageListings.length
         ? await admin
@@ -48,7 +64,7 @@ export async function GET() {
     const seen: Record<string, boolean> = {};
     const bookings: any[] = [];
 
-    (own || []).concat(helping || []).forEach((b: any) => {
+    (own || []).concat(companionBookings || []).concat(helping || []).forEach((b: any) => {
         if (seen[b.id]) return;
         seen[b.id] = true;
         bookings.push(b);
