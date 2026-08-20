@@ -117,12 +117,16 @@ export async function GET() {
     (lastMessages || []).forEach((m: any) => {
         if (!lastMap[m.booking_id]) lastMap[m.booking_id] = m;
 
-        // Unread means sent to this person and not yet opened. A message
-        // they sent themselves is never unread.
+        // Unread means sent to this person and not yet opened. Something they
+        // sent themselves is never unread.
         if (m.recipient_id === uid && !m.read_at) {
             unreadMap[m.booking_id] = (unreadMap[m.booking_id] || 0) + 1;
         }
     });
+
+    const todayKey = new Date().toISOString().split('T')[0];
+
+    const todayKey = new Date().toISOString().split('T')[0];
 
     const conversations = bookings.map((b) => {
         const listing = listingMap[b.listing_id];
@@ -136,6 +140,17 @@ export async function GET() {
             checkOut: b.check_out,
             lastMessage: lastMap[b.id] || null,
             unread: unreadMap[b.id] || 0,
+            // The signal a host actually works from: the other person spoke
+            // last and nobody has answered.
+            needsReply: !!(lastMap[b.id] && lastMap[b.id].sender_id !== uid),
+            // Somebody currently in the property matters more than somebody
+            // arriving in April.
+            stage:
+                b.check_in <= todayKey && b.check_out > todayKey
+                    ? 'staying'
+                    : b.check_in > todayKey
+                        ? 'upcoming'
+                        : 'past',
             // Flagged so the screen can make clear whose property it is.
             asCoHost: listing ? listing.host_id !== uid && b.guest_id !== uid : false,
         };
@@ -153,13 +168,9 @@ export async function GET() {
         return 0;
     });
 
-    const totalUnread = conversations.reduce(
-        (sum: number, c: any) => sum + (c.unread || 0),
-        0
-    );
-
     return NextResponse.json({
         conversations: conversations,
-        totalUnread: totalUnread,
+        totalUnread: conversations.reduce((sum: number, c: any) => sum + (c.unread || 0), 0),
+        needsReply: conversations.filter((c: any) => c.needsReply).length,
     });
 }
