@@ -39,7 +39,10 @@ export default function MessagesInboxPage() {
     const [quickReplies, setQuickReplies] = useState<any[]>([]);
     const [showQuick, setShowQuick] = useState(false);
 
-    const bottomRef = useRef<HTMLDivElement>(null);
+    // The scrollable message list itself, not the page. Asking the browser to
+    // reveal an element scrolls whatever container it likes — which dragged
+    // the whole page down past the footer every time a thread opened.
+    const scrollRef = useRef<HTMLDivElement>(null);
 
     useEffect(() => {
         const load = async () => {
@@ -170,7 +173,8 @@ export default function MessagesInboxPage() {
     }, [supabase, activeId]);
 
     useEffect(() => {
-        bottomRef.current?.scrollIntoView({ behavior: 'smooth' });
+        const box = scrollRef.current;
+        if (box) box.scrollTop = box.scrollHeight;
     }, [thread]);
 
     const counts = useMemo(
@@ -423,7 +427,7 @@ export default function MessagesInboxPage() {
                         )}
                     </div>
 
-                    <div className="flex-1 overflow-y-auto p-4 space-y-3">
+                    <div ref={scrollRef} className="flex-1 overflow-y-auto p-4 space-y-3">
                         {thread.messages.length === 0 && (
                             <p className="text-sm text-slate-400 text-center py-8">
                                 Nothing here yet. Say hello.
@@ -463,7 +467,6 @@ export default function MessagesInboxPage() {
                                 </div>
                             );
                         })}
-                        <div ref={bottomRef} />
                     </div>
 
                     <div className="p-4 border-t">
@@ -709,7 +712,7 @@ export default function MessagesInboxPage() {
             <h1 className="text-2xl font-bold text-slate-900 mb-4">Messages</h1>
 
             {/* Three panes side by side once there's room for them. */}
-            <div className="hidden lg:flex border rounded-2xl overflow-hidden h-[calc(100vh-11rem)] bg-white">
+            <div className="hidden lg:flex border rounded-2xl overflow-hidden h-[calc(100vh-14rem)] min-h-[32rem] bg-white">
                 <div className="w-80 border-r flex-shrink-0">{list}</div>
                 <div className="flex-1 min-w-0 border-r">{conversation}</div>
                 <div className="w-72 flex-shrink-0">{details}</div>
