@@ -92,6 +92,9 @@ const NavMenu = ({
                                         <Link href='/trips'>Your trips</Link>
                                     </li>
                                     <li className={itemClass}>
+                                        <Link href='/passport'>Your passport</Link>
+                                    </li>
+                                    <li className={itemClass}>
                                         <Link href='/messages'>Messages</Link>
                                     </li>
                                 </>
