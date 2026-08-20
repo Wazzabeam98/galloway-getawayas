@@ -24,6 +24,8 @@ interface Props {
     cleaningFee?: number;
     petFee?: number;
     extraGuestFee?: number;
+    extraGuestAfter?: number;
+    extraGuestPeriod?: string;
     damageDeposit?: number;
     availabilityWindow?: string;
     instantBook?: boolean;
@@ -79,7 +81,8 @@ function Counter({
 
 export default function BookingWidget({
     listingId, hostId, pricePerNight, maxGuests, petsAllowed, icalImportUrl,
-    weekendPrice, cleaningFee = 0, petFee = 0, extraGuestFee = 0, availabilityWindow,
+    weekendPrice, cleaningFee = 0, petFee = 0, extraGuestFee = 0,
+    extraGuestAfter = 1, extraGuestPeriod = 'night', availabilityWindow,
     instantBook = false, instantBookRequiresPhone = false, instantBookRequiresVerifiedId = false,
     damageDeposit = 0,
     cancellationPolicy,
@@ -173,6 +176,8 @@ export default function BookingWidget({
             cleaning_fee: cleaningFee,
             pet_fee: petFee,
             extra_guest_fee: extraGuestFee,
+            extra_guest_after: extraGuestAfter,
+            extra_guest_period: extraGuestPeriod,
         },
         priceOverrides,
         dateRange.startDate || new Date(),
@@ -376,7 +381,20 @@ export default function BookingWidget({
                     )}
                     {extraGuestTotal > 0 && (
                         <div className="flex justify-between text-slate-600">
-                            <span>Extra guest fee</span>
+                            <span>
+                                {(() => {
+                                    // Spelled out, so a guest can see where the
+                                    // number came from rather than wondering.
+                                    const extra = Math.max(0, totalGuests - Math.max(1, extraGuestAfter));
+                                    return (
+                                        extra +
+                                        (extra === 1 ? ' extra guest' : ' extra guests') +
+                                        ' × £' +
+                                        Number(extraGuestFee).toFixed(2) +
+                                        (extraGuestPeriod === 'stay' ? '' : ' × ' + nights + (nights === 1 ? ' night' : ' nights'))
+                                    );
+                                })()}
+                            </span>
                             <span>£{extraGuestTotal.toFixed(2)}</span>
                         </div>
                     )}
