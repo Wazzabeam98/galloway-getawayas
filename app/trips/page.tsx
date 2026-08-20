@@ -1,5 +1,6 @@
 'use client';
 
+import TripGroup from '@/components/TripGroup';
 import { useEffect, useState } from 'react';
 import { createClientComponentClient } from '@supabase/auth-helpers-nextjs';
 import Logo from '@/components/base/Logo';
@@ -21,6 +22,9 @@ interface Booking {
     balance_due_date: string | null;
     amount_paid: number | null;
     amount_refunded: number | null;
+    // True when someone else booked it and added this person along.
+    guests?: number | null;
+    sharedWithMe?: boolean;
 }
 
 export default function TripsPage() {
@@ -100,12 +104,12 @@ export default function TripsPage() {
                 return;
             }
 
-            const { data: bookingRows } = await supabase
-                .from('bookings')
-                .select('id, listing_id, host_id, check_in, check_out, status, total_price, payment_status, balance_amount, balance_due_date, amount_paid, amount_refunded')
-                .eq('guest_id', session.user.id)
-                .order('check_in', { ascending: false });
-            setBookings(bookingRows || []);
+            // Fetched on the server so trips shared with this person come
+            // through too — and so the money is stripped out of those before
+            // it ever reaches the browser.
+            const tripsRes = await fetch('/api/trips');
+            const bookingRows = tripsRes.ok ? (await tripsRes.json()).trips || [] : [];
+            setBookings(bookingRows);
 
             const listingIds = Array.from(new Set((bookingRows || []).map((b) => b.listing_id)));
             if (listingIds.length) {
@@ -176,7 +180,15 @@ export default function TripsPage() {
 
     return (
         <div className="max-w-3xl mx-auto px-6 py-10">
-            <h1 className="text-2xl md:text-3xl font-bold text-slate-900 mb-8">Your trips</h1>
+            <div className="flex items-baseline justify-between gap-4 flex-wrap mb-8">
+                <h1 className="text-2xl md:text-3xl font-bold text-slate-900">Your trips</h1>
+                <Link
+                    href="/passport"
+                    className="text-sm font-semibold text-emerald-700 hover:text-emerald-800 underline"
+                >
+                    Your passport
+                </Link>
+            </div>
 
             {bookings.length === 0 ? (
                 <div className="text-center py-20 bg-white rounded-2xl border border-slate-200">
@@ -203,7 +215,13 @@ export default function TripsPage() {
                                         <div className="text-sm text-slate-600">
                                             Hosted by {capitializeFirst(hostNames[b.host_id] || 'Host')} · {b.check_in} → {b.check_out}
                                         </div>
-                                        <div className="text-sm font-medium text-slate-700">£{b.total_price}</div>
+                                        {b.sharedWithMe ? (
+                                            <div className="text-sm text-slate-400">
+                                                {b.guests ? b.guests + (b.guests === 1 ? ' guest' : ' guests') : 'Shared with you'}
+                                            </div>
+                                        ) : (
+                                            <div className="text-sm font-medium text-slate-700">£{b.total_price}</div>
+                                        )}
                                     </div>
                                     <span className={`text-xs font-semibold px-3 py-1 rounded-full capitalize flex-shrink-0 ${statusStyles[b.status] || 'bg-slate-100 text-slate-600'}`}>
                                         {b.status}
@@ -214,7 +232,18 @@ export default function TripsPage() {
                                     Message host
                                 </Link>
 
-                                {b.payment_status === 'deposit_paid'
+                                {b.sharedWithMe ? (
+                                    <p className="text-xs text-slate-400 mt-3">
+                                        You were added to this trip. Whoever booked it looks after
+                                        the payment and any changes.
+                                    </p>
+                                ) : (
+                                    b.status !== 'cancelled'
+                                        && b.status !== 'declined'
+                                        && <TripGroup bookingId={b.id} />
+                                )}
+
+                                {!b.sharedWithMe && b.payment_status === 'deposit_paid'
                                     && Number(b.balance_amount || 0) > 0
                                     && b.status !== 'cancelled'
                                     && b.status !== 'declined' && (
@@ -241,7 +270,8 @@ export default function TripsPage() {
                                     </div>
                                 )}
 
-                                {b.status !== 'cancelled'
+                                {!b.sharedWithMe
+                                    && b.status !== 'cancelled'
                                     && b.status !== 'declined'
                                     && new Date(b.check_in) > today && (() => {
                                     const paidSoFar = Number(b.amount_paid || 0) - Number(b.amount_refunded || 0);
