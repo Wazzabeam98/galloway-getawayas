@@ -73,6 +73,19 @@ export default function ConversationPage() {
 
             let allowed = !!booking && (booking.guest_id === uid || booking.host_id === uid);
 
+            // Someone the guest added to their trip can talk to the host too.
+            if (booking && !allowed) {
+                const { data: companion } = await supabase
+                    .from('booking_guests')
+                    .select('id')
+                    .eq('booking_id', bookingId)
+                    .eq('user_id', uid)
+                    .eq('status', 'active')
+                    .maybeSingle();
+
+                if (companion) allowed = true;
+            }
+
             // A co-host the owner trusted with messages can also reply here.
             if (booking && !allowed) {
                 const res = await fetch('/api/my-listings?permission=can_messages');
