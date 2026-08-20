@@ -1,3 +1,4 @@
+import HostReservations from '@/components/HostReservations';
 import { publicArea } from '@/lib/places';
 import Hero from '@/components/base/Hero';
 import UpcomingTrip from '@/components/UpcomingTrip';
@@ -10,7 +11,13 @@ import { Home, Star } from 'lucide-react';
 export const dynamic = 'force-dynamic';
 
 export default async function HomePage() {
+  const cookieStore = cookies();
   const supabase = createServerComponentClient({ cookies });
+
+  // Same cookie the navbar reads, so the page agrees with the mode switch.
+  // Anyone who hasn't chosen is a traveller.
+  const mode: 'host' | 'travel' =
+    cookieStore.get('gg_mode')?.value === 'host' ? 'host' : 'travel';
   const { data: listings } = await supabase
     .from('listings')
     .select('id, title, location, price_per_night, images, rating_avg, rating_count')
@@ -23,8 +30,9 @@ export default async function HomePage() {
       <Hero />
 
       {/* Someone with a stay coming up sees it before anything else. Returns
-          nothing at all for a signed-out visitor or a guest with no booking. */}
-      <UpcomingTrip />
+          nothing at all for a signed-out visitor or a guest with no booking.
+          In hosting mode the same slot shows the next arrivals instead. */}
+      {mode === 'host' ? <HostReservations /> : <UpcomingTrip />}
 
       <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-16">
         {/* Section Heading */}
