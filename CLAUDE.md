@@ -76,6 +76,10 @@ his observations seriously even when they sound vague.
 
 ## House rules for this codebase
 
+- push straight to master for anything that isn't payments, payouts or
+  refunds. The site is private and pre-launch, so a branch and a merge is
+  friction for no gain. Money-touching code still goes on a branch for a
+  human to merge
 - move money before changing a booking's status, never the other way round
 - never put anything resettable in a Stripe idempotency key
 - `lib/pricing.ts` is the only place a total is calculated

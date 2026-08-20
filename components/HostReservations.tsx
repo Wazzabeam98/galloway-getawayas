@@ -1,3 +1,4 @@
+import { DEFAULT_COMMISSION_PERCENT, rateFor, netOfFee } from '@/lib/fees';
 import { createServerComponentClient } from '@supabase/auth-helpers-nextjs';
 import { createClient } from '@supabase/supabase-js';
 import { cookies } from 'next/headers';
@@ -22,6 +23,11 @@ export default async function HostReservations() {
     // booking row, so row-level security would hand back nothing at all.
     const allowed = await listingIdsFor(auth.session.user.id, 'can_bookings');
 
+    // Money is a separate permission. Somebody can be trusted with the diary
+    // and not with the takings — staff, typically — so the earnings line is
+    // gated on can_earnings rather than on seeing the booking at all.
+    const earningsAllowed = await listingIdsFor(auth.session.user.id, 'can_earnings');
+
     // The mode cookie outlives the listings that justified it — someone who
     // has since removed their last property would otherwise get a blank space
     // where their own trip used to be. Give them the guest card back.
@@ -41,7 +47,7 @@ export default async function HostReservations() {
     // sitting on a stay that is already under way.
     const { data: bookings } = await admin
         .from('bookings')
-        .select('id, listing_id, guest_id, check_in, check_out, status, guests')
+        .select('id, listing_id, guest_id, check_in, check_out, status, guests, total_price, commission_rate, amount_refunded, payment_status, balance_amount')
         .in('listing_id', allowed)
         .in('status', ['confirmed', 'pending'])
         .gte('check_in', todayKey)
@@ -55,7 +61,7 @@ export default async function HostReservations() {
 
     const { data: listings } = await admin
         .from('listings')
-        .select('id, title, location, images')
+        .select('id, title, location, images, commission_rate')
         .in('id', listingIds);
 
     const { data: guests } = guestIds.length
@@ -65,9 +71,17 @@ export default async function HostReservations() {
             .in('id', guestIds)
         : { data: [] };
 
-    const listingMap: Record<string, { title: string; location: string | null; images: string[] | null }> = {};
+    const listingMap: Record<
+        string,
+        { title: string; location: string | null; images: string[] | null; rate: number }
+    > = {};
     (listings || []).forEach((l) => {
-        listingMap[l.id] = { title: l.title, location: l.location, images: l.images };
+        listingMap[l.id] = {
+            title: l.title,
+            location: l.location,
+            images: l.images,
+            rate: rateFor(l),
+        };
     });
 
     const guestNameMap: Record<string, string> = {};
@@ -115,6 +129,35 @@ export default async function HostReservations() {
 
                     const guestName = guestNameMap[booking.guest_id] || 'Guest';
 
+                    // The rate stamped on the booking wins, so a stay is
+                    // always netted at the rate that applied when it was
+                    // taken, even if the listing's rate changed afterwards.
+                    // Same order the earnings page uses, so the two agree.
+                    const rate =
+                        booking.commission_rate !== null && booking.commission_rate !== undefined
+                            ? Number(booking.commission_rate)
+                            : listing.rate ?? DEFAULT_COMMISSION_PERCENT;
+
+                    // The whole stay less anything already refunded, matching
+                    // what the payout run will actually send.
+                    const refunded = Number(booking.amount_refunded || 0);
+                    const grossDue = Math.round((Number(booking.total_price || 0) - refunded) * 100) / 100;
+                    const earns = netOfFee(grossDue > 0 ? grossDue : 0, rate);
+
+                    // A stay pays out the day after check-in.
+                    const paysOn = new Date(booking.check_in);
+                    paysOn.setHours(0, 0, 0, 0);
+                    paysOn.setDate(paysOn.getDate() + 1);
+
+                    const showMoney = earningsAllowed.indexOf(booking.listing_id) !== -1;
+
+                    // Some of that money is not in yet. These are all future
+                    // check-ins, so a stay more than 30 days out will usually
+                    // still have the guest's balance to collect — say so,
+                    // rather than let the figure read as money already banked.
+                    const outstanding = Number(booking.balance_amount || 0);
+                    const awaitingBalance = booking.payment_status !== 'paid' && outstanding > 0;
+
                     return (
                         <div
                             key={booking.id}
@@ -156,6 +199,29 @@ export default async function HostReservations() {
                                             : ''}
                                     </div>
                                 </div>
+
+                                {showMoney && (
+                                    <div className="mt-5 pt-5 border-t border-stone-100">
+                                        <div className="text-lg font-semibold text-stone-900">
+                                            &pound;{earns.toFixed(2)}
+                                            <span className="text-sm font-normal text-stone-500">
+                                                {' '}after your {rate}% fee
+                                            </span>
+                                        </div>
+                                        <div className="text-sm text-stone-500 mt-1">
+                                            {booking.status === 'pending'
+                                                ? 'If you confirm, paid the day after check-in'
+                                                : 'Paid ' + formatUk(paysOn)}
+                                        </div>
+                                        {awaitingBalance && (
+                                            <div className="text-xs text-amber-700 mt-1">
+                                                Includes &pound;{outstanding.toFixed(2)} of the
+                                                guest&apos;s balance still to be collected before
+                                                check-in
+                                            </div>
+                                        )}
+                                    </div>
+                                )}
 
                                 {booking.status === 'pending' && (
                                     <div className="mt-5 text-sm text-amber-700">

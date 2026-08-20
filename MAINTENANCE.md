@@ -44,9 +44,10 @@ Usually not worth chasing:
 
 Please:
 
-- **propose fixes on a branch and let a human merge them.** Do not push
-  straight to master. Several bugs here have had non-obvious causes where the
-  first plausible fix was wrong.
+- **branch for money-touching code — payments, payouts, refunds — and let a
+  human merge it.** Several bugs here have had non-obvious causes where the
+  first plausible fix was wrong. Everything else goes straight to master while
+  the site is private and pre-launch. See the house rules in `CLAUDE.md`.
 - **read the surrounding code before changing it.** Naming collides in places —
   the Stripe webhook has a local variable called `logError`, unrelated to
   `lib/logError.ts`.
