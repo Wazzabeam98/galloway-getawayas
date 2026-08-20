@@ -1,51 +1,164 @@
 'use client';
 
-import { useEffect, useMemo, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import { createClientComponentClient } from '@supabase/auth-helpers-nextjs';
 import Link from 'next/link';
 import Logo from '@/components/base/Logo';
 import LoginModel from '@/components/auth/LoginModel';
 import { getImageUrl, capitializeFirst } from '@/lib/utils';
-import { Search, Inbox } from 'lucide-react';
+import { toast } from 'react-toastify';
+import { Search, Inbox, Send, Zap, Phone, ExternalLink } from 'lucide-react';
+
+function timeAgo(iso: string): string {
+    const mins = Math.round((Date.now() - new Date(iso).getTime()) / 60000);
+    if (mins < 1) return 'just now';
+    if (mins < 60) return mins + 'm ago';
+    const hours = Math.round(mins / 60);
+    if (hours < 24) return hours + 'h ago';
+    const days = Math.round(hours / 24);
+    return days + 'd ago';
+}
 
 export default function MessagesInboxPage() {
     const supabase = createClientComponentClient();
+
     const [loading, setLoading] = useState(true);
     const [session, setSession] = useState<any>(null);
     const [conversations, setConversations] = useState<any[]>([]);
+
     const [query, setQuery] = useState('');
-    const [unreadOnly, setUnreadOnly] = useState(false);
+    const [filter, setFilter] = useState<'all' | 'unread' | 'needsReply'>('all');
+
+    const [activeId, setActiveId] = useState<string | null>(null);
+    const [thread, setThread] = useState<any>(null);
+    const [threadLoading, setThreadLoading] = useState(false);
+
+    const [text, setText] = useState('');
+    const [sending, setSending] = useState(false);
+    const [quickReplies, setQuickReplies] = useState<any[]>([]);
+    const [showQuick, setShowQuick] = useState(false);
+
+    const bottomRef = useRef<HTMLDivElement>(null);
 
     useEffect(() => {
         const load = async () => {
             const { data: { session } } = await supabase.auth.getSession();
             setSession(session);
+
             if (!session?.user) {
                 setLoading(false);
                 return;
             }
 
             const res = await fetch('/api/messages/threads');
-            const convos = res.ok ? (await res.json()).conversations || [] : [];
-
+            const data = res.ok ? await res.json() : { conversations: [] };
+            const convos = data.conversations || [];
             setConversations(convos);
+
+            const { data: replies } = await supabase
+                .from('quick_replies')
+                .select('id, title, body')
+                .eq('user_id', session.user.id)
+                .order('created_at', { ascending: true });
+            setQuickReplies(replies || []);
+
+            // Open whichever conversation is waiting on them, so the page
+            // lands on something useful rather than an empty pane.
+            const first =
+                convos.find((c: any) => c.unread > 0) ||
+                convos.find((c: any) => c.needsReply) ||
+                convos[0];
+            if (first) setActiveId(first.bookingId);
+
             setLoading(false);
         };
         load();
     }, [supabase]);
 
-    const totalUnread = useMemo(
-        () => conversations.reduce((sum, c) => sum + (c.unread || 0), 0),
+    // Load whichever conversation is selected.
+    useEffect(() => {
+        if (!activeId) return;
+
+        let cancelled = false;
+        setThreadLoading(true);
+
+        const load = async () => {
+            try {
+                const res = await fetch('/api/messages/thread/' + activeId);
+                const data = await res.json();
+                if (cancelled) return;
+
+                setThread(data && data.ok ? data : null);
+
+                // Opening it clears the unread flags, here and in the list.
+                fetch('/api/messages/mark-read', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ bookingId: activeId }),
+                }).catch(() => {});
+
+                setConversations((prev) =>
+                    prev.map((c) => (c.bookingId === activeId ? { ...c, unread: 0 } : c))
+                );
+            } catch (err) {
+                if (!cancelled) setThread(null);
+            }
+            if (!cancelled) setThreadLoading(false);
+        };
+
+        load();
+        return () => {
+            cancelled = true;
+        };
+    }, [activeId]);
+
+    // New messages arrive without a refresh.
+    useEffect(() => {
+        if (!activeId) return;
+
+        const channel = supabase
+            .channel('thread-' + activeId)
+            .on(
+                'postgres_changes',
+                {
+                    event: 'INSERT',
+                    schema: 'public',
+                    table: 'messages',
+                    filter: 'booking_id=eq.' + activeId,
+                },
+                (payload: any) => {
+                    setThread((prev: any) => {
+                        if (!prev) return prev;
+                        if (prev.messages.some((m: any) => m.id === payload.new.id)) return prev;
+                        return { ...prev, messages: prev.messages.concat(payload.new) };
+                    });
+                }
+            )
+            .subscribe();
+
+        return () => {
+            supabase.removeChannel(channel);
+        };
+    }, [supabase, activeId]);
+
+    useEffect(() => {
+        bottomRef.current?.scrollIntoView({ behavior: 'smooth' });
+    }, [thread]);
+
+    const counts = useMemo(
+        () => ({
+            unread: conversations.reduce((s, c) => s + (c.unread || 0), 0),
+            needsReply: conversations.filter((c) => c.needsReply).length,
+        }),
         [conversations]
     );
 
-    // Searching by name and by property, since a host is as likely to think
-    // "the Kirkcudbright one" as to remember who booked it.
     const shown = useMemo(() => {
         const q = query.trim().toLowerCase();
 
         return conversations.filter((c) => {
-            if (unreadOnly && !c.unread) return false;
+            if (filter === 'unread' && !c.unread) return false;
+            if (filter === 'needsReply' && !c.needsReply) return false;
             if (!q) return true;
 
             const name = (c.otherName || '').toLowerCase();
@@ -54,7 +167,45 @@ export default function MessagesInboxPage() {
 
             return name.indexOf(q) !== -1 || place.indexOf(q) !== -1 || body.indexOf(q) !== -1;
         });
-    }, [conversations, query, unreadOnly]);
+    }, [conversations, query, filter]);
+
+    const send = async () => {
+        const outgoing = text.trim();
+        if (!outgoing || !thread || sending) return;
+
+        setSending(true);
+
+        const { error } = await supabase.from('messages').insert({
+            booking_id: activeId,
+            sender_id: session.user.id,
+            recipient_id: thread.other.id,
+            body: outgoing,
+        });
+
+        setSending(false);
+
+        if (error) {
+            toast.error(error.message, { theme: 'colored' });
+            return;
+        }
+
+        setText('');
+        setShowQuick(false);
+
+        // Reflect it straight away in the list, so the ordering and the
+        // needs-reply flag don't lie until the next load.
+        setConversations((prev) =>
+            prev.map((c) =>
+                c.bookingId === activeId
+                    ? {
+                        ...c,
+                        needsReply: false,
+                        lastMessage: { body: outgoing, created_at: new Date().toISOString() },
+                    }
+                    : c
+            )
+        );
+    };
 
     if (loading) {
         return (
@@ -75,109 +226,450 @@ export default function MessagesInboxPage() {
         );
     }
 
-    return (
-        <div className="max-w-3xl mx-auto px-6 py-10">
-            <div className="flex items-baseline gap-3 mb-6">
-                <h1 className="text-2xl md:text-3xl font-bold text-slate-900">Messages</h1>
-                {totalUnread > 0 && (
-                    <span className="text-sm font-semibold text-white bg-emerald-700 rounded-full px-2.5 py-0.5">
-                        {totalUnread} new
-                    </span>
-                )}
-            </div>
+    const stageStyles: Record<string, string> = {
+        staying: 'bg-emerald-100 text-emerald-800',
+        upcoming: 'bg-sky-100 text-sky-800',
+        past: 'bg-slate-100 text-slate-500',
+    };
 
-            <div className="flex flex-col sm:flex-row gap-2 mb-6">
-                <div className="relative flex-1">
+    const stageWords: Record<string, string> = {
+        staying: 'Here now',
+        upcoming: 'Upcoming',
+        past: 'Past',
+    };
+
+    // --- The list of conversations ----------------------------------------
+    const list = (
+        <div className="flex flex-col h-full">
+            <div className="p-4 border-b space-y-3">
+                <div className="relative">
                     <Search className="w-4 h-4 text-slate-400 absolute left-3 top-1/2 -translate-y-1/2" />
                     <input
                         type="text"
                         value={query}
                         onChange={(e) => setQuery(e.target.value)}
-                        placeholder="Search by name, property or message"
-                        className="w-full pl-9 pr-3 py-2.5 border rounded-xl text-sm outline-none focus:border-slate-900"
+                        placeholder="Search name, property or message"
+                        className="w-full pl-9 pr-3 py-2 border rounded-xl text-sm outline-none focus:border-slate-900"
                     />
                 </div>
-                <button
-                    type="button"
-                    onClick={() => setUnreadOnly(!unreadOnly)}
-                    className={
-                        'px-4 py-2.5 rounded-xl text-sm font-semibold border transition whitespace-nowrap ' +
-                        (unreadOnly
-                            ? 'bg-slate-900 text-white border-slate-900'
-                            : 'text-slate-600 hover:border-slate-900')
-                    }
-                >
-                    Unread{totalUnread > 0 ? ' (' + totalUnread + ')' : ''}
-                </button>
-            </div>
 
-            {shown.length === 0 ? (
-                <div className="border rounded-2xl p-10 text-center">
-                    <Inbox className="w-8 h-8 text-slate-300 mx-auto mb-3" />
-                    <p className="text-slate-600 font-medium">
-                        {conversations.length === 0
-                            ? 'No messages yet'
-                            : unreadOnly
-                                ? 'Nothing unread'
-                                : 'Nothing matches that'}
-                    </p>
-                    {conversations.length > 0 && (
+                <div className="flex gap-1.5">
+                    {([
+                        ['all', 'All', 0],
+                        ['needsReply', 'Needs reply', counts.needsReply],
+                        ['unread', 'Unread', counts.unread],
+                    ] as [typeof filter, string, number][]).map((row) => (
                         <button
+                            key={row[0]}
                             type="button"
-                            onClick={() => {
-                                setQuery('');
-                                setUnreadOnly(false);
-                            }}
-                            className="text-sm text-slate-500 underline hover:text-slate-800 mt-2"
-                        >
-                            Show everything
-                        </button>
-                    )}
-                </div>
-            ) : (
-                <div className="space-y-3">
-                    {shown.map((c) => (
-                        <Link
-                            key={c.bookingId}
-                            href={`/messages/${c.bookingId}`}
+                            onClick={() => setFilter(row[0])}
                             className={
-                                'flex items-center gap-4 p-4 border rounded-2xl transition hover:border-slate-400 ' +
-                                (c.unread ? 'bg-emerald-50/50 border-emerald-200' : '')
+                                'px-3 py-1.5 rounded-lg text-xs font-semibold border transition ' +
+                                (filter === row[0]
+                                    ? 'bg-slate-900 text-white border-slate-900'
+                                    : 'text-slate-600 hover:border-slate-900')
                             }
                         >
-                            <div className="w-16 h-16 rounded-xl bg-slate-200 overflow-hidden flex-shrink-0">
-                                {c.listing?.images?.[0] && (
+                            {row[1]}
+                            {row[2] > 0 ? ' ' + row[2] : ''}
+                        </button>
+                    ))}
+                </div>
+            </div>
+
+            <div className="flex-1 overflow-y-auto">
+                {shown.length === 0 ? (
+                    <div className="p-8 text-center">
+                        <Inbox className="w-7 h-7 text-slate-300 mx-auto mb-2" />
+                        <p className="text-sm text-slate-500">
+                            {conversations.length === 0 ? 'No messages yet' : 'Nothing here'}
+                        </p>
+                    </div>
+                ) : (
+                    shown.map((c) => (
+                        <button
+                            key={c.bookingId}
+                            type="button"
+                            onClick={() => setActiveId(c.bookingId)}
+                            className={
+                                'w-full text-left p-4 border-b transition flex gap-3 ' +
+                                (activeId === c.bookingId
+                                    ? 'bg-slate-100'
+                                    : c.unread
+                                        ? 'bg-emerald-50/50 hover:bg-emerald-50'
+                                        : 'hover:bg-slate-50')
+                            }
+                        >
+                            <div className="w-12 h-12 rounded-xl bg-slate-200 overflow-hidden flex-shrink-0">
+                                {c.listing && c.listing.images && c.listing.images[0] && (
                                     <img
                                         src={getImageUrl(c.listing.images[0])}
-                                        alt={c.listing.title}
+                                        alt=""
                                         className="w-full h-full object-cover"
                                     />
                                 )}
                             </div>
 
-                            <div className="flex-1 min-w-0">
+                            <div className="min-w-0 flex-1">
                                 <div className="flex items-center gap-2">
-                                    <div className="font-semibold text-slate-900 truncate">
+                                    <span className="font-semibold text-slate-900 truncate">
                                         {capitializeFirst(c.otherName)}
-                                    </div>
+                                    </span>
                                     {c.unread > 0 && (
-                                        <span className="flex-shrink-0 text-xs font-bold text-white bg-emerald-700 rounded-full px-2 py-0.5">
+                                        <span className="flex-shrink-0 text-xs font-bold text-white bg-emerald-700 rounded-full px-1.5">
                                             {c.unread}
+                                        </span>
+                                    )}
+                                    {c.lastMessage && (
+                                        <span className="ml-auto text-xs text-slate-400 flex-shrink-0">
+                                            {timeAgo(c.lastMessage.created_at)}
                                         </span>
                                     )}
                                 </div>
 
-                                <div className="text-sm text-slate-500 truncate">
-                                    {c.listing?.title || 'Listing'} · {c.checkIn} → {c.checkOut}
+                                <div className="flex items-center gap-1.5 mt-0.5">
+                                    <span
+                                        className={
+                                            'text-[10px] font-semibold px-1.5 py-0.5 rounded ' +
+                                            (stageStyles[c.stage] || stageStyles.past)
+                                        }
+                                    >
+                                        {stageWords[c.stage] || 'Past'}
+                                    </span>
+                                    <span className="text-xs text-slate-500 truncate">
+                                        {(c.listing && c.listing.title) || 'Listing'}
+                                    </span>
                                 </div>
 
                                 {c.lastMessage && (
                                     <div
                                         className={
-                                            'text-sm truncate mt-0.5 ' +
-                                            (c.unread ? 'text-slate-900 font-medium' : 'text-slate-400')
+                                            'text-xs truncate mt-1 ' +
+                                            (c.needsReply ? 'text-slate-900 font-medium' : 'text-slate-400')
                                         }
                                     >
+                                        {c.needsReply && <span className="text-amber-600">&bull; </span>}
+                                        {c.lastMessage.body}
+                                    </div>
+                                )}
+                            </div>
+                        </button>
+                    ))
+                )}
+            </div>
+        </div>
+    );
+
+    // --- The conversation -------------------------------------------------
+    const conversation = (
+        <div className="flex flex-col h-full">
+            {!thread ? (
+                <div className="flex-1 flex items-center justify-center text-slate-400 text-sm">
+                    {threadLoading ? 'Loading…' : 'Pick a conversation'}
+                </div>
+            ) : (
+                <>
+                    <div className="p-4 border-b flex items-center justify-between gap-3">
+                        <div className="min-w-0">
+                            <div className="font-semibold text-slate-900 truncate">
+                                {capitializeFirst(thread.other.name)}
+                            </div>
+                            <div className="text-xs text-slate-500 truncate">
+                                {thread.listing && thread.listing.title}
+                            </div>
+                        </div>
+                        {thread.other.phone && (
+                            <a
+                                href={'tel:' + thread.other.phone}
+                                className="flex-shrink-0 text-slate-400 hover:text-emerald-700"
+                                title={thread.other.phone}
+                            >
+                                <Phone className="w-4 h-4" />
+                            </a>
+                        )}
+                    </div>
+
+                    <div className="flex-1 overflow-y-auto p-4 space-y-3">
+                        {thread.messages.length === 0 && (
+                            <p className="text-sm text-slate-400 text-center py-8">
+                                Nothing here yet. Say hello.
+                            </p>
+                        )}
+
+                        {thread.messages.map((m: any) => {
+                            const mine = m.sender_id === session.user.id;
+                            return (
+                                <div
+                                    key={m.id}
+                                    className={'flex ' + (mine ? 'justify-end' : 'justify-start')}
+                                >
+                                    <div
+                                        className={
+                                            'max-w-[75%] rounded-2xl px-4 py-2.5 text-sm ' +
+                                            (mine
+                                                ? 'bg-emerald-700 text-white'
+                                                : 'bg-slate-100 text-slate-900')
+                                        }
+                                    >
+                                        <div className="whitespace-pre-wrap break-words">{m.body}</div>
+                                        <div
+                                            className={
+                                                'text-[10px] mt-1 ' +
+                                                (mine ? 'text-emerald-100' : 'text-slate-400')
+                                            }
+                                        >
+                                            {new Date(m.created_at).toLocaleString('en-GB', {
+                                                day: 'numeric',
+                                                month: 'short',
+                                                hour: '2-digit',
+                                                minute: '2-digit',
+                                            })}
+                                        </div>
+                                    </div>
+                                </div>
+                            );
+                        })}
+                        <div ref={bottomRef} />
+                    </div>
+
+                    <div className="p-4 border-t">
+                        {showQuick && quickReplies.length > 0 && (
+                            <div className="mb-2 border rounded-xl divide-y max-h-40 overflow-y-auto">
+                                {quickReplies.map((r) => (
+                                    <button
+                                        key={r.id}
+                                        type="button"
+                                        onClick={() => {
+                                            setText(r.body);
+                                            setShowQuick(false);
+                                        }}
+                                        className="w-full text-left px-3 py-2 hover:bg-slate-50"
+                                    >
+                                        <div className="text-sm font-medium text-slate-800">
+                                            {r.title}
+                                        </div>
+                                        <div className="text-xs text-slate-500 truncate">{r.body}</div>
+                                    </button>
+                                ))}
+                            </div>
+                        )}
+
+                        <div className="flex items-end gap-2">
+                            {quickReplies.length > 0 && (
+                                <button
+                                    type="button"
+                                    onClick={() => setShowQuick(!showQuick)}
+                                    title="Saved replies"
+                                    className={
+                                        'p-2.5 rounded-xl border transition flex-shrink-0 ' +
+                                        (showQuick
+                                            ? 'border-slate-900 text-slate-900'
+                                            : 'text-slate-400 hover:text-slate-800 hover:border-slate-400')
+                                    }
+                                >
+                                    <Zap className="w-4 h-4" />
+                                </button>
+                            )}
+
+                            <textarea
+                                value={text}
+                                onChange={(e) => setText(e.target.value)}
+                                onKeyDown={(e) => {
+                                    // Enter sends; shift and enter makes a new line.
+                                    if (e.key === 'Enter' && !e.shiftKey) {
+                                        e.preventDefault();
+                                        send();
+                                    }
+                                }}
+                                rows={1}
+                                placeholder="Write a message…"
+                                className="flex-1 border rounded-xl px-3 py-2.5 text-sm outline-none focus:border-slate-900 resize-none max-h-32"
+                            />
+
+                            <button
+                                type="button"
+                                onClick={send}
+                                disabled={sending || !text.trim()}
+                                className="p-2.5 bg-emerald-700 hover:bg-emerald-800 text-white rounded-xl disabled:opacity-40 flex-shrink-0"
+                            >
+                                <Send className="w-4 h-4" />
+                            </button>
+                        </div>
+                    </div>
+                </>
+            )}
+        </div>
+    );
+
+    // --- The booking behind the conversation ------------------------------
+    const details = thread ? (
+        <div className="h-full overflow-y-auto p-5 space-y-5">
+            {thread.listing && thread.listing.images && thread.listing.images[0] && (
+                <img
+                    src={getImageUrl(thread.listing.images[0])}
+                    alt=""
+                    className="w-full h-32 object-cover rounded-xl"
+                />
+            )}
+
+            <div>
+                <div className="font-semibold text-slate-900">
+                    {thread.listing && thread.listing.title}
+                </div>
+                <div className="text-sm text-slate-500">
+                    {thread.listing && thread.listing.location}
+                </div>
+            </div>
+
+            <div className="space-y-2 text-sm">
+                <div className="flex justify-between gap-2">
+                    <span className="text-slate-500 flex-shrink-0">Check in</span>
+                    <span className="text-slate-900 font-medium text-right">
+                        {thread.booking.check_in}
+                        {thread.listing && thread.listing.checkin_start
+                            ? ' · ' + thread.listing.checkin_start
+                            : ''}
+                    </span>
+                </div>
+                <div className="flex justify-between gap-2">
+                    <span className="text-slate-500 flex-shrink-0">Check out</span>
+                    <span className="text-slate-900 font-medium text-right">
+                        {thread.booking.check_out}
+                        {thread.listing && thread.listing.checkout_time
+                            ? ' · ' + thread.listing.checkout_time
+                            : ''}
+                    </span>
+                </div>
+                <div className="flex justify-between">
+                    <span className="text-slate-500">Guests</span>
+                    <span className="text-slate-900 font-medium">{thread.booking.guests}</span>
+                </div>
+                <div className="flex justify-between">
+                    <span className="text-slate-500">Status</span>
+                    <span className="text-slate-900 font-medium capitalize">
+                        {thread.booking.status}
+                    </span>
+                </div>
+            </div>
+
+            {thread.booking.total_price !== null && (
+                <div className="border-t pt-4 space-y-2 text-sm">
+                    <div className="flex justify-between">
+                        <span className="text-slate-500">Total</span>
+                        <span className="text-slate-900 font-medium">
+                            £{Number(thread.booking.total_price).toFixed(2)}
+                        </span>
+                    </div>
+                    {Number(thread.booking.balance_amount) > 0 && (
+                        <div className="flex justify-between">
+                            <span className="text-slate-500">Still to pay</span>
+                            <span className="text-amber-700 font-medium">
+                                £{Number(thread.booking.balance_amount).toFixed(2)}
+                            </span>
+                        </div>
+                    )}
+                </div>
+            )}
+
+            {thread.other.phone && (
+                <div className="border-t pt-4">
+                    <div className="text-xs text-slate-500 mb-1">Phone</div>
+                    <a
+                        href={'tel:' + thread.other.phone}
+                        className="text-sm text-emerald-700 hover:underline"
+                    >
+                        {thread.other.phone}
+                    </a>
+                </div>
+            )}
+
+            <div className="border-t pt-4 space-y-2">
+                {thread.listing && (
+                    <Link
+                        href={'/homes/' + thread.listing.id}
+                        className="flex items-center gap-1.5 text-sm text-slate-600 hover:text-slate-900"
+                    >
+                        <ExternalLink className="w-3.5 h-3.5" />
+                        View the listing
+                    </Link>
+                )}
+                {thread.role === 'host' && (
+                    <Link
+                        href="/dashboard/bookings"
+                        className="flex items-center gap-1.5 text-sm text-slate-600 hover:text-slate-900"
+                    >
+                        <ExternalLink className="w-3.5 h-3.5" />
+                        Manage this booking
+                    </Link>
+                )}
+            </div>
+        </div>
+    ) : (
+        <div className="p-5 text-sm text-slate-400">Pick a conversation</div>
+    );
+
+    return (
+        <div className="max-w-[1400px] mx-auto px-4 py-6">
+            <h1 className="text-2xl font-bold text-slate-900 mb-4">Messages</h1>
+
+            {/* Three panes side by side once there's room for them. */}
+            <div className="hidden lg:flex border rounded-2xl overflow-hidden h-[calc(100vh-11rem)] bg-white">
+                <div className="w-80 border-r flex-shrink-0">{list}</div>
+                <div className="flex-1 min-w-0 border-r">{conversation}</div>
+                <div className="w-72 flex-shrink-0">{details}</div>
+            </div>
+
+            {/* Narrow screens keep the list, and tapping opens the existing
+                full-screen conversation page. A proper phone layout is its
+                own job rather than three squashed columns. */}
+            <div className="lg:hidden border rounded-2xl overflow-hidden bg-white">
+                <div className="p-4 border-b">
+                    <div className="relative">
+                        <Search className="w-4 h-4 text-slate-400 absolute left-3 top-1/2 -translate-y-1/2" />
+                        <input
+                            type="text"
+                            value={query}
+                            onChange={(e) => setQuery(e.target.value)}
+                            placeholder="Search"
+                            className="w-full pl-9 pr-3 py-2 border rounded-xl text-sm outline-none"
+                        />
+                    </div>
+                </div>
+
+                <div>
+                    {shown.map((c) => (
+                        <Link
+                            key={c.bookingId}
+                            href={'/messages/' + c.bookingId}
+                            className={
+                                'p-4 border-b flex gap-3 ' + (c.unread ? 'bg-emerald-50/50' : '')
+                            }
+                        >
+                            <div className="w-12 h-12 rounded-xl bg-slate-200 overflow-hidden flex-shrink-0">
+                                {c.listing && c.listing.images && c.listing.images[0] && (
+                                    <img
+                                        src={getImageUrl(c.listing.images[0])}
+                                        alt=""
+                                        className="w-full h-full object-cover"
+                                    />
+                                )}
+                            </div>
+                            <div className="min-w-0 flex-1">
+                                <div className="flex items-center gap-2">
+                                    <span className="font-semibold text-slate-900 truncate">
+                                        {capitializeFirst(c.otherName)}
+                                    </span>
+                                    {c.unread > 0 && (
+                                        <span className="text-xs font-bold text-white bg-emerald-700 rounded-full px-1.5">
+                                            {c.unread}
+                                        </span>
+                                    )}
+                                </div>
+                                <div className="text-xs text-slate-500 truncate">
+                                    {c.listing && c.listing.title}
+                                </div>
+                                {c.lastMessage && (
+                                    <div className="text-xs text-slate-400 truncate mt-0.5">
                                         {c.lastMessage.body}
                                     </div>
                                 )}
@@ -185,7 +677,7 @@ export default function MessagesInboxPage() {
                         </Link>
                     ))}
                 </div>
-            )}
+            </div>
         </div>
     );
 }
