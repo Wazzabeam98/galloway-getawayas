@@ -32,6 +32,7 @@ export default function MessagesInboxPage() {
     const [activeId, setActiveId] = useState<string | null>(null);
     const [thread, setThread] = useState<any>(null);
     const [threadLoading, setThreadLoading] = useState(false);
+    const [threadError, setThreadError] = useState('');
 
     const [text, setText] = useState('');
     const [sending, setSending] = useState(false);
@@ -81,14 +82,38 @@ export default function MessagesInboxPage() {
 
         let cancelled = false;
         setThreadLoading(true);
+        setThreadError('');
 
         const load = async () => {
             try {
-                const res = await fetch('/api/messages/thread/' + activeId);
+                const res = await fetch('/api/messages/threads/' + activeId);
+
+                // A failure that looks identical to "nothing selected" is
+                // impossible to diagnose, so say what actually happened.
+                if (!res.ok) {
+                    if (!cancelled) {
+                        setThread(null);
+                        setThreadError(
+                            res.status === 404
+                                ? 'That conversation could not be found.'
+                                : 'Could not load this conversation (' + res.status + ').'
+                        );
+                        setThreadLoading(false);
+                    }
+                    return;
+                }
+
                 const data = await res.json();
                 if (cancelled) return;
 
-                setThread(data && data.ok ? data : null);
+                if (!data || !data.ok) {
+                    setThread(null);
+                    setThreadError((data && data.error) || 'Could not load this conversation.');
+                    setThreadLoading(false);
+                    return;
+                }
+
+                setThread(data);
 
                 // Opening it clears the unread flags, here and in the list.
                 fetch('/api/messages/mark-read', {
@@ -100,8 +125,11 @@ export default function MessagesInboxPage() {
                 setConversations((prev) =>
                     prev.map((c) => (c.bookingId === activeId ? { ...c, unread: 0 } : c))
                 );
-            } catch (err) {
-                if (!cancelled) setThread(null);
+            } catch (err: any) {
+                if (!cancelled) {
+                    setThread(null);
+                    setThreadError('Could not reach the server.');
+                }
             }
             if (!cancelled) setThreadLoading(false);
         };
@@ -364,8 +392,14 @@ export default function MessagesInboxPage() {
     const conversation = (
         <div className="flex flex-col h-full">
             {!thread ? (
-                <div className="flex-1 flex items-center justify-center text-slate-400 text-sm">
-                    {threadLoading ? 'Loading…' : 'Pick a conversation'}
+                <div className="flex-1 flex items-center justify-center px-6 text-center">
+                    {threadLoading ? (
+                        <span className="text-slate-400 text-sm">Loading…</span>
+                    ) : threadError ? (
+                        <span className="text-sm text-red-600">{threadError}</span>
+                    ) : (
+                        <span className="text-slate-400 text-sm">Pick a conversation</span>
+                    )}
                 </div>
             ) : (
                 <>
@@ -540,14 +574,55 @@ export default function MessagesInboxPage() {
                             : ''}
                     </span>
                 </div>
+                <div className="flex justify-between gap-2">
+                    <span className="text-slate-500 flex-shrink-0">Guests</span>
+                    <span className="text-slate-900 font-medium text-right">
+                        {thread.booking.guests}
+                        {thread.booking.adults
+                            ? ' (' +
+                              thread.booking.adults +
+                              (thread.booking.adults === 1 ? ' adult' : ' adults') +
+                              (thread.booking.children
+                                  ? ', ' +
+                                    thread.booking.children +
+                                    (thread.booking.children === 1 ? ' child' : ' children')
+                                  : '') +
+                              ')'
+                            : ''}
+                    </span>
+                </div>
+                {thread.booking.pets > 0 && (
+                    <div className="flex justify-between">
+                        <span className="text-slate-500">Pets</span>
+                        <span className="text-slate-900 font-medium">{thread.booking.pets}</span>
+                    </div>
+                )}
                 <div className="flex justify-between">
-                    <span className="text-slate-500">Guests</span>
-                    <span className="text-slate-900 font-medium">{thread.booking.guests}</span>
+                    <span className="text-slate-500">Nights</span>
+                    <span className="text-slate-900 font-medium">
+                        {Math.round(
+                            (new Date(thread.booking.check_out).getTime() -
+                                new Date(thread.booking.check_in).getTime()) /
+                                86400000
+                        )}
+                    </span>
                 </div>
                 <div className="flex justify-between">
                     <span className="text-slate-500">Status</span>
                     <span className="text-slate-900 font-medium capitalize">
-                        {thread.booking.status}
+                        {String(thread.booking.status).replace(/_/g, ' ')}
+                    </span>
+                </div>
+                <div className="flex justify-between gap-2">
+                    <span className="text-slate-500 flex-shrink-0">Booked</span>
+                    <span className="text-slate-900 font-medium text-right">
+                        {new Date(thread.booking.created_at).toLocaleDateString('en-GB')}
+                    </span>
+                </div>
+                <div className="flex justify-between gap-2">
+                    <span className="text-slate-500 flex-shrink-0">Reference</span>
+                    <span className="text-slate-500 font-mono text-xs text-right">
+                        {String(thread.booking.id).slice(0, 8)}
                     </span>
                 </div>
             </div>
@@ -560,11 +635,32 @@ export default function MessagesInboxPage() {
                             £{Number(thread.booking.total_price).toFixed(2)}
                         </span>
                     </div>
-                    {Number(thread.booking.balance_amount) > 0 && (
+                    {thread.booking.amount_paid !== null && (
                         <div className="flex justify-between">
-                            <span className="text-slate-500">Still to pay</span>
-                            <span className="text-amber-700 font-medium">
+                            <span className="text-slate-500">Paid</span>
+                            <span className="text-slate-900 font-medium">
+                                £{Number(thread.booking.amount_paid || 0).toFixed(2)}
+                            </span>
+                        </div>
+                    )}
+                    {Number(thread.booking.balance_amount) > 0 && (
+                        <div className="flex justify-between gap-2">
+                            <span className="text-slate-500 flex-shrink-0">Still to pay</span>
+                            <span className="text-amber-700 font-medium text-right">
                                 £{Number(thread.booking.balance_amount).toFixed(2)}
+                                {thread.booking.balance_due_date
+                                    ? ' by ' +
+                                      new Date(thread.booking.balance_due_date).toLocaleDateString('en-GB')
+                                    : ''}
+                            </span>
+                        </div>
+                    )}
+                    {thread.booking.free_cancel_until && (
+                        <div className="flex justify-between gap-2">
+                            <span className="text-slate-500 flex-shrink-0">Free cancellation</span>
+                            <span className="text-slate-600 text-right">
+                                until{' '}
+                                {new Date(thread.booking.free_cancel_until).toLocaleDateString('en-GB')}
                             </span>
                         </div>
                     )}
