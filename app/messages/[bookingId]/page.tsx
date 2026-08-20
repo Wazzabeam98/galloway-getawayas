@@ -107,6 +107,14 @@ export default function ConversationPage() {
             const { data: listing } = await supabase.from('listings').select('title').eq('id', booking.listing_id).single();
             setListingTitle(listing?.title || 'Listing');
 
+            // Anything waiting for them is read the moment they open it.
+            // Fired without waiting — the messages matter more than the flag.
+            fetch('/api/messages/mark-read', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ bookingId: bookingId }),
+            }).catch(() => {});
+
             const { data: msgs } = await supabase
                 .from('messages')
                 .select('id, sender_id, body, created_at')
