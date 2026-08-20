@@ -1,5 +1,6 @@
 'use client';
 
+import { PLATFORMS } from '@/lib/platforms';
 import { useEffect, useMemo, useState } from 'react';
 import { createClientComponentClient } from '@supabase/auth-helpers-nextjs';
 import Logo from '@/components/base/Logo';
@@ -57,6 +58,8 @@ export default function CalendarPage() {
     const [month, setMonth] = useState(startOfMonth(new Date()));
     const [overrides, setOverrides] = useState<Record<string, Override>>({});
     const [bookings, setBookings] = useState<Booking[]>([]);
+    // date -> which platform has it, from the imported calendars
+    const [external, setExternal] = useState<Record<string, { platform: string; name: string }>>({});
     const [guestNames, setGuestNames] = useState<Record<string, string>>({});
 
     const [rightTab, setRightTab] = useState<'manage' | 'pricing' | 'fees' | 'availability'>('manage');
@@ -154,6 +157,36 @@ export default function CalendarPage() {
                 .eq('listing_id', selectedListingId)
                 .eq('status', 'confirmed');
             setBookings(bookingRows || []);
+
+            // Dates taken on Airbnb, Booking.com and anywhere else this
+            // listing syncs with. Without this a host sees their Galloway
+            // bookings only and assumes the rest of the month is free.
+            try {
+                const res = await fetch('/api/ical-import?listing=' + selectedListingId);
+                const data = res.ok ? await res.json() : { events: [] };
+
+                const map: Record<string, any> = {};
+
+                (data.events || []).forEach((ev: any) => {
+                    const day = new Date(ev.start);
+                    const end = new Date(ev.end);
+
+                    // An iCal event runs up to its checkout date, which is
+                    // itself free — the same convention as a booking here.
+                    while (day < end) {
+                        map[format(day, 'yyyy-MM-dd')] = {
+                            platform: ev.platform,
+                            name: ev.platformName,
+                        };
+                        day.setDate(day.getDate() + 1);
+                    }
+                });
+
+                setExternal(map);
+            } catch (err) {
+                // A calendar we can't reach shouldn't stop the page loading.
+                setExternal({});
+            }
 
             const guestIds = Array.from(new Set((bookingRows || []).map((b) => b.guest_id)));
             if (guestIds.length > 0) {
@@ -379,6 +412,8 @@ export default function CalendarPage() {
                             const key = format(day, 'yyyy-MM-dd');
                             const override = overrides[key];
                             const booking = bookingForDate(day);
+                            const away = !booking ? external[key] : null;
+                            const awayStyle = away ? PLATFORMS[away.platform] || PLATFORMS.other : null;
                             const isPast = isBefore(day, startOfDay(new Date()));
                             const selected = isInSelection(day);
                             const price = dayPrice(day, key, override);
@@ -392,16 +427,19 @@ export default function CalendarPage() {
                                     className={`aspect-square rounded-xl border-2 p-1.5 flex flex-col items-start justify-between text-left transition ${
                                         isPast ? 'opacity-30 cursor-not-allowed border-slate-100' :
                                         booking ? 'border-slate-900 bg-slate-900 text-white' :
+                                        awayStyle ? `${awayStyle.border} ${awayStyle.bg} ${awayStyle.text}` :
                                         override?.is_blocked ? 'border-slate-300 bg-slate-100 text-slate-400' :
                                         selected ? 'border-slate-900 bg-slate-50' :
                                         'border-slate-200 hover:border-slate-400'
                                     }`}
                                 >
-                                    <span className={`text-xs font-semibold ${booking ? 'text-white' : override?.is_blocked ? 'line-through' : 'text-slate-800'}`}>
+                                    <span className={`text-xs font-semibold ${booking || awayStyle ? 'text-white' : override?.is_blocked ? 'line-through' : 'text-slate-800'}`}>
                                         {format(day, 'd')}
                                     </span>
                                     {booking ? (
                                         <span className="text-[9px] truncate w-full">{guestNames[booking.guest_id] || 'Guest'}</span>
+                                    ) : away ? (
+                                        <span className="text-[9px] truncate w-full">{away.name}</span>
                                     ) : override?.is_blocked ? (
                                         <span className="text-[9px]">Blocked</span>
                                     ) : (
@@ -415,6 +453,18 @@ export default function CalendarPage() {
                     <div className="flex flex-wrap gap-4 mt-6 text-xs text-slate-500">
                         <div className="flex items-center gap-1.5"><span className="w-3 h-3 rounded bg-slate-900" /> Booked</div>
                         <div className="flex items-center gap-1.5"><span className="w-3 h-3 rounded bg-slate-100 border border-slate-300" /> Blocked</div>
+                        {Array.from(new Set(Object.keys(external).map((k) => external[k].platform))).map((key) => {
+                            const p = PLATFORMS[key as string] || PLATFORMS.other;
+                            const name = Object.keys(external)
+                                .map((k) => external[k])
+                                .find((e) => e.platform === key);
+                            return (
+                                <div key={key as string} className="flex items-center gap-1.5">
+                                    <span className={`w-3 h-3 rounded ${p.dot}`} />
+                                    {(name && name.name) || p.name}
+                                </div>
+                            );
+                        })}
                         <div className="flex items-center gap-1.5"><span className="w-3 h-3 rounded border-2 border-slate-200" /> Available</div>
                     </div>
                     <p className="text-xs text-slate-400 mt-3">Click a date to select it, then click another date to select a range for date-specific overrides.</p>
