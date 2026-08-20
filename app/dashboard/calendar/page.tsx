@@ -23,6 +23,8 @@ interface Listing {
     damage_deposit: number;
     pet_fee: number;
     extra_guest_fee: number;
+    extra_guest_after: number;
+    extra_guest_period: string;
     advance_notice: string;
     preparation_time: string;
     availability_window: string;
@@ -74,6 +76,8 @@ export default function CalendarPage() {
     const [damageDeposit, setDamageDeposit] = useState('0');
     const [petFee, setPetFee] = useState('0');
     const [extraGuestFee, setExtraGuestFee] = useState('0');
+    const [extraGuestAfter, setExtraGuestAfter] = useState('1');
+    const [extraGuestPeriod, setExtraGuestPeriod] = useState('night');
     const [minNightsGlobal, setMinNightsGlobal] = useState('1');
     const [maxNightsGlobal, setMaxNightsGlobal] = useState('');
     const [advanceNotice, setAdvanceNotice] = useState('Same day');
@@ -98,7 +102,7 @@ export default function CalendarPage() {
                 const { data } = ids.length
                     ? await supabase
                         .from('listings')
-                        .select('id, title, price_per_night, min_nights, max_nights, weekend_price, cleaning_fee, pet_fee, extra_guest_fee, damage_deposit, advance_notice, preparation_time, availability_window')
+                        .select('id, title, price_per_night, min_nights, max_nights, weekend_price, cleaning_fee, pet_fee, extra_guest_fee, extra_guest_after, extra_guest_period, damage_deposit, advance_notice, preparation_time, availability_window')
                         .in('id', ids)
                         // A hidden listing still has guests arriving, so its
                         // calendar has to stay reachable.
@@ -122,6 +126,8 @@ export default function CalendarPage() {
         setDamageDeposit(String(selectedListing.damage_deposit ?? 0));
         setPetFee(String(selectedListing.pet_fee ?? 0));
         setExtraGuestFee(String(selectedListing.extra_guest_fee ?? 0));
+        setExtraGuestAfter(String(selectedListing.extra_guest_after ?? 1));
+        setExtraGuestPeriod(selectedListing.extra_guest_period || 'night');
         setMinNightsGlobal(String(selectedListing.min_nights ?? 1));
         setMaxNightsGlobal(selectedListing.max_nights ? String(selectedListing.max_nights) : '');
         setAdvanceNotice(selectedListing.advance_notice || 'Same day');
@@ -547,11 +553,62 @@ export default function CalendarPage() {
                             </div>
                             <div>
                                 <label className="block text-sm font-semibold text-slate-800 mb-1">Extra guest fee</label>
-                                <p className="text-xs text-slate-400 mb-1">Per night, per guest after the first</p>
-                                <div className="flex items-center border rounded-xl px-3 py-2">
+                                <p className="text-xs text-slate-400 mb-2">
+                                    Leave at 0 if your price covers everyone.
+                                </p>
+
+                                <div className="flex items-center border rounded-xl px-3 py-2 mb-2">
                                     <span className="text-slate-500 mr-1">£</span>
                                     <input type="number" value={extraGuestFee} onChange={(e) => setExtraGuestFee(e.target.value)} className="w-full outline-none text-sm" />
                                 </div>
+
+                                <div className="flex items-center gap-2 mb-2">
+                                    <span className="text-sm text-slate-600 whitespace-nowrap">for each guest after the first</span>
+                                    <input
+                                        type="number"
+                                        min="1"
+                                        value={extraGuestAfter}
+                                        onChange={(e) => setExtraGuestAfter(e.target.value)}
+                                        className="w-16 border rounded-xl px-3 py-2 text-sm outline-none"
+                                    />
+                                </div>
+
+                                <div className="grid grid-cols-2 gap-2">
+                                    <button
+                                        type="button"
+                                        onClick={() => setExtraGuestPeriod('night')}
+                                        className={
+                                            'border rounded-xl px-3 py-2 text-sm font-medium transition ' +
+                                            (extraGuestPeriod === 'night'
+                                                ? 'border-slate-900 bg-slate-50 text-slate-900'
+                                                : 'text-slate-500 hover:border-slate-400')
+                                        }
+                                    >
+                                        Per night
+                                    </button>
+                                    <button
+                                        type="button"
+                                        onClick={() => setExtraGuestPeriod('stay')}
+                                        className={
+                                            'border rounded-xl px-3 py-2 text-sm font-medium transition ' +
+                                            (extraGuestPeriod === 'stay'
+                                                ? 'border-slate-900 bg-slate-50 text-slate-900'
+                                                : 'text-slate-500 hover:border-slate-400')
+                                        }
+                                    >
+                                        Once per stay
+                                    </button>
+                                </div>
+
+                                {Number(extraGuestFee) > 0 && (
+                                    <p className="text-xs text-slate-500 mt-2">
+                                        {Number(extraGuestAfter) === 1
+                                            ? 'One guest is included. '
+                                            : 'The first ' + (Number(extraGuestAfter) || 1) + ' guests are included. '}
+                                        After that it&apos;s £{Number(extraGuestFee).toFixed(2)} each
+                                        {extraGuestPeriod === 'night' ? ', per night.' : ', for the whole stay.'}
+                                    </p>
+                                )}
                             </div>
 
                             <div className="border-t pt-5">
@@ -573,6 +630,8 @@ export default function CalendarPage() {
                                     cleaning_fee: Number(cleaningFee) || 0,
                                     pet_fee: Number(petFee) || 0,
                                     extra_guest_fee: Number(extraGuestFee) || 0,
+                                    extra_guest_after: Math.max(1, Number(extraGuestAfter) || 1),
+                                    extra_guest_period: extraGuestPeriod === 'stay' ? 'stay' : 'night',
                                     damage_deposit: Number(damageDeposit) || 0,
                                 })}
                                 className="w-full py-3 bg-emerald-700 hover:bg-emerald-800 text-white font-bold rounded-xl transition disabled:opacity-50"
