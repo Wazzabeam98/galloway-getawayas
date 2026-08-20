@@ -213,6 +213,56 @@ export default function CalendarPage() {
         return (firstDay + 6) % 7;
     }, [month]);
 
+    // How full the month is, counting every source together. A host sees
+    // Galloway as one channel among several, so singling our own bookings out
+    // as "direct" would be our framing, not theirs — and the split between
+    // channels is their business, not something this page needs to total up.
+    const monthSummary = useMemo(() => {
+        const sources: Record<string, { name: string; colour: string }> = {};
+        let sold = 0;
+        let blocked = 0;
+        let free = 0;
+
+        days.forEach((day) => {
+            const key = format(day, 'yyyy-MM-dd');
+
+            const booked = bookings.find((b) => {
+                const start = new Date(b.check_in);
+                const end = new Date(b.check_out);
+                return day >= start && day < end;
+            });
+
+            if (booked) {
+                sold = sold + 1;
+                return;
+            }
+
+            const away = external[key];
+            if (away) {
+                const p = PLATFORMS[away.platform] || PLATFORMS.other;
+                const id = away.name || p.name;
+                if (!sources[id]) sources[id] = { name: id, colour: p.colour };
+                sold = sold + 1;
+                return;
+            }
+
+            if (overrides[key]?.is_blocked) {
+                blocked = blocked + 1;
+                return;
+            }
+
+            free = free + 1;
+        });
+
+        return {
+            sold: sold,
+            blocked: blocked,
+            free: free,
+            sources: Object.keys(sources).map((k) => sources[k]),
+            occupancy: days.length ? Math.round((sold / days.length) * 100) : 0,
+        };
+    }, [days, bookings, external, overrides]);
+
     const bookingForDate = (date: Date) => {
         return bookings.find((b) => {
             const start = new Date(b.check_in);
@@ -457,26 +507,50 @@ export default function CalendarPage() {
                         })}
                     </div>
 
-                    <div className="flex flex-wrap gap-4 mt-6 text-xs text-slate-500">
-                        <div className="flex items-center gap-1.5"><span className="w-3 h-3 rounded bg-slate-900" /> Booked</div>
-                        <div className="flex items-center gap-1.5"><span className="w-3 h-3 rounded bg-slate-100 border border-slate-300" /> Blocked</div>
-                        {Array.from(new Set(Object.keys(external).map((k) => external[k].platform))).map((key) => {
-                            const p = PLATFORMS[key as string] || PLATFORMS.other;
-                            const name = Object.keys(external)
-                                .map((k) => external[k])
-                                .find((e) => e.platform === key);
-                            return (
-                                <div key={key as string} className="flex items-center gap-1.5">
+                    <div className="mt-6 border-t pt-5">
+                        <div className="flex flex-wrap items-baseline gap-x-6 gap-y-2 mb-4">
+                            <div>
+                                <span className="text-2xl font-bold text-slate-900">
+                                    {monthSummary.occupancy}%
+                                </span>
+                                <span className="text-xs text-slate-500 ml-1.5">booked</span>
+                            </div>
+
+                            <div className="text-xs text-slate-500">
+                                {monthSummary.sold} {monthSummary.sold === 1 ? 'night' : 'nights'} booked
+                                {monthSummary.free > 0
+                                    ? ', ' + monthSummary.free + ' still free'
+                                    : ''}
+                                {monthSummary.blocked > 0
+                                    ? ', ' + monthSummary.blocked + ' blocked'
+                                    : ''}
+                            </div>
+                        </div>
+
+                        <div className="flex flex-wrap gap-x-5 gap-y-2 text-xs text-slate-500">
+                            <div className="flex items-center gap-1.5">
+                                <span className="w-3 h-3 rounded bg-slate-900" /> Booked here
+                            </div>
+
+                            {monthSummary.sources.map((p) => (
+                                <div key={p.name} className="flex items-center gap-1.5">
                                     <span
                                         className="w-3 h-3 rounded"
                                         style={{ backgroundColor: p.colour }}
                                     />
-                                    {(name && name.name) || p.name}
+                                    {p.name}
                                 </div>
-                            );
-                        })}
-                        <div className="flex items-center gap-1.5"><span className="w-3 h-3 rounded border-2 border-slate-200" /> Available</div>
+                            ))}
+
+                            <div className="flex items-center gap-1.5">
+                                <span className="w-3 h-3 rounded bg-slate-100 border border-slate-300" /> Blocked
+                            </div>
+                            <div className="flex items-center gap-1.5">
+                                <span className="w-3 h-3 rounded border-2 border-slate-200" /> Available
+                            </div>
+                        </div>
                     </div>
+
                     <p className="text-xs text-slate-400 mt-3">Click a date to select it, then click another date to select a range for date-specific overrides.</p>
                 </div>
 
