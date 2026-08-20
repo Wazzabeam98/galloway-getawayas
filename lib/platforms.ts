@@ -4,62 +4,26 @@
 // in an iCal file is whatever that platform felt like writing ("Reserved",
 // "CLOSED - Not available") and changes without notice.
 //
-// Colours are each platform's own, so a host reading the calendar recognises
-// them at a glance. Their logos are deliberately not reproduced: a coloured
-// chip with the name reads just as fast and avoids using someone else's
-// trademark inside our product.
+// Plain colour values, not Tailwind class names, on purpose: Tailwind only
+// generates CSS for classes it can find by scanning pages, components, app
+// and src. A class name written in this folder is never seen, so it silently
+// produces no styling at all.
+//
+// Their logos are deliberately not reproduced — a coloured chip with the name
+// reads just as fast and avoids putting someone else's trademark in here.
 
 export interface Platform {
     key: string;
     name: string;
-    // Tailwind classes rather than hex, so the calendar stays consistent.
-    bg: string;
-    border: string;
-    text: string;
-    dot: string;
+    colour: string;
 }
 
 export const PLATFORMS: Record<string, Platform> = {
-    airbnb: {
-        key: 'airbnb',
-        name: 'Airbnb',
-        bg: 'bg-rose-500',
-        border: 'border-rose-500',
-        text: 'text-white',
-        dot: 'bg-rose-500',
-    },
-    booking: {
-        key: 'booking',
-        name: 'Booking.com',
-        bg: 'bg-[#003580]',
-        border: 'border-[#003580]',
-        text: 'text-white',
-        dot: 'bg-[#003580]',
-    },
-    vrbo: {
-        key: 'vrbo',
-        name: 'Vrbo',
-        bg: 'bg-sky-700',
-        border: 'border-sky-700',
-        text: 'text-white',
-        dot: 'bg-sky-700',
-    },
-    google: {
-        key: 'google',
-        name: 'Google Calendar',
-        bg: 'bg-blue-600',
-        border: 'border-blue-600',
-        text: 'text-white',
-        dot: 'bg-blue-600',
-    },
-    other: {
-        key: 'other',
-        name: 'Another calendar',
-        bg: 'bg-slate-600',
-        border: 'border-slate-600',
-        text: 'text-white',
-        dot: 'bg-slate-600',
-    },
+    airbnb: { key: 'airbnb', name: 'Airbnb', colour: '#FF5A5F' },
+    booking: { key: 'booking', name: 'Booking.com', colour: '#003580' },
+    vrbo: { key: 'vrbo', name: 'Vrbo', colour: '#0F5B99' },
+    google: { key: 'google', name: 'Google Calendar', colour: '#4285F4' },
+    other: { key: 'other', name: 'Another calendar', colour: '#475569' },
 };
 
 export function platformFromUrl(url: string | null, label?: string | null): Platform {
@@ -76,7 +40,7 @@ export function platformFromUrl(url: string | null, label?: string | null): Plat
 
     // A host's own label is more use than "Another calendar", so keep it.
     if (label && label.trim()) {
-        return { ...PLATFORMS.other, name: label.trim() };
+        return { key: 'other', name: label.trim(), colour: PLATFORMS.other.colour };
     }
 
     return PLATFORMS.other;
