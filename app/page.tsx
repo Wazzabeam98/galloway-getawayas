@@ -66,9 +66,9 @@ export default async function HomePage() {
           nothing at all for a signed-out visitor or a guest with no booking. */}
       <UpcomingTrip />
 
-      <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-12">
+      <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-16">
         {/* Section Heading */}
-        <div className="mb-8 border-b border-stone-200 pb-4">
+        <div className="mb-10 border-b border-stone-200 pb-4">
           <h2 className="text-2xl md:text-3xl font-bold text-stone-900">
             Our Properties
           </h2>
@@ -79,7 +79,7 @@ export default async function HomePage() {
 
         {/* Property Grid */}
         {listings && listings.length > 0 ? (
-          <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-6">
+          <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-x-6 gap-y-10">
             {listings.map((property) => {
               const rating = property.rating_avg ? Number(property.rating_avg) : null;
               const count = property.rating_count || 0;
