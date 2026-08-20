@@ -1,3 +1,4 @@
+import { townOf, townKey } from '@/lib/places';
 import { createClient } from '@supabase/supabase-js';
 import { NextResponse } from 'next/server';
 import {
@@ -90,10 +91,66 @@ export async function GET(request: Request) {
 
             const { data: listing } = await admin
                 .from('listings')
-                .select('title')
+                .select('title, location')
                 .eq('id', b.listing_id)
                 .maybeSingle();
             const listingTitle = escapeHtml((listing && listing.title) || 'your stay');
+
+            // Their passport, as it stands after this stay. Worth mentioning
+            // in the email they're already getting rather than sending a
+            // second one nobody asked for.
+            let stampHtml = '';
+
+            try {
+                const { data: pastStays } = await admin
+                    .from('bookings')
+                    .select('listing_id, check_out')
+                    .eq('guest_id', b.guest_id)
+                    .eq('status', 'confirmed')
+                    .lte('check_out', b.check_out);
+
+                const otherIds = Array.from(
+                    new Set((pastStays || []).map((p: any) => p.listing_id))
+                );
+
+                const { data: theirListings } = otherIds.length
+                    ? await admin.from('listings').select('id, location').in('id', otherIds)
+                    : { data: [] };
+
+                const locById: Record<string, string> = {};
+                (theirListings || []).forEach((l: any) => {
+                    locById[l.id] = l.location;
+                });
+
+                const townsBefore: Record<string, boolean> = {};
+                const townsNow: Record<string, boolean> = {};
+
+                (pastStays || []).forEach((p: any) => {
+                    const key = townKey(locById[p.listing_id]);
+                    if (!key) return;
+                    townsNow[key] = true;
+                    if (p.check_out < b.check_out) townsBefore[key] = true;
+                });
+
+                const thisTown = townOf(listing && listing.location);
+                const isNewPlace = !townsBefore[townKey(listing && listing.location)];
+                const total = Object.keys(townsNow).length;
+
+                stampHtml =
+                    '<div style="margin:24px 0;padding:16px 20px;border:2px dashed #a7f3d0;border-radius:12px;background:#ecfdf5;">'
+                    + '<p style="margin:0 0 4px 0;font-size:15px;font-weight:700;color:#065f46;">'
+                    + (isNewPlace ? 'New stamp: ' + escapeHtml(thisTown) : escapeHtml(thisTown) + ', again')
+                    + '</p>'
+                    + '<p style="margin:0;font-size:14px;color:#047857;">'
+                    + (total === 1
+                        ? 'That\u2019s your first stamp. There are a good few more places down here.'
+                        : 'That\u2019s ' + total + ' places you\u2019ve stayed with us now.')
+                    + '</p>'
+                    + '</div>';
+            } catch (err) {
+                // A passport is a nice touch, not a reason to hold up the
+                // review reminder.
+            }
 
             const deadline = new Date(b.check_out);
             deadline.setDate(deadline.getDate() + 14);
@@ -103,6 +160,7 @@ export async function GET(request: Request) {
                 '<p style="margin:0 0 8px 0;">Hi ' + guestFirst + ' &mdash; hope you had a good stay in Dumfries &amp; Galloway.</p>' +
                 '<p style="margin:0;">It takes about a minute: six quick star ratings and a sentence or two. Your review helps the next guest choose, and helps good hosts stand out.</p>' +
                 button(SITE_URL + '/review/' + b.id, 'Leave your review') +
+                stampHtml +
                 '<p style="margin:0;font-size:14px;color:#6b7280;">Reviews close on ' +
                 escapeHtml(formatDate(deadline.toISOString())) +
                 '. Yours stays hidden until your host has reviewed you too, so neither of you sees the other\u2019s first.</p>',
