@@ -70,7 +70,12 @@ export default function BookingsView({
         const alreadyReviewed = reviewedSet.has(booking.id);
 
         return (
-            <div className="border rounded-2xl p-5 flex items-center justify-between gap-4 flex-wrap">
+            <div
+                id={'booking-' + booking.id}
+                /* Anchored so the home page cards can link to a single
+                   booking. scroll-mt clears the sticky navbar. */
+                className="border rounded-2xl p-5 flex items-center justify-between gap-4 flex-wrap scroll-mt-24"
+            >
                 <div className="flex items-center gap-4">
                     <div className="w-16 h-16 rounded-xl overflow-hidden bg-slate-200 flex-shrink-0">
                         {listing?.images?.[0] && (

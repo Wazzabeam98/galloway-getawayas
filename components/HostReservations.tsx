@@ -6,7 +6,7 @@ import Link from 'next/link';
 import { getImageUrl, displayName } from '@/lib/utils';
 import { formatUk } from '@/lib/cancellation';
 import { listingIdsFor } from '@/lib/access';
-import { MessageSquare, CalendarDays } from 'lucide-react';
+import { MessageSquare, CalendarDays, Phone } from 'lucide-react';
 import UpcomingTrip from '@/components/UpcomingTrip';
 
 // The host-mode counterpart to UpcomingTrip. Somebody who has switched to
@@ -47,12 +47,12 @@ export default async function HostReservations() {
     // sitting on a stay that is already under way.
     const { data: bookings } = await admin
         .from('bookings')
-        .select('id, listing_id, guest_id, check_in, check_out, status, guests, total_price, commission_rate, amount_refunded, payment_status, balance_amount')
+        .select('id, listing_id, guest_id, check_in, check_out, status, guests, total_price, commission_rate, amount_refunded')
         .in('listing_id', allowed)
         .in('status', ['confirmed', 'pending'])
         .gte('check_in', todayKey)
         .order('check_in', { ascending: true })
-        .limit(2);
+        .limit(4);
 
     if (!bookings || bookings.length === 0) return null;
 
@@ -67,7 +67,7 @@ export default async function HostReservations() {
     const { data: guests } = guestIds.length
         ? await admin
             .from('profiles')
-            .select('id, full_name, preferred_name, show_full_name')
+            .select('id, full_name, preferred_name, show_full_name, phone')
             .in('id', guestIds)
         : { data: [] };
 
@@ -85,8 +85,10 @@ export default async function HostReservations() {
     });
 
     const guestNameMap: Record<string, string> = {};
+    const guestPhoneMap: Record<string, string | null> = {};
     (guests || []).forEach((g) => {
         guestNameMap[g.id] = displayName(g, 'Guest');
+        guestPhoneMap[g.id] = g.phone || null;
     });
 
     return (
@@ -151,18 +153,30 @@ export default async function HostReservations() {
 
                     const showMoney = earningsAllowed.indexOf(booking.listing_id) !== -1;
 
-                    // Some of that money is not in yet. These are all future
-                    // check-ins, so a stay more than 30 days out will usually
-                    // still have the guest's balance to collect — say so,
-                    // rather than let the figure read as money already banked.
-                    const outstanding = Number(booking.balance_amount || 0);
-                    const awaitingBalance = booking.payment_status !== 'paid' && outstanding > 0;
+                    // Close enough to arrival that a host may need to ring
+                    // them — a late ferry, a key left somewhere. Further out
+                    // there is no reason to put a private number on a page
+                    // that is open the moment somebody signs in.
+                    const phone = days <= 1 ? guestPhoneMap[booking.guest_id] : null;
+
+                    // There is no page per booking, so this lands on the
+                    // bookings list and jumps to the row.
+                    const bookingHref = '/dashboard/bookings#booking-' + booking.id;
+
 
                     return (
                         <div
                             key={booking.id}
-                            className="rounded-3xl overflow-hidden border border-stone-200 bg-white flex flex-col"
+                            className="relative rounded-3xl overflow-hidden border border-stone-200 hover:border-stone-300 transition bg-white flex flex-col"
                         >
+                            {/* Covers the card so the whole thing is
+                                clickable. The buttons below sit on top of it. */}
+                            <Link
+                                href={bookingHref}
+                                className="absolute inset-0"
+                                aria-label={'Open this booking at ' + listing.title}
+                            />
+
                             {image && (
                                 <div className="h-44 flex-shrink-0">
                                     <img
@@ -213,13 +227,6 @@ export default async function HostReservations() {
                                                 ? 'If you confirm, paid the day after check-in'
                                                 : 'Paid ' + formatUk(paysOn)}
                                         </div>
-                                        {awaitingBalance && (
-                                            <div className="text-xs text-amber-700 mt-1">
-                                                Includes &pound;{outstanding.toFixed(2)} of the
-                                                guest&apos;s balance still to be collected before
-                                                check-in
-                                            </div>
-                                        )}
                                     </div>
                                 )}
 
@@ -229,9 +236,19 @@ export default async function HostReservations() {
                                     </div>
                                 )}
 
-                                <div className="flex flex-wrap gap-3 mt-8">
+                                {phone && (
+                                    <a
+                                        href={'tel:' + phone}
+                                        className="relative inline-flex items-center gap-2 mt-5 text-sm font-semibold text-stone-900 hover:underline w-fit"
+                                    >
+                                        <Phone className="w-4 h-4" />
+                                        {phone}
+                                    </a>
+                                )}
+
+                                <div className="relative flex flex-wrap gap-3 mt-8">
                                     <Link
-                                        href="/dashboard/bookings"
+                                        href={bookingHref}
                                         className="inline-flex items-center gap-2 px-6 py-3 bg-emerald-700 hover:bg-emerald-800 text-white text-sm font-semibold rounded-xl transition"
                                     >
                                         <CalendarDays className="w-4 h-4" />
