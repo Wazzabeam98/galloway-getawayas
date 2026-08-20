@@ -20,7 +20,7 @@ export default async function UpcomingTrip() {
 
     const { data: bookings } = await supabase
         .from('bookings')
-        .select('id, listing_id, check_in, check_out, status, guests')
+        .select('id, listing_id, check_in, check_out, status, guests, free_cancel_until')
         .eq('guest_id', auth.session.user.id)
         .in('status', ['confirmed', 'pending'])
         .gte('check_out', todayKey)
@@ -45,6 +45,15 @@ export default async function UpcomingTrip() {
 
     const days = Math.round((checkIn.getTime() - today.getTime()) / 86400000);
     const nights = Math.round((checkOut.getTime() - checkIn.getTime()) / 86400000);
+
+    // Only worth showing while it's still true. Once the window has closed,
+    // saying so on the home page would be a poke rather than a reassurance.
+    const freeUntil = booking.free_cancel_until ? new Date(booking.free_cancel_until) : null;
+    if (freeUntil) freeUntil.setHours(0, 0, 0, 0);
+    const canStillCancelFree = !!freeUntil && freeUntil.getTime() >= today.getTime();
+    const freeDaysLeft = freeUntil
+        ? Math.round((freeUntil.getTime() - today.getTime()) / 86400000)
+        : 0;
     const staying = days <= 0 && checkOut.getTime() > today.getTime();
 
     // The bit that does the work. Everything else on this card is detail.
@@ -108,6 +117,24 @@ export default async function UpcomingTrip() {
                                 : ''}
                         </div>
                     </div>
+
+                    {canStillCancelFree && (
+                        <div className="mt-5 text-sm">
+                            <span className={freeDaysLeft <= 3 ? 'text-amber-700' : 'text-emerald-700'}>
+                                Free cancellation until {formatUk(freeUntil as Date)}
+                            </span>
+                            {freeDaysLeft <= 3 && (
+                                <span className="text-stone-500">
+                                    {' '}&middot;{' '}
+                                    {freeDaysLeft === 0
+                                        ? 'last day'
+                                        : freeDaysLeft === 1
+                                            ? '1 day left'
+                                            : freeDaysLeft + ' days left'}
+                                </span>
+                            )}
+                        </div>
+                    )}
 
                     <div className="flex flex-wrap gap-3 mt-8">
                         <Link
