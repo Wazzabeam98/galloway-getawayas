@@ -1,4 +1,5 @@
 import Hero from '@/components/base/Hero';
+import UpcomingTrip from '@/components/UpcomingTrip';
 import { createServerComponentClient } from '@supabase/auth-helpers-nextjs';
 import { cookies } from 'next/headers';
 import { getImageUrl } from '@/lib/utils';
@@ -60,6 +61,10 @@ export default async function HomePage() {
     <main className="min-h-screen bg-stone-50">
       {/* Kirkcudbright Hero Banner */}
       <Hero />
+
+      {/* Someone with a stay coming up sees it before anything else. Returns
+          nothing at all for a signed-out visitor or a guest with no booking. */}
+      <UpcomingTrip />
 
       <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-12">
         {/* Section Heading */}
