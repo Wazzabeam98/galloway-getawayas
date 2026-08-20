@@ -64,7 +64,13 @@ export function nightlyRate(
     overrides: Record<string, number>
 ): number {
     const key = dateKey(date);
-    if (overrides && overrides[key]) return Number(overrides[key]);
+    // Tested for presence, not truthiness: an override of 0 is a free night
+    // somebody set deliberately, and `if (overrides[key])` silently charged
+    // them the standard rate instead.
+    const override = overrides ? overrides[key] : undefined;
+    if (override !== undefined && override !== null && !isNaN(Number(override))) {
+        return Number(override);
+    }
 
     const day = date.getDay(); // 5 = Friday, 6 = Saturday
     if ((day === 5 || day === 6) && listing.weekend_price) {
