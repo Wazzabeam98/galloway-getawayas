@@ -126,8 +126,6 @@ export async function GET() {
 
     const todayKey = new Date().toISOString().split('T')[0];
 
-    const todayKey = new Date().toISOString().split('T')[0];
-
     const conversations = bookings.map((b) => {
         const listing = listingMap[b.listing_id];
         const otherId = b.guest_id === uid ? b.host_id : b.guest_id;
