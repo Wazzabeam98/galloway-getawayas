@@ -36,11 +36,16 @@ export async function GET(request: Request) {
     cutoff.setDate(cutoff.getDate() - 1);
     const cutoffDate = cutoff.toISOString().split('T')[0];
 
+    // A refund before check-in leaves the stay confirmed but moves the
+    // payment to 'partially_refunded', so matching on 'paid' alone meant the
+    // host was never paid the remainder. Cancellations set status to
+    // 'cancelled' and are still excluded; a stay refunded down to nothing is
+    // caught by the `collected <= 0` check below.
     const { data: due } = await admin
         .from('bookings')
         .select('id, listing_id, host_id, check_in, total_price, amount_paid, amount_refunded, commission_rate, status, payment_status, paid_out_at')
         .eq('status', 'confirmed')
-        .eq('payment_status', 'paid')
+        .in('payment_status', ['paid', 'partially_refunded'])
         .is('paid_out_at', null)
         .lte('check_in', cutoffDate);
 
