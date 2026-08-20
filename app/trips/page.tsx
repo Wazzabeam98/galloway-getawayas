@@ -108,7 +108,11 @@ export default function TripsPage() {
             // through too — and so the money is stripped out of those before
             // it ever reaches the browser.
             const tripsRes = await fetch('/api/trips');
-            const bookingRows = tripsRes.ok ? (await tripsRes.json()).trips || [] : [];
+            // Typed here because it arrives as JSON, so TypeScript can't work
+            // out its shape the way it does from a Supabase query.
+            const bookingRows: Booking[] = tripsRes.ok
+                ? ((await tripsRes.json()).trips || [])
+                : [];
             setBookings(bookingRows);
 
             const listingIds = Array.from(new Set((bookingRows || []).map((b) => b.listing_id)));
