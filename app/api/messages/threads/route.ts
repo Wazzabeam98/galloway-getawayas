@@ -107,13 +107,21 @@ export async function GET() {
 
     const { data: lastMessages } = await admin
         .from('messages')
-        .select('booking_id, body, created_at')
+        .select('booking_id, body, created_at, sender_id, recipient_id, read_at')
         .in('booking_id', bookings.map((b) => b.id))
         .order('created_at', { ascending: false });
 
     const lastMap: Record<string, any> = {};
+    const unreadMap: Record<string, number> = {};
+
     (lastMessages || []).forEach((m: any) => {
         if (!lastMap[m.booking_id]) lastMap[m.booking_id] = m;
+
+        // Unread means sent to this person and not yet opened. A message
+        // they sent themselves is never unread.
+        if (m.recipient_id === uid && !m.read_at) {
+            unreadMap[m.booking_id] = (unreadMap[m.booking_id] || 0) + 1;
+        }
     });
 
     const conversations = bookings.map((b) => {
@@ -127,10 +135,31 @@ export async function GET() {
             checkIn: b.check_in,
             checkOut: b.check_out,
             lastMessage: lastMap[b.id] || null,
+            unread: unreadMap[b.id] || 0,
             // Flagged so the screen can make clear whose property it is.
             asCoHost: listing ? listing.host_id !== uid && b.guest_id !== uid : false,
         };
     });
 
-    return NextResponse.json({ conversations: conversations });
+    // Sorted by the most recent message rather than when the booking was
+    // made — a conversation someone replied to an hour ago matters more than
+    // a booking taken last week.
+    conversations.sort((a: any, b: any) => {
+        const at = (a.lastMessage && a.lastMessage.created_at) || '';
+        const bt = (b.lastMessage && b.lastMessage.created_at) || '';
+        if (at && bt) return at < bt ? 1 : -1;
+        if (at) return -1;
+        if (bt) return 1;
+        return 0;
+    });
+
+    const totalUnread = conversations.reduce(
+        (sum: number, c: any) => sum + (c.unread || 0),
+        0
+    );
+
+    return NextResponse.json({
+        conversations: conversations,
+        totalUnread: totalUnread,
+    });
 }
