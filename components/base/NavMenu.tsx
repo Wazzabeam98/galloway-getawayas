@@ -11,6 +11,7 @@ import SignOut from '../common/SignOut'
 import ModeSwitch from './ModeSwitch'
 import Link from 'next/link'
 import { getImageUrl } from '@/lib/utils'
+import MessagesLink from './MessagesLink'
 
 const itemClass = 'hover:bg-slate-200 rounded-md p-2 cursor-pointer';
 
@@ -83,7 +84,7 @@ const NavMenu = ({
                                         <Link href='/services'>Services</Link>
                                     </li>
                                     <li className={itemClass}>
-                                        <Link href='/messages'>Messages</Link>
+                                        <MessagesLink />
                                     </li>
                                 </>
                             ) : (
@@ -95,7 +96,7 @@ const NavMenu = ({
                                         <Link href='/passport'>Your passport</Link>
                                     </li>
                                     <li className={itemClass}>
-                                        <Link href='/messages'>Messages</Link>
+                                        <MessagesLink />
                                     </li>
                                 </>
                             )}
