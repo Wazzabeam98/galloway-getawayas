@@ -11,6 +11,11 @@ export interface PricingListing {
     cleaning_fee?: number | null;
     pet_fee?: number | null;
     extra_guest_fee?: number | null;
+    // The number of guests included before the fee starts. 2 means the first
+    // two are included and the third onwards is charged.
+    extra_guest_after?: number | null;
+    // 'night' charges per extra guest per night, 'stay' charges once.
+    extra_guest_period?: string | null;
 }
 
 export interface PriceQuote {
@@ -103,7 +108,17 @@ export function quoteBooking(
 
     const totalGuests = (adults || 0) + (children || 0);
     const extraGuestFee = Number(listing.extra_guest_fee || 0);
-    const extraGuestTotal = totalGuests > 1 ? extraGuestFee * (totalGuests - 1) * nights : 0;
+
+    // How many are included before anything is charged. Defaults to 1 so a
+    // listing set up before this existed behaves exactly as it did.
+    const includedGuests = Math.max(1, Number(listing.extra_guest_after || 1));
+    const chargeableGuests = Math.max(0, totalGuests - includedGuests);
+
+    const perNight = (listing.extra_guest_period || 'night') !== 'stay';
+    const extraGuestTotal =
+        chargeableGuests > 0
+            ? extraGuestFee * chargeableGuests * (perNight ? nights : 1)
+            : 0;
 
     const petFeeTotal = (pets || 0) > 0 ? Number(listing.pet_fee || 0) : 0;
     const cleaningFeeTotal = Number(listing.cleaning_fee || 0);
