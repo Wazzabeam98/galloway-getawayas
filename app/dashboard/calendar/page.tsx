@@ -413,7 +413,9 @@ export default function CalendarPage() {
                             const override = overrides[key];
                             const booking = bookingForDate(day);
                             const away = !booking ? external[key] : null;
-                            const awayStyle = away ? PLATFORMS[away.platform] || PLATFORMS.other : null;
+                            const awayColour = away
+                                ? (PLATFORMS[away.platform] || PLATFORMS.other).colour
+                                : null;
                             const isPast = isBefore(day, startOfDay(new Date()));
                             const selected = isInSelection(day);
                             const price = dayPrice(day, key, override);
@@ -427,13 +429,18 @@ export default function CalendarPage() {
                                     className={`aspect-square rounded-xl border-2 p-1.5 flex flex-col items-start justify-between text-left transition ${
                                         isPast ? 'opacity-30 cursor-not-allowed border-slate-100' :
                                         booking ? 'border-slate-900 bg-slate-900 text-white' :
-                                        awayStyle ? `${awayStyle.border} ${awayStyle.bg} ${awayStyle.text}` :
+                                        awayColour ? 'text-white' :
                                         override?.is_blocked ? 'border-slate-300 bg-slate-100 text-slate-400' :
                                         selected ? 'border-slate-900 bg-slate-50' :
                                         'border-slate-200 hover:border-slate-400'
                                     }`}
+                                    style={
+                                        awayColour
+                                            ? { backgroundColor: awayColour, borderColor: awayColour }
+                                            : undefined
+                                    }
                                 >
-                                    <span className={`text-xs font-semibold ${booking || awayStyle ? 'text-white' : override?.is_blocked ? 'line-through' : 'text-slate-800'}`}>
+                                    <span className={`text-xs font-semibold ${booking || awayColour ? 'text-white' : override?.is_blocked ? 'line-through' : 'text-slate-800'}`}>
                                         {format(day, 'd')}
                                     </span>
                                     {booking ? (
@@ -460,7 +467,10 @@ export default function CalendarPage() {
                                 .find((e) => e.platform === key);
                             return (
                                 <div key={key as string} className="flex items-center gap-1.5">
-                                    <span className={`w-3 h-3 rounded ${p.dot}`} />
+                                    <span
+                                        className="w-3 h-3 rounded"
+                                        style={{ backgroundColor: p.colour }}
+                                    />
                                     {(name && name.name) || p.name}
                                 </div>
                             );
