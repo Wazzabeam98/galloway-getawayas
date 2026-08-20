@@ -1,3 +1,4 @@
+import { publicArea } from '@/lib/places';
 import Hero from '@/components/base/Hero';
 import UpcomingTrip from '@/components/UpcomingTrip';
 import { createServerComponentClient } from '@supabase/auth-helpers-nextjs';
@@ -7,47 +8,6 @@ import Link from 'next/link';
 import { Home, Star } from 'lucide-react';
 
 export const dynamic = 'force-dynamic';
-
-// Some listings store a full street address in `location`, others store only
-// the town and region. Guests should never see the street, so the first part
-// is dropped only when it actually looks like one — a house number, or a
-// street-type word. "Kirkcudbright, Dumfries and Galloway" is left alone.
-const STREET_WORDS = [
-  'street', 'st', 'road', 'rd', 'lane', 'avenue', 'ave', 'drive', 'close',
-  'place', 'terrace', 'court', 'crescent', 'way', 'row', 'gardens', 'park',
-  'square', 'wynd', 'brae', 'vennel', 'loan', 'view', 'grove', 'walk',
-];
-
-function looksLikeStreet(part: string): boolean {
-  const clean = part.trim().toLowerCase();
-  if (!clean) return false;
-  // Starts with a house number, e.g. "28" or "57 St Cuthbert Street" or "Flat 2".
-  if (/^[0-9]/.test(clean)) return true;
-  if (/^(flat|apt|apartment|unit)\b/.test(clean)) return true;
-  // Ends in a street-type word.
-  const words = clean.replace(/[.,]/g, '').split(/\s+/);
-  const last = words[words.length - 1];
-  return words.length > 1 && STREET_WORDS.indexOf(last) !== -1;
-}
-
-function publicArea(location: string | null): string {
-  if (!location) return 'Dumfries & Galloway';
-  const parts = location.split(',').map((p) => p.trim()).filter(Boolean);
-  if (parts.length <= 1) return location;
-
-  // Drop every leading street-ish part, so "28, Millburn Street, Kirkcudbright"
-  // loses both the number and the street. Never strips the last two parts.
-  let start = 0;
-  while (start < parts.length - 2 && looksLikeStreet(parts[start])) {
-    start = start + 1;
-  }
-  if (start < parts.length - 1 && looksLikeStreet(parts[start])) {
-    start = start + 1;
-  }
-
-  const kept = parts.slice(start);
-  return kept.length ? kept.join(', ') : location;
-}
 
 export default async function HomePage() {
   const supabase = createServerComponentClient({ cookies });
