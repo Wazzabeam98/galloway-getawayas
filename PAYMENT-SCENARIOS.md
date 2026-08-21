@@ -116,7 +116,8 @@ holding and carries the rest on `payout_balance_owed`.
   to it and works the figure out itself from what was paid and the
   cancellation policy. That is correct for what it does, but passing it an
   amount and expecting a partial refund will silently refund everything.
-- A host declining or cancelling refunds through the route, but the booking's
-  **status is changed by the browser afterwards**, in `BookingActions.tsx`, not
-  by the route. If the tab is closed in between, the guest has their money back
-  and the booking still reads as confirmed.
+- A host declining or cancelling is now closed off by `/api/stripe/refund`
+  itself, in the same place the money moves. It used to be left to the browser
+  in `BookingActions.tsx`, so a tab closed at the wrong moment left the guest
+  refunded with the booking still reading as confirmed and the dates blocked.
+  Accepting a request is still set from the browser, because no money moves.

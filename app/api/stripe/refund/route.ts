@@ -136,13 +136,48 @@ export async function POST(request: Request) {
             }
         }
 
-        await admin
+        // The stay is called off here, in the same place the money moved, and
+        // only once it has. This used to be left to the browser to do after the
+        // route returned: a closed tab or a dropped connection left the guest
+        // refunded while the booking still read as confirmed and the dates
+        // stayed blocked. Nothing outside this route may set it now.
+        const closingStatus =
+            reason === 'declined' ? 'declined' : reason === 'cancelled' ? 'cancelled' : null;
+
+        const patch: Record<string, any> = {
+            amount_refunded: totalRefunded,
+            payment_status: fullyRefunded ? 'refunded' : 'partially_refunded',
+        };
+
+        if (closingStatus) {
+            patch.status = closingStatus;
+            // Nothing further is owed on a stay that isn't happening, so the
+            // balance charge can't pick it up.
+            patch.balance_amount = 0;
+        }
+
+        const { error: updateError } = await admin
             .from('bookings')
-            .update({
-                amount_refunded: totalRefunded,
-                payment_status: fullyRefunded ? 'refunded' : 'partially_refunded',
-            })
+            .update(patch)
             .eq('id', booking.id);
+
+        // The guest's money has already gone back at this point, so a failure
+        // here is the dangerous one — it is the case that used to be silent.
+        if (updateError) {
+            await logError('[stripe/refund] refunded but could not update the booking', updateError, {
+                path: 'stripe/refund',
+                userId: session.user.id,
+            });
+            return NextResponse.json(
+                {
+                    ok: false,
+                    error: 'The refund went through but the booking could not be updated. '
+                        + 'Please check it before trying again.',
+                    refunded: amount,
+                },
+                { status: 500 }
+            );
+        }
 
         await admin.from('payments').insert({
             booking_id: booking.id,

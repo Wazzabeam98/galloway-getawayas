@@ -59,12 +59,6 @@ async function post(path, cookie, body) {
     return { status: res.status, body: data };
 }
 
-// What the host's browser does after the refund route returns. The route only
-// moves money; BookingActions.tsx sets the status afterwards.
-async function setStatus(id, status) {
-    await db.update('bookings', '?id=eq.' + id, { status });
-}
-
 // Everything Stripe actually gave back on this booking's charge.
 async function refundedAtStripe(bookingId) {
     const b = await booking(bookingId);
@@ -119,12 +113,13 @@ async function main() {
     const owed12Before = round2(Number((await profileOf(users.hostReady)).payout_balance_owed));
     const res12 = await post('/api/stripe/refund', host, { bookingId: bookings.s12, reason: 'declined' });
     console.log('   refund → ' + res12.status + ' ' + JSON.stringify(res12.body).slice(0, 140));
-    await setStatus(bookings.s12, 'declined');
 
     const after12 = await booking(bookings.s12);
     check('the whole £450 went back', round2(Number(after12.amount_refunded)) === 450,
         '£' + after12.amount_refunded);
     check('payment_status is refunded', after12.payment_status === 'refunded', after12.payment_status);
+    check('the route closed the booking itself, without the browser',
+        after12.status === 'declined', after12.status);
     check('a refund payment row was written',
         (await paymentsFor(bookings.s12)).some((p) => p.kind === 'refund' && round2(Number(p.amount)) === 450));
 
@@ -145,7 +140,6 @@ async function main() {
 
     const res13 = await post('/api/stripe/refund', host, { bookingId: bookings.s13, reason: 'cancelled' });
     console.log('   refund → ' + res13.status + ' ' + JSON.stringify(res13.body).slice(0, 140));
-    await setStatus(bookings.s13, 'cancelled');
 
     const after13 = await booking(bookings.s13);
     check('the guest got everything back', round2(Number(after13.amount_refunded)) === 700,
@@ -158,7 +152,10 @@ async function main() {
         '£' + owed13Before + ' → £' + owed13After);
     check('a penalty row was written',
         (await payoutsFor(bookings.s13)).some((r) => r.kind === 'penalty' && round2(Number(r.amount)) === -penalty));
-    check('the dates are released — the booking is cancelled', after13.status === 'cancelled');
+    check('the route closed the booking itself, without the browser — dates released',
+        after13.status === 'cancelled', after13.status);
+    check('nothing is left owing, so the balance charge cannot pick it up',
+        round2(Number(after13.balance_amount || 0)) === 0, String(after13.balance_amount));
     await assertAgreesWithStripe(bookings.s13);
 
     /* ---- 14 ---- */
