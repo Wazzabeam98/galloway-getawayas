@@ -9,6 +9,31 @@ book and pay through the site; the platform takes a commission and passes the
 rest to the property owner. Real money moves through it, so mistakes here cost
 somebody something.
 
+## Which database am I on?
+
+There are two Supabase projects and three ways to end up on the wrong one.
+
+| | project ref |
+|---|---|
+| Production | `hviwjxigqivjfhmhpjiy` |
+| Test | `yefoqcabuijcowoqewtc` |
+
+- **Vercel Preview deployments read the test project. Production reads
+  production.** The three Supabase variables are split per environment; the
+  Stripe keys, `CRON_SECRET` and `RESEND_API_KEY` are still shared.
+- **`galloway-getawayas-git-master-…vercel.app` is production, not a preview.**
+  master is the production branch, so that hostname is one of five aliases on
+  the same deployment as the real domain. Any vercel.app URL with a random
+  slug is a frozen snapshot of one build.
+- **The reliable tell is what renders**: `SEED —` listings mean the test
+  project; the four real listings mean production.
+- **The Supabase CLI in this checkout is linked to production**, while
+  `.env.local` points the app at test. So `supabase db push`, `db reset` or a
+  migration run from here hits **live data** even though everything else in the
+  session is on test. Check `cat supabase/.temp/project-ref` before any CLI
+  command that writes, and re-link with
+  `supabase link --project-ref yefoqcabuijcowoqewtc` if you mean test.
+
 ## Checking what's broken
 
 Errors are recorded in the `error_log` table and shown at `/admin/errors`.
@@ -55,6 +80,8 @@ Please:
   here, not just style issues.
 - **say when you are unsure.** A flagged uncertainty is far cheaper than a
   confident wrong fix to a payment route.
+- **do not enter credentials into forms or CLI fields.** Keys, tokens and
+  passwords are the owner's step, even when he has supplied the value.
 
 ## Things that bite
 
@@ -64,9 +91,19 @@ Please:
   one. Several files use multi-line `import { ... }` blocks and an import
   dropped into the middle of one is a syntax error. This has happened three
   times.
+- **Never put Tailwind class names in `lib/`.** `tailwind.config.js` scans
+  pages, components, app and src only, so no CSS is generated and elements
+  render invisible — white text on no background. Use hex values via inline
+  style, or `currentColor`.
+- **Check column and table names against the repo before writing a query.**
+  Invented names have got as far as being sent more than once.
 - **New status values need the check constraint widening first.** Adding
   `'hidden'` to listings, or `'pending_payment'` to bookings, fails silently at
   the database until the constraint allows it.
+- **Some Supabase functions throw rather than returning an error.**
+  `exchangeCodeForSession` and `signUp` both do, for non-auth failures. A
+  `{ error }` destructure alone leaves a 500 or a button stuck on
+  "Processing.." with nothing shown to the person. Wrap them.
 - **Two confirmed stays cannot overlap — the database enforces it.**
   `bookings_no_overlapping_confirmed` is an exclusion constraint on
   `(listing_id, daterange(check_in, check_out))` for rows where
@@ -77,7 +114,7 @@ Please:
   that trips it is not a crash — look for it at `/admin/errors`.
 
   **It is applied to the test project only.** `supabase/migrations/` has the
-  file. Run it against production before this ships, and run the pre-flight
+  file. **Run it against production before this ships**, and run the pre-flight
   query at the top of it first: if any confirmed stays already overlap, the
   constraint will refuse to be created until they are sorted out.
 
@@ -88,17 +125,8 @@ Please:
   docker run --rm -i postgres:16-alpine psql "$DATABASE_URL" -v ON_ERROR_STOP=1 -f - < supabase/migrations/<file>.sql
   ```
 
-  Do **not** use `supabase db push` — see the next point.
-
-- **The Supabase CLI is linked to the production project, not the test one.**
-  `supabase/.temp/project-ref` says `hviwjxigqivjfhmhpjiy`, which is
-  production, while `.env.local` points the app at the test project
-  `yefoqcabuijcowoqewtc`. So the app and the CLI are aimed at different
-  databases, and `supabase db push`, `db reset` or a migration run from this
-  checkout hits **live data** even though everything else in the session is on
-  test. Check with `cat supabase/.temp/project-ref` before running any CLI
-  command that writes, and re-link with `supabase link --project-ref
-  yefoqcabuijcowoqewtc` if you mean the test project.
+  Do **not** use `supabase db push` — the CLI is linked to production, see
+  above.
 
 - **A co-host is not the `host_id` on a booking.** Any query on their behalf
   needs the service key, or row-level security returns nothing and the page
@@ -111,6 +139,64 @@ Please:
   guest gets told their booking is cancelled while their money is still here.
 - **Idempotency keys must not include anything resettable.** One included an
   attempt counter, a test reset it, and Stripe took a second payment.
+
+## Email — two separate systems
+
+- **Auth email** (confirm signup, password reset, magic links) is sent by
+  **Supabase**, using SMTP configured inside each Supabase project. Production
+  uses Resend SMTP. The `RESEND_API_KEY` in Vercel has nothing to do with it.
+- **App email** (booking confirmations, payment reminders, payout breakdowns)
+  is sent by the app through `lib/email.ts` using the Vercel Resend key.
+- **The test project has no SMTP configured**, so it falls back to Supabase's
+  built-in service — a handful of emails per hour for the whole project. A
+  signup whose email cannot be sent fails whole and creates no account.
+- Auth templates must link to
+  `{{ .RedirectTo }}&token_hash={{ .TokenHash }}&type=…`, not
+  `{{ .ConfirmationURL }}`, or the link lands on the home page signed out.
+  `{{ .RedirectTo }}` means one template body works for every environment.
+
+## Auth
+
+`app/auth/callback/route.ts` handles `?code=` (PKCE — the verifier lives in a
+cookie belonging to the browser that asked, so request-on-laptop /
+open-on-phone can never work through this path) and `?token_hash=&type=` (via
+`verifyOtp`, no verifier needed, works cross-device). It checks its own result
+and surfaces failures; an earlier version reported `?success=loggedin`
+regardless. `signUp` sets `emailRedirectTo`. `/auth/reset` is the new-password
+page. `<Toast />` is mounted in the layout — it used to be on `/dashboard`
+only, so every error these redirects carried vanished unseen.
+
+`middleware.ts` protects `/dashboard/:path*` using `createMiddlewareClient`,
+which can write refreshed cookies. `createServerComponentClient` cannot, and
+would bounce a genuinely signed-in person whose token refreshed on read.
+`/addhome` is deliberately excluded — it handles signed-out visitors better
+itself.
+
+## Running the payment suite
+
+27 scripted scenarios across four runners, all passing as of 21 Aug. Reseed
+between runners as `scripts/README.md` requires.
+
+- **The Stripe webhook signing secret changes every time `stripe listen`
+  starts** and must be written back into `.env.local` by hand:
+
+  ```
+  stripe listen --forward-to localhost:3000/api/stripe/webhook
+  ```
+
+  Forgetting this is the classic one — every webhook fails its signature check,
+  so payments succeed at Stripe while the site still shows the booking as
+  unconfirmed. It looks like a bug in the webhook and is not.
+
+- The Stripe CLI is not logged in. Point the listener at the `sk_test_` key
+  already in `.env.local` rather than running `stripe login`, which needs a
+  browser. Pass it as an env var, not a flag, to keep it out of the process
+  list.
+- **Colima has to be started after a reboot** (`colima start`). `colima`,
+  `docker` and `stripe` live in `~/homebrew/bin`, which is not on the default
+  PATH.
+- The suite's reset only touches `@gallowayseed.test`. The passport seed data
+  lives on a different domain deliberately, so it survives a reseed.
 
 ## Scheduled jobs
 
@@ -126,6 +212,9 @@ All at `/api/cron/*`, all behind `CRON_SECRET`, all listed in `vercel.json`:
 
 They can be triggered by hand from Vercel → Cron Jobs → Run.
 
+Note `CRON_SECRET` is still shared between Preview and Production, so a
+preview deployment's cron routes are the live ones. Split it before live mode.
+
 ## Where things live
 
 - `lib/pricing.ts` — the only place a booking total is worked out. The widget
@@ -135,3 +224,9 @@ They can be triggered by hand from Vercel → Cron Jobs → Run.
 - `lib/fees.ts` — commission.
 - `lib/clawback.ts` — recovering a payout after a refund.
 - `lib/logError.ts` — recording a server-side failure. Never throws.
+- `lib/supabaseAdmin.ts` — the shared `adminClient()`. Never build a
+  service-role client inline; all 20 callers use this one, and a missing
+  `SUPABASE_SERVICE_ROLE_KEY` now throws by name rather than failing later as
+  an opaque auth error.
+- `lib/places.ts` — the only place a free-text location is parsed
+  (`publicArea` / `townOf` / `townKey`).
