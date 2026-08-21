@@ -225,9 +225,8 @@ const FindHome = async ({ params }: { params: { id: string } }) => {
 
     let hostName = 'Host';
     let hostAvatar: string | null = null;
-    // Stripe has been through this host's identity documents and bank details
-    // and is willing to pay them. It is a check on the person, not on the
-    // property, and the badge below says so.
+    // Stripe has been through this host's identity documents. It is a check on
+    // the person, not on the property, and the badge below says so.
     let hostVerified = false;
     if (home?.host_id) {
         const { data: hostProfile } = await supabase
@@ -426,7 +425,7 @@ const FindHome = async ({ params }: { params: { id: string } }) => {
                                 </div>
                                 {hostVerified && (
                                     <div className='text-sm text-slate-500'>
-                                        Stripe has confirmed who {hostFirstName} is and where their money goes.
+                                        Stripe has confirmed {hostFirstName}&apos;s identity.
                                     </div>
                                 )}
                                 {reviews && reviews.length > 0 && (
