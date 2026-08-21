@@ -11,11 +11,18 @@ node scripts/payout-scenarios.mjs        # scenarios 19-24, needs `npm run dev`
 node scripts/refund-scenarios.mjs        # scenarios 12-18, needs `npm run dev`
 node scripts/balance-scenarios.mjs       # scenarios 3 and 7-11, needs `npm run dev`
 node scripts/crosscutting-scenarios.mjs  # scenarios 25-29, needs `npm run dev`
+node scripts/seed-my-passport.mjs        # a finished stay on your own account
 ```
 
 The cross-cutting runner replays a real webhook, so it needs `stripe listen`
 running and the `whsec_` it prints written into `.env.local` — see the note in
 `CLAUDE.md`.
+
+`seed-my-passport.mjs` is the odd one out and is not part of the payment set.
+It puts a couple of finished stays on a real address you sign in with, so the
+passport has stamps in it. It stays off the `@gallowayseed.test` domain on
+purpose, so the reset below never touches it — clean it up with its own
+`--reset`.
 
 **Reseed between runners.** They all use the same hosts, and each leaves
 bookings paid out, cancelled or in debt behind it. Running one straight after
