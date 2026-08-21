@@ -227,8 +227,12 @@ async function createListing(host, title, patch = {}) {
 }
 
 async function createBooking(listing, guest, host, patch = {}) {
+    // The charge stands for what was actually collected, not the headline
+    // price — on a deposit booking those differ, and a refund goes against the
+    // charge.
     const total = patch.total_price !== undefined ? patch.total_price : 500;
-    const intentId = await chargeFor(total, (patch.label || listing.title));
+    const collected = patch.amount_paid !== undefined ? patch.amount_paid : total;
+    const intentId = await chargeFor(collected, (patch.label || listing.title));
     delete patch.label;
     const [booking] = await db.insert('bookings', {
         stripe_payment_intent_id: intentId,
@@ -301,7 +305,9 @@ async function main() {
     if (!spareAccount) spareAccount = (await createOnboardedAccount('host-spare')).id;
 
     log('\nPlatform balance…');
-    await fundPlatform(2000);
+    // One full pass of either suite moves well over £2000 out to hosts before
+    // any of it is reversed back, so this leaves real headroom.
+    await fundPlatform(6000);
 
     log('\nConnected account balances…');
     for (const [label, id] of Object.entries({
@@ -368,13 +374,78 @@ async function main() {
         check_in: dayOffset(14), check_out: dayOffset(16),
     });
 
+    /* -------------------------------------------------- refunds, 12-18 */
+
+    // Each of these needs its own listing, because the cancellation tier that
+    // decides the refund lives on the listing, not the booking.
+    const listingFlexible = await createListing(hostReady, 'Flexible cottage', {
+        commission_rate: 10, cancellation_policy: 'Flexible',
+    });
+    const listingFirm = await createListing(hostReady, 'Firm cottage', {
+        commission_rate: 10, cancellation_policy: 'Firm',
+    });
+
+    // 12 — a request the host has not accepted yet.
+    const s12 = await createBooking(listingReady, guest, hostReady, {
+        label: 's12', total_price: 450, amount_paid: 450,
+        status: 'pending', payment_status: 'paid',
+        check_in: dayOffset(30), check_out: dayOffset(33),
+    });
+
+    // 13 — confirmed, and the host pulls out. Carries the 5% fee.
+    const s13 = await createBooking(listingReady, guest, hostReady, {
+        label: 's13', total_price: 700, amount_paid: 700,
+        check_in: dayOffset(30), check_out: dayOffset(33),
+    });
+
+    // 14 — goodwill money back, stay still happening, host still paid the
+    // remainder. Checked in already so the payout run will take it.
+    const s14 = await createBooking(listingReady, guest, hostReady, {
+        label: 's14', total_price: 400, amount_paid: 400,
+        check_in: dayOffset(-3), check_out: dayOffset(-1),
+    });
+
+    // 15 — guest cancels with the free window still open. Flexible is full
+    // refund up to 1 day before.
+    const s15 = await createBooking(listingFlexible, guest, hostReady, {
+        label: 's15', total_price: 300, amount_paid: 300,
+        check_in: dayOffset(20), check_out: dayOffset(23),
+    });
+
+    // 16 — Firm: full to 30 days, half from 30 down to 7. 20 days out is half.
+    const s16 = await createBooking(listingFirm, guest, hostReady, {
+        label: 's16', total_price: 500, amount_paid: 500,
+        check_in: dayOffset(20), check_out: dayOffset(23),
+    });
+
+    // 17 — Firm, 3 days out, inside the non-refundable part.
+    const s17 = await createBooking(listingFirm, guest, hostReady, {
+        label: 's17', total_price: 500, amount_paid: 500,
+        check_in: dayOffset(3), check_out: dayOffset(6),
+    });
+
+    // 18 — only the 25% deposit has been taken. They get that back, not £800.
+    const s18 = await createBooking(listingFlexible, guest, hostReady, {
+        label: 's18', total_price: 800, amount_paid: 200,
+        payment_status: 'deposit_paid', payment_plan: 'deposit',
+        deposit_amount: 200, balance_amount: 600, balance_due_date: dayOffset(-10),
+        check_in: dayOffset(20), check_out: dayOffset(23),
+    });
+
     const manifest = {
         seededAt: new Date().toISOString(),
         project: env.NEXT_PUBLIC_SUPABASE_URL,
         accounts: { ready: readyAccount, indebted: secondAccount, pending: pendingAccount, spare: spareAccount },
         users: { guest: guest.id, hostReady: hostReady.id, hostIndebted: hostIndebted.id, hostPending: hostPending.id },
-        listings: { ready: listingReady.id, indebted: listingIndebted.id, pending: listingPending.id },
-        bookings: { s20: s20.id, s21: s21.id, s22: s22.id, s23: s23.id, s23b: s23b.id, s24: s24.id },
+        listings: {
+            ready: listingReady.id, indebted: listingIndebted.id, pending: listingPending.id,
+            flexible: listingFlexible.id, firm: listingFirm.id,
+        },
+        bookings: {
+            s12: s12.id, s13: s13.id, s14: s14.id, s15: s15.id, s16: s16.id,
+            s17: s17.id, s18: s18.id,
+            s20: s20.id, s21: s21.id, s22: s22.id, s23: s23.id, s23b: s23b.id, s24: s24.id,
+        },
     };
     writeManifest(manifest);
 

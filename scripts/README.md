@@ -8,7 +8,16 @@ the Supabase URL is not the test project, so neither can reach production.
 node scripts/seed-payments.mjs           # reset, then seed
 node scripts/seed-payments.mjs --reset   # tear down only
 node scripts/payout-scenarios.mjs        # scenarios 19-24, needs `npm run dev`
+node scripts/refund-scenarios.mjs        # scenarios 12-18, needs `npm run dev`
 ```
+
+**Reseed between the two runners.** Both use the same hosts, and each leaves
+bookings paid out, cancelled or in debt behind it. Running one straight after
+the other without a reseed makes the second one fail on state the first left.
+
+Anything that runs `npm run build` overwrites `.next` underneath a running
+`next dev`, which then serves 500s until it is restarted. Build or dev, not
+both.
 
 ## What the seeder makes
 
@@ -31,11 +40,19 @@ Two things are slower or fiddlier than they look:
 - connected balances are normalised to zero at the start of every run,
   including negative ones left behind by a clawback
 
-## What the runner covers
+## What the runners cover
 
-Scenarios 19-24 from `PAYMENT-SCENARIOS.md`, driven through the real routes over
-HTTP with real test-mode Stripe behind them, checking the database and Stripe
-agree afterwards.
+Scenarios 12-24 from `PAYMENT-SCENARIOS.md`, driven through the real routes over
+HTTP with real test-mode Stripe behind them. Every scenario finishes by checking
+the database and Stripe agree on what moved.
 
-Scenario 23 is **not reproducible against Stripe** — see the note it prints. Its
-fallback branch is covered by `tests/clawback.test.ts` instead.
+Two things worth knowing if a scenario starts failing oddly:
+
+- **The platform's available balance runs down.** Each full pass sends a few
+  thousand pounds out to hosts before any of it is reversed back. The seeder
+  tops available up to £6000; a run that fails with *insufficient available
+  funds* has outrun it.
+- **Scenario 14 clears the host's `payout_balance_owed` before its payout run.**
+  Scenario 13 leaves a 5% fee against the same host, and the payout run takes it
+  off whichever due booking it reaches first — not necessarily scenario 14's. The
+  debt-comes-off-the-next-payout behaviour is scenario 24's job.

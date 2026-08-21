@@ -74,12 +74,16 @@ Roughly eight of these have been tested by hand. The rest never have.
 
 ## Progress
 
-Scenarios 19-24, the payouts, are scripted and passing against the test
-project and Stripe test mode:
+Scenarios 12-24 — the refunds and the payouts — are scripted and passing
+against the test project and Stripe test mode. Reseed between the two:
 
 ```
 node scripts/seed-payments.mjs && node scripts/payout-scenarios.mjs
+node scripts/seed-payments.mjs && node scripts/refund-scenarios.mjs
 ```
+
+Still unscripted: 1-11 (money in, and the balance-charge failure ladder) and
+25-29 (the cross-cutting cases).
 
 See `scripts/README.md`. Scenario 23 needed a fix before it could pass at all —
 Stripe does not refuse a reversal the host cannot fund, it takes their account
@@ -104,8 +108,15 @@ holding and carries the rest on `payout_balance_owed`.
   transfer id or an outage into money deducted from the host's next payout.
   Only `balance_insufficient` does that now.
 
-## Still open
+## Worth knowing
 
-- `/api/stripe/refund` ignores the amount it is given and recalculates from the
-  booking and the cancellation policy, so scenario 14 — a partial goodwill
-  refund — is not possible through it.
+- There are two refund routes and they are not interchangeable.
+  `/api/bookings/host-refund` is the partial one and takes an amount.
+  `/api/stripe/refund` is the decline/cancel one: it ignores any amount passed
+  to it and works the figure out itself from what was paid and the
+  cancellation policy. That is correct for what it does, but passing it an
+  amount and expecting a partial refund will silently refund everything.
+- A host declining or cancelling refunds through the route, but the booking's
+  **status is changed by the browser afterwards**, in `BookingActions.tsx`, not
+  by the route. If the tab is closed in between, the guest has their money back
+  and the booking still reads as confirmed.
