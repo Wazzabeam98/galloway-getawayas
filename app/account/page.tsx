@@ -1193,16 +1193,6 @@ export default function AccountSettings() {
                                     </div>
                                     <span className="text-xs text-slate-400 ml-4">Contact support to change</span>
                                 </div>
-
-                                <div className="p-5">
-                                    <div className="font-semibold text-slate-900 text-sm mb-1">Identity verification</div>
-                                    <div className="flex items-center text-sm text-amber-600 font-medium mb-1">
-                                        <span className="w-2 h-2 rounded-full bg-amber-500 mr-2" /> Not verified
-                                    </div>
-                                    <p className="text-xs text-slate-400">
-                                        Real ID verification isn't set up yet — this needs a proper verification provider, not just a self-reported status.
-                                    </p>
-                                </div>
                             </div>
                         </div>
                     ) : activeSection === 'security' ? (

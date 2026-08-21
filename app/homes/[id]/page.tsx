@@ -10,7 +10,7 @@ import PhotoGallery from '@/components/PhotoGallery';
 import HostReplyBox from '@/components/HostReplyBox';
 import ReviewsSummary from '@/components/ReviewsSummary';
 import PropertyMap from '@/components/PropertyMap';
-import { KeyRound, Zap, Car, Bath, Waves, Flame, PawPrint, Briefcase, Plug, Users, MapPin, DoorOpen } from 'lucide-react';
+import { KeyRound, Zap, Car, Bath, Waves, Flame, PawPrint, Briefcase, Plug, Users, MapPin, DoorOpen, BadgeCheck } from 'lucide-react';
 
 // Turns the wizard's plural category into a noun that reads naturally in
 // a sentence: "Entire townhouse in ..." rather than "Entire Townhouses".
@@ -225,14 +225,19 @@ const FindHome = async ({ params }: { params: { id: string } }) => {
 
     let hostName = 'Host';
     let hostAvatar: string | null = null;
+    // Stripe has been through this host's identity documents and bank details
+    // and is willing to pay them. It is a check on the person, not on the
+    // property, and the badge below says so.
+    let hostVerified = false;
     if (home?.host_id) {
         const { data: hostProfile } = await supabase
             .from('profiles')
-            .select('full_name, preferred_name, show_full_name, avatar_url')
+            .select('full_name, preferred_name, show_full_name, avatar_url, stripe_payouts_enabled')
             .eq('id', home.host_id)
             .single();
         hostName = displayName(hostProfile, 'Host');
         hostAvatar = hostProfile?.avatar_url || null;
+        hostVerified = hostProfile?.stripe_payouts_enabled === true;
     }
 
     // Guests see a first name only — a surname on a public page is more
@@ -408,9 +413,22 @@ const FindHome = async ({ params }: { params: { id: string } }) => {
                                 )}
                             </div>
                             <div>
-                                <div className='font-semibold text-slate-900'>
-                                    Hosted by {hostFirstName}
+                                <div className='flex items-center gap-2 flex-wrap'>
+                                    <span className='font-semibold text-slate-900'>
+                                        Hosted by {hostFirstName}
+                                    </span>
+                                    {hostVerified && (
+                                        <span className='inline-flex items-center gap-1 text-xs font-semibold text-emerald-800 bg-emerald-50 border border-emerald-200 rounded-full px-2 py-0.5'>
+                                            <BadgeCheck className='w-3.5 h-3.5' />
+                                            Verified host
+                                        </span>
+                                    )}
                                 </div>
+                                {hostVerified && (
+                                    <div className='text-sm text-slate-500'>
+                                        Stripe has confirmed who {hostFirstName} is and where their money goes.
+                                    </div>
+                                )}
                                 {reviews && reviews.length > 0 && (
                                     <div className='text-sm text-slate-500'>
                                         {reviews.length} review{reviews.length > 1 ? 's' : ''} from guests
