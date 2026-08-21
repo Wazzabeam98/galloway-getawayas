@@ -8,6 +8,8 @@ const LoginModel = () => {
     const [email, setEmail] = useState('');
     const [password, setPassword] = useState('');
     const [error, setError] = useState('');
+    const [notice, setNotice] = useState('');
+    const [sendingReset, setSendingReset] = useState(false);
     const supabase = createClientComponentClient();
 
     const handleLogin = async (e: React.FormEvent) => {
@@ -22,6 +24,33 @@ const LoginModel = () => {
         } else {
             window.location.reload();
         }
+    };
+
+    // Sends the reset email. The link goes through /auth/callback, which
+    // swaps it for a session and then forwards to the form that actually
+    // changes the password.
+    const handleForgotPassword = async () => {
+        setError('');
+        setNotice('');
+
+        if (!email.trim()) {
+            setError('Type your email address first, then choose this again.');
+            return;
+        }
+
+        setSendingReset(true);
+        const { error: resetError } = await supabase.auth.resetPasswordForEmail(email.trim(), {
+            redirectTo: `${window.location.origin}/auth/callback?next=/auth/reset`,
+        });
+        setSendingReset(false);
+
+        // Said the same way whether or not the address is on an account. The
+        // log in box should not be a way of finding out who has one.
+        if (resetError) {
+            setError(resetError.message);
+            return;
+        }
+        setNotice('If that address has an account, a link is on its way. It lasts an hour.');
     };
 
     const handleSocialLogin = async (provider: 'google' | 'facebook') => {
@@ -59,6 +88,7 @@ const LoginModel = () => {
 
                         <form onSubmit={handleLogin} className="space-y-4">
                             {error && <p className="text-red-500 text-sm text-center">{error}</p>}
+                            {notice && <p className="text-emerald-700 text-sm text-center">{notice}</p>}
                             <div>
                                 <input
                                     type="email"
@@ -81,6 +111,15 @@ const LoginModel = () => {
                             </div>
                             <button type="submit" className="w-full py-3 bg-emerald-700 hover:bg-emerald-800 text-white font-bold rounded-xl transition">
                                 Continue
+                            </button>
+
+                            <button
+                                type="button"
+                                onClick={handleForgotPassword}
+                                disabled={sendingReset}
+                                className="w-full text-xs font-semibold text-slate-500 underline hover:text-slate-800 disabled:opacity-50"
+                            >
+                                {sendingReset ? 'Sending…' : 'Forgotten your password?'}
                             </button>
                         </form>
 

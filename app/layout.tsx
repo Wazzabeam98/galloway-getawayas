@@ -5,6 +5,8 @@ import 'react-toastify/dist/ReactToastify.css';
 import Navbar from '@/components/base/Navbar';
 import Footer from '@/components/base/Footer';
 import { ToastContainer } from 'react-toastify';
+import { Suspense } from 'react';
+import Toast from '@/components/base/Toast';
 import type { Metadata } from 'next';
 
 const SITE_URL = 'https://gallowaygetaways.co.uk';
@@ -109,6 +111,13 @@ export default function RootLayout({
         {children}
         <Footer />
         <ToastContainer position="top-center" />
+        {/* Reads ?error= and ?success= off the URL and shows it. It was only
+            on the dashboard, so every message the auth callback and the
+            middleware redirect with landed on the home page and vanished.
+            Suspense because it reads the query string. */}
+        <Suspense fallback={null}>
+          <Toast />
+        </Suspense>
       </body>
     </html>
   );
