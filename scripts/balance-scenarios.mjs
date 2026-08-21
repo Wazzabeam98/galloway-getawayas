@@ -121,6 +121,34 @@ async function main() {
         !!after11.balance_payment_intent_id,
         'nothing recorded, so there is no trail from the booking to the attempt');
 
+    /* ---- 11b: the week a bank-authentication case gets ---- */
+
+    scenario('11b', 'A booking waiting on the guest’s bank gets a week, not 72 hours');
+
+    // Three more runs. On a declined card the fourth would cancel the booking.
+    for (let i = 0; i < 3; i++) {
+        await aDayPasses(bookings.s11);
+        await runBalanceCharges();
+    }
+
+    const day4 = await booking(bookings.s11);
+    check('four failed attempts, and the booking is still alive',
+        Number(day4.balance_attempts) === 4 && day4.status === 'confirmed',
+        day4.balance_attempts + ' attempts, status ' + day4.status);
+    check('the balance is still outstanding, so it is still being chased',
+        round2(Number(day4.balance_amount)) === 600);
+
+    // Jump to the end of the week rather than running three more days of cron.
+    await db.update('bookings', '?id=eq.' + bookings.s11, { balance_attempts: 7 });
+    await aDayPasses(bookings.s11);
+    const run11b = await runBalanceCharges();
+
+    const day8 = await booking(bookings.s11);
+    check('after a week it is cancelled', day8.status === 'cancelled', day8.status);
+    check('the run reported the cancellation', Number(run11b.cancelled) >= 1, JSON.stringify(run11b));
+    check('the deposit came back', round2(Number(day8.amount_refunded)) === 200,
+        '£' + day8.amount_refunded);
+
     /* ---- 3: the happy path ---- */
 
     scenario(3, 'Balance charged automatically against the saved card');

@@ -197,14 +197,30 @@ export async function POST(request: Request) {
             const reason = (pi.last_payment_error && pi.last_payment_error.message) || 'Payment failed';
 
             if (bookingId) {
-                await admin.from('payments').insert({
-                    booking_id: bookingId,
-                    kind: (pi.metadata && pi.metadata.kind) || 'balance',
-                    amount: Number(pi.amount || 0) / 100,
-                    status: 'failed',
-                    stripe_payment_intent_id: pi.id,
-                    failure_reason: reason,
-                });
+                // The balance job records its own failures, and it knows things
+                // this event does not — chiefly whether the bank wanted the
+                // guest to authenticate, which Stripe's message calls a
+                // decline. Writing this one as well left two rows for one
+                // failure, in different words, and the job reads the most
+                // recent one back to decide how long the guest gets.
+                const { data: already } = await admin
+                    .from('payments')
+                    .select('id')
+                    .eq('stripe_payment_intent_id', pi.id)
+                    .eq('status', 'failed')
+                    .limit(1)
+                    .maybeSingle();
+
+                if (!already) {
+                    await admin.from('payments').insert({
+                        booking_id: bookingId,
+                        kind: (pi.metadata && pi.metadata.kind) || 'balance',
+                        amount: Number(pi.amount || 0) / 100,
+                        status: 'failed',
+                        stripe_payment_intent_id: pi.id,
+                        failure_reason: reason,
+                    });
+                }
             }
         }
     } catch (err: any) {
