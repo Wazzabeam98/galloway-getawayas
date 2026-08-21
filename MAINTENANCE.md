@@ -138,8 +138,18 @@ Please:
   needs the service key, or row-level security returns nothing and the page
   looks empty rather than broken.
 - **Money columns are revoked from `authenticated`.** `commission_rate`,
-  `payout_*`, `is_admin`, `payout_balance_owed`. Anything writing to those goes
-  through a server route.
+  `payout_*`, `payout_balance_owed`. Anything writing to those goes through a
+  server route.
+- **`is_admin` is NOT revoked, whatever this file used to say.** An anonymous
+  select returns it, so anyone can work out who the owners are. That discloses
+  something; it grants nothing, because every owner page checks the flag on the
+  server against the signed-in user's own row.
+
+  It is left as it is on purpose. Every admin page and route reads it with the
+  **session** client — `app/admin/*`, `/api/admin/*`, the moderation branch in
+  `/api/listings/save` — so revoking it breaks all of them at once, silently,
+  with a `notFound()` rather than an error. If you do revoke it, every one of
+  those has to move to the service role **in the same commit**.
 - **Refund or transfer money before changing a booking's status**, and don't
   notify anyone until it has succeeded. Doing it the other way round is how a
   guest gets told their booking is cancelled while their money is still here.

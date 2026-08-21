@@ -26,6 +26,11 @@ async function requireOwner() {
 
 const tools = [
     {
+        href: '/admin/listings',
+        title: 'All listings',
+        blurb: 'Every property on the site. Take one down, or put it back.',
+    },
+    {
         href: '/admin/commission',
         title: 'Commission rates',
         blurb: 'What each property is charged. Blank means the standard rate.',
