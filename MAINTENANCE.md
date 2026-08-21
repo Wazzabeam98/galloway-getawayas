@@ -113,13 +113,19 @@ Please:
   Stripe webhook refunds the guest in full and emails an apology, so a booking
   that trips it is not a crash — look for it at `/admin/errors`.
 
-  **It is applied to the test project only.** `supabase/migrations/` has the
-  file. **Run it against production before this ships**, and run the pre-flight
-  query at the top of it first: if any confirmed stays already overlap, the
-  constraint will refuse to be created until they are sorted out.
+  **It is live on both projects — nothing needs running.** Test and production
+  both have it; on production it is visible under Database → Indexes. The
+  pre-flight query in the migration file was run against production on
+  21 August 2026 and returned no rows, so no existing pair of confirmed stays
+  was ever standing in its way.
 
-  Applying it needs a direct Postgres connection, and there is no `psql` on
-  this machine. Colima is, so:
+  Keep the pre-flight in mind for the *next* exclusion constraint rather than
+  this one: a constraint of this kind refuses to be created if the data
+  already violates it, so the query goes first and any overlapping pairs get
+  sorted out before the `alter table`.
+
+- **Running a migration by hand needs a direct Postgres connection**, and there
+  is no `psql` on this machine. Colima is, so:
 
   ```
   docker run --rm -i postgres:16-alpine psql "$DATABASE_URL" -v ON_ERROR_STOP=1 -f - < supabase/migrations/<file>.sql
