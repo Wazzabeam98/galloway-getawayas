@@ -128,7 +128,7 @@ const NavMenu = ({
                                 <li className={itemClass}>
                                     <ModeSwitch
                                         mode={mode}
-                                        className='w-full text-left'
+                                        className='w-full text-left rounded-md'
                                     />
                                 </li>
                             ) : (
