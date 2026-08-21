@@ -34,10 +34,37 @@ export default async function AdminListings() {
 
     // Service role: bookings and profiles are behind row-level security, and
     // the counts below would come back empty read as the signed-in user.
-    const { data: listings } = await admin
+    //
+    // The error is checked rather than discarded. Without this a failing
+    // service-role key returns null, `rows` falls back to [], and the page
+    // says "No listings yet" — which reads as an empty site rather than a
+    // broken key, and is a lie in the one place that must not tell them.
+    const { data: listings, error: listingsError } = await admin
         .from('listings')
         .select('id, title, location, images, status, host_id, created_at')
         .order('created_at', { ascending: false });
+
+    if (listingsError) {
+        return (
+            <div className="max-w-3xl mx-auto px-6 py-10">
+                <Link href="/admin" className="text-sm text-slate-500 hover:text-slate-800 underline">
+                    &larr; Owner tools
+                </Link>
+                <h1 className="text-2xl font-bold text-slate-900 mt-4 mb-2">All listings</h1>
+                <div className="rounded-2xl border-2 border-red-300 bg-red-50 p-5">
+                    <div className="font-bold text-red-900">The listings could not be read</div>
+                    <p className="text-sm text-red-900 mt-1">
+                        This is not an empty site — the database refused the request.
+                    </p>
+                    <p className="text-sm text-red-900 mt-2 font-mono break-all">{listingsError.message}</p>
+                    <p className="text-xs text-red-800 mt-3">
+                        &ldquo;Invalid API key&rdquo; here means SUPABASE_SERVICE_ROLE_KEY does not belong to
+                        the project NEXT_PUBLIC_SUPABASE_URL points at, for this environment.
+                    </p>
+                </div>
+            </div>
+        );
+    }
 
     const rows = listings || [];
     const hostIds = Array.from(new Set(rows.map((l) => l.host_id)));
