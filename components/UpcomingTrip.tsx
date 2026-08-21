@@ -1,7 +1,7 @@
 import { createServerComponentClient } from '@supabase/auth-helpers-nextjs';
 import { cookies } from 'next/headers';
 import Link from 'next/link';
-import { getImageUrl } from '@/lib/utils';
+import { getImageUrl, formatTime } from '@/lib/utils';
 import { formatUk } from '@/lib/cancellation';
 import { MessageSquare, CalendarDays } from 'lucide-react';
 
@@ -32,7 +32,7 @@ export default async function UpcomingTrip() {
 
     const { data: listing } = await supabase
         .from('listings')
-        .select('id, title, location, images')
+        .select('id, title, location, images, check_in_time, check_in_end_time, check_out_time')
         .eq('id', booking.listing_id)
         .maybeSingle();
 
@@ -116,6 +116,22 @@ export default async function UpcomingTrip() {
                                 ? ' · ' + booking.guests + (booking.guests === 1 ? ' guest' : ' guests')
                                 : ''}
                         </div>
+                        {/* Same sentence, and the same formatTime, as the listing
+                            page, /trips, the confirmation page and the email. */}
+                        {(formatTime(listing.check_in_time) || formatTime(listing.check_out_time)) && (
+                            <div className="text-sm text-stone-500 mt-1">
+                                {formatTime(listing.check_in_time)
+                                    ? 'Arrive from ' + formatTime(listing.check_in_time)
+                                        + (formatTime(listing.check_in_end_time)
+                                            ? ' until ' + formatTime(listing.check_in_end_time)
+                                            : '')
+                                        + '. '
+                                    : ''}
+                                {formatTime(listing.check_out_time)
+                                    ? 'Leave by ' + formatTime(listing.check_out_time) + '.'
+                                    : ''}
+                            </div>
+                        )}
                     </div>
 
                     {canStillCancelFree && (
