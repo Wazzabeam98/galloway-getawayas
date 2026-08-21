@@ -149,6 +149,11 @@ export default function EditListing() {
     const [monthlyDiscount, setMonthlyDiscount] = useState(false);
     const [icalToken, setIcalToken] = useState('');
     const [isCoHost, setIsCoHost] = useState(false);
+    // Set when an owner opens somebody else's listing. Everything it turns on
+    // — the banner, the required reason — exists so this can never be mistaken
+    // for editing your own.
+    const [moderating, setModerating] = useState(false);
+    const [moderationReason, setModerationReason] = useState('');
     const [minNights, setMinNights] = useState('1');
     const [maxNights, setMaxNights] = useState('');
     const [eventsAllowed, setEventsAllowed] = useState(false);
@@ -196,13 +201,26 @@ export default function EditListing() {
                 const res = await fetch('/api/my-listings?permission=can_listing');
                 const allowed = res.ok ? (await res.json()).listings || [] : [];
 
-                if (!allowed.some((a: any) => a.id === listingId)) {
-                    setNotOwner(true);
-                    setLoading(false);
-                    return;
-                }
+                if (allowed.some((a: any) => a.id === listingId)) {
+                    setIsCoHost(true);
+                } else {
+                    // Not theirs and not shared with them — but a Galloway
+                    // Getaways owner may still moderate it. The server checks
+                    // this again on save; this only decides what is drawn.
+                    const { data: me } = await supabase
+                        .from('profiles')
+                        .select('is_admin')
+                        .eq('id', session.user.id)
+                        .maybeSingle();
 
-                setIsCoHost(true);
+                    if (!me || me.is_admin !== true) {
+                        setNotOwner(true);
+                        setLoading(false);
+                        return;
+                    }
+
+                    setModerating(true);
+                }
             }
 
             setTitle(listing.title || '');
@@ -366,7 +384,11 @@ export default function EditListing() {
             const saveRes = await fetch('/api/listings/save', {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({ listingId: listingId, patch: patch }),
+                body: JSON.stringify({
+                    listingId: listingId,
+                    patch: patch,
+                    reason: moderating ? moderationReason : undefined,
+                }),
             });
             const saveData = await saveRes.json();
             const updateErr = saveData && saveData.ok ? null : { message: (saveData && saveData.error) || 'Could not save' };
@@ -436,10 +458,43 @@ export default function EditListing() {
         <div className="max-w-5xl mx-auto px-6 py-10 w-full">
             <div className="flex justify-between items-center mb-8">
                 <h1 className="text-2xl font-extrabold text-emerald-800">Edit listing</h1>
-                <button type="button" onClick={() => router.push('/dashboard')} className="text-sm font-semibold underline text-slate-600 hover:text-black">
-                    Back to dashboard
+                <button type="button" onClick={() => router.push(moderating ? '/admin/listings' : '/dashboard')} className="text-sm font-semibold underline text-slate-600 hover:text-black">
+                    {moderating ? 'Back to all listings' : 'Back to dashboard'}
                 </button>
             </div>
+
+            {/* Impossible to mistake for your own listing, which is the whole
+                point — this form looks identical either way. */}
+            {moderating && (
+                <div className="mb-8 rounded-2xl border-2 border-amber-300 bg-amber-50 p-5">
+                    <div className="font-bold text-amber-900">This listing is not yours</div>
+                    <p className="text-sm text-amber-900 mt-1">
+                        You are editing it as a Galloway Getaways owner. Whatever you change is
+                        recorded against your name, along with the reason you give below. The host
+                        is not told automatically.
+                    </p>
+                    <p className="text-sm text-amber-900 mt-2">
+                        Removing a photo takes it off the public site and moves the file somewhere
+                        private, so it can still be produced if the host asks what was taken down.
+                    </p>
+
+                    <label className="block text-xs font-semibold text-amber-900 mt-4">
+                        Why are you making this change?
+                    </label>
+                    <textarea
+                        value={moderationReason}
+                        onChange={(e) => setModerationReason(e.target.value)}
+                        rows={2}
+                        placeholder="e.g. Photo four shows the neighbouring property's front door"
+                        className="w-full p-2.5 border border-amber-300 rounded-lg text-sm mt-1 bg-white"
+                    />
+                    {moderationReason.trim().length < 3 && (
+                        <p className="text-xs text-amber-800 mt-1">
+                            Saving is blocked until you write one.
+                        </p>
+                    )}
+                </div>
+            )}
 
             <form onSubmit={handleSubmit}>
                 <div className="grid grid-cols-1 md:grid-cols-[220px_1fr] gap-10">
@@ -953,7 +1008,7 @@ export default function EditListing() {
 
                         {formError && <p className="text-red-600 text-sm mt-8">{formError}</p>}
 
-                        <button type="submit" disabled={submitting}
+                        <button type="submit" disabled={submitting || (moderating && moderationReason.trim().length < 3)}
                             className="w-full mt-8 py-4 bg-emerald-700 text-white font-bold rounded-xl hover:bg-emerald-800 transition disabled:opacity-60">
                             {submitting ? 'Saving...' : 'Save changes'}
                         </button>
