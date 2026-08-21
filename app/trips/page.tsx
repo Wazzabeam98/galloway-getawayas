@@ -182,6 +182,200 @@ export default function TripsPage() {
         cancelled: 'bg-slate-100 text-slate-500',
     };
 
+    // Upcoming means a stay that could still happen: not cancelled, not turned
+    // down, and not already over. Everything else is history, including a
+    // booking cancelled for dates that have not arrived yet — those dates are
+    // gone and it is not a trip any more.
+    const isOver = (b: Booking) =>
+        b.status === 'cancelled'
+        || b.status === 'declined'
+        || new Date(b.check_out) < today;
+
+    // Nearest first at the top, so the next stay is the first thing read.
+    const upcoming = bookings
+        .filter((b) => !isOver(b))
+        .sort((a, b) => (a.check_in < b.check_in ? -1 : 1));
+
+    // Most recent first below, so the stay just finished heads the old ones.
+    const past = bookings
+        .filter(isOver)
+        .sort((a, b) => (a.check_out > b.check_out ? -1 : 1));
+
+    // One trip card. It is rendered from two lists now, so it lives in a
+    // function rather than inline in a single map.
+    const renderTrip = (b: Booking) => {
+        const listing = listingMap[b.listing_id];
+        const isCompleted = b.status === 'confirmed' && new Date(b.check_out) < today;
+        const alreadyReviewed = reviewedBookingIds.has(b.id);
+
+        return (
+            <div key={b.id} className="border rounded-2xl p-5">
+                <div className="flex items-center gap-4">
+                    <div className="w-16 h-16 rounded-xl overflow-hidden bg-slate-200 flex-shrink-0">
+                        {listing?.images?.[0] && (
+                            <img src={getImageUrl(listing.images[0])} alt={listing.title} className="w-full h-full object-cover" />
+                        )}
+                    </div>
+                    <div className="flex-1">
+                        <div className="font-semibold text-slate-900">{listing?.title || 'Listing'}</div>
+                        <div className="text-sm text-slate-600">
+                            Hosted by {capitializeFirst(hostNames[b.host_id] || 'Host')} · {b.check_in} → {b.check_out}
+                        </div>
+                        {b.sharedWithMe ? (
+                            <div className="text-sm text-slate-400">
+                                {b.guests ? b.guests + (b.guests === 1 ? ' guest' : ' guests') : 'Shared with you'}
+                            </div>
+                        ) : (
+                            <div className="text-sm font-medium text-slate-700">£{b.total_price}</div>
+                        )}
+                    </div>
+                    <span className={`text-xs font-semibold px-3 py-1 rounded-full capitalize flex-shrink-0 ${statusStyles[b.status] || 'bg-slate-100 text-slate-600'}`}>
+                        {b.status}
+                    </span>
+                </div>
+
+                <Link href={`/messages/${b.id}`} className="text-xs font-semibold text-slate-500 underline hover:text-slate-800 mt-3 inline-block">
+                    Message host
+                </Link>
+
+                {b.sharedWithMe ? (
+                    <p className="text-xs text-slate-400 mt-3">
+                        You were added to this trip. Whoever booked it looks after
+                        the payment and any changes.
+                    </p>
+                ) : (
+                    b.status !== 'cancelled'
+                        && b.status !== 'declined'
+                        && <TripGroup bookingId={b.id} />
+                )}
+
+                {!b.sharedWithMe && b.payment_status === 'deposit_paid'
+                    && Number(b.balance_amount || 0) > 0
+                    && b.status !== 'cancelled'
+                    && b.status !== 'declined' && (
+                    <div className="mt-4 rounded-xl border border-amber-200 bg-amber-50 p-3">
+                        <div className="text-sm font-semibold text-amber-900">
+                            £{Number(b.balance_amount).toFixed(2)} still to pay
+                        </div>
+                        <p className="text-xs text-amber-800 mt-0.5">
+                            {b.balance_due_date
+                                ? 'This is taken from your card automatically on ' + b.balance_due_date + '. You can pay it sooner if you prefer.'
+                                : 'You can settle this at any time.'}
+                        </p>
+                        <button
+                            type="button"
+                            onClick={() => payBalance(b.id)}
+                            disabled={payingId === b.id}
+                            className="mt-2 px-4 py-2 bg-emerald-700 hover:bg-emerald-800 text-white text-sm font-semibold rounded-xl transition disabled:opacity-50"
+                        >
+                            {payingId === b.id ? 'Opening payment…' : 'Pay the balance now'}
+                        </button>
+                        {payError && payingId === null && (
+                            <p className="text-xs text-red-600 mt-2">{payError}</p>
+                        )}
+                    </div>
+                )}
+
+                {!b.sharedWithMe
+                    && b.status !== 'cancelled'
+                    && b.status !== 'declined'
+                    && new Date(b.check_in) > today && (() => {
+                    const paidSoFar = Number(b.amount_paid || 0) - Number(b.amount_refunded || 0);
+                    const fraction = refundFraction(b.check_in, listing?.cancellation_policy);
+                    const refund = Math.round(paidSoFar * fraction * 100) / 100;
+
+                    if (confirmingId !== b.id) {
+                        return (
+                            <div className="mt-3">
+                                <button
+                                    type="button"
+                                    onClick={() => { setConfirmingId(b.id); setCancelError(''); }}
+                                    className="text-xs font-semibold text-slate-500 underline hover:text-slate-800"
+                                >
+                                    Cancel booking
+                                </button>
+                            </div>
+                        );
+                    }
+
+                    return (
+                        <div className="mt-4 rounded-xl border border-slate-200 bg-slate-50 p-4">
+                            <div className="text-sm font-semibold text-slate-900">
+                                Cancel this booking?
+                            </div>
+                            <p className="text-sm text-slate-600 mt-1">
+                                {paidSoFar <= 0
+                                    ? 'You haven’t paid anything for this stay, so there’s nothing to refund.'
+                                    : refund >= paidSoFar
+                                        ? 'You’ll get your full £' + paidSoFar.toFixed(2) + ' back to your card, usually within five to ten days.'
+                                    : refund > 0
+                                        ? 'You’ll get £' + refund.toFixed(2) + ' of the £' + paidSoFar.toFixed(2) + ' you’ve paid back to your card, usually within five to ten days.'
+                                        : 'These dates are inside the non-refundable period for this place, so no refund is due on the £' + paidSoFar.toFixed(2) + ' you’ve paid.'}
+                            </p>
+                            <p className="text-xs text-slate-500 mt-2">
+                                The dates will be released for someone else, and this can’t be undone.
+                            </p>
+
+                            {cancelError && (
+                                <p className="text-xs text-red-600 mt-2">{cancelError}</p>
+                            )}
+
+                            <div className="mt-3 flex items-center gap-2">
+                                <button
+                                    type="button"
+                                    onClick={() => cancelBooking(b.id)}
+                                    disabled={cancellingId === b.id}
+                                    className="px-4 py-2 bg-red-700 hover:bg-red-800 text-white text-sm font-semibold rounded-xl transition disabled:opacity-50"
+                                >
+                                    {cancellingId === b.id ? 'Cancelling…' : 'Yes, cancel it'}
+                                </button>
+                                <button
+                                    type="button"
+                                    onClick={() => setConfirmingId(null)}
+                                    className="px-4 py-2 text-sm font-semibold text-slate-600 hover:text-slate-900"
+                                >
+                                    Keep my booking
+                                </button>
+                            </div>
+                        </div>
+                    );
+                })()}
+
+                {isCompleted && !alreadyReviewed && (() => {
+                    // Reviews close 14 days after check-out.
+                    const deadline = new Date(b.check_out);
+                    deadline.setDate(deadline.getDate() + 14);
+                    const daysLeft = Math.ceil((deadline.getTime() - today.getTime()) / 86400000);
+
+                    if (daysLeft < 0) {
+                        return (
+                            <p className="text-xs text-slate-400 mt-4">
+                                The review window for this stay has closed.
+                            </p>
+                        );
+                    }
+
+                    return (
+                        <div className="mt-4 flex items-center gap-3">
+                            <Link
+                                href={`/review/${b.id}`}
+                                className="px-4 py-2 bg-emerald-700 hover:bg-emerald-800 text-white text-sm font-semibold rounded-xl transition"
+                            >
+                                Leave a review
+                            </Link>
+                            <span className={`text-xs ${daysLeft <= 3 ? 'text-amber-700 font-medium' : 'text-slate-400'}`}>
+                                {daysLeft === 0 ? 'Last day' : `${daysLeft} days left`}
+                            </span>
+                        </div>
+                    );
+                })()}
+                {isCompleted && alreadyReviewed && (
+                    <p className="text-xs text-slate-400 mt-3">You've reviewed this stay.</p>
+                )}
+            </div>
+        );
+    };
+
     return (
         <div className="max-w-3xl mx-auto px-6 py-10">
             <div className="flex items-baseline justify-between gap-4 flex-wrap mb-8">
@@ -200,180 +394,27 @@ export default function TripsPage() {
                     <p className="text-slate-500 mt-1">Once you book a stay, it'll show up here.</p>
                 </div>
             ) : (
-                <div className="space-y-4">
-                    {bookings.map((b) => {
-                        const listing = listingMap[b.listing_id];
-                        const isCompleted = b.status === 'confirmed' && new Date(b.check_out) < today;
-                        const alreadyReviewed = reviewedBookingIds.has(b.id);
+                <>
+                    {upcoming.length > 0 ? (
+                        <div className="space-y-4">
+                            {upcoming.map(renderTrip)}
+                        </div>
+                    ) : (
+                        <div className="text-center py-12 bg-white rounded-2xl border border-slate-200">
+                            <h3 className="text-lg font-semibold text-slate-800">Nothing booked at the moment</h3>
+                            <p className="text-slate-500 mt-1">Your past trips are below.</p>
+                        </div>
+                    )}
 
-                        return (
-                            <div key={b.id} className="border rounded-2xl p-5">
-                                <div className="flex items-center gap-4">
-                                    <div className="w-16 h-16 rounded-xl overflow-hidden bg-slate-200 flex-shrink-0">
-                                        {listing?.images?.[0] && (
-                                            <img src={getImageUrl(listing.images[0])} alt={listing.title} className="w-full h-full object-cover" />
-                                        )}
-                                    </div>
-                                    <div className="flex-1">
-                                        <div className="font-semibold text-slate-900">{listing?.title || 'Listing'}</div>
-                                        <div className="text-sm text-slate-600">
-                                            Hosted by {capitializeFirst(hostNames[b.host_id] || 'Host')} · {b.check_in} → {b.check_out}
-                                        </div>
-                                        {b.sharedWithMe ? (
-                                            <div className="text-sm text-slate-400">
-                                                {b.guests ? b.guests + (b.guests === 1 ? ' guest' : ' guests') : 'Shared with you'}
-                                            </div>
-                                        ) : (
-                                            <div className="text-sm font-medium text-slate-700">£{b.total_price}</div>
-                                        )}
-                                    </div>
-                                    <span className={`text-xs font-semibold px-3 py-1 rounded-full capitalize flex-shrink-0 ${statusStyles[b.status] || 'bg-slate-100 text-slate-600'}`}>
-                                        {b.status}
-                                    </span>
-                                </div>
-
-                                <Link href={`/messages/${b.id}`} className="text-xs font-semibold text-slate-500 underline hover:text-slate-800 mt-3 inline-block">
-                                    Message host
-                                </Link>
-
-                                {b.sharedWithMe ? (
-                                    <p className="text-xs text-slate-400 mt-3">
-                                        You were added to this trip. Whoever booked it looks after
-                                        the payment and any changes.
-                                    </p>
-                                ) : (
-                                    b.status !== 'cancelled'
-                                        && b.status !== 'declined'
-                                        && <TripGroup bookingId={b.id} />
-                                )}
-
-                                {!b.sharedWithMe && b.payment_status === 'deposit_paid'
-                                    && Number(b.balance_amount || 0) > 0
-                                    && b.status !== 'cancelled'
-                                    && b.status !== 'declined' && (
-                                    <div className="mt-4 rounded-xl border border-amber-200 bg-amber-50 p-3">
-                                        <div className="text-sm font-semibold text-amber-900">
-                                            £{Number(b.balance_amount).toFixed(2)} still to pay
-                                        </div>
-                                        <p className="text-xs text-amber-800 mt-0.5">
-                                            {b.balance_due_date
-                                                ? 'This is taken from your card automatically on ' + b.balance_due_date + '. You can pay it sooner if you prefer.'
-                                                : 'You can settle this at any time.'}
-                                        </p>
-                                        <button
-                                            type="button"
-                                            onClick={() => payBalance(b.id)}
-                                            disabled={payingId === b.id}
-                                            className="mt-2 px-4 py-2 bg-emerald-700 hover:bg-emerald-800 text-white text-sm font-semibold rounded-xl transition disabled:opacity-50"
-                                        >
-                                            {payingId === b.id ? 'Opening payment…' : 'Pay the balance now'}
-                                        </button>
-                                        {payError && payingId === null && (
-                                            <p className="text-xs text-red-600 mt-2">{payError}</p>
-                                        )}
-                                    </div>
-                                )}
-
-                                {!b.sharedWithMe
-                                    && b.status !== 'cancelled'
-                                    && b.status !== 'declined'
-                                    && new Date(b.check_in) > today && (() => {
-                                    const paidSoFar = Number(b.amount_paid || 0) - Number(b.amount_refunded || 0);
-                                    const fraction = refundFraction(b.check_in, listing?.cancellation_policy);
-                                    const refund = Math.round(paidSoFar * fraction * 100) / 100;
-
-                                    if (confirmingId !== b.id) {
-                                        return (
-                                            <div className="mt-3">
-                                                <button
-                                                    type="button"
-                                                    onClick={() => { setConfirmingId(b.id); setCancelError(''); }}
-                                                    className="text-xs font-semibold text-slate-500 underline hover:text-slate-800"
-                                                >
-                                                    Cancel booking
-                                                </button>
-                                            </div>
-                                        );
-                                    }
-
-                                    return (
-                                        <div className="mt-4 rounded-xl border border-slate-200 bg-slate-50 p-4">
-                                            <div className="text-sm font-semibold text-slate-900">
-                                                Cancel this booking?
-                                            </div>
-                                            <p className="text-sm text-slate-600 mt-1">
-                                                {paidSoFar <= 0
-                                                    ? 'You haven’t paid anything for this stay, so there’s nothing to refund.'
-                                                    : refund >= paidSoFar
-                                                        ? 'You’ll get your full £' + paidSoFar.toFixed(2) + ' back to your card, usually within five to ten days.'
-                                                    : refund > 0
-                                                        ? 'You’ll get £' + refund.toFixed(2) + ' of the £' + paidSoFar.toFixed(2) + ' you’ve paid back to your card, usually within five to ten days.'
-                                                        : 'These dates are inside the non-refundable period for this place, so no refund is due on the £' + paidSoFar.toFixed(2) + ' you’ve paid.'}
-                                            </p>
-                                            <p className="text-xs text-slate-500 mt-2">
-                                                The dates will be released for someone else, and this can’t be undone.
-                                            </p>
-
-                                            {cancelError && (
-                                                <p className="text-xs text-red-600 mt-2">{cancelError}</p>
-                                            )}
-
-                                            <div className="mt-3 flex items-center gap-2">
-                                                <button
-                                                    type="button"
-                                                    onClick={() => cancelBooking(b.id)}
-                                                    disabled={cancellingId === b.id}
-                                                    className="px-4 py-2 bg-red-700 hover:bg-red-800 text-white text-sm font-semibold rounded-xl transition disabled:opacity-50"
-                                                >
-                                                    {cancellingId === b.id ? 'Cancelling…' : 'Yes, cancel it'}
-                                                </button>
-                                                <button
-                                                    type="button"
-                                                    onClick={() => setConfirmingId(null)}
-                                                    className="px-4 py-2 text-sm font-semibold text-slate-600 hover:text-slate-900"
-                                                >
-                                                    Keep my booking
-                                                </button>
-                                            </div>
-                                        </div>
-                                    );
-                                })()}
-
-                                {isCompleted && !alreadyReviewed && (() => {
-                                    // Reviews close 14 days after check-out.
-                                    const deadline = new Date(b.check_out);
-                                    deadline.setDate(deadline.getDate() + 14);
-                                    const daysLeft = Math.ceil((deadline.getTime() - today.getTime()) / 86400000);
-
-                                    if (daysLeft < 0) {
-                                        return (
-                                            <p className="text-xs text-slate-400 mt-4">
-                                                The review window for this stay has closed.
-                                            </p>
-                                        );
-                                    }
-
-                                    return (
-                                        <div className="mt-4 flex items-center gap-3">
-                                            <Link
-                                                href={`/review/${b.id}`}
-                                                className="px-4 py-2 bg-emerald-700 hover:bg-emerald-800 text-white text-sm font-semibold rounded-xl transition"
-                                            >
-                                                Leave a review
-                                            </Link>
-                                            <span className={`text-xs ${daysLeft <= 3 ? 'text-amber-700 font-medium' : 'text-slate-400'}`}>
-                                                {daysLeft === 0 ? 'Last day' : `${daysLeft} days left`}
-                                            </span>
-                                        </div>
-                                    );
-                                })()}
-                                {isCompleted && alreadyReviewed && (
-                                    <p className="text-xs text-slate-400 mt-3">You've reviewed this stay.</p>
-                                )}
+                    {past.length > 0 && (
+                        <div className="mt-12">
+                            <h2 className="text-lg font-semibold text-slate-900 mb-4">Past trips</h2>
+                            <div className="space-y-4">
+                                {past.map(renderTrip)}
                             </div>
-                        );
-                    })}
-                </div>
+                        </div>
+                    )}
+                </>
             )}
         </div>
     );
