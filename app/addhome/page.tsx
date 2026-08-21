@@ -235,7 +235,7 @@ export default function AddHome() {
             const location = [flat, propertyName, street, city, state, postcode, country].filter(Boolean).join(', ');
             const payload = {
                 host_id: user.data.user.id,
-                title: title || 'Untitled listing',
+                title: title.trim(),
                 description,
                 location,
                 price_per_night: price ? Number(price) : 0,
@@ -392,6 +392,14 @@ export default function AddHome() {
         e.preventDefault();
         setFormError('');
 
+        // A draft may be saved without a name, but a published listing may not.
+        // Resuming a draft can land here without walking back through step 7,
+        // so the check belongs on the publish path and not only in goNext().
+        if (!title.trim()) {
+            setFormError('Please give your place a title before publishing it.');
+            setStep(7);
+            return;
+        }
         if (photos.length === 0) {
             setFormError('Please add at least one photo of your place.');
             return;
@@ -438,7 +446,7 @@ export default function AddHome() {
 
             const { error: listingErr } = draftId
                 ? await supabase.from('listings').update({
-                    title,
+                    title: title.trim(),
                     description,
                     location,
                     price_per_night: Number(price),
@@ -464,7 +472,7 @@ export default function AddHome() {
                 }).eq('id', draftId)
                 : await supabase.from('listings').insert({
                     host_id: user.data.user.id,
-                    title,
+                    title: title.trim(),
                     description,
                     location,
                     price_per_night: Number(price),
@@ -640,7 +648,7 @@ export default function AddHome() {
                 setFormError('Please add at least one photo of your place.');
                 return;
             }
-            if (step === 7 && (!title || !description)) {
+            if (step === 7 && (!title.trim() || !description.trim())) {
                 setFormError('Please add a title and description.');
                 return;
             }
