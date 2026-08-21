@@ -1,4 +1,4 @@
-import { createClient } from '@supabase/supabase-js';
+import { adminClient } from '@/lib/supabaseAdmin';
 import { NextResponse } from 'next/server';
 import { stripeRequest } from '@/lib/stripe';
 import { refundFraction } from '@/lib/cancellation';
@@ -39,14 +39,6 @@ function deadlineText(hours: number): string {
         return days + (days === 1 ? ' day' : ' days');
     }
     return hours + ' hours';
-}
-
-function adminClient() {
-    return createClient(
-        process.env.NEXT_PUBLIC_SUPABASE_URL || '',
-        process.env.SUPABASE_SERVICE_ROLE_KEY || '',
-        { auth: { persistSession: false } }
-    );
 }
 
 function round2(value: number): number {
