@@ -87,6 +87,15 @@ async function drainToBank(accountId) {
 
 // The route works out the amount itself from the booking and the cancellation
 // policy — it takes no amount from the caller — so this refunds in full.
+// Puts money into a connected account so a reversal has something to pull
+// against. Used to set up a failure that is NOT a shortfall.
+async function topUpConnected(accountId, pounds) {
+    await stripe.request('POST', '/transfers', {
+        amount: Math.round(pounds * 100), currency: 'gbp', destination: accountId,
+        description: 'scenario setup',
+    });
+}
+
 async function refundAsHost(bookingId, hostLabel, reason) {
     const { cookie } = await signIn(env, hostLabel + '@' + SEED_DOMAIN, 'seed-password-' + hostLabel);
     const res = await fetch(SITE + '/api/stripe/refund', {
@@ -214,37 +223,40 @@ async function main() {
         JSON.stringify(refund23.body).slice(0, 160));
 
     const rows23 = await payoutsFor(bookings.s23);
-    const reversal23 = rows23.find((r) => r.kind === 'reversal');
     const balAfter23 = await connectedBalance(accounts.indebted);
     console.log('   host balance after the clawback: £' + balAfter23.available);
 
-    // The scenario as written assumes Stripe refuses a reversal the host cannot
-    // fund. It does not. It reverses anyway and takes the connected account
-    // negative, so this branch never fires for the stated reason.
-    if (reversal23 && reversal23.status === 'succeeded' && balAfter23.available < 0) {
-        untestable(
-            'Stripe does not refuse the reversal. It reversed in full and left the host\u2019s '
-            + 'connected account at £' + balAfter23.available + '. `payout_balance_owed` is never '
-            + 'written, so the platform\u2019s books show the host square while Stripe quietly '
-            + 'recovers the £' + Math.abs(balAfter23.available) + ' out of their next transfer.'
-        );
-    } else {
-        check('a reversal row was written as owed',
-            !!rows23.find((r) => r.kind === 'reversal' && r.status === 'owed'),
-            'rows: ' + rows23.map((r) => r.kind + '/' + r.status).join(', '));
-        const host23 = await profile(users.hostIndebted);
-        check('the shortfall was added to payout_balance_owed',
-            round2(Number(host23.payout_balance_owed)) > owedBefore);
-    }
+    check('the host’s connected account was NOT left negative', balAfter23.available >= 0,
+        '£' + balAfter23.available + ' — Stripe would absorb this out of their next transfer, '
+        + 'recovering the same money twice');
+
+    check('a reversal row was written as owed',
+        !!rows23.find((r) => r.kind === 'reversal' && r.status === 'owed'),
+        'rows: ' + rows23.map((r) => r.kind + '/' + r.status).join(', '));
+
+    const host23 = await profile(users.hostIndebted);
+    const owedAfter = round2(Number(host23.payout_balance_owed));
+    check('the shortfall was added to payout_balance_owed',
+        owedAfter > owedBefore, '£' + owedBefore + ' → £' + owedAfter);
+    check('the debt is exactly what the host could not fund (£' + paid23.payout_amount + ')',
+        round2(owedAfter - owedBefore) === round2(Number(paid23.payout_amount)),
+        'expected £' + paid23.payout_amount + ', got £' + round2(owedAfter - owedBefore));
 
     /* ---- 23b: a clawback failure that is NOT a shortfall ---- */
 
     scenario('23b', 'A clawback that fails for any other reason is not billed to the host');
 
-    // Point it at a transfer that has already been reversed in full. Stripe
-    // refuses, and that refusal is not a shortfall.
+    // The host must actually have the money, or the clawback correctly carries
+    // it forward as a shortfall and never reaches Stripe at all. With funds
+    // present it attempts the reversal — against a transfer already reversed in
+    // full, which Stripe refuses for a reason that is not a shortfall.
+    await topUpConnected(accounts.indebted, 500);
+    console.log('   topped the host up to £500 so the reversal is actually attempted');
+
+    // Scenario 22's transfer was reversed in full; scenario 23's never was,
+    // because the host had nothing to reverse against.
     await db.update('bookings', '?id=eq.' + bookings.s23b, {
-        payout_transfer_id: paid23.payout_transfer_id,
+        payout_transfer_id: paid22.payout_transfer_id,
         payout_amount: 150,
         paid_out_at: new Date().toISOString(),
     });
@@ -268,12 +280,9 @@ async function main() {
 
     scenario(24, 'The next payout is smaller than the debt — withheld entirely, carried forward');
 
-    // Scenario 23 cannot produce a debt here (see above), so the debt is set
-    // directly. What is under test is the payout run\u2019s withholding, not how
-    // the debt came to exist.
-    const DEBT = 250;
-    await db.update('profiles', '?id=eq.' + users.hostIndebted, { payout_balance_owed: DEBT });
-    console.log('   payout_balance_owed set to £' + DEBT + ' directly (see scenario 23)');
+    // The debt is whatever scenario 23 left behind — no longer set by hand.
+    const DEBT = round2(Number((await profile(users.hostIndebted)).payout_balance_owed));
+    console.log('   carrying £' + DEBT + ' of debt from scenario 23');
 
     await db.update('bookings', '?id=eq.' + bookings.s24, {
         check_in: dayOffset(-2), check_out: dayOffset(-1),

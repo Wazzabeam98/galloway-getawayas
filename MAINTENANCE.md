@@ -67,6 +67,16 @@ Please:
 - **New status values need the check constraint widening first.** Adding
   `'hidden'` to listings, or `'pending_payment'` to bookings, fails silently at
   the database until the constraint allows it.
+- **The Supabase CLI is linked to the production project, not the test one.**
+  `supabase/.temp/project-ref` says `hviwjxigqivjfhmhpjiy`, which is
+  production, while `.env.local` points the app at the test project
+  `yefoqcabuijcowoqewtc`. So the app and the CLI are aimed at different
+  databases, and `supabase db push`, `db reset` or a migration run from this
+  checkout hits **live data** even though everything else in the session is on
+  test. Check with `cat supabase/.temp/project-ref` before running any CLI
+  command that writes, and re-link with `supabase link --project-ref
+  yefoqcabuijcowoqewtc` if you mean the test project.
+
 - **A co-host is not the `host_id` on a booking.** Any query on their behalf
   needs the service key, or row-level security returns nothing and the page
   looks empty rather than broken.

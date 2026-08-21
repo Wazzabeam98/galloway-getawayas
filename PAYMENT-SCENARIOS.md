@@ -72,14 +72,40 @@ Roughly eight of these have been tested by hand. The rest never have.
 29. A webhook is delivered twice, or a scheduled job runs twice. Nothing is
     charged, refunded or paid out twice.
 
-## Known bugs to fix as part of this
+## Progress
 
-- `host-payouts/route.ts` rounds `hostShare` and `commission` independently
-  from the same amount. On roughly a quarter of pence-ending totals they sum
-  to a penny more than was collected, so the transfer and the email disagree.
-  Round one and derive the other by subtraction.
-- `pricing.ts` tests `if (overrides[key])`, so a calendar override of £0 is
-  ignored and the standard rate applies.
-- `host-payouts/route.ts` imports `logError` but never calls it, and
-  discards the error from its first query — so a failed payout run looks
-  identical to a quiet one.
+Scenarios 19-24, the payouts, are scripted and passing against the test
+project and Stripe test mode:
+
+```
+node scripts/seed-payments.mjs && node scripts/payout-scenarios.mjs
+```
+
+See `scripts/README.md`. Scenario 23 needed a fix before it could pass at all —
+Stripe does not refuse a reversal the host cannot fund, it takes their account
+negative and absorbs the difference out of the next transfer, so the money was
+being recovered twice. The clawback now reverses only what the host is actually
+holding and carries the rest on `payout_balance_owed`.
+
+## Fixed
+
+- ~~`host-payouts/route.ts` rounds `hostShare` and `commission` independently.~~
+  `feeAmount` now derives from `netOfFee` by subtraction, so the two always sum
+  to what was collected. Covered by `tests/money.test.ts`.
+- ~~`host-payouts/route.ts` imports `logError` but never calls it, and discards
+  the error from its first query.~~ A failed read now returns 500 and reaches
+  /admin/errors. Covered by `tests/host-payouts.test.ts`.
+- ~~`pricing.ts` tests `if (overrides[key])`, so a £0 override is ignored.~~
+  Fixed; a zero override is honoured.
+- The clawback keyed its idempotency on the booking id alone, so a second
+  refund on one booking either replayed the first reversal or was rejected and
+  billed to the host as a debt. It now carries the Stripe refund id.
+- The clawback treated every Stripe error as a shortfall, turning a bad
+  transfer id or an outage into money deducted from the host's next payout.
+  Only `balance_insufficient` does that now.
+
+## Still open
+
+- `/api/stripe/refund` ignores the amount it is given and recalculates from the
+  booking and the cancellation policy, so scenario 14 — a partial goodwill
+  refund — is not possible through it.

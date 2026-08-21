@@ -12,17 +12,27 @@ installAliases();
 
 const MODULE = '@/lib/clawback';
 
-type Call = { path: string; body: any; idempotencyKey?: string };
+type Call = { method: string; path: string; body: any; idempotencyKey?: string; account?: string };
 
-function load(stripeBehaviour: (call: Call) => any) {
+// `balance` is what the host is holding at Stripe, in pounds; null means the
+// read itself fails. `onReversal` decides what the reversal call does.
+function load(options: { balance?: number | null; onReversal?: (call: Call) => any } = {}) {
     const calls: Call[] = [];
     const logged: any[] = [];
+    const balance = options.balance === undefined ? 1000 : options.balance;
+    const onReversal = options.onReversal || (() => ({ id: 'trr_stub' }));
 
     stubModule('@/lib/stripe', {
-        stripeRequest: async (_method: string, path: string, body: any, idempotencyKey?: string) => {
-            const call = { path, body, idempotencyKey };
+        stripeRequest: async (
+            method: string, path: string, body: any, idempotencyKey?: string, account?: string
+        ) => {
+            const call = { method, path, body, idempotencyKey, account };
             calls.push(call);
-            return stripeBehaviour(call);
+            if (path === '/balance') {
+                if (balance === null) throw new Error('could not read the balance');
+                return { available: [{ currency: 'gbp', amount: Math.round(balance * 100) }] };
+            }
+            return onReversal(call);
         },
     });
     stubModule('@/lib/logError', {
@@ -38,6 +48,7 @@ function load(stripeBehaviour: (call: Call) => any) {
 
 // Records what was written, so a test can assert the host's debt exactly.
 function fakeAdmin(profile: any = { payout_balance_owed: 0 }) {
+    const withAccount = { stripe_account_id: 'acct_test', ...profile };
     const writes: any[] = [];
     const updates: any[] = [];
     return {
@@ -49,7 +60,7 @@ function fakeAdmin(profile: any = { payout_balance_owed: 0 }) {
                 select() {
                     return {
                         eq() {
-                            return { maybeSingle: async () => ({ data: profile, error: null }) };
+                            return { maybeSingle: async () => ({ data: withAccount, error: null }) };
                         },
                     };
                 },
@@ -73,38 +84,112 @@ const booking = {
     payout_amount: 270,
 };
 
-test('a shortfall at Stripe is carried forward as a debt', async () => {
-    const { clawBackPayout } = load(() => {
-        const err: any = new Error('Insufficient funds in the account.');
-        err.stripeCode = 'balance_insufficient';
-        throw err;
-    });
+const reversalsIn = (calls: Call[]) => calls.filter((c) => c.path.indexOf('/reversals') !== -1);
+
+// Scenario 23. Stripe will not refuse a reversal the host cannot fund — it
+// takes their account negative and absorbs the difference out of the next
+// transfer, which is the same money recovered twice. So we reverse only what
+// they are holding and carry the rest.
+test('a host with nothing at Stripe has the whole amount carried forward', async () => {
+    const { clawBackPayout, calls } = load({ balance: 0 });
+    const admin = fakeAdmin({ payout_balance_owed: 0 });
+
+    const result = await clawBackPayout(admin, booking, 270, 're_abc');
+
+    assert.equal(result.reversed, 0);
+    assert.equal(result.owed, 270);
+    assert.equal(reversalsIn(calls).length, 0, 'nothing to reverse, so Stripe is not asked to');
+
+    const debt = admin.updates.find((u) => u.table === 'profiles');
+    assert.equal(debt.patch.payout_balance_owed, 270);
+
+    const row = admin.writes.find((w) => w.table === 'payouts');
+    assert.equal(row.row.status, 'owed');
+});
+
+test('a host holding part of it has the rest carried forward', async () => {
+    const { clawBackPayout, calls } = load({ balance: 100 });
+    const admin = fakeAdmin({ payout_balance_owed: 0 });
+
+    const result = await clawBackPayout(admin, booking, 270, 're_abc');
+
+    assert.equal(result.reversed, 100, 'only what they actually had');
+    assert.equal(result.owed, 170);
+    assert.equal(reversalsIn(calls)[0].body.amount, 10000, 'pence');
+
+    const debt = admin.updates.find((u) => u.table === 'profiles');
+    assert.equal(debt.patch.payout_balance_owed, 170);
+
+    const statuses = admin.writes.filter((w) => w.table === 'payouts').map((w) => w.row.status);
+    assert.deepEqual(statuses, ['succeeded', 'owed'], 'both halves are recorded');
+});
+
+test('a shortfall is added to what the host already owed, not set over it', async () => {
+    const { clawBackPayout } = load({ balance: 0 });
     const admin = fakeAdmin({ payout_balance_owed: 12.5 });
+
+    await clawBackPayout(admin, booking, 270, 're_abc');
+
+    const debt = admin.updates.find((u) => u.table === 'profiles');
+    assert.equal(debt.patch.payout_balance_owed, 282.5);
+});
+
+test('a host with the money covers it in full and owes nothing', async () => {
+    const { clawBackPayout, calls } = load({ balance: 810 });
+    const admin = fakeAdmin({ payout_balance_owed: 0 });
+
+    const result = await clawBackPayout(admin, booking, 270, 're_ok');
+
+    assert.equal(result.reversed, 270);
+    assert.equal(result.owed, 0);
+    assert.equal(reversalsIn(calls)[0].body.amount, 27000);
+    assert.equal(admin.updates.filter((u) => u.table === 'profiles').length, 0);
+    assert.equal(admin.writes.find((w) => w.table === 'payouts').row.status, 'succeeded');
+});
+
+// A balance we could not read must not silently become a debt.
+test('an unreadable balance attempts the whole reversal rather than inventing a debt', async () => {
+    const { clawBackPayout, calls } = load({ balance: null });
+    const admin = fakeAdmin({ payout_balance_owed: 0 });
+
+    const result = await clawBackPayout(admin, booking, 270, 're_abc');
+
+    assert.equal(result.reversed, 270);
+    assert.equal(reversalsIn(calls)[0].body.amount, 27000);
+    assert.equal(admin.updates.filter((u) => u.table === 'profiles').length, 0);
+});
+
+// The balance can move between reading it and reversing against it.
+test('Stripe reporting a shortfall anyway carries the whole amount', async () => {
+    const { clawBackPayout } = load({
+        balance: 810,
+        onReversal: () => {
+            const err: any = new Error('Insufficient funds in the account.');
+            err.stripeCode = 'balance_insufficient';
+            throw err;
+        },
+    });
+    const admin = fakeAdmin({ payout_balance_owed: 0 });
 
     const result = await clawBackPayout(admin, booking, 270, 're_abc');
 
     assert.equal(result.owed, 270);
-    assert.equal(result.reversed, 0);
-    assert.equal(result.failed, 0);
-
-    const debt = admin.updates.find((u) => u.table === 'profiles');
-    assert.ok(debt, 'the debt must be written to the host profile');
-    assert.equal(debt.patch.payout_balance_owed, 282.5, 'added to what they already owed');
-
-    const row = admin.writes.find((w) => w.table === 'payouts');
-    assert.equal(row.row.status, 'owed');
+    assert.equal(admin.updates.find((u) => u.table === 'profiles').patch.payout_balance_owed, 270);
 });
 
 // The bug: every Stripe error was treated as a shortfall, so a bad transfer id
 // or a reused idempotency key silently became money taken off the host's next
 // payout that they never owed.
 test('any other Stripe failure is recorded, not billed to the host', async () => {
-    const { clawBackPayout, logged } = load(() => {
-        const err: any = new Error(
-            'Keys for idempotent requests can only be used with the same parameters'
-        );
-        err.stripeCode = 'idempotency_error';
-        throw err;
+    const { clawBackPayout, logged } = load({
+        balance: 810,
+        onReversal: () => {
+            const err: any = new Error(
+                'Keys for idempotent requests can only be used with the same parameters'
+            );
+            err.stripeCode = 'idempotency_error';
+            throw err;
+        },
     });
     const admin = fakeAdmin({ payout_balance_owed: 40 });
 
@@ -112,16 +197,12 @@ test('any other Stripe failure is recorded, not billed to the host', async () =>
 
     assert.equal(result.failed, 270);
     assert.equal(result.owed, 0, 'this is not money the host owes');
-
     assert.equal(
         admin.updates.filter((u) => u.table === 'profiles').length,
         0,
         'payout_balance_owed must not be touched'
     );
-
-    const row = admin.writes.find((w) => w.table === 'payouts');
-    assert.equal(row.row.status, 'failed');
-
+    assert.equal(admin.writes.find((w) => w.table === 'payouts').row.status, 'failed');
     assert.equal(logged.length, 1, 'a failure nobody is charged for still has to reach /admin/errors');
     assert.match(logged[0].message, /not a shortfall/i);
 });
@@ -129,43 +210,42 @@ test('any other Stripe failure is recorded, not billed to the host', async () =>
 // Two refunds on one booking each need their own reversal. Keyed on the booking
 // alone, Stripe replayed the first — recovering nothing while recording success.
 test('each refund gets its own idempotency key', async () => {
-    const { clawBackPayout, calls } = load(() => ({ id: 'trr_1' }));
+    const { clawBackPayout, calls } = load({ balance: 810 });
     const admin = fakeAdmin();
 
     await clawBackPayout(admin, booking, 100, 're_first');
     await clawBackPayout(admin, booking, 150, 're_second');
 
-    assert.equal(calls.length, 2);
-    assert.notEqual(calls[0].idempotencyKey, calls[1].idempotencyKey);
-    assert.match(calls[0].idempotencyKey!, /re_first/);
-    assert.match(calls[1].idempotencyKey!, /re_second/);
-});
-
-test('a successful reversal records nothing against the host', async () => {
-    const { clawBackPayout } = load(() => ({ id: 'trr_9' }));
-    const admin = fakeAdmin({ payout_balance_owed: 0 });
-
-    const result = await clawBackPayout(admin, booking, 270, 're_ok');
-
-    assert.equal(result.reversed, 270);
-    assert.equal(result.owed, 0);
-    assert.equal(admin.updates.filter((u) => u.table === 'profiles').length, 0);
-    const row = admin.writes.find((w) => w.table === 'payouts');
-    assert.equal(row.row.status, 'succeeded');
+    const reversals = reversalsIn(calls);
+    assert.equal(reversals.length, 2);
+    assert.notEqual(reversals[0].idempotencyKey, reversals[1].idempotencyKey);
+    assert.match(reversals[0].idempotencyKey!, /re_first/);
+    assert.match(reversals[1].idempotencyKey!, /re_second/);
 });
 
 test('a reversal never exceeds what was actually paid out', async () => {
-    const { clawBackPayout, calls } = load(() => ({ id: 'trr_5' }));
+    const { clawBackPayout, calls } = load({ balance: 5000 });
     const admin = fakeAdmin();
 
     // The guest is refunded £600 but the host only ever received £270.
     await clawBackPayout(admin, booking, 600, 're_big');
 
-    assert.equal(calls[0].body.amount, 27000, 'pence, capped at the payout');
+    assert.equal(reversalsIn(calls)[0].body.amount, 27000, 'pence, capped at the payout');
+});
+
+test('the balance is read as the host, not as the platform', async () => {
+    const { clawBackPayout, calls } = load({ balance: 810 });
+    const admin = fakeAdmin();
+
+    await clawBackPayout(admin, booking, 270, 're_abc');
+
+    const balanceCall = calls.find((c) => c.path === '/balance');
+    assert.ok(balanceCall, 'the balance must be read');
+    assert.equal(balanceCall!.account, 'acct_test');
 });
 
 test('a booking that was never paid out is left alone', async () => {
-    const { clawBackPayout, calls } = load(() => ({ id: 'trr_x' }));
+    const { clawBackPayout, calls } = load({ balance: 810 });
     const admin = fakeAdmin();
 
     const result = await clawBackPayout(admin, { ...booking, payout_transfer_id: null }, 100, 're_n');

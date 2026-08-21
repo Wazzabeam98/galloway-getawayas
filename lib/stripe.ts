@@ -44,12 +44,19 @@ export async function stripeRequest(
     method: 'GET' | 'POST',
     path: string,
     body?: Record<string, any>,
-    idempotencyKey?: string
+    idempotencyKey?: string,
+    stripeAccount?: string
 ): Promise<any> {
     const headers: Record<string, string> = {
         Authorization: 'Bearer ' + stripeKey(),
         'Stripe-Version': '2024-06-20',
     };
+
+    // Ask the question as the connected account rather than as the platform —
+    // needed to read a host's own Stripe balance.
+    if (stripeAccount) {
+        headers['Stripe-Account'] = stripeAccount;
+    }
 
     // Stripe takes this as a header, not a field. Send the same key twice and
     // it replays the original response instead of charging again — which is
