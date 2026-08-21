@@ -4,7 +4,7 @@ import {
     PopoverContent,
     PopoverTrigger,
 } from "@/components/ui/popover"
-import { MenuIcon, UserIcon } from 'lucide-react'
+import { UserIcon } from 'lucide-react'
 import LoginModel from '../auth/LoginModel'
 import SignupModel from '../auth/SignupModel'
 import SignOut from '../common/SignOut'
@@ -12,6 +12,7 @@ import ModeSwitch from './ModeSwitch'
 import Link from 'next/link'
 import { getImageUrl } from '@/lib/utils'
 import MessagesLink from './MessagesLink'
+import MenuUnreadDot from './MenuUnreadDot'
 
 const itemClass = 'hover:bg-slate-200 rounded-md p-2 cursor-pointer';
 
@@ -36,7 +37,7 @@ const NavMenu = ({
         <Popover>
             <PopoverTrigger asChild>
                 <div className='flex items-center gap-2 border p-1.5 pl-3 rounded-full cursor-pointer hover:shadow-md transition'>
-                    <MenuIcon className='w-5 h-5' />
+                    <MenuUnreadDot enabled={session != null} />
                     {session != null ? (
                         <div className='w-8 h-8 rounded-full overflow-hidden bg-slate-900 text-white flex items-center justify-center text-sm font-semibold flex-shrink-0'>
                             {avatarUrl ? (
