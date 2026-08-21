@@ -8,7 +8,7 @@
 // =====================================================================
 
 import { createRouteHandlerClient } from '@supabase/auth-helpers-nextjs';
-import { createClient } from '@supabase/supabase-js';
+import { adminClient } from '@/lib/supabaseAdmin';
 import { cookies } from 'next/headers';
 import { NextResponse } from 'next/server';
 import {
@@ -25,14 +25,6 @@ export const dynamic = 'force-dynamic';
 
 // Reads auth.users and other people's rows, so it uses the service role
 // key. This only ever runs on the server.
-function adminClient() {
-    return createClient(
-        process.env.NEXT_PUBLIC_SUPABASE_URL || '',
-        process.env.SUPABASE_SERVICE_ROLE_KEY || '',
-        { auth: { persistSession: false } }
-    );
-}
-
 async function emailFor(admin: any, userId: string): Promise<string> {
     const { data } = await admin.auth.admin.getUserById(userId);
     return (data && data.user && data.user.email) || '';

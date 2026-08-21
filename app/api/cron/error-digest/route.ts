@@ -1,17 +1,9 @@
-import { createClient } from '@supabase/supabase-js';
+import { adminClient } from '@/lib/supabaseAdmin';
 import { NextResponse } from 'next/server';
 import { sendEmail, emailLayout, escapeHtml, button, SITE_URL } from '@/lib/email';
 
 export const dynamic = 'force-dynamic';
 export const maxDuration = 60;
-
-function adminClient() {
-    return createClient(
-        process.env.NEXT_PUBLIC_SUPABASE_URL || '',
-        process.env.SUPABASE_SERVICE_ROLE_KEY || '',
-        { auth: { persistSession: false } }
-    );
-}
 
 // Flattens ids, amounts and dates so the same fault doesn't split into dozens
 // of separate entries.

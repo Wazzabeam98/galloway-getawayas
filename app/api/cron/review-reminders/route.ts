@@ -1,5 +1,5 @@
 import { townOf, townKey } from '@/lib/places';
-import { createClient } from '@supabase/supabase-js';
+import { adminClient } from '@/lib/supabaseAdmin';
 import { NextResponse } from 'next/server';
 import {
     sendEmail,
@@ -12,14 +12,6 @@ import {
 
 export const dynamic = 'force-dynamic';
 export const maxDuration = 60;
-
-function adminClient() {
-    return createClient(
-        process.env.NEXT_PUBLIC_SUPABASE_URL || '',
-        process.env.SUPABASE_SERVICE_ROLE_KEY || '',
-        { auth: { persistSession: false } }
-    );
-}
 
 export async function GET(request: Request) {
     // Vercel Cron sends the secret as a bearer token. Without this, anyone

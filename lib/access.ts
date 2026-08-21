@@ -1,4 +1,4 @@
-import { createClient } from '@supabase/supabase-js';
+import { adminClient } from '@/lib/supabaseAdmin';
 
 export type Permission =
     | 'can_calendar'
@@ -18,14 +18,6 @@ export interface ListingAccess {
     can_bookings: boolean;
     can_listing: boolean;
     can_earnings: boolean;
-}
-
-function adminClient() {
-    return createClient(
-        process.env.NEXT_PUBLIC_SUPABASE_URL || '',
-        process.env.SUPABASE_SERVICE_ROLE_KEY || '',
-        { auth: { persistSession: false } }
-    );
 }
 
 // Every listing this person can act on, and what they may do with each.
