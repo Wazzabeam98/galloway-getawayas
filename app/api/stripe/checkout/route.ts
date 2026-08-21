@@ -1,5 +1,5 @@
 import { createRouteHandlerClient } from '@supabase/auth-helpers-nextjs';
-import { createClient } from '@supabase/supabase-js';
+import { adminClient } from '@/lib/supabaseAdmin';
 import { cookies } from 'next/headers';
 import { NextResponse } from 'next/server';
 import { stripeRequest } from '@/lib/stripe';
@@ -25,14 +25,6 @@ const BALANCE_DAYS_BEFORE_CHECKIN = 30;
 // So it holds, briefly. Long enough to type a card in, short enough that an
 // abandoned attempt frees the dates again within the half hour.
 const HOLD_MINUTES = 30;
-
-function adminClient() {
-    return createClient(
-        process.env.NEXT_PUBLIC_SUPABASE_URL || '',
-        process.env.SUPABASE_SERVICE_ROLE_KEY || '',
-        { auth: { persistSession: false } }
-    );
-}
 
 function pence(amount: number): number {
     return Math.round(amount * 100);
