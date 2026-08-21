@@ -51,14 +51,25 @@ Built and working in Stripe sandbox:
 
 ## How the owner works
 
-Everything until now has been written in a chat window and pasted into
-GitHub's web editor, because his work laptop is locked down. That is why
-several bugs reached production that a local build would have caught in
-seconds — a duplicate variable, imports dropped into the middle of a
-multi-line import block, Tailwind classes in a folder Tailwind does not scan.
+He works two ways, and both are current.
 
-He has just moved to a MacBook. **Run the build before showing him anything.**
-That single change removes most of the failure modes this project has had.
+On the MacBook, with Claude Code, working locally. **Run the build before
+showing him anything** — most of the failure modes this project has had are
+ones a local build catches in seconds: a duplicate variable, imports dropped
+into the middle of a multi-line import block, Tailwind classes in a folder
+Tailwind does not scan.
+
+The rest of the time, from a locked-down work laptop, by writing in a chat
+window and pasting whole files into GitHub's web editor. This is a normal way
+for the repo to change, not a legacy habit, and it has two consequences worth
+knowing:
+
+- `origin` can gain commits partway through a session while the local tree
+  stays clean. A rejected push is him, not a collaborator. Fetch, read what
+  landed, and re-apply on top rather than forcing.
+- Those commits replace whole files rather than patching them, so a fix made
+  earlier can quietly reappear undone. That is the paste carrying it along,
+  not a decision — say so rather than treating it as intentional.
 
 He is not a developer. Explain in plain English, say what you are about to do
 before doing it, and do not assume he will spot a mistake in code he cannot
