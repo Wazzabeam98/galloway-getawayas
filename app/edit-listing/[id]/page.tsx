@@ -308,8 +308,17 @@ export default function EditListing() {
             setFormError('Please keep at least one photo of your place.');
             return;
         }
-        if (!title || !price) {
-            setFormError('Please fill in a title and price.');
+        // "0" is a non-empty string and a run of spaces is a truthy one, so the
+        // old `!title || !price` let both through — a live listing could be
+        // edited down to a blank name or £0 a night after it had been published
+        // properly.
+        if (!title.trim()) {
+            setFormError('Please give your place a title.');
+            return;
+        }
+        const priceValue = Number(price);
+        if (!price.trim() || !isFinite(priceValue) || priceValue <= 0) {
+            setFormError('Please set a price of more than \u00a30 a night.');
             return;
         }
         if (maxNights && Number(maxNights) < Number(minNights || 1)) {
@@ -344,7 +353,7 @@ export default function EditListing() {
             // Saved through the server so a co-host the owner trusted can
             // edit too — row-level security would block them otherwise.
             const patch = {
-                    title,
+                    title: title.trim(),
                     description,
                     location,
                     price_per_night: Number(price),
