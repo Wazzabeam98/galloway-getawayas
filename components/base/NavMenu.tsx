@@ -21,6 +21,7 @@ const NavMenu = ({
     isHost = false,
     isAdmin = false,
     mode = 'travel',
+    hasCompletedStay = false,
     avatarUrl = null,
     initial = '',
 }: {
@@ -28,6 +29,7 @@ const NavMenu = ({
     isHost?: boolean;
     isAdmin?: boolean;
     mode?: 'host' | 'travel';
+    hasCompletedStay?: boolean;
     avatarUrl?: string | null;
     initial?: string;
 }) => {
@@ -93,9 +95,12 @@ const NavMenu = ({
                                     <li className={itemClass}>
                                         <Link href='/trips'>Your trips</Link>
                                     </li>
-                                    <li className={itemClass}>
-                                        <Link href='/passport'>Your passport</Link>
-                                    </li>
+                                    {/* Nothing to show until a stay is finished. */}
+                                    {hasCompletedStay && (
+                                        <li className={itemClass}>
+                                            <Link href='/passport'>Your passport</Link>
+                                        </li>
+                                    )}
                                     <li className={itemClass}>
                                         <MessagesLink />
                                     </li>

@@ -15,6 +15,7 @@ const Navbar = async () => {
     let isHost = false;
     let avatarUrl: string | null = null;
     let isAdmin = false;
+    let hasCompletedStay = false;
 
     if (data?.session?.user) {
         const { data: profile } = await supabase
@@ -42,6 +43,20 @@ const Navbar = async () => {
             .eq('host_id', data.session.user.id);
 
         isHost = (count || 0) > 0;
+
+        // The passport is made of finished stays, so it is empty until there
+        // is one. Same rule the passport page itself uses — a confirmed
+        // booking whose check-out has been and gone — so the menu link never
+        // leads to a blank page.
+        const today = new Date().toISOString().split('T')[0];
+        const { count: stays } = await supabase
+            .from('bookings')
+            .select('id', { count: 'exact', head: true })
+            .eq('guest_id', data.session.user.id)
+            .eq('status', 'confirmed')
+            .lt('check_out', today);
+
+        hasCompletedStay = (stays || 0) > 0;
     }
 
     // Default a host to travel mode until they choose otherwise.
@@ -76,6 +91,7 @@ const Navbar = async () => {
                         isHost={isHost}
                         isAdmin={isAdmin}
                         mode={mode}
+                        hasCompletedStay={hasCompletedStay}
                         avatarUrl={avatarUrl}
                         initial={firstName ? firstName.charAt(0).toUpperCase() : ''}
                     />
