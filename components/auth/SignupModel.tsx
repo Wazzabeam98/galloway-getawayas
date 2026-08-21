@@ -60,7 +60,12 @@ const SignupModel = () => {
                 // the home page — where nothing exists to turn it into a
                 // session, so a guest who confirmed their address arrived
                 // signed out and assumed it had not worked.
-                emailRedirectTo: `${window.location.origin}/auth/callback`,
+                //
+                // The ?next= is redundant (the callback defaults to / anyway)
+                // but it means every link this site sends already carries a
+                // query string, so all the email templates can append with a
+                // single & and none of them is a special case.
+                emailRedirectTo: `${window.location.origin}/auth/callback?next=/`,
             },
         });
 
@@ -109,6 +114,12 @@ const SignupModel = () => {
         const { error } = await supabase.auth.resend({
             type: 'signup',
             email: sentTo,
+            // The resend needs it too. Without it the second email points
+            // somewhere different from the first, which is a fine way to spend
+            // an afternoon wondering why only one of them works.
+            options: {
+                emailRedirectTo: `${window.location.origin}/auth/callback?next=/`,
+            },
         });
 
         setResending(false);
