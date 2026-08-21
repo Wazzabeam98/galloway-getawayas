@@ -32,6 +32,11 @@ const SignupModel = () => {
     const [sentTo, setSentTo] = useState<string>('');
     const [resending, setResending] = useState<boolean>(false);
 
+    // Kept in the dialog rather than only in a toast. A toast is at the top of
+    // the screen and gone in five seconds, while the person is looking at a
+    // box in the middle of the screen wondering why nothing happened.
+    const [failure, setFailure] = useState<string>('');
+
     const supabase = createClientComponentClient();
     const router = useRouter();
 
@@ -39,72 +44,111 @@ const SignupModel = () => {
         resolver: yupResolver(registerSchema)
     });
 
+    // Supabase's own wording, turned into something a guest can act on.
+    const explain = (err: any): string => {
+        const message: string = (err && err.message) || '';
+        const status: number = (err && err.status) || 0;
+
+        // The one that bit us: Supabase's built-in email service allows only a
+        // handful of messages an hour, and a send it refuses fails the whole
+        // signUp — no account is created. It clears on its own, so say so
+        // rather than leaving someone thinking the site is broken.
+        if (status === 429 || /rate limit/i.test(message)) {
+            return 'We could not send your confirmation email just now — too many have gone out from the site in the last hour. Nothing is wrong with your details. Please try again a little later.';
+        }
+        if (/already registered|already been registered/i.test(message)) {
+            return 'There is already an account with that email address. Try logging in instead, or use the forgotten password link.';
+        }
+        if (/password/i.test(message)) {
+            return message;
+        }
+        if (!message) {
+            return 'Something went wrong reaching the server, so your account was not created. Please check your connection and try again.';
+        }
+        return message;
+    };
+
     const closeAndReset = () => {
         setOpen(false);
         setSentTo('');
         setResending(false);
+        setFailure('');
         reset();
     };
 
     const onSubmit = async (payload: registerType) => {
         setLoading(true);
+        setFailure('');
 
-        const { data, error } = await supabase.auth.signUp({
-            email: payload.email,
-            password: payload.password,
-            options: {
-                data: {
-                    name: payload.name,
-                },
-                // Without this the confirmation link goes to the Site URL —
-                // the home page — where nothing exists to turn it into a
-                // session, so a guest who confirmed their address arrived
-                // signed out and assumed it had not worked.
-                //
-                // The ?next= is redundant (the callback defaults to / anyway)
-                // but it means every link this site sends already carries a
-                // query string, so all the email templates can append with a
-                // single & and none of them is a special case.
-                emailRedirectTo: `${window.location.origin}/auth/callback?next=/`,
-            },
-        });
-
-        if (error) {
-            setLoading(false);
-            toast.error(error.message, { theme: 'colored' });
-            return;
-        }
-
-        // If email confirmation is switched on in Supabase, signUp returns a
-        // user but NO session. If it's switched off, we get a session straight
-        // away and can carry on as a normal login.
-        if (data.session) {
-            const { error: profileError } = await supabase
-                .from('profiles')
-                .upsert(
-                    {
-                        id: data.session.user.id,
-                        email: payload.email,
-                        full_name: payload.name,
-                        is_host: false,
+        // signUp returns Supabase's own auth errors but THROWS anything else —
+        // a dropped connection, a 5xx, a CORS refusal. Without this catch the
+        // throw escaped, setLoading(false) never ran, and the button sat on
+        // "Processing.." for ever having told the guest nothing whatsoever.
+        try {
+            const { data, error } = await supabase.auth.signUp({
+                email: payload.email,
+                password: payload.password,
+                options: {
+                    data: {
+                        name: payload.name,
                     },
-                    { onConflict: 'id' }
-                );
+                    // Without this the confirmation link goes to the Site URL —
+                    // the home page — where nothing exists to turn it into a
+                    // session, so a guest who confirmed their address arrived
+                    // signed out and assumed it had not worked.
+                    //
+                    // The ?next= is redundant (the callback defaults to / anyway)
+                    // but it means every link this site sends already carries a
+                    // query string, so all the email templates can append with a
+                    // single & and none of them is a special case.
+                    emailRedirectTo: `${window.location.origin}/auth/callback?next=/`,
+                },
+            });
 
-            if (profileError) {
-                console.error('Profile insertion error:', profileError.message);
+            if (error) {
+                setLoading(false);
+                const readable = explain(error);
+                setFailure(readable);
+                toast.error(readable, { theme: 'colored' });
+                return;
             }
 
-            setLoading(false);
-            closeAndReset();
-            router.refresh();
-            toast.success('Welcome to Galloway Getaways', { theme: 'colored' });
-            return;
-        }
+            // If email confirmation is switched on in Supabase, signUp returns a
+            // user but NO session. If it's switched off, we get a session straight
+            // away and can carry on as a normal login.
+            if (data.session) {
+                const { error: profileError } = await supabase
+                    .from('profiles')
+                    .upsert(
+                        {
+                            id: data.session.user.id,
+                            email: payload.email,
+                            full_name: payload.name,
+                            is_host: false,
+                        },
+                        { onConflict: 'id' }
+                    );
 
-        // No session — the confirmation email is on its way.
-        setLoading(false);
-        setSentTo(payload.email);
+                if (profileError) {
+                    console.error('Profile insertion error:', profileError.message);
+                }
+
+                setLoading(false);
+                closeAndReset();
+                router.refresh();
+                toast.success('Welcome to Galloway Getaways', { theme: 'colored' });
+                return;
+            }
+
+            // No session — the confirmation email is on its way.
+            setLoading(false);
+            setSentTo(payload.email);
+        } catch (err: any) {
+            setLoading(false);
+            const readable = explain(err);
+            setFailure(readable);
+            toast.error(readable, { theme: 'colored' });
+        }
     };
 
     const resendEmail = async () => {
@@ -125,10 +169,13 @@ const SignupModel = () => {
         setResending(false);
 
         if (error) {
-            toast.error(error.message, { theme: 'colored' });
+            const readable = explain(error);
+            setFailure(readable);
+            toast.error(readable, { theme: 'colored' });
             return;
         }
 
+        setFailure('');
         toast.success('Confirmation email sent again.', { theme: 'colored' });
     };
 
@@ -166,6 +213,12 @@ const SignupModel = () => {
                                     Click the link in that email to activate your account and finish signing in.
                                 </p>
 
+                                {failure && (
+                                    <div className='mt-4 rounded-lg border border-red-200 bg-red-50 p-3'>
+                                        <p className='text-sm text-red-800'>{failure}</p>
+                                    </div>
+                                )}
+
                                 <div className='mt-4 rounded-lg bg-slate-50 border p-3'>
                                     <p className='text-xs text-slate-500'>
                                         Can&apos;t find it? Give it a couple of minutes, then check your junk or spam
@@ -197,6 +250,15 @@ const SignupModel = () => {
                                 <h1 className='text-lg font-bold'>
                                     Welcome to Galloway Getaways
                                 </h1>
+
+                                {/* Stays on screen until something changes it,
+                                    unlike the toast, which is at the top of the
+                                    page and gone in five seconds. */}
+                                {failure && (
+                                    <div className='mt-4 rounded-lg border border-red-200 bg-red-50 p-3'>
+                                        <p className='text-sm text-red-800'>{failure}</p>
+                                    </div>
+                                )}
                                 <div className='mt-5'>
                                     <Label htmlFor='name'>Name</Label>
                                     <Input id='name' placeholder='Enter your Name' {...register('name')} />
