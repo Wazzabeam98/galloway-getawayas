@@ -56,6 +56,11 @@ const SignupModel = () => {
                 data: {
                     name: payload.name,
                 },
+                // Without this the confirmation link goes to the Site URL —
+                // the home page — where nothing exists to turn it into a
+                // session, so a guest who confirmed their address arrived
+                // signed out and assumed it had not worked.
+                emailRedirectTo: `${window.location.origin}/auth/callback`,
             },
         });
 
