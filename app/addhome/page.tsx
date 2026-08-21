@@ -24,6 +24,21 @@ interface PlaceResult {
     lon?: string;
 }
 
+// Every real UK format, from "M1 1AA" to "EC1A 1BB". Used to catch a town name
+// typed into the postcode box, not to prove the place exists.
+const UK_POSTCODE = /^[A-Z]{1,2}[0-9][A-Z0-9]?\s*[0-9][A-Z]{2}$/i;
+
+// Not a business rule — a typo catcher, for the extra zero on £500. Raise it if
+// a big group property ever needs more.
+const MAX_PRICE_PER_NIGHT = 5000;
+
+// "dg71ab" -> "DG7 1AB", so the address reads the same on every listing.
+function tidyPostcode(raw: string): string {
+    const clean = raw.replace(/\s+/g, '').toUpperCase();
+    if (clean.length < 5) return raw.trim().toUpperCase();
+    return clean.slice(0, clean.length - 3) + ' ' + clean.slice(clean.length - 3);
+}
+
 export default function AddHome() {
     const [loading, setLoading] = useState(true);
     const [session, setSession] = useState<any>(null);
@@ -388,22 +403,72 @@ export default function AddHome() {
         });
     };
 
+    // What is still missing at a given step, or null if that step is done.
+    //
+    // Saving a draft is held to none of it — a half-finished draft is the point
+    // of Save & finish later. This is only what a listing needs to go live.
+    const problemAtStep = (n: number): string | null => {
+        if (n === 1 && !propertyType) {
+            return 'Please choose a property type to continue.';
+        }
+        if (n === 3) {
+            if (!street.trim() && !propertyName.trim() && !flat.trim()) {
+                // A rural cottage may have a name and no street, so either will
+                // do — what is not allowed is nothing but the town.
+                return 'Please add a street address or a property name, so guests can find the place.';
+            }
+            if (!city.trim() || !state.trim()) {
+                return 'Please fill in your town/city and region.';
+            }
+            if (!postcode.trim()) {
+                return 'Please add a postcode.';
+            }
+            if (!UK_POSTCODE.test(postcode.trim())) {
+                return 'That postcode doesn\u2019t look right \u2014 please check it.';
+            }
+        }
+        if (n === 6 && photos.length === 0) {
+            return 'Please add at least one photo of your place.';
+        }
+        if (n === 7 && (!title.trim() || !description.trim())) {
+            return 'Please add a title and description.';
+        }
+        if (n === 9) {
+            const value = Number(price);
+            if (!price.trim() || !isFinite(value) || value <= 0) {
+                return 'Please set a price of more than \u00a30 a night.';
+            }
+            if (value > MAX_PRICE_PER_NIGHT) {
+                return 'That price looks like a typo \u2014 the most you can set is \u00a3' + MAX_PRICE_PER_NIGHT + ' a night.';
+            }
+        }
+        return null;
+    };
+
+    // The first thing missing anywhere, with the step it belongs to.
+    //
+    // Publishing asks about every step, not just the one you are standing on.
+    // Resuming a saved draft can reach the Publish button without walking back
+    // through the wizard, which is how a listing once went live with no name.
+    const firstPublishProblem = (): { step: number; message: string } | null => {
+        for (let n = 1; n <= TOTAL_STEPS; n++) {
+            const message = problemAtStep(n);
+            if (message) return { step: n, message: message };
+        }
+        return null;
+    };
+
     const handleListingSubmit = async (e: React.FormEvent) => {
         e.preventDefault();
         setFormError('');
 
-        // A draft may be saved without a name, but a published listing may not.
-        // Resuming a draft can land here without walking back through step 7,
-        // so the check belongs on the publish path and not only in goNext().
-        if (!title.trim()) {
-            setFormError('Please give your place a title before publishing it.');
-            setStep(7);
+        const problem = firstPublishProblem();
+        if (problem) {
+            setFormError(problem.message);
+            setStep(problem.step);
             return;
         }
-        if (photos.length === 0) {
-            setFormError('Please add at least one photo of your place.');
-            return;
-        }
+
         const tooBig = photos.find((p) => p.size / 1048576 >= 5);
         if (tooBig) {
             setFormError('One of those photos is still too large. Please try a different one.');
@@ -440,7 +505,8 @@ export default function AddHome() {
 
             // Your listings table stores the address as one combined text field,
             // not separate country/state/city columns — build that here.
-            const location = [flat, propertyName, street, city, state, postcode, country]
+            const location = [flat, propertyName, street, city, state, tidyPostcode(postcode), country]
+                .map(function (part) { return part.trim(); })
                 .filter(Boolean)
                 .join(', ');
 
@@ -636,20 +702,9 @@ export default function AddHome() {
 
         const goNext = () => {
             setFormError('');
-            if (step === 1 && !propertyType) {
-                setFormError('Please choose a property type to continue.');
-                return;
-            }
-            if (step === 3 && (!city || !state)) {
-                setFormError('Please fill in your town/city and region.');
-                return;
-            }
-            if (step === 6 && photos.length === 0) {
-                setFormError('Please add at least one photo of your place.');
-                return;
-            }
-            if (step === 7 && (!title.trim() || !description.trim())) {
-                setFormError('Please add a title and description.');
+            const problem = problemAtStep(step);
+            if (problem) {
+                setFormError(problem);
                 return;
             }
             setStep(step + 1);
@@ -788,7 +843,7 @@ export default function AddHome() {
                             <div className="grid grid-cols-2 gap-4">
                                 <div>
                                     <label className="text-xs text-slate-500 font-semibold uppercase">Postcode</label>
-                                    <input type="text" value={postcode} onChange={(e) => setPostcode(e.target.value)} className="w-full p-3 border rounded-xl mt-1" />
+                                    <input type="text" value={postcode} onChange={(e) => setPostcode(e.target.value)} className="w-full p-3 border rounded-xl mt-1" required />
                                 </div>
                                 <div>
                                     <label className="text-xs text-slate-500 font-semibold uppercase">Country</label>
