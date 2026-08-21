@@ -39,3 +39,6 @@ next-env.d.ts
 
 # test build output
 /.test-build
+
+# seeded test-data ids, machine-local
+/scripts/.seed-manifest.json

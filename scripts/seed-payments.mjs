@@ -1,0 +1,390 @@
+// Seeds the test project for the payment scenarios: auth users, profiles,
+// listings, bookings, and Stripe test Connect accounts.
+//
+//   node scripts/seed-payments.mjs           seed (resets first)
+//   node scripts/seed-payments.mjs --reset   tear down and stop
+//
+// Nothing here is interactive. The one slow part is waiting for Stripe to
+// verify a freshly created Connect account, which in test mode takes a couple
+// of minutes; created accounts are cached in the manifest and reused.
+
+import {
+    loadEnv, assertTestEnvironment, stripeClient, supabaseClient,
+    SEED_DOMAIN, SEED_TAG, sleep, dayOffset, writeManifest, MANIFEST,
+} from './seed-lib.mjs';
+import fs from 'node:fs';
+
+const env = loadEnv();
+assertTestEnvironment(env);
+
+const stripe = stripeClient(env);
+const db = supabaseClient(env);
+const log = (...a) => console.log(...a);
+
+/* ------------------------------------------------------------------ reset */
+
+async function reset() {
+    log('resetting seeded data\u2026');
+
+    const users = await db.auth('GET', '/admin/users?per_page=200');
+    const seeded = (users.users || []).filter((u) => (u.email || '').endsWith('@' + SEED_DOMAIN));
+
+    if (!seeded.length) {
+        log('  nothing to remove');
+        return;
+    }
+
+    const inList = '(' + seeded.map((u) => u.id).join(',') + ')';
+
+    // Children first — payouts and payments carry a booking_id with no cascade
+    // behind it, so deleting the bookings out from under them would fail.
+    const bookings = await db.select(
+        'bookings',
+        '?select=id&or=(guest_id.in.' + inList + ',host_id.in.' + inList + ')'
+    );
+    if (bookings.length) {
+        const bookingList = '(' + bookings.map((b) => b.id).join(',') + ')';
+        for (const table of ['payouts', 'payments', 'booking_guests', 'messages', 'reviews']) {
+            await db.remove(table, '?booking_id=in.' + bookingList);
+        }
+    }
+
+    await db.remove('bookings', '?or=(guest_id.in.' + inList + ',host_id.in.' + inList + ')');
+    await db.remove('listings', '?host_id=in.' + inList);
+    await db.remove('profiles', '?id=in.' + inList);
+    for (const u of seeded) await db.auth('DELETE', '/admin/users/' + u.id);
+
+    log('  removed ' + seeded.length + ' seeded user(s), ' + bookings.length + ' booking(s) and their rows');
+}
+
+/* ------------------------------------------------------------ Stripe side */
+
+// A Connect account that can actually receive a transfer. Stripe test mode
+// parks a new custom account in `pending_verification` for a minute or two
+// even with the magic test values, so this waits rather than handing back an
+// account the payout run would skip.
+async function createOnboardedAccount(label) {
+    const account = await stripe.request('POST', '/accounts', {
+        type: 'custom',
+        country: 'GB',
+        email: label + '@' + SEED_DOMAIN,
+        business_type: 'individual',
+        capabilities: { transfers: { requested: 'true' }, card_payments: { requested: 'true' } },
+        business_profile: {
+            mcc: '7011',
+            url: 'https://gallowaygetaways.co.uk',
+            product_description: 'Self-catering holiday letting',
+        },
+        individual: {
+            first_name: 'Seed',
+            last_name: label,
+            email: label + '@' + SEED_DOMAIN,
+            phone: '+442071234567',
+            id_number: '000000000',
+            dob: { day: 1, month: 1, year: 1901 },
+            // Stripe's magic value for an instantly matching address.
+            address: { line1: 'address_full_match', city: 'Dumfries', postal_code: 'DG1 1AA', country: 'GB' },
+        },
+        tos_acceptance: { date: Math.floor(Date.now() / 1000), ip: '127.0.0.1' },
+        external_account: {
+            object: 'bank_account', country: 'GB', currency: 'gbp',
+            account_number: '00012345', routing_number: '108800',
+        },
+        metadata: { [SEED_TAG]: label },
+    });
+
+    log('  ' + label + ': created ' + account.id + ', waiting for verification…');
+
+    for (let i = 0; i < 40; i++) {
+        const fresh = await stripe.request('GET', '/accounts/' + account.id);
+        if (fresh.payouts_enabled) {
+            log('  ' + label + ': payouts enabled after ~' + i * 5 + 's');
+            return fresh;
+        }
+        await sleep(5000);
+    }
+    throw new Error(label + ': Connect account never became payouts_enabled');
+}
+
+// A host who started onboarding and stopped. Scenario 21.
+async function createUnonboardedAccount(label) {
+    const account = await stripe.request('POST', '/accounts', {
+        type: 'express',
+        country: 'GB',
+        email: label + '@' + SEED_DOMAIN,
+        business_type: 'individual',
+        capabilities: { transfers: { requested: 'true' }, card_payments: { requested: 'true' } },
+        metadata: { [SEED_TAG]: label },
+    });
+    log('  ' + label + ': created ' + account.id + ' (payouts_enabled=' + account.payouts_enabled + ')');
+    return account;
+}
+
+// Connect accounts are reused between runs because creating them is slow, so
+// each run has to start them from a known state. A balance left over from last
+// time — positive, or negative after a clawback — quietly changes what the next
+// run observes.
+async function normaliseConnectedBalance(accountId, label) {
+    const balance = await stripe.request('GET', '/balance', null, { account: accountId });
+    const gbp = (balance.available || []).find((b) => b.currency === 'gbp');
+    const amount = gbp ? gbp.amount : 0;
+    if (amount === 0) return;
+
+    if (amount > 0) {
+        // Send it on to their bank, the way a real payout would.
+        await stripe.request('POST', '/payouts', { amount, currency: 'gbp' }, { account: accountId });
+        log('  ' + label + ': drained £' + (amount / 100).toFixed(2) + ' to bank');
+    } else {
+        // Left negative by a previous clawback. Top it back up to zero.
+        await stripe.request('POST', '/transfers', {
+            amount: -amount, currency: 'gbp', destination: accountId,
+            description: SEED_TAG + ': resetting a negative balance',
+        });
+        log('  ' + label + ': topped up £' + (-amount / 100).toFixed(2) + ' to clear a negative balance');
+    }
+}
+
+// Transfers come out of the platform's *available* balance, which starts at
+// zero because ordinary test charges sit in pending for a week. This test
+// token lands straight in available.
+async function fundPlatform(pounds) {
+    const balance = await stripe.request('GET', '/balance');
+    const gbp = (balance.available || []).find((b) => b.currency === 'gbp');
+    const have = gbp ? gbp.amount / 100 : 0;
+    if (have >= pounds) {
+        log('  platform available balance is £' + have.toFixed(2) + ' — enough');
+        return have;
+    }
+    const need = Math.ceil(pounds - have);
+    await stripe.request('POST', '/charges', {
+        amount: need * 100,
+        currency: 'gbp',
+        source: 'tok_bypassPending',
+        description: SEED_TAG + ': funding the platform available balance',
+    });
+    const after = await stripe.request('GET', '/balance');
+    const now = ((after.available || []).find((b) => b.currency === 'gbp') || {}).amount / 100;
+    log('  platform available balance topped up to £' + now.toFixed(2));
+    return now;
+}
+
+// A booking can only be refunded if a real charge sits behind it, and the
+// clawback cases all start with a refund. So every seeded booking gets a
+// genuine test-mode PaymentIntent for its full amount.
+async function chargeFor(pounds, label) {
+    const intent = await stripe.request('POST', '/payment_intents', {
+        amount: Math.round(pounds * 100),
+        currency: 'gbp',
+        payment_method: 'pm_card_visa',
+        payment_method_types: ['card'],
+        confirm: 'true',
+        description: SEED_TAG + ': ' + label,
+        metadata: { [SEED_TAG]: label },
+    });
+    if (intent.status !== 'succeeded') {
+        throw new Error(label + ': payment intent ended ' + intent.status);
+    }
+    return intent.id;
+}
+
+/* ---------------------------------------------------------- Supabase side */
+
+async function createUser(label, fullName) {
+    const email = label + '@' + SEED_DOMAIN;
+    const user = await db.auth('POST', '/admin/users', {
+        email,
+        password: 'seed-password-' + label,
+        email_confirm: true,
+        user_metadata: { full_name: fullName, [SEED_TAG]: true },
+    });
+    return { id: user.id, email, label };
+}
+
+async function upsertProfile(user, patch) {
+    const existing = await db.select('profiles', '?select=id&id=eq.' + user.id);
+    const row = { id: user.id, email: user.email, full_name: user.label, ...patch };
+    if (existing.length) {
+        const [updated] = await db.update('profiles', '?id=eq.' + user.id, patch);
+        return updated;
+    }
+    const [inserted] = await db.insert('profiles', row);
+    return inserted;
+}
+
+async function createListing(host, title, patch = {}) {
+    const [listing] = await db.insert('listings', {
+        host_id: host.id,
+        title: 'SEED — ' + title,
+        description: 'Seeded for payment scenario testing.',
+        location: 'Dumfries & Galloway',
+        price_per_night: 100,
+        max_guests: 4,
+        status: 'published',
+        cancellation_policy: 'Moderate',
+        ...patch,
+    });
+    return listing;
+}
+
+async function createBooking(listing, guest, host, patch = {}) {
+    const total = patch.total_price !== undefined ? patch.total_price : 500;
+    const intentId = await chargeFor(total, (patch.label || listing.title));
+    delete patch.label;
+    const [booking] = await db.insert('bookings', {
+        stripe_payment_intent_id: intentId,
+        listing_id: listing.id,
+        guest_id: guest.id,
+        host_id: host.id,
+        check_in: dayOffset(-3),
+        check_out: dayOffset(-1),
+        guests: 2,
+        adults: 2,
+        total_price: 500,
+        status: 'confirmed',
+        payment_status: 'paid',
+        amount_paid: 500,
+        amount_refunded: 0,
+        commission_rate: 10,
+        paid_at: new Date().toISOString(),
+        ...patch,
+    });
+    return booking;
+}
+
+/* ------------------------------------------------------------------ main */
+
+async function main() {
+    const resetOnly = process.argv.includes('--reset');
+
+    log('project: ' + env.NEXT_PUBLIC_SUPABASE_URL);
+    log('stripe:  ' + env.STRIPE_SECRET_KEY.slice(0, 12) + '… (test mode)');
+    log('');
+
+    await reset();
+    if (resetOnly) {
+        if (fs.existsSync(MANIFEST)) fs.unlinkSync(MANIFEST);
+        log('\ndone — reset only.');
+        return;
+    }
+
+    // Connect accounts are slow and rate-limited, so they survive a reseed.
+    const cached = fs.existsSync(MANIFEST) ? JSON.parse(fs.readFileSync(MANIFEST, 'utf8')) : {};
+
+    log('\nStripe Connect accounts…');
+    let readyAccount = cached.accounts && cached.accounts.ready;
+    if (readyAccount) {
+        const fresh = await stripe.request('GET', '/accounts/' + readyAccount).catch(() => null);
+        if (fresh && fresh.payouts_enabled) log('  reusing ' + readyAccount);
+        else readyAccount = null;
+    }
+    if (!readyAccount) readyAccount = (await createOnboardedAccount('host-ready')).id;
+
+    let secondAccount = cached.accounts && cached.accounts.indebted;
+    if (secondAccount) {
+        const fresh = await stripe.request('GET', '/accounts/' + secondAccount).catch(() => null);
+        if (fresh && fresh.payouts_enabled) log('  reusing ' + secondAccount);
+        else secondAccount = null;
+    }
+    if (!secondAccount) secondAccount = (await createOnboardedAccount('host-indebted')).id;
+
+    const pendingAccount = (await createUnonboardedAccount('host-pending')).id;
+
+    // Scenario 21 finishes by proving a later run picks the host up once they
+    // are onboarded. `stripe_account_id` is unique on profiles, so that needs
+    // an account of its own rather than borrowing another host's.
+    let spareAccount = cached.accounts && cached.accounts.spare;
+    if (spareAccount) {
+        const fresh = await stripe.request('GET', '/accounts/' + spareAccount).catch(() => null);
+        if (fresh && fresh.payouts_enabled) log('  reusing ' + spareAccount);
+        else spareAccount = null;
+    }
+    if (!spareAccount) spareAccount = (await createOnboardedAccount('host-spare')).id;
+
+    log('\nPlatform balance…');
+    await fundPlatform(2000);
+
+    log('\nConnected account balances…');
+    for (const [label, id] of Object.entries({
+        ready: readyAccount, indebted: secondAccount, pending: pendingAccount, spare: spareAccount,
+    })) {
+        await normaliseConnectedBalance(id, label);
+    }
+
+    log('\nUsers, listings and bookings…');
+    const guest = await createUser('guest', 'Seed Guest');
+    const hostReady = await createUser('host-ready', 'Seed Host Ready');
+    const hostIndebted = await createUser('host-indebted', 'Seed Host Indebted');
+    const hostPending = await createUser('host-pending', 'Seed Host Pending');
+
+    await upsertProfile(guest, { is_host: false });
+    await upsertProfile(hostReady, {
+        is_host: true, stripe_account_id: readyAccount,
+        stripe_charges_enabled: true, stripe_payouts_enabled: true, stripe_details_submitted: true,
+        payout_balance_owed: 0,
+    });
+    await upsertProfile(hostIndebted, {
+        is_host: true, stripe_account_id: secondAccount,
+        stripe_charges_enabled: true, stripe_payouts_enabled: true, stripe_details_submitted: true,
+        payout_balance_owed: 0,
+    });
+    await upsertProfile(hostPending, {
+        is_host: true, stripe_account_id: pendingAccount,
+        stripe_charges_enabled: false, stripe_payouts_enabled: false, stripe_details_submitted: false,
+        payout_balance_owed: 0,
+    });
+
+    // Scenario 20 — the listing's rate is deliberately different from the rate
+    // stamped on the booking, so a payout at the wrong one is visible.
+    const listingReady = await createListing(hostReady, 'Rate-stamped cottage', { commission_rate: 25 });
+    const listingIndebted = await createListing(hostIndebted, 'Clawback cottage', { commission_rate: 10 });
+    const listingPending = await createListing(hostPending, 'Not-onboarded cottage', { commission_rate: 10 });
+
+    // A pence-ending total, because that is where the rounding used to split.
+    const s20 = await createBooking(listingReady, guest, hostReady, {
+        label: 's20', total_price: 483.33, amount_paid: 483.33, commission_rate: 10,
+    });
+    const s21 = await createBooking(listingPending, guest, hostPending, {
+        label: 's21', total_price: 400, amount_paid: 400,
+    });
+    const s22 = await createBooking(listingIndebted, guest, hostIndebted, {
+        label: 's22', total_price: 600, amount_paid: 600,
+    });
+    const s23 = await createBooking(listingIndebted, guest, hostIndebted, {
+        label: 's23', total_price: 300, amount_paid: 300,
+    });
+    // Scenario 24's payout is deliberately small next to the debt scenario 23
+    // leaves behind. It is seeded in the future so the first payout run cannot
+    // pick it up — the runner brings its dates back once the debt exists.
+    const s24 = await createBooking(listingIndebted, guest, hostIndebted, {
+        label: 's24', total_price: 120, amount_paid: 120, check_in: dayOffset(10), check_out: dayOffset(12),
+    });
+
+    // A stand-in for "the clawback failed for a reason that is not a shortfall".
+    // The runner points its payout_transfer_id at an already-reversed transfer,
+    // which Stripe refuses — the case that used to be billed to the host as a
+    // debt they never owed. Seeded in the future so no payout run takes it.
+    const s23b = await createBooking(listingIndebted, guest, hostIndebted, {
+        label: 's23b', total_price: 200, amount_paid: 200,
+        check_in: dayOffset(14), check_out: dayOffset(16),
+    });
+
+    const manifest = {
+        seededAt: new Date().toISOString(),
+        project: env.NEXT_PUBLIC_SUPABASE_URL,
+        accounts: { ready: readyAccount, indebted: secondAccount, pending: pendingAccount, spare: spareAccount },
+        users: { guest: guest.id, hostReady: hostReady.id, hostIndebted: hostIndebted.id, hostPending: hostPending.id },
+        listings: { ready: listingReady.id, indebted: listingIndebted.id, pending: listingPending.id },
+        bookings: { s20: s20.id, s21: s21.id, s22: s22.id, s23: s23.id, s23b: s23b.id, s24: s24.id },
+    };
+    writeManifest(manifest);
+
+    log('\nseeded:');
+    log('  hosts    ready=' + readyAccount + '  indebted=' + secondAccount + '  pending=' + pendingAccount);
+    log('  bookings ' + Object.entries(manifest.bookings).map(([k, v]) => k + '=' + v.slice(0, 8)).join(' '));
+    log('\nmanifest written to scripts/.seed-manifest.json');
+}
+
+main().catch((err) => {
+    console.error('\nseed failed:', err.message);
+    process.exit(1);
+});

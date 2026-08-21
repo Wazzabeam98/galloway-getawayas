@@ -154,7 +154,7 @@ export async function POST(request: Request) {
 
         // Recover the host's share if they have already been paid.
         if (booking.payout_transfer_id) {
-            await clawBackPayout(admin, booking, amount);
+            await clawBackPayout(admin, booking, amount, refund && refund.id);
         }
 
         return NextResponse.json({ ok: true, refunded: amount, refundId: refund && refund.id });

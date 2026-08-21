@@ -74,7 +74,14 @@ export async function stripeRequest(
 
     if (!res.ok) {
         const message = (data && data.error && data.error.message) || 'Stripe request failed';
-        throw new Error(message);
+        // Carry Stripe's own classification through. A caller that has to tell
+        // 'their balance was short' apart from 'the request was malformed'
+        // cannot do it from the message text alone.
+        const error: any = new Error(message);
+        error.stripeCode = data && data.error && data.error.code;
+        error.stripeType = data && data.error && data.error.type;
+        error.stripeStatus = res.status;
+        throw error;
     }
 
     return data;
