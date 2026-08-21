@@ -88,6 +88,9 @@ export async function stripeRequest(
         error.stripeCode = data && data.error && data.error.code;
         error.stripeType = data && data.error && data.error.type;
         error.stripeStatus = res.status;
+        // On a failed confirm Stripe hands back the PaymentIntent it created.
+        // Without it the attempt leaves no trail on our side at all.
+        error.stripePaymentIntent = data && data.error && data.error.payment_intent;
         throw error;
     }
 

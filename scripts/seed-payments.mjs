@@ -187,6 +187,34 @@ async function chargeFor(pounds, label) {
     return intent.id;
 }
 
+// A saved card, the way one is left behind when a guest pays a deposit. The
+// balance charge later uses this off-session, with the guest nowhere near it.
+//
+// `token` picks the behaviour: pm_card_visa just works, pm_card_chargeDeclined
+// always declines, pm_card_authenticationRequired makes the bank demand the
+// guest confirm — which is not the same thing as a decline, and is the case
+// scenario 11 exists for.
+async function savedCard(token, label) {
+    const customer = await stripe.request('POST', '/customers', {
+        email: label + '@' + SEED_DOMAIN,
+        description: SEED_TAG + ': ' + label,
+    });
+
+    // A `tok_` has to be turned into a payment method first. This matters for
+    // the declining card: pm_card_chargeDeclined is rejected when it is
+    // attached, so it can never stand for a card that was fine at deposit time
+    // and fails later. tok_chargeCustomerFail attaches cleanly and fails when
+    // charged, which is the situation the failure ladder is actually for.
+    const methodId = token.indexOf('tok_') === 0
+        ? (await stripe.request('POST', '/payment_methods', { type: 'card', card: { token } })).id
+        : token;
+
+    const method = await stripe.request('POST', '/payment_methods/' + methodId + '/attach', {
+        customer: customer.id,
+    });
+    return { customerId: customer.id, paymentMethodId: method.id };
+}
+
 /* ---------------------------------------------------------- Supabase side */
 
 async function createUser(label, fullName) {
@@ -432,6 +460,30 @@ async function main() {
         check_in: dayOffset(20), check_out: dayOffset(23),
     });
 
+    /* --------------------------------------------- balance charges, 3 & 7-11 */
+
+    // All three are deposit-paid bookings with the balance now due. What
+    // differs is the card left on file.
+    const depositBooking = async (label, token) => {
+        const card = await savedCard(token, label);
+        const b = await createBooking(listingReady, guest, hostReady, {
+            label: label,
+            total_price: 800, amount_paid: 200,
+            payment_status: 'deposit_paid', payment_plan: 'deposit',
+            deposit_amount: 200, balance_amount: 600,
+            balance_due_date: dayOffset(0),
+            balance_attempts: 0,
+            check_in: dayOffset(30), check_out: dayOffset(33),
+            stripe_customer_id: card.customerId,
+            stripe_payment_method_id: card.paymentMethodId,
+        });
+        return b;
+    };
+
+    const s03 = await depositBooking('s03', 'pm_card_visa');
+    const s07 = await depositBooking('s07', 'tok_chargeCustomerFail');
+    const s11 = await depositBooking('s11', 'pm_card_authenticationRequired');
+
     const manifest = {
         seededAt: new Date().toISOString(),
         project: env.NEXT_PUBLIC_SUPABASE_URL,
@@ -442,6 +494,7 @@ async function main() {
             flexible: listingFlexible.id, firm: listingFirm.id,
         },
         bookings: {
+            s03: s03.id, s07: s07.id, s11: s11.id,
             s12: s12.id, s13: s13.id, s14: s14.id, s15: s15.id, s16: s16.id,
             s17: s17.id, s18: s18.id,
             s20: s20.id, s21: s21.id, s22: s22.id, s23: s23.id, s23b: s23b.id, s24: s24.id,

@@ -176,6 +176,9 @@ export async function GET(request: Request) {
             const amount = round2(Number(booking.balance_amount || 0));
             let succeeded = false;
             let failureMessage = 'No saved card for this booking';
+            // Not the same thing as a decline, and the guest has to be told
+            // something different, so it is tracked separately.
+            let needsAuthentication = false;
 
             if (booking.stripe_customer_id && booking.stripe_payment_method_id) {
                 try {
@@ -214,7 +217,29 @@ export async function GET(request: Request) {
                             .eq('id', booking.id);
                     }
                 } catch (err: any) {
-                    failureMessage = (err && err.message) || 'The card was declined';
+                    // A bank asking the guest to confirm the payment is not a
+                    // decline. Their card is fine — it simply cannot be charged
+                    // while they are not here to approve it, which in the UK is
+                    // commoner than an outright refusal. Stripe's own message
+                    // for it opens with 'Your card was declined', so left as it
+                    // was, both the record and the guest's email said the wrong
+                    // thing.
+                    needsAuthentication = !!(err && err.stripeCode === 'authentication_required');
+
+                    failureMessage = needsAuthentication
+                        ? 'The guest\u2019s bank asked them to authenticate this payment, which cannot be done while they are away'
+                        : (err && err.message) || 'The card was declined';
+
+                    // Stripe returns the intent it created alongside the error.
+                    // Keeping its id leaves a trail from the booking to the
+                    // attempt; without it there was nothing to look at.
+                    const failedIntent = err && err.stripePaymentIntent;
+                    if (failedIntent && failedIntent.id) {
+                        await admin
+                            .from('bookings')
+                            .update({ balance_payment_intent_id: failedIntent.id })
+                            .eq('id', booking.id);
+                    }
                 }
             }
 
@@ -290,16 +315,25 @@ export async function GET(request: Request) {
             if (guestEmail) {
                 await sendEmail(
                     guestEmail,
-                    attemptNumber === 1
-                        ? 'We couldn\u2019t take the balance for your stay'
-                        : 'Reminder: your booking will be cancelled without payment',
+                    needsAuthentication
+                        ? 'Your bank needs you to confirm a payment'
+                        : attemptNumber === 1
+                            ? 'We couldn\u2019t take the balance for your stay'
+                            : 'Reminder: your booking will be cancelled without payment',
                     emailLayout(
-                        '<p style="margin:0 0 16px;font-size:16px;">We tried to charge the remaining <strong>\u00A3'
-                            + amount.toFixed(2)
-                            + '</strong> for your stay at <strong>'
-                            + escapeHtml(listing.title)
-                            + '</strong>, but the payment didn\u2019t go through.</p>'
-                            + '<p style="margin:0 0 16px;font-size:16px;">This usually means the card has expired or there weren\u2019t enough funds \u2014 it\u2019s easily fixed. Use the button below to pay with any card.</p>'
+                        (needsAuthentication
+                            ? '<p style="margin:0 0 16px;font-size:16px;">We tried to charge the remaining <strong>\u00A3'
+                                + amount.toFixed(2)
+                                + '</strong> for your stay at <strong>'
+                                + escapeHtml(listing.title)
+                                + '</strong>, and your bank asked for you to confirm it\u2019s really you.</p>'
+                                + '<p style="margin:0 0 16px;font-size:16px;">There is nothing wrong with your card. Banks ask for this on payments taken while you aren\u2019t there, and we can\u2019t answer it on your behalf \u2014 so the payment needs a minute of your time. Use the button below and your bank will ask you to approve it.</p>'
+                            : '<p style="margin:0 0 16px;font-size:16px;">We tried to charge the remaining <strong>\u00A3'
+                                + amount.toFixed(2)
+                                + '</strong> for your stay at <strong>'
+                                + escapeHtml(listing.title)
+                                + '</strong>, but the payment didn\u2019t go through.</p>'
+                                + '<p style="margin:0 0 16px;font-size:16px;">This usually means the card has expired or there weren\u2019t enough funds \u2014 it\u2019s easily fixed. Use the button below to pay with any card.</p>')
                             + '<p style="margin:0 0 16px;font-size:16px;">If the balance isn\u2019t paid within <strong>'
                             + hoursLeft
                             + ' hours</strong>, the booking will be cancelled and the dates released.</p>'
