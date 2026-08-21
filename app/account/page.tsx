@@ -423,7 +423,6 @@ export default function AccountSettings() {
         title: string;
         instant_book: boolean;
         instant_book_requires_phone: boolean;
-        instant_book_requires_verified_id: boolean;
         min_nights: number | null;
         max_nights: number | null;
         advance_notice: string | null;
@@ -487,7 +486,7 @@ export default function AccountSettings() {
 
                 const { data: myListings } = await supabase
                     .from('listings')
-                    .select('id, title, instant_book, instant_book_requires_phone, instant_book_requires_verified_id, min_nights, max_nights, advance_notice, preparation_time, availability_window, cancellation_policy, check_in_time, check_out_time, images, stl_licence_number, stl_licence_expiry, stl_licence_status')
+                    .select('id, title, instant_book, instant_book_requires_phone, min_nights, max_nights, advance_notice, preparation_time, availability_window, cancellation_policy, check_in_time, check_out_time, images, stl_licence_number, stl_licence_expiry, stl_licence_status')
                     .eq('host_id', session.user.id)
                     .order('created_at', { ascending: true });
                 setHostListings(myListings || []);
@@ -1895,36 +1894,6 @@ export default function AccountSettings() {
                                                     <div className="border-t pt-4 mb-4">
                                                         <div className="text-xs font-semibold text-slate-700 mb-3">
                                                             Guests must meet these before booking instantly
-                                                        </div>
-
-                                                        <div className="flex items-start justify-between mb-4">
-                                                            <div className="pr-6">
-                                                                <div className="font-semibold text-slate-900 text-sm mb-1">
-                                                                    Verified ID
-                                                                </div>
-                                                                <p className="text-xs text-slate-500">
-                                                                    Guests must have passed an identity check — a government ID
-                                                                    matched against a selfie. The strongest safeguard for Instant Book.
-                                                                </p>
-                                                                <p className="text-xs text-amber-600 mt-1.5">
-                                                                    Identity checks aren&apos;t connected yet, so no guest can pass
-                                                                    one. Leave this off until they are, or Instant Book won&apos;t
-                                                                    work for anyone.
-                                                                </p>
-                                                            </div>
-                                                            <button
-                                                                type="button"
-                                                                role="switch"
-                                                                aria-checked={l.instant_book_requires_verified_id}
-                                                                aria-label="Require verified ID"
-                                                                disabled={busy}
-                                                                onClick={() => updateListingBooking(l.id, { instant_book_requires_verified_id: !l.instant_book_requires_verified_id })}
-                                                                className={`relative inline-flex h-6 w-11 flex-shrink-0 rounded-full transition-colors disabled:opacity-50 ${l.instant_book_requires_verified_id ? 'bg-emerald-700' : 'bg-slate-300'}`}
-                                                            >
-                                                                <span
-                                                                    className={`inline-block h-5 w-5 transform rounded-full bg-white shadow transition-transform mt-0.5 ${l.instant_book_requires_verified_id ? 'translate-x-5' : 'translate-x-0.5'}`}
-                                                                />
-                                                            </button>
                                                         </div>
 
                                                         <div className="flex items-start justify-between">
