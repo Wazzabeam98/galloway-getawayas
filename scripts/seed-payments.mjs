@@ -50,6 +50,16 @@ async function reset() {
     }
 
     await db.remove('bookings', '?or=(guest_id.in.' + inList + ',host_id.in.' + inList + ')');
+
+    // Anything hanging off a listing has to go before the listing does.
+    const listings = await db.select('listings', '?select=id&host_id=in.' + inList);
+    if (listings.length) {
+        const listingList = '(' + listings.map((l) => l.id).join(',') + ')';
+        for (const table of ['listing_ical_feeds', 'calendar_overrides', 'listing_access']) {
+            await db.remove(table, '?listing_id=in.' + listingList);
+        }
+    }
+
     await db.remove('listings', '?host_id=in.' + inList);
     await db.remove('profiles', '?id=in.' + inList);
     for (const u of seeded) await db.auth('DELETE', '/admin/users/' + u.id);
@@ -527,6 +537,39 @@ async function main() {
         stripe_payment_method_id: card04.paymentMethodId,
     });
 
+    /* --------------------------------------------- cross-cutting, 25-29 */
+
+    // Each of these needs a listing to itself: the tests change the price or
+    // block the calendar, and that must not disturb anything else.
+    const listingPrice = await createListing(hostReady, 'Price-change cottage', {
+        price_per_night: 100, instant_book: true,
+    });
+    const listingIcal = await createListing(hostReady, 'iCal-clash cottage', {
+        price_per_night: 100, instant_book: true,
+    });
+    const listingRace = await createListing(hostReady, 'Two-guests cottage', {
+        price_per_night: 100, instant_book: true,
+    });
+
+    const unpaidOn = (listing, label, start, nights, total) =>
+        createBooking(listing, guest, hostReady, {
+            label: label, noCharge: true,
+            total_price: total, amount_paid: 0,
+            status: 'pending_payment', payment_status: 'unpaid',
+            deposit_amount: null, balance_amount: null,
+            check_in: dayOffset(start), check_out: dayOffset(start + nights),
+        });
+
+    const s25 = await unpaidOn(listingPrice, 's25', 120, 3, 300);
+    const s26 = await unpaidOn(listingIcal, 's26', 130, 3, 300);
+
+    // 27 — two guests, one set of dates, both still unpaid.
+    const s27a = await unpaidOn(listingRace, 's27a', 140, 3, 300);
+    const s27b = await unpaidOn(listingRace, 's27b', 140, 3, 300);
+
+    // 28 — flipped between states to see what the confirmation page says.
+    const s28 = await unpaidOn(listingPrice, 's28', 150, 3, 300);
+
     const manifest = {
         seededAt: new Date().toISOString(),
         project: env.NEXT_PUBLIC_SUPABASE_URL,
@@ -535,9 +578,11 @@ async function main() {
         listings: {
             ready: listingReady.id, indebted: listingIndebted.id, pending: listingPending.id,
             flexible: listingFlexible.id, firm: listingFirm.id, instant: listingInstant.id,
+            price: listingPrice.id, ical: listingIcal.id, race: listingRace.id,
         },
         bookings: {
             s01: s01.id, s02: s02.id, s04: s04.id, s05: s05.id, s06: s06.id,
+            s25: s25.id, s26: s26.id, s27a: s27a.id, s27b: s27b.id, s28: s28.id,
             s03: s03.id, s07: s07.id, s11: s11.id,
             s12: s12.id, s13: s13.id, s14: s14.id, s15: s15.id, s16: s16.id,
             s17: s17.id, s18: s18.id,

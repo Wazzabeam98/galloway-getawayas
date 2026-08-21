@@ -14,6 +14,18 @@ export const dynamic = 'force-dynamic';
 const DEPOSIT_FRACTION = 0.25;
 const BALANCE_DAYS_BEFORE_CHECKIN = 30;
 
+// How long a guest who has reached the Stripe page holds the dates for.
+//
+// A booking sitting at 'pending_payment' is deliberately not counted as taking
+// the dates — a card declined at checkout, or a guest who wandered off, must
+// not block a calendar for ever. But counting it for nothing meant two guests
+// could both reach the payment page for the same nights and both pay, and the
+// first anyone would know is two confirmed stays on one week.
+//
+// So it holds, briefly. Long enough to type a card in, short enough that an
+// abandoned attempt frees the dates again within the half hour.
+const HOLD_MINUTES = 30;
+
 function adminClient() {
     return createClient(
         process.env.NEXT_PUBLIC_SUPABASE_URL || '',
@@ -47,7 +59,7 @@ export async function POST(request: Request) {
 
         const { data: booking } = await admin
             .from('bookings')
-            .select('id, listing_id, guest_id, host_id, check_in, check_out, total_price, status, payment_status, adults, children, pets')
+            .select('id, listing_id, guest_id, host_id, check_in, check_out, total_price, status, payment_status, adults, children, pets, created_at')
             .eq('id', bookingId)
             .maybeSingle();
 
@@ -199,6 +211,38 @@ export async function POST(request: Request) {
         if (clashes && clashes.length > 0) {
             return NextResponse.json(
                 { ok: false, error: 'Sorry \u2014 those dates have just been booked by someone else.' },
+                { status: 409 }
+            );
+        }
+
+        // Somebody else is at the payment page for these nights right now.
+        //
+        // Only an *earlier* attempt holds. Both guests arrive here within
+        // milliseconds of each other, so a rule that simply says 'someone else
+        // is here' turns both away and neither gets the dates. Whoever started
+        // first keeps them, which is decidable the same way by both requests
+        // however they interleave.
+        const holdSince = new Date(Date.now() - HOLD_MINUTES * 60 * 1000).toISOString();
+
+        const { data: held } = await admin
+            .from('bookings')
+            .select('id')
+            .eq('listing_id', booking.listing_id)
+            .neq('id', booking.id)
+            .eq('status', 'pending_payment')
+            .gt('created_at', holdSince)
+            .lt('created_at', booking.created_at)
+            .lt('check_in', booking.check_out)
+            .gt('check_out', booking.check_in);
+
+        if (held && held.length > 0) {
+            return NextResponse.json(
+                {
+                    ok: false,
+                    error: 'Someone else is paying for those dates right now. '
+                        + 'Give it a few minutes and try again \u2014 if they don\u2019t go through, '
+                        + 'the dates come back.',
+                },
                 { status: 409 }
             );
         }

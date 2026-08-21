@@ -100,7 +100,11 @@ was confirmed is that while the challenge is outstanding the booking stays
 webhook path it finishes through is the same one scenarios 1, 2 and 4 all
 proved works.
 
-Also still unscripted: 25-29, the cross-cutting cases.
+Scenarios 25-29, the cross-cutting cases:
+
+```
+node scripts/seed-payments.mjs && node scripts/crosscutting-scenarios.mjs
+```
 
 See `scripts/README.md`. Scenario 23 needed a fix before it could pass at all —
 Stripe does not refuse a reversal the host cannot fund, it takes their account
@@ -130,6 +134,14 @@ holding and carries the rest on `payout_balance_owed`.
   perfectly fine. The two are now told apart. (Scenario 11.)
 - A booking paid in full ended with `balance_amount` null rather than zero, in
   both the checkout route and the webhook. (Scenario 2.)
+- Two guests could both reach the payment page for the same nights and both
+  pay. A booking at `pending_payment` was not counted as taking the dates —
+  correctly, so an abandoned attempt cannot block a calendar for ever — but it
+  did not hold them even for a moment. It now holds for 30 minutes, and only
+  an *earlier* attempt holds, so of two guests arriving together exactly one
+  gets through rather than neither. (Scenario 27.)
+- The balance job and the `payment_intent.payment_failed` webhook both recorded
+  the same failed charge, in different words. (Found while doing scenario 11.)
 
 ## Worth knowing
 
@@ -139,6 +151,13 @@ holding and carries the rest on `payout_balance_owed`.
   to it and works the figure out itself from what was paid and the
   cancellation policy. That is correct for what it does, but passing it an
   amount and expecting a partial refund will silently refund everything.
+- **A guest can still pay for dates taken while they were on the Stripe page.**
+  The 30-minute hold closes the common race, but nothing re-checks
+  availability when the webhook lands, so a guest who sits on the payment page
+  for longer can still pay for nights someone else has since taken. Fixing it
+  properly means either refunding at the webhook or a database-level exclusion
+  on overlapping dates — both are real decisions rather than tidying, so they
+  are left for a human.
 - On the pay-in-full path the webhook stores `stripe_payment_method_id` even
   though the card was deliberately not saved for future use — checkout only
   sets `setup_future_usage` on the deposit path. Nothing charges it, because

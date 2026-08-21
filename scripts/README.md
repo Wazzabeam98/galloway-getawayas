@@ -9,9 +9,15 @@ node scripts/seed-payments.mjs           # reset, then seed
 node scripts/seed-payments.mjs --reset   # tear down only
 node scripts/payout-scenarios.mjs        # scenarios 19-24, needs `npm run dev`
 node scripts/refund-scenarios.mjs        # scenarios 12-18, needs `npm run dev`
+node scripts/balance-scenarios.mjs       # scenarios 3 and 7-11, needs `npm run dev`
+node scripts/crosscutting-scenarios.mjs  # scenarios 25-29, needs `npm run dev`
 ```
 
-**Reseed between the two runners.** Both use the same hosts, and each leaves
+The cross-cutting runner replays a real webhook, so it needs `stripe listen`
+running and the `whsec_` it prints written into `.env.local` — see the note in
+`CLAUDE.md`.
+
+**Reseed between runners.** They all use the same hosts, and each leaves
 bookings paid out, cancelled or in debt behind it. Running one straight after
 the other without a reseed makes the second one fail on state the first left.
 
