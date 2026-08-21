@@ -67,6 +67,39 @@ Please:
 - **New status values need the check constraint widening first.** Adding
   `'hidden'` to listings, or `'pending_payment'` to bookings, fails silently at
   the database until the constraint allows it.
+- **Two confirmed stays cannot overlap — the database enforces it.**
+  `bookings_no_overlapping_confirmed` is an exclusion constraint on
+  `(listing_id, daterange(check_in, check_out))` for rows where
+  `status = 'confirmed'`. The checkout route still refuses clashing dates and
+  holds them while a guest pays, but those are checks made before the money
+  moves; this is the only thing that makes it impossible. When it fires the
+  Stripe webhook refunds the guest in full and emails an apology, so a booking
+  that trips it is not a crash — look for it at `/admin/errors`.
+
+  **It is applied to the test project only.** `supabase/migrations/` has the
+  file. Run it against production before this ships, and run the pre-flight
+  query at the top of it first: if any confirmed stays already overlap, the
+  constraint will refuse to be created until they are sorted out.
+
+  Applying it needs a direct Postgres connection, and there is no `psql` on
+  this machine. Colima is, so:
+
+  ```
+  docker run --rm -i postgres:16-alpine psql "$DATABASE_URL" -v ON_ERROR_STOP=1 -f - < supabase/migrations/<file>.sql
+  ```
+
+  Do **not** use `supabase db push` — see the next point.
+
+- **The Supabase CLI is linked to the production project, not the test one.**
+  `supabase/.temp/project-ref` says `hviwjxigqivjfhmhpjiy`, which is
+  production, while `.env.local` points the app at the test project
+  `yefoqcabuijcowoqewtc`. So the app and the CLI are aimed at different
+  databases, and `supabase db push`, `db reset` or a migration run from this
+  checkout hits **live data** even though everything else in the session is on
+  test. Check with `cat supabase/.temp/project-ref` before running any CLI
+  command that writes, and re-link with `supabase link --project-ref
+  yefoqcabuijcowoqewtc` if you mean the test project.
+
 - **A co-host is not the `host_id` on a booking.** Any query on their behalf
   needs the service key, or row-level security returns nothing and the page
   looks empty rather than broken.

@@ -21,6 +21,11 @@ export function netOfFee(gross: number, percent: number): number {
     return Math.round(gross * (1 - percent / 100) * 100) / 100;
 }
 
+// Derived by subtraction, never rounded separately. Rounding both halves
+// independently makes them sum to a penny more than was collected on about a
+// quarter of pence-ending totals — so the host would be transferred one
+// figure and told another. What the host keeps plus what the platform takes
+// must equal what the guest paid, exactly, at every amount.
 export function feeAmount(gross: number, percent: number): number {
-    return Math.round(gross * (percent / 100) * 100) / 100;
+    return Math.round((gross - netOfFee(gross, percent)) * 100) / 100;
 }

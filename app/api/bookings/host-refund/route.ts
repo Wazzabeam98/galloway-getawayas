@@ -91,7 +91,7 @@ export async function POST(request: Request) {
             );
         }
 
-        await stripeRequest(
+        const refund = await stripeRequest(
             'POST',
             '/refunds',
             {
@@ -130,7 +130,7 @@ export async function POST(request: Request) {
 
         // If they've already been paid for this stay, recover it.
         if (booking.payout_transfer_id) {
-            await clawBackPayout(admin, booking, amount);
+            await clawBackPayout(admin, booking, amount, refund && refund.id);
         }
 
         const { data: listing } = await admin

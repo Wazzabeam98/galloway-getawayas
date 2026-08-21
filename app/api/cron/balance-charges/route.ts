@@ -19,6 +19,28 @@ export const maxDuration = 60;
 // cancellation on the fourth day — 72 hours after the guest was first told.
 const MAX_ATTEMPTS = 3;
 
+// A bank asking the guest to confirm the payment is not a card problem. There
+// is nothing for them to fix — they just have to be at their phone when the
+// message arrives, and 72 hours is not long for that. A week is.
+const MAX_ATTEMPTS_AUTHENTICATION = 7;
+
+// Written at the front of failure_reason so a later run can tell why the last
+// attempt failed without asking Stripe again. The payments table has no column
+// for it, and matching on the prose would break the moment anyone reworded it.
+const AUTHENTICATION_MARKER = 'authentication_required';
+
+// '72 hours' reads oddly once it is a week, and 'seven days' reads oddly for a
+// short deadline.
+function deadlineText(hours: number): string {
+    // 72 hours has always been said as 72 hours, and it reads as more urgent
+    // than 'three days'. Only the longer deadline is worth saying in days.
+    if (hours > 72 && hours % 24 === 0) {
+        const days = hours / 24;
+        return days + (days === 1 ? ' day' : ' days');
+    }
+    return hours + ' hours';
+}
+
 function adminClient() {
     return createClient(
         process.env.NEXT_PUBLIC_SUPABASE_URL || '',
@@ -81,12 +103,32 @@ export async function GET(request: Request) {
                 .maybeSingle();
             const listing = listingRes.data || { title: 'your stay', cancellation_policy: null };
 
+            // How long this guest gets depends on why the last attempt failed.
+            // A declined card is theirs to fix now; a bank waiting on them to
+            // approve the payment is not.
+            const { data: lastFailure } = await admin
+                .from('payments')
+                .select('failure_reason')
+                .eq('booking_id', booking.id)
+                .eq('kind', 'balance')
+                .eq('status', 'failed')
+                .order('created_at', { ascending: false })
+                .limit(1)
+                .maybeSingle();
+
+            const awaitingAuthentication =
+                !!lastFailure &&
+                String(lastFailure.failure_reason || '').indexOf(AUTHENTICATION_MARKER) === 0;
+
+            const maxAttempts = awaitingAuthentication ? MAX_ATTEMPTS_AUTHENTICATION : MAX_ATTEMPTS;
+            const allowedText = deadlineText(maxAttempts * 24);
+
             // ----------------------------------------------------------
-            // Three attempts have already failed. The guest was told at the
-            // first failure, so 72 hours have passed. Cancel on their behalf
-            // and refund whatever the listing's policy allows today.
+            // Every attempt has failed and the time allowed has run out.
+            // Cancel on their behalf and refund whatever the listing's policy
+            // allows today.
             // ----------------------------------------------------------
-            if (attempts >= MAX_ATTEMPTS) {
+            if (attempts >= maxAttempts) {
                 const paid = Number(booking.amount_paid || 0);
                 const alreadyRefunded = Number(booking.amount_refunded || 0);
                 const refundable = round2(paid - alreadyRefunded);
@@ -134,7 +176,7 @@ export async function GET(request: Request) {
                         emailLayout(
                             '<p style="margin:0 0 16px;font-size:16px;">We weren\u2019t able to collect the remaining balance for your stay at <strong>'
                                 + escapeHtml(listing.title)
-                                + '</strong>, and the 72 hours we allow to sort it out have now passed, so the booking has been cancelled.</p>'
+                                + '</strong>, and the ' + allowedText + ' we allow to sort it out have now passed, so the booking has been cancelled.</p>'
                                 + '<p style="margin:0 0 16px;font-size:16px;">'
                                 + (refundAmount > 0
                                     ? 'A refund of \u00A3' + refundAmount.toFixed(2) + ' is on its way back to your card. It usually takes five to ten days to appear.'
@@ -158,7 +200,9 @@ export async function GET(request: Request) {
                                 + '</strong> for '
                                 + formatDate(booking.check_in)
                                 + ' has been cancelled because the guest\u2019s remaining balance couldn\u2019t be collected.</p>'
-                                + '<p style="margin:0 0 16px;font-size:16px;">We tried three times over 72 hours and let the guest know each time. Your calendar is open again for those dates.</p>'
+                                + '<p style="margin:0 0 16px;font-size:16px;">We tried '
+                                + maxAttempts
+                                + ' times over ' + allowedText + ' and let the guest know each time. Your calendar is open again for those dates.</p>'
                                 + button(SITE_URL + '/dashboard/bookings', 'View your bookings'),
                             'You\u2019re receiving this because you host on Galloway Getaways.'
                         )
@@ -176,6 +220,10 @@ export async function GET(request: Request) {
             const amount = round2(Number(booking.balance_amount || 0));
             let succeeded = false;
             let failureMessage = 'No saved card for this booking';
+            // Not the same thing as a decline, and the guest has to be told
+            // something different, so it is tracked separately.
+            let needsAuthentication = false;
+            let failedIntentId: string | null = null;
 
             if (booking.stripe_customer_id && booking.stripe_payment_method_id) {
                 try {
@@ -214,7 +262,31 @@ export async function GET(request: Request) {
                             .eq('id', booking.id);
                     }
                 } catch (err: any) {
-                    failureMessage = (err && err.message) || 'The card was declined';
+                    // A bank asking the guest to confirm the payment is not a
+                    // decline. Their card is fine — it simply cannot be charged
+                    // while they are not here to approve it, which in the UK is
+                    // commoner than an outright refusal. Stripe's own message
+                    // for it opens with 'Your card was declined', so left as it
+                    // was, both the record and the guest's email said the wrong
+                    // thing.
+                    needsAuthentication = !!(err && err.stripeCode === 'authentication_required');
+
+                    failureMessage = needsAuthentication
+                        ? AUTHENTICATION_MARKER
+                            + ': the guest\u2019s bank asked them to authenticate this payment, which cannot be done while they are away'
+                        : (err && err.message) || 'The card was declined';
+
+                    // Stripe returns the intent it created alongside the error.
+                    // Keeping its id leaves a trail from the booking to the
+                    // attempt; without it there was nothing to look at.
+                    const failedIntent = err && err.stripePaymentIntent;
+                    if (failedIntent && failedIntent.id) {
+                        failedIntentId = failedIntent.id;
+                        await admin
+                            .from('bookings')
+                            .update({ balance_payment_intent_id: failedIntent.id })
+                            .eq('id', booking.id);
+                    }
                 }
             }
 
@@ -268,7 +340,11 @@ export async function GET(request: Request) {
             // they have and how to fix it.
             // ----------------------------------------------------------
             const attemptNumber = attempts + 1;
-            const hoursLeft = (MAX_ATTEMPTS - attemptNumber + 1) * 24;
+            // The limit that applies from here is decided by *this* attempt,
+            // not the one before it — a card that has just asked for
+            // authentication earns the longer deadline straight away.
+            const limitFromNow = needsAuthentication ? MAX_ATTEMPTS_AUTHENTICATION : maxAttempts;
+            const leftText = deadlineText(Math.max(1, limitFromNow - attemptNumber + 1) * 24);
 
             await admin
                 .from('bookings')
@@ -283,6 +359,10 @@ export async function GET(request: Request) {
                 kind: 'balance',
                 amount: amount,
                 status: 'failed',
+                // Recorded so the webhook for the same failure can tell it has
+                // already been written down, and not say it twice in different
+                // words.
+                stripe_payment_intent_id: failedIntentId,
                 failure_reason: failureMessage,
             });
 
@@ -290,19 +370,28 @@ export async function GET(request: Request) {
             if (guestEmail) {
                 await sendEmail(
                     guestEmail,
-                    attemptNumber === 1
-                        ? 'We couldn\u2019t take the balance for your stay'
-                        : 'Reminder: your booking will be cancelled without payment',
+                    needsAuthentication
+                        ? 'Your bank needs you to confirm a payment'
+                        : attemptNumber === 1
+                            ? 'We couldn\u2019t take the balance for your stay'
+                            : 'Reminder: your booking will be cancelled without payment',
                     emailLayout(
-                        '<p style="margin:0 0 16px;font-size:16px;">We tried to charge the remaining <strong>\u00A3'
-                            + amount.toFixed(2)
-                            + '</strong> for your stay at <strong>'
-                            + escapeHtml(listing.title)
-                            + '</strong>, but the payment didn\u2019t go through.</p>'
-                            + '<p style="margin:0 0 16px;font-size:16px;">This usually means the card has expired or there weren\u2019t enough funds \u2014 it\u2019s easily fixed. Use the button below to pay with any card.</p>'
+                        (needsAuthentication
+                            ? '<p style="margin:0 0 16px;font-size:16px;">We tried to charge the remaining <strong>\u00A3'
+                                + amount.toFixed(2)
+                                + '</strong> for your stay at <strong>'
+                                + escapeHtml(listing.title)
+                                + '</strong>, and your bank asked for you to confirm it\u2019s really you.</p>'
+                                + '<p style="margin:0 0 16px;font-size:16px;">There is nothing wrong with your card. Banks ask for this on payments taken while you aren\u2019t there, and we can\u2019t answer it on your behalf \u2014 so the payment needs a minute of your time. Use the button below and your bank will ask you to approve it.</p>'
+                            : '<p style="margin:0 0 16px;font-size:16px;">We tried to charge the remaining <strong>\u00A3'
+                                + amount.toFixed(2)
+                                + '</strong> for your stay at <strong>'
+                                + escapeHtml(listing.title)
+                                + '</strong>, but the payment didn\u2019t go through.</p>'
+                                + '<p style="margin:0 0 16px;font-size:16px;">This usually means the card has expired or there weren\u2019t enough funds \u2014 it\u2019s easily fixed. Use the button below to pay with any card.</p>')
                             + '<p style="margin:0 0 16px;font-size:16px;">If the balance isn\u2019t paid within <strong>'
-                            + hoursLeft
-                            + ' hours</strong>, the booking will be cancelled and the dates released.</p>'
+                            + leftText
+                            + '</strong>, the booking will be cancelled and the dates released.</p>'
                             + button(SITE_URL + '/trips?pay=' + booking.id, 'Pay the balance')
                             + '<p style="margin:16px 0 0;font-size:14px;color:#6b7280;">Check-in is '
                             + formatDate(booking.check_in)

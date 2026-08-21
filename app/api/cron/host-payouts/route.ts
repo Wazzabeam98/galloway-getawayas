@@ -41,13 +41,26 @@ export async function GET(request: Request) {
     // host was never paid the remainder. Cancellations set status to
     // 'cancelled' and are still excluded; a stay refunded down to nothing is
     // caught by the `collected <= 0` check below.
-    const { data: due } = await admin
+    const { data: due, error: dueError } = await admin
         .from('bookings')
         .select('id, listing_id, host_id, check_in, total_price, amount_paid, amount_refunded, commission_rate, status, payment_status, paid_out_at')
         .eq('status', 'confirmed')
         .in('payment_status', ['paid', 'partially_refunded'])
         .is('paid_out_at', null)
         .lte('check_in', cutoffDate);
+
+    // Without this the query could fail, `due` would come back empty, and the
+    // run would report a cheerful ok:true with nothing sent — identical to a
+    // day with no payouts due. Hosts would simply not be paid, quietly.
+    if (dueError) {
+        await logError('host-payouts: could not load the bookings due for payout', dueError, {
+            path: '/api/cron/host-payouts',
+        });
+        return NextResponse.json(
+            { ok: false, error: 'Could not load the bookings due for payout' },
+            { status: 500 }
+        );
+    }
 
     let sent = 0;
     let skipped = 0;
@@ -193,6 +206,13 @@ export async function GET(request: Request) {
             sent++;
         } catch (err: any) {
             console.error('[cron/host-payouts]', booking.id, err && err.message);
+
+            // Money failing to reach a host is exactly what /admin/errors is
+            // for. The console alone is nobody's alarm.
+            await logError('host-payouts: transfer failed', err, {
+                path: '/api/cron/host-payouts',
+                userId: booking.host_id,
+            });
 
             await admin.from('payouts').insert({
                 booking_id: booking.id,

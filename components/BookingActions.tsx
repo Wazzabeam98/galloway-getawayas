@@ -194,18 +194,27 @@ export default function BookingActions({
             }
         }
 
-        const patch: Record<string, any> = { status };
-        // Scheduled messages anchored to acceptance need to know when that was.
+        // Declining or cancelling is finished by the refund route above — it
+        // moves the money and closes the booking in one place, so a tab closed
+        // at the wrong moment can't leave a refunded guest with a booking that
+        // still reads as confirmed. Only accepting is still set from here,
+        // because no money moves for it.
         if (status === 'confirmed') {
-            patch.confirmed_at = new Date().toISOString();
-        }
+            const { error } = await supabase
+                .from('bookings')
+                .update({
+                    status: status,
+                    // Scheduled messages anchored to acceptance need to know when
+                    // that was.
+                    confirmed_at: new Date().toISOString(),
+                })
+                .eq('id', bookingId);
 
-        const { error } = await supabase.from('bookings').update(patch).eq('id', bookingId);
-
-        if (error) {
-            setUpdating(false);
-            toast.error(error.message, { theme: 'colored' });
-            return;
+            if (error) {
+                setUpdating(false);
+                toast.error(error.message, { theme: 'colored' });
+                return;
+            }
         }
 
         if (status === 'confirmed') {

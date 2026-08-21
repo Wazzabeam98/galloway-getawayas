@@ -72,14 +72,100 @@ Roughly eight of these have been tested by hand. The rest never have.
 29. A webhook is delivered twice, or a scheduled job runs twice. Nothing is
     charged, refunded or paid out twice.
 
-## Known bugs to fix as part of this
+## Progress
 
-- `host-payouts/route.ts` rounds `hostShare` and `commission` independently
-  from the same amount. On roughly a quarter of pence-ending totals they sum
-  to a penny more than was collected, so the transfer and the email disagree.
-  Round one and derive the other by subtraction.
-- `pricing.ts` tests `if (overrides[key])`, so a calendar override of £0 is
-  ignored and the standard rate applies.
-- `host-payouts/route.ts` imports `logError` but never calls it, and
-  discards the error from its first query — so a failed payout run looks
-  identical to a quiet one.
+Scenarios 12-24 — the refunds and the payouts — are scripted and passing
+against the test project and Stripe test mode. Reseed between the two:
+
+```
+node scripts/seed-payments.mjs && node scripts/payout-scenarios.mjs
+node scripts/seed-payments.mjs && node scripts/refund-scenarios.mjs
+```
+
+Scenarios 3 and 7-11, the automatic balance charge and its failure ladder:
+
+```
+node scripts/seed-payments.mjs && node scripts/balance-scenarios.mjs
+```
+
+Scenarios 1, 2, 4 and 5 were done by hand through a real Stripe Checkout page
+in a browser, with `stripe listen` forwarding the webhooks. A Checkout Session
+cannot be completed over the API, so there is no script for them.
+
+Still open: **scenario 6**, the 3D Secure challenge at checkout. The challenge
+is a cross-origin iframe driven by `use_stripe_sdk`, so it takes no synthetic
+clicks and there is no redirect URL to open directly — it needs a person. What
+was confirmed is that while the challenge is outstanding the booking stays
+`pending_payment` and unpaid and the dates are not blocked, and that the
+webhook path it finishes through is the same one scenarios 1, 2 and 4 all
+proved works.
+
+Scenarios 25-29, the cross-cutting cases:
+
+```
+node scripts/seed-payments.mjs && node scripts/crosscutting-scenarios.mjs
+```
+
+See `scripts/README.md`. Scenario 23 needed a fix before it could pass at all —
+Stripe does not refuse a reversal the host cannot fund, it takes their account
+negative and absorbs the difference out of the next transfer, so the money was
+being recovered twice. The clawback now reverses only what the host is actually
+holding and carries the rest on `payout_balance_owed`.
+
+## Fixed
+
+- ~~`host-payouts/route.ts` rounds `hostShare` and `commission` independently.~~
+  `feeAmount` now derives from `netOfFee` by subtraction, so the two always sum
+  to what was collected. Covered by `tests/money.test.ts`.
+- ~~`host-payouts/route.ts` imports `logError` but never calls it, and discards
+  the error from its first query.~~ A failed read now returns 500 and reaches
+  /admin/errors. Covered by `tests/host-payouts.test.ts`.
+- ~~`pricing.ts` tests `if (overrides[key])`, so a £0 override is ignored.~~
+  Fixed; a zero override is honoured.
+- The clawback keyed its idempotency on the booking id alone, so a second
+  refund on one booking either replayed the first reversal or was rejected and
+  billed to the host as a debt. It now carries the Stripe refund id.
+- The clawback treated every Stripe error as a shortfall, turning a bad
+  transfer id or an outage into money deducted from the host's next payout.
+  Only `balance_insufficient` does that now.
+- A balance charge refused because the guest's bank wanted them to authenticate
+  it was recorded and emailed as a decline. Stripe's own message for it opens
+  'Your card was declined', so the guest was sent to check a card that was
+  perfectly fine. The two are now told apart. (Scenario 11.)
+- A booking paid in full ended with `balance_amount` null rather than zero, in
+  both the checkout route and the webhook. (Scenario 2.)
+- Two guests could both reach the payment page for the same nights and both
+  pay. A booking at `pending_payment` was not counted as taking the dates —
+  correctly, so an abandoned attempt cannot block a calendar for ever — but it
+  did not hold them even for a moment. It now holds for 30 minutes, and only
+  an *earlier* attempt holds, so of two guests arriving together exactly one
+  gets through rather than neither. (Scenario 27.)
+- The balance job and the `payment_intent.payment_failed` webhook both recorded
+  the same failed charge, in different words. (Found while doing scenario 11.)
+- Nothing made two confirmed stays on one week actually impossible — every
+  check happened before the money moved. There is now an exclusion constraint
+  on the database, and when it fires the webhook refunds the guest in full and
+  emails an apology rather than leaving them paid-up with no stay.
+
+## Worth knowing
+
+- There are two refund routes and they are not interchangeable.
+  `/api/bookings/host-refund` is the partial one and takes an amount.
+  `/api/stripe/refund` is the decline/cancel one: it ignores any amount passed
+  to it and works the figure out itself from what was paid and the
+  cancellation policy. That is correct for what it does, but passing it an
+  amount and expecting a partial refund will silently refund everything.
+- The migration that makes overlapping confirmed stays impossible is applied to
+  the **test project only**. It has to be run against production before this
+  ships. See `MAINTENANCE.md`, and run the pre-flight query in the migration
+  first.
+- On the pay-in-full path the webhook stores `stripe_payment_method_id` even
+  though the card was deliberately not saved for future use — checkout only
+  sets `setup_future_usage` on the deposit path. Nothing charges it, because
+  the balance job needs `payment_status = 'deposit_paid'`, but the column
+  implies a reusable card that is not there.
+- A host declining or cancelling is now closed off by `/api/stripe/refund`
+  itself, in the same place the money moves. It used to be left to the browser
+  in `BookingActions.tsx`, so a tab closed at the wrong moment left the guest
+  refunded with the booking still reading as confirmed and the dates blocked.
+  Accepting a request is still set from the browser, because no money moves.

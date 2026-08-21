@@ -36,3 +36,9 @@ next-env.d.ts
 
 # supabase cli local link state
 /supabase/.temp
+
+# test build output
+/.test-build
+
+# seeded test-data ids, machine-local
+/scripts/.seed-manifest.json

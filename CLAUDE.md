@@ -74,6 +74,34 @@ his observations seriously even when they sound vague.
 - a host-facing app, most likely a PWA first for push notifications
 - partnerships with local businesses
 
+## Running it locally
+
+Two things bite every single session on the MacBook:
+
+- **Colima has to be started after a reboot.** Supabase's local tooling talks
+  to Docker, and Docker here is Colima, which does not come back on its own:
+
+  ```
+  colima start
+  ```
+
+  If Docker commands report no such host, this is why. `colima status` says
+  whether it is up. Note that `colima`, `docker` and `stripe` live in
+  `~/homebrew/bin`, which is not on the default PATH.
+
+- **The Stripe webhook signing secret changes every time `stripe listen`
+  starts**, and it has to be written back into `.env.local` by hand. Start the
+  listener, take the `whsec_…` it prints, and replace `STRIPE_WEBHOOK_SECRET`
+  with it:
+
+  ```
+  stripe listen --forward-to localhost:3000/api/stripe/webhook
+  ```
+
+  Forgetting this is the classic one — every webhook fails its signature check,
+  so payments succeed at Stripe while the site still shows the booking as
+  unconfirmed. It looks like a bug in the webhook and is not.
+
 ## House rules for this codebase
 
 - push straight to master for anything that isn't payments, payouts or
