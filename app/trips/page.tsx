@@ -201,6 +201,18 @@ export default function TripsPage() {
         .filter(isOver)
         .sort((a, b) => (a.check_out > b.check_out ? -1 : 1));
 
+    // Same test as the menu and the passport page itself: a confirmed booking
+    // of your own whose check-out has been and gone. Dates are compared as
+    // strings so a stay checking out this morning is still today's, the way
+    // the passport query reads it.
+    //
+    // A trip somebody else booked and added you to earns no stamp, so it does
+    // not unlock the link either.
+    const todayIso = today.toISOString().split('T')[0];
+    const hasCompletedStay = bookings.some(
+        (b) => !b.sharedWithMe && b.status === 'confirmed' && b.check_out < todayIso
+    );
+
     // One trip card. It is rendered from two lists now, so it lives in a
     // function rather than inline in a single map.
     const renderTrip = (b: Booking) => {
@@ -380,12 +392,14 @@ export default function TripsPage() {
         <div className="max-w-3xl mx-auto px-6 py-10">
             <div className="flex items-baseline justify-between gap-4 flex-wrap mb-8">
                 <h1 className="text-2xl md:text-3xl font-bold text-slate-900">Your trips</h1>
-                <Link
-                    href="/passport"
-                    className="text-sm font-semibold text-emerald-700 hover:text-emerald-800 underline"
-                >
-                    Your passport
-                </Link>
+                {hasCompletedStay && (
+                    <Link
+                        href="/passport"
+                        className="text-sm font-semibold text-emerald-700 hover:text-emerald-800 underline"
+                    >
+                        Your passport
+                    </Link>
+                )}
             </div>
 
             {bookings.length === 0 ? (
