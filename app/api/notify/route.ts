@@ -1,3 +1,4 @@
+import { formatTime } from '@/lib/utils';
 // =====================================================================
 // GALLOWAY GETAWAYS — notification sender
 // WHERE THIS GOES: GitHub → app/api/notify/route.ts   (NEW FILE)
@@ -92,11 +93,25 @@ export async function POST(request: Request) {
 
         const { data: listing } = await admin
             .from('listings')
-            .select('title')
+            .select('title, check_in_time, check_in_end_time, check_out_time')
             .eq('id', booking.listing_id)
             .maybeSingle();
 
         const listingTitle = escapeHtml((listing && listing.title) || 'your listing');
+
+        // "Arrive from 3pm until 8pm. Leave by 11am." — empty when the host has
+        // set nothing, so the email never states a time nobody chose.
+        const arrivalLine = [
+            formatTime(listing?.check_in_time)
+                ? 'Arrive from ' + formatTime(listing?.check_in_time)
+                    + (formatTime(listing?.check_in_end_time)
+                        ? ' until ' + formatTime(listing?.check_in_end_time)
+                        : '')
+                : '',
+            formatTime(listing?.check_out_time)
+                ? 'Leave by ' + formatTime(listing?.check_out_time)
+                : '',
+        ].filter(Boolean).join('. ');
         const nights = escapeHtml(
             formatDate(booking.check_in) + ' to ' + formatDate(booking.check_out)
         );
@@ -172,6 +187,7 @@ export async function POST(request: Request) {
                 detailRows([
                     { label: 'Property', value: listingTitle },
                     { label: 'Dates', value: nights },
+                    ...(arrivalLine ? [{ label: 'Times', value: escapeHtml(arrivalLine + '.') }] : []),
                     { label: 'Guests', value: String(booking.guests || 1) },
                     { label: 'Total', value: '&pound;' + Number(booking.total_price || 0).toFixed(2) },
                 ]) +

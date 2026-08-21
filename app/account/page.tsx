@@ -11,7 +11,7 @@ import Link from 'next/link';
 import Logo from '@/components/base/Logo';
 import LoginModel from '@/components/auth/LoginModel';
 import { toast } from 'react-toastify';
-import { getImageUrl } from '@/lib/utils';
+import { getImageUrl, formatTime } from '@/lib/utils';
 import Env from '@/config/Env';
 import NotificationsSection from '@/components/account/NotificationsSection';
 import PaymentsSection from '@/components/account/PaymentsSection';
@@ -1913,55 +1913,11 @@ export default function AccountSettings() {
                                                     </div>
                                                 )}
 
-                                                {/* Read-only summary of rules that live elsewhere */}
-                                                <div className="border-t pt-4 mb-4">
-                                                    <div className="flex items-start justify-between mb-4">
-                                                        <div className="pr-6">
-                                                            <div className="font-semibold text-slate-900 text-sm mb-1">
-                                                                Check-in from
-                                                            </div>
-                                                            <p className="text-xs text-slate-500">
-                                                                When guests can arrive. Messages timed after check-in count
-                                                                forward from this.
-                                                            </p>
-                                                        </div>
-                                                        <select
-                                                            value={(l.check_in_time || '15:00').slice(0, 5)}
-                                                            disabled={busy}
-                                                            onChange={(e) => updateListingBooking(l.id, { check_in_time: e.target.value })}
-                                                            className="border rounded-lg p-2 text-sm flex-shrink-0 disabled:opacity-50"
-                                                        >
-                                                            {HOURS.map((h) => (
-                                                                <option key={h} value={h < 10 ? `0${h}:00` : `${h}:00`}>
-                                                                    {h < 10 ? `0${h}:00` : `${h}:00`}
-                                                                </option>
-                                                            ))}
-                                                        </select>
-                                                    </div>
-
-                                                    <div className="flex items-start justify-between">
-                                                        <div className="pr-6">
-                                                            <div className="font-semibold text-slate-900 text-sm mb-1">
-                                                                Check-out by
-                                                            </div>
-                                                            <p className="text-xs text-slate-500">
-                                                                When guests need to be out on their last morning.
-                                                            </p>
-                                                        </div>
-                                                        <select
-                                                            value={(l.check_out_time || '11:00').slice(0, 5)}
-                                                            disabled={busy}
-                                                            onChange={(e) => updateListingBooking(l.id, { check_out_time: e.target.value })}
-                                                            className="border rounded-lg p-2 text-sm flex-shrink-0 disabled:opacity-50"
-                                                        >
-                                                            {HOURS.map((h) => (
-                                                                <option key={h} value={h < 10 ? `0${h}:00` : `${h}:00`}>
-                                                                    {h < 10 ? `0${h}:00` : `${h}:00`}
-                                                                </option>
-                                                            ))}
-                                                        </select>
-                                                    </div>
-                                                </div>
+                                                {/* Check-in and check-out times used to be here as well as in the
+                                                    listing editor — two controls writing the same columns, with
+                                                    nothing to say which had been used last. They live on the
+                                                    listing now, which is also the only way to give two properties
+                                                    different times. */}
 
                                                 <div className="border-t pt-4">
                                                     <div className="text-xs font-semibold text-slate-700 mb-2">
@@ -1980,6 +1936,10 @@ export default function AccountSettings() {
                                                         <dd className="text-slate-800">{l.availability_window || '9 months'}</dd>
                                                         <dt className="text-slate-500">Cancellation policy</dt>
                                                         <dd className="text-slate-800">{l.cancellation_policy || 'Moderate'}</dd>
+                                                        <dt className="text-slate-500">Check-in from</dt>
+                                                        <dd className="text-slate-800">{formatTime(l.check_in_time) || '3pm'}</dd>
+                                                        <dt className="text-slate-500">Checkout by</dt>
+                                                        <dd className="text-slate-800">{formatTime(l.check_out_time) || '11am'}</dd>
                                                     </dl>
                                                     <p className="text-xs text-slate-400 mt-3">
                                                         These are set per listing so they stay in one place — edit nights, notice

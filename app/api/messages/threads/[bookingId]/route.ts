@@ -72,7 +72,7 @@ export async function GET(
 
     const { data: listing } = await admin
         .from('listings')
-        .select('id, title, location, images, checkin_start, checkin_end, checkout_time, check_in_method')
+        .select('id, title, location, images, check_in_time, check_in_end_time, check_out_time, check_in_method')
         .eq('id', booking.listing_id)
         .maybeSingle();
 

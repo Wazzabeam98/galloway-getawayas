@@ -5,7 +5,7 @@ import { createClientComponentClient } from '@supabase/auth-helpers-nextjs';
 import Link from 'next/link';
 import Logo from '@/components/base/Logo';
 import LoginModel from '@/components/auth/LoginModel';
-import { getImageUrl, capitializeFirst } from '@/lib/utils';
+import { getImageUrl, capitializeFirst, formatTime } from '@/lib/utils';
 import { toast } from 'react-toastify';
 import { Search, Inbox, Send, Zap, Phone, ExternalLink, ChevronLeft, Info } from 'lucide-react';
 
@@ -574,8 +574,8 @@ export default function MessagesInboxPage() {
                     <span className="text-slate-500 flex-shrink-0">Check in</span>
                     <span className="text-slate-900 font-medium text-right">
                         {thread.booking.check_in}
-                        {thread.listing && thread.listing.checkin_start
-                            ? ' · ' + thread.listing.checkin_start
+                        {thread.listing && formatTime(thread.listing.check_in_time)
+                            ? ' · from ' + formatTime(thread.listing.check_in_time)
                             : ''}
                     </span>
                 </div>
@@ -583,8 +583,8 @@ export default function MessagesInboxPage() {
                     <span className="text-slate-500 flex-shrink-0">Check out</span>
                     <span className="text-slate-900 font-medium text-right">
                         {thread.booking.check_out}
-                        {thread.listing && thread.listing.checkout_time
-                            ? ' · ' + thread.listing.checkout_time
+                        {thread.listing && formatTime(thread.listing.check_out_time)
+                            ? ' · by ' + formatTime(thread.listing.check_out_time)
                             : ''}
                     </span>
                 </div>

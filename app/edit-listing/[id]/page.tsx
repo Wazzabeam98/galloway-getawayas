@@ -7,7 +7,7 @@ import Logo from '@/components/base/Logo';
 import LoginModel from '@/components/auth/LoginModel';
 import { categories } from '@/config/categories';
 import Env from '@/config/Env';
-import { generateRandomNumber, getImageUrl } from '@/lib/utils';
+import { generateRandomNumber, getImageUrl, timeInputValue } from '@/lib/utils';
 import { toast } from 'react-toastify';
 import { rateFor } from '@/lib/fees';
 import IcalFeeds from '@/components/IcalFeeds';
@@ -233,9 +233,11 @@ export default function EditListing() {
             setQuietHoursStart(listing.quiet_hours_start || '22:00');
             setQuietHoursEnd(listing.quiet_hours_end || '07:00');
             setCommercialPhotographyAllowed(listing.commercial_photography_allowed ?? false);
-            setCheckinStart(listing.checkin_start || '15:00');
-            setCheckinEnd(listing.checkin_end || '');
-            setCheckoutTime(listing.checkout_time || '11:00');
+            // The typed columns now, not the old text trio. timeInputValue
+            // trims the seconds a `time` column comes back with.
+            setCheckinStart(timeInputValue(listing.check_in_time) || '15:00');
+            setCheckinEnd(timeInputValue(listing.check_in_end_time));
+            setCheckoutTime(timeInputValue(listing.check_out_time) || '11:00');
             setAdditionalRules(listing.additional_rules || '');
             setCancellationPolicy(listing.cancellation_policy || 'Moderate');
             setNonRefundableOption(listing.non_refundable_option ?? false);
@@ -350,9 +352,12 @@ export default function EditListing() {
                     quiet_hours_start: quietHoursStart,
                     quiet_hours_end: quietHoursEnd,
                     commercial_photography_allowed: commercialPhotographyAllowed,
-                    checkin_start: checkinStart,
-                    checkin_end: checkinEnd,
-                    checkout_time: checkoutTime,
+                    // These also decide when scheduled messages go out —
+                    // send_due_scheduled_messages() counts "before check-out"
+                    // back from check_out_time — so they are not display-only.
+                    check_in_time: checkinStart || '15:00',
+                    check_in_end_time: checkinEnd || null,
+                    check_out_time: checkoutTime || '11:00',
                     additional_rules: additionalRules,
                     cancellation_policy: cancellationPolicy,
                     non_refundable_option: nonRefundableOption,
@@ -806,8 +811,9 @@ export default function EditListing() {
                                     </div>
                                     <div>
                                         <label className="text-xs text-slate-500">Check-in until</label>
-                                        <input type="text" value={checkinEnd} onChange={(e) => setCheckinEnd(e.target.value)}
-                                            placeholder="e.g. 20:00 or Flexible" className="w-full p-2.5 border rounded-lg text-sm mt-1" />
+                                        <input type="time" value={checkinEnd} onChange={(e) => setCheckinEnd(e.target.value)}
+                                            className="w-full p-2.5 border rounded-lg text-sm mt-1" />
+                                        <p className="text-xs text-slate-400 mt-1">Leave blank for no set end.</p>
                                     </div>
                                     <div>
                                         <label className="text-xs text-slate-500">Checkout by</label>
