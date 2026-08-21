@@ -60,3 +60,36 @@ export function displayName(
   if (legalAllowed && legal) return legal;
   return fallback;
 }
+
+// A time column comes back from PostgREST as "15:00:00". Guests should read
+// "3pm". One place, so the listing page, the trip card, the confirmation page
+// and the confirmation email cannot drift apart on how a time looks.
+//
+// Returns '' for null, which every caller treats as "not stated" rather than
+// printing something misleading.
+export function formatTime(value: string | null | undefined): string {
+    if (!value) return '';
+
+    const parts = String(value).split(':');
+    const hour = Number(parts[0]);
+    const minute = Number(parts[1] || 0);
+    if (isNaN(hour) || isNaN(minute)) return '';
+
+    const suffix = hour < 12 ? 'am' : 'pm';
+    let display = hour % 12;
+    if (display === 0) display = 12;
+
+    // Midnight and noon read better by name than as 12am / 12pm.
+    if (hour === 0 && minute === 0) return 'midnight';
+    if (hour === 12 && minute === 0) return 'noon';
+
+    return minute === 0
+        ? display + suffix
+        : display + ':' + String(minute).padStart(2, '0') + suffix;
+}
+
+// The value a <input type="time"> wants: "15:00:00" -> "15:00".
+export function timeInputValue(value: string | null | undefined): string {
+    if (!value) return '';
+    return String(value).slice(0, 5);
+}

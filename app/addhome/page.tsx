@@ -11,7 +11,7 @@ import LoginModel from '@/components/auth/LoginModel';
 import { categories } from '@/config/categories';
 import Env from '@/config/Env';
 import { compressImage } from '@/lib/compressImage';
-import { generateRandomNumber } from '@/lib/utils';
+import { generateRandomNumber, timeInputValue } from '@/lib/utils';
 import { toast } from 'react-toastify';
 import { DEFAULT_COMMISSION_PERCENT } from '@/lib/fees';
 
@@ -54,6 +54,11 @@ export default function AddHome() {
     const [bathrooms, setBathrooms] = useState(1);
     const [amenities, setAmenities] = useState<string[]>([]);
     const [checkInMethod, setCheckInMethod] = useState('');
+    // Seeded with the old silent defaults, but now visible and changeable
+    // before the listing is created rather than assumed afterwards.
+    const [checkInTime, setCheckInTime] = useState('15:00');
+    const [checkInEndTime, setCheckInEndTime] = useState('');
+    const [checkOutTime, setCheckOutTime] = useState('11:00');
     const [latitude, setLatitude] = useState<number | null>(null);
     const [longitude, setLongitude] = useState<number | null>(null);
     const [selectedHighlights, setSelectedHighlights] = useState<string[]>([]);
@@ -195,6 +200,9 @@ export default function AddHome() {
                     setPropertyType(draft.property_type || '');
                     setPrivacyType(draft.privacy_type || 'Entire place');
                     setCheckInMethod(draft.check_in_method || '');
+                    setCheckInTime(timeInputValue(draft.check_in_time) || '15:00');
+                    setCheckInEndTime(timeInputValue(draft.check_in_end_time));
+                    setCheckOutTime(timeInputValue(draft.check_out_time) || '11:00');
                     setLatitude(draft.latitude ?? null);
                     setLongitude(draft.longitude ?? null);
                     setGuests(draft.max_guests || 1);
@@ -239,6 +247,9 @@ export default function AddHome() {
                 bathrooms,
                 amenities,
                 check_in_method: checkInMethod || null,
+                check_in_time: checkInTime || '15:00',
+                check_in_end_time: checkInEndTime || null,
+                check_out_time: checkOutTime || '11:00',
                 latitude,
                 longitude,
                 new_listing_promo: newListingPromo,
@@ -440,6 +451,9 @@ export default function AddHome() {
                     bathrooms,
                     amenities,
                     check_in_method: checkInMethod || null,
+                    check_in_time: checkInTime || '15:00',
+                    check_in_end_time: checkInEndTime || null,
+                    check_out_time: checkOutTime || '11:00',
                     latitude,
                     longitude,
                     new_listing_promo: newListingPromo,
@@ -463,6 +477,9 @@ export default function AddHome() {
                     bathrooms,
                     amenities,
                     check_in_method: checkInMethod || null,
+                    check_in_time: checkInTime || '15:00',
+                    check_in_end_time: checkInEndTime || null,
+                    check_out_time: checkOutTime || '11:00',
                     latitude,
                     longitude,
                     new_listing_promo: newListingPromo,
@@ -808,6 +825,42 @@ export default function AddHome() {
                                         </button>
                                     );
                                 })}
+                            </div>
+
+                            <h3 className="text-xl font-bold text-slate-900 mt-10 mb-1">When can they arrive?</h3>
+                            <p className="text-slate-600 text-sm mb-5">
+                                Guests see these on your listing and in their booking confirmation. You
+                                can change them later.
+                            </p>
+                            <div className="grid grid-cols-1 sm:grid-cols-3 gap-3 max-w-lg">
+                                <div>
+                                    <label className="text-xs text-slate-500">Check-in from</label>
+                                    <input
+                                        type="time"
+                                        value={checkInTime}
+                                        onChange={(e) => setCheckInTime(e.target.value)}
+                                        className="w-full p-2.5 border rounded-lg text-sm mt-1"
+                                    />
+                                </div>
+                                <div>
+                                    <label className="text-xs text-slate-500">Check-in until</label>
+                                    <input
+                                        type="time"
+                                        value={checkInEndTime}
+                                        onChange={(e) => setCheckInEndTime(e.target.value)}
+                                        className="w-full p-2.5 border rounded-lg text-sm mt-1"
+                                    />
+                                    <p className="text-xs text-slate-400 mt-1">Optional.</p>
+                                </div>
+                                <div>
+                                    <label className="text-xs text-slate-500">Checkout by</label>
+                                    <input
+                                        type="time"
+                                        value={checkOutTime}
+                                        onChange={(e) => setCheckOutTime(e.target.value)}
+                                        className="w-full p-2.5 border rounded-lg text-sm mt-1"
+                                    />
+                                </div>
                             </div>
                         </div>
                     </div>

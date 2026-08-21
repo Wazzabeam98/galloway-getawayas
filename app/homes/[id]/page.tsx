@@ -3,14 +3,14 @@ import React from 'react'
 import type { Metadata } from 'next';
 import { createServerComponentClient } from '@supabase/auth-helpers-nextjs'
 import { cookies } from 'next/headers';
-import { capitializeFirst, displayName, getImageUrl } from '@/lib/utils';
+import { capitializeFirst, displayName, getImageUrl, formatTime } from '@/lib/utils';
 import BookingWidget from '@/components/BookingWidget';
 import ReviewStars from '@/components/ReviewStars';
 import PhotoGallery from '@/components/PhotoGallery';
 import HostReplyBox from '@/components/HostReplyBox';
 import ReviewsSummary from '@/components/ReviewsSummary';
 import PropertyMap from '@/components/PropertyMap';
-import { KeyRound, Zap, Car, Bath, Waves, Flame, PawPrint, Briefcase, Plug, Users, MapPin, DoorOpen, BadgeCheck } from 'lucide-react';
+import { KeyRound, Zap, Car, Bath, Waves, Flame, PawPrint, Briefcase, Plug, Users, MapPin, DoorOpen, BadgeCheck, Clock } from 'lucide-react';
 
 // Turns the wizard's plural category into a noun that reads naturally in
 // a sentence: "Entire townhouse in ..." rather than "Entire Townhouses".
@@ -435,6 +435,33 @@ const FindHome = async ({ params }: { params: { id: string } }) => {
                                 )}
                             </div>
                         </div>
+
+                        {(home.check_in_time || home.check_out_time) && (
+                            <div className='mt-5 pt-5 border-t'>
+                                <div className='flex items-start gap-4'>
+                                    <Clock className='w-6 h-6 text-slate-700 flex-shrink-0 mt-0.5' />
+                                    <div>
+                                        <div className='font-semibold text-slate-900'>
+                                            Check-in and checkout
+                                        </div>
+                                        <p className='text-sm text-slate-600 mt-0.5'>
+                                            {formatTime(home.check_in_time) && (
+                                                <>
+                                                    Arrive from {formatTime(home.check_in_time)}
+                                                    {formatTime(home.check_in_end_time)
+                                                        ? ' until ' + formatTime(home.check_in_end_time)
+                                                        : ''}
+                                                    .{' '}
+                                                </>
+                                            )}
+                                            {formatTime(home.check_out_time) && (
+                                                <>Leave by {formatTime(home.check_out_time)} on your last morning.</>
+                                            )}
+                                        </p>
+                                    </div>
+                                </div>
+                            </div>
+                        )}
 
                         {highlights.length > 0 && (
                             <div className='mt-5 pt-5 border-t space-y-4'>

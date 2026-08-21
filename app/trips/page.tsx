@@ -5,7 +5,7 @@ import { useEffect, useState } from 'react';
 import { createClientComponentClient } from '@supabase/auth-helpers-nextjs';
 import Logo from '@/components/base/Logo';
 import LoginModel from '@/components/auth/LoginModel';
-import { getImageUrl, capitializeFirst, displayName } from '@/lib/utils';
+import { getImageUrl, capitializeFirst, displayName, formatTime } from '@/lib/utils';
 import Link from 'next/link';
 import { refundFraction } from '@/lib/cancellation';
 
@@ -119,7 +119,7 @@ export default function TripsPage() {
             if (listingIds.length) {
                 const { data: listings } = await supabase
                     .from('listings')
-                    .select('id, title, images, cancellation_policy')
+                    .select('id, title, images, cancellation_policy, check_in_time, check_in_end_time, check_out_time')
                     .in('id', listingIds);
                 const map: Record<string, any> = {};
                 (listings || []).forEach((l) => { map[l.id] = l; });
@@ -233,6 +233,20 @@ export default function TripsPage() {
                         <div className="text-sm text-slate-600">
                             Hosted by {capitializeFirst(hostNames[b.host_id] || 'Host')} · {b.check_in} → {b.check_out}
                         </div>
+                        {(formatTime(listing?.check_in_time) || formatTime(listing?.check_out_time)) && (
+                            <div className="text-xs text-slate-500">
+                                {formatTime(listing?.check_in_time)
+                                    ? 'Arrive from ' + formatTime(listing?.check_in_time)
+                                        + (formatTime(listing?.check_in_end_time)
+                                            ? ' until ' + formatTime(listing?.check_in_end_time)
+                                            : '')
+                                    : ''}
+                                {formatTime(listing?.check_in_time) && formatTime(listing?.check_out_time) ? ' · ' : ''}
+                                {formatTime(listing?.check_out_time)
+                                    ? 'Leave by ' + formatTime(listing?.check_out_time)
+                                    : ''}
+                            </div>
+                        )}
                         {b.sharedWithMe ? (
                             <div className="text-sm text-slate-400">
                                 {b.guests ? b.guests + (b.guests === 1 ? ' guest' : ' guests') : 'Shared with you'}

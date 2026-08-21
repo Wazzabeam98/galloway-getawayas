@@ -1,3 +1,4 @@
+import { formatTime } from '@/lib/utils';
 import { createClient } from '@supabase/supabase-js';
 import Link from 'next/link';
 import { notFound } from 'next/navigation';
@@ -30,7 +31,7 @@ export default async function BookingConfirmed({ params }: { params: { id: strin
 
     const { data: listing } = await admin
         .from('listings')
-        .select('title, location')
+        .select('title, location, check_in_time, check_in_end_time, check_out_time')
         .eq('id', booking.listing_id)
         .maybeSingle();
 
@@ -97,6 +98,20 @@ export default async function BookingConfirmed({ params }: { params: { id: strin
                         {formatUk(new Date(booking.check_in))} &rarr;{' '}
                         {formatUk(new Date(booking.check_out))}
                     </div>
+                    {(formatTime(listing?.check_in_time) || formatTime(listing?.check_out_time)) && (
+                        <div className="text-sm text-slate-500 mt-1">
+                            {formatTime(listing?.check_in_time)
+                                ? 'Arrive from ' + formatTime(listing?.check_in_time)
+                                    + (formatTime(listing?.check_in_end_time)
+                                        ? ' until ' + formatTime(listing?.check_in_end_time)
+                                        : '')
+                                    + '. '
+                                : ''}
+                            {formatTime(listing?.check_out_time)
+                                ? 'Leave by ' + formatTime(listing?.check_out_time) + '.'
+                                : ''}
+                        </div>
+                    )}
                 </div>
 
                 <div className="border-t pt-4">
