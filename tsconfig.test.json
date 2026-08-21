@@ -20,6 +20,7 @@
     "tests/**/*.ts",
     "lib/**/*.ts",
     "app/api/cron/host-payouts/route.ts",
-    "app/api/cron/balance-charges/route.ts"
+    "app/api/cron/balance-charges/route.ts",
+    "app/api/stripe/webhook/route.ts"
   ]
 }

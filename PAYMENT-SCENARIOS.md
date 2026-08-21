@@ -82,8 +82,25 @@ node scripts/seed-payments.mjs && node scripts/payout-scenarios.mjs
 node scripts/seed-payments.mjs && node scripts/refund-scenarios.mjs
 ```
 
-Still unscripted: 1-11 (money in, and the balance-charge failure ladder) and
-25-29 (the cross-cutting cases).
+Scenarios 3 and 7-11, the automatic balance charge and its failure ladder:
+
+```
+node scripts/seed-payments.mjs && node scripts/balance-scenarios.mjs
+```
+
+Scenarios 1, 2, 4 and 5 were done by hand through a real Stripe Checkout page
+in a browser, with `stripe listen` forwarding the webhooks. A Checkout Session
+cannot be completed over the API, so there is no script for them.
+
+Still open: **scenario 6**, the 3D Secure challenge at checkout. The challenge
+is a cross-origin iframe driven by `use_stripe_sdk`, so it takes no synthetic
+clicks and there is no redirect URL to open directly — it needs a person. What
+was confirmed is that while the challenge is outstanding the booking stays
+`pending_payment` and unpaid and the dates are not blocked, and that the
+webhook path it finishes through is the same one scenarios 1, 2 and 4 all
+proved works.
+
+Also still unscripted: 25-29, the cross-cutting cases.
 
 See `scripts/README.md`. Scenario 23 needed a fix before it could pass at all —
 Stripe does not refuse a reversal the host cannot fund, it takes their account
@@ -107,6 +124,12 @@ holding and carries the rest on `payout_balance_owed`.
 - The clawback treated every Stripe error as a shortfall, turning a bad
   transfer id or an outage into money deducted from the host's next payout.
   Only `balance_insufficient` does that now.
+- A balance charge refused because the guest's bank wanted them to authenticate
+  it was recorded and emailed as a decline. Stripe's own message for it opens
+  'Your card was declined', so the guest was sent to check a card that was
+  perfectly fine. The two are now told apart. (Scenario 11.)
+- A booking paid in full ended with `balance_amount` null rather than zero, in
+  both the checkout route and the webhook. (Scenario 2.)
 
 ## Worth knowing
 
@@ -116,6 +139,11 @@ holding and carries the rest on `payout_balance_owed`.
   to it and works the figure out itself from what was paid and the
   cancellation policy. That is correct for what it does, but passing it an
   amount and expecting a partial refund will silently refund everything.
+- On the pay-in-full path the webhook stores `stripe_payment_method_id` even
+  though the card was deliberately not saved for future use — checkout only
+  sets `setup_future_usage` on the deposit path. Nothing charges it, because
+  the balance job needs `payment_status = 'deposit_paid'`, but the column
+  implies a reusable card that is not there.
 - A host declining or cancelling is now closed off by `/api/stripe/refund`
   itself, in the same place the money moves. It used to be left to the browser
   in `BookingActions.tsx`, so a tab closed at the wrong moment left the guest

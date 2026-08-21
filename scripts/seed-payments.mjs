@@ -257,10 +257,13 @@ async function createListing(host, title, patch = {}) {
 async function createBooking(listing, guest, host, patch = {}) {
     // The charge stands for what was actually collected, not the headline
     // price — on a deposit booking those differ, and a refund goes against the
-    // charge.
+    // charge. A booking that has not been paid yet gets none, because the
+    // whole point of it is to go through checkout for real.
     const total = patch.total_price !== undefined ? patch.total_price : 500;
     const collected = patch.amount_paid !== undefined ? patch.amount_paid : total;
-    const intentId = await chargeFor(collected, (patch.label || listing.title));
+    const noCharge = patch.noCharge === true;
+    delete patch.noCharge;
+    const intentId = noCharge ? null : await chargeFor(collected, (patch.label || listing.title));
     delete patch.label;
     const [booking] = await db.insert('bookings', {
         stripe_payment_intent_id: intentId,
@@ -484,6 +487,46 @@ async function main() {
     const s07 = await depositBooking('s07', 'tok_chargeCustomerFail');
     const s11 = await depositBooking('s11', 'pm_card_authenticationRequired');
 
+    /* ------------------------------------------------ checkout, 1, 2, 4, 5, 6 */
+
+    // Instant Book, so a paid booking confirms on the webhook rather than
+    // going back to the host. £100 a night and no fees, which keeps the total
+    // something a test can state plainly — checkout re-quotes from the listing
+    // and refuses anything that disagrees.
+    const listingInstant = await createListing(hostReady, 'Instant-book cottage', {
+        commission_rate: 10, price_per_night: 100, instant_book: true,
+        cancellation_policy: 'Moderate',
+    });
+
+    // Each gets its own week. They share a listing, and checkout refuses dates
+    // that overlap anything already pending or confirmed — including each
+    // other.
+    const unpaid = (label, start, nights, total) => createBooking(listingInstant, guest, hostReady, {
+        label: label, noCharge: true,
+        total_price: total, amount_paid: 0,
+        status: 'pending_payment', payment_status: 'unpaid',
+        deposit_amount: null, balance_amount: null,
+        check_in: dayOffset(start), check_out: dayOffset(start + nights),
+    });
+
+    const s01 = await unpaid('s01', 60, 4, 400);   // pays the 25% deposit
+    const s02 = await unpaid('s02', 70, 3, 300);   // pays in full
+    const s05 = await unpaid('s05', 80, 3, 300);   // card declined at checkout
+    const s06 = await unpaid('s06', 90, 3, 300);   // 3D Secure challenge
+
+    // 4 — the balance paid by hand from the link in the reminder email.
+    const card04 = await savedCard('pm_card_visa', 's04');
+    const s04 = await createBooking(listingInstant, guest, hostReady, {
+        label: 's04',
+        total_price: 400, amount_paid: 100,
+        payment_status: 'deposit_paid', payment_plan: 'deposit',
+        deposit_amount: 100, balance_amount: 300,
+        balance_due_date: dayOffset(30),
+        check_in: dayOffset(100), check_out: dayOffset(104),
+        stripe_customer_id: card04.customerId,
+        stripe_payment_method_id: card04.paymentMethodId,
+    });
+
     const manifest = {
         seededAt: new Date().toISOString(),
         project: env.NEXT_PUBLIC_SUPABASE_URL,
@@ -491,9 +534,10 @@ async function main() {
         users: { guest: guest.id, hostReady: hostReady.id, hostIndebted: hostIndebted.id, hostPending: hostPending.id },
         listings: {
             ready: listingReady.id, indebted: listingIndebted.id, pending: listingPending.id,
-            flexible: listingFlexible.id, firm: listingFirm.id,
+            flexible: listingFlexible.id, firm: listingFirm.id, instant: listingInstant.id,
         },
         bookings: {
+            s01: s01.id, s02: s02.id, s04: s04.id, s05: s05.id, s06: s06.id,
             s03: s03.id, s07: s07.id, s11: s11.id,
             s12: s12.id, s13: s13.id, s14: s14.id, s15: s15.id, s16: s16.id,
             s17: s17.id, s18: s18.id,

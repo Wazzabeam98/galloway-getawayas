@@ -282,7 +282,11 @@ export async function POST(request: Request) {
             .update({
                 payment_plan: useDeposit ? 'deposit' : 'full',
                 deposit_amount: useDeposit ? dueNow : null,
-                balance_amount: useDeposit ? balance : null,
+                // Zero, not null, on the pay-in-full path. Nothing is
+                // outstanding, and the column that says what is outstanding
+                // has to be able to say so — a null reads as 'unknown' and
+                // turns into NaN the moment anything does arithmetic on it.
+                balance_amount: useDeposit ? balance : 0,
                 balance_due_date: useDeposit ? balanceDue.toISOString().split('T')[0] : null,
                 free_cancel_until: freeUntil ? freeUntil.toISOString().split('T')[0] : null,
                 // Stamped on now and never changed. If the listing's rate is

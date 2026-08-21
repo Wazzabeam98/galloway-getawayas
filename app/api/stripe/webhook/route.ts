@@ -156,18 +156,26 @@ export async function POST(request: Request) {
                     if (listing && listing.instant_book === true) nextStatus = 'confirmed';
                 }
 
+                const paidPatch: Record<string, any> = {
+                    payment_status: kind === 'deposit' ? 'deposit_paid' : 'paid',
+                    amount_paid: amount,
+                    paid_at: new Date().toISOString(),
+                    stripe_payment_intent_id: cs.payment_intent || null,
+                    stripe_customer_id: customerId,
+                    stripe_payment_method_id: paymentMethodId,
+                    status: nextStatus,
+                    confirmed_at: nextStatus === 'confirmed' ? new Date().toISOString() : null,
+                };
+
+                // Paid in full, so nothing is outstanding. Set here as well as
+                // at checkout, because this is the point the money landed.
+                if (kind !== 'deposit') {
+                    paidPatch.balance_amount = 0;
+                }
+
                 await admin
                     .from('bookings')
-                    .update({
-                        payment_status: kind === 'deposit' ? 'deposit_paid' : 'paid',
-                        amount_paid: amount,
-                        paid_at: new Date().toISOString(),
-                        stripe_payment_intent_id: cs.payment_intent || null,
-                        stripe_customer_id: customerId,
-                        stripe_payment_method_id: paymentMethodId,
-                        status: nextStatus,
-                        confirmed_at: nextStatus === 'confirmed' ? new Date().toISOString() : null,
-                    })
+                    .update(paidPatch)
                     .eq('id', bookingId);
 
                 await admin.from('payments').insert({
