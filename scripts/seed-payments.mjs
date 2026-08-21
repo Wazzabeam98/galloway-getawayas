@@ -389,15 +389,19 @@ async function main() {
     // A pence-ending total, because that is where the rounding used to split.
     const s20 = await createBooking(listingReady, guest, hostReady, {
         label: 's20', total_price: 483.33, amount_paid: 483.33, commission_rate: 10,
+        check_in: dayOffset(-6), check_out: dayOffset(-4),
     });
     const s21 = await createBooking(listingPending, guest, hostPending, {
         label: 's21', total_price: 400, amount_paid: 400,
+        check_in: dayOffset(-6), check_out: dayOffset(-4),
     });
     const s22 = await createBooking(listingIndebted, guest, hostIndebted, {
         label: 's22', total_price: 600, amount_paid: 600,
+        check_in: dayOffset(-6), check_out: dayOffset(-4),
     });
     const s23 = await createBooking(listingIndebted, guest, hostIndebted, {
         label: 's23', total_price: 300, amount_paid: 300,
+        check_in: dayOffset(-3), check_out: dayOffset(-1),
     });
     // Scenario 24's payout is deliberately small next to the debt scenario 23
     // leaves behind. It is seeded in the future so the first payout run cannot
@@ -436,7 +440,7 @@ async function main() {
     // 13 — confirmed, and the host pulls out. Carries the 5% fee.
     const s13 = await createBooking(listingReady, guest, hostReady, {
         label: 's13', total_price: 700, amount_paid: 700,
-        check_in: dayOffset(30), check_out: dayOffset(33),
+        check_in: dayOffset(40), check_out: dayOffset(43),
     });
 
     // 14 — goodwill money back, stay still happening, host still paid the
@@ -470,14 +474,14 @@ async function main() {
         label: 's18', total_price: 800, amount_paid: 200,
         payment_status: 'deposit_paid', payment_plan: 'deposit',
         deposit_amount: 200, balance_amount: 600, balance_due_date: dayOffset(-10),
-        check_in: dayOffset(20), check_out: dayOffset(23),
+        check_in: dayOffset(30), check_out: dayOffset(33),
     });
 
     /* --------------------------------------------- balance charges, 3 & 7-11 */
 
     // All three are deposit-paid bookings with the balance now due. What
     // differs is the card left on file.
-    const depositBooking = async (label, token) => {
+    const depositBooking = async (label, token, startsIn) => {
         const card = await savedCard(token, label);
         const b = await createBooking(listingReady, guest, hostReady, {
             label: label,
@@ -486,16 +490,16 @@ async function main() {
             deposit_amount: 200, balance_amount: 600,
             balance_due_date: dayOffset(0),
             balance_attempts: 0,
-            check_in: dayOffset(30), check_out: dayOffset(33),
+            check_in: dayOffset(startsIn), check_out: dayOffset(startsIn + 3),
             stripe_customer_id: card.customerId,
             stripe_payment_method_id: card.paymentMethodId,
         });
         return b;
     };
 
-    const s03 = await depositBooking('s03', 'pm_card_visa');
-    const s07 = await depositBooking('s07', 'tok_chargeCustomerFail');
-    const s11 = await depositBooking('s11', 'pm_card_authenticationRequired');
+    const s03 = await depositBooking('s03', 'pm_card_visa', 50);
+    const s07 = await depositBooking('s07', 'tok_chargeCustomerFail', 60);
+    const s11 = await depositBooking('s11', 'pm_card_authenticationRequired', 70);
 
     /* ------------------------------------------------ checkout, 1, 2, 4, 5, 6 */
 

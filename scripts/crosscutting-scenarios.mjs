@@ -149,6 +149,82 @@ async function main() {
     check('once the first guest’s half hour is up, the dates come back',
         r3.status === 200 && !!r3.body.url, JSON.stringify(r3.body).slice(0, 140));
 
+    /* ---- 27b: the database has the final say ---- */
+
+    scenario('27b', 'A guest who pays for nights taken meanwhile is refunded and told');
+
+    // The hold only covers half an hour. This is the guest who sat on the
+    // Stripe page longer than that, and paid for nights someone else has since
+    // been confirmed for.
+    const held = await booking(bookings.s27a);
+    await db.update('bookings', '?id=eq.' + bookings.s27a, { status: 'confirmed' });
+
+    // A real payment for the overlapping stay.
+    const intent = await stripe.request('POST', '/payment_intents', {
+        amount: 30000, currency: 'gbp', payment_method: 'pm_card_visa',
+        payment_method_types: ['card'], confirm: 'true',
+        description: 'oversold test',
+    });
+    check('the guest really did pay', intent.status === 'succeeded', intent.status);
+
+    const b27b = await booking(bookings.s27b);
+    const event = {
+        id: 'evt_oversold_' + Date.now(),
+        type: 'checkout.session.completed',
+        data: {
+            object: {
+                payment_status: 'paid',
+                amount_total: 30000,
+                payment_intent: intent.id,
+                customer: null,
+                client_reference_id: b27b.id,
+                metadata: { booking_id: b27b.id, kind: 'full' },
+            },
+        },
+    };
+
+    const res27b = await fetch(SITE + '/api/stripe/webhook', await signedWebhook(event));
+    const body27b = await res27b.json().catch(() => ({}));
+    console.log('   webhook → ' + res27b.status + ' ' + JSON.stringify(body27b));
+
+    check('the webhook saw it could not confirm and said so',
+        body27b.oversold === true, JSON.stringify(body27b));
+
+    const after27b = await booking(bookings.s27b);
+    check('the guest was not given the nights', after27b.status !== 'confirmed', after27b.status);
+    check('the booking is called off', after27b.status === 'cancelled', after27b.status);
+    check('what they paid and what came back are both recorded',
+        round2(Number(after27b.amount_paid)) === 300
+            && round2(Number(after27b.amount_refunded)) === 300,
+        'paid £' + after27b.amount_paid + ', refunded £' + after27b.amount_refunded);
+    check('payment_status is refunded', after27b.payment_status === 'refunded', after27b.payment_status);
+
+    const refunds27b = await stripe.request('GET', '/refunds', { payment_intent: intent.id, limit: 10 });
+    const backAtStripe = round2(
+        (refunds27b.data || []).reduce((sum, r) => sum + r.amount, 0) / 100
+    );
+    check('Stripe actually sent the money back, in full', backAtStripe === 300,
+        '£' + backAtStripe);
+    check('a refund row was written',
+        (await paymentsFor(bookings.s27b)).some((p) => p.kind === 'refund'));
+
+    // Redelivery must not refund twice.
+    const replayEvent = { ...event, id: 'evt_oversold_replay_' + Date.now() };
+    await fetch(SITE + '/api/stripe/webhook', await signedWebhook(replayEvent));
+    const refundsAgain = await stripe.request('GET', '/refunds', { payment_intent: intent.id, limit: 10 });
+    const totalAfterReplay = round2(
+        (refundsAgain.data || []).reduce((sum, r) => sum + r.amount, 0) / 100
+    );
+    check('a redelivered event does not refund twice', totalAfterReplay === 300,
+        '£' + totalAfterReplay);
+
+    // And the stay that won is untouched.
+    const winner = await booking(bookings.s27a);
+    check('the guest who got there first still has their stay',
+        winner.status === 'confirmed', winner.status);
+
+    await db.update('bookings', '?id=eq.' + bookings.s27a, { status: held.status });
+
     /* ---- 28 ---- */
 
     scenario(28, 'The webhook arrives after the guest reaches the confirmation page');

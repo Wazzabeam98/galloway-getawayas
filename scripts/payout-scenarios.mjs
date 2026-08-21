@@ -284,8 +284,10 @@ async function main() {
     const DEBT = round2(Number((await profile(users.hostIndebted)).payout_balance_owed));
     console.log('   carrying £' + DEBT + ' of debt from scenario 23');
 
+    // Its own week — scenario 23's booking already has the days either side of
+    // check-in, and two confirmed stays cannot overlap.
     await db.update('bookings', '?id=eq.' + bookings.s24, {
-        check_in: dayOffset(-2), check_out: dayOffset(-1),
+        check_in: dayOffset(-9), check_out: dayOffset(-8),
     });
 
     const b24 = await booking(bookings.s24);

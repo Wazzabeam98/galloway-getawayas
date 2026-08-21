@@ -1,3 +1,5 @@
+import { logError } from '@/lib/logError';
+import { sendEmail, emailLayout, escapeHtml, formatDate, button, SITE_URL } from '@/lib/email';
 import { createClient } from '@supabase/supabase-js';
 import { NextResponse } from 'next/server';
 import { verifyStripeSignature, stripeRequest } from '@/lib/stripe';
@@ -53,11 +55,14 @@ export async function POST(request: Request) {
 
     // Stripe retries, so the same event can arrive twice. The primary key
     // on event_id turns a repeat into a harmless conflict.
-    const { error: logError } = await admin
+    // Named for what it is. It used to be called logError, which shadowed the
+    // import of the same name from lib/logError — the collision MAINTENANCE.md
+    // warns about.
+    const { error: eventInsertError } = await admin
         .from('stripe_events')
         .insert({ event_id: event.id, event_type: event.type, payload: event });
 
-    if (logError && logError.code === '23505') {
+    if (eventInsertError && eventInsertError.code === '23505') {
         return NextResponse.json({ ok: true, duplicate: true });
     }
 
@@ -115,7 +120,7 @@ export async function POST(request: Request) {
 
                 const { data: booking } = await admin
                     .from('bookings')
-                    .select('id, status, total_price, listing_id, amount_paid')
+                    .select('id, status, total_price, listing_id, amount_paid, guest_id, check_in')
                     .eq('id', bookingId)
                     .maybeSingle();
 
@@ -147,13 +152,15 @@ export async function POST(request: Request) {
                 // Instant Book listings confirm on payment; request
                 // bookings go back to pending for the host to accept.
                 let nextStatus = 'pending';
+                let listingTitle = 'your stay';
                 if (booking) {
                     const { data: listing } = await admin
                         .from('listings')
-                        .select('instant_book')
+                        .select('instant_book, title')
                         .eq('id', booking.listing_id)
                         .maybeSingle();
                     if (listing && listing.instant_book === true) nextStatus = 'confirmed';
+                    listingTitle = (listing && listing.title) || listingTitle;
                 }
 
                 const paidPatch: Record<string, any> = {
@@ -173,10 +180,104 @@ export async function POST(request: Request) {
                     paidPatch.balance_amount = 0;
                 }
 
-                await admin
+                const { error: confirmError } = await admin
                     .from('bookings')
                     .update(paidPatch)
                     .eq('id', bookingId);
+
+                // 23P01 is the exclusion constraint: somebody else's stay was
+                // confirmed for these nights while this guest was paying. The
+                // database is the only thing that can say so for certain, and
+                // it has just said so.
+                if (confirmError) {
+                    const oversold = confirmError.code === '23P01';
+
+                    await logError(
+                        oversold
+                            ? 'stripe/webhook: the dates were taken while the guest was paying'
+                            : 'stripe/webhook: a paid booking could not be updated',
+                        confirmError,
+                        { path: 'stripe/webhook', userId: (booking && booking.guest_id) || undefined }
+                    );
+
+                    if (!oversold || !cs.payment_intent) {
+                        // Not something a refund fixes. The money is here and
+                        // the booking is not updated, which is exactly what
+                        // /admin/errors is for.
+                        return NextResponse.json({ ok: true });
+                    }
+
+                    // The guest has paid for nights they cannot have. The money
+                    // goes back first, before the booking is touched, so they
+                    // are never told the stay is off while it is still here.
+                    // Keyed on the payment intent, so a redelivered event
+                    // refunds once.
+                    await stripeRequest(
+                        'POST',
+                        '/refunds',
+                        {
+                            payment_intent: cs.payment_intent,
+                            amount: Math.round(amount * 100),
+                            metadata: {
+                                booking_id: bookingId,
+                                reason: 'dates_taken_while_paying',
+                                initiated_by: 'system',
+                            },
+                        },
+                        'oversold-' + cs.payment_intent
+                    );
+
+                    await admin.from('payments').insert({
+                        booking_id: bookingId,
+                        kind: 'refund',
+                        amount: amount,
+                        status: 'succeeded',
+                        stripe_payment_intent_id: cs.payment_intent,
+                    });
+
+                    // Only now, with the money on its way back.
+                    await admin
+                        .from('bookings')
+                        .update({
+                            status: 'cancelled',
+                            payment_status: 'refunded',
+                            // What happened is recorded truthfully: they paid,
+                            // and they were paid back.
+                            amount_paid: amount,
+                            amount_refunded: amount,
+                            balance_amount: 0,
+                            stripe_payment_intent_id: cs.payment_intent,
+                        })
+                        .eq('id', bookingId);
+
+                    const guestId = booking && booking.guest_id;
+                    const { data: guestUser } = guestId
+                        ? await admin.auth.admin.getUserById(guestId)
+                        : { data: null as any };
+                    const guestEmail = (guestUser && guestUser.user && guestUser.user.email) || '';
+
+                    if (guestEmail) {
+                        await sendEmail(
+                            guestEmail,
+                            'We\u2019re sorry \u2014 those dates went while you were paying',
+                            emailLayout(
+                                '<p style="margin:0 0 16px;font-size:16px;">We are very sorry. Somebody else\u2019s booking for <strong>'
+                                    + escapeHtml(listingTitle)
+                                    + '</strong> was confirmed for '
+                                    + formatDate(booking ? booking.check_in : '')
+                                    + ' in the moments while you were paying, so we cannot give you those nights.</p>'
+                                    + '<p style="margin:0 0 16px;font-size:16px;">You have not been charged. The full <strong>\u00A3'
+                                    + amount.toFixed(2)
+                                    + '</strong> has already been sent back to your card and usually takes five to ten days to appear.</p>'
+                                    + '<p style="margin:0 0 16px;font-size:16px;">This should not happen and it is our fault, not yours. If you would like help finding somewhere else for those dates, just reply to this email.</p>'
+                                    + button(SITE_URL, 'Find another place'),
+                                'You\u2019re receiving this because you tried to book with Galloway Getaways.'
+                            )
+                        );
+                    }
+
+                    return NextResponse.json({ ok: true, oversold: true, refunded: amount });
+                }
 
                 await admin.from('payments').insert({
                     booking_id: bookingId,

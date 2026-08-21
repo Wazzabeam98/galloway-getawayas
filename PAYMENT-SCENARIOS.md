@@ -142,6 +142,10 @@ holding and carries the rest on `payout_balance_owed`.
   gets through rather than neither. (Scenario 27.)
 - The balance job and the `payment_intent.payment_failed` webhook both recorded
   the same failed charge, in different words. (Found while doing scenario 11.)
+- Nothing made two confirmed stays on one week actually impossible — every
+  check happened before the money moved. There is now an exclusion constraint
+  on the database, and when it fires the webhook refunds the guest in full and
+  emails an apology rather than leaving them paid-up with no stay.
 
 ## Worth knowing
 
@@ -151,13 +155,10 @@ holding and carries the rest on `payout_balance_owed`.
   to it and works the figure out itself from what was paid and the
   cancellation policy. That is correct for what it does, but passing it an
   amount and expecting a partial refund will silently refund everything.
-- **A guest can still pay for dates taken while they were on the Stripe page.**
-  The 30-minute hold closes the common race, but nothing re-checks
-  availability when the webhook lands, so a guest who sits on the payment page
-  for longer can still pay for nights someone else has since taken. Fixing it
-  properly means either refunding at the webhook or a database-level exclusion
-  on overlapping dates — both are real decisions rather than tidying, so they
-  are left for a human.
+- The migration that makes overlapping confirmed stays impossible is applied to
+  the **test project only**. It has to be run against production before this
+  ships. See `MAINTENANCE.md`, and run the pre-flight query in the migration
+  first.
 - On the pay-in-full path the webhook stores `stripe_payment_method_id` even
   though the card was deliberately not saved for future use — checkout only
   sets `setup_future_usage` on the deposit path. Nothing charges it, because
