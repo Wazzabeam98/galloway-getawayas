@@ -7,6 +7,7 @@ import Link from 'next/link';
 import Logo from '@/components/base/Logo';
 import LoginModel from '@/components/auth/LoginModel';
 import { getImageUrl, capitializeFirst, formatTime } from '@/lib/utils';
+import { publicArea } from '@/lib/places';
 import { toast } from 'react-toastify';
 import { Search, Inbox, Send, Zap, Phone, ExternalLink, ChevronLeft, Info } from 'lucide-react';
 
@@ -654,7 +655,7 @@ export default function MessagesInboxPage() {
                     {thread.listing && thread.listing.title}
                 </div>
                 <div className="text-sm text-slate-500">
-                    {thread.listing && thread.listing.location}
+                    {thread.listing && publicArea(thread.listing.location)}
                 </div>
             </div>
 

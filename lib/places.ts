@@ -55,3 +55,45 @@ export function townOf(location: string | null): string {
 export function townKey(location: string | null): string {
     return townOf(location).toLowerCase().replace(/[^a-z]/g, '');
 }
+
+// Every listing on this site sits in the Dumfries & Galloway council area, and
+// the listings that already exist spell it this way. `location` has to match
+// them, so this is the default the form offers rather than the postal county
+// getAddress.io returns (which here is usually the historic county —
+// "Kirkcudbrightshire" and the like).
+export const DEFAULT_REGION = 'Dumfries and Galloway';
+
+// The one place `location` is assembled. Both the draft save and the publish
+// used to build it separately from seven fields, in slightly different ways —
+// only one of them trimmed, which is how a listing ended up stored as
+// " , Kirkcudbright , United Kingdom, DG6 4JS, United Kingdom".
+//
+// Two parts, always. The street is deliberately not in here: it lives in its
+// own column, so it cannot reach a screen that prints `location` raw.
+export function buildLocation(town: string | null, region: string | null): string {
+    return [town, region]
+        .map((part) => (part || '').trim())
+        .filter(Boolean)
+        .join(', ');
+}
+
+// Reading a stored `location` back into the town and region boxes. Runs through
+// publicArea first so an older row that still has its street on the front does
+// not put the street into the town box.
+export function splitLocation(location: string | null): { town: string; region: string } {
+    if (!location) return { town: '', region: '' };
+
+    const parts = publicArea(location)
+        .split(',')
+        .map((p) => p.trim())
+        .filter(Boolean);
+
+    if (!parts.length) return { town: '', region: '' };
+
+    return {
+        town: parts[0],
+        // Anything after the town is the region. Joined rather than taking
+        // parts[1] so "Town, Dumfries and Galloway, Scotland" keeps both.
+        region: parts.slice(1).join(', '),
+    };
+}

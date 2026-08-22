@@ -4,6 +4,7 @@ import Toast from "@/components/base/Toast";
 import { createServerComponentClient } from "@supabase/auth-helpers-nextjs";
 import { cookies } from "next/headers";
 import { getImageUrl } from "@/lib/utils";
+import { publicArea } from "@/lib/places";
 import DeleteHomebtn from "@/components/DeleteHomebtn";
 import { createClient } from "@supabase/supabase-js";
 import { accessibleListings } from "@/lib/access";
@@ -37,7 +38,7 @@ function ListingCard({ item, isDraft }: { item: any; isDraft: boolean }) {
                     </span>
                 </div>
                 <h3 className="font-semibold text-slate-900 mt-3 truncate">{item.title || 'Untitled listing'}</h3>
-                <p className="text-sm text-slate-500 truncate">{item.location || 'No location yet'}</p>
+                <p className="text-sm text-slate-500 truncate">{item.location ? publicArea(item.location) : 'No location yet'}</p>
                 {!isDraft && (
                     <p className="text-sm font-medium text-slate-700 mt-0.5">£{item.price_per_night} / night</p>
                 )}
@@ -149,7 +150,7 @@ export default async function Dashboard() {
                                                 {item.title}
                                             </h3>
                                             <p className="text-slate-500 text-sm truncate">
-                                                {item.location}
+                                                {publicArea(item.location)}
                                             </p>
                                         </div>
                                     </Link>

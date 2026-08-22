@@ -10,6 +10,8 @@ import Env from '@/config/Env';
 import { generateRandomNumber, getImageUrl, timeInputValue } from '@/lib/utils';
 import { toast } from 'react-toastify';
 import { rateFor } from '@/lib/fees';
+import { buildLocation, splitLocation, DEFAULT_REGION } from '@/lib/places';
+import { buildStreetAddress, tidyPostcode } from '@/lib/address';
 import IcalFeeds from '@/components/IcalFeeds';
 import {
     HomeIcon, Trees, Waves, Compass, Building2, Sparkles, Minus, Plus, Check,
@@ -121,7 +123,14 @@ export default function EditListing() {
 
     const [title, setTitle] = useState('');
     const [description, setDescription] = useState('');
-    const [location, setLocation] = useState('');
+    // Was a single free-text box holding the whole address. A street typed in
+    // there went straight into `location`, which is the public field — the same
+    // way the malformed one got there in the first place. Four boxes now, and
+    // `location` is assembled from two of them.
+    const [locTown, setLocTown] = useState('');
+    const [locRegion, setLocRegion] = useState(DEFAULT_REGION);
+    const [streetAddress, setStreetAddress] = useState('');
+    const [locPostcode, setLocPostcode] = useState('');
     const [price, setPrice] = useState('');
     const [propertyType, setPropertyType] = useState('');
     const [privacyType, setPrivacyType] = useState('Entire place');
@@ -225,7 +234,11 @@ export default function EditListing() {
 
             setTitle(listing.title || '');
             setDescription(listing.description || '');
-            setLocation(listing.location || '');
+            const place = splitLocation(listing.location);
+            setLocTown(place.town);
+            setLocRegion(place.region || DEFAULT_REGION);
+            setStreetAddress(listing.street_address || '');
+            setLocPostcode(listing.postcode || '');
             setPrice(String(listing.price_per_night ?? ''));
             setCommissionRate(listing.commission_rate ?? null);
             setPropertyType(listing.property_type || '');
@@ -355,7 +368,9 @@ export default function EditListing() {
             const patch = {
                     title: title.trim(),
                     description,
-                    location,
+                    location: buildLocation(locTown, locRegion),
+                    street_address: buildStreetAddress(null, null, streetAddress) || null,
+                    postcode: locPostcode.trim() ? tidyPostcode(locPostcode) : null,
                     price_per_night: Number(price),
                     max_guests: guests,
                     images: finalPaths,
@@ -589,9 +604,40 @@ export default function EditListing() {
                         {activeSection === 'location' && (
                             <div className="space-y-10">
                                 <section>
-                                    <h2 className="text-xl font-bold text-slate-900 mb-4">Location</h2>
-                                    <textarea value={location} onChange={(e) => setLocation(e.target.value)} rows={3}
-                                        className="w-full p-3 border rounded-xl text-sm" />
+                                    <h2 className="text-xl font-bold text-slate-900 mb-1">Location</h2>
+                                    <p className="text-sm text-slate-500 mb-4">
+                                        Guests only ever see the town and region. The street address and
+                                        postcode are kept private.
+                                    </p>
+                                    <div className="space-y-4">
+                                        <div>
+                                            <label htmlFor="edit-town" className="text-xs text-slate-500 font-semibold uppercase">Town / city</label>
+                                            <input id="edit-town" type="text" value={locTown} onChange={(e) => setLocTown(e.target.value)}
+                                                placeholder="e.g. Kirkcudbright"
+                                                className="w-full p-3 border rounded-xl text-sm mt-1" />
+                                        </div>
+                                        <div>
+                                            <label htmlFor="edit-region" className="text-xs text-slate-500 font-semibold uppercase">Region</label>
+                                            <input id="edit-region" type="text" value={locRegion} onChange={(e) => setLocRegion(e.target.value)}
+                                                placeholder="e.g. Dumfries and Galloway"
+                                                className="w-full p-3 border rounded-xl text-sm mt-1" />
+                                        </div>
+                                        <div>
+                                            <label htmlFor="edit-street" className="text-xs text-slate-500 font-semibold uppercase">Street address (private)</label>
+                                            <input id="edit-street" type="text" value={streetAddress} onChange={(e) => setStreetAddress(e.target.value)}
+                                                placeholder="e.g. 18 Dovecroft"
+                                                className="w-full p-3 border rounded-xl text-sm mt-1" />
+                                        </div>
+                                        <div>
+                                            <label htmlFor="edit-postcode" className="text-xs text-slate-500 font-semibold uppercase">Postcode (private)</label>
+                                            <input id="edit-postcode" type="text" value={locPostcode} onChange={(e) => setLocPostcode(e.target.value)}
+                                                placeholder="e.g. DG6 4JS"
+                                                className="w-full p-3 border rounded-xl text-sm mt-1" />
+                                        </div>
+                                        <p className="text-xs text-slate-500">
+                                            Guests will see <span className="font-medium text-slate-700">{buildLocation(locTown, locRegion) || 'your town and region'}</span>.
+                                        </p>
+                                    </div>
                                 </section>
 
                                 <section>

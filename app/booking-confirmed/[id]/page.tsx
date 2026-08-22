@@ -3,6 +3,7 @@ import { createClient } from '@supabase/supabase-js';
 import Link from 'next/link';
 import { notFound } from 'next/navigation';
 import { formatUk } from '@/lib/cancellation';
+import { publicArea } from '@/lib/places';
 
 export const dynamic = 'force-dynamic';
 
@@ -88,7 +89,7 @@ export default async function BookingConfirmed({ params }: { params: { id: strin
                         {(listing && listing.title) || 'Your stay'}
                     </div>
                     {listing && listing.location && (
-                        <div className="text-sm text-slate-500">{listing.location}</div>
+                        <div className="text-sm text-slate-500">{publicArea(listing.location)}</div>
                     )}
                 </div>
 

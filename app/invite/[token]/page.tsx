@@ -4,6 +4,7 @@ import { cookies } from 'next/headers';
 import Link from 'next/link';
 import { notFound } from 'next/navigation';
 import AcceptInvite from '@/components/AcceptInvite';
+import { publicArea } from '@/lib/places';
 
 export const dynamic = 'force-dynamic';
 
@@ -71,7 +72,7 @@ export default async function InvitePage({ params }: { params: { token: string }
             </h1>
             <p className="text-lg text-slate-700 mb-1">{listing?.title || 'A property'}</p>
             {listing?.location && (
-                <p className="text-sm text-slate-500 mb-8">{listing.location}</p>
+                <p className="text-sm text-slate-500 mb-8">{publicArea(listing.location)}</p>
             )}
 
             <div className="border rounded-2xl p-6 mb-6">

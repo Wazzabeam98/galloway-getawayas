@@ -14,14 +14,15 @@ import { compressImage } from '@/lib/compressImage';
 import { generateRandomNumber, timeInputValue } from '@/lib/utils';
 import { toast } from 'react-toastify';
 import { DEFAULT_COMMISSION_PERCENT } from '@/lib/fees';
+import { buildLocation, splitLocation, DEFAULT_REGION } from '@/lib/places';
+import { buildStreetAddress, tidyPostcode } from '@/lib/address';
 
-interface PlaceResult {
-    display_name: string;
-    street?: string;
-    town?: string;
-    postcode?: string;
-    lat?: string;
-    lon?: string;
+// What the autocomplete route hands back. Deliberately just these two — the
+// full address is only fetched once the host has actually picked a suggestion,
+// so a search costs one lookup, not one per result.
+interface AddressSuggestion {
+    id: string;
+    address: string;
 }
 
 // Every real UK format, from "M1 1AA" to "EC1A 1BB". Used to catch a town name
@@ -31,13 +32,6 @@ const UK_POSTCODE = /^[A-Z]{1,2}[0-9][A-Z0-9]?\s*[0-9][A-Z]{2}$/i;
 // Not a business rule — a typo catcher, for the extra zero on £500. Raise it if
 // a big group property ever needs more.
 const MAX_PRICE_PER_NIGHT = 5000;
-
-// "dg71ab" -> "DG7 1AB", so the address reads the same on every listing.
-function tidyPostcode(raw: string): string {
-    const clean = raw.replace(/\s+/g, '').toUpperCase();
-    if (clean.length < 5) return raw.trim().toUpperCase();
-    return clean.slice(0, clean.length - 3) + ' ' + clean.slice(clean.length - 3);
-}
 
 export default function AddHome() {
     const [loading, setLoading] = useState(true);
@@ -50,7 +44,7 @@ export default function AddHome() {
     const [price, setPrice] = useState('');
     const [country, setCountry] = useState('United Kingdom');
     const [city, setCity] = useState('');
-    const [state, setState] = useState('');
+    const [state, setState] = useState(DEFAULT_REGION);
     const [description, setDescription] = useState('');
     const [homeCategories, setHomeCategories] = useState<string[]>([]);
     const [photos, setPhotos] = useState<File[]>([]);
@@ -168,14 +162,18 @@ export default function AddHome() {
 
     // Address search & modal state
     const [addressQuery, setAddressQuery] = useState('');
-    const [suggestions, setSuggestions] = useState<PlaceResult[]>([]);
+    const [suggestions, setSuggestions] = useState<AddressSuggestion[]>([]);
     const [isModalOpen, setIsModalOpen] = useState(false);
     const [flat, setFlat] = useState('');
     const [propertyName, setPropertyName] = useState('');
     const [street, setStreet] = useState('');
-    const [locality, setLocality] = useState('Dumfries and Galloway');
     const [postcode, setPostcode] = useState('');
     const [addressLoading, setAddressLoading] = useState(false);
+    const [addressError, setAddressError] = useState('');
+
+    // There used to be a `locality` box as well as the Region box on step 3,
+    // both holding the county. Picking a search result filled both, so the
+    // county appeared twice. One field now — `state` — shown on both screens.
 
     // Import-from-listing-link state
     const [importUrl, setImportUrl] = useState('');
@@ -187,6 +185,10 @@ export default function AddHome() {
     const searchParams = useSearchParams();
     const supabase = createClientComponentClient();
     const debounceRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+    // Bumped on every search. A response whose number is no longer the current
+    // one is a slow earlier request arriving late, and is dropped — otherwise
+    // it overwrites the results for what the host has since typed.
+    const searchSeq = useRef(0);
     const [draftId, setDraftId] = useState<string | null>(null);
     const [savingDraft, setSavingDraft] = useState(false);
 
@@ -225,8 +227,15 @@ export default function AddHome() {
                     setBeds(draft.beds ?? 1);
                     setBathrooms(draft.bathrooms ?? 1);
                     setAmenities(draft.amenities || []);
-                    setCity(draft.location?.split(',')[0]?.trim() || '');
-                    setState(draft.location || '');
+                    // This used to be setCity(location.split(',')[0]) and
+                    // setState(location) — the whole string into the region
+                    // box. Saving the draft again then folded the entire
+                    // address back into itself, one comma at a time.
+                    const place = splitLocation(draft.location);
+                    setCity(place.town);
+                    setState(place.region || DEFAULT_REGION);
+                    setStreet(draft.street_address || '');
+                    setPostcode(draft.postcode || '');
                     setNewListingPromo(draft.new_listing_promo ?? true);
                     setLastMinuteDiscount(draft.last_minute_discount ?? false);
                     setWeeklyDiscount(draft.weekly_discount ?? false);
@@ -247,12 +256,14 @@ export default function AddHome() {
 
         setSavingDraft(true);
         try {
-            const location = [flat, propertyName, street, city, state, postcode, country].filter(Boolean).join(', ');
+            const location = buildLocation(city, state);
             const payload = {
                 host_id: user.data.user.id,
                 title: title.trim(),
                 description,
                 location,
+                street_address: buildStreetAddress(flat, propertyName, street) || null,
+                postcode: postcode.trim() ? tidyPostcode(postcode) : null,
                 price_per_night: price ? Number(price) : 0,
                 max_guests: guests,
                 property_type: propertyType,
@@ -290,62 +301,57 @@ export default function AddHome() {
         }
     };
 
+    // getAddress.io charges per lookup, so this waits until the host has
+    // stopped typing rather than firing on every keystroke. Both calls go
+    // through our own routes — the API key travels in the query string, so a
+    // direct call from here would put it in the network tab.
     const handleAddressChange = (e: React.ChangeEvent<HTMLInputElement>) => {
         const value = e.target.value;
         setAddressQuery(value);
+        setAddressError('');
 
         if (debounceRef.current) clearTimeout(debounceRef.current);
 
-        if (value.trim().length <= 1) {
+        // Two characters match most of the country and cost a lookup to find
+        // that out.
+        if (value.trim().length < 3) {
             setSuggestions([]);
             setAddressLoading(false);
             return;
         }
 
         setAddressLoading(true);
+        const seq = searchSeq.current + 1;
+        searchSeq.current = seq;
+
         debounceRef.current = setTimeout(async () => {
             try {
                 const response = await fetch(
-                    `https://nominatim.openstreetmap.org/search?format=json&addressdetails=1&q=${encodeURIComponent(value)}&countrycodes=gb&limit=10`,
-                    { headers: { 'User-Agent': 'GallowayGetawaysApp/1.0' } }
+                    `/api/address/autocomplete?q=${encodeURIComponent(value.trim())}`
                 );
                 const data = await response.json();
 
-                const liveResults = data
-                    .filter((item: any) => {
-                        const name = item.display_name.toLowerCase();
-                        const pc = item.address?.postcode?.toUpperCase() || '';
-                        return pc.startsWith('DG') || 
-                               name.includes('dumfries') || 
-                               name.includes('galloway') || 
-                               name.includes('kirkcudbright') || 
-                               name.includes('stranraer') || 
-                               name.includes('annan') || 
-                               name.includes('lockerbie') || 
-                               name.includes('moffat') ||
-                               name.includes('castle douglas') ||
-                               name.includes('dalbeattie') ||
-                               name.includes('newton stewart');
-                    })
-                    .map((item: any) => ({
-                        display_name: item.display_name,
-                        street: [item.address?.house_number, item.address?.road].filter(Boolean).join(' ') || item.display_name.split(',')[0],
-                        town: item.address?.city || item.address?.town || item.address?.village || 'Dumfries and Galloway',
-                        postcode: item.address?.postcode || '',
-                        // Nominatim returns these with every result — worth keeping
-                        // so the listing can show an approximate-location map.
-                        lat: item.lat,
-                        lon: item.lon
-                    }));
+                // A later search has already been sent — this reply is stale.
+                if (searchSeq.current !== seq) return;
 
-                setSuggestions(liveResults);
-            } catch (err) {
-                console.error("Live fetch error:", err);
+                if (!response.ok || !data.ok) {
+                    setSuggestions([]);
+                    setAddressError(data.error || 'Address search is unavailable just now.');
+                    return;
+                }
+
+                // No whitelist of town names here. The old version asked for ten
+                // results and then threw away anything not naming one of ten
+                // towns, which is why the list came back nearly empty.
+                setSuggestions(data.suggestions || []);
+            } catch {
+                if (searchSeq.current !== seq) return;
                 setSuggestions([]);
+                setAddressError('Address search is unavailable just now.');
             } finally {
-                setAddressLoading(false);
+                if (searchSeq.current === seq) setAddressLoading(false);
             }
-        }, 400);
+        }, 300);
     };
 
     const [processingPhotos, setProcessingPhotos] = useState(false);
@@ -503,18 +509,20 @@ export default function AddHome() {
                 if (imgData?.path) uploadedPaths.push(imgData.path);
             }
 
-            // Your listings table stores the address as one combined text field,
-            // not separate country/state/city columns — build that here.
-            const location = [flat, propertyName, street, city, state, tidyPostcode(postcode), country]
-                .map(function (part) { return part.trim(); })
-                .filter(Boolean)
-                .join(', ');
+            // `location` is the public one — town and region only. The street
+            // goes to its own column below, and the postcode, country, flat and
+            // property name are not part of it at all. Built by the same helper
+            // the draft save uses, so a draft and a published listing cannot
+            // disagree about what this listing's location is.
+            const location = buildLocation(city, state);
 
             const { error: listingErr } = draftId
                 ? await supabase.from('listings').update({
                     title: title.trim(),
                     description,
                     location,
+                    street_address: buildStreetAddress(flat, propertyName, street) || null,
+                    postcode: postcode.trim() ? tidyPostcode(postcode) : null,
                     price_per_night: Number(price),
                     max_guests: guests,
                     images: uploadedPaths,
@@ -541,6 +549,8 @@ export default function AddHome() {
                     title: title.trim(),
                     description,
                     location,
+                    street_address: buildStreetAddress(flat, propertyName, street) || null,
+                    postcode: postcode.trim() ? tidyPostcode(postcode) : null,
                     price_per_night: Number(price),
                     max_guests: guests,
                     images: uploadedPaths,
@@ -653,18 +663,51 @@ export default function AddHome() {
         }
     };
 
-    const handleSelectSuggestion = (place: PlaceResult) => {
-        setAddressQuery(place.display_name);
+    // The second lookup, once the host has actually chosen an address. Each
+    // getAddress field goes to exactly one box — the old version had two
+    // fallbacks that fired on nearly every postcode search, dropping the
+    // postcode into the street box and the county into the town box, and then
+    // wrote the county into a second box on top of that.
+    const handleSelectSuggestion = async (place: AddressSuggestion) => {
+        setAddressQuery(place.address);
         setSuggestions([]);
-        
-        setStreet(place.street || place.display_name.split(',')[0]);
-        setCity(place.town || 'Dumfries and Galloway');
-        setPostcode(place.postcode || '');
-        setLocality('Dumfries and Galloway');
-        setLatitude(place.lat ? parseFloat(place.lat) : null);
-        setLongitude(place.lon ? parseFloat(place.lon) : null);
+        setAddressError('');
+        setAddressLoading(true);
 
-        setIsModalOpen(true);
+        // Nothing types after a pick, so cancel any search still pending and
+        // retire its sequence number.
+        if (debounceRef.current) clearTimeout(debounceRef.current);
+        searchSeq.current = searchSeq.current + 1;
+
+        try {
+            const response = await fetch(`/api/address/get?id=${encodeURIComponent(place.id)}`);
+            const data = await response.json();
+
+            if (!response.ok || !data.ok) {
+                setAddressError(data.error || 'Could not load that address.');
+                return;
+            }
+
+            const a = data.address;
+
+            setFlat(a.flat || '');
+            setStreet(a.street || '');
+            setCity(a.town || '');
+            // Not a.county — getAddress returns the historic postal county here
+            // ("Kirkcudbrightshire"), and `location` has to read the same way as
+            // the listings that already exist. Editable in the box either way.
+            setState(DEFAULT_REGION);
+            setPostcode(a.postcode || '');
+            setCountry('United Kingdom');
+            setLatitude(typeof a.latitude === 'number' ? a.latitude : null);
+            setLongitude(typeof a.longitude === 'number' ? a.longitude : null);
+
+            setIsModalOpen(true);
+        } catch {
+            setAddressError('Could not load that address.');
+        } finally {
+            setAddressLoading(false);
+        }
     };
 
     if (loading) {
@@ -1187,7 +1230,7 @@ export default function AddHome() {
                             <h3 className="font-bold text-slate-900 mb-3">Review your listing</h3>
                             <ul className="text-sm text-slate-600 space-y-1">
                                 <li><span className="font-medium text-slate-800">Type:</span> {propertyType || '—'} · {privacyType}</li>
-                                <li><span className="font-medium text-slate-800">Location:</span> {[street, city, state, postcode].filter(Boolean).join(', ') || '—'}</li>
+                                <li><span className="font-medium text-slate-800">Location:</span> {[city, state].filter(Boolean).join(', ') || '—'}</li>
                                 <li><span className="font-medium text-slate-800">Guests:</span> {guests} · {bedrooms} bedrooms · {beds} beds · {bathrooms} bathrooms</li>
                                 <li><span className="font-medium text-slate-800">Amenities:</span> {amenities.length ? amenities.join(', ') : 'None selected'}</li>
                                 <li><span className="font-medium text-slate-800">Title:</span> {title || '—'}</li>
@@ -1291,7 +1334,7 @@ export default function AddHome() {
                         </svg>
                         <input
                             type="text"
-                            placeholder="Enter DG postcode or street (e.g. DG1, Millburn Street)"
+                            placeholder="Start typing a postcode or street (e.g. DG6 4JS, Millburn Street)"
                             value={addressQuery}
                             onChange={handleAddressChange}
                             className="w-full outline-none text-slate-800 placeholder-slate-400 text-base bg-transparent"
@@ -1299,11 +1342,13 @@ export default function AddHome() {
                         {addressLoading && <div className="text-xs text-slate-400 animate-pulse ml-2">Searching...</div>}
                     </div>
 
+                    {addressError && <p className="text-red-600 text-xs mt-2 ml-2">{addressError}</p>}
+
                     {suggestions.length > 0 && (
                         <ul className="absolute left-0 right-0 mt-2 bg-white border border-slate-200 rounded-2xl shadow-xl overflow-hidden z-30 max-h-60 overflow-y-auto">
-                            {suggestions.map((item, index) => (
+                            {suggestions.map((item) => (
                                 <li
-                                    key={index}
+                                    key={item.id}
                                     onClick={() => handleSelectSuggestion(item)}
                                     className="px-5 py-3 hover:bg-slate-100 cursor-pointer text-slate-700 text-sm flex items-center space-x-3 border-b last:border-none"
                                 >
@@ -1311,7 +1356,7 @@ export default function AddHome() {
                                         <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M17.657 16.657L13.414 20.9a1.998 1.998 0 01-2.827 0l-4.244-4.243a8 8 0 1111.314 0z" />
                                         <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M15 11a3 3 0 11-6 0 3 3 0 016 0z" />
                                     </svg>
-                                    <span className="truncate">{item.display_name}</span>
+                                    <span className="truncate">{item.address}</span>
                                 </li>
                             ))}
                         </ul>
@@ -1359,76 +1404,98 @@ export default function AddHome() {
                             </button>
                         </div>
 
+                        {/* Every box is labelled. They used to be identified by
+                            placeholder alone, which vanishes the moment a box has
+                            anything in it — so a wrongly-filled box could only be
+                            identified by emptying it. */}
                         <div className="space-y-4">
                             <div>
-                                <label className="text-xs text-slate-500 font-semibold uppercase">Country/region</label>
-                                <input 
+                                <label htmlFor="addr-country" className="text-xs text-slate-500 font-semibold uppercase">Country / region</label>
+                                <input
+                                    id="addr-country"
                                     type="text"
-                                    value={country} 
+                                    placeholder="United Kingdom"
+                                    value={country}
                                     onChange={(e) => setCountry(e.target.value)}
-                                    className="w-full p-3 border rounded-xl text-sm bg-white font-medium text-slate-800 mt-1"
+                                    className="w-full p-3 border rounded-xl text-sm text-slate-800 placeholder-slate-400 mt-1 bg-white font-medium"
                                 />
                             </div>
                             <div>
+                                <label htmlFor="addr-flat" className="text-xs text-slate-500 font-semibold uppercase">Flat, floor or building</label>
                                 <input
+                                    id="addr-flat"
                                     type="text"
-                                    placeholder="Flat, floor, bldg (if applicable)"
+                                    placeholder="If applicable"
                                     value={flat}
                                     onChange={(e) => setFlat(e.target.value)}
-                                    className="w-full p-3 border rounded-xl text-sm text-slate-800 placeholder-slate-400"
+                                    className="w-full p-3 border rounded-xl text-sm text-slate-800 placeholder-slate-400 mt-1"
                                 />
                             </div>
                             <div>
+                                <label htmlFor="addr-property-name" className="text-xs text-slate-500 font-semibold uppercase">Property name</label>
                                 <input
+                                    id="addr-property-name"
                                     type="text"
-                                    placeholder="Property name (if applicable)"
+                                    placeholder="If applicable"
                                     value={propertyName}
                                     onChange={(e) => setPropertyName(e.target.value)}
-                                    className="w-full p-3 border rounded-xl text-sm text-slate-800 placeholder-slate-400"
+                                    className="w-full p-3 border rounded-xl text-sm text-slate-800 placeholder-slate-400 mt-1"
                                 />
                             </div>
                             <div>
+                                <label htmlFor="addr-street" className="text-xs text-slate-500 font-semibold uppercase">Street address</label>
                                 <input
+                                    id="addr-street"
                                     type="text"
-                                    placeholder="Street address"
+                                    placeholder="e.g. 18 Dovecroft"
                                     value={street}
                                     onChange={(e) => setStreet(e.target.value)}
-                                    className="w-full p-3 border rounded-xl text-sm text-slate-800 placeholder-slate-400 font-medium"
+                                    className="w-full p-3 border rounded-xl text-sm text-slate-800 placeholder-slate-400 mt-1 font-medium"
                                 />
                             </div>
                             <div>
+                                <label htmlFor="addr-city" className="text-xs text-slate-500 font-semibold uppercase">Town / city</label>
                                 <input
+                                    id="addr-city"
                                     type="text"
-                                    placeholder="Locality / Region"
-                                    value={locality}
-                                    onChange={(e) => setLocality(e.target.value)}
-                                    className="w-full p-3 border rounded-xl text-sm text-slate-800 placeholder-slate-400"
-                                />
-                            </div>
-                            <div>
-                                <input
-                                    type="text"
-                                    placeholder="Town / city"
+                                    placeholder="e.g. Kirkcudbright"
                                     value={city}
                                     onChange={(e) => setCity(e.target.value)}
-                                    className="w-full p-3 border rounded-xl text-sm text-slate-800 placeholder-slate-400 font-medium"
+                                    className="w-full p-3 border rounded-xl text-sm text-slate-800 placeholder-slate-400 mt-1 font-medium"
                                 />
                             </div>
                             <div>
+                                <label htmlFor="addr-region" className="text-xs text-slate-500 font-semibold uppercase">Region</label>
                                 <input
+                                    id="addr-region"
                                     type="text"
-                                    placeholder="Postcode"
+                                    placeholder="e.g. Dumfries and Galloway"
+                                    value={state}
+                                    onChange={(e) => setState(e.target.value)}
+                                    className="w-full p-3 border rounded-xl text-sm text-slate-800 placeholder-slate-400 mt-1"
+                                />
+                            </div>
+                            <div>
+                                <label htmlFor="addr-postcode" className="text-xs text-slate-500 font-semibold uppercase">Postcode</label>
+                                <input
+                                    id="addr-postcode"
+                                    type="text"
+                                    placeholder="e.g. DG6 4JS"
                                     value={postcode}
                                     onChange={(e) => setPostcode(e.target.value)}
-                                    className="w-full p-3 border rounded-xl text-sm text-slate-800 placeholder-slate-400 font-medium"
+                                    className="w-full p-3 border rounded-xl text-sm text-slate-800 placeholder-slate-400 mt-1 font-medium"
                                 />
                             </div>
                         </div>
 
+                        <p className="text-xs text-slate-500 mt-4">
+                            Guests only ever see <span className="font-medium text-slate-700">{buildLocation(city, state) || 'your town and region'}</span>.
+                            The street address is never shown publicly.
+                        </p>
+
                         <div className="mt-8 pt-4 border-t flex justify-end">
                             <button
                                 onClick={() => {
-                                    setState(locality);
                                     setIsModalOpen(false);
                                     setShowListingForm(true);
                                 }}

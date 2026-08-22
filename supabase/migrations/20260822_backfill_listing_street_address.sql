@@ -1,0 +1,66 @@
+-- Moving the street out of `location` on the listings that already exist.
+--
+-- NOT SAFE TO RUN AS-IS. This file is a preview query plus a place to write the
+-- four UPDATEs by hand. Read the whole thing before running any of it.
+--
+-- Why it is not automatic: the obvious approach is to reuse publicArea() from
+-- lib/places.ts, which decides a leading segment is a street if it starts with a
+-- house number or ends in a street word. Run against the shapes we have, it gets
+-- two of four right:
+--
+--   "18 Dovecroft, Kirkcudbright, Dumfries and Galloway"
+--       -> street "18 Dovecroft", location "Kirkcudbright, Dumfries and Galloway"   CORRECT
+--
+--   "57 St Cuthbert Street, Kirkcudbright, Dumfries and Galloway"
+--       -> street "57 St Cuthbert Street", location "Kirkcudbright, ..."            CORRECT
+--
+--   "Rose Cottage, Castle Douglas, Dumfries and Galloway"
+--       -> street "", location "Rose Cottage, Castle Douglas, Dumfries and Galloway"
+--       WRONG. A named property with no house number and no street word is not
+--       recognised, so the property name is kept as the town.
+--
+--   " , Kirkcudbright , United Kingdom, DG6 4JS, United Kingdom"
+--       -> town "Kirkcudbright", region "United Kingdom, DG6 4JS, United Kingdom"
+--       WRONG, and there is no street to recover: the street segment in that row
+--       is a single space. It was never stored. That address has to be retyped.
+--
+-- Four rows is few enough that guessing is not worth it. Run the preview, look
+-- at what is actually there, then write four explicit UPDATEs.
+
+-- STEP 1 -- run this and read the output. Nothing is changed.
+--
+--   select
+--       id,
+--       title,
+--       status,
+--       location                                   as current_location,
+--       string_to_array(location, ',')             as segments,
+--       street_address                             as street_now,
+--       postcode                                   as postcode_now
+--   from public.listings
+--   order by created_at;
+
+-- STEP 2 -- one UPDATE per row, written out in full from what STEP 1 showed.
+-- Explicit ids and explicit values, so each one can be checked by eye before it
+-- runs. Nothing clever, nothing that pattern-matches.
+--
+--   update public.listings set
+--       street_address = '18 Dovecroft',
+--       postcode       = 'DG6 4JS',
+--       location       = 'Kirkcudbright, Dumfries and Galloway'
+--   where id = '<<paste the id from step 1>>';
+--
+-- Repeat for each. For the malformed row, street_address has to be typed from
+-- what the property actually is -- it is not in the database to be recovered.
+
+-- STEP 3 -- confirm nothing still carries a street in the public field.
+--
+--   select id, title, location
+--   from public.listings
+--   where location !~ '^[^,]+, [^,]+$';
+--
+-- Every row should come back as "Town, Region" and this should return nothing.
+
+-- Deliberately left with no runnable statements. Fill in STEP 2 and run it in
+-- the Supabase SQL editor -- there is no production database password on the
+-- MacBook, same as the last migration.

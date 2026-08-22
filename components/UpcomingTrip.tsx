@@ -3,6 +3,7 @@ import { cookies } from 'next/headers';
 import Link from 'next/link';
 import { getImageUrl, formatTime } from '@/lib/utils';
 import { formatUk } from '@/lib/cancellation';
+import { publicArea } from '@/lib/places';
 import { MessageSquare, CalendarDays } from 'lucide-react';
 
 // Shown at the top of the home page to someone with a stay coming up. The
@@ -102,7 +103,7 @@ export default async function UpcomingTrip() {
                     <div className="mt-6 space-y-1">
                         <div className="text-lg font-semibold text-stone-900">{listing.title}</div>
                         {listing.location && (
-                            <div className="text-stone-500">{listing.location}</div>
+                            <div className="text-stone-500">{publicArea(listing.location)}</div>
                         )}
                     </div>
 

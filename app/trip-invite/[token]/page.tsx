@@ -5,6 +5,7 @@ import Link from 'next/link';
 import { notFound } from 'next/navigation';
 import { getImageUrl } from '@/lib/utils';
 import { formatUk } from '@/lib/cancellation';
+import { publicArea } from '@/lib/places';
 import AcceptTripInvite from '@/components/AcceptTripInvite';
 
 export const dynamic = 'force-dynamic';
@@ -85,7 +86,7 @@ export default async function TripInvitePage({ params }: { params: { token: stri
                         {listing?.title || 'A property'}
                     </h1>
                     {listing?.location && (
-                        <p className="text-sm text-slate-500">{listing.location}</p>
+                        <p className="text-sm text-slate-500">{publicArea(listing.location)}</p>
                     )}
                     <p className="text-slate-800 mt-3">
                         {formatUk(new Date(booking.check_in))} &rarr;{' '}
