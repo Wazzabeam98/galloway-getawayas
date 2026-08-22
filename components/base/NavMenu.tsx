@@ -13,6 +13,7 @@ import Link from 'next/link'
 import { getImageUrl } from '@/lib/utils'
 import MessagesLink from './MessagesLink'
 import MenuUnreadDot from './MenuUnreadDot'
+import BookingsLink from './BookingsLink'
 
 const itemClass = 'hover:bg-slate-200 rounded-md p-2 cursor-pointer';
 
@@ -39,7 +40,7 @@ const NavMenu = ({
         <Popover>
             <PopoverTrigger asChild>
                 <div className='flex items-center gap-2 border p-1.5 pl-3 rounded-full cursor-pointer hover:shadow-md transition'>
-                    <MenuUnreadDot enabled={session != null} />
+                    <MenuUnreadDot enabled={session != null} host={isHost} />
                     {session != null ? (
                         <div className='w-8 h-8 rounded-full overflow-hidden bg-slate-900 text-white flex items-center justify-center text-sm font-semibold flex-shrink-0'>
                             {avatarUrl ? (
@@ -69,7 +70,7 @@ const NavMenu = ({
                                         <Link href='/dashboard'>Listings</Link>
                                     </li>
                                     <li className={itemClass}>
-                                        <Link href='/dashboard/bookings'>Bookings</Link>
+                                        <BookingsLink />
                                     </li>
                                     <li className={itemClass}>
                                         <Link href='/dashboard/calendar'>Calendar</Link>
@@ -104,6 +105,11 @@ const NavMenu = ({
                                     <li className={itemClass}>
                                         <MessagesLink />
                                     </li>
+                                    {isHost && (
+                                        <li className={itemClass}>
+                                            <BookingsLink onlyWhenWaiting />
+                                        </li>
+                                    )}
                                 </>
                             )}
 
