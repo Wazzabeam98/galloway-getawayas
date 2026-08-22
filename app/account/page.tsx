@@ -106,6 +106,12 @@ const PLACEHOLDERS = [
     { token: '{listing}',    label: 'Listing name' },
     { token: '{check_in}',   label: 'Check-in date' },
     { token: '{check_out}',  label: 'Check-out date' },
+    // The one that resolves per property rather than per booking. Set the
+    // code on each listing and one message covers them all with the right
+    // code each time — which is the point, since a template cannot be written
+    // per property. A listing with no code set holds the message back rather
+    // than sending it with a gap in it.
+    { token: '{lockbox_code}', label: 'Door code for that property' },
 ];
 
 // True only if the host has written something beyond the stock greeting.

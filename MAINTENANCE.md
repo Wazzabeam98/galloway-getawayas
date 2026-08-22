@@ -337,6 +337,36 @@ Please:
 - **Refund or transfer money before changing a booking's status**, and don't
   notify anyone until it has succeeded. Doing it the other way round is how a
   guest gets told their booking is cancelled while their money is still here.
+- **A door code is never a column on `listings`.** Five places read that table
+  with `select('*')` — the public listing page among them — so a column there
+  ends up in the page source. Revoking it does not help either: Postgres
+  refuses `select *` outright when a column has been revoked, which breaks the
+  public page, the wizard, the edit screen, the save route and account settings
+  at once. Codes live in `listing_access_codes`, RLS on, **no grants for `anon`
+  or `authenticated`**, reachable only through the service role and
+  `/api/listings/access-code`, which checks `can_listing`.
+
+  `20260823_listing_access_codes.sql` — **live on both projects as of 23 August
+  2026, nothing needs running.** Anonymous read and write are refused with
+  `42501` on both.
+
+  The `{lockbox_code}` placeholder resolves from **the booking's own listing**,
+  never from the template. That matters because `message_templates` is unique
+  on `(user_id, template_type)` — one template per type per host, so a host
+  with three properties *cannot* write one per property. The placeholder is the
+  only way one message can carry the right code to each. `listing_ids` narrows
+  which listings a template applies to and does not interact with the code
+  lookup.
+
+  A message asking for a code the listing has not got is **held back and
+  logged, never sent with a gap** — and held back *before* the send is claimed,
+  so it goes out on a later run once somebody fills the code in. Claiming first
+  would mark it done for ever and the guest would never get it.
+
+  Worth knowing operationally: once sent, the code stays in that guest's
+  message thread and they can look it up months later. Change codes between
+  guests; the feature assumes you do.
+
 - **An early fraud warning is not a chargeback, and the two must never be
   totalled together.** Stripe's `warning_*` dispute statuses are an inquiry:
   the card network has flagged a charge and **no money has been taken**. A real
