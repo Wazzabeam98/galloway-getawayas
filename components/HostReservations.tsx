@@ -8,6 +8,7 @@ import { formatUk } from '@/lib/cancellation';
 import { listingIdsFor } from '@/lib/access';
 import { MessageSquare, CalendarDays, Phone } from 'lucide-react';
 import UpcomingTrip from '@/components/UpcomingTrip';
+import BookingActions from '@/components/BookingActions';
 
 // The host-mode counterpart to UpcomingTrip. Somebody who has switched to
 // hosting is thinking about who is arriving, not about their own holiday, so
@@ -47,7 +48,7 @@ export default async function HostReservations() {
     // sitting on a stay that is already under way.
     const { data: bookings } = await admin
         .from('bookings')
-        .select('id, listing_id, guest_id, check_in, check_out, status, guests, total_price, commission_rate, amount_refunded')
+        .select('id, listing_id, guest_id, check_in, check_out, status, guests, total_price, commission_rate, amount_paid, amount_refunded')
         .in('listing_id', allowed)
         .in('status', ['confirmed', 'pending'])
         .gte('check_in', todayKey)
@@ -230,9 +231,24 @@ export default async function HostReservations() {
                                     </div>
                                 )}
 
+                                {/* The card said a request was waiting and gave
+                                    nowhere to answer it, so the host had to go
+                                    hunting for the buttons on another page.
+                                    'relative' lifts these clear of the link
+                                    covering the whole card. */}
                                 {booking.status === 'pending' && (
-                                    <div className="mt-5 text-sm text-amber-700">
-                                        Waiting for you to confirm
+                                    <div className="relative mt-5">
+                                        <div className="text-sm font-semibold text-amber-700">
+                                            Waiting for you to confirm
+                                        </div>
+                                        <div className="mt-3">
+                                            <BookingActions
+                                                bookingId={booking.id}
+                                                totalPrice={Number(booking.total_price || 0)}
+                                                amountPaid={Number(booking.amount_paid || 0)}
+                                                amountRefunded={Number(booking.amount_refunded || 0)}
+                                            />
+                                        </div>
                                     </div>
                                 )}
 
