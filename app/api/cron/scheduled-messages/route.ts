@@ -79,17 +79,18 @@ export async function GET(request: Request) {
             return NextResponse.json({ ok: true, sent: 0, skipped: 0, failed: 0 });
         }
 
-        // Only stays that are actually happening. A window either side keeps
-        // the query small without cutting off a template anchored a fortnight
-        // out or one that trails a check-out.
+        // Stays that are actually happening. A window either side keeps the
+        // query small without cutting off a template anchored a fortnight out
+        // or one that trails a check-out.
         const from = new Date(now.getTime() - 40 * 86400000).toISOString().split('T')[0];
         const to = new Date(now.getTime() + 40 * 86400000).toISOString().split('T')[0];
 
         const hostIds = Array.from(new Set(live.map((t: Template) => t.user_id)));
+        const COLUMNS = 'id, host_id, guest_id, listing_id, check_in, check_out, status, confirmed_at';
 
-        const { data: bookings, error: bookingError } = await admin
+        const { data: byStayDates, error: bookingError } = await admin
             .from('bookings')
-            .select('id, host_id, guest_id, listing_id, check_in, check_out, status, confirmed_at')
+            .select(COLUMNS)
             .in('host_id', hostIds)
             .eq('status', 'confirmed')
             .gte('check_out', from)
@@ -105,7 +106,55 @@ export async function GET(request: Request) {
             );
         }
 
-        if (!bookings || bookings.length === 0) {
+        // A booking-anchored template counts from when the host accepted, not
+        // from the dates of the stay — so the window above is the wrong
+        // question for it entirely. Somebody accepting a booking today for a
+        // stay in six months would never have got their welcome message: the
+        // stay is outside the window, so the booking was never looked at.
+        //
+        // Only asked when such a template is actually live, and bounded by how
+        // recently the booking was accepted rather than by its dates, so it
+        // stays a small query.
+        const hasBookingAnchored = live.some((t: Template) => t.anchor === 'booking');
+
+        let byConfirmedAt: any[] = [];
+        if (hasBookingAnchored) {
+            const acceptedSince = new Date(now.getTime() - 7 * 86400000).toISOString();
+
+            const { data: recent, error: recentError } = await admin
+                .from('bookings')
+                .select(COLUMNS)
+                .in('host_id', hostIds)
+                .eq('status', 'confirmed')
+                .gte('confirmed_at', acceptedSince);
+
+            if (recentError) {
+                await logError(
+                    'scheduled-messages: could not load recently accepted bookings',
+                    recentError,
+                    { path: '/api/cron/scheduled-messages' }
+                );
+                return NextResponse.json(
+                    { ok: false, error: 'Could not load the bookings' },
+                    { status: 500 }
+                );
+            }
+
+            byConfirmedAt = recent || [];
+        }
+
+        // The two queries overlap for anything both recent and soon, so the
+        // same booking must not be considered twice — it would claim, send,
+        // and then find its own claim already there.
+        const seen: Record<string, boolean> = {};
+        const bookings: any[] = [];
+        (byStayDates || []).concat(byConfirmedAt).forEach(function (b: any) {
+            if (seen[b.id]) return;
+            seen[b.id] = true;
+            bookings.push(b);
+        });
+
+        if (bookings.length === 0) {
             return NextResponse.json({ ok: true, sent: 0, skipped: 0, failed: 0 });
         }
 
