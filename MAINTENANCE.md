@@ -268,6 +268,40 @@ Please:
   see the note on `accessibleListings`. Any screen offering those buttons has
   to gate them on `isOwner`, or a co-host gets a button that can only fail.
 
+- **A host's debt is recorded twice, and the two must always agree.**
+  `profiles.payout_balance_owed` is the running total the payout run reads;
+  the `payouts` rows with status `owed` are the itemised version a host or a
+  dispute would be shown. They are the same money counted two ways. The run
+  used to move only the total and leave the rows saying `owed` for ever, so
+  anything listing what a host owed kept listing debts already taken.
+
+  Recovery is partial-aware: `settled_amount` records how much has come back,
+  `status` becomes `settled` only when it covers the whole thing, and the
+  original `amount` is never rewritten — that row is the evidence of what was
+  charged and why. The allocation lives in `lib/hostDebt.ts` and is shared by
+  the run, the earnings page and the booking screen, because a host told £126
+  and paid £111 is how you lose a host. Owner tools warns in red if the rows
+  and the totals ever disagree.
+
+  `20260822_cancellation_record_and_debt_settlement.sql` — **live on both
+  projects as of 22 August 2026, nothing needs running.** It also adds
+  `cancelled_at`, `cancelled_by_user` and `cancelled_by_role` to `bookings`:
+  until then the only trace of who cancelled was `initiated_by` in the
+  metadata on the Stripe refund, and the 5% host fee turns on exactly that
+  distinction. Existing cancellations are deliberately **not** backfilled — a
+  `penalty` row is evidence a cancellation was the host's, not a record, and
+  this column will be quoted at somebody one day.
+
+- **The unit tests were unreliable until 22 August 2026, and the same trap is
+  still there for any new test file.** Routes reach the database through
+  `lib/supabaseAdmin`, which captures `createClient` when it loads and is then
+  cached like any module. Stubbing `@supabase/supabase-js` for a *second* test
+  in a file therefore changed nothing: every test after the first silently
+  reused the first one's fake database. 17 of 63 tests were failing on data
+  they were never given, in `host-payouts`, `balance-charges` and `webhook` —
+  and the passes meant no more than the failures did. Any loader that stubs
+  Supabase must `clearModule('@/lib/supabaseAdmin')` as well as the route.
+
 - **Stripe's Adaptive Pricing is on by default and will offer euros.** It
   converts a GBP price into whatever currency it decides the guest's country
   wants, which is why a checkout with `currency: 'gbp'` hard-coded still
