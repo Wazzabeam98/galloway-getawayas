@@ -15,6 +15,8 @@ import {
     appliesToListing,
     fillPlaceholders,
     londonInstant,
+    needsLockboxCode,
+    usesLockboxCode,
 } from '../lib/scheduledMessages';
 
 const LISTING = { check_in_time: '15:00:00', check_out_time: '11:00:00' };
@@ -312,4 +314,62 @@ test('the extra query is only made when a booking-anchored template is live', as
         false,
         'nothing keys off acceptance, so there is no reason to ask'
     );
+});
+
+/* ----------------------------------------------------------- the door code */
+
+test('the code is filled in, and repeats are all filled', () => {
+    const out = fillPlaceholders(
+        'Hi {guest_name}, the code for {listing} is {lockbox_code}. Again: {lockbox_code}.',
+        { guestName: 'Alex', listing: 'Bookshop Flat', checkIn: 'x', checkOut: 'y', lockboxCode: '1860' }
+    );
+    assert.equal(out, 'Hi Alex, the code for Bookshop Flat is 1860. Again: 1860.');
+    assert.doesNotMatch(out, /\{lockbox_code\}/);
+});
+
+test('a message wanting a code it has not got is held back', () => {
+    const withCode = 'Hi {guest_name}, the code is {lockbox_code}.';
+    const without = 'Hi {guest_name}, see you soon.';
+
+    assert.equal(needsLockboxCode(withCode, null), true, 'no code set at all');
+    assert.equal(needsLockboxCode(withCode, ''), true, 'empty is not a code');
+    assert.equal(needsLockboxCode(withCode, '   '), true, 'nor is whitespace');
+    assert.equal(needsLockboxCode(withCode, '1860'), false, 'a real code sends');
+    assert.equal(
+        needsLockboxCode(without, null),
+        false,
+        'a template that never asks for a code is unaffected by not having one'
+    );
+});
+
+// The two must not fight. `listing_ids` decides *whether* a template applies;
+// the code is resolved from the booking's own listing. Narrowing a template to
+// some properties must not make it send another property's code.
+test('narrowing a template to some listings still resolves each booking’s own code', () => {
+    const narrowed = template({ listing_ids: ['l1', 'l2'] });
+    const codes: Record<string, string> = { l1: '1111', l2: '2222', l3: '3333' };
+
+    assert.equal(appliesToListing(narrowed, 'l1'), true);
+    assert.equal(appliesToListing(narrowed, 'l2'), true);
+    assert.equal(appliesToListing(narrowed, 'l3'), false, 'not targeted, so nothing is sent at all');
+
+    // Each targeted booking gets its own code, not the first one found.
+    const body = 'The code is {lockbox_code}.';
+    assert.equal(
+        fillPlaceholders(body, { guestName: 'a', listing: 'b', checkIn: 'c', checkOut: 'd', lockboxCode: codes['l1'] }),
+        'The code is 1111.'
+    );
+    assert.equal(
+        fillPlaceholders(body, { guestName: 'a', listing: 'b', checkIn: 'c', checkOut: 'd', lockboxCode: codes['l2'] }),
+        'The code is 2222.'
+    );
+});
+
+test('one template left open to all listings still gives each property its own code', () => {
+    const openToAll = template({ listing_ids: [] });
+    assert.equal(appliesToListing(openToAll, 'l1'), true);
+    assert.equal(appliesToListing(openToAll, 'l9'), true);
+    // Which is the whole point of the placeholder: one message, right code.
+    assert.equal(usesLockboxCode('code: {lockbox_code}'), true);
+    assert.equal(usesLockboxCode('no code here'), false);
 });
