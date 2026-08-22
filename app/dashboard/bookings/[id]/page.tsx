@@ -8,7 +8,7 @@ import { adminClient } from "@/lib/supabaseAdmin";
 import { checkListing } from "@/lib/access";
 import { displayName, getImageUrl, formatTime } from "@/lib/utils";
 import { rateFor, netOfFee } from "@/lib/fees";
-import { formatUk, refundFraction, policyOf } from "@/lib/cancellation";
+import { formatUk, refundFraction, policyOf, freeCancelDateOrNull } from "@/lib/cancellation";
 import { stayHasEnded, stayHasStarted } from "@/lib/stayWindow";
 import { dateFromKey } from "@/lib/pricing";
 import BookingActions from "@/components/BookingActions";
@@ -121,6 +121,19 @@ export default async function BookingDetail({ params }: { params: { id: string }
     const grossDue = Math.round((total - refunded) * 100) / 100;
     const yours = netOfFee(grossDue > 0 ? grossDue : 0, rate);
 
+    // A stay pays out the day after check-in.
+    const paysOn = dateFromKey(booking.check_in);
+    paysOn.setDate(paysOn.getDate() + 1);
+
+    // free_cancel_until is stamped by the checkout route, so it is null on
+    // anything that did not come through it — and a null there means 'not
+    // recorded', not 'the window has closed'. Work it out from the policy in
+    // that case rather than telling a host their guest has lost a right they
+    // still have.
+    const freeCancelDisplay = booking.free_cancel_until
+        ? dateFromKey(booking.free_cancel_until)
+        : freeCancelDateOrNull(booking.check_in, listing?.cancellation_policy);
+
     // A guest cancelling right now would get this much back, under the
     // policy on the listing. Worth knowing before asking them to.
     const guestWouldGet = Math.round(refundFraction(booking.check_in, listing?.cancellation_policy) * paid * 100) / 100;
@@ -143,18 +156,26 @@ export default async function BookingDetail({ params }: { params: { id: string }
     );
     const phone = (daysToArrival <= 1 && !ended) ? (guest?.phone || null) : null;
 
-    // Prefills the message box rather than sending anything. The host writes
+    // Prefills the message box rather than sending anything. The host adds
     // the reason and presses send — a stay called off in the guest's name
     // without them reading it first is not something to automate.
+    //
+    // One paragraph, no line breaks, and short. The composer on the other end
+    // is a single-line <input>, which silently drops newlines: a draft written
+    // in paragraphs arrived with its sentences run together, and only the
+    // first sixty characters are visible while the host reads it back. It also
+    // has to be sendable exactly as it stands, because a bracketed 'fill this
+    // in' note is one distracted press away from reaching the guest.
+    const shortDate = (value: string) =>
+        dateFromKey(value).toLocaleDateString('en-GB', { day: 'numeric', month: 'long' });
+
     const askToCancelDraft =
         'Hi ' + firstName + ', I’m very sorry — I’ve run into a problem with '
-        + (listing?.title || 'the property') + ' for your dates ('
-        + formatUk(dateFromKey(booking.check_in)) + ' to ' + formatUk(dateFromKey(booking.check_out))
-        + ') and I don’t think I can host you as planned.\n\n'
-        + 'If you cancel from Your trips you’d be refunded '
-        + money(guestWouldGet) + ' under the ' + policyOf(listing?.cancellation_policy)
-        + ' policy on this listing. Do let me know and I’ll do what I can to help.\n\n'
-        + '[Say what has happened here before sending.]';
+        + (listing?.title || 'the property')
+        + ' and I don’t think I can host you for '
+        + shortDate(booking.check_in) + ' to ' + shortDate(booking.check_out)
+        + ' as planned. If you cancel from Your trips you’d be refunded '
+        + money(guestWouldGet) + '. Do let me know and I’ll help however I can.';
 
     return (
         <div className="max-w-3xl mx-auto px-6 py-10">
@@ -243,9 +264,11 @@ export default async function BookingDetail({ params }: { params: { id: string }
                             value={
                                 booking.payout_transfer_id
                                     ? 'Sent — ' + money(Number(booking.payout_amount || 0))
-                                    : booking.status === 'confirmed'
-                                        ? 'The day after check-in'
-                                        : 'Nothing to send yet'
+                                    : booking.status !== 'confirmed'
+                                        ? 'Nothing to send'
+                                        : started
+                                            ? 'Was due ' + formatUk(paysOn) + ' — not recorded as sent'
+                                            : 'Due ' + formatUk(paysOn) + ', the day after check-in'
                             }
                             muted={!booking.payout_transfer_id}
                         />
@@ -287,8 +310,8 @@ export default async function BookingDetail({ params }: { params: { id: string }
                     <Row
                         label="Free cancellation for guest"
                         value={
-                            booking.free_cancel_until
-                                ? 'Until ' + formatUk(dateFromKey(booking.free_cancel_until))
+                            freeCancelDisplay
+                                ? 'Until ' + formatUk(freeCancelDisplay)
                                 : 'Window has closed'
                         }
                         muted
