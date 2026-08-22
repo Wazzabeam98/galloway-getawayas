@@ -5,6 +5,7 @@ import { DEFAULT_COMMISSION_PERCENT, netOfFee, feeAmount } from '@/lib/fees';
 import { sendEmail, emailLayout, escapeHtml, formatDate, button, SITE_URL } from '@/lib/email';
 import { logError } from '@/lib/logError';
 import { outstandingOf, spread } from '@/lib/hostDebt';
+import { readSchedule, arrivalSentence } from '@/lib/payoutTiming';
 
 export const dynamic = 'force-dynamic';
 export const maxDuration = 60;
@@ -234,6 +235,14 @@ export async function GET(request: Request) {
             const { data: hostUser } = await admin.auth.admin.getUserById(booking.host_id);
             const hostEmail = (hostUser && hostUser.user && hostUser.user.email) || '';
 
+            // One read per host we are actually emailing. Returns null on any
+            // failure, which falls back to the vaguer wording rather than
+            // holding up a payout that has already gone.
+            const hostSchedule = (hostEmail && toSend > 0)
+                ? await readSchedule(host.stripe_account_id)
+                : null;
+            const payoutDelayDays = hostSchedule ? hostSchedule.delayDays : null;
+
             if (hostEmail && toSend > 0) {
                 await sendEmail(
                     hostEmail,
@@ -249,7 +258,16 @@ export async function GET(request: Request) {
                             + (rate > 0 ? ', less \u00A3' + commission.toFixed(2) + ' service fee (' + rate + '%)' : ', with no service fee')
                             + (deduction > 0 ? ', less \u00A3' + deduction.toFixed(2) + ' previously owed' : '')
                             + '. <strong>\u00A3' + toSend.toFixed(2) + '</strong> is yours.</p>'
-                            + '<p style="margin:0 0 16px;font-size:16px;">It usually reaches your bank within a couple of working days.</p>'
+                            // Read off this host's own account rather than
+                            // printed. It said "a couple of working days",
+                            // which was the day-after release described as the
+                            // bank arrival; the accounts checked all said
+                            // seven. This is the email a host reads while
+                            // waiting, so it is the sentence that has to be
+                            // true.
+                            + '<p style="margin:0 0 16px;font-size:16px;">'
+                            + arrivalSentence(payoutDelayDays)
+                            + '</p>'
                             + button(SITE_URL + '/dashboard/earnings', 'View your earnings'),
                         'You\u2019re receiving this because you host on Galloway Getaways.'
                     )

@@ -63,10 +63,19 @@ export async function POST(request: Request) {
                 },
                 settings: {
                     payouts: {
-                        // Daily, so money reaches a host's bank a day or two
-                        // after we transfer it. On manual they would have to
-                        // log into Stripe and release it themselves, which no
-                        // host expects to do.
+                        // Daily, so a payout is created every day rather than
+                        // sitting until a host logs into Stripe and releases
+                        // it, which no host expects to do.
+                        //
+                        // Daily is how often a payout is *made*, not how fast
+                        // it lands. 'minimum' resolves to whatever settlement
+                        // wait Stripe sets for the account — seven days on
+                        // every UK account checked, shortening as the account
+                        // builds history. The wording hosts see is generated
+                        // from the account's real delay_days in
+                        // lib/payoutTiming.ts rather than written down here,
+                        // because a number written down here goes stale
+                        // silently.
                         schedule: { interval: 'daily', delay_days: 'minimum' },
                     },
                 },
