@@ -4,6 +4,7 @@ import { stripeRequest } from '@/lib/stripe';
 import { DEFAULT_COMMISSION_PERCENT, netOfFee, feeAmount } from '@/lib/fees';
 import { sendEmail, emailLayout, escapeHtml, formatDate, button, SITE_URL } from '@/lib/email';
 import { logError } from '@/lib/logError';
+import { outstandingOf, spread } from '@/lib/hostDebt';
 
 export const dynamic = 'force-dynamic';
 export const maxDuration = 60;
@@ -168,6 +169,66 @@ export async function GET(request: Request) {
                     .from('profiles')
                     .update({ payout_balance_owed: round2(owed - deduction) })
                     .eq('id', booking.host_id);
+
+                // Close off the individual debts this has just paid down.
+                //
+                // Until now only the running total moved and the rows behind
+                // it were left saying 'owed' for ever, so anything itemising
+                // what a host still owed kept listing debts already recovered.
+                // The total and the rows have to agree — they are the same
+                // money counted two ways, and the rows are the ones a host
+                // would be shown if they queried a deduction.
+                //
+                // Oldest first, and partial recovery is recorded as partial:
+                // a £45 debt against a £30 payout is £30 off this row, not a
+                // row marked settled. The original amount is never rewritten;
+                // it is the evidence of what was charged and why.
+                //
+                // Deliberately after the money has moved and after the balance
+                // has come down. If this fails, the debt is recovered and the
+                // bookkeeping is behind, which owner tools can see and put
+                // right — the other order would show a settled debt that was
+                // never actually taken.
+                try {
+                    const { data: debts } = await admin
+                        .from('payouts')
+                        .select('id, amount, settled_amount, status')
+                        .eq('host_id', booking.host_id)
+                        .eq('status', 'owed')
+                        .order('created_at', { ascending: true });
+
+                    const rows = debts || [];
+                    const shares = spread(
+                        deduction,
+                        rows.map(function (r: any) { return outstandingOf(r); })
+                    );
+
+                    for (let i = 0; i < rows.length; i++) {
+                        const share = shares[i];
+                        if (share <= 0) continue;
+
+                        const row = rows[i];
+                        const recovered = round2(Number(row.settled_amount || 0) + share);
+                        const fully = recovered >= round2(Math.abs(Number(row.amount || 0)));
+
+                        await admin
+                            .from('payouts')
+                            .update({
+                                settled_amount: recovered,
+                                status: fully ? 'settled' : 'owed',
+                                settled_at: fully ? new Date().toISOString() : null,
+                            })
+                            .eq('id', row.id);
+                    }
+                } catch (err) {
+                    await logError(
+                        'host-payouts: recovered £' + deduction.toFixed(2)
+                            + ' on booking ' + booking.id
+                            + ' but could not mark the debts settled',
+                        err,
+                        { path: '/api/cron/host-payouts' }
+                    );
+                }
             }
 
             const { data: hostUser } = await admin.auth.admin.getUserById(booking.host_id);
