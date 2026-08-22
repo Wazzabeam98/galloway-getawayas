@@ -235,6 +235,7 @@ test('a real decline still gets the old advice', async () => {
     assert.match(emails[0].html, /expired or there weren/i);
 
     const payment = settledPayment(inserts, updates);
+    assert.ok(payment, 'the failure must be recorded');
     assert.match(payment.row.failure_reason, /declined/i);
 });
 
