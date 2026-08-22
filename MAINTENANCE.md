@@ -337,8 +337,29 @@ Please:
 - **Refund or transfer money before changing a booking's status**, and don't
   notify anyone until it has succeeded. Doing it the other way round is how a
   guest gets told their booking is cancelled while their money is still here.
-- **Idempotency keys must not include anything resettable.** One included an
-  attempt counter, a test reset it, and Stripe took a second payment.
+- **An idempotency key must belong to the attempt, not to the booking's
+  current state.** "Nothing resettable in the key" is the symptom; this is the
+  rule. Two keys have got this wrong now. One included an attempt counter, a
+  test reset it, and Stripe took a second payment. The next was
+  `balance-<booking>-<balance_due_date>`, under a comment calling those
+  "things that don't move" — the due date is an ordinary column, and moving it
+  is exactly how a balance is made chargeable today for testing.
+
+  The balance charge now claims a `payments` row before charging and uses that
+  row's uuid as the key. The record that an attempt happened and the thing
+  stopping it happening twice are one object, so they cannot disagree — and a
+  run that dies between claiming and hearing back from Stripe is covered,
+  because the next run finds the dangling `attempting` row and reuses its id.
+  `payout-<booking>` in the payout run is the other shape that works: one
+  payout per booking, ever, so the booking id alone *is* the attempt.
+
+  Two things about Stripe's behaviour that make this matter more than it
+  looks. Results are saved **whether the request succeeded or failed**, so a
+  reused key after a decline replays that decline without the bank seeing
+  anything. And keys are pruned after **24 hours**, while the balance job's
+  one-attempt-per-day guard admits an attempt after **20** — so a key built
+  from anything stable across attempts left a four-hour window in which a
+  manual re-run recorded a refusal that never happened.
 
 ## Email — two separate systems
 
