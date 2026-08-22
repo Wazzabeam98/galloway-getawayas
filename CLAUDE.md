@@ -87,7 +87,7 @@ his observations seriously even when they sound vague.
 
 ## Running it locally
 
-Two things bite every single session on the MacBook:
+Three things bite every single session on the MacBook:
 
 - **Colima has to be started after a reboot.** Supabase's local tooling talks
   to Docker, and Docker here is Colima, which does not come back on its own:
@@ -99,6 +99,19 @@ Two things bite every single session on the MacBook:
   If Docker commands report no such host, this is why. `colima status` says
   whether it is up. Note that `colima`, `docker` and `stripe` live in
   `~/homebrew/bin`, which is not on the default PATH.
+
+- **`node`, `npm` and `npx` are not on the PATH a tool session starts with.**
+  A login shell picks them up from `.zprofile`, but Claude Code's shell does
+  not, and `npm run build` fails with `command not found` before it has done
+  anything. Put them on the path first:
+
+  ```
+  export PATH="$HOME/.local/node/bin:$PATH"
+  ```
+
+  There are already two Node installs — `~/.local/node` and
+  `~/.local/opt/node`, the first winning in a login shell. **Do not add a
+  third.** A missing `node` here is a PATH problem, never a missing install.
 
 - **The Stripe webhook signing secret changes every time `stripe listen`
   starts**, and it has to be written back into `.env.local` by hand. Start the

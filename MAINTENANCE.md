@@ -141,9 +141,10 @@ Please:
 
   **Live on both projects as of 22 August 2026 — nothing needs running.** The
   pre-flight was run against both first and returned no rows either side.
-  Production had to be done in the Supabase SQL editor: there is no production
-  database password on the MacBook, only the test one, so a terminal here can
-  reach test and not production.
+  Production had to be done in the Supabase SQL editor. The reason given at the
+  time was that only the test database password was on the MacBook — as of
+  22 August 2026 neither is, and both projects have to go through the SQL
+  editor. See the migration bullet further down.
 
   **Photos are deliberately not in it**, even though the wizard requires one.
   Every seed listing in the test project is created with an empty `images`
@@ -194,8 +195,19 @@ Please:
   message bringing an archived thread back, and the menu dot agreeing with the
   list. It needs `npm run dev`.
 
-- **Running a migration by hand needs a direct Postgres connection**, and there
-  is no `psql` on this machine. Colima is, so:
+- **There is no database connection on this machine for either project, so
+  migrations are pasted into the Supabase SQL editor by hand.** Checked on
+  22 August 2026: no `DATABASE_URL` in any `.env` file, no password in
+  `supabase/.temp/pooler-url` (which is production's anyway), and no Supabase
+  access token in `~/.supabase`. An earlier note here said a terminal could
+  reach test but not production. That is no longer true of either.
+
+  In practice that means **write migrations to be pasted**: idempotent, safe to
+  run twice, with any pre-flight query in a comment at the top, because they
+  get run by hand on two projects and nobody is watching an exit code.
+
+  If a connection string ever does turn up, there is no `psql` on this machine
+  but Colima is, so:
 
   ```
   docker run --rm -i postgres:16-alpine psql "$DATABASE_URL" -v ON_ERROR_STOP=1 -f - < supabase/migrations/<file>.sql
@@ -203,6 +215,37 @@ Please:
 
   Do **not** use `supabase db push` — the CLI is linked to production, see
   above.
+
+  A migration can still be **rehearsed** without either project, which is worth
+  doing before handing one over. Start a throwaway Postgres, create stubs for
+  whatever the file references, and run it — twice, to prove it is safe to
+  re-run:
+
+  ```
+  docker run --rm -e POSTGRES_PASSWORD=x --name sqlcheck -d postgres:16-alpine
+  ```
+
+- **Checking a migration landed, without a database connection.** Two things
+  can be done over the REST API with the keys in `.env.local` and
+  `.env.production.local`:
+
+  - **the table and its columns** — `GET /rest/v1/<table>?select=col,col&limit=1`
+    with the service key. A 200 means every column named exists.
+  - **that row-level security is really on** — POST a row as **anon** using a
+    made-up uuid for the foreign keys. RLS on gives `42501 permission denied`;
+    RLS off gives a foreign-key violation instead. The foreign keys make it
+    impossible to actually write anything, so this is safe to run against
+    production.
+
+  What this cannot check is **triggers and functions**. PostgREST leaves
+  functions returning `trigger` out of its schema cache, so calling one over
+  RPC reports it missing whether or not it exists — do not read that as an
+  answer. Either test the behaviour, or run this in the SQL editor:
+
+  ```
+  select tgname from pg_trigger
+  where tgrelid = 'public.<table>'::regclass and not tgisinternal;
+  ```
 
 - **A co-host is not the `host_id` on a booking.** Any query on their behalf
   needs the service key, or row-level security returns nothing and the page
