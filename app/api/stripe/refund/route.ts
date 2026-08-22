@@ -146,6 +146,14 @@ export async function POST(request: Request) {
             // Nothing further is owed on a stay that isn't happening, so the
             // balance charge can't pick it up.
             patch.balance_amount = 0;
+
+            // Who did this, in our own records rather than only in the
+            // metadata on the Stripe refund. The 5% fee below turns on
+            // exactly this distinction, so the first time a host disputes one
+            // the answer has to be somewhere we can read it.
+            patch.cancelled_at = new Date().toISOString();
+            patch.cancelled_by_user = session.user.id;
+            patch.cancelled_by_role = isHost ? 'host' : 'guest';
         }
 
         const { error: updateError } = await admin

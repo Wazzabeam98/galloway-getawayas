@@ -7,6 +7,7 @@ import { DEFAULT_COMMISSION_PERCENT, rateFor, netOfFee, feeAmount } from '@/lib/
 import { formatUk } from '@/lib/cancellation';
 import { createClient } from '@supabase/supabase-js';
 import { listingIdsFor } from '@/lib/access';
+import { outstandingDebts, outstandingOf, debtAgainstStays, debtReason, round2 } from '@/lib/hostDebt';
 
 
 export default async function EarningsPage({ searchParams }: { searchParams?: { from?: string; to?: string } }) {
@@ -144,6 +145,7 @@ export default async function EarningsPage({ searchParams }: { searchParams?: { 
 
         return {
             id: b.id,
+            hostId: b.host_id,
             title: listingMap.get(b.listing_id) || 'Listing',
             checkIn: b.check_in,
             due: due,
@@ -157,7 +159,33 @@ export default async function EarningsPage({ searchParams }: { searchParams?: { 
 
     const awaiting = schedule.filter((r) => !r.paidOutAt);
     const alreadyPaid = schedule.filter((r) => r.paidOutAt).reverse();
+
+    // What this person owes back, and which of their coming payouts it will
+    // come off — the same allocation the payout run performs, so the figure
+    // here is the figure that arrives.
+    //
+    // Their own debts only. payout_balance_owed belongs to whoever is host_id
+    // on a booking, and this page can show listings belonging to other people:
+    // a co-host with the earnings permission must not be shown the owner's
+    // debts, nor have someone else's deducted from what they are told.
+    const viewerId = user.user?.id || '';
+    const debts = await outstandingDebts(admin, viewerId);
+    const owedTotal = debts.reduce((sum, d) => round2(sum + outstandingOf(d)), 0);
+
+    const myAwaiting = awaiting.filter((r) => r.hostId === viewerId);
+    const deductions = owedTotal > 0 ? debtAgainstStays(owedTotal, myAwaiting) : {};
+
     const awaitingTotal = awaiting.reduce((sum, r) => sum + r.expected, 0);
+    const deductionTotal = Object.keys(deductions).reduce(
+        (sum, k) => round2(sum + deductions[k]),
+        0
+    );
+    const netAfterDebt = round2(awaitingTotal - deductionTotal);
+
+    // Owed more than the coming stays can absorb: the rest waits for the ones
+    // after those. Saying so beats a host working it out from a total that
+    // does not add up.
+    const owedBeyondQueue = round2(owedTotal - deductionTotal);
 
     const StatCard = ({ label, value, sub }: { label: string; value: string; sub?: string }) => (
         <div className="border rounded-2xl p-5">
@@ -209,13 +237,39 @@ export default async function EarningsPage({ searchParams }: { searchParams?: { 
                 <div className="flex items-baseline justify-between flex-wrap gap-2 mb-1">
                     <h2 className="font-bold text-slate-900">Your payouts</h2>
                     <div className="text-sm text-slate-500">
-                        £{awaitingTotal.toFixed(2)} still to come
+                        £{(owedTotal > 0 ? netAfterDebt : awaitingTotal).toFixed(2)} still to come
                     </div>
                 </div>
                 <p className="text-sm text-slate-500 mb-5">
                     Each stay is paid into your bank account the day after your guest checks in.
                     It usually lands within a couple of working days.
                 </p>
+
+                {/* A host used to find out about a deduction by receiving less
+                    than they expected, with nothing anywhere explaining it. */}
+                {owedTotal > 0 && (
+                    <div className="border border-amber-300 bg-amber-50 rounded-xl p-4 mb-5">
+                        <div className="font-semibold text-amber-900 text-sm">
+                            £{owedTotal.toFixed(2)} comes off your next payouts
+                        </div>
+                        <ul className="text-sm text-amber-800 mt-2 space-y-1">
+                            {debts.map((d) => (
+                                <li key={d.id}>
+                                    £{outstandingOf(d).toFixed(2)} &mdash; {debtReason(d.kind).toLowerCase()}
+                                </li>
+                            ))}
+                        </ul>
+                        <p className="text-xs text-amber-700 mt-2">
+                            {deductionTotal > 0
+                                ? 'Taken off the stays marked below, as each one pays out.'
+                                : 'It will come off as soon as you have a stay to pay out.'}
+                            {owedBeyondQueue > 0 && deductionTotal > 0
+                                ? ' £' + owedBeyondQueue.toFixed(2) + ' of it is more than your'
+                                    + ' booked stays cover, so it waits for later ones.'
+                                : ''}
+                        </p>
+                    </div>
+                )}
 
                 {awaiting.length === 0 ? (
                     <p className="text-sm text-slate-400">No payouts on the way.</p>
@@ -239,9 +293,23 @@ export default async function EarningsPage({ searchParams }: { searchParams?: { 
                                     )}
                                 </div>
                                 <div className="text-right">
-                                    <div className="font-semibold text-slate-900">
-                                        £{r.expected.toFixed(2)}
-                                    </div>
+                                    {deductions[r.id] ? (
+                                        <>
+                                            <div className="text-sm text-slate-500 line-through">
+                                                £{r.expected.toFixed(2)}
+                                            </div>
+                                            <div className="text-xs text-amber-700">
+                                                less £{deductions[r.id].toFixed(2)} owed
+                                            </div>
+                                            <div className="font-semibold text-slate-900">
+                                                £{Math.max(0, round2(r.expected - deductions[r.id])).toFixed(2)}
+                                            </div>
+                                        </>
+                                    ) : (
+                                        <div className="font-semibold text-slate-900">
+                                            £{r.expected.toFixed(2)}
+                                        </div>
+                                    )}
                                     <div className="text-xs text-slate-500">
                                         {r.due <= todayStart ? 'Due now' : 'Pays ' + formatUk(r.due)}
                                     </div>

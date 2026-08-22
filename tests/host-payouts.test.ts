@@ -42,6 +42,12 @@ function loadRoute(supabaseClient: any) {
         },
     });
 
+    // The route reaches its database through lib/supabaseAdmin, which captures
+    // createClient when it loads and is then cached like any other module. So
+    // stubbing @supabase/supabase-js for a second test changed nothing: every
+    // test after the first in this file silently reused the first one's fake
+    // database, and passed or failed on data it was never given.
+    clearModule('@/lib/supabaseAdmin');
     clearModule(ROUTE);
     const route = require(ROUTE.replace('@/', '../'));
     return { route, logged };

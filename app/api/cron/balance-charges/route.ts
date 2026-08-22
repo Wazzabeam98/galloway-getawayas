@@ -157,6 +157,12 @@ export async function GET(request: Request) {
                         amount_refunded: totalRefunded,
                         // The stay is off, so nothing is owed on it any more.
                         balance_amount: 0,
+                        // Nobody chose this — the balance could not be
+                        // collected after the full failure ladder. Recorded so
+                        // it can never be mistaken for a host cancellation,
+                        // which carries a fee.
+                        cancelled_at: new Date().toISOString(),
+                        cancelled_by_role: 'system',
                     })
                     .eq('id', booking.id);
 
