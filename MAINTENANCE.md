@@ -19,8 +19,13 @@ There are two Supabase projects and three ways to end up on the wrong one.
 | Test | `yefoqcabuijcowoqewtc` |
 
 - **Vercel Preview deployments read the test project. Production reads
-  production.** The three Supabase variables are split per environment; the
-  Stripe keys, `CRON_SECRET` and `RESEND_API_KEY` are still shared.
+  production.** Every environment-sensitive variable is now split per
+  environment: the three Supabase variables, `STRIPE_SECRET_KEY`,
+  `STRIPE_WEBHOOK_SECRET`, `CRON_SECRET` and `RESEND_API_KEY`. Separated in
+  Vercel on 22 August 2026, before the first live booking. A preview
+  deployment therefore talks to the test project with test Stripe keys
+  throughout, and cannot reach production data or live money by any of these
+  routes.
 - **`galloway-getawayas-git-master-…vercel.app` is production, not a preview.**
   master is the production branch, so that hostname is one of five aliases on
   the same deployment as the real domain. Any vercel.app URL with a random
@@ -373,8 +378,11 @@ All at `/api/cron/*`, all behind `CRON_SECRET`, all listed in `vercel.json`:
 
 They can be triggered by hand from Vercel → Cron Jobs → Run.
 
-Note `CRON_SECRET` is still shared between Preview and Production, so a
-preview deployment's cron routes are the live ones. Split it before live mode.
+`CRON_SECRET` is split per environment as of 22 August 2026, so a preview
+deployment's cron routes run against the test project with test Stripe keys.
+They were shared until then, which meant a preview build could fire a real
+balance charge — worth knowing when reading anything that ran before that
+date.
 
 ## Where things live
 
