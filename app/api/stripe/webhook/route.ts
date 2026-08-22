@@ -1,10 +1,99 @@
 import { logError } from '@/lib/logError';
+import { guidanceFor } from '@/lib/disputes';
 import { sendEmail, emailLayout, escapeHtml, formatDate, button, SITE_URL } from '@/lib/email';
 import { adminClient } from '@/lib/supabaseAdmin';
 import { NextResponse } from 'next/server';
 import { verifyStripeSignature, stripeRequest } from '@/lib/stripe';
 
 export const dynamic = 'force-dynamic';
+
+// Tells both directors, now. Not the 8am error digest: a dispute has a hard
+// deadline measured in days, and a summary the next morning can burn a fifth
+// of it.
+async function alertDirectors(
+    admin: any,
+    eventType: string,
+    dispute: any,
+    bookingId: string | null
+): Promise<void> {
+    try {
+        const { data: owners } = await admin
+            .from('profiles')
+            .select('id')
+            .eq('is_admin', true);
+
+        if (!owners || owners.length === 0) return;
+
+        const amount = (Number(dispute.amount || 0) / 100).toFixed(2);
+        const dueBy = dispute.evidence_details && dispute.evidence_details.due_by
+            ? new Date(dispute.evidence_details.due_by * 1000)
+            : null;
+        const guidance = guidanceFor(dispute.reason);
+
+        const opened = eventType === 'charge.dispute.created';
+        const reinstated = eventType === 'charge.dispute.funds_reinstated';
+        const won = dispute.status === 'won' || reinstated;
+
+        const heading = opened
+            ? 'Chargeback opened — \u00A3' + amount
+            : won
+                ? 'Chargeback resolved in our favour — \u00A3' + amount
+                : 'Chargeback lost — \u00A3' + amount;
+
+        const body = opened
+            ? '<p style="margin:0 0 16px;font-size:16px;">' + escapeHtml(guidance.meaning) + '</p>'
+                + '<p style="margin:0 0 16px;font-size:16px;">Stripe has taken <strong>\u00A3'
+                + amount + '</strong> from the balance while this is decided. '
+                + (dueBy
+                    ? 'Evidence is due by <strong>' + escapeHtml(formatDate(dueBy.toISOString())) + '</strong>.'
+                    : 'Stripe has not given a deadline — check in Stripe directly.')
+                + '</p>'
+                + '<p style="margin:0 0 8px;font-size:16px;"><strong>What to gather:</strong></p>'
+                + '<ul style="margin:0 0 16px;font-size:15px;">'
+                + guidance.evidence.map(function (e: string) {
+                    return '<li>' + escapeHtml(e) + '</li>';
+                }).join('')
+                + '</ul>'
+                + '<p style="margin:0 0 8px;font-size:16px;"><strong>What we already hold:</strong></p>'
+                + '<ul style="margin:0 0 16px;font-size:15px;">'
+                + guidance.weHold.map(function (e: string) {
+                    return '<li>' + escapeHtml(e) + '</li>';
+                }).join('')
+                + '</ul>'
+                + '<p style="margin:0 0 16px;font-size:15px;color:#6b7280;">Nothing has been submitted to '
+                + 'Stripe. Submitting is final and cannot be revised, so it is left to a person.</p>'
+            : '<p style="margin:0 0 16px;font-size:16px;">Stripe has closed this dispute with the status '
+                + '<strong>' + escapeHtml(String(dispute.status || 'unknown')) + '</strong>.'
+                + (won ? ' The money has been returned.' : ' The money is gone.') + '</p>';
+
+        for (const owner of owners) {
+            const { data: user } = await admin.auth.admin.getUserById(owner.id);
+            const email = (user && user.user && user.user.email) || '';
+            if (!email) continue;
+
+            await sendEmail(
+                email,
+                heading,
+                emailLayout(
+                    '<h1 style="margin:0 0 16px 0;font-size:22px;font-weight:700;color:#111827;">'
+                        + heading + '</h1>'
+                        + body
+                        + button(
+                            SITE_URL + (bookingId ? '/dashboard/bookings/' + bookingId : '/admin'),
+                            bookingId ? 'Open the booking' : 'Owner tools'
+                        ),
+                    'You are receiving this because you are a director of Galloway Getaways.'
+                )
+            );
+        }
+    } catch (err) {
+        // A dispute that was recorded but not emailed is recoverable; one that
+        // throws here and rolls back the whole webhook is not.
+        await logError('[webhook] recorded a dispute but could not alert the directors', err, {
+            path: 'stripe/webhook',
+        });
+    }
+}
 
 export async function POST(request: Request) {
     // The signature covers the exact bytes Stripe sent, so read the body as
@@ -285,6 +374,81 @@ export async function POST(request: Request) {
                     stripe_payment_intent_id: cs.payment_intent || null,
                 });
             }
+        }
+
+        // -------------------------------------------------------------
+        // A chargeback. The platform carries full liability for these, so
+        // until now the first anyone knew was money missing from the balance.
+        //
+        // Stripe gives a deadline — commonly 7 to 21 days depending on the
+        // card network — and a dispute nobody notices is lost by default
+        // rather than on the facts. So this records it, and tells the
+        // directors immediately rather than waiting for the 8am digest.
+        //
+        // Four events, because a dispute moves: created, updated (the guest's
+        // bank adds something, or the deadline shifts), closed (won or lost),
+        // and funds_reinstated (we won and the money came back).
+        // -------------------------------------------------------------
+        if (event.type.indexOf('charge.dispute.') === 0) {
+            const d = event.data.object;
+
+            // Find the booking from the payment intent. A dispute with no
+            // booking behind it is still recorded — it is money leaving —
+            // it just cannot say which stay.
+            let bookingId: string | null = null;
+            if (d.payment_intent) {
+                const { data: booking } = await admin
+                    .from('bookings')
+                    .select('id')
+                    .eq('stripe_payment_intent_id', d.payment_intent)
+                    .maybeSingle();
+                bookingId = (booking && booking.id) || null;
+            }
+
+            const dueBy = d.evidence_details && d.evidence_details.due_by
+                ? new Date(d.evidence_details.due_by * 1000).toISOString()
+                : null;
+
+            const closed = event.type === 'charge.dispute.closed';
+            const reinstated = event.type === 'charge.dispute.funds_reinstated';
+
+            // Upserted on Stripe's own id, because these events arrive out of
+            // order and more than once. Whatever the latest event says wins.
+            const { error: upsertError } = await admin
+                .from('disputes')
+                .upsert(
+                    {
+                        booking_id: bookingId,
+                        stripe_dispute_id: d.id,
+                        stripe_charge_id: d.charge || null,
+                        stripe_payment_intent_id: d.payment_intent || null,
+                        amount: Number(d.amount || 0) / 100,
+                        currency: (d.currency || 'gbp').toUpperCase(),
+                        reason: d.reason || null,
+                        status: d.status || null,
+                        evidence_due_by: dueBy,
+                        opened_at: d.created ? new Date(d.created * 1000).toISOString() : null,
+                        closed_at: closed ? new Date().toISOString() : null,
+                        funds_reinstated_at: reinstated ? new Date().toISOString() : null,
+                        updated_at: new Date().toISOString(),
+                    },
+                    { onConflict: 'stripe_dispute_id' }
+                );
+
+            if (upsertError) {
+                await logError('[webhook] could not record dispute ' + d.id, upsertError, {
+                    path: 'stripe/webhook',
+                });
+            }
+
+            // Only shout when it opens or resolves. An 'updated' event can
+            // fire several times and a stream of emails trains people to
+            // ignore the one that matters.
+            if (event.type === 'charge.dispute.created' || closed || reinstated) {
+                await alertDirectors(admin, event.type, d, bookingId);
+            }
+
+            return NextResponse.json({ received: true, dispute: d.id });
         }
 
         // -------------------------------------------------------------
