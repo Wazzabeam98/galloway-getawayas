@@ -64,6 +64,9 @@ export function debtReason(kind: string): string {
     if (kind === 'reversal') {
         return 'Refund paid to the guest after the payout had gone';
     }
+    if (kind === 'dispute') {
+        return 'Chargeback raised by the guest’s bank';
+    }
     return 'Owed back';
 }
 
@@ -79,6 +82,12 @@ export function debtExplanation(kind: string): string {
         return 'A refund went to the guest after this host had already been '
             + 'paid, and it could not be taken back from their Stripe balance. '
             + 'It comes off their next payout.';
+    }
+    if (kind === 'dispute') {
+        return 'The guest’s bank reversed the payment and the platform bore '
+            + 'the loss. Nobody here chose this and the host may have done '
+            + 'nothing wrong, so charging it on is a decision rather than an '
+            + 'automatic consequence — it is never created by the webhook.';
     }
     return 'Owed back, reason not recorded.';
 }

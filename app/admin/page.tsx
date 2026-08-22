@@ -46,6 +46,11 @@ const tools = [
         blurb: 'What each host is owed, and what has already been sent.',
     },
     {
+        href: '/admin/disputes',
+        title: 'Chargebacks',
+        blurb: 'Disputes raised by guests\u2019 banks, and what evidence to send.',
+    },
+    {
         href: '/admin/errors',
         title: 'Errors',
         blurb: 'Anything that broke, whether or not anyone told us.',
