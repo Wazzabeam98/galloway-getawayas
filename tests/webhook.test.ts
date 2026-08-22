@@ -241,6 +241,24 @@ test('any other write failure is reported rather than refunded', async () => {
     assert.equal(emails.length, 0);
 });
 
+// An automatic refund is not somebody cancelling. The 5% host cancellation fee
+// turns on exactly this distinction, so a booking called off by the overlap
+// constraint must never be readable as a host having done it. Mutation testing
+// found nothing asserted this: recording it as 'host' passed the whole suite.
+test('an oversold booking is recorded as cancelled by the system, not by anyone', async () => {
+    const { route, updates } = load({ confirmError: EXCLUSION });
+    await route.POST(completedSession('full', 30000));
+
+    const cancel = updates.filter((u) => u.table === 'bookings').pop();
+    assert.equal(cancel.patch.cancelled_by_role, 'system', 'nobody chose this');
+    assert.equal(
+        cancel.patch.cancelled_by_user,
+        undefined,
+        'and no account is named — naming one invites a fee being charged to them'
+    );
+    assert.ok(cancel.patch.cancelled_at, 'when it happened is recorded');
+});
+
 test('a booking that confirms normally is not disturbed', async () => {
     const { route, stripeCalls, emails, updates } = load();
     await route.POST(completedSession('full', 30000));

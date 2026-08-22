@@ -13,7 +13,7 @@ import assert from 'node:assert/strict';
 import { stubModule, clearModule, installAliases } from './helpers/stub';
 // Relative, not '@/': the alias is installed at runtime by installAliases()
 // below, and a top-level import resolves before that call has run.
-import { spread, outstandingOf } from '../lib/hostDebt';
+import { spread, outstandingOf, debtReason, debtExplanation } from '../lib/hostDebt';
 
 installAliases();
 
@@ -53,6 +53,28 @@ test('outstandingOf reads a stored debt correctly', () => {
     assert.equal(outstandingOf({ ...row, settled_amount: 45 }), 0, 'fully paid');
     assert.equal(outstandingOf({ ...row, settled_amount: 50 }), 0, 'never negative');
     assert.equal(outstandingOf({ amount: -45 } as any), 45, 'missing settled_amount is zero');
+});
+
+// A cancellation penalty and a clawback are different debts and were sharing
+// one explanation, which described the clawback and quietly mis-stated the
+// other. Mutation testing found nothing asserted they had stayed apart.
+test('a penalty and a clawback say different things', () => {
+    const penalty = debtReason('penalty');
+    const reversal = debtReason('reversal');
+
+    assert.notEqual(penalty, reversal, 'two reasons, two explanations');
+    assert.match(penalty, /cancel/i);
+    assert.match(reversal, /refund/i);
+
+    assert.match(debtExplanation('penalty'), /nobody had been paid/i,
+        'the whole point of the distinction: no payout had gone out');
+    assert.match(debtExplanation('reversal'), /already been paid/i);
+    assert.notEqual(debtExplanation('penalty'), debtExplanation('reversal'));
+});
+
+test('an unrecognised kind does not claim to know why', () => {
+    assert.match(debtReason('something_new'), /owed/i);
+    assert.match(debtExplanation('something_new'), /not recorded/i);
 });
 
 // ---------------------------------------------------------------------------
