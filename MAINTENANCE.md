@@ -337,6 +337,38 @@ Please:
 - **Refund or transfer money before changing a booking's status**, and don't
   notify anyone until it has succeeded. Doing it the other way round is how a
   guest gets told their booking is cancelled while their money is still here.
+- **An early fraud warning is not a chargeback, and the two must never be
+  totalled together.** Stripe's `warning_*` dispute statuses are an inquiry:
+  the card network has flagged a charge and **no money has been taken**. A real
+  dispute withdraws the amount from the balance immediately. Both arrive as
+  `charge.dispute.*` events, both have an evidence deadline, and they look
+  nearly identical in the payload — the tell is that a warning cannot be closed
+  the way a dispute can.
+
+  `isInquiry()` in `lib/disputes.ts` is the check, and `isMoneyAtRisk()`
+  excludes warnings, won disputes and anything reinstated. Owner tools shows
+  warnings in amber and real losses in red on purpose. This was caught by
+  raising one of each against test Stripe and reading the total: it said
+  "£46.00 at risk" when £45 had gone and £1 had not. A liability figure that
+  overstates itself is one nobody checks twice.
+
+  A warning still wants answering — a good response is what stops it becoming a
+  chargeback — so it is shown, just not counted.
+
+  The platform carries full chargeback liability, so `charge.dispute.created`
+  reaching nobody meant the first sign was money missing. Both directors are
+  emailed on open and on resolution, not through the 8am digest: Stripe's
+  window is 7 to 21 days and a summary the next morning can burn a fifth of it.
+
+  **Nothing submits evidence to Stripe.** A submission is final and cannot be
+  revised, so a half-assembled one is worse than a late one. It is a person's
+  job, in Stripe.
+
+  `20260822_disputes.sql` — **live on both projects as of 22 August 2026,
+  nothing needs running.** RLS is on with no policy for `authenticated`: a
+  dispute names a guest who has accused somebody of taking their money, and the
+  host it concerns must not read it out of the browser.
+
 - **An idempotency key must belong to the attempt, not to the booking's
   current state.** "Nothing resettable in the key" is the symptom; this is the
   rule. Two keys have got this wrong now. One included an attempt counter, a
