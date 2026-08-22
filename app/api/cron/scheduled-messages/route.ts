@@ -8,6 +8,8 @@ import {
     hasRealContent,
     appliesToListing,
     fillPlaceholders,
+    needsLockboxCode,
+    usesLockboxCode,
 } from '@/lib/scheduledMessages';
 import type { Template, BookingLike } from '@/lib/scheduledMessages';
 
@@ -177,6 +179,19 @@ export async function GET(request: Request) {
         const guestById: Record<string, any> = {};
         (guests || []).forEach((g: any) => { guestById[g.id] = g; });
 
+        // Door codes live in their own table with no grants to a browser, so
+        // they are only ever read here, with the service role. Only fetched
+        // when a live template actually asks for one.
+        const codeByListing: Record<string, string> = {};
+        if (live.some((t: Template) => usesLockboxCode(t.body))) {
+            const { data: codes } = await admin
+                .from('listing_access_codes')
+                .select('listing_id, code')
+                .in('listing_id', listingIds);
+
+            (codes || []).forEach((c: any) => { codeByListing[c.listing_id] = c.code; });
+        }
+
         for (const template of live as Template[]) {
             for (const booking of bookings as BookingLike[]) {
                 if (booking.host_id !== template.user_id) continue;
@@ -186,6 +201,26 @@ export async function GET(request: Request) {
                 if (!listing) continue;
 
                 if (!isDue(timingFor(template, booking, listing), now)) {
+                    continue;
+                }
+
+                // Held back rather than sent wrong.
+                //
+                // Checked before the claim on purpose. Claiming and then
+                // refusing to send would mark it done for ever, and the guest
+                // would never get their code even once somebody noticed and
+                // filled it in. Left unclaimed, the next run after the code is
+                // set sends it — late, but sent.
+                if (needsLockboxCode(template.body, codeByListing[booking.listing_id])) {
+                    await logError(
+                        'scheduled-messages: held back ' + template.template_type
+                            + ' for booking ' + booking.id
+                            + ' — the template asks for a door code and '
+                            + (listing.title || booking.listing_id) + ' has none set',
+                        null,
+                        { path: '/api/cron/scheduled-messages' }
+                    );
+                    failed++;
                     continue;
                 }
 
@@ -225,6 +260,7 @@ export async function GET(request: Request) {
                     listing: listing.title || 'your stay',
                     checkIn: formatDate(booking.check_in),
                     checkOut: formatDate(booking.check_out),
+                    lockboxCode: codeByListing[booking.listing_id] || null,
                 });
 
                 const { error: messageError } = await admin.from('messages').insert({

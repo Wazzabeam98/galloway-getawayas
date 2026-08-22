@@ -180,13 +180,38 @@ export function appliesToListing(template: Template, listingId: string): boolean
     return targeted.length === 0 || targeted.indexOf(listingId) !== -1;
 }
 
+// The door code is the one placeholder that can fail to resolve, because it
+// lives per listing and a host may not have set it. See needsLockboxCode.
+export const LOCKBOX_TOKEN = '{lockbox_code}';
+
+export function usesLockboxCode(body: string | null | undefined): boolean {
+    return String(body || '').indexOf(LOCKBOX_TOKEN) !== -1;
+}
+
+// Whether this message must be held back rather than sent.
+//
+// A guest reading "the code is {lockbox_code}" has been sent nonsense, and an
+// empty string is worse — it reads as though there is no code and they will
+// stand at the door trying the handle. Neither is better than the message
+// arriving late, once somebody has noticed and filled the code in.
+export function needsLockboxCode(body: string | null | undefined, code: string | null | undefined): boolean {
+    return usesLockboxCode(body) && !String(code || '').trim();
+}
+
 export function fillPlaceholders(
     body: string,
-    values: { guestName: string; listing: string; checkIn: string; checkOut: string }
+    values: {
+        guestName: string;
+        listing: string;
+        checkIn: string;
+        checkOut: string;
+        lockboxCode?: string | null;
+    }
 ): string {
     return String(body)
         .split('{guest_name}').join(values.guestName)
         .split('{listing}').join(values.listing)
         .split('{check_in}').join(values.checkIn)
-        .split('{check_out}').join(values.checkOut);
+        .split('{check_out}').join(values.checkOut)
+        .split(LOCKBOX_TOKEN).join(String(values.lockboxCode || ''));
 }
