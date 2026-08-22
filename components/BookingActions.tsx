@@ -10,12 +10,17 @@ import { notify } from '@/lib/notify';
 export default function BookingActions({
     bookingId,
     mode = 'pending',
+    allowCancel = true,
     totalPrice = 0,
     amountPaid = 0,
     amountRefunded = 0,
 }: {
     bookingId: string;
     mode?: 'pending' | 'confirmed';
+    // Off once the guest has arrived. Cancelling refunds the whole stay and
+    // puts the dates back on sale, which is the wrong answer to a problem
+    // found on the second night — Refund guest is.
+    allowCancel?: boolean;
     totalPrice?: number;
     amountPaid?: number;
     amountRefunded?: number;
@@ -23,7 +28,7 @@ export default function BookingActions({
     const supabase = createClientComponentClient();
     const router = useRouter();
     const [updating, setUpdating] = useState(false);
-    const [panel, setPanel] = useState<'none' | 'cancel' | 'refund'>('none');
+    const [panel, setPanel] = useState<'none' | 'cancel' | 'decline' | 'refund'>('none');
     const [refundAmount, setRefundAmount] = useState('');
     const [panelError, setPanelError] = useState('');
 
@@ -337,14 +342,58 @@ export default function BookingActions({
                         Refund guest
                     </button>
                 )}
-                <button
-                    type="button"
-                    onClick={() => setPanel('cancel')}
-                    disabled={updating}
-                    className="px-4 py-1.5 border border-slate-300 hover:border-red-400 hover:text-red-600 text-slate-700 text-sm font-semibold rounded-lg disabled:opacity-50"
-                >
-                    Cancel booking
-                </button>
+                {allowCancel && (
+                    <button
+                        type="button"
+                        onClick={() => setPanel('cancel')}
+                        disabled={updating}
+                        className="px-4 py-1.5 border border-slate-300 hover:border-red-400 hover:text-red-600 text-slate-700 text-sm font-semibold rounded-lg disabled:opacity-50"
+                    >
+                        Cancel booking
+                    </button>
+                )}
+            </div>
+        );
+    }
+
+    // Declining sends the guest's money back. It used to fire on one click,
+    // which was survivable while these buttons only existed on the bookings
+    // list; they are on the home page card now, on a surface that is itself a
+    // link, so a misplaced click has to be recoverable.
+    if (panel === 'decline') {
+        return (
+            <div className="rounded-xl border border-red-200 bg-red-50 p-4 text-left max-w-md">
+                <div className="text-sm font-semibold text-red-900">
+                    Decline this request?
+                </div>
+                <p className="text-sm text-red-800 mt-1">
+                    {refundable > 0
+                        ? 'Your guest is refunded the full £' + refundable.toFixed(2)
+                            + ' they have paid, and the dates go back on sale.'
+                        : 'The request is turned down and the dates go back on sale.'}
+                </p>
+                <p className="text-xs text-red-700 mt-2">
+                    There is no undoing this — they would have to book again, and the dates
+                    may be gone by then.
+                </p>
+
+                <div className="mt-3 flex items-center gap-2">
+                    <button
+                        type="button"
+                        onClick={() => updateStatus('declined')}
+                        disabled={updating}
+                        className="px-4 py-2 bg-red-700 hover:bg-red-800 text-white text-sm font-semibold rounded-lg disabled:opacity-50"
+                    >
+                        {updating ? 'Declining…' : 'Yes, decline it'}
+                    </button>
+                    <button
+                        type="button"
+                        onClick={() => setPanel('none')}
+                        className="px-4 py-2 text-sm font-semibold text-slate-600 hover:text-slate-900"
+                    >
+                        Keep the request
+                    </button>
+                </div>
             </div>
         );
     }
@@ -357,11 +406,11 @@ export default function BookingActions({
                 disabled={updating}
                 className="px-4 py-1.5 bg-slate-900 hover:bg-black text-white text-sm font-semibold rounded-lg disabled:opacity-50"
             >
-                Confirm
+                {updating ? 'Confirming…' : 'Confirm'}
             </button>
             <button
                 type="button"
-                onClick={() => updateStatus('declined')}
+                onClick={() => setPanel('decline')}
                 disabled={updating}
                 className="px-4 py-1.5 border border-slate-300 hover:border-slate-500 text-slate-700 text-sm font-semibold rounded-lg disabled:opacity-50"
             >

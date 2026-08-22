@@ -40,11 +40,13 @@ export default function BookingsView({
     listingMap,
     guestNameMap,
     reviewedBookingIds,
+    ownedListingIds = [],
 }: {
     bookings: Booking[];
     listingMap: Record<string, ListingInfo>;
     guestNameMap: Record<string, string>;
     reviewedBookingIds: string[];
+    ownedListingIds?: string[];
 }) {
     const [tab, setTab] = useState<'upcoming' | 'past'>('upcoming');
     const now = new Date();
@@ -95,10 +97,14 @@ export default function BookingsView({
             ? Number(booking.commission_rate)
             : rateFor(listing);
         const guestName = guestNameMap[booking.guest_id] || 'Guest';
-        const showConfirmDecline = booking.status === 'pending';
+        // Answering, cancelling and refunding are the owner's alone. A
+        // co-host with can_bookings sees the booking and can message about
+        // it, but these routes turn them away with a 403.
+        const canAnswer = ownedListingIds.indexOf(booking.listing_id) !== -1;
+        const showConfirmDecline = booking.status === 'pending' && canAnswer;
         // Callable off right up to the end of arrival day. Once the guest is
         // in, a full refund is the wrong instrument — Refund guest is.
-        const showCancel = booking.status === 'confirmed' && !stayHasStarted(booking.check_in, now);
+        const showCancel = booking.status === 'confirmed' && canAnswer && !stayHasStarted(booking.check_in, now);
         const isReviewable = booking.status === 'confirmed'
             && stayHasEnded(booking.check_out, checkOutTimeFor(booking), now);
         const alreadyReviewed = reviewedSet.has(booking.id);
@@ -117,7 +123,12 @@ export default function BookingsView({
                         )}
                     </div>
                     <div>
-                        <div className="font-semibold text-slate-900">{listing?.title || 'Listing'}</div>
+                        <Link
+                            href={'/dashboard/bookings/' + booking.id}
+                            className="font-semibold text-slate-900 hover:underline"
+                        >
+                            {listing?.title || 'Listing'}
+                        </Link>
                         <div className="text-sm text-slate-600">
                             {capitializeFirst(guestName)} · {booking.check_in} → {booking.check_out} · {booking.guests} guest{booking.guests > 1 ? 's' : ''}
                         </div>
@@ -140,9 +151,14 @@ export default function BookingsView({
                                 </Link>
                             )
                         ) : (
-                            <Link href={`/messages/${booking.id}`} className="text-xs font-semibold text-slate-500 underline hover:text-slate-800">
-                                Message guest
-                            </Link>
+                            <div className="flex items-center gap-3">
+                                <Link href={'/dashboard/bookings/' + booking.id} className="text-xs font-semibold text-slate-500 underline hover:text-slate-800">
+                                    Full details
+                                </Link>
+                                <Link href={`/messages/${booking.id}`} className="text-xs font-semibold text-slate-500 underline hover:text-slate-800">
+                                    Message guest
+                                </Link>
+                            </div>
                         )}
                     </div>
                 </div>

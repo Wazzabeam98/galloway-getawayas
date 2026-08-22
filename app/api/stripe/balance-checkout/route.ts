@@ -71,6 +71,22 @@ export async function POST(request: Request) {
             customer_email: session.user.email,
             client_reference_id: booking.id,
             payment_method_types: ['card', 'klarna', 'link'],
+            // GBP only, at the price on the listing.
+            //
+            // Stripe's Adaptive Pricing is on by default and converts the
+            // price into whatever currency it decides the guest's country
+            // wants — which is why a Scottish cottage priced in pounds was
+            // offering euros at checkout. Off here as well as in the
+            // Dashboard: the toggle is per account and per mode and can be
+            // turned back on by anyone with a login, whereas this travels
+            // with the code.
+            //
+            // Nothing about the money was ever at risk from it. The session
+            // and the payment intent always reported this currency and this
+            // amount, so commission, payouts and refunds were unaffected —
+            // it was only what the guest was shown, plus the 2-4% conversion
+            // fee they would have paid for the privilege.
+            adaptive_pricing: { enabled: false },
             // Lands on a page that confirms the payment from the booking id
             // alone, so a session lost on the way back from Stripe never leaves
             // a guest staring at a login screen.

@@ -5,9 +5,10 @@ import { cookies } from 'next/headers';
 import Link from 'next/link';
 import { getImageUrl, displayName } from '@/lib/utils';
 import { formatUk } from '@/lib/cancellation';
-import { listingIdsFor } from '@/lib/access';
+import { accessibleListings } from '@/lib/access';
 import { MessageSquare, CalendarDays, Phone } from 'lucide-react';
 import UpcomingTrip from '@/components/UpcomingTrip';
+import BookingActions from '@/components/BookingActions';
 
 // The host-mode counterpart to UpcomingTrip. Somebody who has switched to
 // hosting is thinking about who is arriving, not about their own holiday, so
@@ -18,15 +19,27 @@ export default async function HostReservations() {
 
     if (!auth || !auth.session || !auth.session.user) return null;
 
+    // One pass over their access, then three questions of it. listingIdsFor
+    // fetches the lot every time it is called, so asking it twice fetched the
+    // same rows twice.
+    const access = await accessibleListings(auth.session.user.id);
+
     // Properties they own, plus any they co-host with permission to see
     // bookings. Read with the service key: a co-host is not the host_id on a
     // booking row, so row-level security would hand back nothing at all.
-    const allowed = await listingIdsFor(auth.session.user.id, 'can_bookings');
+    const allowed = access.filter((a) => a.can_bookings).map((a) => a.listingId);
 
     // Money is a separate permission. Somebody can be trusted with the diary
     // and not with the takings — staff, typically — so the earnings line is
     // gated on can_earnings rather than on seeing the booking at all.
-    const earningsAllowed = await listingIdsFor(auth.session.user.id, 'can_earnings');
+    const earningsAllowed = access.filter((a) => a.can_earnings).map((a) => a.listingId);
+
+    // Accepting and declining are never delegated, whatever else somebody has
+    // been given — see the note on accessibleListings. Declining refunds the
+    // guest, and /api/stripe/refund answers 403 to anyone who is not the
+    // host_id, so showing a co-host these buttons offers them a click that
+    // cannot work.
+    const ownedIds = access.filter((a) => a.isOwner).map((a) => a.listingId);
 
     // The mode cookie outlives the listings that justified it — someone who
     // has since removed their last property would otherwise get a blank space
@@ -47,7 +60,7 @@ export default async function HostReservations() {
     // sitting on a stay that is already under way.
     const { data: bookings } = await admin
         .from('bookings')
-        .select('id, listing_id, guest_id, check_in, check_out, status, guests, total_price, commission_rate, amount_refunded')
+        .select('id, listing_id, guest_id, check_in, check_out, status, guests, total_price, commission_rate, amount_paid, amount_refunded')
         .in('listing_id', allowed)
         .in('status', ['confirmed', 'pending'])
         .gte('check_in', todayKey)
@@ -152,6 +165,7 @@ export default async function HostReservations() {
                     paysOn.setDate(paysOn.getDate() + 1);
 
                     const showMoney = earningsAllowed.indexOf(booking.listing_id) !== -1;
+                    const canAnswer = ownedIds.indexOf(booking.listing_id) !== -1;
 
                     // Close enough to arrival that a host may need to ring
                     // them — a late ferry, a key left somewhere. Further out
@@ -159,9 +173,7 @@ export default async function HostReservations() {
                     // that is open the moment somebody signs in.
                     const phone = days <= 1 ? guestPhoneMap[booking.guest_id] : null;
 
-                    // There is no page per booking, so this lands on the
-                    // bookings list and jumps to the row.
-                    const bookingHref = '/dashboard/bookings#booking-' + booking.id;
+                    const bookingHref = '/dashboard/bookings/' + booking.id;
 
 
                     return (
@@ -230,9 +242,30 @@ export default async function HostReservations() {
                                     </div>
                                 )}
 
+                                {/* The card said a request was waiting and gave
+                                    nowhere to answer it, so the host had to go
+                                    hunting for the buttons on another page.
+                                    'relative' lifts these clear of the link
+                                    covering the whole card. */}
                                 {booking.status === 'pending' && (
-                                    <div className="mt-5 text-sm text-amber-700">
-                                        Waiting for you to confirm
+                                    <div className="relative mt-5">
+                                        <div className="text-sm font-semibold text-amber-700">
+                                            Waiting for you to confirm
+                                        </div>
+                                        {canAnswer ? (
+                                        <div className="mt-3">
+                                            <BookingActions
+                                                bookingId={booking.id}
+                                                totalPrice={Number(booking.total_price || 0)}
+                                                amountPaid={Number(booking.amount_paid || 0)}
+                                                amountRefunded={Number(booking.amount_refunded || 0)}
+                                            />
+                                        </div>
+                                        ) : (
+                                            <div className="mt-1 text-sm text-stone-500">
+                                                Only the owner can answer this one.
+                                            </div>
+                                        )}
                                     </div>
                                 )}
 

@@ -145,7 +145,7 @@ export async function POST(request: Request) {
                     { label: 'Guests', value: String(booking.guests || 1) },
                     { label: 'Total', value: '&pound;' + Number(booking.total_price || 0).toFixed(2) },
                 ]) +
-                button(SITE_URL + '/dashboard/bookings', instant ? 'View the booking' : 'Review this request'),
+                button(SITE_URL + '/dashboard/bookings/' + booking.id, instant ? 'View the booking' : 'Review this request'),
                 "You're receiving this because you host on Galloway Getaways. Booking emails can't be switched off."
             );
 
