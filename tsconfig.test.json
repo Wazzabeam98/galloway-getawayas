@@ -22,6 +22,7 @@
     "app/api/cron/host-payouts/route.ts",
     "app/api/cron/balance-charges/route.ts",
     "app/api/stripe/webhook/route.ts",
-    "app/api/notify/route.ts"
+    "app/api/notify/route.ts",
+    "app/api/cron/scheduled-messages/route.ts"
   ]
 }

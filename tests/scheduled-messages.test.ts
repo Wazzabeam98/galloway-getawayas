@@ -179,3 +179,137 @@ test('placeholders are filled, including repeats', () => {
     );
     assert.doesNotMatch(out, /\{/, 'no placeholder is left showing to a guest');
 });
+
+/* -------------------------------------- which bookings the run even looks at */
+
+// The bug this covers: the run only queried stays within 40 days either side
+// of today, but a booking-anchored template counts from when the host
+// accepted, not from the dates of the stay. Somebody accepting a booking for a
+// stay six months out would never have got their welcome message — the stay
+// was outside the window, so the booking was never looked at.
+
+import { stubModule, clearModule } from './helpers/stub';
+
+const ROUTE = '@/app/api/cron/scheduled-messages/route';
+
+function loadRoute(opts: { templates: any[]; farFutureBooking: any }) {
+    const queries: any[] = [];
+    const claims: any[] = [];
+    const messages: any[] = [];
+
+    function builder(table: string) {
+        const state: any = { table, ops: [] };
+        const chain: any = new Proxy({}, {
+            get(_t, prop: string) {
+                if (prop === 'then') {
+                    const filters: Record<string, any> = {};
+                    state.ops.forEach((o: any) => {
+                        if (o.op === 'gte' || o.op === 'lte') filters[o.op + ':' + o.args[0]] = o.args[1];
+                    });
+
+                    if (table === 'message_templates') {
+                        return (r: any) => r({ data: opts.templates, error: null });
+                    }
+                    if (table === 'bookings') {
+                        queries.push(filters);
+                        // The stay-date query must not find it; only the
+                        // confirmed_at sweep may.
+                        const byConfirmedAt = Object.keys(filters).some(
+                            (k) => k.indexOf('confirmed_at') !== -1
+                        );
+                        return (r: any) => r({
+                            data: byConfirmedAt ? [opts.farFutureBooking] : [],
+                            error: null,
+                        });
+                    }
+                    if (table === 'listings') {
+                        return (r: any) => r({
+                            data: [{ id: 'l1', title: 'Bookshop Flat', check_in_time: '15:00:00', check_out_time: '11:00:00' }],
+                            error: null,
+                        });
+                    }
+                    if (table === 'profiles') {
+                        return (r: any) => r({ data: [{ id: 'g1', full_name: 'Alex Guest' }], error: null });
+                    }
+                    if (table === 'sent_scheduled_messages') {
+                        const insert = state.ops.find((o: any) => o.op === 'insert');
+                        if (insert) claims.push(insert.args[0]);
+                        return (r: any) => r({ data: null, error: null });
+                    }
+                    if (table === 'messages') {
+                        const insert = state.ops.find((o: any) => o.op === 'insert');
+                        if (insert) messages.push(insert.args[0]);
+                        return (r: any) => r({ data: null, error: null });
+                    }
+                    return (r: any) => r({ data: [], error: null });
+                }
+                return (...args: any[]) => { state.ops.push({ op: prop, args }); return chain; };
+            },
+        });
+        return chain;
+    }
+
+    process.env.CRON_SECRET = 'test-secret';
+    process.env.NEXT_PUBLIC_SUPABASE_URL = 'http://example.invalid';
+    process.env.SUPABASE_SERVICE_ROLE_KEY = 'test-service-key';
+
+    stubModule('@/lib/supabaseAdmin', { adminClient: () => ({ from: (t: string) => builder(t) }) });
+    stubModule('next/server', {
+        NextResponse: { json: (b: any, i?: any) => ({ body: b, status: (i && i.status) || 200 }) },
+    });
+    stubModule('@/lib/logError', { logError: async () => undefined });
+
+    clearModule(ROUTE);
+    return { route: require(ROUTE.replace('@/', '../')), queries, claims, messages };
+}
+
+const authorised = () =>
+    new Request('http://example.invalid/api/cron/scheduled-messages', {
+        headers: { authorization: 'Bearer test-secret' },
+    });
+
+const bookingAnchoredTemplate = {
+    user_id: 'h1', template_type: 'booking_confirmation',
+    body: 'Hi {guest_name}, thanks for booking {listing}.',
+    enabled: true, anchor: 'booking', days_offset: 0, send_hour: 9,
+    minutes_after: 15, hours_after: 0, hours_before: 0, listing_ids: [],
+};
+
+// Confirmed an hour ago, for a stay far outside the stay-date window.
+const farFuture = {
+    id: 'b-far', host_id: 'h1', guest_id: 'g1', listing_id: 'l1',
+    check_in: '2027-03-01', check_out: '2027-03-05', status: 'confirmed',
+    confirmed_at: new Date(Date.now() - 3600000).toISOString(),
+};
+
+test('a booking accepted today for a stay months away still gets its welcome message', async () => {
+    const { route, queries, messages } = loadRoute({
+        templates: [bookingAnchoredTemplate],
+        farFutureBooking: farFuture,
+    });
+
+    const res: any = await route.GET(authorised());
+    assert.equal(res.status, 200);
+
+    assert.ok(
+        queries.some((f) => Object.keys(f).some((k) => k.indexOf('confirmed_at') !== -1)),
+        'the run must ask about recently accepted bookings, not only about stay dates'
+    );
+    assert.equal(messages.length, 1, 'the stay is in March; the message is due now');
+    assert.match(messages[0].body, /thanks for booking Bookshop Flat/);
+});
+
+test('the extra query is only made when a booking-anchored template is live', async () => {
+    const { route, queries } = loadRoute({
+        templates: [{ ...bookingAnchoredTemplate, anchor: 'check_in', days_offset: 3 }],
+        farFutureBooking: farFuture,
+    });
+
+    await route.GET(authorised());
+
+    assert.equal(
+        queries.some((f) => Object.keys(f).some((k) => k.indexOf('confirmed_at') !== -1)),
+        false,
+        'nothing keys off acceptance, so there is no reason to ask'
+    );
+});
