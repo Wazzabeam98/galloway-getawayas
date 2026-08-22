@@ -1,4 +1,5 @@
 import { formatTime } from '@/lib/utils';
+import { round2 } from '@/lib/hostDebt';
 // =====================================================================
 // GALLOWAY GETAWAYS — notification sender
 // WHERE THIS GOES: GitHub → app/api/notify/route.ts   (NEW FILE)
@@ -78,7 +79,7 @@ export async function POST(request: Request) {
 
         const { data: booking } = await admin
             .from('bookings')
-            .select('id, listing_id, guest_id, host_id, check_in, check_out, guests, total_price, status')
+            .select('id, listing_id, guest_id, host_id, check_in, check_out, guests, total_price, status, amount_paid, amount_refunded, balance_amount, balance_due_date, free_cancel_until')
             .eq('id', bookingId)
             .maybeSingle();
 
@@ -181,6 +182,55 @@ export async function POST(request: Request) {
                 return NextResponse.json({ ok: true, skipped: 'no email for this status' });
             }
 
+            // The three questions a guest asks in the ten minutes after
+            // paying: when does the rest come out, how long can I change my
+            // mind, and what do I get back if I do. All three were on the
+            // confirmation page and in none of the email, which is the thing
+            // they keep.
+            //
+            // Every figure is read off the booking as stored, not recalculated
+            // here. free_cancel_until and balance_due_date were stamped by the
+            // checkout route when the guest agreed to them, and this email is
+            // quoting the agreement back — working them out again would let
+            // the email and the booking drift apart.
+            const paidSoFar = round2(
+                Number(booking.amount_paid || 0) - Number(booking.amount_refunded || 0)
+            );
+            const balanceLeft = round2(Number(booking.balance_amount || 0));
+
+            const moneyRows = booking.status === 'confirmed'
+                ? [
+                    ...(paidSoFar > 0
+                        ? [{ label: 'Paid so far', value: '&pound;' + paidSoFar.toFixed(2) }]
+                        : []),
+                    ...(balanceLeft > 0
+                        ? [{
+                            label: 'Still to pay',
+                            value: '&pound;' + balanceLeft.toFixed(2)
+                                + (booking.balance_due_date
+                                    ? ', taken from the same card on '
+                                        + escapeHtml(formatDate(booking.balance_due_date))
+                                    : ', due before you arrive')
+                                + '. You can pay it sooner from your trips page.',
+                        }]
+                        : [{ label: 'Still to pay', value: 'Nothing &mdash; your stay is paid in full.' }]),
+                    ...(booking.free_cancel_until
+                        ? [{
+                            label: 'Free cancellation',
+                            value: 'Cancel by ' + escapeHtml(formatDate(booking.free_cancel_until))
+                                + ' and you get back everything you have paid'
+                                + (paidSoFar > 0 ? ' — &pound;' + paidSoFar.toFixed(2) + ' today' : '')
+                                + '. After that a share is kept, depending on how close to your stay it is.',
+                        }]
+                        : [{
+                            label: 'Cancelling',
+                            value: 'These dates are outside the free-cancellation window, so a'
+                                + ' cancellation now would not be refunded in full. Get in touch'
+                                + ' if something changes and we will see what we can do.',
+                        }]),
+                ]
+                : [];
+
             const html = emailLayout(
                 '<h1 style="margin:0 0 16px 0;font-size:22px;font-weight:700;color:#111827;">' + heading + '</h1>' +
                 '<p style="margin:0;">Hi ' + guestFirst + ' &mdash; ' + intro + '</p>' +
@@ -190,6 +240,7 @@ export async function POST(request: Request) {
                     ...(arrivalLine ? [{ label: 'Times', value: escapeHtml(arrivalLine + '.') }] : []),
                     { label: 'Guests', value: String(booking.guests || 1) },
                     { label: 'Total', value: '&pound;' + Number(booking.total_price || 0).toFixed(2) },
+                    ...moneyRows,
                 ]) +
                 button(SITE_URL + '/trips', 'View your trip'),
                 "You're receiving this because you have a booking with Galloway Getaways. Booking emails can't be switched off."

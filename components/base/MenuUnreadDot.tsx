@@ -13,8 +13,8 @@ import usePendingCount from './usePendingCount';
 //
 // One dot, not two. Two dots on an icon this size is a smudge as well, and a
 // host does not need to know which kind of thing is waiting before opening the
-// menu that tells them. It goes amber when a booking request is unanswered —
-// a guest's money is already held for that one, so it outranks a message.
+// menu that tells them. One colour too: the dot means "something is waiting",
+// and a host should not have to learn a palette to read a 10px circle.
 export default function MenuUnreadDot({
     enabled = true,
     host = false,
@@ -45,7 +45,7 @@ export default function MenuUnreadDot({
                 <span
                     // A white ring so the dot reads as separate from the icon
                     // rather than as part of the top bar of the hamburger.
-                    className={`absolute -top-1 -right-1 w-2.5 h-2.5 rounded-full ring-2 ring-white ${pending > 0 ? 'bg-amber-600' : 'bg-emerald-700'}`}
+                    className='absolute -top-1 -right-1 w-2.5 h-2.5 rounded-full ring-2 ring-white bg-emerald-700'
                     aria-hidden='true'
                 />
             )}

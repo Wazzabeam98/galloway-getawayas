@@ -6,6 +6,7 @@ import { useRouter } from 'next/navigation';
 import { toast } from 'react-toastify';
 import { displayName } from '@/lib/utils';
 import { notify } from '@/lib/notify';
+import { bookingsChanged } from '@/components/base/usePendingCount';
 
 export default function BookingActions({
     bookingId,
@@ -238,6 +239,12 @@ export default function BookingActions({
             cancelled: 'Booking cancelled.',
         };
         toast.success(messages[status], { theme: 'colored' });
+
+        // The menu badge is a client component that router.refresh() does not
+        // re-run, so without this the dot stays lit on a request that has just
+        // been answered.
+        bookingsChanged();
+
         router.refresh();
     };
 
