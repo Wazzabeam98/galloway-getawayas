@@ -8,7 +8,7 @@
 
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { guidanceFor, deadlineText, isUrgent, isMoneyAtRisk } from '../lib/disputes';
+import { guidanceFor, deadlineText, isUrgent, isMoneyAtRisk, isInquiry } from '../lib/disputes';
 
 const now = new Date('2026-08-22T12:00:00.000Z');
 const inHours = (h: number) => new Date(now.getTime() + h * 3600000);
@@ -48,6 +48,24 @@ test('an open dispute is money at risk', () => {
     assert.equal(isMoneyAtRisk({ status: 'needs_response', funds_reinstated_at: null }), true);
     assert.equal(isMoneyAtRisk({ status: 'under_review', funds_reinstated_at: null }), true);
     assert.equal(isMoneyAtRisk({ status: 'lost', funds_reinstated_at: null }), true);
+});
+
+// Found by raising both kinds against test Stripe: the page totalled an early
+// fraud warning together with a real chargeback, when no money had gone on the
+// warning at all. A warning cannot even be closed the way a dispute can.
+test('an early warning is not money at risk, because nothing has been taken', () => {
+    assert.equal(isInquiry('warning_needs_response'), true);
+    assert.equal(isInquiry('warning_under_review'), true);
+    assert.equal(isInquiry('warning_closed'), true);
+    assert.equal(isInquiry('needs_response'), false, 'a real dispute is not a warning');
+    assert.equal(isInquiry(null), false);
+
+    assert.equal(isMoneyAtRisk({ status: 'warning_needs_response', funds_reinstated_at: null }), false);
+    assert.equal(
+        isMoneyAtRisk({ status: 'needs_response', funds_reinstated_at: null }),
+        true,
+        'but the real one still counts, or the total understates the loss'
+    );
 });
 
 test('a won dispute is not money at risk', () => {

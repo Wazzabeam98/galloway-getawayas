@@ -124,11 +124,26 @@ export function isUrgent(dueBy: Date | null, now: Date): boolean {
     return dueBy.getTime() - now.getTime() < 72 * 3600000;
 }
 
-// A dispute is only money at risk while it is open and unresolved. Won ones
-// and reinstated funds must stop showing as a liability, or the number nobody
-// can explain becomes the number nobody trusts.
+// An early fraud warning is not a chargeback.
+//
+// Stripe's `warning_*` statuses are an inquiry: the card network has flagged
+// the charge, and no money has been taken. It still wants answering — a good
+// response can stop it becoming a real dispute — but it is not a liability,
+// and adding it to the amount at risk overstates what is actually gone.
+//
+// Found by raising both against test Stripe and watching the page total two
+// different kinds of thing together. A warning cannot even be closed the way
+// a dispute can, which is the tell.
+export function isInquiry(status: string | null | undefined): boolean {
+    return String(status || '').indexOf('warning') === 0;
+}
+
+// Money actually withdrawn and not yet returned. Won disputes, reinstated
+// funds and inquiries are all excluded — a total nobody can explain becomes a
+// total nobody trusts.
 export function isMoneyAtRisk(dispute: { status: string | null; funds_reinstated_at: string | null }): boolean {
     if (dispute.funds_reinstated_at) return false;
     const status = String(dispute.status || '');
-    return status !== 'won' && status !== 'warning_closed';
+    if (isInquiry(status)) return false;
+    return status !== 'won';
 }

@@ -6,7 +6,7 @@ import Link from 'next/link';
 import { notFound } from 'next/navigation';
 import { adminClient } from '@/lib/supabaseAdmin';
 import { formatUk } from '@/lib/cancellation';
-import { guidanceFor, deadlineText, isUrgent, isMoneyAtRisk } from '@/lib/disputes';
+import { guidanceFor, deadlineText, isUrgent, isMoneyAtRisk, isInquiry } from '@/lib/disputes';
 
 // Chargebacks, and what to send back.
 //
@@ -62,6 +62,7 @@ export default async function AdminDisputes() {
     const atRisk = open
         .filter((d: any) => isMoneyAtRisk(d))
         .reduce((sum: number, d: any) => sum + Number(d.amount || 0), 0);
+    const inquiries = open.filter((d: any) => isInquiry(d.status)).length;
 
     return (
         <div className="max-w-3xl mx-auto px-6 py-10">
@@ -84,16 +85,39 @@ export default async function AdminDisputes() {
                 </div>
             ) : (
                 <>
-                    <div className="border border-red-300 bg-red-50 rounded-2xl p-5 mb-6">
-                        <div className="font-semibold text-red-900">
-                            £{atRisk.toFixed(2)} at risk across {open.length} open{' '}
-                            {open.length === 1 ? 'dispute' : 'disputes'}
+                    {/* Red only when money has actually gone. An early warning
+                        still needs answering, but colouring it as a loss —
+                        and saying Stripe has taken money it has not — is how a
+                        banner stops being believed. */}
+                    {atRisk > 0 ? (
+                        <div className="border border-red-300 bg-red-50 rounded-2xl p-5 mb-6">
+                            <div className="font-semibold text-red-900">
+                                £{atRisk.toFixed(2)} taken back by Stripe, across{' '}
+                                {open.length - inquiries}{' '}
+                                {open.length - inquiries === 1 ? 'chargeback' : 'chargebacks'}
+                            </div>
+                            <p className="text-sm text-red-800 mt-1">
+                                It comes back only if they are won.
+                                {inquiries > 0 && (
+                                    <>
+                                        {' '}There {inquiries === 1 ? 'is also 1' : 'are also ' + inquiries}{' '}
+                                        early {inquiries === 1 ? 'warning' : 'warnings'} below, where no
+                                        money has gone yet.
+                                    </>
+                                )}
+                            </p>
                         </div>
-                        <p className="text-sm text-red-800 mt-1">
-                            Stripe has already taken this from the balance. It comes back only if
-                            the disputes are won.
-                        </p>
-                    </div>
+                    ) : (
+                        <div className="border border-amber-300 bg-amber-50 rounded-2xl p-5 mb-6">
+                            <div className="font-semibold text-amber-900">
+                                {inquiries === 1 ? '1 early warning' : inquiries + ' early warnings'} to answer
+                            </div>
+                            <p className="text-sm text-amber-800 mt-1">
+                                No money has been taken. The card network has flagged the charge, and a
+                                good response now is what stops it becoming a chargeback.
+                            </p>
+                        </div>
+                    )}
 
                     <div className="space-y-5">
                         {open.map((d: any) => {
@@ -111,8 +135,15 @@ export default async function AdminDisputes() {
                                         <div className={`font-bold ${urgent ? 'text-red-700' : 'text-slate-900'}`}>
                                             {deadlineText(dueBy, now)}
                                         </div>
-                                        <div className="font-bold text-slate-900">
-                                            £{Number(d.amount || 0).toFixed(2)}
+                                        <div className="text-right">
+                                            <div className="font-bold text-slate-900">
+                                                £{Number(d.amount || 0).toFixed(2)}
+                                            </div>
+                                            {isInquiry(d.status) && (
+                                                <div className="text-xs font-semibold text-amber-700">
+                                                    early warning — not yet taken
+                                                </div>
+                                            )}
                                         </div>
                                     </div>
 
