@@ -34,7 +34,7 @@ export default async function BookingsPage() {
     const guestIds = Array.from(new Set((bookings || []).map((b) => b.guest_id)));
 
     const { data: listings } = listingIds.length
-        ? await admin.from("listings").select("id, title, images, commission_rate").in("id", listingIds)
+        ? await admin.from("listings").select("id, title, images, commission_rate, check_out_time").in("id", listingIds)
         : { data: [] };
 
     const { data: guests } = guestIds.length
@@ -45,13 +45,21 @@ export default async function BookingsPage() {
     // from a Server Component into a Client Component.
     const listingMap: Record<
         string,
-        { title: string; images: string[] | null; commission_rate: number | null }
+        {
+            title: string;
+            images: string[] | null;
+            commission_rate: number | null;
+            check_out_time: string | null;
+        }
     > = {};
     (listings || []).forEach((l) => {
         listingMap[l.id] = {
             title: l.title,
             images: l.images,
             commission_rate: l.commission_rate,
+            // Decides when a stay stops being upcoming, so the split lands on
+            // the guest actually leaving rather than on midnight.
+            check_out_time: l.check_out_time,
         };
     });
 

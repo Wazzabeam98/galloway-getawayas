@@ -1,11 +1,12 @@
 'use client';
 
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import Link from 'next/link';
 import { getImageUrl, capitializeFirst } from '@/lib/utils';
 import BookingActions from '@/components/BookingActions';
 import { CalendarClock, History } from 'lucide-react';
 import { rateFor, netOfFee } from '@/lib/fees';
+import { stayHasEnded, stayHasStarted } from '@/lib/stayWindow';
 
 interface Booking {
     id: string;
@@ -25,6 +26,7 @@ interface ListingInfo {
     title: string;
     images: string[] | null;
     commission_rate?: number | null;
+    check_out_time?: string | null;
 }
 
 const statusStyles: Record<string, string> = {
@@ -45,16 +47,45 @@ export default function BookingsView({
     reviewedBookingIds: string[];
 }) {
     const [tab, setTab] = useState<'upcoming' | 'past'>('upcoming');
-    const today = new Date();
+    const now = new Date();
     const reviewedSet = new Set(reviewedBookingIds);
 
+    const checkOutTimeFor = (b: Booking) => listingMap[b.listing_id]?.check_out_time;
+
+    // A stay belongs under Upcoming until the guest is actually due out, so a
+    // booking made for tonight is where the host looks for it, and a stay
+    // already under way doesn't disappear on its second morning.
     const isUpcoming = (b: Booking) =>
-        (b.status === 'pending' || b.status === 'confirmed') && new Date(b.check_in) >= today;
+        (b.status === 'pending' || b.status === 'confirmed')
+        && !stayHasEnded(b.check_out, checkOutTimeFor(b), now);
 
     const upcoming = bookings.filter(isUpcoming);
     const past = bookings.filter((b) => !isUpcoming(b));
 
     const list = tab === 'upcoming' ? upcoming : past;
+
+    // The home page cards link to '#booking-<id>' without knowing which tab
+    // the booking is under, and the wrong tab renders an anchor that isn't
+    // there. Work out where it actually is, switch to it, then jump — the
+    // browser's own jump happened before this tab existed.
+    useEffect(() => {
+        const hash = window.location.hash;
+        if (hash.indexOf('#booking-') !== 0) return;
+
+        const id = hash.slice('#booking-'.length);
+        const found = bookings.filter((b) => b.id === id)[0];
+        if (!found) return;
+
+        setTab(isUpcoming(found) ? 'upcoming' : 'past');
+
+        const timer = setTimeout(() => {
+            const el = document.getElementById('booking-' + id);
+            if (el) el.scrollIntoView({ block: 'center' });
+        }, 0);
+
+        return () => clearTimeout(timer);
+        // eslint-disable-next-line react-hooks/exhaustive-deps
+    }, []);
 
     const BookingRow = ({ booking }: { booking: Booking }) => {
         const listing = listingMap[booking.listing_id];
@@ -65,8 +96,11 @@ export default function BookingsView({
             : rateFor(listing);
         const guestName = guestNameMap[booking.guest_id] || 'Guest';
         const showConfirmDecline = booking.status === 'pending';
-        const showCancel = booking.status === 'confirmed' && new Date(booking.check_in) >= today;
-        const isReviewable = booking.status === 'confirmed' && new Date(booking.check_out) < today;
+        // Callable off right up to the end of arrival day. Once the guest is
+        // in, a full refund is the wrong instrument — Refund guest is.
+        const showCancel = booking.status === 'confirmed' && !stayHasStarted(booking.check_in, now);
+        const isReviewable = booking.status === 'confirmed'
+            && stayHasEnded(booking.check_out, checkOutTimeFor(booking), now);
         const alreadyReviewed = reviewedSet.has(booking.id);
 
         return (
