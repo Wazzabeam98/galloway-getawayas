@@ -1,5 +1,6 @@
 'use client';
 
+import Link from 'next/link';
 import { useEffect, useState } from 'react';
 import { createClientComponentClient } from '@supabase/auth-helpers-nextjs';
 import { DEFAULT_COMMISSION_PERCENT } from '@/lib/fees';
@@ -116,7 +117,11 @@ export default function CommissionAdmin() {
 
     return (
         <div className="max-w-3xl mx-auto px-6 py-10">
-            <h1 className="text-2xl font-bold text-slate-900 mb-1">Commission rates</h1>
+            <Link href="/admin" className="text-sm text-slate-500 hover:underline">
+                &larr; Owner tools
+            </Link>
+
+            <h1 className="text-2xl font-bold text-slate-900 mt-4 mb-1">Commission rates</h1>
             <p className="text-sm text-slate-500 mb-8">
                 Leave a rate blank for the standard {DEFAULT_COMMISSION_PERCENT}%. Hosts never see
                 this page or their rate.
