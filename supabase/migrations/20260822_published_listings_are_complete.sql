@@ -31,15 +31,12 @@
 -- Run against production and test on 22 August 2026: no rows on either.
 -- Production had 4 published listings, test had 10.
 --
--- APPLIED TO TEST on 22 August 2026, and checked: an update setting a
+-- LIVE ON BOTH PROJECTS as of 22 August 2026 — nothing here needs running.
+-- Applied to test from the MacBook and checked there: an update setting a
 -- published listing to price 0, and one setting its title to spaces, were both
--- refused.
---
--- NOT YET APPLIED TO PRODUCTION. There is no production database password on
--- the MacBook — supabase/.temp/pooler-url carries the host and user but no
--- password, and the CLI has no stored access token — so it could not be run
--- from here. Run the alter and comment below in the Supabase SQL editor for
--- project hviwjxigqivjfhmhpjiy, then delete this paragraph.
+-- refused. Applied to production in the Supabase SQL editor, which is where it
+-- had to happen — there is no production database password on the MacBook, so
+-- it could not be run from a terminal here.
 
 alter table public.listings
     add constraint listings_published_are_complete

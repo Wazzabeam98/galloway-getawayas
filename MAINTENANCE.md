@@ -124,6 +124,34 @@ Please:
   already violates it, so the query goes first and any overlapping pairs get
   sorted out before the `alter table`.
 
+- **A published listing must have a name and a price the database agrees to.**
+  `listings_published_are_complete` is a check constraint on `listings`: a row
+  at `status = 'published'` must have a title that is not blank once trimmed
+  and a `price_per_night` above zero. Drafts are exempt on purpose — a
+  half-finished draft is the point of Save & finish later — and `hidden` rows
+  were published before they were taken down, so they already pass.
+
+  It exists because both places that publish are browser code writing straight
+  to the table: the wizard in `app/addhome/page.tsx` and
+  `app/edit-listing/[id]/page.tsx`. Both refuse now, but a form can only refuse
+  politely. Two ways past them had already been found — the wizard stored
+  `title || 'Untitled listing'` on a draft, which then loaded back in and
+  published as the name, and the edit screen tested `!price`, which the string
+  `"0"` passes.
+
+  **Live on both projects as of 22 August 2026 — nothing needs running.** The
+  pre-flight was run against both first and returned no rows either side.
+  Production had to be done in the Supabase SQL editor: there is no production
+  database password on the MacBook, only the test one, so a terminal here can
+  reach test and not production.
+
+  **Photos are deliberately not in it**, even though the wizard requires one.
+  Every seed listing in the test project is created with an empty `images`
+  array, so a photo condition would have refused to apply to test at all and
+  would have broken the payment suite's reseed. Photos are a rule the forms
+  enforce and the database does not. Worth knowing before anyone "completes"
+  this constraint and wonders why the seed scripts stop working.
+
 - **Running a migration by hand needs a direct Postgres connection**, and there
   is no `psql` on this machine. Colima is, so:
 
