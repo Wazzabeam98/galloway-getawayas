@@ -333,7 +333,12 @@ export default async function BookingDetail({ params }: { params: { id: string }
                             />
                         )}
                         {refunded > 0 && <Row label="Refunded to guest" value={'−' + money(refunded)} />}
-                        <Row label={'Our fee (' + rate + '%)'} value={'−' + money(grossDue - yours)} muted />
+                        {/* Nothing was kept on a stay refunded to nothing, and
+                            "−£0.00" on a money screen reads as a rounding
+                            error rather than as zero. */}
+                        {round2(grossDue - yours) > 0 && (
+                            <Row label={'Our fee (' + rate + '%)'} value={'−' + money(grossDue - yours)} muted />
+                        )}
                         <Row label="You get" value={money(yours)} />
                         <Row
                             label="Payout"
