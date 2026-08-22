@@ -1,3 +1,4 @@
+import { isArchived } from '@/lib/conversations';
 import { createRouteHandlerClient } from '@supabase/auth-helpers-nextjs';
 import { createClient } from '@supabase/supabase-js';
 import { cookies } from 'next/headers';
@@ -113,9 +114,17 @@ export async function GET() {
 
     const lastMap: Record<string, any> = {};
     const unreadMap: Record<string, number> = {};
+    // The newest message addressed to this person, read or unread. Only used
+    // to decide whether something they archived has been brought back.
+    const lastInboundMap: Record<string, string> = {};
 
     (lastMessages || []).forEach((m: any) => {
         if (!lastMap[m.booking_id]) lastMap[m.booking_id] = m;
+
+        if (m.recipient_id === uid && !lastInboundMap[m.booking_id]) {
+            // Already sorted newest first, so the first one seen is the newest.
+            lastInboundMap[m.booking_id] = m.created_at;
+        }
 
         // Unread means sent to this person and not yet opened. Something they
         // sent themselves is never unread.
@@ -124,14 +133,32 @@ export async function GET() {
         }
     });
 
+    // Starring and archiving are this person's own, not the conversation's.
+    // A host archiving a thread leaves the guest's copy exactly where it was.
+    const { data: prefs } = await admin
+        .from('conversation_prefs')
+        .select('booking_id, archived_at, starred_at')
+        .eq('user_id', uid);
+
+    const prefMap: Record<string, any> = {};
+    (prefs || []).forEach((p: any) => {
+        prefMap[p.booking_id] = p;
+    });
+
     const todayKey = new Date().toISOString().split('T')[0];
 
     const conversations = bookings.map((b) => {
         const listing = listingMap[b.listing_id];
         const otherId = b.guest_id === uid ? b.host_id : b.guest_id;
 
+        const pref = prefMap[b.id];
+
         return {
             bookingId: b.id,
+            starred: !!(pref && pref.starred_at),
+            // Worked out, not stored — see lib/conversations.ts. A message
+            // arriving after they archived it puts it back in the inbox.
+            archived: isArchived(pref && pref.archived_at, lastInboundMap[b.id]),
             listing: listing ? { id: listing.id, title: listing.title, images: listing.images } : null,
             otherName: nameMap[otherId] || 'Guest',
             checkIn: b.check_in,
@@ -168,7 +195,11 @@ export async function GET() {
 
     return NextResponse.json({
         conversations: conversations,
-        totalUnread: conversations.reduce((sum: number, c: any) => sum + (c.unread || 0), 0),
-        needsReply: conversations.filter((c: any) => c.needsReply).length,
+        // Both totals count the inbox only. Something archived is deliberately
+        // out of sight, so it must not keep a badge lit either.
+        totalUnread: conversations
+            .filter((c: any) => !c.archived)
+            .reduce((sum: number, c: any) => sum + (c.unread || 0), 0),
+        needsReply: conversations.filter((c: any) => c.needsReply && !c.archived).length,
     });
 }

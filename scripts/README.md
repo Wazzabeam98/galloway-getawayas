@@ -12,11 +12,23 @@ node scripts/refund-scenarios.mjs        # scenarios 12-18, needs `npm run dev`
 node scripts/balance-scenarios.mjs       # scenarios 3 and 7-11, needs `npm run dev`
 node scripts/crosscutting-scenarios.mjs  # scenarios 25-29, needs `npm run dev`
 node scripts/seed-my-passport.mjs        # a finished stay on your own account
+node scripts/inbox-scenarios.mjs         # mark unread / star / archive, needs `npm run dev`
 ```
 
 The cross-cutting runner replays a real webhook, so it needs `stripe listen`
 running and the `whsec_` it prints written into `.env.local` — see the note in
 `CLAUDE.md`.
+
+`inbox-scenarios.mjs` is not part of the payment set either. It covers the
+per-conversation actions in the inbox — mark as unread, star, archive — and it
+makes its own host and guest on `@gallowayinbox.test`, deliberately *not* the
+payment seeder's domain, so the reset below never touches them and the two
+never disturb each other. It cleans up after itself; `--reset` on its own
+clears anything an interrupted run left behind.
+
+It writes `conversation_prefs` as the signed-in user with their own access
+token, the way the browser does, so row-level security is part of what is being
+tested rather than something bypassed.
 
 `seed-my-passport.mjs` is the odd one out and is not part of the payment set.
 It puts a couple of finished stays on a real address you sign in with, so the

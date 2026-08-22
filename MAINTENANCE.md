@@ -152,6 +152,48 @@ Please:
   enforce and the database does not. Worth knowing before anyone "completes"
   this constraint and wonders why the seed scripts stop working.
 
+- **Starring and archiving a conversation are per person, not per thread.**
+  `conversation_prefs` is keyed on `(user_id, booking_id)` — one row per person
+  per conversation. A host and a guest share one thread, so a flag on the
+  booking would have meant one of them archiving it emptying the other's
+  inbox. A conversation is not always two people either: `booking_guests` lets
+  a companion message the host, so keying on the person is what makes that
+  work without a special case.
+
+  **Archived is worked out, not stored.** A conversation counts as archived
+  only while `archived_at` is set *and* nothing has been sent to that person
+  since. So a guest's message un-archives it by existing — there is no trigger
+  on message insert to miss, and no state to get stuck. Archiving means "done
+  for now", not "stop telling me", which matters because a guest asking about
+  next week's stay must never sit in a folder nobody looks at. The rule lives
+  in one place, `lib/conversations.ts`, and both the inbox and the menu badge
+  read it from there.
+
+  **`archived_at` is stamped by the database, not the browser.** A trigger,
+  `conversation_prefs_stamp_trigger`, replaces whatever the client sends with
+  `now()`. It has to: that stamp is compared against `created_at` values the
+  database wrote, so a laptop running a few seconds slow would archive
+  something and watch it bounce straight back, looking exactly like Archive
+  being broken. This machine was one second behind Supabase and that was
+  enough to catch it. **Any future column compared against a database
+  timestamp needs the same treatment.**
+
+  The trigger only restamps a value that has actually just been set. An upsert
+  fires the BEFORE INSERT trigger before it notices the conflict, so stamping
+  unconditionally handed the update a value that always looked new — and
+  starring a conversation silently re-archived it. Hence the existence check
+  in the insert branch.
+
+  **Both migrations are live on both projects as of 22 August 2026 — nothing
+  needs running.** `20260822_conversation_prefs.sql` and
+  `20260822_conversation_prefs_server_clock.sql`. Both are new objects with no
+  constraint on existing data, so both are safe to run again.
+
+  `node scripts/inbox-scenarios.mjs` covers all of it against test — 28 checks,
+  including a host and a guest archiving the same thread independently, a
+  message bringing an archived thread back, and the menu dot agreeing with the
+  list. It needs `npm run dev`.
+
 - **Running a migration by hand needs a direct Postgres connection**, and there
   is no `psql` on this machine. Colima is, so:
 

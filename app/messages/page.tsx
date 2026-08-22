@@ -1,5 +1,6 @@
 'use client';
 
+import ConversationRow from '@/components/messages/ConversationRow';
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { createClientComponentClient } from '@supabase/auth-helpers-nextjs';
 import Link from 'next/link';
@@ -9,16 +10,6 @@ import { getImageUrl, capitializeFirst, formatTime } from '@/lib/utils';
 import { toast } from 'react-toastify';
 import { Search, Inbox, Send, Zap, Phone, ExternalLink, ChevronLeft, Info } from 'lucide-react';
 
-function timeAgo(iso: string): string {
-    const mins = Math.round((Date.now() - new Date(iso).getTime()) / 60000);
-    if (mins < 1) return 'just now';
-    if (mins < 60) return mins + 'm ago';
-    const hours = Math.round(mins / 60);
-    if (hours < 24) return hours + 'h ago';
-    const days = Math.round(hours / 24);
-    return days + 'd ago';
-}
-
 export default function MessagesInboxPage() {
     const supabase = createClientComponentClient();
 
@@ -27,7 +18,14 @@ export default function MessagesInboxPage() {
     const [conversations, setConversations] = useState<any[]>([]);
 
     const [query, setQuery] = useState('');
-    const [filter, setFilter] = useState<'all' | 'unread' | 'needsReply'>('all');
+    const [filter, setFilter] = useState<
+        'all' | 'unread' | 'needsReply' | 'starred' | 'archived'
+    >('all');
+    // Which rows have a menu action in flight. One entry per conversation
+    // rather than a single id: two rows acted on at once are independent, and
+    // a shared flag would have let the second one finish and re-enable the
+    // first while it was still saving.
+    const [busy, setBusy] = useState<Record<string, boolean>>({});
 
     const [activeId, setActiveId] = useState<string | null>(null);
     const [thread, setThread] = useState<any>(null);
@@ -48,6 +46,10 @@ export default function MessagesInboxPage() {
     // the whole page down past the footer every time a thread opened.
     const scrollRef = useRef<HTMLDivElement>(null);
     const mobileScrollRef = useRef<HTMLDivElement>(null);
+
+    // Set for the one conversation the page opens by itself on load. See the
+    // note where it is set.
+    const skipMarkRead = useRef(false);
 
     useEffect(() => {
         const load = async () => {
@@ -80,7 +82,15 @@ export default function MessagesInboxPage() {
 
             // Pre-selects for the desktop's middle pane. mobileOpen stays
             // false, so a phone still lands on the list.
-            if (first) setActiveId(first.bookingId);
+            if (first) {
+                // Marking read follows somebody choosing a conversation, not
+                // the page choosing one for them. Without this, marking a
+                // conversation unread and reloading the page would land on it
+                // and quietly mark it read again, which is the one thing the
+                // action exists to prevent.
+                skipMarkRead.current = true;
+                setActiveId(first.bookingId);
+            }
 
             setLoading(false);
         };
@@ -126,16 +136,23 @@ export default function MessagesInboxPage() {
 
                 setThread(data);
 
-                // Opening it clears the unread flags, here and in the list.
-                fetch('/api/messages/mark-read', {
-                    method: 'POST',
-                    headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify({ bookingId: activeId }),
-                }).catch(() => {});
+                if (skipMarkRead.current) {
+                    // Opened by the page rather than by the person. Leave the
+                    // unread flags alone; the next conversation they choose
+                    // themselves clears its own.
+                    skipMarkRead.current = false;
+                } else {
+                    // Opening it clears the unread flags, here and in the list.
+                    fetch('/api/messages/mark-read', {
+                        method: 'POST',
+                        headers: { 'Content-Type': 'application/json' },
+                        body: JSON.stringify({ bookingId: activeId }),
+                    }).catch(() => {});
 
-                setConversations((prev) =>
-                    prev.map((c) => (c.bookingId === activeId ? { ...c, unread: 0 } : c))
-                );
+                    setConversations((prev) =>
+                        prev.map((c) => (c.bookingId === activeId ? { ...c, unread: 0 } : c))
+                    );
+                }
             } catch (err: any) {
                 if (!cancelled) {
                     setThread(null);
@@ -188,11 +205,19 @@ export default function MessagesInboxPage() {
         if (phoneBox) phoneBox.scrollTop = phoneBox.scrollHeight;
     }, [thread, mobileOpen]);
 
+    // Every count is of the inbox, never of the archive. Something archived is
+    // deliberately out of sight, so it must not keep a number lit next to a
+    // filter the person is not looking at.
     const counts = useMemo(
-        () => ({
-            unread: conversations.reduce((s, c) => s + (c.unread || 0), 0),
-            needsReply: conversations.filter((c) => c.needsReply).length,
-        }),
+        () => {
+            const inbox = conversations.filter((c) => !c.archived);
+            return {
+                unread: inbox.reduce((s, c) => s + (c.unread || 0), 0),
+                needsReply: inbox.filter((c) => c.needsReply).length,
+                starred: inbox.filter((c) => c.starred).length,
+                archived: conversations.filter((c) => c.archived).length,
+            };
+        },
         [conversations]
     );
 
@@ -200,8 +225,18 @@ export default function MessagesInboxPage() {
         const q = query.trim().toLowerCase();
 
         return conversations.filter((c) => {
+            // The archive is a folder, not a filter on top of the inbox: it is
+            // the only view that shows archived conversations, and every other
+            // view hides them.
+            if (filter === 'archived') {
+                if (!c.archived) return false;
+            } else if (c.archived) {
+                return false;
+            }
+
             if (filter === 'unread' && !c.unread) return false;
             if (filter === 'needsReply' && !c.needsReply) return false;
+            if (filter === 'starred' && !c.starred) return false;
             if (!q) return true;
 
             const name = (c.otherName || '').toLowerCase();
@@ -211,6 +246,122 @@ export default function MessagesInboxPage() {
             return name.indexOf(q) !== -1 || place.indexOf(q) !== -1 || body.indexOf(q) !== -1;
         });
     }, [conversations, query, filter]);
+
+    // Starring and archiving are this person's own view of the conversation,
+    // so the browser writes them straight to conversation_prefs — the row is
+    // theirs, and row-level security is what keeps it that way. Unlike the
+    // rest of this page there is no co-host problem to work around: a co-host
+    // writing their own preference row is still writing their own row.
+    const setPref = async (bookingId: string, patch: any, optimistic: any, undo: any) => {
+        if (!session || !session.user || busy[bookingId]) return;
+
+        setBusy((prev) => ({ ...prev, [bookingId]: true }));
+        setConversations((prev) =>
+            prev.map((c) => (c.bookingId === bookingId ? { ...c, ...optimistic } : c))
+        );
+
+        const { error } = await supabase.from('conversation_prefs').upsert(
+            { user_id: session.user.id, booking_id: bookingId, ...patch },
+            { onConflict: 'user_id,booking_id' }
+        );
+
+        setBusy((prev) => ({ ...prev, [bookingId]: false }));
+
+        if (error) {
+            // Put this row back rather than leaving the screen claiming
+            // something that did not happen. Only the fields this action
+            // touched, on the one row — restoring the whole list would throw
+            // away anything that arrived while the save was in flight.
+            setConversations((prev) =>
+                prev.map((c) => (c.bookingId === bookingId ? { ...c, ...undo } : c))
+            );
+            toast.error('That did not save. Please try again.');
+        }
+    };
+
+    const toggleStar = (c: any) =>
+        setPref(
+            c.bookingId,
+            { starred_at: c.starred ? null : new Date().toISOString() },
+            { starred: !c.starred },
+            { starred: !!c.starred }
+        );
+
+    const toggleArchive = (c: any) => {
+        // Archiving stamps the time, which is what puts the conversation
+        // behind every message in it so far. Anything arriving afterwards is
+        // newer than the stamp and brings it back on its own.
+        //
+        // The time sent from here is NOT the one that gets stored — a trigger
+        // on the table replaces it with the database's own clock. It has to,
+        // because that stamp is compared against message timestamps the
+        // database wrote, and a browser running a few seconds slow would
+        // archive something and watch it reappear immediately. The value is
+        // still sent so the row means something without the trigger.
+        //
+        // Moving it back to the inbox clears the stamp outright, so it stays
+        // in the inbox until it is archived again.
+        setPref(
+            c.bookingId,
+            { archived_at: c.archived ? null : new Date().toISOString() },
+            { archived: !c.archived },
+            { archived: !!c.archived }
+        );
+
+        if (!c.archived && activeId === c.bookingId) {
+            // Do not leave a conversation open in the middle pane that has
+            // just left the list on the left.
+            setActiveId(null);
+            setThread(null);
+            setMobileOpen(false);
+        }
+    };
+
+    const markUnread = async (c: any) => {
+        if (busy[c.bookingId]) return;
+        setBusy((prev) => ({ ...prev, [c.bookingId]: true }));
+
+        let data: any = null;
+        try {
+            const res = await fetch('/api/messages/mark-unread', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ bookingId: c.bookingId }),
+            });
+            data = await res.json();
+        } catch (err) {
+            data = null;
+        }
+
+        setBusy((prev) => ({ ...prev, [c.bookingId]: false }));
+
+        if (!data || !data.ok) {
+            toast.error('Could not mark that as unread.');
+            return;
+        }
+
+        // A conversation they have only ever sent in has nothing addressed to
+        // them, so there is nothing that could come back unread. Saying so is
+        // better than a tick that changed nothing.
+        if (!data.marked) {
+            toast.info('There is nothing from them to mark as unread.');
+            return;
+        }
+
+        setConversations((prev) =>
+            prev.map((x) =>
+                x.bookingId === c.bookingId ? { ...x, unread: Math.max(1, x.unread || 0) } : x
+            )
+        );
+
+        // Opening a conversation marks it read, so leaving this one open would
+        // undo the action the moment anything reloaded it.
+        if (activeId === c.bookingId) {
+            setActiveId(null);
+            setThread(null);
+            setMobileOpen(false);
+        }
+    };
 
     const send = async () => {
         const outgoing = text.trim();
@@ -269,18 +420,6 @@ export default function MessagesInboxPage() {
         );
     }
 
-    const stageStyles: Record<string, string> = {
-        staying: 'bg-emerald-100 text-emerald-800',
-        upcoming: 'bg-sky-100 text-sky-800',
-        past: 'bg-slate-100 text-slate-500',
-    };
-
-    const stageWords: Record<string, string> = {
-        staying: 'Here now',
-        upcoming: 'Upcoming',
-        past: 'Past',
-    };
-
     // --- The list of conversations ----------------------------------------
     const list = (
         <div className="flex flex-col h-full">
@@ -296,11 +435,13 @@ export default function MessagesInboxPage() {
                     />
                 </div>
 
-                <div className="flex gap-1.5">
+                <div className="flex flex-wrap gap-1.5">
                     {([
                         ['all', 'All', 0],
                         ['needsReply', 'Needs reply', counts.needsReply],
                         ['unread', 'Unread', counts.unread],
+                        ['starred', 'Starred', counts.starred],
+                        ['archived', 'Archived', counts.archived],
                     ] as [typeof filter, string, number][]).map((row) => (
                         <button
                             key={row[0]}
@@ -325,78 +466,26 @@ export default function MessagesInboxPage() {
                     <div className="p-8 text-center">
                         <Inbox className="w-7 h-7 text-slate-300 mx-auto mb-2" />
                         <p className="text-sm text-slate-500">
-                            {conversations.length === 0 ? 'No messages yet' : 'Nothing here'}
+                            {filter === 'archived'
+                                ? 'Nothing archived'
+                                : conversations.length === 0
+                                    ? 'No messages yet'
+                                    : 'Nothing here'}
                         </p>
                     </div>
                 ) : (
                     shown.map((c) => (
-                        <button
+                        <ConversationRow
                             key={c.bookingId}
-                            type="button"
-                            onClick={() => setActiveId(c.bookingId)}
-                            className={
-                                'w-full text-left p-4 border-b transition flex gap-3 ' +
-                                (activeId === c.bookingId
-                                    ? 'bg-slate-100'
-                                    : c.unread
-                                        ? 'bg-emerald-50/50 hover:bg-emerald-50'
-                                        : 'hover:bg-slate-50')
-                            }
-                        >
-                            <div className="w-12 h-12 rounded-xl bg-slate-200 overflow-hidden flex-shrink-0">
-                                {c.listing && c.listing.images && c.listing.images[0] && (
-                                    <img
-                                        src={getImageUrl(c.listing.images[0])}
-                                        alt=""
-                                        className="w-full h-full object-cover"
-                                    />
-                                )}
-                            </div>
-
-                            <div className="min-w-0 flex-1">
-                                <div className="flex items-center gap-2">
-                                    <span className="font-semibold text-slate-900 truncate">
-                                        {capitializeFirst(c.otherName)}
-                                    </span>
-                                    {c.unread > 0 && (
-                                        <span className="flex-shrink-0 text-xs font-bold text-white bg-emerald-700 rounded-full px-1.5">
-                                            {c.unread}
-                                        </span>
-                                    )}
-                                    {c.lastMessage && (
-                                        <span className="ml-auto text-xs text-slate-400 flex-shrink-0">
-                                            {timeAgo(c.lastMessage.created_at)}
-                                        </span>
-                                    )}
-                                </div>
-
-                                <div className="flex items-center gap-1.5 mt-0.5">
-                                    <span
-                                        className={
-                                            'text-[10px] font-semibold px-1.5 py-0.5 rounded ' +
-                                            (stageStyles[c.stage] || stageStyles.past)
-                                        }
-                                    >
-                                        {stageWords[c.stage] || 'Past'}
-                                    </span>
-                                    <span className="text-xs text-slate-500 truncate">
-                                        {(c.listing && c.listing.title) || 'Listing'}
-                                    </span>
-                                </div>
-
-                                {c.lastMessage && (
-                                    <div
-                                        className={
-                                            'text-xs truncate mt-1 ' +
-                                            (c.needsReply ? 'text-slate-900 font-medium' : 'text-slate-400')
-                                        }
-                                    >
-                                        {c.needsReply && <span className="text-amber-600">&bull; </span>}
-                                        {c.lastMessage.body}
-                                    </div>
-                                )}
-                            </div>
-                        </button>
+                            conversation={c}
+                            active={activeId === c.bookingId}
+                            showActive
+                            busy={!!busy[c.bookingId]}
+                            onOpen={() => setActiveId(c.bookingId)}
+                            onStar={() => toggleStar(c)}
+                            onArchive={() => toggleArchive(c)}
+                            onMarkUnread={() => markUnread(c)}
+                        />
                     ))
                 )}
             </div>
@@ -747,11 +836,13 @@ export default function MessagesInboxPage() {
                                 />
                             </div>
 
-                            <div className="flex gap-1.5">
+                            <div className="flex flex-wrap gap-1.5">
                                 {([
                                     ['all', 'All', 0],
                                     ['needsReply', 'Needs reply', counts.needsReply],
                                     ['unread', 'Unread', counts.unread],
+                                    ['starred', 'Starred', counts.starred],
+                                    ['archived', 'Archived', counts.archived],
                                 ] as [typeof filter, string, number][]).map((row) => (
                                     <button
                                         key={row[0]}
@@ -775,82 +866,28 @@ export default function MessagesInboxPage() {
                             <div className="p-10 text-center">
                                 <Inbox className="w-7 h-7 text-slate-300 mx-auto mb-2" />
                                 <p className="text-sm text-slate-500">
-                                    {conversations.length === 0 ? 'No messages yet' : 'Nothing here'}
+                                    {filter === 'archived'
+                                ? 'Nothing archived'
+                                : conversations.length === 0
+                                    ? 'No messages yet'
+                                    : 'Nothing here'}
                                 </p>
                             </div>
                         ) : (
                             shown.map((c) => (
-                                <button
+                                <ConversationRow
                                     key={c.bookingId}
-                                    type="button"
-                                    onClick={() => {
+                                    conversation={c}
+                                    busy={!!busy[c.bookingId]}
+                                    onOpen={() => {
                                         setActiveId(c.bookingId);
                                         setMobileOpen(true);
                                         setShowDetails(false);
                                     }}
-                                    className={
-                                        'w-full text-left p-4 border-b flex gap-3 ' +
-                                        (c.unread ? 'bg-emerald-50/50' : '')
-                                    }
-                                >
-                                    <div className="w-12 h-12 rounded-xl bg-slate-200 overflow-hidden flex-shrink-0">
-                                        {c.listing && c.listing.images && c.listing.images[0] && (
-                                            <img
-                                                src={getImageUrl(c.listing.images[0])}
-                                                alt=""
-                                                className="w-full h-full object-cover"
-                                            />
-                                        )}
-                                    </div>
-
-                                    <div className="min-w-0 flex-1">
-                                        <div className="flex items-center gap-2">
-                                            <span className="font-semibold text-slate-900 truncate">
-                                                {capitializeFirst(c.otherName)}
-                                            </span>
-                                            {c.unread > 0 && (
-                                                <span className="flex-shrink-0 text-xs font-bold text-white bg-emerald-700 rounded-full px-1.5">
-                                                    {c.unread}
-                                                </span>
-                                            )}
-                                            {c.lastMessage && (
-                                                <span className="ml-auto text-xs text-slate-400 flex-shrink-0">
-                                                    {timeAgo(c.lastMessage.created_at)}
-                                                </span>
-                                            )}
-                                        </div>
-
-                                        <div className="flex items-center gap-1.5 mt-0.5">
-                                            <span
-                                                className={
-                                                    'text-[10px] font-semibold px-1.5 py-0.5 rounded ' +
-                                                    (stageStyles[c.stage] || stageStyles.past)
-                                                }
-                                            >
-                                                {stageWords[c.stage] || 'Past'}
-                                            </span>
-                                            <span className="text-xs text-slate-500 truncate">
-                                                {(c.listing && c.listing.title) || 'Listing'}
-                                            </span>
-                                        </div>
-
-                                        {c.lastMessage && (
-                                            <div
-                                                className={
-                                                    'text-xs truncate mt-1 ' +
-                                                    (c.needsReply
-                                                        ? 'text-slate-900 font-medium'
-                                                        : 'text-slate-400')
-                                                }
-                                            >
-                                                {c.needsReply && (
-                                                    <span className="text-amber-600">&bull; </span>
-                                                )}
-                                                {c.lastMessage.body}
-                                            </div>
-                                        )}
-                                    </div>
-                                </button>
+                                    onStar={() => toggleStar(c)}
+                                    onArchive={() => toggleArchive(c)}
+                                    onMarkUnread={() => markUnread(c)}
+                                />
                             ))
                         )}
                     </div>
