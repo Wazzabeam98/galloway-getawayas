@@ -5,7 +5,7 @@ import { cookies } from "next/headers";
 import BookingsView from "@/components/BookingsView";
 import { displayName } from "@/lib/utils";
 import { createClient } from "@supabase/supabase-js";
-import { listingIdsFor } from "@/lib/access";
+import { accessibleListings } from "@/lib/access";
 
 export default async function BookingsPage() {
     const supabase = createServerComponentClient({ cookies });
@@ -14,7 +14,14 @@ export default async function BookingsPage() {
     // Bookings on properties they own, plus any they co-host with permission
     // to handle bookings. Read with the service key because a co-host is not
     // the host_id on these rows, so row-level security would hide them.
-    const allowed = await listingIdsFor(user.user?.id || '', 'can_bookings');
+    const access = await accessibleListings(user.user?.id || '');
+    const allowed = access.filter((a) => a.can_bookings).map((a) => a.listingId);
+
+    // Accepting, declining, cancelling and refunding are never delegated —
+    // the routes behind them answer 403 to anyone who is not the host_id. A
+    // co-host may see these bookings and message about them; the buttons that
+    // would fail are left off.
+    const ownedIds = access.filter((a) => a.isOwner).map((a) => a.listingId);
 
     const admin = createClient(
         process.env.NEXT_PUBLIC_SUPABASE_URL || '',
@@ -83,6 +90,7 @@ export default async function BookingsPage() {
                 listingMap={listingMap}
                 guestNameMap={guestNameMap}
                 reviewedBookingIds={reviewedBookingIds}
+                ownedListingIds={ownedIds}
             />
         </div>
     );

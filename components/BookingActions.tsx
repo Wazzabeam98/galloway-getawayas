@@ -10,12 +10,17 @@ import { notify } from '@/lib/notify';
 export default function BookingActions({
     bookingId,
     mode = 'pending',
+    allowCancel = true,
     totalPrice = 0,
     amountPaid = 0,
     amountRefunded = 0,
 }: {
     bookingId: string;
     mode?: 'pending' | 'confirmed';
+    // Off once the guest has arrived. Cancelling refunds the whole stay and
+    // puts the dates back on sale, which is the wrong answer to a problem
+    // found on the second night — Refund guest is.
+    allowCancel?: boolean;
     totalPrice?: number;
     amountPaid?: number;
     amountRefunded?: number;
@@ -337,14 +342,16 @@ export default function BookingActions({
                         Refund guest
                     </button>
                 )}
-                <button
-                    type="button"
-                    onClick={() => setPanel('cancel')}
-                    disabled={updating}
-                    className="px-4 py-1.5 border border-slate-300 hover:border-red-400 hover:text-red-600 text-slate-700 text-sm font-semibold rounded-lg disabled:opacity-50"
-                >
-                    Cancel booking
-                </button>
+                {allowCancel && (
+                    <button
+                        type="button"
+                        onClick={() => setPanel('cancel')}
+                        disabled={updating}
+                        className="px-4 py-1.5 border border-slate-300 hover:border-red-400 hover:text-red-600 text-slate-700 text-sm font-semibold rounded-lg disabled:opacity-50"
+                    >
+                        Cancel booking
+                    </button>
+                )}
             </div>
         );
     }

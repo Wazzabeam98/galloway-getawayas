@@ -46,6 +46,18 @@ export default function ConversationPage() {
 
     const bottomRef = useRef<HTMLDivElement>(null);
 
+    // 'Ask the guest to cancel' on the booking screen sends the host here with
+    // the awkward part already written. It only fills the box — nothing is
+    // sent until they have read it and pressed send, because the whole point
+    // of that button is a conversation, not an announcement.
+    //
+    // Read off window rather than through useSearchParams, which would want a
+    // Suspense boundary around a page that has no other reason for one.
+    useEffect(() => {
+        const draft = new URLSearchParams(window.location.search).get('draft');
+        if (draft) setText(draft);
+    }, []);
+
     useEffect(() => {
         const load = async () => {
             const { data: { session } } = await supabase.auth.getSession();
