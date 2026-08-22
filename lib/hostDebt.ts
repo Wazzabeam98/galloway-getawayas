@@ -82,3 +82,41 @@ export function debtExplanation(kind: string): string {
     }
     return 'Owed back, reason not recorded.';
 }
+
+// Every debt this host still owes, oldest first — the same order the payout
+// run works through them in.
+export async function outstandingDebts(admin: any, hostId: string): Promise<OwedRow[]> {
+    if (!hostId) return [];
+
+    const { data } = await admin
+        .from('payouts')
+        .select('id, booking_id, host_id, amount, kind, status, note, created_at, settled_amount')
+        .eq('host_id', hostId)
+        .eq('status', 'owed')
+        .order('created_at', { ascending: true });
+
+    return (data || []).filter(function (row: OwedRow) {
+        return outstandingOf(row) > 0;
+    });
+}
+
+// Which of a host's coming payouts a debt will actually come off.
+//
+// `stays` must be in the order the payout run will reach them — check-in
+// ascending — and carry what each is expected to pay. Returns the deduction
+// against each, so a screen can show the same £30-now-£15-next the run will
+// perform, rather than stamping the whole debt on every stay and implying a
+// host is being charged repeatedly.
+export function debtAgainstStays(
+    owed: number,
+    stays: { id: string; expected: number }[]
+): Record<string, number> {
+    const shares = spread(owed, stays.map(function (s) { return s.expected; }));
+    const out: Record<string, number> = {};
+
+    stays.forEach(function (stay, i) {
+        if (shares[i] > 0) out[stay.id] = shares[i];
+    });
+
+    return out;
+}

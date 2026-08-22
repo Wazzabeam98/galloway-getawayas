@@ -10,6 +10,7 @@ import { displayName, getImageUrl, formatTime } from "@/lib/utils";
 import { rateFor, netOfFee } from "@/lib/fees";
 import { formatUk, refundFraction, policyOf, freeCancelDateOrNull } from "@/lib/cancellation";
 import { stayHasEnded, stayHasStarted } from "@/lib/stayWindow";
+import { outstandingDebts, outstandingOf, debtAgainstStays, debtReason, round2 } from "@/lib/hostDebt";
 import { dateFromKey } from "@/lib/pricing";
 import BookingActions from "@/components/BookingActions";
 import { ArrowLeft, MessageSquare, Phone } from "lucide-react";
@@ -125,6 +126,56 @@ export default async function BookingDetail({ params }: { params: { id: string }
     const paysOn = dateFromKey(booking.check_in);
     paysOn.setDate(paysOn.getDate() + 1);
 
+    const closed = booking.status === 'cancelled' || booking.status === 'declined';
+
+    // Debts charged against this particular booking — the 5% fee if the host
+    // called it off, or a clawback if a refund landed after the payout.
+    const { data: ownDebtRows } = showMoney
+        ? await admin
+            .from('payouts')
+            .select('id, booking_id, host_id, amount, kind, status, note, created_at, settled_amount')
+            .eq('booking_id', booking.id)
+            .in('kind', ['penalty', 'reversal'])
+        : { data: [] };
+
+    const ownDebts = ownDebtRows || [];
+
+    // What this host still owes overall, and which of their coming stays it
+    // will actually come off. Only their own money: payout_balance_owed
+    // belongs to whoever is host_id on the booking, and a co-host looking at
+    // someone else's listing has no business seeing it.
+    const viewerIsPayee = uid === booking.host_id;
+
+    const debts = (showMoney && viewerIsPayee) ? await outstandingDebts(admin, booking.host_id) : [];
+    const owedTotal = debts.reduce(function (sum, d) { return round2(sum + outstandingOf(d)); }, 0);
+
+    let deductionHere = 0;
+    let owedElsewhere = 0;
+
+    if (owedTotal > 0 && booking.status === 'confirmed' && !booking.paid_out_at) {
+        // Every stay of theirs still waiting to pay out, in the order the
+        // payout run will reach them.
+        const { data: queue } = await admin
+            .from('bookings')
+            .select('id, listing_id, check_in, total_price, amount_refunded, commission_rate')
+            .eq('host_id', booking.host_id)
+            .eq('status', 'confirmed')
+            .is('paid_out_at', null)
+            .order('check_in', { ascending: true });
+
+        const stays = (queue || []).map(function (b: any) {
+            const r = b.commission_rate !== null && b.commission_rate !== undefined
+                ? Number(b.commission_rate)
+                : rate;
+            const gross = round2(Number(b.total_price || 0) - Number(b.amount_refunded || 0));
+            return { id: b.id, expected: netOfFee(gross > 0 ? gross : 0, r) };
+        });
+
+        const allocation = debtAgainstStays(owedTotal, stays);
+        deductionHere = allocation[booking.id] || 0;
+        owedElsewhere = round2(owedTotal - deductionHere);
+    }
+
     // free_cancel_until is stamped by the checkout route, so it is null on
     // anything that did not come through it — and a null there means 'not
     // recorded', not 'the window has closed'. Work it out from the policy in
@@ -136,7 +187,12 @@ export default async function BookingDetail({ params }: { params: { id: string }
 
     // A guest cancelling right now would get this much back, under the
     // policy on the listing. Worth knowing before asking them to.
-    const guestWouldGet = Math.round(refundFraction(booking.check_in, listing?.cancellation_policy) * paid * 100) / 100;
+    // Against what they are actually still holding, not what they once paid.
+    // A booking already part-refunded cannot give back the whole amount again.
+    const stillHeld = round2(paid - refunded);
+    const guestWouldGet = round2(
+        refundFraction(booking.check_in, listing?.cancellation_policy) * (stillHeld > 0 ? stillHeld : 0)
+    );
 
     const nights = Math.round(
         (dateFromKey(booking.check_out).getTime() - dateFromKey(booking.check_in).getTime()) / 86400000
@@ -176,6 +232,26 @@ export default async function BookingDetail({ params }: { params: { id: string }
         + shortDate(booking.check_in) + ' to ' + shortDate(booking.check_out)
         + ' as planned. If you cancel from Your trips you’d be refunded '
         + money(guestWouldGet) + '. Do let me know and I’ll help however I can.';
+
+    // Five values, not three. 'refunded' and 'partially_refunded' both used to
+    // fall through to 'Nothing paid yet', which told a host their guest had
+    // never paid for a stay that had been paid for and refunded.
+    const paymentStage =
+        booking.payment_status === 'paid' ? 'Everything paid'
+            : booking.payment_status === 'deposit_paid' ? 'Deposit paid, balance outstanding'
+                : booking.payment_status === 'refunded' ? 'Paid, then refunded in full'
+                    : booking.payment_status === 'partially_refunded' ? 'Paid, then partly refunded'
+                        : 'Nothing paid yet';
+
+    const whoCancelled =
+        booking.cancelled_by_role === 'host'
+            ? (viewerIsPayee ? 'by you' : 'by the owner')
+            : booking.cancelled_by_role === 'guest' ? 'by the guest'
+                : booking.cancelled_by_role === 'system' ? 'automatically' : '';
+
+    const cancelledLine = booking.cancelled_at
+        ? (whoCancelled ? whoCancelled + ' on ' : 'on ') + formatUk(new Date(booking.cancelled_at))
+        : (closed ? 'Not recorded — this predates us writing it down' : '');
 
     return (
         <div className="max-w-3xl mx-auto px-6 py-10">
@@ -272,6 +348,37 @@ export default async function BookingDetail({ params }: { params: { id: string }
                             }
                             muted={!booking.payout_transfer_id}
                         />
+                        {ownDebts.map((d: any) => (
+                            <Row
+                                key={d.id}
+                                label={debtReason(d.kind)}
+                                value={
+                                    '−' + money(Math.abs(Number(d.amount || 0)))
+                                    + (d.status === 'settled'
+                                        ? ' — taken from a later payout'
+                                        : outstandingOf(d) < Math.abs(Number(d.amount || 0))
+                                            ? ' — ' + money(outstandingOf(d)) + ' of it still to come off'
+                                            : ' — comes off your next payout')
+                                }
+                            />
+                        ))}
+                        {deductionHere > 0 && (
+                            <Row
+                                label="Less owed from before"
+                                value={
+                                    '−' + money(deductionHere)
+                                    + (owedElsewhere > 0
+                                        ? ' (' + money(owedElsewhere) + ' more off later stays)'
+                                        : '')
+                                }
+                            />
+                        )}
+                        {deductionHere > 0 && (
+                            <Row
+                                label="Expected in your bank"
+                                value={money(round2(yours - deductionHere) > 0 ? round2(yours - deductionHere) : 0)}
+                            />
+                        )}
                         {Number(listing?.damage_deposit || 0) > 0 && (
                             <Row
                                 label="Damage deposit"
@@ -296,31 +403,35 @@ export default async function BookingDetail({ params }: { params: { id: string }
                     />
                     <Row
                         label="Stage"
-                        value={
-                            booking.payment_status === 'paid'
-                                ? 'Everything paid'
-                                : booking.payment_status === 'deposit_paid'
-                                    ? 'Deposit paid, balance outstanding'
-                                    : 'Nothing paid yet'
-                        }
+                        value={paymentStage}
                     />
                     {booking.confirmed_at && (
                         <Row label="You accepted" value={formatUk(new Date(booking.confirmed_at))} muted />
                     )}
-                    <Row
-                        label="Free cancellation for guest"
-                        value={
-                            freeCancelDisplay
-                                ? 'Until ' + formatUk(freeCancelDisplay)
-                                : 'Window has closed'
-                        }
-                        muted
-                    />
-                    <Row
-                        label="If they cancelled today"
-                        value={money(guestWouldGet) + ' back (' + policyOf(listing?.cancellation_policy) + ')'}
-                        muted
-                    />
+                    {/* Both of these describe a cancellation that might still
+                        happen. On a booking already called off they are noise
+                        at best — the page was quoting a guest £0.50 they could
+                        get back on a stay that had already been refunded in
+                        full. */}
+                    {!closed && (
+                        <>
+                            <Row
+                                label="Free cancellation for guest"
+                                value={
+                                    freeCancelDisplay
+                                        ? 'Until ' + formatUk(freeCancelDisplay)
+                                        : 'Window has closed'
+                                }
+                                muted
+                            />
+                            <Row
+                                label="If they cancelled today"
+                                value={money(guestWouldGet) + ' back (' + policyOf(listing?.cancellation_policy) + ')'}
+                                muted
+                            />
+                        </>
+                    )}
+                    {closed && cancelledLine && <Row label="Cancelled" value={cancelledLine} muted />}
                 </Card>
 
                 <Card title="What you can do">

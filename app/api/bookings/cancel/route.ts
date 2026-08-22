@@ -133,6 +133,13 @@ export async function POST(request: Request) {
                 // Nothing further is owed on a stay that isn't happening, so
                 // the balance charge won't pick it up.
                 balance_amount: 0,
+                // This route is the guest's own cancel button, so the role is
+                // never in doubt — but it still gets written down, because a
+                // booking that records nothing is indistinguishable from one
+                // the host called off.
+                cancelled_at: new Date().toISOString(),
+                cancelled_by_user: session.user.id,
+                cancelled_by_role: 'guest',
             })
             .eq('id', booking.id);
 

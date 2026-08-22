@@ -238,6 +238,12 @@ export async function POST(request: Request) {
                             amount_paid: amount,
                             amount_refunded: amount,
                             balance_amount: 0,
+                            // The overlap constraint fired: two confirmed
+                            // stays on one week, so this one was refunded
+                            // automatically. Nobody cancelled it, and it must
+                            // never be read as a host having done so.
+                            cancelled_at: new Date().toISOString(),
+                            cancelled_by_role: 'system',
                             stripe_payment_intent_id: cs.payment_intent,
                         })
                         .eq('id', bookingId);
