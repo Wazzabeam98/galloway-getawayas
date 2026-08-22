@@ -8,6 +8,7 @@ import { formatUk } from '@/lib/cancellation';
 import { createClient } from '@supabase/supabase-js';
 import { listingIdsFor } from '@/lib/access';
 import { outstandingDebts, outstandingOf, debtAgainstStays, debtReason, round2 } from '@/lib/hostDebt';
+import { readSchedule, payoutTimingText } from '@/lib/payoutTiming';
 
 
 export default async function EarningsPage({ searchParams }: { searchParams?: { from?: string; to?: string } }) {
@@ -169,6 +170,24 @@ export default async function EarningsPage({ searchParams }: { searchParams?: { 
     // a co-host with the earnings permission must not be shown the owner's
     // debts, nor have someone else's deducted from what they are told.
     const viewerId = user.user?.id || '';
+
+    // Read the settlement wait off the viewer's own connected account rather
+    // than printing a number. This page used to say a payout landed "within a
+    // couple of working days" — that was the day-after release dressed up as
+    // the bank arrival, and every account checked said seven days. Stripe
+    // shortens it as an account builds history, so the only honest figure is
+    // whatever the account says today.
+    const { data: payoutProfile } = await admin
+        .from('profiles')
+        .select('stripe_account_id')
+        .eq('id', viewerId)
+        .maybeSingle();
+
+    const payoutSchedule = payoutProfile && payoutProfile.stripe_account_id
+        ? await readSchedule(payoutProfile.stripe_account_id)
+        : null;
+
+    const timingText = payoutTimingText(payoutSchedule ? payoutSchedule.delayDays : null);
     const debts = await outstandingDebts(admin, viewerId);
     const owedTotal = debts.reduce((sum, d) => round2(sum + outstandingOf(d)), 0);
 
@@ -241,8 +260,7 @@ export default async function EarningsPage({ searchParams }: { searchParams?: { 
                     </div>
                 </div>
                 <p className="text-sm text-slate-500 mb-5">
-                    Each stay is paid into your bank account the day after your guest checks in.
-                    It usually lands within a couple of working days.
+                    {timingText}
                 </p>
 
                 {/* A host used to find out about a deduction by receiving less
