@@ -247,6 +247,38 @@ Please:
   where tgrelid = 'public.<table>'::regclass and not tgisinternal;
   ```
 
+- **Never compare a booking date against `new Date()`.** `check_in` and
+  `check_out` are date-only strings, so `new Date(booking.check_in)` is
+  *midnight*, and comparing that against the current time makes a stay
+  starting today read as already past. This put a booking made for that
+  evening under Past bookings, taking its Confirm button with it — the only
+  place a host could accept, so a same-day booking could not be accepted at
+  all. `lib/stayWindow.ts` is the one place that answers "has it started" and
+  "has it ended"; use it rather than writing the comparison again. The same
+  care applies to any new date-only column.
+
+- **Accepting, declining, cancelling and refunding are the owner's alone.**
+  `/api/stripe/refund` and `/api/bookings/host-refund` check `host_id`
+  directly and answer 403 to everybody else, whatever `can_bookings` says —
+  see the note on `accessibleListings`. Any screen offering those buttons has
+  to gate them on `isOwner`, or a co-host gets a button that can only fail.
+
+- **Stripe's Adaptive Pricing is on by default and will offer euros.** It
+  converts a GBP price into whatever currency it decides the guest's country
+  wants, which is why a checkout with `currency: 'gbp'` hard-coded still
+  showed euros in live mode. It is off in two places on purpose:
+  `adaptive_pricing: { enabled: false }` on both Checkout Sessions, and the
+  Dashboard toggle at Settings → Payments → Adaptive Pricing, which is **per
+  account and per mode** — switching it off in a sandbox does nothing to live.
+  Verified against `Stripe-Version: 2024-06-20` on 22 August 2026: the
+  parameter is accepted on that version, and a session created without it
+  comes back `adaptive_pricing: { enabled: true }`.
+
+  It never affected the money. The session and payment intent always reported
+  the integration currency and amount, so commission, payouts and refunds were
+  correct throughout — it changed what the guest saw, and charged them a 2-4%
+  conversion fee for it.
+
 - **A co-host is not the `host_id` on a booking.** Any query on their behalf
   needs the service key, or row-level security returns nothing and the page
   looks empty rather than broken.
