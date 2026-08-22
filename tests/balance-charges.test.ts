@@ -47,6 +47,8 @@ function dueBooking(overrides: any = {}) {
 // decides how long this guest gets.
 function load(options: {
     onCharge?: () => any;
+    // A `payments` row left at 'attempting' by a run that died mid-charge.
+    danglingClaim?: any;
     attempts?: number;
     lastFailureReason?: string | null;
 } = {}) {
@@ -57,12 +59,21 @@ function load(options: {
     const due = dueBooking({ balance_attempts: options.attempts || 0 });
     const onCharge = options.onCharge || (() => ({ id: 'pi_1', status: 'succeeded' }));
 
+    // The balance job now claims a `payments` row before charging and uses its
+    // id as the idempotency key, so this fake has to model two things it did
+    // not before: an insert that can be chained with .select(), and the
+    // difference between the two questions the job asks of `payments` — "is
+    // there a dangling claim" (status = attempting) and "why did the last one
+    // fail" (status = failed).
+    let claimCounter = 0;
+
     const admin: any = {
         from(table: string) {
             return {
                 select() {
+                    const filters: Record<string, any> = {};
                     const chain: any = {
-                        eq: () => chain,
+                        eq: (column: string, value: any) => { filters[column] = value; return chain; },
                         in: () => chain,
                         lte: () => chain,
                         gt: () => chain,
@@ -77,6 +88,11 @@ function load(options: {
                                 };
                             }
                             if (table === 'payments') {
+                                // The dangling-claim lookup. Nothing dangling
+                                // unless a test says so.
+                                if (filters.status === 'attempting') {
+                                    return { data: options.danglingClaim || null, error: null };
+                                }
                                 return {
                                     data: options.lastFailureReason
                                         ? { failure_reason: options.lastFailureReason }
@@ -99,9 +115,16 @@ function load(options: {
                         },
                     };
                 },
-                insert: async (row: any) => {
+                insert: (row: any) => {
                     inserts.push({ table, row });
-                    return { data: null, error: null };
+                    const id = 'pay-' + (++claimCounter);
+                    const result = { data: { id: id }, error: null };
+                    // Awaited directly by callers that do not need the id, and
+                    // chained through .select().maybeSingle() by the claim.
+                    return {
+                        select: () => ({ maybeSingle: async () => result }),
+                        then: (resolve: any) => resolve({ data: null, error: null }),
+                    };
                 },
             };
         },
@@ -150,6 +173,16 @@ const authorised = () =>
         headers: { authorization: 'Bearer test-secret' },
     });
 
+// The job claims a `payments` row before charging and settles that same row
+// afterwards, so what ended up recorded is the claim merged with the patch
+// that closed it — not a single insert as it used to be.
+function settledPayment(inserts: any[], updates: any[]) {
+    const claim = inserts.find((i) => i.table === 'payments');
+    const settle = updates.filter((u) => u.table === 'payments').pop();
+    if (!claim && !settle) return undefined;
+    return { row: Object.assign({}, claim ? claim.row : {}, settle ? settle.patch : {}) };
+}
+
 function authRequiredError() {
     const err: any = new Error('Your card was declined. This transaction requires authentication.');
     err.stripeCode = 'authentication_required';
@@ -165,10 +198,10 @@ function plainDecline() {
 }
 
 test('a payment needing authentication is not recorded as a decline', async () => {
-    const { route, inserts } = load({ onCharge: authRequiredError });
+    const { route, inserts, updates } = load({ onCharge: authRequiredError });
     await route.GET(authorised());
 
-    const payment = inserts.find((i) => i.table === 'payments');
+    const payment = settledPayment(inserts, updates);
     assert.ok(payment, 'the failure must be recorded');
     assert.match(payment.row.failure_reason, /^authentication_required:/,
         'the marker is what a later run reads to decide how long the guest gets');
@@ -195,13 +228,13 @@ test('the guest is told their card is fine and they need to confirm it', async (
 });
 
 test('a real decline still gets the old advice', async () => {
-    const { route, emails, inserts } = load({ onCharge: plainDecline });
+    const { route, emails, inserts, updates } = load({ onCharge: plainDecline });
     await route.GET(authorised());
 
     assert.match(emails[0].subject, /couldn.t take the balance/i);
     assert.match(emails[0].html, /expired or there weren/i);
 
-    const payment = inserts.find((i) => i.table === 'payments');
+    const payment = settledPayment(inserts, updates);
     assert.match(payment.row.failure_reason, /declined/i);
 });
 
@@ -222,7 +255,7 @@ test('either way the booking is left alone and the attempt is counted', async ()
     const counted = updates.find((u) => u.patch.balance_attempts !== undefined);
     assert.equal(counted.patch.balance_attempts, 1);
     assert.equal(
-        updates.filter((u) => u.patch.status !== undefined).length,
+        updates.filter((u) => u.table === 'bookings' && u.patch.status !== undefined).length,
         0,
         'one failed attempt must not change the booking status'
     );

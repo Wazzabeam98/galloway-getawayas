@@ -222,18 +222,103 @@ export async function GET(request: Request) {
             // something different, so it is tracked separately.
             let needsAuthentication = false;
             let failedIntentId: string | null = null;
+            let succeededIntentId: string | null = null;
+
+            // ----------------------------------------------------------
+            // Claim the attempt BEFORE charging, and key the charge on it.
+            //
+            // The row is written first and its uuid is the idempotency key, so
+            // the thing that says an attempt happened and the thing that stops
+            // it happening twice are one object. Two objects can disagree.
+            //
+            // The key used to be built from the booking and its balance_due_date,
+            // described in a comment here as "things that don't move". The due
+            // date moves: it is an ordinary column, and moving it is exactly
+            // how you make a balance chargeable today for testing. Reset it
+            // afterwards and the key changes, which is the same shape as the
+            // attempt-counter bug that already cost a double payment once.
+            //
+            // That comment also claimed a declined charge leaves nothing for
+            // Stripe to replay. It does. Stripe saves the result of the first
+            // request for a key "regardless of whether it succeeds or fails",
+            // and replays it — so a reused key after a decline returns that
+            // decline without the bank ever seeing it. Keys are pruned after
+            // 24 hours, and the guard above lets an attempt through after 20,
+            // so the old key had a four-hour window in which a manual re-run
+            // would record a refusal that never happened. A key per attempt
+            // closes it.
+            //
+            // A dangling 'attempting' row means a previous run died between
+            // claiming and hearing back from Stripe. Reusing its id is the
+            // point: the retry carries the same key, so if the charge did go
+            // through, Stripe replays it instead of taking the money again.
+            let attemptRowId: string | null = null;
+
+            if (booking.stripe_customer_id && booking.stripe_payment_method_id) {
+                const { data: dangling } = await admin
+                    .from('payments')
+                    .select('id, amount')
+                    .eq('booking_id', booking.id)
+                    .eq('kind', 'balance')
+                    .eq('status', 'attempting')
+                    .order('created_at', { ascending: false })
+                    .limit(1)
+                    .maybeSingle();
+
+                if (dangling && round2(Number(dangling.amount || 0)) === amount) {
+                    attemptRowId = dangling.id;
+                } else {
+                    // A dangling row for a different amount cannot be reused:
+                    // Stripe rejects a key replayed with different parameters.
+                    // Close it off rather than leaving it to be picked up
+                    // later and confuse the trail.
+                    if (dangling) {
+                        await admin
+                            .from('payments')
+                            .update({
+                                status: 'abandoned',
+                                failure_reason: 'Superseded — the balance changed before this attempt completed',
+                            })
+                            .eq('id', dangling.id);
+                    }
+
+                    const { data: claimed } = await admin
+                        .from('payments')
+                        .insert({
+                            booking_id: booking.id,
+                            kind: 'balance',
+                            amount: amount,
+                            status: 'attempting',
+                        })
+                        .select('id')
+                        .maybeSingle();
+
+                    attemptRowId = (claimed && claimed.id) || null;
+                }
+            }
+
+            // No claim, no charge. Without a key this would be a bare
+            // off-session charge with nothing to stop a retry taking the money
+            // twice, which is worse than waiting for tomorrow's run.
+            //
+            // Skipped rather than failed, deliberately. Counting this as an
+            // attempt would burn a rung on the guest's 72-hour ladder and
+            // email them that their card was declined, when their card was
+            // never presented and nothing is wrong with it. Our fault, our
+            // problem — it goes to /admin/errors instead.
+            if (booking.stripe_customer_id && booking.stripe_payment_method_id && !attemptRowId) {
+                await logError(
+                    'balance-charges: could not record an attempt for booking ' + booking.id
+                        + ', so the balance was not charged',
+                    null,
+                    { path: '/api/cron/balance-charges' }
+                );
+                skipped++;
+                continue;
+            }
 
             if (booking.stripe_customer_id && booking.stripe_payment_method_id) {
                 try {
-                    // The key at the end is what stops a guest ever being
-                    // charged twice for the same balance. It is built from
-                    // things that don't move — the booking and its due date —
-                    // and deliberately not from the attempt count, because a
-                    // restore, a repair script or a stray database edit can
-                    // reset a counter, and this has to hold even then.
-                    //
-                    // A genuine retry after a decline is unaffected: a failed
-                    // charge leaves nothing for Stripe to replay.
                     const intent = await stripeRequest('POST', '/payment_intents', {
                         amount: Math.round(amount * 100),
                         currency: 'gbp',
@@ -246,9 +331,10 @@ export async function GET(request: Request) {
                             booking_id: booking.id,
                             kind: 'balance',
                         },
-                    }, 'balance-' + booking.id + '-' + String(booking.balance_due_date || ''));
+                    }, 'balance-attempt-' + attemptRowId);
 
                     succeeded = intent && intent.status === 'succeeded';
+                    if (intent && intent.id) succeededIntentId = intent.id;
                     if (!succeeded) {
                         failureMessage = 'Payment status: ' + ((intent && intent.status) || 'unknown');
                     }
@@ -302,12 +388,16 @@ export async function GET(request: Request) {
                     })
                     .eq('id', booking.id);
 
-                await admin.from('payments').insert({
-                    booking_id: booking.id,
-                    kind: 'balance',
-                    amount: amount,
-                    status: 'succeeded',
-                });
+                // Settles the row claimed above rather than writing a second
+                // one, so the attempt and its outcome stay a single record and
+                // anything counting attempts still counts the same number.
+                await admin
+                    .from('payments')
+                    .update({
+                        status: 'succeeded',
+                        stripe_payment_intent_id: succeededIntentId,
+                    })
+                    .eq('id', attemptRowId);
 
                 const guestEmail = await emailFor(admin, booking.guest_id);
                 if (guestEmail) {
@@ -352,17 +442,31 @@ export async function GET(request: Request) {
                 })
                 .eq('id', booking.id);
 
-            await admin.from('payments').insert({
-                booking_id: booking.id,
-                kind: 'balance',
-                amount: amount,
-                status: 'failed',
-                // Recorded so the webhook for the same failure can tell it has
-                // already been written down, and not say it twice in different
-                // words.
-                stripe_payment_intent_id: failedIntentId,
-                failure_reason: failureMessage,
-            });
+            // The same row again, settled as failed. The webhook for this
+            // failure looks for a 'failed' row carrying the intent id so it
+            // does not write the same failure a second time in different
+            // words, so the intent id has to land here.
+            if (attemptRowId) {
+                await admin
+                    .from('payments')
+                    .update({
+                        status: 'failed',
+                        stripe_payment_intent_id: failedIntentId,
+                        failure_reason: failureMessage,
+                    })
+                    .eq('id', attemptRowId);
+            } else {
+                // No claim was made — no saved card, or the claim itself
+                // failed. There is still an attempt to record.
+                await admin.from('payments').insert({
+                    booking_id: booking.id,
+                    kind: 'balance',
+                    amount: amount,
+                    status: 'failed',
+                    stripe_payment_intent_id: failedIntentId,
+                    failure_reason: failureMessage,
+                });
+            }
 
             const guestEmail = await emailFor(admin, booking.guest_id);
             if (guestEmail) {
