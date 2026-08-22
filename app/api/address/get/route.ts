@@ -2,7 +2,7 @@ import { createRouteHandlerClient } from '@supabase/auth-helpers-nextjs';
 import { cookies } from 'next/headers';
 import { NextResponse } from 'next/server';
 import ServerEnv from '@/config/ServerEnv';
-import { mapAddress } from '@/lib/address';
+import { mapAddress, upstreamDetail } from '@/lib/address';
 
 export const dynamic = 'force-dynamic';
 
@@ -26,7 +26,10 @@ export async function GET(request: Request) {
 
         if (!ServerEnv.GETADDRESS_API_KEY) {
             return NextResponse.json(
-                { ok: false, error: 'Address lookup is not configured.' },
+                {
+                    ok: false,
+                    error: 'Address lookup is not configured — GETADDRESS_API_KEY is empty in this environment.',
+                },
                 { status: 503 }
             );
         }
@@ -44,11 +47,9 @@ export async function GET(request: Request) {
         const response = await fetch(url, { cache: 'no-store' });
 
         if (!response.ok) {
-            console.error('getAddress get failed', response.status);
-            return NextResponse.json(
-                { ok: false, error: 'Could not load that address.' },
-                { status: 502 }
-            );
+            const detail = await upstreamDetail(response, ServerEnv.GETADDRESS_API_KEY);
+            console.error('getAddress get failed', detail);
+            return NextResponse.json({ ok: false, error: detail }, { status: 502 });
         }
 
         return NextResponse.json({ ok: true, address: mapAddress(await response.json()) });

@@ -101,3 +101,23 @@ export function buildStreetAddress(
     }
     return parts.join(', ');
 }
+
+// What actually went wrong upstream, safe to hand back to a signed-in host.
+//
+// These routes used to collapse every upstream failure into "Address search is
+// unavailable just now", which is polite and tells you nothing — a wrong key, a
+// spent allowance and a getAddress outage all looked identical.
+//
+// The key travels in the query string, so anything getAddress echoes back could
+// carry it. It is redacted defensively even though the error bodies seen so far
+// do not include it.
+export async function upstreamDetail(response: Response, key: string): Promise<string> {
+    let body = '';
+    try {
+        body = (await response.text()).slice(0, 300).trim();
+    } catch {
+        body = '';
+    }
+    if (key && body) body = body.split(key).join('<redacted>');
+    return `getAddress returned ${response.status}${body ? ': ' + body : ''}`;
+}

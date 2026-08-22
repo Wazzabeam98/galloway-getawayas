@@ -2,6 +2,7 @@ import { createRouteHandlerClient } from '@supabase/auth-helpers-nextjs';
 import { cookies } from 'next/headers';
 import { NextResponse } from 'next/server';
 import ServerEnv from '@/config/ServerEnv';
+import { upstreamDetail } from '@/lib/address';
 
 export const dynamic = 'force-dynamic';
 
@@ -24,7 +25,10 @@ export async function GET(request: Request) {
 
         if (!ServerEnv.GETADDRESS_API_KEY) {
             return NextResponse.json(
-                { ok: false, error: 'Address lookup is not configured.' },
+                {
+                    ok: false,
+                    error: 'Address lookup is not configured — GETADDRESS_API_KEY is empty in this environment.',
+                },
                 { status: 503 }
             );
         }
@@ -44,13 +48,11 @@ export async function GET(request: Request) {
         const response = await fetch(url, { cache: 'no-store' });
 
         if (!response.ok) {
-            // Deliberately vague to the browser — an upstream body could carry
-            // the key back out. The detail goes to the server log instead.
-            console.error('getAddress autocomplete failed', response.status);
-            return NextResponse.json(
-                { ok: false, error: 'Address search is unavailable just now.' },
-                { status: 502 }
-            );
+            const detail = await upstreamDetail(response, ServerEnv.GETADDRESS_API_KEY);
+            console.error('getAddress autocomplete failed', detail);
+            // The real status, not a friendly mask — a rejected key, a spent
+            // allowance and an outage need telling apart from the browser.
+            return NextResponse.json({ ok: false, error: detail }, { status: 502 });
         }
 
         const data = await response.json();
