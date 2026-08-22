@@ -29,27 +29,57 @@ type Stamp = {
     art: ReactNode;
 };
 
-// Kirkcudbright — MacLellan's Castle. The roofless 16th-century tower house
-// in the middle of the town: tall stair tower on the left, crow-stepped
-// gable and chimney stacks on the right, empty windows throughout.
+// Kirkcudbright — the Tolbooth. Drawn from a photograph: the tower stands
+// at the left end of a long two-storey hall, not on its own. Square tower
+// with a pointed turret at each corner, two visible from the front flanking
+// the base of a thin needle spire, clock on the face, and the forestair
+// climbing tight against the tower where it meets the hall.
+//
+// The pinnacle cluster is the point of the drawing — without it this is any
+// clock tower anywhere, and castle battlements (tried first) read as a
+// generic blocky building. The hall is what stops it reading as a church.
+//
+// Two things here are deliberate and easy to "tidy" wrongly:
+//   * The hall is 1.35x the tower's width, not the true 2x. At 2x the whole
+//     building has to shrink to stay inside the ring, the tower drops to
+//     about 14 units, and the pinnacles close into one blunt peak.
+//   * The roof is a long horizontal ridge dropping to a sloped verge at the
+//     far end, and the eaves overhang the end wall by two units. That
+//     overhang is doing real work: without it the roof reads as a 3D box
+//     lid against the flat elevation of everything else. A centred triangle
+//     instead reads as a lean-to sloping away from the tower, and a plain
+//     band with a vertical end reads as a flat-roofed modern extension.
 const kirkcudbright: Stamp = {
-    landmark: "MacLellan's Castle",
+    landmark: 'the Tolbooth',
     art: (
         <>
             {/* ground */}
-            <path d="M8 50 H56" />
-            {/* stair tower, left, with its chimney */}
-            <path d="M14 50 V21 H24 V50" />
-            <path d="M16 21 V16 H20 V21" />
-            {/* main block, its wall head stepping down to the right */}
-            <path d="M24 50 V30 H44 V34 H48 V38 H52 V50" />
-            <path d="M35 30 V25 H39 V30" />
-            {/* empty windows, filled so they still read as holes when small */}
-            <path d="M17 26 H21 V31 H17 Z" fill="currentColor" />
-            <path d="M28 33 H32 V38 H28 Z" fill="currentColor" />
-            <path d="M36 33 H40 V38 H36 Z" fill="currentColor" />
-            {/* arched door */}
-            <path d="M29 50 V44 q3 -4 6 0 V50" />
+            <path d="M12 52 H54" />
+            {/* tower */}
+            <path d="M13 52 V24 H30 V52" />
+            {/* corner pinnacles, lower than the spire. The gaps either side of
+                the spire are ~2.5 units on purpose — any tighter and the three
+                points close into one blunt peak at card size. */}
+            <path d="M13.5 24 L15 17 L16.5 24" />
+            <path d="M26.5 24 L28 17 L29.5 24" />
+            {/* needle spire between them */}
+            <path d="M19 24 L21.5 5 L24 24" />
+            {/* clock. Left as a plain ring: hands this small close up into a
+                solid blob and the face stops reading as a clock at all. */}
+            <circle cx="21.5" cy="30" r="3.5" />
+            {/* hall: eaves running away to the right, overhanging its end wall.
+                The roof is a deep slate plane, near enough 40% of the hall's
+                height — in the photograph it is the biggest single surface on
+                the building, not a thin cap. */}
+            <path d="M30 41 H56" />
+            <path d="M54 41 V52" />
+            {/* long horizontal ridge, dropping to a sloped verge at the far end */}
+            <path d="M30 34 H50 L56 41" />
+            {/* chimney stack near the far end */}
+            <path d="M45 34 V29 H48 V34" />
+            {/* first-floor door and the forestair tight against the tower */}
+            <path d="M25.5 46 V40 H29.5 V46" />
+            <path d="M30 46 H31.6 V48 H33.2 V50 H34.8 V52" />
         </>
     ),
 };
