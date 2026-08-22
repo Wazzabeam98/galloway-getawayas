@@ -3,6 +3,7 @@ import { cookies } from 'next/headers';
 import Link from 'next/link';
 import { redirect } from 'next/navigation';
 import { townOf, townKey } from '@/lib/places';
+import TownStamp from '@/components/stamps/TownStamp';
 import { formatUk } from '@/lib/cancellation';
 
 export const dynamic = 'force-dynamic';
@@ -51,6 +52,9 @@ export default async function PassportPage() {
         if (!stamps[key]) {
             stamps[key] = {
                 town: townOf(listing.location),
+                // Kept so the stamp artwork can be looked up the same way
+                // the grouping was.
+                location: listing.location,
                 visits: 0,
                 nights: 0,
                 first: b.check_out,
@@ -131,7 +135,10 @@ export default async function PassportPage() {
                                 className="border-2 border-dashed border-emerald-200 rounded-2xl p-5 bg-emerald-50/40"
                             >
                                 <div className="flex items-start justify-between gap-3">
-                                    <div className="min-w-0">
+                                    <div className="flex-shrink-0 text-emerald-700">
+                                        <TownStamp location={s.location} />
+                                    </div>
+                                    <div className="min-w-0 flex-1">
                                         <div className="font-bold text-stone-900 text-lg truncate">
                                             {s.town}
                                         </div>

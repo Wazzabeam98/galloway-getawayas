@@ -144,6 +144,41 @@ async function main() {
         console.log('  ' + s.in + ' → ' + s.out + '  (' + nights + ' nights, £' + total + ')');
     }
 
+    // A second town with no drawing of its own, so the passport shows the
+    // fallback stamp next to a real one. Swap the town here if Wigtown ever
+    // gets drawn.
+    const [other] = await db.insert('listings', [{
+        host_id: hostId,
+        title: TAG + ' — Bookshop flat',
+        location: 'Wigtown, Dumfries and Galloway',
+        price_per_night: 95,
+        status: 'published',
+        max_guests: 2,
+        bedrooms: 1,
+        beds: 1,
+        bathrooms: 1,
+        description: 'Seeded so the passport shows an undrawn town too.',
+    }]);
+    console.log('  ' + other.title);
+
+    const otherStay = { in: dayOffset(-70), out: dayOffset(-68) };  // 2 nights
+    await db.insert('bookings', [{
+        listing_id: other.id,
+        guest_id: guestId,
+        host_id: hostId,
+        check_in: otherStay.in,
+        check_out: otherStay.out,
+        guests: 2,
+        adults: 2,
+        total_price: 190,
+        status: 'confirmed',
+        payment_status: 'paid',
+        amount_paid: 190,
+        confirmed_at: new Date().toISOString(),
+        paid_at: new Date().toISOString(),
+    }]);
+    console.log('  ' + otherStay.in + ' → ' + otherStay.out + '  (2 nights, £190)');
+
     console.log('');
     console.log('Sign in as ' + GUEST_EMAIL + '.');
     console.log('It has no password yet — set one in the Supabase dashboard,');
