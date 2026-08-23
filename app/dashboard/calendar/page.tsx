@@ -12,6 +12,7 @@ import {
 } from 'date-fns';
 import { ChevronLeft, ChevronRight, X } from 'lucide-react';
 import { displayName } from "@/lib/utils";
+import { MAX_PRICE_PER_NIGHT } from '@/lib/listingRules';
 
 interface Listing {
     id: string;
@@ -656,10 +657,27 @@ export default function CalendarPage() {
                             <button
                                 type="button"
                                 disabled={savingSettings}
-                                onClick={() => saveListingSettings({
-                                    price_per_night: Number(basePrice) || 0,
-                                    weekend_price: weekendPrice ? Number(weekendPrice) : null,
-                                })}
+                                onClick={() => {
+                                    // The same ceiling the wizard and the edit
+                                    // screen publish by. This panel writes
+                                    // price_per_night straight to the table
+                                    // rather than through /api/listings/save,
+                                    // so it has to ask for itself — otherwise
+                                    // it is the one way left to put £50,000 a
+                                    // night on a listing.
+                                    if (Number(basePrice) > MAX_PRICE_PER_NIGHT) {
+                                        toast.error(
+                                            'That price looks like a typo — the most you can set is £'
+                                                + MAX_PRICE_PER_NIGHT + ' a night.',
+                                            { theme: 'colored' }
+                                        );
+                                        return;
+                                    }
+                                    saveListingSettings({
+                                        price_per_night: Number(basePrice) || 0,
+                                        weekend_price: weekendPrice ? Number(weekendPrice) : null,
+                                    });
+                                }}
                                 className="w-full py-3 bg-emerald-700 hover:bg-emerald-800 text-white font-bold rounded-xl transition disabled:opacity-50"
                             >
                                 {savingSettings ? 'Saving...' : 'Save'}
