@@ -9,6 +9,7 @@ import { createClientComponentClient } from '@supabase/auth-helpers-nextjs';
 import { useRouter } from 'next/navigation';
 import Link from 'next/link';
 import Logo from '@/components/base/Logo';
+import TemplateCoverage from '@/components/account/TemplateCoverage';
 import LoginModel from '@/components/auth/LoginModel';
 import { toast } from 'react-toastify';
 import { getImageUrl, formatTime } from '@/lib/utils';
@@ -1634,6 +1635,12 @@ export default function AccountSettings() {
                                         );
                                     })}
                                 </div>
+
+                                {/* Which of these actually reach which property.
+                                    With scoping, the easy mistake is narrowing
+                                    one and forgetting a cottage — and a guest
+                                    then arrives with no instructions at all. */}
+                                <TemplateCoverage />
                             </div>
 
                             {/* Quick replies */}
