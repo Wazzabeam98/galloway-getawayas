@@ -2,7 +2,7 @@
 
 import { useEffect, useState } from 'react';
 import Link from 'next/link';
-import { AlertTriangle, Check, KeyRound } from 'lucide-react';
+import { AlertTriangle, Check, ChevronDown, ChevronRight, KeyRound } from 'lucide-react';
 
 // Which messages cover which properties.
 //
@@ -10,6 +10,14 @@ import { AlertTriangle, Check, KeyRound } from 'lucide-react';
 // forgetting the third, which then silently gets no check-in message — no door
 // code, no directions, nothing. A host should see the gap rather than deduce
 // it.
+//
+// Two rules keep it glanceable. Colour carries the meaning — green is covered,
+// whether by its own message or the catch-all; anything that sends nothing is
+// amber or red — so the cells never need reading one by one. And it stays shut
+// until asked for: the headline says whether anything is wrong, which for most
+// hosts is the whole answer. With a single property there is no grid at all,
+// only the headline, because a one-row table says nothing a host does not
+// already know.
 
 interface Cell {
     listingId: string;
@@ -20,14 +28,15 @@ interface Cell {
 
 const LOOK: Record<string, { text: string; className: string; title: string }> = {
     specific: { text: 'Own', className: 'bg-emerald-50 text-emerald-800 border-emerald-200', title: 'Has its own message for this property' },
-    default:  { text: 'Default', className: 'bg-slate-50 text-slate-600 border-slate-200', title: 'Covered by a message that applies to all your properties' },
-    disabled: { text: 'Off', className: 'bg-slate-50 text-slate-400 border-slate-200', title: 'A message exists but is switched off' },
-    none:     { text: 'None', className: 'bg-amber-50 text-amber-800 border-amber-300 font-semibold', title: 'Nothing will be sent for this property' },
+    default:  { text: 'Default', className: 'bg-emerald-50 text-emerald-800 border-emerald-200', title: 'Covered by a message that applies to all your properties' },
+    disabled: { text: 'Off', className: 'bg-amber-50 text-amber-800 border-amber-300', title: 'A message exists but is switched off, so nothing will be sent' },
+    none:     { text: 'None', className: 'bg-red-50 text-red-800 border-red-300 font-semibold', title: 'Nothing will be sent for this property' },
 };
 
 export default function TemplateCoverage() {
     const [data, setData] = useState<any>(null);
     const [loading, setLoading] = useState(true);
+    const [open, setOpen] = useState(false);
 
     useEffect(() => {
         let cancelled = false;
@@ -50,66 +59,126 @@ export default function TemplateCoverage() {
     const cellAt = (listingId: string, type: string): Cell | undefined =>
         data.cells.filter((c: Cell) => c.listingId === listingId && c.templateType === type)[0];
 
-    const gaps = data.cells.filter((c: Cell) => c.state === 'none').length;
-    const clashes = data.cells.filter((c: Cell) => c.clash).length;
+    // Counted by property rather than by cell: a host thinks in cottages, not
+    // in cottage-by-message combinations.
+    const propertiesWith = (test: (c: Cell) => boolean) =>
+        data.listings.filter((l: any) => data.cells.some((c: Cell) => c.listingId === l.id && test(c))).length;
+
+    const silent = propertiesWith((c) => c.state === 'none');
+    const switchedOff = propertiesWith((c) => c.state === 'disabled' && !c.clash);
+    const clashing = propertiesWith((c) => !!c.clash);
+
+    // Worst state wins the headline, so the one line a host reads is the one
+    // that matters.
+    const summary = silent > 0
+        ? {
+            tone: 'text-red-800',
+            Icon: AlertTriangle,
+            iconClass: 'text-red-700',
+            text: silent === 1 ? '1 property will send nothing' : silent + ' properties will send nothing',
+          }
+        : clashing > 0
+        ? {
+            tone: 'text-red-800',
+            Icon: AlertTriangle,
+            iconClass: 'text-red-700',
+            text: clashing === 1
+                ? '1 property has two messages of the same kind'
+                : clashing + ' properties have two messages of the same kind',
+          }
+        : switchedOff > 0
+        ? {
+            tone: 'text-amber-800',
+            Icon: AlertTriangle,
+            iconClass: 'text-amber-700',
+            text: switchedOff === 1 ? '1 property has a message switched off' : switchedOff + ' properties have a message switched off',
+          }
+        : {
+            tone: 'text-slate-700',
+            Icon: Check,
+            iconClass: 'text-emerald-700',
+            text: 'All properties covered',
+          };
+
+    const showGrid = data.listings.length > 1;
+    const Chevron = open ? ChevronDown : ChevronRight;
 
     return (
         <div className="mt-10 border rounded-2xl p-5">
-            <h3 className="font-semibold text-slate-900 mb-1">What each property sends</h3>
-            <p className="text-sm text-slate-500 mb-4">
-                A message with no properties chosen covers all of them. One set up for a particular
-                property is used instead, for that property.
-            </p>
+            <h3 className="font-semibold text-slate-900 mb-2">What each property sends</h3>
 
-            <div className="overflow-x-auto">
-                <table className="w-full text-sm border-collapse">
-                    <thead>
-                        <tr>
-                            <th className="text-left font-medium text-slate-500 pb-2 pr-3">Property</th>
-                            {data.types.map((t: any) => (
-                                <th key={t.key} className="text-left font-medium text-slate-500 pb-2 px-2 whitespace-nowrap">
-                                    {t.label}
-                                </th>
-                            ))}
-                        </tr>
-                    </thead>
-                    <tbody>
-                        {data.listings.map((l: any) => (
-                            <tr key={l.id} className="border-t">
-                                <td className="py-2 pr-3 text-slate-800 max-w-[14rem] truncate">{l.title}</td>
-                                {data.types.map((t: any) => {
-                                    const cell = cellAt(l.id, t.key);
-                                    const look = LOOK[cell?.state || 'none'];
-                                    return (
-                                        <td key={t.key} className="py-2 px-2">
-                                            <span
-                                                title={cell?.clash ? 'Two messages both name this property' : look.title}
-                                                className={'inline-block text-xs px-2 py-1 rounded-md border ' + look.className}
-                                            >
-                                                {cell?.clash ? 'Clash' : look.text}
-                                            </span>
-                                        </td>
-                                    );
-                                })}
-                            </tr>
-                        ))}
-                    </tbody>
-                </table>
-            </div>
-
-            {gaps > 0 ? (
-                <div className="mt-4 flex items-start gap-2 text-sm text-amber-800">
-                    <AlertTriangle className="w-4 h-4 mt-0.5 shrink-0" />
-                    <span>
-                        {gaps === 1 ? 'One property and message' : gaps + ' combinations'} will send
-                        nothing. If that is deliberate, ignore this — if it is not, a guest arrives
-                        with no instructions.
-                    </span>
-                </div>
+            {showGrid ? (
+                <button
+                    type="button"
+                    onClick={() => setOpen(!open)}
+                    aria-expanded={open}
+                    className={'flex items-center gap-2 text-sm font-medium w-full text-left ' + summary.tone}
+                >
+                    <summary.Icon className={'w-4 h-4 shrink-0 ' + summary.iconClass} />
+                    <span>{summary.text}</span>
+                    <Chevron className="w-4 h-4 shrink-0 text-slate-400" />
+                </button>
             ) : (
-                <div className="mt-4 flex items-center gap-2 text-sm text-slate-500">
-                    <Check className="w-4 h-4 text-emerald-700" />
-                    Every property is covered by every message.
+                <div className={'flex items-center gap-2 text-sm font-medium ' + summary.tone}>
+                    <summary.Icon className={'w-4 h-4 shrink-0 ' + summary.iconClass} />
+                    <span>{summary.text}</span>
+                </div>
+            )}
+
+            {showGrid && open && (
+                <div className="mt-4">
+                    <p className="text-sm text-slate-500 mb-4">
+                        A message with no properties chosen covers all of them. One set up for a particular
+                        property is used instead, for that property.
+                    </p>
+
+                    <div className="overflow-x-auto">
+                        <table className="w-full text-sm border-collapse">
+                            <thead>
+                                <tr>
+                                    <th className="text-left font-medium text-slate-500 pb-2 pr-3">Property</th>
+                                    {data.types.map((t: any) => (
+                                        <th key={t.key} className="text-left font-medium text-slate-500 pb-2 px-2 whitespace-nowrap">
+                                            {t.label}
+                                        </th>
+                                    ))}
+                                </tr>
+                            </thead>
+                            <tbody>
+                                {data.listings.map((l: any) => (
+                                    <tr key={l.id} className="border-t">
+                                        <td className="py-2 pr-3 text-slate-800 max-w-[14rem] truncate">{l.title}</td>
+                                        {data.types.map((t: any) => {
+                                            const cell = cellAt(l.id, t.key);
+                                            const look = LOOK[cell?.state || 'none'];
+                                            return (
+                                                <td key={t.key} className="py-2 px-2">
+                                                    <span
+                                                        title={cell?.clash ? 'Two messages both name this property' : look.title}
+                                                        className={
+                                                            'inline-block text-xs px-2 py-1 rounded-md border ' +
+                                                            (cell?.clash
+                                                                ? 'bg-red-50 text-red-800 border-red-300 font-semibold'
+                                                                : look.className)
+                                                        }
+                                                    >
+                                                        {cell?.clash ? 'Clash' : look.text}
+                                                    </span>
+                                                </td>
+                                            );
+                                        })}
+                                    </tr>
+                                ))}
+                            </tbody>
+                        </table>
+                    </div>
+
+                    {silent > 0 && (
+                        <p className="mt-4 text-sm text-slate-600">
+                            If that is deliberate, ignore this — if it is not, a guest arrives with no
+                            instructions.
+                        </p>
+                    )}
                 </div>
             )}
 
@@ -149,8 +218,11 @@ export default function TemplateCoverage() {
                 </div>
             )}
 
-            {clashes > 0 && (
-                <p className="mt-2 text-sm font-semibold text-red-700">
+            {/* The headline already says a clash exists; this says what it
+                means. Kept outside the collapsed detail because a host with one
+                property has nothing to expand. */}
+            {clashing > 0 && (
+                <p className="mt-2 text-sm text-red-800">
                     Two messages of the same kind both name the same property. Only one will send.
                 </p>
             )}

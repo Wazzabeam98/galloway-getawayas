@@ -13,10 +13,10 @@ somebody something.
 
 There are two Supabase projects and three ways to end up on the wrong one.
 
-| | project ref |
-|---|---|
-| Production | `hviwjxigqivjfhmhpjiy` |
-| Test | `yefoqcabuijcowoqewtc` |
+| | project name | project ref |
+|---|---|---|
+| Production | `supabase-pink-elephant` | `hviwjxigqivjfhmhpjiy` |
+| Test | `galloway-getaways-test` | `yefoqcabuijcowoqewtc` |
 
 - **Vercel Preview deployments read the test project. Production reads
   production.** Every environment-sensitive variable is now split per
@@ -372,9 +372,12 @@ Please:
 
   The join rows carry `user_id` and `template_type` purely so that unique index
   can be written. **They are filled by a trigger from the parent, never by the
-  caller** — verified in rehearsal that a forged `user_id` is overwritten, so a
-  caller cannot defeat the constraint by lying about which template a row
-  belongs to. Same reasoning as the `conversation_prefs` stamp trigger.
+  caller** — a forged `user_id` is overwritten, so a caller cannot defeat the
+  constraint by lying about which template a row belongs to. Same reasoning as
+  the `conversation_prefs` stamp trigger. Verified against both live projects
+  on 23 August 2026: a second template of a kind naming the same listing is
+  refused with `23505`, and the forged-`user_id` route is refused the same way
+  because the trigger has already replaced the value the caller sent.
 
   **Most specific wins, exactly one message.** A template naming the listing
   beats one left open to everything; a listing with no specific template falls
@@ -383,7 +386,10 @@ Please:
   the scheduled sender and the welcome posted on accept — and two
   implementations would eventually disagree about which message a guest gets.
   The tie-break (oldest) should be unreachable; it exists because "should
-  never" is not "cannot".
+  never" is not "cannot" — the unique index is live on both projects, so the
+  only rows that can reach it are ones predating it. The coverage grid in
+  `components/account/TemplateCoverage.tsx` reports the clash rather than
+  quietly picking a winner, for the same reason.
 
   The sender walks **bookings and then types**, not templates. Walking
   templates gives each a turn and sends whichever the query returned first,
