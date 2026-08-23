@@ -7,6 +7,7 @@ import { coverage, hasScopeClash, resolveTemplate } from '@/lib/messageTemplates
 import { usesLockboxCode } from '@/lib/scheduledMessages';
 import type { ScopedTemplate } from '@/lib/messageTemplates';
 import { logError } from '@/lib/logError';
+import { TEMPLATE_TYPES } from '@/lib/templateTypes';
 
 export const dynamic = 'force-dynamic';
 
@@ -19,14 +20,6 @@ export const dynamic = 'force-dynamic';
 // and four kinds of message is looking at twelve answers; the one that matters
 // is the empty one, and they should see it rather than work it out.
 
-// Not exported: a Next route file may only export route handlers and a few
-// known config fields, and exporting anything else fails the build.
-const TEMPLATE_TYPES = [
-    { key: 'booking_confirmation', label: 'Booking confirmation' },
-    { key: 'checkin_details', label: 'Check-in details' },
-    { key: 'checkin_day', label: 'Checking in with guest' },
-    { key: 'checkout_details', label: 'Check-out details' },
-];
 
 export async function GET() {
     try {

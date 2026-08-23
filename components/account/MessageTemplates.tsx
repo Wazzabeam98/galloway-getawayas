@@ -5,6 +5,7 @@ import { createClientComponentClient } from '@supabase/auth-helpers-nextjs';
 import { toast } from 'react-toastify';
 import { Clock, Copy, Trash2, Plus, Home } from 'lucide-react';
 import TemplateCoverage from '@/components/account/TemplateCoverage';
+import { TEMPLATE_TYPES, templateDefFor } from '@/lib/templateTypes';
 
 // Scheduled messages.
 //
@@ -232,57 +233,6 @@ function HighlightedTemplate({
 
 const HOURS = [6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19, 20];
 
-interface TemplateDef {
-    key: string;
-    label: string;
-    hint: string;
-    placeholder: string;
-    defaultOffset: number;
-    // Which kind of timing makes sense: hung off the booking being
-    // accepted, or off the dates of the stay itself.
-    family: 'booking' | 'stay' | 'settled' | 'checkout';
-    offsetLabel?: string;
-    offsetChoices?: number[];
-}
-
-const TEMPLATE_TYPES: TemplateDef[] = [
-    {
-        key: 'booking_confirmation',
-        family: 'booking',
-        label: 'Booking confirmation',
-        hint: 'Sent the moment you accept a booking request.',
-        placeholder: "Thanks for booking {listing}! I've confirmed your stay from {check_in} to {check_out}. Any questions before you arrive, just reply here.",
-        defaultOffset: 0,
-    },
-    {
-        key: 'checkin_details',
-        family: 'stay',
-        label: 'Check-in details',
-        hint: 'The practical stuff — address, key safe, parking, wifi.',
-        placeholder: "You're arriving at {listing} on {check_in}. Check-in is any time after 3pm. The key safe is to the right of the front door — code 1234. Parking is on the street directly outside.",
-        defaultOffset: 3,
-        offsetLabel: 'days before arrival',
-        offsetChoices: [1, 2, 3, 4, 5, 6, 7, 10, 14],
-    },
-    {
-        key: 'checkin_day',
-        family: 'settled',
-        label: 'Checking in with guest',
-        hint: 'A friendly note once they\'ve arrived and had a chance to settle in.',
-        placeholder: "Just checking you got in alright and everything's as you expected at {listing}. Any problems at all, give me a shout and I'll sort it.",
-        defaultOffset: 0,
-    },
-    {
-        key: 'checkout_details',
-        family: 'checkout',
-        label: 'Check-out details',
-        hint: 'What you need them to do before they leave — counted back from your check-out time.',
-        placeholder: "Hope you've had a lovely stay. Check-out is by 11am on {check_out} — just pop the keys back in the safe and close the door behind you. Bins are round the side if you have any rubbish.",
-        defaultOffset: 1,
-        offsetLabel: 'days before departure',
-        offsetChoices: [1, 2, 3],
-    },
-];
 /* ------------------------------------------------------------------ types */
 
 interface Template {
@@ -309,7 +259,7 @@ interface Listing {
     title: string;
 }
 
-const defOf = (type: string) => TEMPLATE_TYPES.filter((d) => d.key === type)[0] || TEMPLATE_TYPES[0];
+const defOf = templateDefFor;
 
 /* -------------------------------------------------------------- component */
 
