@@ -13,7 +13,22 @@ import 'react-date-range/dist/theme/default.css';
 // instead of the black box that used to sit there.
 import hero1 from '@/public/images/hero-1.jpg';
 import hero2 from '@/public/images/hero-2.jpg';
-import hero3 from '@/public/images/hero-3.jpg';
+// hero-3 is the stonework one, and stone texture is the worst case for an
+// image codec — there is no flat area to throw away, so every wall costs
+// bytes. At the full 4928px source it came out of the optimiser at 1.4MB
+// against 0.5–0.9MB for the other three.
+//
+// Quality is the wrong lever for it: dropping to 72 only reached 1.1MB, and
+// softening is exactly what ruins stonework. Resolution is what costs the
+// bytes, so this points at a 2560px-wide copy instead. next/image cannot
+// serve wider than its source, so the 3840 variant a retina screen asks for
+// is capped there — 0.57MB, in line with hero-1, still at quality 80.
+//
+// hero-3.jpg is the original and stays on disk untouched. Regenerate this
+// copy from it with:
+//   cp hero-3.jpg hero-3-web.jpg
+//   sips --resampleWidth 2560 -s formatOptions 90 hero-3-web.jpg
+import hero3 from '@/public/images/hero-3-web.jpg';
 import hero4 from '@/public/images/hero-4.jpg';
 
 const durations = ['weekend', 'week', 'month'];
