@@ -331,8 +331,8 @@ export default async function HostReservations() {
 
                                         <details className="group mt-3">
                                             <summary className="text-sm text-stone-500 underline cursor-pointer list-none w-fit hover:text-stone-800">
-                                                <span className="group-open:hidden">How that&apos;s worked out</span>
-                                                <span className="hidden group-open:inline">Hide the breakdown</span>
+                                                <span className="group-open:hidden">Show breakdown</span>
+                                                <span className="hidden group-open:inline">Hide breakdown</span>
                                             </summary>
                                             <div className="mt-2 text-sm space-y-1">
                                                 <div className="flex justify-between gap-6 text-stone-600">
