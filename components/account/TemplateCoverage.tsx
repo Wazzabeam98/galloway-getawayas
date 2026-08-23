@@ -1,7 +1,8 @@
 'use client';
 
 import { useEffect, useState } from 'react';
-import { AlertTriangle, Check } from 'lucide-react';
+import Link from 'next/link';
+import { AlertTriangle, Check, KeyRound } from 'lucide-react';
 
 // Which messages cover which properties.
 //
@@ -109,6 +110,42 @@ export default function TemplateCoverage() {
                 <div className="mt-4 flex items-center gap-2 text-sm text-slate-500">
                     <Check className="w-4 h-4 text-emerald-700" />
                     Every property is covered by every message.
+                </div>
+            )}
+
+            {/* The code lives on the listing, because it is per-property and
+                this page is per-host. So this points at it rather than asking
+                for it here — but this is where the failure shows up, so this is
+                where a host needs telling. */}
+            {(data.missingCode || []).length > 0 && (
+                <div className="mt-4 border border-amber-300 bg-amber-50 rounded-xl p-4">
+                    <div className="flex items-start gap-2">
+                        <KeyRound className="w-4 h-4 text-amber-700 mt-0.5 shrink-0" />
+                        <div>
+                            <div className="text-sm font-semibold text-amber-900">
+                                {data.missingCode.length === 1
+                                    ? 'One property has no door code set'
+                                    : data.missingCode.length + ' properties have no door code set'}
+                            </div>
+                            <p className="text-sm text-amber-800 mt-0.5">
+                                A message covering {data.missingCode.length === 1 ? 'it' : 'them'} uses{' '}
+                                <code className="text-xs bg-amber-100 px-1 rounded">{'{lockbox_code}'}</code>,
+                                so it will be held back rather than sent with a gap in it.
+                            </p>
+                            <ul className="mt-2 space-y-1">
+                                {data.missingCode.map((l: any) => (
+                                    <li key={l.id}>
+                                        <Link
+                                            href={'/edit-listing/' + l.id}
+                                            className="text-sm font-semibold text-amber-900 underline hover:text-amber-950"
+                                        >
+                                            Set the code for {l.title}
+                                        </Link>
+                                    </li>
+                                ))}
+                            </ul>
+                        </div>
+                    </div>
                 </div>
             )}
 

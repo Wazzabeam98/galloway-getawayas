@@ -3,6 +3,7 @@
 import { useEffect, useState } from 'react';
 import { toast } from 'react-toastify';
 import { KeyRound } from 'lucide-react';
+import { methodNeedsCode, codeHintFor } from '@/lib/checkInMethods';
 
 // The door code for one listing.
 //
@@ -15,7 +16,16 @@ import { KeyRound } from 'lucide-react';
 // Deliberately not part of the big Save at the bottom of the page: a host
 // changing a door code between guests should not have to save the whole
 // listing, and should get a plain yes or no that it took.
-export default function LockboxCode({ listingId }: { listingId: string }) {
+export default function LockboxCode({
+    listingId,
+    method,
+}: {
+    listingId: string;
+    // The check-in method as currently chosen in the form — not as saved, so
+    // the field appears the moment somebody picks Lockbox rather than after
+    // they save and come back.
+    method?: string | null;
+}) {
     const [code, setCode] = useState('');
     const [saved, setSaved] = useState('');
     const [loading, setLoading] = useState(true);
@@ -69,12 +79,42 @@ export default function LockboxCode({ listingId }: { listingId: string }) {
         return <p className="text-sm text-slate-400 mt-2">Checking the door code…</p>;
     }
 
+    // The method no longer implies a code, but one is stored. It is not
+    // deleted: losing a credential as a side effect of changing a dropdown is
+    // the wrong instinct, and the host may be mid-way through a change. Said
+    // out loud instead, because a template using {lockbox_code} still works
+    // and that is surprising if the field has vanished.
+    if (!methodNeedsCode(method)) {
+        if (!saved) return null;
+        return (
+            <div className="mt-6 border border-amber-200 bg-amber-50 rounded-xl p-4">
+                <div className="text-sm font-semibold text-amber-900">
+                    A door code is still saved for this property
+                </div>
+                <p className="text-sm text-amber-800 mt-1">
+                    Your check-in method no longer involves a code, but one is stored and any
+                    message using {'{lockbox_code}'} will still send it. Clear it if it should
+                    not be used.
+                </p>
+                <button
+                    type="button"
+                    onClick={() => { setCode(''); save(); }}
+                    disabled={saving}
+                    className="mt-3 px-4 py-2 border border-amber-300 hover:border-amber-500 text-amber-900 text-sm font-semibold rounded-lg disabled:opacity-50"
+                >
+                    {saving ? 'Clearing…' : 'Clear the code'}
+                </button>
+            </div>
+        );
+    }
+
     return (
         <div className="mt-8">
             <h3 className="font-semibold text-slate-800 mb-1 flex items-center gap-2">
                 <KeyRound className="w-4 h-4 text-slate-500" />
                 Door code
             </h3>
+            <p className="text-sm text-slate-600 mb-1">{codeHintFor(method)}</p>
             <p className="text-sm text-slate-500 mb-3">
                 Used by <code className="text-xs bg-slate-100 px-1 py-0.5 rounded">{'{lockbox_code}'}</code>{' '}
                 in your check-in message, so the right code goes to each property. It is never shown

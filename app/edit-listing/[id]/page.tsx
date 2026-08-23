@@ -590,6 +590,21 @@ export default function EditListing() {
                                             );
                                         })}
                                     </div>
+
+                                    {/* Asked here because this is where the
+                                        question arises: a host who has just
+                                        said "there's a lockbox" is thinking
+                                        about the code. It sat next to the house
+                                        rules before, surrounded by guest-facing
+                                        copy, which is the wrong company for a
+                                        credential.
+
+                                        Saved on its own, through its own route:
+                                        the code is not on the listing row, so
+                                        it is not part of this form's Save. */}
+                                    {listingId && (
+                                        <LockboxCode listingId={listingId} method={checkInMethod} />
+                                    )}
                                 </section>
 
                                 <section>
@@ -932,11 +947,6 @@ export default function EditListing() {
                                             className="w-full p-2.5 border rounded-lg text-sm mt-1" />
                                     </div>
                                 </div>
-
-                                {/* Saved on its own, through its own route —
-                                    the code does not live on the listing row,
-                                    so it is not part of this form's Save. */}
-                                {listingId && <LockboxCode listingId={listingId} />}
 
                                 <h3 className="font-semibold text-slate-800 mt-8 mb-2">Additional rules</h3>
                                 <textarea

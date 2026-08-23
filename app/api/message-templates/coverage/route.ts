@@ -3,7 +3,8 @@ import { adminClient } from '@/lib/supabaseAdmin';
 import { cookies } from 'next/headers';
 import { NextResponse } from 'next/server';
 import { accessibleListings } from '@/lib/access';
-import { coverage, hasScopeClash } from '@/lib/messageTemplates';
+import { coverage, hasScopeClash, resolveTemplate } from '@/lib/messageTemplates';
+import { usesLockboxCode } from '@/lib/scheduledMessages';
 import type { ScopedTemplate } from '@/lib/messageTemplates';
 import { logError } from '@/lib/logError';
 
@@ -51,7 +52,7 @@ export async function GET() {
 
         const { data: listings } = await admin
             .from('listings')
-            .select('id, title, status')
+            .select('id, title, status, check_in_method')
             .in('id', ownedIds)
             .order('created_at', { ascending: true });
 
@@ -83,6 +84,30 @@ export async function GET() {
         const visible = (listings || []).filter((l: any) => l.status !== 'draft');
         const types = TEMPLATE_TYPES.map((t) => t.key);
 
+        // Which properties are about to send a message asking for a door code
+        // they have not got. The message is held back rather than sent with a
+        // gap in it, so this is the difference between a guest getting their
+        // code and getting nothing — and the fix is on the listing, not here,
+        // so this points rather than asks.
+        const { data: codes } = await admin
+            .from('listing_access_codes')
+            .select('listing_id')
+            .in('listing_id', visible.map((l: any) => l.id));
+
+        const hasCode: Record<string, boolean> = {};
+        (codes || []).forEach((c: any) => { hasCode[c.listing_id] = true; });
+
+        const missingCode = visible
+            .filter((l: any) => {
+                if (hasCode[l.id]) return false;
+                // Only where a template that covers it actually wants one.
+                return types.some((type) => {
+                    const winner = resolveTemplate(scoped, type, l.id);
+                    return !!winner && usesLockboxCode(winner.body);
+                });
+            })
+            .map((l: any) => ({ id: l.id, title: l.title || 'Untitled listing' }));
+
         const cells = coverage(scoped, visible.map((l: any) => l.id), types).map((c) => ({
             ...c,
             // The database refuses this, so it should never appear. Reported
@@ -96,6 +121,7 @@ export async function GET() {
             listings: visible.map((l: any) => ({ id: l.id, title: l.title || 'Untitled listing' })),
             types: TEMPLATE_TYPES,
             cells: cells,
+            missingCode: missingCode,
         });
     } catch (err: any) {
         await logError('[message-templates/coverage] ' + ((err && err.message) || 'failed'), err, {
