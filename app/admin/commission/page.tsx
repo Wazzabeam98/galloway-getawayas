@@ -1,182 +1,74 @@
-'use client';
+// =====================================================================
+// GALLOWAY GETAWAYS — commission rates, owner only
+// WHERE THIS GOES: GitHub → app/admin/commission/page.tsx  (REPLACES the file)
+//
+// This page used to be a client component. It asked the browser "am I an
+// owner?", and if the browser said yes it drew the rates. That is not a gate:
+// everything it decided happened on the far side of the wire, and it queried
+// commission_rate — a money column — straight from the browser to do it.
+//
+// It grants nothing new to close this. /api/admin/commission has always
+// checked for itself, so the numbers could be read but never changed. What it
+// closes is a page that looked protected and was not, and one more place a
+// money column leaves the database towards a browser.
+//
+// The gate is now here, on the server, before anything renders. The editor is
+// components/admin/CommissionEditor.tsx and receives the rows as props.
+// =====================================================================
 
-import Link from 'next/link';
-import { useEffect, useState } from 'react';
-import { createClientComponentClient } from '@supabase/auth-helpers-nextjs';
-import { DEFAULT_COMMISSION_PERCENT } from '@/lib/fees';
+import { createServerComponentClient } from '@supabase/auth-helpers-nextjs';
+import { cookies } from 'next/headers';
+import { notFound } from 'next/navigation';
+import { adminClient } from '@/lib/supabaseAdmin';
 import { displayName } from '@/lib/utils';
+import CommissionEditor, { CommissionRow } from '@/components/admin/CommissionEditor';
 
-interface Row {
-    id: string;
-    title: string;
-    host_id: string;
-    commission_rate: number | null;
-}
+export const dynamic = 'force-dynamic';
 
-export default function CommissionAdmin() {
-    const supabase = createClientComponentClient();
-    const [loading, setLoading] = useState(true);
-    const [allowed, setAllowed] = useState(false);
-    const [rows, setRows] = useState<Row[]>([]);
-    const [hostNames, setHostNames] = useState<Record<string, string>>({});
-    const [drafts, setDrafts] = useState<Record<string, string>>({});
-    const [savingId, setSavingId] = useState<string | null>(null);
-    const [message, setMessage] = useState('');
+export default async function CommissionAdmin() {
+    const supabase = createServerComponentClient({ cookies });
 
-    useEffect(() => {
-        const load = async () => {
-            const { data: { session } } = await supabase.auth.getSession();
-            if (!session || !session.user) {
-                setLoading(false);
-                return;
-            }
+    // getUser(), not getSession(). getSession() only decodes the cookie — it
+    // never checks the signature — so the id everything below hangs off would
+    // be whatever the caller wrote in it. getUser() asks the auth server,
+    // which verifies the token and that the session has not been revoked.
+    const { data: auth } = await supabase.auth.getUser();
 
-            const { data: me } = await supabase
-                .from('profiles')
-                .select('is_admin')
-                .eq('id', session.user.id)
-                .maybeSingle();
+    if (!auth || !auth.user) notFound();
 
-            if (!me || !me.is_admin) {
-                setLoading(false);
-                return;
-            }
-            setAllowed(true);
+    const { data: me } = await supabase
+        .from('profiles')
+        .select('is_admin')
+        .eq('id', auth.user.id)
+        .maybeSingle();
 
-            const { data: listings } = await supabase
-                .from('listings')
-                .select('id, title, host_id, commission_rate')
-                .order('title');
+    if (!me || me.is_admin !== true) notFound();
 
-            setRows(listings || []);
+    // Service role, like the other owner pages. commission_rate is one of the
+    // money columns revoked from `authenticated`, so reading it as the
+    // signed-in user is the wrong tool even for someone allowed to see it.
+    const admin = adminClient();
 
-            const initial: Record<string, string> = {};
-            (listings || []).forEach((l: Row) => {
-                initial[l.id] = l.commission_rate === null || l.commission_rate === undefined
-                    ? ''
-                    : String(l.commission_rate);
-            });
-            setDrafts(initial);
+    const { data: listings } = await admin
+        .from('listings')
+        .select('id, title, host_id, commission_rate')
+        .order('title');
 
-            const hostIds = Array.from(new Set((listings || []).map((l: Row) => l.host_id)));
-            if (hostIds.length) {
-                const { data: hosts } = await supabase
-                    .from('profiles')
-                    .select('id, full_name, preferred_name, show_full_name')
-                    .in('id', hostIds);
-                const names: Record<string, string> = {};
-                (hosts || []).forEach((h: any) => {
-                    names[h.id] = displayName(h, 'Host');
-                });
-                setHostNames(names);
-            }
+    const rows: CommissionRow[] = listings || [];
 
-            setLoading(false);
-        };
+    const hostIds = Array.from(new Set(rows.map((l) => l.host_id)));
+    const hostNames: Record<string, string> = {};
 
-        load();
-    }, []);
+    if (hostIds.length) {
+        const { data: hosts } = await admin
+            .from('profiles')
+            .select('id, full_name, preferred_name, show_full_name')
+            .in('id', hostIds);
 
-    const save = async (listingId: string) => {
-        setSavingId(listingId);
-        setMessage('');
-        try {
-            const res = await fetch('/api/admin/commission', {
-                method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({ listingId: listingId, rate: drafts[listingId] }),
-            });
-            const data = await res.json();
-
-            if (data && data.ok) {
-                setRows((prev) =>
-                    prev.map((r) => (r.id === listingId ? { ...r, commission_rate: data.rate } : r))
-                );
-                setMessage('Saved.');
-            } else {
-                setMessage((data && data.error) || 'Could not save.');
-            }
-        } catch (err) {
-            setMessage('Could not save.');
-        }
-        setSavingId(null);
-    };
-
-    if (loading) {
-        return <div className="max-w-3xl mx-auto px-6 py-10 text-slate-400">Loading…</div>;
+        (hosts || []).forEach((h: any) => {
+            hostNames[h.id] = displayName(h, 'Host');
+        });
     }
 
-    if (!allowed) {
-        return (
-            <div className="max-w-3xl mx-auto px-6 py-20 text-center">
-                <h1 className="text-xl font-semibold text-slate-900">Page not found</h1>
-                <p className="text-slate-500 mt-1">This page isn&apos;t available.</p>
-            </div>
-        );
-    }
-
-    return (
-        <div className="max-w-3xl mx-auto px-6 py-10">
-            <Link href="/admin" className="text-sm text-slate-500 hover:underline">
-                &larr; Owner tools
-            </Link>
-
-            <h1 className="text-2xl font-bold text-slate-900 mt-4 mb-1">Commission rates</h1>
-            <p className="text-sm text-slate-500 mb-8">
-                Leave a rate blank for the standard {DEFAULT_COMMISSION_PERCENT}%. Hosts never see
-                this page or their rate.
-            </p>
-
-            {message && (
-                <div className="mb-4 text-sm font-medium text-emerald-700">{message}</div>
-            )}
-
-            <div className="space-y-3">
-                {rows.map((r) => (
-                    <div
-                        key={r.id}
-                        className="border rounded-2xl p-4 flex items-center justify-between gap-4 flex-wrap"
-                    >
-                        <div className="min-w-0">
-                            <div className="font-semibold text-slate-900 truncate">{r.title}</div>
-                            <div className="text-sm text-slate-500">
-                                {hostNames[r.host_id] || 'Host'}
-                                {r.commission_rate === null || r.commission_rate === undefined
-                                    ? ' · standard rate'
-                                    : ' · ' + r.commission_rate + '%'}
-                            </div>
-                        </div>
-
-                        <div className="flex items-center gap-2">
-                            <input
-                                type="number"
-                                min="0"
-                                max="100"
-                                step="0.5"
-                                placeholder={String(DEFAULT_COMMISSION_PERCENT)}
-                                value={drafts[r.id] ?? ''}
-                                onChange={(e) =>
-                                    setDrafts((prev) => ({ ...prev, [r.id]: e.target.value }))
-                                }
-                                className="w-24 border rounded-xl px-3 py-2 text-sm outline-none focus:border-slate-900"
-                            />
-                            <span className="text-sm text-slate-400">%</span>
-                            <button
-                                type="button"
-                                onClick={() => save(r.id)}
-                                disabled={savingId === r.id}
-                                className="px-4 py-2 bg-emerald-700 hover:bg-emerald-800 text-white text-sm font-semibold rounded-xl transition disabled:opacity-50"
-                            >
-                                {savingId === r.id ? 'Saving…' : 'Save'}
-                            </button>
-                        </div>
-                    </div>
-                ))}
-            </div>
-
-            {rows.length === 0 && (
-                <p className="text-slate-500">No listings yet.</p>
-            )}
-        </div>
-    );
+    return <CommissionEditor rows={rows} hostNames={hostNames} />;
 }

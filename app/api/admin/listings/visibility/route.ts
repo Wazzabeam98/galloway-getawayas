@@ -17,15 +17,19 @@ export const dynamic = 'force-dynamic';
 export async function POST(request: Request) {
     try {
         const supabase = createRouteHandlerClient({ cookies });
-        const { data: { session } } = await supabase.auth.getSession();
+        // getUser(), not getSession(). getSession() only decodes the cookie
+        // — it never checks the signature — so the id this route trusts would
+        // be whatever the caller wrote in it. getUser() asks the auth server,
+        // which verifies the token and that the session has not been revoked.
+        const { data: { user } } = await supabase.auth.getUser();
 
-        if (!session || !session.user) {
+        if (!user) {
             return NextResponse.json({ ok: false, error: 'Not signed in' }, { status: 401 });
         }
 
         // Checked here on the server every time. The screen hiding itself is
         // presentation; this is what actually decides.
-        if (!(await isAdmin(session.user.id))) {
+        if (!(await isAdmin(user.id))) {
             return NextResponse.json({ ok: false, error: 'Not permitted' }, { status: 403 });
         }
 
@@ -82,7 +86,7 @@ export async function POST(request: Request) {
         }
 
         await recordAdminAction({
-            adminId: session.user.id,
+            adminId: user.id,
             action: hidden ? 'listing_hidden' : 'listing_relisted',
             listingId: listingId,
             hostId: listing.host_id,

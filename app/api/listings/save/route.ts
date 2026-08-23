@@ -29,9 +29,15 @@ const BUCKET = process.env.NEXT_PUBLIC_S3_BUCKET || 'listings';
 export async function POST(request: Request) {
     try {
         const supabase = createRouteHandlerClient({ cookies });
-        const { data: { session } } = await supabase.auth.getSession();
+        // getUser(), not getSession(). getSession() only decodes the cookie —
+        // it never checks the signature — so the id below would be whatever
+        // the caller wrote in it, and this route decides both whether a host
+        // may edit their own listing and whether an owner may moderate
+        // somebody else's. getUser() asks the auth server, which verifies the
+        // token and that it has not been revoked.
+        const { data: { user } } = await supabase.auth.getUser();
 
-        if (!session || !session.user) {
+        if (!user) {
             return NextResponse.json({ ok: false, error: 'Not signed in' }, { status: 401 });
         }
 
@@ -57,14 +63,14 @@ export async function POST(request: Request) {
 
         // The ordinary path: the owner of the listing, or a co-host they
         // trusted with editing it.
-        const access = await checkListing(session.user.id, listingId, 'can_listing');
+        const access = await checkListing(user.id, listingId, 'can_listing');
 
         // The moderation path, opted into here rather than inside
         // checkListing() — that helper is used by the earnings, payouts,
         // calendar, messages and bookings routes, and teaching it about admins
         // would hand an owner all of those at once with nothing written down.
-        const owner = !access && (await isAdmin(session.user.id));
-        const moderating = owner && before.host_id !== session.user.id;
+        const owner = !access && (await isAdmin(user.id));
+        const moderating = owner && before.host_id !== user.id;
 
         if (!access && !owner) {
             return NextResponse.json(
@@ -180,7 +186,7 @@ export async function POST(request: Request) {
         }
 
         await recordAdminAction({
-            adminId: session.user.id,
+            adminId: user.id,
             action: droppedImages.length && changed.length === 1 && changed[0] === 'images'
                 ? 'listing_photo_removed'
                 : 'listing_edited',

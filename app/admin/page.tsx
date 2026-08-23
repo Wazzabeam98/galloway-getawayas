@@ -9,19 +9,24 @@ export const dynamic = 'force-dynamic';
 // security — this is what actually keeps people out.
 async function requireOwner() {
     const supabase = createServerComponentClient({ cookies });
-    const { data } = await supabase.auth.getSession();
 
-    if (!data || !data.session || !data.session.user) notFound();
+    // getUser(), not getSession(). getSession() only decodes the cookie — it
+    // never checks the signature — so the id everything below hangs off would
+    // be whatever the caller wrote in it. getUser() asks the auth server,
+    // which verifies the token and that the session has not been revoked.
+    const { data } = await supabase.auth.getUser();
+
+    if (!data || !data.user) notFound();
 
     const { data: profile } = await supabase
         .from('profiles')
         .select('is_admin')
-        .eq('id', data.session.user.id)
+        .eq('id', data.user.id)
         .maybeSingle();
 
     if (!profile || profile.is_admin !== true) notFound();
 
-    return data.session.user;
+    return data.user;
 }
 
 const tools = [

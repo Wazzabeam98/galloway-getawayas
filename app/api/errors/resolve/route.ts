@@ -8,9 +8,13 @@ export const dynamic = 'force-dynamic';
 export async function POST(request: Request) {
     try {
         const supabase = createRouteHandlerClient({ cookies });
-        const { data: { session } } = await supabase.auth.getSession();
+        // getUser(), not getSession(). getSession() only decodes the cookie
+        // — it never checks the signature — so the id this route trusts would
+        // be whatever the caller wrote in it. getUser() asks the auth server,
+        // which verifies the token and that the session has not been revoked.
+        const { data: { user } } = await supabase.auth.getUser();
 
-        if (!session || !session.user) {
+        if (!user) {
             return NextResponse.json({ ok: false, error: 'Not signed in' }, { status: 401 });
         }
 
@@ -23,7 +27,7 @@ export async function POST(request: Request) {
         const { data: profile } = await admin
             .from('profiles')
             .select('is_admin')
-            .eq('id', session.user.id)
+            .eq('id', user.id)
             .maybeSingle();
 
         if (!profile || profile.is_admin !== true) {
