@@ -6,6 +6,7 @@ import {
     emailLayout,
     escapeHtml,
     button,
+    waitedFor,
     SITE_URL,
 } from '@/lib/email';
 
@@ -41,6 +42,13 @@ export async function GET(request: Request) {
     if (!secret || auth !== 'Bearer ' + secret) {
         return NextResponse.json({ ok: false, error: 'Unauthorised' }, { status: 401 });
     }
+
+    // ?preview=1 builds everything and sends nothing: no mail, no rows in
+    // sent_reply_nudges, just the emails that would have gone out. It takes
+    // the same secret as the real run, so it gives away nothing that
+    // triggering the run does not, and it is the only way to read the wording
+    // without either waiting twelve hours or mailing somebody to find out.
+    const preview = new URL(request.url).searchParams.get('preview') === '1';
 
     const admin = adminClient();
     const now = Date.now();
@@ -159,6 +167,7 @@ export async function GET(request: Request) {
     }
 
     let emailed = 0;
+    const previews: any[] = [];
 
     for (const userId of Object.keys(perPerson)) {
         const items = perPerson[userId];
@@ -196,20 +205,17 @@ export async function GET(request: Request) {
 
             const rows = items.map((item: any) => {
                 const listing = listingMap[item.booking.listing_id];
-                const hours = Math.floor(
-                    (now - new Date(item.message.created_at).getTime()) / 3600000
-                );
-                const preview = String(item.message.body || '').slice(0, 140);
+                const snippet = String(item.message.body || '').slice(0, 140);
 
                 return (
                     '<div style="margin:0 0 14px 0;padding:14px 16px;background-color:#f9fafb;' +
                     'border-left:3px solid #b45309;border-radius:6px;">' +
                     '<div style="font-size:13px;color:#6b7280;">' +
                     escapeHtml((listing && listing.title) || 'A booking') +
-                    ' &middot; waiting ' + hours + ' hours' +
+                    ' &middot; ' + waitedFor(item.message.created_at, new Date(now)) +
                     '</div>' +
                     '<div style="margin-top:6px;font-size:15px;color:#374151;">' +
-                    (escapeHtml(preview) || '<em>No message text</em>') +
+                    (escapeHtml(snippet) || '<em>No message text</em>') +
                     (String(item.message.body || '').length > 140 ? '&hellip;' : '') +
                     '</div>' +
                     '</div>'
@@ -239,7 +245,15 @@ export async function GET(request: Request) {
                     : undefined
             );
 
-            const delivered = await sendEmail(to, heading + ' — Galloway Getaways', html);
+            const subject = heading + ' \u2014 Galloway Getaways';
+
+            if (preview) {
+                previews.push({ to: to, subject: subject, html: html });
+                emailed += items.length;
+                continue;
+            }
+
+            const delivered = await sendEmail(to, subject, html);
 
             if (!delivered) { skipped += items.length; continue; }
 
@@ -266,9 +280,11 @@ export async function GET(request: Request) {
 
     return NextResponse.json({
         ok: true,
+        preview: preview,
         waiting: waiting.length,
         people: Object.keys(perPerson).length,
         emailed: emailed,
         skipped: skipped,
+        ...(preview ? { emails: previews } : {}),
     });
 }

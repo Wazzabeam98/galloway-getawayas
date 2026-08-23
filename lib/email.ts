@@ -39,6 +39,75 @@ export function formatDate(value: string | null | undefined): string {
     }
 }
 
+// Everything on this site happens in one place, so the clock that matters is
+// that place's. Vercel runs in UTC, which in summer is an hour behind
+// Dumfries — enough to file a message sent at half past midnight under the
+// day before, and then call it Thursday night when it was Friday morning.
+const LOCAL_TIME_ZONE = 'Europe/London';
+
+function londonDayKey(date: Date): string {
+    return date.toLocaleDateString('en-CA', { timeZone: LOCAL_TIME_ZONE });
+}
+
+function londonHour(date: Date): number {
+    // formatToParts with an explicit h23 cycle, because asking for a
+    // two-digit hour and hoping is how you get "24" back for midnight.
+    const parts = new Intl.DateTimeFormat('en-GB', {
+        timeZone: LOCAL_TIME_ZONE,
+        hour: 'numeric',
+        hourCycle: 'h23',
+    }).formatToParts(date);
+
+    for (let i = 0; i < parts.length; i++) {
+        if (parts[i].type === 'hour') return Number(parts[i].value);
+    }
+    return 0;
+}
+
+// How long something has been sitting, said the way somebody would say it.
+//
+// Hours while hours still mean something, and after that the day it started.
+// "Waiting 31 hours" makes the reader do arithmetic before they know whether
+// to care; "waiting since yesterday morning" they simply read. The changeover
+// is at a day, which is also where the arithmetic starts.
+export function waitedFor(since: string | Date, now?: Date): string {
+    const start = typeof since === 'string' ? new Date(since) : since;
+    const at = now || new Date();
+
+    const hours = Math.floor((at.getTime() - start.getTime()) / 3600000);
+    if (hours < 24) return 'waiting ' + hours + (hours === 1 ? ' hour' : ' hours');
+
+    const hour = londonHour(start);
+    const partOfDay = hour < 5
+        ? 'night'
+        : hour < 12
+            ? 'morning'
+            : hour < 18
+                ? 'afternoon'
+                : 'evening';
+
+    const yesterday = new Date(at.getTime() - 86400000);
+
+    if (londonDayKey(start) === londonDayKey(yesterday)) {
+        return 'waiting since yesterday ' + partOfDay;
+    }
+
+    // Within the week a weekday is the clearest thing to say. Older than that
+    // and the day of the week stops locating anything, so give the date.
+    if (hours < 24 * 7) {
+        return 'waiting since ' +
+            start.toLocaleDateString('en-GB', { weekday: 'long', timeZone: LOCAL_TIME_ZONE }) +
+            ' ' + partOfDay;
+    }
+
+    return 'waiting since ' +
+        start.toLocaleDateString('en-GB', {
+            day: 'numeric',
+            month: 'long',
+            timeZone: LOCAL_TIME_ZONE,
+        });
+}
+
 export function button(url: string, label: string): string {
     return (
         '<table role="presentation" cellpadding="0" cellspacing="0" border="0" style="margin:26px 0;">' +
