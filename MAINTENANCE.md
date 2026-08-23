@@ -292,6 +292,31 @@ Please:
   `penalty` row is evidence a cancellation was the host's, not a record, and
   this column will be quoted at somebody one day.
 
+- **A new test must be seen to fail before it is trusted.** A passing suite
+  says nothing about whether the tests would catch a regression. Three times in
+  one session tests here turned out to be asserting something other than what
+  their name claimed — each one a default quietly standing in for the case
+  under test, each one passing for a long time:
+
+  - a payout test whose stub handed back the wrong client, so it asserted on
+    data it was never given
+  - `"one failed attempt must not change the booking status"`, which checked
+    *every* update rather than the booking's, and only passed because payments
+    happened to be inserted rather than updated
+  - a 403 test written with `opts.access ?? default`, where `??` treats an
+    explicit null as "not supplied" — so it exercised the permitted path while
+    claiming to test the refusal
+
+  `./scripts/mutate.sh <file> <from> <to> <label>` is how you tell: it breaks a
+  behaviour, runs the suite, and reports whether anything noticed. Four real
+  gaps came out of it in one evening — the payout idempotency key,
+  `lib/stayWindow.ts` and `lib/access.ts` with no tests at all, and the
+  cancellation attribution that decides whether a host is charged 5%.
+
+  It reverts with `git checkout --`, so it **refuses to run on a file with
+  uncommitted changes**. That guard exists because it silently ate the same fix
+  twice in one evening before it was there.
+
 - **The unit tests were unreliable until 22 August 2026, and the same trap is
   still there for any new test file.** Routes reach the database through
   `lib/supabaseAdmin`, which captures `createClient` when it loads and is then
