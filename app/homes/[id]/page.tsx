@@ -9,6 +9,7 @@ import ReviewStars from '@/components/ReviewStars';
 import PhotoGallery from '@/components/PhotoGallery';
 import HostReplyBox from '@/components/HostReplyBox';
 import ReviewsSummary from '@/components/ReviewsSummary';
+import { hasPublicScore, MIN_PUBLIC_REVIEWS } from '@/lib/reviews';
 import PropertyMap from '@/components/PropertyMap';
 import { KeyRound, Zap, Car, Bath, Waves, Flame, PawPrint, Briefcase, Plug, Users, MapPin, DoorOpen, BadgeCheck, Clock } from 'lucide-react';
 
@@ -306,17 +307,28 @@ const FindHome = async ({ params }: { params: { id: string } }) => {
             ? reviews.reduce((sum, r) => sum + Number(r.rating), 0) / reviews.length
             : 0;
 
+    // A handful of reviews is not a rating yet, so a listing stays "New" until
+    // it has MIN_PUBLIC_REVIEWS of them rather than publishing a number that
+    // one more review could swing by a whole star.
+    const reviewCount = reviews?.length || 0;
+    const showScore = hasPublicScore(reviewCount);
+
     return (
         <div className='container mb-10'>
             <div className='container mt-4'>
                 <h1 className='text-2xl md:text-3xl font-bold text-slate-900'>{home.title}</h1>
                 <div className='flex items-center gap-1.5 mt-1.5 text-sm text-slate-600'>
-                    {reviews && reviews.length > 0 ? (
+                    {showScore ? (
                         <>
                             <ReviewStars value={Math.round(avgRating)} size={15} />
                             <span className='font-semibold text-slate-900'>{avgRating.toFixed(1)}</span>
-                            <span>· {reviews.length} review{reviews.length > 1 ? 's' : ''}</span>
+                            <span>· {reviewCount} review{reviewCount > 1 ? 's' : ''}</span>
                         </>
+                    ) : reviewCount > 0 ? (
+                        <span className='inline-flex items-center gap-1.5 font-semibold text-slate-900'>
+                            <span className='bg-emerald-50 text-emerald-800 text-xs px-2 py-0.5 rounded-full'>New</span>
+                            {reviewCount} review{reviewCount > 1 ? 's' : ''} so far
+                        </span>
                     ) : (
                         <span className='inline-flex items-center gap-1.5 font-semibold text-slate-900'>
                             <span className='bg-emerald-50 text-emerald-800 text-xs px-2 py-0.5 rounded-full'>New</span>
@@ -364,12 +376,12 @@ const FindHome = async ({ params }: { params: { id: string } }) => {
                                 name: a,
                                 value: true,
                             })),
-                            ...(reviews && reviews.length > 0
+                            ...(showScore
                                 ? {
                                       aggregateRating: {
                                           '@type': 'AggregateRating',
                                           ratingValue: avgRating.toFixed(2),
-                                          reviewCount: reviews.length,
+                                          reviewCount: reviewCount,
                                           bestRating: 5,
                                           worstRating: 1,
                                       },
@@ -541,12 +553,38 @@ const FindHome = async ({ params }: { params: { id: string } }) => {
 
                         {reviews && reviews.length > 0 && (
                             <div className='mt-8'>
-                                <ReviewsSummary reviews={reviews} />
+                                {showScore && (
+                                    <ReviewsSummary
+                                        reviews={reviews}
+                                        ratingAvg={avgRating}
+                                        ratingCount={home.rating_count || reviewCount}
+                                        categoryAverages={{
+                                            cleanliness: home.rating_cleanliness,
+                                            accuracy: home.rating_accuracy,
+                                            checkin: home.rating_checkin,
+                                            communication: home.rating_communication,
+                                            location: home.rating_location,
+                                            value: home.rating_value,
+                                        }}
+                                    />
+                                )}
 
                                 <h2 className='text-xl font-semibold my-6 flex items-center gap-2'>
-                                    <ReviewStars value={Math.round(avgRating)} size={18} />
-                                    {avgRating.toFixed(1)} · {reviews.length} review{reviews.length > 1 ? 's' : ''}
+                                    {showScore ? (
+                                        <>
+                                            <ReviewStars value={Math.round(avgRating)} size={18} />
+                                            {avgRating.toFixed(1)} · {reviewCount} review{reviewCount > 1 ? 's' : ''}
+                                        </>
+                                    ) : (
+                                        <>{reviewCount} review{reviewCount > 1 ? 's' : ''}</>
+                                    )}
                                 </h2>
+                                {!showScore && (
+                                    <p className='text-sm text-slate-600 -mt-3 mb-6'>
+                                        An overall score appears once this place has{' '}
+                                        {MIN_PUBLIC_REVIEWS} reviews.
+                                    </p>
+                                )}
                                 <div className='space-y-5'>
                                     {reviews.map((r) => (
                                         <div key={r.id} className='border-b pb-5'>
