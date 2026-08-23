@@ -60,7 +60,7 @@ export default async function HostReservations() {
     // sitting on a stay that is already under way.
     const { data: bookings } = await admin
         .from('bookings')
-        .select('id, listing_id, guest_id, check_in, check_out, status, guests, total_price, commission_rate, amount_paid, amount_refunded')
+        .select('id, listing_id, guest_id, check_in, check_out, status, guests, total_price, commission_rate, amount_paid, amount_refunded, balance_due_date')
         .in('listing_id', allowed)
         .in('status', ['confirmed', 'pending'])
         .gte('check_in', todayKey)
@@ -104,6 +104,23 @@ export default async function HostReservations() {
         guestPhoneMap[g.id] = g.phone || null;
     });
 
+    // Whether the guest is waiting on an answer. The card has always carried a
+    // Message guest button and never a reason to press it, so a host had to
+    // open every conversation to find out there was nothing in any of them.
+    // Unread means addressed to this person and not yet opened — the same rule
+    // the inbox counts by, so the two never disagree.
+    const { data: unreadRows } = await admin
+        .from('messages')
+        .select('booking_id')
+        .in('booking_id', bookings.map((b) => b.id))
+        .eq('recipient_id', auth.session.user.id)
+        .is('read_at', null);
+
+    const unreadMap: Record<string, number> = {};
+    (unreadRows || []).forEach((m: any) => {
+        unreadMap[m.booking_id] = (unreadMap[m.booking_id] || 0) + 1;
+    });
+
     return (
         <section className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 pt-14">
             <div className="mb-6 border-b border-stone-200 pb-4">
@@ -137,6 +154,15 @@ export default async function HostReservations() {
                                 ? 'Arriving tomorrow'
                                 : days + ' days to go';
 
+                    // "96 days to go" on its own sends you off to a calendar
+                    // to work out what day that actually is. Said beside it,
+                    // it doesn't.
+                    const arrivalShort = checkIn.toLocaleDateString('en-GB', {
+                        weekday: 'short',
+                        day: 'numeric',
+                        month: 'short',
+                    });
+
                     const image =
                         listing.images && listing.images.length > 0
                             ? getImageUrl(listing.images[0])
@@ -164,6 +190,21 @@ export default async function HostReservations() {
                     paysOn.setHours(0, 0, 0, 0);
                     paysOn.setDate(paysOn.getDate() + 1);
 
+                    // What the guest still owes, and when it is taken. The
+                    // balance is charged automatically 30 days before check-in
+                    // and can fail — an expired card, usually — so a stay can
+                    // sit here looking healthy while the money never arrived.
+                    // A due date already past with money still outstanding is
+                    // the one thing on this card worth chasing today.
+                    const stillOwed = Math.round((Number(booking.total_price || 0) - Number(booking.amount_paid || 0)) * 100) / 100;
+                    const balanceDue = booking.balance_due_date
+                        ? new Date(booking.balance_due_date)
+                        : null;
+                    if (balanceDue) balanceDue.setHours(0, 0, 0, 0);
+                    const balanceLate = stillOwed > 0 && !!balanceDue && balanceDue.getTime() < today.getTime();
+
+                    const unread = unreadMap[booking.id] || 0;
+
                     const showMoney = earningsAllowed.indexOf(booking.listing_id) !== -1;
                     const canAnswer = ownedIds.indexOf(booking.listing_id) !== -1;
 
@@ -189,27 +230,43 @@ export default async function HostReservations() {
                                 aria-label={'Open this booking at ' + listing.title}
                             />
 
-                            {image && (
-                                <div className="h-44 flex-shrink-0">
-                                    <img
-                                        src={image}
-                                        alt={listing.title}
-                                        className="w-full h-full object-cover"
-                                    />
-                                </div>
-                            )}
-
                             <div className="p-8 flex-1 flex flex-col">
-                                <div className="text-3xl md:text-4xl font-bold text-stone-900 tracking-tight">
-                                    {headline}
+                                {/* The photo used to be a 176px banner across
+                                    the top, which on a listing whose first
+                                    image is a placeholder is a white band
+                                    above everything that matters. Small and
+                                    beside the name it still does the job it
+                                    was there for — telling three cottages
+                                    apart at a glance — at a tenth of the
+                                    height. */}
+                                <div className="flex items-center gap-4">
+                                    <div className="w-14 h-14 rounded-xl overflow-hidden bg-stone-100 flex-shrink-0">
+                                        {image && (
+                                            <img
+                                                src={image}
+                                                alt={listing.title}
+                                                className="w-full h-full object-cover"
+                                            />
+                                        )}
+                                    </div>
+                                    <div className="min-w-0">
+                                        <div className="text-lg font-semibold text-stone-900 truncate">
+                                            {listing.title}
+                                        </div>
+                                        {listing.location && (
+                                            <div className="text-stone-500 text-sm truncate">
+                                                {listing.location}
+                                            </div>
+                                        )}
+                                    </div>
                                 </div>
 
-                                <div className="mt-6 space-y-1">
-                                    <div className="text-lg font-semibold text-stone-900">
-                                        {listing.title}
-                                    </div>
-                                    {listing.location && (
-                                        <div className="text-stone-500">{listing.location}</div>
+                                <div className="mt-6 text-3xl md:text-4xl font-bold text-stone-900 tracking-tight">
+                                    {headline}
+                                    {days > 1 && (
+                                        <span className="block text-base font-normal text-stone-500 mt-1 tracking-normal">
+                                            {arrivalShort}
+                                        </span>
                                     )}
                                 </div>
 
@@ -250,6 +307,22 @@ export default async function HostReservations() {
                                                 ? 'If you confirm, it reaches you the day after check-in'
                                                 : 'Reaches you ' + formatUk(paysOn) + ', the day after check-in'}
                                         </div>
+
+                                        {stillOwed > 0 && (
+                                            <div
+                                                className={
+                                                    'text-sm mt-2 font-medium '
+                                                    + (balanceLate ? 'text-amber-700' : 'text-stone-600')
+                                                }
+                                            >
+                                                &pound;{stillOwed.toFixed(2)} of it is still to come
+                                                {balanceDue
+                                                    ? balanceLate
+                                                        ? ' — was due ' + formatUk(balanceDue) + ', so the charge may have failed'
+                                                        : ' — charged ' + formatUk(balanceDue)
+                                                    : ''}
+                                            </div>
+                                        )}
 
                                         <details className="group mt-3">
                                             <summary className="text-sm text-stone-500 underline cursor-pointer list-none w-fit hover:text-stone-800">
@@ -321,10 +394,19 @@ export default async function HostReservations() {
                                     </Link>
                                     <Link
                                         href={'/messages?b=' + booking.id}
-                                        className="inline-flex items-center gap-2 px-6 py-3 border border-stone-300 hover:border-stone-900 text-stone-800 text-sm font-semibold rounded-xl transition"
+                                        className={
+                                            'inline-flex items-center gap-2 px-6 py-3 border text-sm font-semibold rounded-xl transition '
+                                            + (unread > 0
+                                                ? 'border-emerald-700 text-emerald-800 hover:bg-emerald-50'
+                                                : 'border-stone-300 hover:border-stone-900 text-stone-800')
+                                        }
                                     >
                                         <MessageSquare className="w-4 h-4" />
-                                        Message guest
+                                        {unread > 0
+                                            ? unread === 1
+                                                ? '1 unread message'
+                                                : unread + ' unread messages'
+                                            : 'Message guest'}
                                     </Link>
                                 </div>
                             </div>
