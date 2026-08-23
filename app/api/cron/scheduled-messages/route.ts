@@ -6,12 +6,13 @@ import {
     timingFor,
     isDue,
     hasRealContent,
-    appliesToListing,
     fillPlaceholders,
     needsLockboxCode,
     usesLockboxCode,
 } from '@/lib/scheduledMessages';
-import type { Template, BookingLike } from '@/lib/scheduledMessages';
+import type { BookingLike } from '@/lib/scheduledMessages';
+import { resolveTemplate } from '@/lib/messageTemplates';
+import type { ScopedTemplate } from '@/lib/messageTemplates';
 
 export const dynamic = 'force-dynamic';
 export const maxDuration = 60;
@@ -76,10 +77,45 @@ export async function GET(request: Request) {
             );
         }
 
-        const live = (templates || []).filter((t: Template) => hasRealContent(t.body));
-        if (live.length === 0) {
+        const usable = (templates || []).filter((t: any) => hasRealContent(t.body));
+        if (usable.length === 0) {
             return NextResponse.json({ ok: true, sent: 0, skipped: 0, failed: 0 });
         }
+
+        // Which listings each template is scoped to. No rows means the
+        // catch-all, which is what an untouched template is and what a host
+        // with one property will always have.
+        const { data: scopeRows, error: scopeError } = await admin
+            .from('message_template_listings')
+            .select('template_id, listing_id')
+            .in('template_id', usable.map((t: any) => t.id));
+
+        if (scopeError) {
+            await logError('scheduled-messages: could not load template scopes', scopeError, {
+                path: '/api/cron/scheduled-messages',
+            });
+            return NextResponse.json(
+                { ok: false, error: 'Could not load the template scopes' },
+                { status: 500 }
+            );
+        }
+
+        const scopeByTemplate: Record<string, string[]> = {};
+        (scopeRows || []).forEach((r: any) => {
+            if (!scopeByTemplate[r.template_id]) scopeByTemplate[r.template_id] = [];
+            scopeByTemplate[r.template_id].push(r.listing_id);
+        });
+
+        const live: ScopedTemplate[] = usable.map((t: any) => ({
+            ...t,
+            listingIds: scopeByTemplate[t.id] || [],
+        }));
+
+        // The types in play, so each booking is asked once per type rather
+        // than once per template. That ordering is what makes "most specific
+        // wins" mean anything — walking templates instead would send whichever
+        // the query happened to return first.
+        const templateTypes = Array.from(new Set(live.map((t) => t.template_type)));
 
         // Stays that are actually happening. A window either side keeps the
         // query small without cutting off a template anchored a fortnight out
@@ -87,7 +123,7 @@ export async function GET(request: Request) {
         const from = new Date(now.getTime() - 40 * 86400000).toISOString().split('T')[0];
         const to = new Date(now.getTime() + 40 * 86400000).toISOString().split('T')[0];
 
-        const hostIds = Array.from(new Set(live.map((t: Template) => t.user_id)));
+        const hostIds = Array.from(new Set(live.map((t) => t.user_id)));
         const COLUMNS = 'id, host_id, guest_id, listing_id, check_in, check_out, status, confirmed_at';
 
         const { data: byStayDates, error: bookingError } = await admin
@@ -117,7 +153,7 @@ export async function GET(request: Request) {
         // Only asked when such a template is actually live, and bounded by how
         // recently the booking was accepted rather than by its dates, so it
         // stays a small query.
-        const hasBookingAnchored = live.some((t: Template) => t.anchor === 'booking');
+        const hasBookingAnchored = live.some((t) => t.anchor === 'booking');
 
         let byConfirmedAt: any[] = [];
         if (hasBookingAnchored) {
@@ -183,7 +219,7 @@ export async function GET(request: Request) {
         // they are only ever read here, with the service role. Only fetched
         // when a live template actually asks for one.
         const codeByListing: Record<string, string> = {};
-        if (live.some((t: Template) => usesLockboxCode(t.body))) {
+        if (live.some((t) => usesLockboxCode(t.body))) {
             const { data: codes } = await admin
                 .from('listing_access_codes')
                 .select('listing_id, code')
@@ -192,13 +228,17 @@ export async function GET(request: Request) {
             (codes || []).forEach((c: any) => { codeByListing[c.listing_id] = c.code; });
         }
 
-        for (const template of live as Template[]) {
-            for (const booking of bookings as BookingLike[]) {
-                if (booking.host_id !== template.user_id) continue;
-                if (!appliesToListing(template, booking.listing_id)) continue;
+        // Booking first, then type — so exactly one template is chosen per
+        // type per booking, by the shared rule, instead of every matching
+        // template getting a turn.
+        for (const booking of bookings as BookingLike[]) {
+            const listing = listingById[booking.listing_id];
+            if (!listing) continue;
 
-                const listing = listingById[booking.listing_id];
-                if (!listing) continue;
+            for (const templateType of templateTypes) {
+                const mine = live.filter((t) => t.user_id === booking.host_id);
+                const template = resolveTemplate(mine, templateType, booking.listing_id);
+                if (!template) continue;
 
                 if (!isDue(timingFor(template, booking, listing), now)) {
                     continue;

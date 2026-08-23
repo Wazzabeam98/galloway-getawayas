@@ -1,6 +1,7 @@
 export const dynamic = "force-dynamic";
 
 import Toast from "@/components/base/Toast";
+import TemplateGapWarning from "@/components/TemplateGapWarning";
 import { createServerComponentClient } from "@supabase/auth-helpers-nextjs";
 import { cookies } from "next/headers";
 import { getImageUrl } from "@/lib/utils";
@@ -107,6 +108,10 @@ export default async function Dashboard() {
     return (
         <div>
             <Toast />
+            {/* Only shows when a guest is actually arriving somewhere with no
+                check-in message. The settings grid answers "is anything
+                missing"; this answers "is it about to matter". */}
+            <TemplateGapWarning />
             <div className="max-w-7xl mx-auto px-6 py-10">
                 <div className="flex items-center justify-between mb-8">
                     <h1 className="text-2xl md:text-3xl font-bold text-slate-900">Your listings</h1>
