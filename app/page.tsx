@@ -7,6 +7,7 @@ import { cookies } from 'next/headers';
 import { getImageUrl } from '@/lib/utils';
 import Link from 'next/link';
 import { Home, Star } from 'lucide-react';
+import { hasPublicScore } from '@/lib/reviews';
 
 export const dynamic = 'force-dynamic';
 
@@ -77,7 +78,7 @@ export default async function HomePage() {
                       {property.title}
                     </h3>
 
-                    {rating && count > 0 ? (
+                    {rating && hasPublicScore(count) ? (
                       <span className="flex items-center gap-1 text-sm text-stone-900 shrink-0">
                         <Star className="w-3.5 h-3.5 fill-amber-400 text-amber-400" />
                         <span className="font-semibold">{rating.toFixed(2)}</span>

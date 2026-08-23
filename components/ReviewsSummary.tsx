@@ -1,4 +1,13 @@
 import { Sparkles, CheckCircle, Key, MessageSquare, Map, Tag, Star } from 'lucide-react';
+import {
+    CATEGORY_KEYS,
+    CategoryKey,
+    GUEST_FAVOURITE_MIN_REVIEWS,
+    GUEST_FAVOURITE_THRESHOLD,
+    isGraceHoldingBadge,
+    isGuestFavourite,
+    meanTo2dp,
+} from '@/lib/reviews';
 
 interface Review {
     rating: number;
@@ -28,42 +37,72 @@ const CATEGORY_LABELS: Record<string, string> = {
     value: 'Value',
 };
 
-export default function ReviewsSummary({ reviews }: { reviews: Review[] }) {
+interface Props {
+    reviews: Review[];
+    // The stored aggregates, maintained by the refresh_listing_ratings trigger.
+    // Displaying these rather than recomputing keeps this card and the page
+    // header showing the same number — see meanTo2dp in lib/reviews for why
+    // recomputing in JS drifts by a hundredth.
+    ratingAvg: number;
+    ratingCount: number;
+    // Stored per-category averages. Any that are missing (a listing predating
+    // the trigger) fall back to being computed from the reviews themselves.
+    categoryAverages?: Partial<Record<CategoryKey, number | null>>;
+}
+
+export default function ReviewsSummary({ reviews, ratingAvg, ratingCount, categoryAverages }: Props) {
     if (!reviews || reviews.length === 0) return null;
 
-    const avgOverall = reviews.reduce((sum, r) => sum + Number(r.rating), 0) / reviews.length;
-
-    const categoryKeys = ['cleanliness', 'accuracy', 'checkin', 'communication', 'location', 'value'] as const;
-    const categoryAverages = categoryKeys.map((key) => {
+    const categories = CATEGORY_KEYS.map((key) => {
+        const stored = categoryAverages?.[key];
+        if (stored !== null && stored !== undefined) {
+            return { key, avg: Number(stored) };
+        }
         const field = `${key}_rating` as keyof Review;
-        const values = reviews.map((r) => r[field]).filter((v): v is number => typeof v === 'number');
-        const avg = values.length ? values.reduce((sum, v) => sum + Number(v), 0) / values.length : null;
-        return { key, avg };
-    }).filter((c) => c.avg !== null);
+        const values = reviews
+            .map((r) => r[field])
+            .filter((v): v is number => v !== null && v !== undefined);
+        return { key, avg: meanTo2dp(values) };
+    }).filter((c): c is { key: CategoryKey; avg: number } => c.avg !== null);
 
-    const isGuestFavourite = avgOverall >= 4.8 && reviews.length >= 5;
+    const ratings = reviews.map((r) => Number(r.rating));
+    const guestFavourite = isGuestFavourite(ratings);
+
+    // The badge can sit above an average well below the threshold, because a
+    // young listing's worst review is set aside when judging it. Said plainly,
+    // that reads as generous; left unsaid, it reads as broken.
+    const badgeExplanation = isGraceHoldingBadge(ratings)
+        ? "Highly rated by guests. While a place is still new, its single lowest review isn't counted towards this badge, so one unusual stay doesn't undo a strong record."
+        : `Among the most highly rated places to stay: ${GUEST_FAVOURITE_THRESHOLD} or above across at least ${GUEST_FAVOURITE_MIN_REVIEWS} reviews.`;
 
     return (
         <div className="border rounded-2xl p-5 md:p-6">
             <div className="flex items-center justify-between gap-4 flex-wrap">
                 <div className="flex items-baseline gap-2.5">
                     <Star className="w-5 h-5 fill-amber-400 text-amber-400 self-center" />
-                    <span className="text-3xl font-bold text-slate-900 leading-none">{avgOverall.toFixed(2)}</span>
+                    <span className="text-3xl font-bold text-slate-900 leading-none">{ratingAvg.toFixed(2)}</span>
                     <span className="text-slate-500 text-sm">
-                        {reviews.length} review{reviews.length > 1 ? 's' : ''}
+                        {ratingCount} review{ratingCount > 1 ? 's' : ''}
                     </span>
                 </div>
 
-                {isGuestFavourite && (
-                    <span className="text-xs font-semibold text-emerald-800 bg-emerald-50 border border-emerald-200 px-3 py-1 rounded-full">
+                {guestFavourite && (
+                    <span
+                        title={badgeExplanation}
+                        className="text-xs font-semibold text-emerald-800 bg-emerald-50 border border-emerald-200 px-3 py-1 rounded-full"
+                    >
                         Guest favourite
                     </span>
                 )}
             </div>
 
-            {categoryAverages.length > 0 && (
+            {guestFavourite && (
+                <p className="text-xs text-slate-500 mt-3 leading-relaxed">{badgeExplanation}</p>
+            )}
+
+            {categories.length > 0 && (
                 <div className="grid grid-cols-2 md:grid-cols-3 gap-x-8 gap-y-4 mt-6 pt-5 border-t">
-                    {categoryAverages.map(({ key, avg }) => {
+                    {categories.map(({ key, avg }) => {
                         const Icon = CATEGORY_ICONS[key];
                         return (
                             <div key={key}>
@@ -73,13 +112,13 @@ export default function ReviewsSummary({ reviews }: { reviews: Review[] }) {
                                         {CATEGORY_LABELS[key]}
                                     </span>
                                     <span className="text-sm font-semibold text-slate-900 tabular-nums">
-                                        {avg!.toFixed(1)}
+                                        {avg.toFixed(1)}
                                     </span>
                                 </div>
                                 <div className="h-1 bg-slate-100 rounded-full overflow-hidden mt-1.5">
                                     <div
                                         className="h-full bg-emerald-700 rounded-full"
-                                        style={{ width: `${(avg! / 5) * 100}%` }}
+                                        style={{ width: `${(avg / 5) * 100}%` }}
                                     />
                                 </div>
                             </div>
