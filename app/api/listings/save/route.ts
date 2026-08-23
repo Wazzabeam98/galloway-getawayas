@@ -4,6 +4,7 @@ import { cookies } from 'next/headers';
 import { NextResponse } from 'next/server';
 import { checkListing } from '@/lib/access';
 import { isAdmin, recordAdminAction, cleanReason, REMOVED_BUCKET } from '@/lib/adminAudit';
+import { fromRow, newProblems } from '@/lib/listingRules';
 
 export const dynamic = 'force-dynamic';
 
@@ -90,6 +91,27 @@ export async function POST(request: Request) {
 
         if (Object.keys(safe).length === 0) {
             return NextResponse.json({ ok: false, error: 'Nothing to save.' }, { status: 400 });
+        }
+
+        // The last word on whether a listing still meets the standard, said on
+        // the server where a browser cannot argue with it. The edit screen asks
+        // the same question of the same rules before it gets here; this is what
+        // makes the answer binding.
+        //
+        // A draft is exempt — Save & finish later is the whole point of one.
+        // And only rules this patch would newly break count: a listing that has
+        // been on the site since before a rule must stay editable, or its host
+        // cannot fix a price without first satisfying something that was never
+        // asked of them. What it cannot do is get worse.
+        if (before.status !== 'draft') {
+            const introduced = newProblems(fromRow(before), fromRow({ ...before, ...safe }));
+
+            if (introduced.length > 0) {
+                return NextResponse.json(
+                    { ok: false, error: introduced[0].message },
+                    { status: 400 }
+                );
+            }
         }
 
         const { error } = await admin.from('listings').update(safe).eq('id', listingId);

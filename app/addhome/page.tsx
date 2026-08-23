@@ -16,6 +16,11 @@ import { toast } from 'react-toastify';
 import { DEFAULT_COMMISSION_PERCENT } from '@/lib/fees';
 import { buildLocation, splitLocation, DEFAULT_REGION } from '@/lib/places';
 import { buildStreetAddress, tidyPostcode } from '@/lib/address';
+import {
+    MAX_PRICE_PER_NIGHT,
+    problemAtStep as ruleAtStep,
+    firstPublishProblem as firstProblemIn,
+} from '@/lib/listingRules';
 
 // What the autocomplete route hands back. Deliberately just these two — the
 // full address is only fetched once the host has actually picked a suggestion,
@@ -24,14 +29,6 @@ interface AddressSuggestion {
     id: string;
     address: string;
 }
-
-// Every real UK format, from "M1 1AA" to "EC1A 1BB". Used to catch a town name
-// typed into the postcode box, not to prove the place exists.
-const UK_POSTCODE = /^[A-Z]{1,2}[0-9][A-Z0-9]?\s*[0-9][A-Z]{2}$/i;
-
-// Not a business rule — a typo catcher, for the extra zero on £500. Raise it if
-// a big group property ever needs more.
-const MAX_PRICE_PER_NIGHT = 5000;
 
 export default function AddHome() {
     const [loading, setLoading] = useState(true);
@@ -409,60 +406,35 @@ export default function AddHome() {
         });
     };
 
-    // What is still missing at a given step, or null if that step is done.
+    // This form's state, in the shape lib/listingRules.ts reads. Built in one
+    // place so the step gating and the Publish button cannot end up asking
+    // slightly different questions of it — which is how the two copies of
+    // these rules drifted apart in the first place.
     //
     // Saving a draft is held to none of it — a half-finished draft is the point
     // of Save & finish later. This is only what a listing needs to go live.
-    const problemAtStep = (n: number): string | null => {
-        if (n === 1 && !propertyType) {
-            return 'Please choose a property type to continue.';
-        }
-        if (n === 3) {
-            if (!street.trim() && !propertyName.trim() && !flat.trim()) {
-                // A rural cottage may have a name and no street, so either will
-                // do — what is not allowed is nothing but the town.
-                return 'Please add a street address or a property name, so guests can find the place.';
-            }
-            if (!city.trim() || !state.trim()) {
-                return 'Please fill in your town/city and region.';
-            }
-            if (!postcode.trim()) {
-                return 'Please add a postcode.';
-            }
-            if (!UK_POSTCODE.test(postcode.trim())) {
-                return 'That postcode doesn\u2019t look right \u2014 please check it.';
-            }
-        }
-        if (n === 6 && photos.length === 0) {
-            return 'Please add at least one photo of your place.';
-        }
-        if (n === 7 && (!title.trim() || !description.trim())) {
-            return 'Please add a title and description.';
-        }
-        if (n === 9) {
-            const value = Number(price);
-            if (!price.trim() || !isFinite(value) || value <= 0) {
-                return 'Please set a price of more than \u00a30 a night.';
-            }
-            if (value > MAX_PRICE_PER_NIGHT) {
-                return 'That price looks like a typo \u2014 the most you can set is \u00a3' + MAX_PRICE_PER_NIGHT + ' a night.';
-            }
-        }
-        return null;
-    };
+    const asListing = () => ({
+        propertyType: propertyType,
+        flat: flat,
+        propertyName: propertyName,
+        street: street,
+        city: city,
+        region: state,
+        postcode: postcode,
+        photoCount: photos.length,
+        title: title,
+        description: description,
+        price: price,
+        amenities: amenities,
+        checkInMethod: checkInMethod,
+    });
+
+    // What is still missing at a given step, or null if that step is done.
+    const problemAtStep = (n: number): string | null => ruleAtStep(asListing(), n);
 
     // The first thing missing anywhere, with the step it belongs to.
-    //
-    // Publishing asks about every step, not just the one you are standing on.
-    // Resuming a saved draft can reach the Publish button without walking back
-    // through the wizard, which is how a listing once went live with no name.
-    const firstPublishProblem = (): { step: number; message: string } | null => {
-        for (let n = 1; n <= TOTAL_STEPS; n++) {
-            const message = problemAtStep(n);
-            if (message) return { step: n, message: message };
-        }
-        return null;
-    };
+    const firstPublishProblem = (): { step: number; message: string } | null =>
+        firstProblemIn(asListing());
 
     const handleListingSubmit = async (e: React.FormEvent) => {
         e.preventDefault();

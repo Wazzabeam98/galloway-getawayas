@@ -13,6 +13,7 @@ import { toast } from 'react-toastify';
 import { rateFor } from '@/lib/fees';
 import { buildLocation, splitLocation, DEFAULT_REGION } from '@/lib/places';
 import { buildStreetAddress, tidyPostcode } from '@/lib/address';
+import { fromRow, newProblems, publishProblems } from '@/lib/listingRules';
 import IcalFeeds from '@/components/IcalFeeds';
 import {
     HomeIcon, Trees, Waves, Compass, Building2, Sparkles, Minus, Plus, Check,
@@ -119,6 +120,7 @@ export default function EditListing() {
     const [loading, setLoading] = useState(true);
     const [session, setSession] = useState<any>(null);
     const [notFound, setNotFound] = useState(false);
+    const [original, setOriginal] = useState<any>(null);
     const [notOwner, setNotOwner] = useState(false);
     const [activeSection, setActiveSection] = useState('basics');
 
@@ -233,6 +235,11 @@ export default function EditListing() {
                 }
             }
 
+            // The listing exactly as it was before this screen touched it.
+            // A rule it already broke is not this edit's doing — see
+            // newProblems in lib/listingRules.ts.
+            setOriginal(listing);
+
             setTitle(listing.title || '');
             setDescription(listing.description || '');
             const place = splitLocation(listing.location);
@@ -314,27 +321,57 @@ export default function EditListing() {
         });
     };
 
+    // What this listing already fails, as it stands on screen. Only ever shown,
+    // never enforced — enforcement is newProblems, which asks what this edit
+    // would newly break.
+    const belowStandard = original
+        ? publishProblems({
+            propertyType: propertyType,
+            street: streetAddress,
+            city: locTown,
+            region: locRegion,
+            postcode: locPostcode,
+            photoCount: photos.length,
+            title: title,
+            description: description,
+            price: price,
+            amenities: amenities,
+            checkInMethod: checkInMethod,
+        })
+        : [];
+
     const handleSubmit = async (e: React.FormEvent) => {
         e.preventDefault();
         setFormError('');
 
-        if (photos.length === 0) {
-            setFormError('Please keep at least one photo of your place.');
+        // The same rules the wizard publishes by, from lib/listingRules.ts,
+        // rather than the shorter list this screen used to keep of its own.
+        // That list is why a listing could go live with no title: the wizard
+        // learned to ask and this screen never did.
+        //
+        // Only rules this edit would newly break, though. A listing already on
+        // the site from before a rule existed still saves — otherwise a host
+        // could not correct a price until they had also satisfied something
+        // that was not asked of them when they published.
+        const introduced = newProblems(fromRow(original), {
+            propertyType: propertyType,
+            street: streetAddress,
+            city: locTown,
+            region: locRegion,
+            postcode: locPostcode,
+            photoCount: photos.length,
+            title: title,
+            description: description,
+            price: price,
+            amenities: amenities,
+            checkInMethod: checkInMethod,
+        });
+
+        if (introduced.length > 0) {
+            setFormError(introduced[0].message);
             return;
         }
-        // "0" is a non-empty string and a run of spaces is a truthy one, so the
-        // old `!title || !price` let both through — a live listing could be
-        // edited down to a blank name or £0 a night after it had been published
-        // properly.
-        if (!title.trim()) {
-            setFormError('Please give your place a title.');
-            return;
-        }
-        const priceValue = Number(price);
-        if (!price.trim() || !isFinite(priceValue) || priceValue <= 0) {
-            setFormError('Please set a price of more than \u00a30 a night.');
-            return;
-        }
+
         if (maxNights && Number(maxNights) < Number(minNights || 1)) {
             setFormError('Maximum nights can\'t be less than minimum nights.');
             return;
@@ -1075,6 +1112,28 @@ export default function EditListing() {
                                     ))}
                                 </div>
                             </section>
+                        )}
+
+                        {/* A listing that predates a rule keeps saving, so it
+                            would otherwise never be told it is below the
+                            standard new listings are held to. Said once, here,
+                            and it blocks nothing. */}
+                        {belowStandard.length > 0 && (
+                            <div className="mt-8 border border-amber-300 bg-amber-50 rounded-xl p-4">
+                                <div className="text-sm font-semibold text-amber-900">
+                                    This listing is below what a new one would need
+                                </div>
+                                <ul className="text-sm text-amber-800 mt-2 space-y-1 list-disc pl-5">
+                                    {belowStandard.map((item) => (
+                                        <li key={item.key}>{item.message}</li>
+                                    ))}
+                                </ul>
+                                <p className="text-xs text-amber-700 mt-2">
+                                    It stays on the site and you can carry on saving changes to it.
+                                    Worth fixing anyway — a listing with nothing filled in loses
+                                    bookings to one that has.
+                                </p>
+                            </div>
                         )}
 
                         {formError && <p className="text-red-600 text-sm mt-8">{formError}</p>}
