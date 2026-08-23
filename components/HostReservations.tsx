@@ -327,6 +327,33 @@ export default async function HostReservations() {
                                         Message guest
                                     </Link>
                                 </div>
+
+                                {/* Calling a stay off used to mean finding the
+                                    booking first. It is a rare thing to do and
+                                    a serious one, so it sits under the card's
+                                    own buttons rather than beside them, and
+                                    the confirm step spells out the full refund
+                                    and the 5% fee before anything moves.
+
+                                    Not once the guest is arriving today: from
+                                    check-in onwards a refund of part of the
+                                    stay is the right instrument, and that
+                                    lives on the booking itself. Owner only —
+                                    /api/stripe/refund answers 403 to a
+                                    co-host, so offering it would be offering a
+                                    click that cannot work. */}
+                                {booking.status === 'confirmed' && canAnswer && days >= 1 && (
+                                    <div className="relative mt-4 pt-4 border-t border-stone-100">
+                                        <BookingActions
+                                            bookingId={booking.id}
+                                            mode="confirmed"
+                                            allowRefund={false}
+                                            totalPrice={Number(booking.total_price || 0)}
+                                            amountPaid={Number(booking.amount_paid || 0)}
+                                            amountRefunded={Number(booking.amount_refunded || 0)}
+                                        />
+                                    </div>
+                                )}
                             </div>
                         </div>
                     );

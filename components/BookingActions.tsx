@@ -13,6 +13,7 @@ export default function BookingActions({
     bookingId,
     mode = 'pending',
     allowCancel = true,
+    allowRefund = true,
     totalPrice = 0,
     amountPaid = 0,
     amountRefunded = 0,
@@ -23,6 +24,11 @@ export default function BookingActions({
     // puts the dates back on sale, which is the wrong answer to a problem
     // found on the second night — Refund guest is.
     allowCancel?: boolean;
+    // Off on the home page card, which is a summary rather than the place to
+    // settle a complaint. Deciding what a bad stay is worth belongs on the
+    // booking itself, with the full picture of what has been paid in front of
+    // you — so the card offers calling it off and nothing finer-grained.
+    allowRefund?: boolean;
     totalPrice?: number;
     amountPaid?: number;
     amountRefunded?: number;
@@ -32,15 +38,27 @@ export default function BookingActions({
     const [updating, setUpdating] = useState(false);
     const [panel, setPanel] = useState<'none' | 'cancel' | 'decline' | 'refund'>('none');
     const [refundAmount, setRefundAmount] = useState('');
+    // Whether they have asked for the amount box. Refunding the whole lot is
+    // the main action; a part refund is a deliberate second choice.
+    const [partial, setPartial] = useState(false);
     const [panelError, setPanelError] = useState('');
 
     const refundable = Math.round((Number(amountPaid) - Number(amountRefunded)) * 100) / 100;
     const penalty = Math.round(Number(totalPrice) * 0.05 * 100) / 100;
 
-    // Giving money back without calling the stay off.
-    const sendRefund = async () => {
+    const closeRefund = () => {
+        setPanel('none');
+        setPartial(false);
+        setRefundAmount('');
         setPanelError('');
-        const value = Number(refundAmount);
+    };
+
+    // Giving money back without calling the stay off. The amount is passed in
+    // rather than read from the box, because the main action refunds the whole
+    // of what is left and never touches the box at all.
+    const sendRefundOf = async (requested: number) => {
+        setPanelError('');
+        const value = Math.round(Number(requested) * 100) / 100;
 
         if (!value || isNaN(value) || value <= 0) {
             setPanelError('Enter how much to refund.');
@@ -62,8 +80,7 @@ export default function BookingActions({
 
             if (data && data.ok) {
                 toast.success('£' + value.toFixed(2) + ' refunded to your guest.', { theme: 'colored' });
-                setPanel('none');
-                setRefundAmount('');
+                closeRefund();
                 router.refresh();
             } else {
                 setPanelError((data && data.error) || 'Could not process the refund.');
@@ -322,49 +339,80 @@ export default function BookingActions({
                         For when something wasn&apos;t right but the stay is still going ahead. The
                         booking stays confirmed and the amount comes off what you&apos;re paid.
                     </p>
-                    <p className="text-xs text-slate-500 mt-1">
-                        Up to £{refundable.toFixed(2)} available.
-                    </p>
 
-                    <div className="mt-3 flex items-center gap-2">
-                        <span className="text-slate-500">£</span>
-                        <input
-                            type="number"
-                            min="0"
-                            step="0.01"
-                            value={refundAmount}
-                            onChange={(e) => setRefundAmount(e.target.value)}
-                            placeholder="0.00"
-                            className="w-28 border rounded-lg px-3 py-2 text-sm outline-none focus:border-slate-900"
-                        />
+                    {/* Giving back everything is the common answer and used to
+                        be the one that took typing. The amount is in the label
+                        rather than in a box, so a single press is never
+                        ambiguous about how much is leaving. */}
+                    <button
+                        type="button"
+                        onClick={() => sendRefundOf(refundable)}
+                        disabled={updating}
+                        className="mt-3 w-full px-4 py-2.5 bg-slate-900 hover:bg-black text-white text-sm font-semibold rounded-lg disabled:opacity-50"
+                    >
+                        {updating && !partial
+                            ? 'Refunding…'
+                            : 'Refund the full £' + refundable.toFixed(2)}
+                    </button>
+
+                    {!partial ? (
                         <button
                             type="button"
-                            onClick={sendRefund}
+                            onClick={() => { setPartial(true); setPanelError(''); }}
                             disabled={updating}
-                            className="px-4 py-2 bg-slate-900 hover:bg-black text-white text-sm font-semibold rounded-lg disabled:opacity-50"
+                            className="mt-3 text-sm font-semibold text-slate-600 underline hover:text-slate-900 disabled:opacity-50"
                         >
-                            {updating ? 'Refunding…' : 'Send refund'}
+                            Refund part of it instead
                         </button>
-                        <button
-                            type="button"
-                            onClick={() => { setPanel('none'); setPanelError(''); }}
-                            className="px-3 py-2 text-sm font-semibold text-slate-600 hover:text-slate-900"
-                        >
-                            Cancel
-                        </button>
-                    </div>
+                    ) : (
+                        <div className="mt-3 pt-3 border-t border-slate-200">
+                            <div className="text-xs text-slate-500 mb-2">
+                                Anything up to £{refundable.toFixed(2)}.
+                            </div>
+                            <div className="flex items-center gap-2">
+                                <span className="text-slate-500">£</span>
+                                <input
+                                    type="number"
+                                    min="0"
+                                    step="0.01"
+                                    value={refundAmount}
+                                    onChange={(e) => setRefundAmount(e.target.value)}
+                                    placeholder="0.00"
+                                    autoFocus
+                                    className="w-28 border rounded-lg px-3 py-2 text-sm outline-none focus:border-slate-900"
+                                />
+                                <button
+                                    type="button"
+                                    onClick={() => sendRefundOf(Number(refundAmount))}
+                                    disabled={updating}
+                                    className="px-4 py-2 border border-slate-300 hover:border-slate-900 text-slate-800 text-sm font-semibold rounded-lg disabled:opacity-50"
+                                >
+                                    {updating ? 'Refunding…' : 'Send that instead'}
+                                </button>
+                            </div>
+                        </div>
+                    )}
 
                     {panelError && <p className="text-xs text-red-600 mt-2">{panelError}</p>}
+
+                    <button
+                        type="button"
+                        onClick={closeRefund}
+                        disabled={updating}
+                        className="mt-3 block text-sm font-semibold text-slate-500 hover:text-slate-900 disabled:opacity-50"
+                    >
+                        Don&apos;t refund anything
+                    </button>
                 </div>
             );
         }
 
         return (
             <div className="flex gap-2">
-                {refundable > 0 && (
+                {allowRefund && refundable > 0 && (
                     <button
                         type="button"
-                        onClick={() => { setPanel('refund'); setPanelError(''); }}
+                        onClick={() => { setPanel('refund'); setPartial(false); setPanelError(''); }}
                         disabled={updating}
                         className="px-4 py-1.5 border border-slate-300 hover:border-slate-500 text-slate-700 text-sm font-semibold rounded-lg disabled:opacity-50"
                     >
