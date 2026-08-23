@@ -337,6 +337,40 @@ Please:
 - **Refund or transfer money before changing a booking's status**, and don't
   notify anyone until it has succeeded. Doing it the other way round is how a
   guest gets told their booking is cancelled while their money is still here.
+- **A host can have several messages of one kind, one per property — and the
+  database is what stops two of them naming the same one.** `message_templates`
+  used to be unique on `(user_id, template_type)`. Scope now lives in
+  `message_template_listings`, because a `uuid[]` column cannot be constrained:
+  Postgres has no built-in way to say "no two templates of this type may name
+  the same listing", and that rule is the only thing between a misconfiguration
+  and a guest being sent another property's door code.
+
+  The join rows carry `user_id` and `template_type` purely so that unique index
+  can be written. **They are filled by a trigger from the parent, never by the
+  caller** — verified in rehearsal that a forged `user_id` is overwritten, so a
+  caller cannot defeat the constraint by lying about which template a row
+  belongs to. Same reasoning as the `conversation_prefs` stamp trigger.
+
+  **Most specific wins, exactly one message.** A template naming the listing
+  beats one left open to everything; a listing with no specific template falls
+  back to the catch-all; a disabled specific one falls back rather than sending
+  nothing. The rule lives in `lib/messageTemplates.ts` because two places ask —
+  the scheduled sender and the welcome posted on accept — and two
+  implementations would eventually disagree about which message a guest gets.
+  The tie-break (oldest) should be unreachable; it exists because "should
+  never" is not "cannot".
+
+  The sender walks **bookings and then types**, not templates. Walking
+  templates gives each a turn and sends whichever the query returned first,
+  which is what it used to do.
+
+  `20260823_templates_per_listing.sql` — **live on both projects as of 23
+  August 2026, nothing needs running.** `message_templates.listing_ids` is
+  vestigial but deliberately still written by the editor, because the migration
+  ran before the deploy. Drop it in its own migration once the new code has
+  been live for a day or two, and remove the write in
+  `components/account/MessageTemplates.tsx`.
+
 - **A door code is never a column on `listings`.** Five places read that table
   with `select('*')` — the public listing page among them — so a column there
   ends up in the page source. Revoking it does not help either: Postgres
