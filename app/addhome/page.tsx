@@ -17,7 +17,6 @@ import { DEFAULT_COMMISSION_PERCENT } from '@/lib/fees';
 import { buildLocation, splitLocation, DEFAULT_REGION } from '@/lib/places';
 import { buildStreetAddress, tidyPostcode } from '@/lib/address';
 import {
-    MAX_PRICE_PER_NIGHT,
     problemAtStep as ruleAtStep,
     firstPublishProblem as firstProblemIn,
 } from '@/lib/listingRules';

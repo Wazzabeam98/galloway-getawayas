@@ -47,6 +47,10 @@ export interface ListingForRules {
     title?: string | null;
     description?: string | null;
     price?: number | string | null;
+    // Optional and usually absent: only the calendar's Pricing tab collects
+    // one. A listing without a weekend price passes the ceiling rule below
+    // rather than failing it.
+    weekendPrice?: number | string | null;
     amenities?: string[] | null;
     checkInMethod?: string | null;
 }
@@ -140,6 +144,21 @@ export const PUBLISH_RULES: Rule[] = [
             + MAX_PRICE_PER_NIGHT + ' a night.',
         failed: (l) => Number(l.price) > MAX_PRICE_PER_NIGHT,
     },
+    {
+        // Same ceiling, same reason — a weekend price is a price per night,
+        // and the extra zero goes in just as easily. Only the calendar's
+        // Pricing tab sets one, so everywhere else this reads undefined and
+        // the rule stands down.
+        key: 'weekend_price_ceiling',
+        step: 9,
+        message: 'That weekend price looks like a typo — the most you can set is £'
+            + MAX_PRICE_PER_NIGHT + ' a night.',
+        failed: (l) =>
+            l.weekendPrice !== null &&
+            l.weekendPrice !== undefined &&
+            String(l.weekendPrice).trim() !== '' &&
+            Number(l.weekendPrice) > MAX_PRICE_PER_NIGHT,
+    },
 ];
 
 // Everything wrong with a listing, in step order.
@@ -203,6 +222,7 @@ export function fromRow(row: any): ListingForRules {
         title: row.title,
         description: row.description,
         price: row.price_per_night,
+        weekendPrice: row.weekend_price,
         amenities: Array.isArray(row.amenities) ? row.amenities : [],
         checkInMethod: row.check_in_method,
     };

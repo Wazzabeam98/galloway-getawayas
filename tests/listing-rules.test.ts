@@ -78,6 +78,102 @@ test('the rules the wizard already had still hold', () => {
     assert.ok(keys({ ...GOOD, propertyType: '' }).includes('property_type'));
 });
 
+// --- The weekend price -----------------------------------------------------
+//
+// Only the calendar's Pricing tab sets one. Every other surface leaves it out
+// of the object entirely, so the rule has to stand down on absent rather than
+// treat it as zero — otherwise the wizard could never publish.
+
+test('a weekend price over the ceiling is caught like any other price', () => {
+    assert.ok(
+        keys({ ...GOOD, weekendPrice: MAX_PRICE_PER_NIGHT + 1 }).includes('weekend_price_ceiling')
+    );
+    assert.ok(
+        keys({ ...GOOD, weekendPrice: String(MAX_PRICE_PER_NIGHT + 1) })
+            .includes('weekend_price_ceiling')
+    );
+});
+
+test('no weekend price is not a failing weekend price', () => {
+    assert.equal(keys({ ...GOOD }).length, 0, 'absent');
+    assert.equal(keys({ ...GOOD, weekendPrice: null }).length, 0, 'null');
+    assert.equal(keys({ ...GOOD, weekendPrice: undefined }).length, 0, 'undefined');
+    assert.equal(keys({ ...GOOD, weekendPrice: '' }).length, 0, 'cleared in the form');
+    assert.equal(keys({ ...GOOD, weekendPrice: MAX_PRICE_PER_NIGHT }).length, 0, 'at the ceiling');
+});
+
+test('a weekend price is read off the row like the rest', () => {
+    const row = {
+        property_type: 'Cottage',
+        street_address: '4 Harbour Row',
+        location: 'Kirkcudbright, Dumfries and Galloway',
+        postcode: 'DG6 4LE',
+        images: ['a.jpg', 'b.jpg'],
+        title: 'Harbour cottage',
+        description: 'By the water.',
+        price_per_night: 140,
+        amenities: ['Wifi', 'Parking', 'Kitchen'],
+        check_in_method: 'Key safe',
+        weekend_price: MAX_PRICE_PER_NIGHT + 1,
+    };
+    assert.ok(keys(fromRow(row)).includes('weekend_price_ceiling'));
+    assert.deepEqual(keys(fromRow({ ...row, weekend_price: null })), []);
+});
+
+test('the calendar cannot push a weekend price over the line', () => {
+    // The exact shape /api/listings/save builds: the stored row, patched.
+    const row = {
+        property_type: 'Cottage',
+        street_address: '4 Harbour Row',
+        location: 'Kirkcudbright, Dumfries and Galloway',
+        postcode: 'DG6 4LE',
+        images: ['a.jpg'],
+        title: 'Harbour cottage',
+        description: 'By the water.',
+        price_per_night: 140,
+        amenities: ['Wifi', 'Parking', 'Kitchen'],
+        check_in_method: 'Key safe',
+        weekend_price: 190,
+    };
+    const introduced = (patch: any) =>
+        newProblems(fromRow(row), fromRow({ ...row, ...patch })).map((r: any) => r.key);
+
+    assert.deepEqual(introduced({ weekend_price: 220 }), [], 'a real weekend price still saves');
+    assert.deepEqual(
+        introduced({ weekend_price: MAX_PRICE_PER_NIGHT + 1 }),
+        ['weekend_price_ceiling'],
+        'the extra zero does not'
+    );
+    assert.deepEqual(
+        introduced({ price_per_night: MAX_PRICE_PER_NIGHT + 1 }),
+        ['price_ceiling'],
+        'and neither does it on the base price'
+    );
+});
+
+// A listing that was already over the line keeps saving — the same
+// grandfathering every other rule gets, for the same reason.
+test('a weekend price already over the ceiling does not lock the host out', () => {
+    const row = {
+        property_type: 'Cottage',
+        street_address: '4 Harbour Row',
+        location: 'Kirkcudbright, Dumfries and Galloway',
+        postcode: 'DG6 4LE',
+        images: ['a.jpg'],
+        title: 'Harbour cottage',
+        description: 'By the water.',
+        price_per_night: 140,
+        amenities: ['Wifi', 'Parking', 'Kitchen'],
+        check_in_method: 'Key safe',
+        weekend_price: 99999,
+    };
+    assert.deepEqual(
+        newProblems(fromRow(row), fromRow({ ...row, cleaning_fee: 60 })).map((r: any) => r.key),
+        [],
+        'they can still fix everything else'
+    );
+});
+
 test('a name or a street will do, but not the town alone', () => {
     assert.equal(keys({ ...GOOD, street: '', propertyName: 'Rose Cottage' }).length, 0);
     assert.ok(keys({ ...GOOD, street: '', propertyName: '', flat: '' }).includes('address'));

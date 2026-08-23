@@ -12,7 +12,6 @@ import {
 } from 'date-fns';
 import { ChevronLeft, ChevronRight, X } from 'lucide-react';
 import { displayName } from "@/lib/utils";
-import { MAX_PRICE_PER_NIGHT } from '@/lib/listingRules';
 
 interface Listing {
     id: string;
@@ -65,6 +64,12 @@ export default function CalendarPage() {
 
     const [rightTab, setRightTab] = useState<'manage' | 'pricing' | 'fees' | 'availability'>('manage');
 
+    // Which of these listings this person may edit, not merely open. The page
+    // is a can_calendar screen, but its Pricing, Fees and Availability tabs
+    // change the listing itself, which is can_listing. Drawing them for a
+    // co-host without it would be a button that can only fail.
+    const [canEditListing, setCanEditListing] = useState<Record<string, boolean>>({});
+
     const [selectionStart, setSelectionStart] = useState<Date | null>(null);
     const [selectionEnd, setSelectionEnd] = useState<Date | null>(null);
     const [panelOpen, setPanelOpen] = useState(false);
@@ -103,6 +108,10 @@ export default function CalendarPage() {
                 const allowed = res.ok ? (await res.json()).listings || [] : [];
                 const ids = allowed.map((a: any) => a.id);
 
+                const editable: Record<string, boolean> = {};
+                allowed.forEach((a: any) => { editable[a.id] = !!a.can_listing; });
+                setCanEditListing(editable);
+
                 const { data } = ids.length
                     ? await supabase
                         .from('listings')
@@ -138,6 +147,14 @@ export default function CalendarPage() {
         setPreparationTime(selectedListing.preparation_time || 'None');
         setAvailabilityWindow(selectedListing.availability_window || '9 months');
     }, [selectedListingId, selectedListing]);
+
+    // Switching to a property they only have calendar access to must not leave
+    // them looking at a tab that is no longer in the bar.
+    useEffect(() => {
+        if (selectedListingId && !canEditListing[selectedListingId] && rightTab !== 'manage') {
+            setRightTab('manage');
+        }
+    }, [selectedListingId, canEditListing, rightTab]);
 
     useEffect(() => {
         if (!selectedListingId) return;
@@ -378,18 +395,48 @@ export default function CalendarPage() {
         closePanel();
     };
 
+    // Every listing-wide setting on this page — Pricing, Fees and Availability
+    // — goes through /api/listings/save rather than updating the table here.
+    //
+    // Writing straight to `listings` from the browser meant nothing on this
+    // screen was ever checked: not the £5,000 ceiling, not the permission, not
+    // the audit trail an owner moderating somebody else's property leaves
+    // behind. It was the one way left to put £50,000 a night on a listing.
+    //
+    // It also silently did nothing for a co-host. Row-level security matches
+    // on host_id, so their update changed no rows and returned no error, and
+    // the page said "Saved." on top of it. The route uses the service key
+    // after checking the permission itself, so a co-host who may edit the
+    // listing now genuinely saves, and one who may not is told so.
     const saveListingSettings = async (fields: Record<string, any>) => {
+        if (!selectedListingId) return;
         setSavingSettings(true);
-        const { error } = await supabase.from('listings').update(fields).eq('id', selectedListingId);
-        setSavingSettings(false);
 
-        if (error) {
-            toast.error(error.message, { theme: 'colored' });
-            return;
+        try {
+            const res = await fetch('/api/listings/save', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ listingId: selectedListingId, patch: fields }),
+            });
+
+            const data = await res.json().catch(() => ({}));
+
+            if (!res.ok || !data.ok) {
+                // The route's own words — it is the one that knows whether
+                // this was a permission, a rule, or the database.
+                toast.error(data.error || 'Could not save.', { theme: 'colored' });
+                return;
+            }
+
+            setListings((prev) =>
+                prev.map((l) => (l.id === selectedListingId ? { ...l, ...fields } : l))
+            );
+            toast.success('Saved.', { theme: 'colored' });
+        } catch (err: any) {
+            toast.error('Could not save — check your connection.', { theme: 'colored' });
+        } finally {
+            setSavingSettings(false);
         }
-
-        setListings((prev) => prev.map((l) => (l.id === selectedListingId ? { ...l, ...fields } : l)));
-        toast.success('Saved.', { theme: 'colored' });
     };
 
     if (loading) {
@@ -419,12 +466,17 @@ export default function CalendarPage() {
         );
     }
 
-    const TABS = [
+    // Manage dates is the calendar itself and belongs to can_calendar. The
+    // other three change the listing, so they are only offered to someone who
+    // may edit it — see canEditListing.
+    const mayEditSelected = !!selectedListingId && !!canEditListing[selectedListingId];
+
+    const TABS = ([
         { key: 'manage', label: 'Manage dates' },
         { key: 'pricing', label: 'Pricing' },
         { key: 'fees', label: 'Fees' },
         { key: 'availability', label: 'Availability' },
-    ] as const;
+    ] as const).filter((t) => t.key === 'manage' || mayEditSelected);
 
     return (
         <div className="max-w-6xl mx-auto px-6 py-10">
@@ -636,7 +688,7 @@ export default function CalendarPage() {
                         )
                     )}
 
-                    {rightTab === 'pricing' && (
+                    {rightTab === 'pricing' && mayEditSelected && (
                         <div className="border rounded-2xl p-5 space-y-5">
                             <p className="text-xs text-slate-500">These apply to all nights, unless overridden by a specific date.</p>
                             <div>
@@ -657,27 +709,10 @@ export default function CalendarPage() {
                             <button
                                 type="button"
                                 disabled={savingSettings}
-                                onClick={() => {
-                                    // The same ceiling the wizard and the edit
-                                    // screen publish by. This panel writes
-                                    // price_per_night straight to the table
-                                    // rather than through /api/listings/save,
-                                    // so it has to ask for itself — otherwise
-                                    // it is the one way left to put £50,000 a
-                                    // night on a listing.
-                                    if (Number(basePrice) > MAX_PRICE_PER_NIGHT) {
-                                        toast.error(
-                                            'That price looks like a typo — the most you can set is £'
-                                                + MAX_PRICE_PER_NIGHT + ' a night.',
-                                            { theme: 'colored' }
-                                        );
-                                        return;
-                                    }
-                                    saveListingSettings({
-                                        price_per_night: Number(basePrice) || 0,
-                                        weekend_price: weekendPrice ? Number(weekendPrice) : null,
-                                    });
-                                }}
+                                onClick={() => saveListingSettings({
+                                    price_per_night: Number(basePrice) || 0,
+                                    weekend_price: weekendPrice ? Number(weekendPrice) : null,
+                                })}
                                 className="w-full py-3 bg-emerald-700 hover:bg-emerald-800 text-white font-bold rounded-xl transition disabled:opacity-50"
                             >
                                 {savingSettings ? 'Saving...' : 'Save'}
@@ -685,7 +720,7 @@ export default function CalendarPage() {
                         </div>
                     )}
 
-                    {rightTab === 'fees' && (
+                    {rightTab === 'fees' && mayEditSelected && (
                         <div className="border rounded-2xl p-5 space-y-5">
                             <div>
                                 <label className="block text-sm font-semibold text-slate-800 mb-1">Cleaning fee</label>
@@ -793,7 +828,7 @@ export default function CalendarPage() {
                         </div>
                     )}
 
-                    {rightTab === 'availability' && (
+                    {rightTab === 'availability' && mayEditSelected && (
                         <div className="border rounded-2xl p-5 space-y-5">
                             <div className="grid grid-cols-2 gap-3">
                                 <div>

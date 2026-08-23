@@ -36,6 +36,17 @@ export async function GET(req: NextRequest) {
                 id: a.listingId,
                 isOwner: a.isOwner,
                 role: a.role,
+                // The rest of what they may do with it, so a screen gated on
+                // one permission can tell whether to draw a control that needs
+                // another. The calendar is the case: it opens on can_calendar,
+                // but its Pricing, Fees and Availability tabs are listing
+                // edits and need can_listing. Advisory only — every route
+                // works the answer out again on the server.
+                can_calendar: a.can_calendar,
+                can_messages: a.can_messages,
+                can_bookings: a.can_bookings,
+                can_listing: a.can_listing,
+                can_earnings: a.can_earnings,
             })),
     });
 }
