@@ -1,20 +1,25 @@
 'use client';
 
 import React, { useState, useRef, useEffect } from 'react';
+import Image from 'next/image';
 import { DateRangePicker, Range, RangeKeyDict } from 'react-date-range';
 import { format, addMonths, isSameDay } from 'date-fns';
 import 'react-date-range/dist/styles.css';
 import 'react-date-range/dist/theme/default.css';
 
+// Imported rather than referenced by path so that next/image gets the real
+// dimensions at build time and can bake in a blurred placeholder. That
+// placeholder is what a guest sees for the first fraction of a second,
+// instead of the black box that used to sit there.
+import hero1 from '@/public/images/hero-1.jpg';
+import hero2 from '@/public/images/hero-2.jpg';
+import hero3 from '@/public/images/hero-3.jpg';
+import hero4 from '@/public/images/hero-4.jpg';
+
 const durations = ['weekend', 'week', 'month'];
 const futureMonths = [...Array(12)].map((_, i) => addMonths(new Date(), i));
 
-const HERO_IMAGES = [
-  '/images/hero-1.jpg',
-  '/images/hero-2.jpg',
-  '/images/hero-3.jpg',
-  '/images/hero-4.jpg',
-];
+const HERO_IMAGES = [hero1, hero2, hero3, hero4];
 
 export default function Hero() {
   const [activePopover, setActivePopover] = useState<'where' | 'when' | 'who' | null>(null);
@@ -44,12 +49,15 @@ export default function Hero() {
   // Rotating hero images
   const [heroIndex, setHeroIndex] = useState(0);
 
+  // The first photo loads on its own; the other three only start once it has
+  // arrived, so nothing competes with the image the guest is actually looking
+  // at. The timer is a backstop — if the first one never reports back, the
+  // slideshow still has something to rotate to.
+  const [firstLoaded, setFirstLoaded] = useState(false);
+
   useEffect(() => {
-    // Load the next images up front, so the first change doesn't flash.
-    HERO_IMAGES.forEach((src) => {
-      const img = new Image();
-      img.src = src;
-    });
+    const t = setTimeout(() => setFirstLoaded(true), 2500);
+    return () => clearTimeout(t);
   }, []);
 
   useEffect(() => {
@@ -129,21 +137,35 @@ export default function Hero() {
 
   return (
     <div
-      className="relative z-40 w-full h-[460px] md:h-[500px] flex items-center justify-center bg-stone-900 text-white overflow-visible"
+      className="relative z-40 w-full h-[460px] md:h-[500px] flex items-center justify-center bg-stone-600 text-white overflow-visible"
       ref={heroRef}
     >
       {/* Rotating background images */}
       <div className="absolute inset-0 overflow-hidden pointer-events-none">
         {HERO_IMAGES.map((src, i) => (
           <div
-            key={src}
+            key={src.src}
             aria-hidden="true"
-            className="absolute inset-0 bg-cover bg-center transition-opacity duration-1000 ease-in-out"
-            style={{
-              backgroundImage: `url('${src}')`,
-              opacity: i === heroIndex ? 1 : 0,
-            }}
-          />
+            className="absolute inset-0 transition-opacity duration-1000 ease-in-out"
+            style={{ opacity: i === heroIndex ? 1 : 0 }}
+          >
+            {/* quality 80 rather than the default 75: at 70 the bare
+                branches and the water go visibly soft on a large screen,
+                and these are photos we paid for. */}
+            {(i === 0 || firstLoaded) && (
+              <Image
+                src={src}
+                alt=""
+                fill
+                sizes="100vw"
+                quality={80}
+                priority={i === 0}
+                placeholder="blur"
+                className="object-cover object-center"
+                onLoadingComplete={i === 0 ? () => setFirstLoaded(true) : undefined}
+              />
+            )}
+          </div>
         ))}
         {/* Soft Vignette Overlay */}
         <div className="absolute inset-0 bg-gradient-to-t from-stone-950/45 via-stone-900/5 to-stone-950/20" />
@@ -157,7 +179,7 @@ export default function Hero() {
         <div className="absolute bottom-5 left-1/2 -translate-x-1/2 z-0 flex items-center gap-2">
           {HERO_IMAGES.map((src, i) => (
             <button
-              key={src}
+              key={src.src}
               type="button"
               onClick={() => setHeroIndex(i)}
               aria-label={`Show image ${i + 1}`}
