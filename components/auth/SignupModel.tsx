@@ -284,9 +284,6 @@ const SignupModel = () => {
                                         {loading ? 'Processing..' : 'Continue'}
                                     </Button>
                                 </div>
-                                <div>
-                                    <h1 className='text-center font-bold text-xl my-2'>-- or --</h1>
-                                </div>
                             </form>
                             <SocialSignUp />
                         </div>

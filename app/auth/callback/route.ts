@@ -5,8 +5,8 @@ import type { EmailOtpType } from '@supabase/supabase-js'
 
 export const dynamic = 'force-dynamic'
 
-// Where every inbound auth link lands: signing in with Google or Facebook,
-// confirming a new account, and resetting a forgotten password.
+// Where every inbound auth link lands: signing in with Google, confirming a
+// new account, and resetting a forgotten password.
 //
 // Until now only the social buttons pointed here, because they were the only
 // thing that set redirectTo. The confirmation email went to the Site URL

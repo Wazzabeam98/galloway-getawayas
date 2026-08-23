@@ -958,16 +958,6 @@ export default function AccountSettings() {
                                     )}
                                 </div>
 
-                                <div className="p-5 flex items-center justify-between">
-                                    <div className="text-sm text-slate-700">Facebook</div>
-                                    {linkedProviders.indexOf('facebook') !== -1 ? (
-                                        <span className="flex items-center text-xs font-medium text-emerald-700">
-                                            <CheckCircle2 className="w-3.5 h-3.5 mr-1.5" /> Connected
-                                        </span>
-                                    ) : (
-                                        <span className="text-xs text-slate-400">Not connected</span>
-                                    )}
-                                </div>
                             </div>
 
                             {/* 2FA placeholder */}
