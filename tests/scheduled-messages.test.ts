@@ -12,12 +12,12 @@ import {
     timingFor,
     isDue,
     hasRealContent,
-    appliesToListing,
     fillPlaceholders,
     londonInstant,
     needsLockboxCode,
     usesLockboxCode,
 } from '../lib/scheduledMessages';
+import { coversListing } from '../lib/messageTemplates';
 
 const LISTING = { check_in_time: '15:00:00', check_out_time: '11:00:00' };
 
@@ -159,12 +159,11 @@ test('a template that is only the stock greeting is not sent', () => {
     );
 });
 
-test('an empty listing selection means every listing', () => {
-    assert.equal(appliesToListing(template({ listing_ids: null }), 'l1'), true);
-    assert.equal(appliesToListing(template({ listing_ids: [] }), 'l1'), true);
-    assert.equal(appliesToListing(template({ listing_ids: ['l1'] }), 'l1'), true);
+test('an empty scope means every listing', () => {
+    assert.equal(coversListing({ ...template(), listingIds: [] } as any, 'l1'), true);
+    assert.equal(coversListing({ ...template(), listingIds: ['l1'] } as any, 'l1'), true);
     assert.equal(
-        appliesToListing(template({ listing_ids: ['l2'] }), 'l1'),
+        coversListing({ ...template(), listingIds: ['l2'] } as any, 'l1'),
         false,
         'a template set up for one cottage must not go to guests at another'
     );
@@ -349,9 +348,10 @@ test('narrowing a template to some listings still resolves each booking’s own 
     const narrowed = template({ listing_ids: ['l1', 'l2'] });
     const codes: Record<string, string> = { l1: '1111', l2: '2222', l3: '3333' };
 
-    assert.equal(appliesToListing(narrowed, 'l1'), true);
-    assert.equal(appliesToListing(narrowed, 'l2'), true);
-    assert.equal(appliesToListing(narrowed, 'l3'), false, 'not targeted, so nothing is sent at all');
+    const scoped = { ...narrowed, listingIds: ['l1', 'l2'] } as any;
+    assert.equal(coversListing(scoped, 'l1'), true);
+    assert.equal(coversListing(scoped, 'l2'), true);
+    assert.equal(coversListing(scoped, 'l3'), false, 'not targeted, so nothing is sent at all');
 
     // Each targeted booking gets its own code, not the first one found.
     const body = 'The code is {lockbox_code}.';
@@ -366,9 +366,9 @@ test('narrowing a template to some listings still resolves each booking’s own 
 });
 
 test('one template left open to all listings still gives each property its own code', () => {
-    const openToAll = template({ listing_ids: [] });
-    assert.equal(appliesToListing(openToAll, 'l1'), true);
-    assert.equal(appliesToListing(openToAll, 'l9'), true);
+    const openToAll = { ...template(), listingIds: [] } as any;
+    assert.equal(coversListing(openToAll, 'l1'), true);
+    assert.equal(coversListing(openToAll, 'l9'), true);
     // Which is the whole point of the placeholder: one message, right code.
     assert.equal(usesLockboxCode('code: {lockbox_code}'), true);
     assert.equal(usesLockboxCode('no code here'), false);

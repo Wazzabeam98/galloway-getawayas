@@ -6,6 +6,7 @@ import { useRouter } from 'next/navigation';
 import { toast } from 'react-toastify';
 import { displayName } from '@/lib/utils';
 import { notify } from '@/lib/notify';
+import { resolveTemplate } from '@/lib/messageTemplates';
 import { bookingsChanged } from '@/components/base/usePendingCount';
 
 export default function BookingActions({
@@ -82,20 +83,29 @@ export default function BookingActions({
             const { data: { session } } = await supabase.auth.getSession();
             if (!session?.user) return;
 
-            const { data: template } = await supabase
+            // A host can have several booking-confirmation templates now, each
+            // scoped to different properties. This used to be .single(), which
+            // *errors* on a second row — and the error is swallowed by the
+            // catch below so a confirmed booking never looks broken, meaning
+            // welcome messages would have stopped sending with nothing said.
+            const { data: candidates } = await supabase
                 .from('message_templates')
-                .select('body, enabled, anchor, minutes_after, listing_ids')
+                .select('id, user_id, template_type, body, enabled, anchor, minutes_after, created_at')
                 .eq('user_id', session.user.id)
-                .eq('template_type', 'booking_confirmation')
-                .single();
+                .eq('template_type', 'booking_confirmation');
 
-            if (!template?.enabled) return;
+            if (!candidates || candidates.length === 0) return;
 
-            // Only send from here when the host chose "as soon as you accept".
-            // Any delay is handled by the scheduled job instead.
-            if (template.anchor !== 'booking' || (template.minutes_after || 0) > 0) return;
-            let body = (template.body || '').trim();
-            if (!body) return;
+            const { data: scopes } = await supabase
+                .from('message_template_listings')
+                .select('template_id, listing_id')
+                .in('template_id', candidates.map((t: any) => t.id));
+
+            const scopeOf: Record<string, string[]> = {};
+            (scopes || []).forEach((r: any) => {
+                if (!scopeOf[r.template_id]) scopeOf[r.template_id] = [];
+                scopeOf[r.template_id].push(r.listing_id);
+            });
 
             const { data: booking } = await supabase
                 .from('bookings')
@@ -107,10 +117,16 @@ export default function BookingActions({
             // Only the host sends this, and only to the guest.
             if (booking.host_id !== session.user.id) return;
 
-            // Respect which listings this template was set up for.
-            // An empty selection means all of them.
-            const targeted: string[] = template.listing_ids || [];
-            if (targeted.length > 0 && targeted.indexOf(booking.listing_id) === -1) return;
+            // Which of their templates covers this property. Same rule the
+            // scheduled sender uses, from the same file, so the two can never
+            // disagree about which message a guest should get.
+            const template = resolveTemplate(
+                candidates.map((t: any) => ({ ...t, listingIds: scopeOf[t.id] || [] })),
+                'booking_confirmation',
+                booking.listing_id
+            );
+
+            if (!template) return;
 
             // Don't send it twice if the booking is confirmed more than once.
             const { data: already } = await supabase
@@ -126,6 +142,12 @@ export default function BookingActions({
                 .select('full_name, preferred_name, show_full_name')
                 .eq('id', booking.guest_id)
                 .single();
+
+            // Only send from here when the host chose "as soon as you accept".
+            // Any delay is handled by the scheduled job instead.
+            if (template.anchor !== 'booking' || (template.minutes_after || 0) > 0) return;
+            let body = (template.body || '').trim();
+            if (!body) return;
 
             const { data: listing } = await supabase
                 .from('listings')

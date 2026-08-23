@@ -24,7 +24,10 @@ export interface Template {
     minutes_after: number | null;
     hours_after: number | null;
     hours_before: number | null;
-    listing_ids: string[] | null;
+    // Vestigial. Scope moved to `message_template_listings` so the database
+    // can refuse two templates of a type naming the same listing; the column
+    // is dropped once the old code is out of production. Nothing reads it.
+    listing_ids?: string[] | null;
 }
 
 export interface BookingLike {
@@ -171,13 +174,6 @@ export function hasRealContent(body: string | null | undefined): boolean {
     const text = String(body || '').trim();
     if (!text) return false;
     return !GREETING_ONLY.test(text);
-}
-
-// Does this template apply to this listing? An empty selection means all of
-// them, which is what the editor implies by leaving nothing ticked.
-export function appliesToListing(template: Template, listingId: string): boolean {
-    const targeted = template.listing_ids || [];
-    return targeted.length === 0 || targeted.indexOf(listingId) !== -1;
 }
 
 // The door code is the one placeholder that can fail to resolve, because it
