@@ -49,9 +49,34 @@ export default function MessagesInboxPage() {
     const scrollRef = useRef<HTMLDivElement>(null);
     const mobileScrollRef = useRef<HTMLDivElement>(null);
 
+    // The composers. Both are in the DOM at once — the three-pane layout and
+    // the phone one — and they share `text`, so they are grown together.
+    const composerRef = useRef<HTMLTextAreaElement>(null);
+    const mobileComposerRef = useRef<HTMLTextAreaElement>(null);
+
     // Set for the one conversation the page opens by itself on load. See the
     // note where it is set.
     const skipMarkRead = useRef(false);
+
+    // rows={1} does not mean "one line and then grow" — it means one line and
+    // then scroll, which hides what the host has already written from them.
+    // So on every change the box is collapsed and given back exactly the
+    // height its content needs. max-h-32 caps it at about six lines, and past
+    // that the textarea's own overflow takes over and it scrolls, which is the
+    // right behaviour for a genuinely long message.
+    useEffect(() => {
+        [composerRef.current, mobileComposerRef.current].forEach((el) => {
+            if (!el) return;
+            el.style.height = 'auto';
+            // scrollHeight counts the padding but not the border, and these
+            // boxes are border-box — so height alone leaves the border with
+            // nowhere to go and the box can be nudged by 2px even when empty.
+            const style = getComputedStyle(el);
+            const border =
+                parseFloat(style.borderTopWidth) + parseFloat(style.borderBottomWidth);
+            el.style.height = el.scrollHeight + border + 'px';
+        });
+    }, [text]);
 
     useEffect(() => {
         const load = async () => {
@@ -686,6 +711,7 @@ export default function MessagesInboxPage() {
                             )}
 
                             <textarea
+                                ref={composerRef}
                                 value={text}
                                 onChange={(e) => setText(e.target.value)}
                                 onKeyDown={(e) => {
@@ -1146,6 +1172,7 @@ export default function MessagesInboxPage() {
                                         )}
 
                                         <textarea
+                                            ref={mobileComposerRef}
                                             value={text}
                                             onChange={(e) => setText(e.target.value)}
                                             rows={1}
