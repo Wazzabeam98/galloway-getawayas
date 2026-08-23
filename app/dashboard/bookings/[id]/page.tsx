@@ -9,7 +9,7 @@ import { checkListing } from "@/lib/access";
 import { displayName, getImageUrl, formatTime } from "@/lib/utils";
 import { rateFor, netOfFee } from "@/lib/fees";
 import { formatUk, refundFraction, policyOf, freeCancelDateOrNull } from "@/lib/cancellation";
-import { stayHasEnded, stayHasStarted } from "@/lib/stayWindow";
+import { contactNumberVisible, stayHasEnded, stayHasStarted } from "@/lib/stayWindow";
 import { outstandingDebts, outstandingOf, debtAgainstStays, debtReason, round2 } from "@/lib/hostDebt";
 import { dateFromKey } from "@/lib/pricing";
 import BookingActions from "@/components/BookingActions";
@@ -204,13 +204,13 @@ export default async function BookingDetail({ params }: { params: { id: string }
     if (booking.children) partyBits.push(booking.children + (Number(booking.children) === 1 ? ' child' : ' children'));
     if (booking.pets) partyBits.push(booking.pets + (Number(booking.pets) === 1 ? ' pet' : ' pets'));
 
-    // A number is only on the page close to arrival — the same rule the home
-    // page card uses. There is no reason to put a guest's private number on a
-    // screen that opens the moment somebody signs in.
-    const daysToArrival = Math.round(
-        (dateFromKey(booking.check_in).getTime() - new Date(now.getFullYear(), now.getMonth(), now.getDate()).getTime()) / 86400000
-    );
-    const phone = (daysToArrival <= 1 && !ended) ? (guest?.phone || null) : null;
+    // A number is only on the page close to arrival. There is no reason to put
+    // a guest's private number on a screen that opens the moment somebody
+    // signs in. The rule itself lives in lib/stayWindow.ts, so the reservation
+    // card, this screen and the messages panel cannot drift apart.
+    const phone = contactNumberVisible(booking, listing?.check_out_time, now)
+        ? (guest?.phone || null)
+        : null;
 
     // Prefills the message box rather than sending anything. The host adds
     // the reason and presses send — a stay called off in the guest's name
@@ -305,7 +305,13 @@ export default async function BookingDetail({ params }: { params: { id: string }
                             }
                         />
                     ) : (
-                        <Row label="Phone" value="Shown from the day before arrival" muted />
+                        <Row
+                            label="Phone"
+                            value={closed
+                                ? 'Not shown once a booking is off'
+                                : 'Shown from the day before arrival'}
+                            muted
+                        />
                     )}
                     <Row
                         label="Arriving"

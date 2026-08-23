@@ -3,6 +3,7 @@ import { createClient } from '@supabase/supabase-js';
 import { cookies } from 'next/headers';
 import { NextRequest, NextResponse } from 'next/server';
 import { checkListing } from '@/lib/access';
+import { contactNumberVisible } from '@/lib/stayWindow';
 import { displayName } from '@/lib/utils';
 
 export const dynamic = 'force-dynamic';
@@ -96,14 +97,37 @@ export async function GET(
     // a trip; they were not shown the price and must not be here either.
     const showMoney = isGuest || isHost || isCoHost;
 
+    // Being one of the two people on a booking is not on its own a reason to
+    // be handed the other one's phone number: the same rule the reservation
+    // card and the booking screen use applies here, and it did not before, so
+    // this panel was still showing a guest's number on a stay that had been
+    // cancelled months ago. The number is not sent at all when it is not to be
+    // shown — a value that reaches the browser has been given out, whatever
+    // the screen does with it afterwards.
+    const phoneOnFile = (otherProfile && otherProfile.phone) || null;
+    const phoneAllowed = isGuest || isHost || isCoHost;
+    const phoneNow =
+        phoneAllowed && contactNumberVisible(booking, listing && listing.check_out_time);
+
+    // Said rather than left blank, so a host looking for a number knows it is
+    // coming rather than assuming the guest never gave one.
+    const phoneHeld = phoneAllowed && phoneOnFile && !phoneNow
+        ? (booking.status === 'cancelled' || booking.status === 'declined'
+            ? 'closed'
+            : 'early')
+        : null;
+
     return NextResponse.json({
         ok: true,
         role: isGuest ? 'guest' : isHost ? 'host' : isCoHost ? 'co_host' : 'companion',
-        canSeePhone: isGuest || isHost || isCoHost,
+        canSeePhone: phoneAllowed,
         other: {
             id: otherId,
             name: displayName(otherProfile, isGuest ? 'Host' : 'Guest'),
-            phone: (isGuest || isHost || isCoHost) ? (otherProfile && otherProfile.phone) || null : null,
+            phone: phoneNow ? phoneOnFile : null,
+            // 'early' — there is a number, but it is not close enough to
+            // arrival. 'closed' — the booking is cancelled or was declined.
+            phoneHeld: phoneHeld,
             avatar: (otherProfile && otherProfile.avatar_url) || null,
         },
         listing: listing || null,

@@ -6,6 +6,7 @@ import Link from 'next/link';
 import { getImageUrl, displayName } from '@/lib/utils';
 import { formatUk } from '@/lib/cancellation';
 import { accessibleListings } from '@/lib/access';
+import { contactNumberVisible } from '@/lib/stayWindow';
 import { MessageSquare, CalendarDays, Phone } from 'lucide-react';
 import UpcomingTrip from '@/components/UpcomingTrip';
 import BookingActions from '@/components/BookingActions';
@@ -211,8 +212,12 @@ export default async function HostReservations() {
                     // Close enough to arrival that a host may need to ring
                     // them — a late ferry, a key left somewhere. Further out
                     // there is no reason to put a private number on a page
-                    // that is open the moment somebody signs in.
-                    const phone = days <= 1 ? guestPhoneMap[booking.guest_id] : null;
+                    // that is open the moment somebody signs in. Same rule as
+                    // the booking screen and the messages panel, from
+                    // lib/stayWindow.ts.
+                    const phone = contactNumberVisible(booking)
+                        ? guestPhoneMap[booking.guest_id]
+                        : null;
 
                     const bookingHref = '/dashboard/bookings/' + booking.id;
 

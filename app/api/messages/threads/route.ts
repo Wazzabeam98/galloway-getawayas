@@ -1,4 +1,4 @@
-import { isArchived } from '@/lib/conversations';
+import { isArchived, needsReply } from '@/lib/conversations';
 import { createRouteHandlerClient } from '@supabase/auth-helpers-nextjs';
 import { createClient } from '@supabase/supabase-js';
 import { cookies } from 'next/headers';
@@ -137,7 +137,7 @@ export async function GET() {
     // A host archiving a thread leaves the guest's copy exactly where it was.
     const { data: prefs } = await admin
         .from('conversation_prefs')
-        .select('booking_id, archived_at, starred_at')
+        .select('booking_id, archived_at, starred_at, no_reply_needed_at')
         .eq('user_id', uid);
 
     const prefMap: Record<string, any> = {};
@@ -166,8 +166,10 @@ export async function GET() {
             lastMessage: lastMap[b.id] || null,
             unread: unreadMap[b.id] || 0,
             // The signal a host actually works from: the other person spoke
-            // last and nobody has answered.
-            needsReply: !!(lastMap[b.id] && lastMap[b.id].sender_id !== uid),
+            // last and nobody has answered — unless they have said they have
+            // read it and no answer is needed. See lib/conversations.ts.
+            needsReply: needsReply(lastMap[b.id], uid, pref && pref.no_reply_needed_at),
+            noReplyNeeded: !!(pref && pref.no_reply_needed_at),
             // Somebody currently in the property matters more than somebody
             // arriving in April.
             stage:

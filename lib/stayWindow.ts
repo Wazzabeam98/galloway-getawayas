@@ -58,3 +58,36 @@ export function stayHasEnded(
 export function stayHasStarted(checkIn: string, now?: Date): boolean {
     return dateKey(now || new Date()) > String(checkIn).split('T')[0];
 }
+
+// Is a phone number worth putting on the screen yet?
+//
+// A guest's number, and a host's, are private until they are useful. Close to
+// arrival they are very useful — a late ferry, a key left somewhere, a gate
+// nobody can find — and at every other time there is no reason to put one on
+// a page that opens the moment somebody signs in.
+//
+// The rule was written out three times over, and the copies disagreed: one of
+// them showed the number on a booking that had been cancelled, which is the
+// one case where nobody is arriving at all. This is the rule.
+export function contactNumberVisible(
+    booking: { check_in: string; check_out: string; status?: string | null },
+    checkOutTime?: string | null,
+    now?: Date
+): boolean {
+    // Nobody is coming. Whatever the dates say, there is no arrival to help
+    // with and no reason to show the number.
+    if (booking.status === 'cancelled' || booking.status === 'declined') return false;
+
+    // They have gone home.
+    if (stayHasEnded(booking.check_out, checkOutTime, now)) return false;
+
+    const today = now ? new Date(now.getTime()) : new Date();
+    today.setHours(0, 0, 0, 0);
+
+    const daysToArrival = Math.round(
+        (dateFromKey(booking.check_in).getTime() - today.getTime()) / 86400000
+    );
+
+    // From the day before arrival, and right through the stay.
+    return daysToArrival <= 1;
+}

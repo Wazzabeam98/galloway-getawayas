@@ -2,7 +2,7 @@
 
 import { useEffect, useRef, useState } from 'react';
 import { getImageUrl, capitializeFirst } from '@/lib/utils';
-import { Archive, ArchiveRestore, Mail, MoreHorizontal, Star } from 'lucide-react';
+import { Archive, ArchiveRestore, Check, Mail, MoreHorizontal, Star } from 'lucide-react';
 
 // One row in the inbox, with its own actions menu.
 //
@@ -45,6 +45,7 @@ export default function ConversationRow(props: {
     showActive?: boolean;
     busy?: boolean;
     onOpen: () => void;
+    onNoReplyNeeded: () => void;
     onStar: () => void;
     onArchive: () => void;
     onMarkUnread: () => void;
@@ -112,6 +113,18 @@ export default function ConversationRow(props: {
 
     const actions = (
         <>
+            {c.needsReply && (
+                <button
+                    type="button"
+                    disabled={props.busy}
+                    onClick={() => run(props.onNoReplyNeeded)}
+                    className="w-full flex items-center gap-2.5 px-4 py-3 sm:py-2 text-sm text-left text-slate-700 hover:bg-slate-50 disabled:opacity-50"
+                >
+                    <Check className="w-4 h-4 text-slate-400 flex-shrink-0" />
+                    No reply needed
+                </button>
+            )}
+
             <button
                 type="button"
                 disabled={props.busy}

@@ -128,10 +128,30 @@ export default function TripsPage() {
 
             // Arrived from a payment reminder email — go straight to Stripe.
             if (typeof window !== 'undefined') {
-                const wanted = new URLSearchParams(window.location.search).get('pay');
+                const params = new URLSearchParams(window.location.search);
+
+                const wanted = params.get('pay');
                 const target = (bookingRows || []).filter(function (b) { return b.id === wanted; })[0];
                 if (target && target.payment_status === 'deposit_paid') {
                     payBalance(target.id);
+                }
+
+                // Arrived from the free-cancellation line on the home page
+                // card. Open the confirmation panel for that booking rather
+                // than making them find it again, but open the panel only —
+                // nothing is cancelled until they press the button in it.
+                const toCancel = params.get('cancel');
+                const cancelTarget = (bookingRows || []).filter(function (b) {
+                    return b.id === toCancel;
+                })[0];
+
+                if (
+                    cancelTarget
+                    && !cancelTarget.sharedWithMe
+                    && cancelTarget.status !== 'cancelled'
+                    && cancelTarget.status !== 'declined'
+                ) {
+                    setConfirmingId(cancelTarget.id);
                 }
             }
 
@@ -154,6 +174,19 @@ export default function TripsPage() {
         };
         load();
     }, [supabase]);
+
+    // The card named in the address only exists once the trips have loaded,
+    // so the browser's own jump to #trip-… has been and gone by the time
+    // there is anything to jump to.
+    useEffect(() => {
+        if (loading) return;
+
+        const hash = window.location.hash;
+        if (!hash) return;
+
+        const card = document.getElementById(hash.slice(1));
+        if (card) card.scrollIntoView({ block: 'start' });
+    }, [loading]);
 
     if (loading) {
         return (
@@ -221,7 +254,9 @@ export default function TripsPage() {
         const alreadyReviewed = reviewedBookingIds.has(b.id);
 
         return (
-            <div key={b.id} className="border rounded-2xl p-5">
+            // Named so the link from the home page card lands on this trip
+            // rather than at the top of a list of them.
+            <div key={b.id} id={'trip-' + b.id} className="border rounded-2xl p-5 scroll-mt-6">
                 <div className="flex items-center gap-4">
                     <div className="w-16 h-16 rounded-xl overflow-hidden bg-slate-200 flex-shrink-0">
                         {listing?.images?.[0] && (

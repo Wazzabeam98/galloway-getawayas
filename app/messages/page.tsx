@@ -1,5 +1,6 @@
 'use client';
 
+import { notify } from '@/lib/notify';
 import ConversationRow from '@/components/messages/ConversationRow';
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { createClientComponentClient } from '@supabase/auth-helpers-nextjs';
@@ -314,6 +315,22 @@ export default function MessagesInboxPage() {
             { starred: !!c.starred }
         );
 
+    // "I have read it, there is nothing to answer." Stored the same way as
+    // archiving and read back the same way — it holds only while nothing
+    // newer has been said, so a guest who follows "thanks!" with a real
+    // question puts the thread back in the count on their own. See
+    // lib/conversations.ts.
+    //
+    // Deliberately not a toggle. Undoing it would mean writing null, and the
+    // thing it would put back is a flag the next message restores anyway.
+    const markNoReplyNeeded = (bookingId: string) =>
+        setPref(
+            bookingId,
+            { no_reply_needed_at: new Date().toISOString() },
+            { needsReply: false, noReplyNeeded: true },
+            { needsReply: true, noReplyNeeded: false }
+        );
+
     const toggleArchive = (c: any) => {
         // Archiving stamps the time, which is what puts the conversation
         // behind every message in it so far. Anything arriving afterwards is
@@ -410,6 +427,12 @@ export default function MessagesInboxPage() {
             return;
         }
 
+        // Email the other person, if they have message alerts switched on —
+        // the route decides that, this just asks. It was only ever sent from
+        // the old single-conversation page, so a reply written here reached
+        // nobody's inbox until they next looked at the site.
+        notify('new_message', activeId as string, outgoing);
+
         setText('');
         setShowQuick(false);
 
@@ -446,6 +469,30 @@ export default function MessagesInboxPage() {
             </div>
         );
     }
+
+    // The row in the list for whatever is open, which is where needsReply
+    // lives — it is worked out per person when the list is built.
+    const activeConversation = conversations.filter(
+        (c) => c.bookingId === activeId
+    )[0] || null;
+
+    // Offered under the last message rather than buried in the row menu,
+    // because it belongs to the message that is waiting. A needs-reply count
+    // that includes threads ending "thanks!" is one nobody reads.
+    const noReplyLink = activeConversation && activeConversation.needsReply ? (
+        <div className="pt-2 flex items-center justify-center gap-2 text-xs">
+            <span className="text-amber-700 font-medium">Waiting on you</span>
+            <span className="text-slate-300">&middot;</span>
+            <button
+                type="button"
+                onClick={() => markNoReplyNeeded(activeConversation.bookingId)}
+                disabled={!!busy[activeConversation.bookingId]}
+                className="font-semibold text-slate-500 underline hover:text-slate-900 disabled:opacity-50"
+            >
+                Mark no reply needed
+            </button>
+        </div>
+    ) : null;
 
     // --- The list of conversations ----------------------------------------
     const list = (
@@ -509,6 +556,7 @@ export default function MessagesInboxPage() {
                             showActive
                             busy={!!busy[c.bookingId]}
                             onOpen={() => setActiveId(c.bookingId)}
+                            onNoReplyNeeded={() => markNoReplyNeeded(c.bookingId)}
                             onStar={() => toggleStar(c)}
                             onArchive={() => toggleArchive(c)}
                             onMarkUnread={() => markUnread(c)}
@@ -594,6 +642,8 @@ export default function MessagesInboxPage() {
                                 </div>
                             );
                         })}
+
+                        {noReplyLink}
                     </div>
 
                     <div className="p-4 border-t">
@@ -797,15 +847,27 @@ export default function MessagesInboxPage() {
                 </div>
             )}
 
-            {thread.other.phone && (
+            {/* The number itself only arrives close to arrival — see the
+                rule in lib/stayWindow.ts. When it is being held back the
+                route says so rather than sending nothing, so a host looking
+                for it knows it is coming and does not go hunting. */}
+            {(thread.other.phone || thread.other.phoneHeld) && (
                 <div className="border-t pt-4">
                     <div className="text-xs text-slate-500 mb-1">Phone</div>
-                    <a
-                        href={'tel:' + thread.other.phone}
-                        className="text-sm text-emerald-700 hover:underline"
-                    >
-                        {thread.other.phone}
-                    </a>
+                    {thread.other.phone ? (
+                        <a
+                            href={'tel:' + thread.other.phone}
+                            className="text-sm text-emerald-700 hover:underline"
+                        >
+                            {thread.other.phone}
+                        </a>
+                    ) : (
+                        <div className="text-sm text-slate-400">
+                            {thread.other.phoneHeld === 'closed'
+                                ? 'Not shown once a booking is off'
+                                : 'Shown from the day before arrival'}
+                        </div>
+                    )}
                 </div>
             )}
 
@@ -821,11 +883,20 @@ export default function MessagesInboxPage() {
                 )}
                 {thread.role === 'host' && (
                     <Link
-                        href="/dashboard/bookings"
+                        href={'/dashboard/bookings/' + thread.booking.id}
                         className="flex items-center gap-1.5 text-sm text-slate-600 hover:text-slate-900"
                     >
                         <ExternalLink className="w-3.5 h-3.5" />
                         Manage this booking
+                    </Link>
+                )}
+                {(thread.role === 'guest' || thread.role === 'companion') && (
+                    <Link
+                        href="/trips"
+                        className="flex items-center gap-1.5 text-sm text-slate-600 hover:text-slate-900"
+                    >
+                        <ExternalLink className="w-3.5 h-3.5" />
+                        Your trip
                     </Link>
                 )}
             </div>
@@ -911,6 +982,7 @@ export default function MessagesInboxPage() {
                                         setMobileOpen(true);
                                         setShowDetails(false);
                                     }}
+                                    onNoReplyNeeded={() => markNoReplyNeeded(c.bookingId)}
                                     onStar={() => toggleStar(c)}
                                     onArchive={() => toggleArchive(c)}
                                     onMarkUnread={() => markUnread(c)}
@@ -1028,6 +1100,8 @@ export default function MessagesInboxPage() {
                                             </div>
                                         );
                                     })}
+
+                                    {noReplyLink}
                                 </div>
 
                                 <div className="p-3 border-t">

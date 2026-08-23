@@ -28,3 +28,34 @@ export function isArchived(
     // the day one of them arrives with a different timezone offset.
     return new Date(lastInboundAt).getTime() <= new Date(archivedAt).getTime();
 }
+
+// Whether a conversation is waiting on this person for an answer.
+//
+// The rule on its own is simply "the newest message in the thread was not
+// mine". That is the honest signal, and it is also why the count needed
+// something more: a thread that ends "thanks!" needs no answer, so nothing
+// will ever clear it, and a needs-reply count that includes half a dozen of
+// those is a count people learn to ignore.
+//
+// So "no reply needed" is an acknowledgement rather than a dismissal, and it
+// is worked out the same way archiving is: it holds only while nothing newer
+// has been said. A guest who follows "thanks!" with a real question puts the
+// thread straight back in the count, with nothing to write and no trigger on
+// message insert that could be missed.
+//
+// Compared against the newest message rather than the newest one addressed to
+// this person, because a co-host is not the recipient_id on anything — those
+// messages are addressed to the owner — and would otherwise have no timestamp
+// to compare against at all.
+export function needsReply(
+    lastMessage: { sender_id: string; created_at: string } | null | undefined,
+    userId: string,
+    noReplyNeededAt?: string | null
+): boolean {
+    if (!lastMessage) return false;
+    if (lastMessage.sender_id === userId) return false;
+    if (!noReplyNeededAt) return true;
+
+    // Parsed rather than compared as strings, for the reason given above.
+    return new Date(lastMessage.created_at).getTime() > new Date(noReplyNeededAt).getTime();
+}

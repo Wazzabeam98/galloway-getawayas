@@ -135,11 +135,23 @@ export default async function UpcomingTrip() {
                         )}
                     </div>
 
+                    {/* A link, not a label. Somebody reading this line is
+                        usually reading it because they are wondering whether
+                        to cancel, and the answer to that was three screens
+                        away. It opens the same confirmation panel on /trips
+                        that the Cancel booking link there opens — the one
+                        place that says what the refund would actually be. */}
                     {canStillCancelFree && (
                         <div className="mt-5 text-sm">
-                            <span className={freeDaysLeft <= 3 ? 'text-amber-700' : 'text-emerald-700'}>
+                            <Link
+                                href={'/trips?cancel=' + booking.id + '#trip-' + booking.id}
+                                className={
+                                    'underline underline-offset-2 hover:no-underline ' +
+                                    (freeDaysLeft <= 3 ? 'text-amber-700' : 'text-emerald-700')
+                                }
+                            >
                                 Free cancellation until {formatUk(freeUntil as Date)}
-                            </span>
+                            </Link>
                             {freeDaysLeft <= 3 && (
                                 <span className="text-stone-500">
                                     {' '}&middot;{' '}
