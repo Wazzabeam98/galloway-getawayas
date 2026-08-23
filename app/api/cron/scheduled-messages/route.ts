@@ -61,7 +61,11 @@ export async function GET(request: Request) {
     try {
         const { data: templates, error: templateError } = await admin
             .from('message_templates')
-            .select('user_id, template_type, body, enabled, anchor, days_offset, send_hour, minutes_after, hours_after, hours_before, listing_ids')
+            // `id` is not optional here: the scope lookup below keys on it, and
+            // without it every template silently reads as the catch-all — which
+            // is the wrong door code going to the wrong cottage. `created_at`
+            // is what breaks a tie deterministically.
+            .select('id, user_id, template_type, body, enabled, anchor, days_offset, send_hour, minutes_after, hours_after, hours_before, created_at')
             .eq('enabled', true);
 
         // A failed read here would leave `templates` empty and the run would

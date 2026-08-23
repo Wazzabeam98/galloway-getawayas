@@ -288,6 +288,9 @@ const TEMPLATE_TYPES: TemplateDef[] = [
 interface Template {
     id: string;
     template_type: string;
+    // The host's own label for this one. Never sent, never shown to a guest —
+    // with three check-in messages the kind is no longer a name.
+    name: string;
     body: string;
     enabled: boolean;
     anchor: string;
@@ -338,7 +341,7 @@ export default function MessageTemplates() {
         const [tplRes, listRes] = await Promise.all([
             supabase
                 .from('message_templates')
-                .select('id, template_type, body, enabled, anchor, days_offset, send_hour, minutes_after, hours_after, hours_before, created_at')
+                .select('id, template_type, name, body, enabled, anchor, days_offset, send_hour, minutes_after, hours_after, hours_before, created_at')
                 .eq('user_id', session.user.id),
             supabase
                 .from('listings')
@@ -364,6 +367,7 @@ export default function MessageTemplates() {
 
         setRows(tpls.map((t: any) => ({
             ...t,
+            name: t.name || defOf(t.template_type).label,
             anchor: t.anchor || 'none',
             days_offset: t.days_offset || 0,
             send_hour: t.send_hour ?? 9,
@@ -402,6 +406,7 @@ export default function MessageTemplates() {
         const { error } = await supabase
             .from('message_templates')
             .update({
+                name: (next.name || '').trim() || defOf(next.template_type).label,
                 body: next.body,
                 enabled: next.enabled,
                 anchor: next.anchor,
@@ -432,6 +437,7 @@ export default function MessageTemplates() {
             .insert({
                 user_id: userId,
                 template_type: type,
+                name: def.label,
                 body: GREETING,
                 enabled: false,
                 anchor: def.family === 'booking' ? 'booking' : def.family === 'settled' ? 'after_check_in' : def.family === 'checkout' ? 'before_check_out' : 'check_in',
@@ -444,7 +450,7 @@ export default function MessageTemplates() {
                 // deployed and reads it. Scope proper lives in the join table.
                 listing_ids: [],
             })
-            .select('id, template_type, body, enabled, anchor, days_offset, send_hour, minutes_after, hours_after, hours_before, created_at')
+            .select('id, template_type, name, body, enabled, anchor, days_offset, send_hour, minutes_after, hours_after, hours_before, created_at')
             .maybeSingle();
 
         setBusyId(null);
@@ -468,6 +474,9 @@ export default function MessageTemplates() {
             .insert({
                 user_id: userId,
                 template_type: source.template_type,
+                // Named properly once it is scoped — see saveScope. Until
+                // then it must not read as a second copy of the original.
+                name: defOf(source.template_type).label + ' (copy)',
                 body: source.body,
                 enabled: false,
                 anchor: source.anchor,
@@ -478,7 +487,7 @@ export default function MessageTemplates() {
                 hours_before: source.hours_before,
                 listing_ids: [],
             })
-            .select('id, template_type, body, enabled, anchor, days_offset, send_hour, minutes_after, hours_after, hours_before, created_at')
+            .select('id, template_type, name, body, enabled, anchor, days_offset, send_hour, minutes_after, hours_after, hours_before, created_at')
             .maybeSingle();
 
         setBusyId(null);
@@ -557,7 +566,23 @@ export default function MessageTemplates() {
             return;
         }
 
-        patchLocal(id, { listingIds: after });
+        // Name it after the property, which is the point of duplicating one.
+        // Only when the name is still one we generated: a host who has typed
+        // their own must keep it.
+        const label = defOf(current.template_type).label;
+        const autoNamed = current.name === label || current.name === label + ' (copy)';
+        let renamed = current.name;
+
+        if (autoNamed && after.length === 1) {
+            const l = listings.filter((x) => x.id === after[0])[0];
+            if (l) renamed = label + ' — ' + l.title;
+        }
+
+        patchLocal(id, { listingIds: after, name: renamed });
+
+        if (renamed !== current.name) {
+            await supabase.from('message_templates').update({ name: renamed }).eq('id', id);
+        }
         // listing_ids is vestigial but still read by the currently deployed
         // code until this ships, so it is kept in step rather than left to rot.
         await supabase.from('message_templates').update({ listing_ids: after }).eq('id', id);
@@ -616,7 +641,8 @@ export default function MessageTemplates() {
                         Written once, sent automatically at the right moment. Anything highlighted in
                         blue is swapped for the real thing when the message goes out. A message can
                         cover all your properties, or just some &mdash; so a cottage with a different
-                        door and a different lockbox can have its own.
+                        door and a different lockbox can have its own. The name at the top of each
+                        is for this list only; a guest never sees it.
                     </p>
                 </div>
 
@@ -671,6 +697,16 @@ export default function MessageTemplates() {
                                     const busy = busyId === tpl.id;
                                     return (
                                         <div key={tpl.id} className="border rounded-xl p-4">
+                                            <input
+                                                type="text"
+                                                value={tpl.name}
+                                                onChange={(e) => patchLocal(tpl.id, { name: e.target.value })}
+                                                onBlur={() => save(tpl.id)}
+                                                placeholder={def.label}
+                                                aria-label="Name for your own list"
+                                                className="w-full font-semibold text-slate-900 bg-transparent border-0 border-b border-transparent hover:border-slate-200 focus:border-slate-900 focus:outline-none mb-3 px-0 py-1"
+                                            />
+
                                             <div className="flex items-center justify-between gap-3 flex-wrap mb-3">
                                                 <button
                                                     type="button"

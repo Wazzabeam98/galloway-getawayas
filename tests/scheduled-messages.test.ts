@@ -373,3 +373,151 @@ test('one template left open to all listings still gives each property its own c
     assert.equal(usesLockboxCode('code: {lockbox_code}'), true);
     assert.equal(usesLockboxCode('no code here'), false);
 });
+
+/* --------------------------------- scoped templates, through the whole run */
+
+// The bug this covers: the run selected template columns without `id`, so the
+// scope lookup keyed on undefined, came back empty, and every template read as
+// the catch-all. Scoping was silently ignored — one cottage's door code going
+// to all of them, which is the exact failure the join table exists to prevent.
+// Nothing caught it because the earlier route test handed templates in
+// directly rather than letting the query shape them.
+
+function loadScopedRun(opts: { templates: any[]; scopes: any[]; bookings: any[]; listings: any[] }) {
+    const messages: any[] = [];
+    const selects: Record<string, string> = {};
+
+    function builder(table: string) {
+        const state: any = { ops: [] };
+        const chain: any = new Proxy({}, {
+            get(_t, prop: string) {
+                if (prop === 'then') {
+                    const sel = state.ops.find((o: any) => o.op === 'select');
+                    if (sel && !selects[table]) selects[table] = String(sel.args[0]);
+
+                    if (table === 'message_templates') return (r: any) => r({ data: opts.templates, error: null });
+                    if (table === 'message_template_listings') {
+                        // Behave like the real thing: only rows whose
+                        // template_id was actually asked for.
+                        const inOp = state.ops.find((o: any) => o.op === 'in');
+                        const wanted = inOp ? inOp.args[1] : [];
+                        return (r: any) => r({
+                            data: opts.scopes.filter((s) => wanted.indexOf(s.template_id) !== -1),
+                            error: null,
+                        });
+                    }
+                    if (table === 'bookings') return (r: any) => r({ data: opts.bookings, error: null });
+                    if (table === 'listings') return (r: any) => r({ data: opts.listings, error: null });
+                    if (table === 'profiles') return (r: any) => r({ data: [{ id: 'g1', full_name: 'Alex Guest' }], error: null });
+                    if (table === 'messages') {
+                        const ins = state.ops.find((o: any) => o.op === 'insert');
+                        if (ins) messages.push(ins.args[0]);
+                        return (r: any) => r({ data: null, error: null });
+                    }
+                    return (r: any) => r({ data: [], error: null });
+                }
+                return (...args: any[]) => { state.ops.push({ op: prop, args }); return chain; };
+            },
+        });
+        return chain;
+    }
+
+    process.env.CRON_SECRET = 'test-secret';
+    process.env.NEXT_PUBLIC_SUPABASE_URL = 'http://example.invalid';
+    process.env.SUPABASE_SERVICE_ROLE_KEY = 'test-service-key';
+
+    stubModule('@/lib/supabaseAdmin', { adminClient: () => ({ from: (t: string) => builder(t) }) });
+    stubModule('next/server', {
+        NextResponse: { json: (b: any, i?: any) => ({ body: b, status: (i && i.status) || 200 }) },
+    });
+    stubModule('@/lib/logError', { logError: async () => undefined });
+
+    clearModule('@/app/api/cron/scheduled-messages/route');
+    return { route: require('../app/api/cron/scheduled-messages/route'), messages, selects };
+}
+
+const scopedTemplate = (id: string, name: string, body: string) => ({
+    id, user_id: 'h1', template_type: 'checkin_details', name,
+    body, enabled: true, anchor: 'check_in', days_offset: 3, send_hour: 9,
+    minutes_after: 0, hours_after: 0, hours_before: 0,
+    created_at: '2026-01-01T00:00:00Z',
+});
+
+// Arriving in two days, with a template set to send three days before — so
+// it came due yesterday and is still inside its window. Whatever the hour the
+// suite happens to run at.
+const arrivingSoon = (id: string, listingId: string) => {
+    const d = new Date(Date.now() + 2 * 86400000).toISOString().split('T')[0];
+    const out = new Date(Date.now() + 5 * 86400000).toISOString().split('T')[0];
+    return {
+        id, host_id: 'h1', guest_id: 'g1', listing_id: listingId,
+        check_in: d, check_out: out, status: 'confirmed',
+        confirmed_at: '2026-01-01T00:00:00Z',
+    };
+};
+
+test('each property gets its own scoped message, not the first one found', async () => {
+    const { route, messages } = loadScopedRun({
+        templates: [
+            scopedTemplate('t-harbour', 'Check-in — Harbour', 'Harbour: blue door.'),
+            scopedTemplate('t-town', 'Check-in — Townhouse', 'Townhouse: side gate.'),
+        ],
+        scopes: [
+            { template_id: 't-harbour', listing_id: 'harbour' },
+            { template_id: 't-town', listing_id: 'townhouse' },
+        ],
+        bookings: [arrivingSoon('b1', 'harbour'), arrivingSoon('b2', 'townhouse')],
+        listings: [
+            { id: 'harbour', title: 'Harbour Cottage', check_in_time: '15:00:00', check_out_time: '11:00:00' },
+            { id: 'townhouse', title: 'The Townhouse', check_in_time: '15:00:00', check_out_time: '11:00:00' },
+        ],
+    });
+
+    await route.GET(new Request('http://example.invalid/x', {
+        headers: { authorization: 'Bearer test-secret' },
+    }));
+
+    assert.equal(messages.length, 2, 'one each, not one template to both');
+    const forHarbour = messages.filter((m) => m.booking_id === 'b1')[0];
+    const forTown = messages.filter((m) => m.booking_id === 'b2')[0];
+
+    assert.match(forHarbour.body, /blue door/, 'the harbour guest gets the harbour instructions');
+    assert.match(forTown.body, /side gate/, 'and the townhouse guest gets theirs');
+    assert.doesNotMatch(forHarbour.body, /side gate/, 'never another property’s');
+    // Both directions. With the scope lookup broken, every template reads as
+    // the catch-all and one of them wins for both bookings — which the
+    // assertion above can miss, depending on which one the tie-break picks.
+    assert.doesNotMatch(forTown.body, /blue door/, 'nor the other way round');
+});
+
+test('the template query asks for the id the scope lookup depends on', async () => {
+    const { route, selects } = loadScopedRun({
+        templates: [scopedTemplate('t1', 'x', 'body')],
+        scopes: [], bookings: [], listings: [],
+    });
+    await route.GET(new Request('http://example.invalid/x', {
+        headers: { authorization: 'Bearer test-secret' },
+    }));
+
+    assert.match(selects['message_templates'], /\bid\b/,
+        'without id the scope lookup keys on undefined and every template reads as the catch-all');
+    assert.match(selects['message_templates'], /created_at/, 'and the tie-break needs it');
+});
+
+// The name is the host's label for their own list.
+test('the host’s name for a message is never read on the send path', async () => {
+    const { route, messages, selects } = loadScopedRun({
+        templates: [scopedTemplate('t1', 'SECRET INTERNAL LABEL', 'Hi {guest_name}, see you soon.')],
+        scopes: [],
+        bookings: [arrivingSoon('b1', 'harbour')],
+        listings: [{ id: 'harbour', title: 'Harbour Cottage', check_in_time: '15:00:00', check_out_time: '11:00:00' }],
+    });
+
+    await route.GET(new Request('http://example.invalid/x', {
+        headers: { authorization: 'Bearer test-secret' },
+    }));
+
+    assert.equal(messages.length, 1);
+    assert.doesNotMatch(messages[0].body, /SECRET INTERNAL LABEL/, 'a guest must never see it');
+    assert.doesNotMatch(selects['message_templates'], /\bname\b/, 'and the send path does not even ask for it');
+});
