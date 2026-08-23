@@ -86,7 +86,12 @@ export default function LockboxCode({ listingId }: { listingId: string }) {
                     type={show ? 'text' : 'password'}
                     value={code}
                     onChange={(e) => setCode(e.target.value)}
-                    placeholder="e.g. 1860"
+                    // Never a real code, not even as an example. This used to
+                    // show one, lifted from a host's own template while writing
+                    // the field — which put a live door code into the page
+                    // source of the listing editor. Including it in the comment
+                    // explaining the fix would have done exactly the same.
+                    placeholder="Enter the code"
                     autoComplete="off"
                     className="w-40 border rounded-lg p-2 text-sm outline-none focus:border-slate-900"
                 />
