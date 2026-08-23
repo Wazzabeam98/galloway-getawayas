@@ -584,11 +584,34 @@ export default function AccountSettings() {
         }
     };
 
+    // The page used to spend its loading second as a centred spinner and then
+    // swap to the two-column grid, so everything on it appeared in the middle
+    // of the screen and jumped right the moment the fetch landed. The shell is
+    // the same either way, so draw it straight away and leave the waiting to
+    // the content column: nothing moves when the answer arrives.
     if (loading) {
         return (
-            <div className="flex flex-col items-center justify-center min-h-[70vh] space-y-4">
-                <Logo />
-                <p className="text-slate-500 animate-pulse">Loading your account...</p>
+            <div className="max-w-5xl mx-auto px-6 py-10 w-full">
+                <h1 className="text-3xl font-extrabold text-slate-900 mb-8">Account settings</h1>
+
+                <div className="grid grid-cols-1 md:grid-cols-[240px_1fr] gap-10">
+                    <div className="space-y-1">
+                        {SECTIONS.map(({ key, label, icon: Icon }) => (
+                            <div
+                                key={key}
+                                className="w-full flex items-center px-3 py-2.5 rounded-xl text-sm font-medium text-slate-300"
+                            >
+                                <Icon className="w-4 h-4 mr-3" /> {label}
+                            </div>
+                        ))}
+                    </div>
+
+                    <div className="animate-pulse">
+                        <div className="h-8 w-56 bg-slate-100 rounded-lg mb-6" />
+                        <div className="h-24 bg-slate-100 rounded-2xl mb-5" />
+                        <div className="h-64 bg-slate-100 rounded-2xl" />
+                    </div>
+                </div>
             </div>
         );
     }

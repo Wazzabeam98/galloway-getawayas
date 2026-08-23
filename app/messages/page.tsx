@@ -74,22 +74,48 @@ export default function MessagesInboxPage() {
                 .order('created_at', { ascending: true });
             setQuickReplies(replies || []);
 
-            // Open whichever conversation is waiting on them, so the page
-            // lands on something useful rather than an empty pane.
+            // Arriving from a Message guest button, which names the booking
+            // it wants: /messages?b=<bookingId>, and optionally a draft to
+            // put in the composer. Every booking has a conversation here —
+            // the list is built from bookings, not from messages — so a
+            // named one is always found.
+            const params = new URLSearchParams(window.location.search);
+            const wanted = params.get('b');
+            const draft = params.get('draft');
+            if (draft) setText(draft);
+
+            const asked = wanted
+                ? convos.find((c: any) => c.bookingId === wanted)
+                : null;
+
+            // Something archived is out of the inbox, so the row for it would
+            // not be in the list beside the thread. Show the archive instead
+            // of an open conversation with nothing selected next to it.
+            if (asked && asked.archived) setFilter('archived');
+
+            // Otherwise open whichever conversation is waiting on them, so
+            // the page lands on something useful rather than an empty pane.
             const first =
+                asked ||
                 convos.find((c: any) => c.unread > 0) ||
                 convos.find((c: any) => c.needsReply) ||
                 convos[0];
 
             // Pre-selects for the desktop's middle pane. mobileOpen stays
-            // false, so a phone still lands on the list.
+            // false unless they asked for this one by name, so a phone lands
+            // on the list — but lands on the conversation they clicked.
             if (first) {
-                // Marking read follows somebody choosing a conversation, not
-                // the page choosing one for them. Without this, marking a
-                // conversation unread and reloading the page would land on it
-                // and quietly mark it read again, which is the one thing the
-                // action exists to prevent.
-                skipMarkRead.current = true;
+                if (asked) {
+                    setMobileOpen(true);
+                } else {
+                    // Marking read follows somebody choosing a conversation,
+                    // not the page choosing one for them. Without this,
+                    // marking a conversation unread and reloading the page
+                    // would land on it and quietly mark it read again, which
+                    // is the one thing the action exists to prevent. Asking
+                    // for one by name is them choosing it, so it is exempt.
+                    skipMarkRead.current = true;
+                }
                 setActiveId(first.bookingId);
             }
 

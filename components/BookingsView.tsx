@@ -155,7 +155,7 @@ export default function BookingsView({
                                 <Link href={'/dashboard/bookings/' + booking.id} className="text-xs font-semibold text-slate-500 underline hover:text-slate-800">
                                     Full details
                                 </Link>
-                                <Link href={`/messages/${booking.id}`} className="text-xs font-semibold text-slate-500 underline hover:text-slate-800">
+                                <Link href={`/messages?b=${booking.id}`} className="text-xs font-semibold text-slate-500 underline hover:text-slate-800">
                                     Message guest
                                 </Link>
                             </div>

@@ -442,7 +442,7 @@ export default async function BookingDetail({ params }: { params: { id: string }
                 <Card title="What you can do">
                     <div className="flex flex-wrap gap-3 pt-1">
                         <Link
-                            href={'/messages/' + booking.id}
+                            href={'/messages?b=' + booking.id}
                             className="inline-flex items-center gap-2 px-4 py-2 border border-slate-300 hover:border-slate-900 text-slate-800 text-sm font-semibold rounded-lg transition"
                         >
                             <MessageSquare className="w-4 h-4" />
@@ -451,7 +451,7 @@ export default async function BookingDetail({ params }: { params: { id: string }
 
                         {isOwner && booking.status === 'confirmed' && !ended && (
                             <Link
-                                href={'/messages/' + booking.id + '?draft=' + encodeURIComponent(askToCancelDraft)}
+                                href={'/messages?b=' + booking.id + '&draft=' + encodeURIComponent(askToCancelDraft)}
                                 className="inline-flex items-center gap-2 px-4 py-2 border border-slate-300 hover:border-slate-900 text-slate-800 text-sm font-semibold rounded-lg transition"
                             >
                                 Ask the guest to cancel

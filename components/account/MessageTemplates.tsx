@@ -578,8 +578,17 @@ export default function MessageTemplates() {
             .sort((a, b) => String(a.created_at || '') < String(b.created_at || '') ? -1 : 1),
     }));
 
+    // Roughly the shape of what is about to arrive, so the rest of the
+    // Messaging section does not slide up the page when it does.
     if (loading) {
-        return <p className="text-sm text-slate-400">Loading your messages…</p>;
+        return (
+            <div className="animate-pulse mb-10">
+                <div className="h-5 w-48 bg-slate-100 rounded mb-3" />
+                <div className="h-3 w-full max-w-xl bg-slate-100 rounded mb-2" />
+                <div className="h-3 w-2/3 max-w-md bg-slate-100 rounded mb-6" />
+                <div className="h-40 bg-slate-100 rounded-2xl" />
+            </div>
+        );
     }
 
     return (

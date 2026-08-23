@@ -221,7 +221,7 @@ export default async function EarningsPage({ searchParams }: { searchParams?: { 
                 <EarningsDateFilter from={from} to={to} />
             </div>
             <p className="text-slate-500 mb-8">
-                {new Date(from).toLocaleDateString('en-GB', { day: 'numeric', month: 'short', year: 'numeric' })} – {new Date(to).toLocaleDateString('en-GB', { day: 'numeric', month: 'short', year: 'numeric' })} · after your host fee
+                {new Date(from).toLocaleDateString('en-GB', { day: 'numeric', month: 'short', year: 'numeric' })} – {new Date(to).toLocaleDateString('en-GB', { day: 'numeric', month: 'short', year: 'numeric' })}
             </p>
 
             <div className="grid grid-cols-2 md:grid-cols-3 gap-4 mb-4">
@@ -398,6 +398,11 @@ export default async function EarningsPage({ searchParams }: { searchParams?: { 
                     </div>
                 )}
             </div>
+
+            {/* Said once, at the bottom, rather than beside every figure. */}
+            <p className="text-xs text-slate-400 mt-6">
+                All figures on this page are after the {effectivePercent}% platform fee.
+            </p>
         </div>
     );
 }

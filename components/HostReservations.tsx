@@ -227,18 +227,50 @@ export default async function HostReservations() {
                                 </div>
 
                                 {showMoney && (
-                                    <div className="mt-5 pt-5 border-t border-stone-100">
+                                    <div className="relative mt-5 pt-5 border-t border-stone-100">
+                                        {/* What the host is paid, framed by the
+                                            stay rather than by the fee. The
+                                            commission is a fact about this
+                                            money, not the headline: a host
+                                            reading their own home page wants
+                                            to know what is coming, and can
+                                            open the sum if they want it. */}
                                         <div className="text-lg font-semibold text-stone-900">
                                             &pound;{earns.toFixed(2)}
                                             <span className="text-sm font-normal text-stone-500">
-                                                {' '}after your {rate}% fee
+                                                {' '}for {nights} {nights === 1 ? 'night' : 'nights'}
                                             </span>
                                         </div>
                                         <div className="text-sm text-stone-500 mt-1">
+                                            {/* "Paid 27 November" read as the day
+                                                the guest paid. It is the day the
+                                                host is paid, which is the day
+                                                after check-in. */}
                                             {booking.status === 'pending'
-                                                ? 'If you confirm, paid the day after check-in'
-                                                : 'Paid ' + formatUk(paysOn)}
+                                                ? 'If you confirm, it reaches you the day after check-in'
+                                                : 'Reaches you ' + formatUk(paysOn) + ', the day after check-in'}
                                         </div>
+
+                                        <details className="group mt-3">
+                                            <summary className="text-sm text-stone-500 underline cursor-pointer list-none w-fit hover:text-stone-800">
+                                                <span className="group-open:hidden">How that&apos;s worked out</span>
+                                                <span className="hidden group-open:inline">Hide the breakdown</span>
+                                            </summary>
+                                            <div className="mt-2 text-sm space-y-1">
+                                                <div className="flex justify-between gap-6 text-stone-600">
+                                                    <span>Guest pays</span>
+                                                    <span>&pound;{grossDue.toFixed(2)}</span>
+                                                </div>
+                                                <div className="flex justify-between gap-6 text-stone-600">
+                                                    <span>Our fee ({rate}%)</span>
+                                                    <span>&minus; &pound;{(Math.round((grossDue - earns) * 100) / 100).toFixed(2)}</span>
+                                                </div>
+                                                <div className="flex justify-between gap-6 font-semibold text-stone-900 pt-1 border-t border-stone-100">
+                                                    <span>You get</span>
+                                                    <span>&pound;{earns.toFixed(2)}</span>
+                                                </div>
+                                            </div>
+                                        </details>
                                     </div>
                                 )}
 
@@ -288,7 +320,7 @@ export default async function HostReservations() {
                                         The booking
                                     </Link>
                                     <Link
-                                        href={'/messages/' + booking.id}
+                                        href={'/messages?b=' + booking.id}
                                         className="inline-flex items-center gap-2 px-6 py-3 border border-stone-300 hover:border-stone-900 text-stone-800 text-sm font-semibold rounded-xl transition"
                                     >
                                         <MessageSquare className="w-4 h-4" />
