@@ -461,53 +461,65 @@ export default function Hero() {
     </>
   );
 
-  // A row in the mobile panel: label above the current value, the whole thing
-  // tappable, and tall enough to hit with a thumb.
-  const mobileRow = (
+  // One cell of the 2x2 grid. Label and value share a line, so a cell is a
+  // single line tall whatever is in it — the card cannot grow as choices are
+  // made. A value too long for half the card width is cut with an ellipsis
+  // rather than wrapping, which is what `truncate` plus `min-w-0` buys: the
+  // flex child is allowed to be narrower than its text, so the ellipsis is
+  // reachable. Without `min-w-0` a flex child refuses to shrink below its
+  // content and the cell would push the grid wider instead.
+  const gridCell = (
     key: 'where' | 'when' | 'who',
     label: string,
     chosen: string,
-    body: React.ReactNode,
+    edges: string,
   ) => {
     const open = activePopover === key;
     return (
-      <div>
-        <button
-          type="button"
-          aria-expanded={open}
-          onClick={() => setActivePopover(open ? null : key)}
-          className="w-full min-h-[64px] px-5 py-3 flex items-center justify-between text-left"
-        >
-          <span className="min-w-0">
-            <span className="block text-[10px] font-bold tracking-wider uppercase text-stone-700">
-              {label}
-            </span>
-            {/* The slot is always here, filled or not, so the rows keep
-                the same height and the labels stay on one line as choices
-                are made. Empty until the guest picks something. */}
-            <span className="block min-h-[1.5rem] text-base font-medium truncate text-stone-900">
-              {chosen}
-            </span>
-          </span>
-          <svg
-            className={`w-5 h-5 shrink-0 text-stone-400 transition-transform ${
-              open ? 'rotate-90' : ''
-            }`}
-            fill="none"
-            stroke="currentColor"
-            viewBox="0 0 24 24"
-          >
-            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5l7 7-7 7" />
-          </svg>
-        </button>
-        {open && <div className="px-4 pb-5">{body}</div>}
-      </div>
+      <button
+        type="button"
+        aria-expanded={open}
+        onClick={() => setActivePopover(open ? null : key)}
+        className={`min-h-[56px] min-w-0 px-4 py-3 flex items-baseline gap-2 text-left transition ${edges} ${
+          open ? 'bg-stone-50' : 'bg-white'
+        }`}
+      >
+        <span className="shrink-0 text-[10px] font-bold tracking-wider uppercase text-stone-700">
+          {label}
+        </span>
+        <span className="min-w-0 flex-1 truncate text-sm font-medium text-stone-900">
+          {chosen}
+        </span>
+      </button>
     );
   };
 
+  // Whichever cell is open, its control opens underneath the grid across the
+  // full width of the card. Putting it inside a cell would stretch that cell
+  // and pull the grid out of shape.
+  const openContent =
+    activePopover === 'where' ? (
+      <select
+        value={location}
+        onChange={(e) => setLocation(e.target.value)}
+        aria-label="Where"
+        className="w-full rounded-xl border border-stone-300 bg-white px-4 py-3 text-base font-medium text-stone-900 focus:outline-none focus:ring-2 focus:ring-emerald-700"
+      >
+        {LOCATIONS.map((l) => (
+          <option key={l.value} value={l.value}>
+            {l.label}
+          </option>
+        ))}
+      </select>
+    ) : activePopover === 'when' ? (
+      whenContent('mobile')
+    ) : activePopover === 'who' ? (
+      guestContent('mobile')
+    ) : null;
+
   return (
     <div
-      className="relative z-40 w-full min-h-[460px] md:h-[500px] py-10 md:py-0 flex items-center justify-center bg-stone-600 text-white overflow-visible"
+      className="relative z-40 w-full min-h-[460px] md:h-[500px] py-10 md:py-0 flex items-stretch md:items-center justify-center bg-stone-600 text-white overflow-visible"
       ref={heroRef}
     >
       {/* Rotating background images */}
@@ -570,42 +582,31 @@ export default function Hero() {
           Book direct for our best rate guarantee & lower booking fees
         </p>
 
-        {/* Stacked search — small screens only. The same three controls as
-            the desktop bar, one per row instead of three across, because
-            three columns and a button do not fit across 375px. Nothing about
-            how any of them work changes: same towns, same date picker, same
-            counters, same submit. */}
-        <div className="md:hidden w-full max-w-md text-stone-800">
-          <div className="bg-white rounded-3xl shadow-2xl border border-stone-100 overflow-hidden divide-y divide-stone-200">
-            {mobileRow(
-              'where',
-              'Where',
-              whereChosen,
-              <select
-                value={location}
-                onChange={(e) => setLocation(e.target.value)}
-                aria-label="Where"
-                className="w-full rounded-xl border border-stone-300 bg-white px-4 py-3 text-base font-medium text-stone-900 focus:outline-none focus:ring-2 focus:ring-emerald-700"
+        {/* Compact search — small screens only. Two by two: Where and When
+            across the top, Who and Search underneath. `mt-auto` drops it to
+            the bottom of the hero so the photo is clear above it. Same three
+            controls as the desktop bar, and nothing about how they work
+            changes. */}
+        <div className="md:hidden mt-auto w-full max-w-md text-stone-800">
+          <div className="bg-white rounded-3xl shadow-2xl border border-stone-100 overflow-hidden">
+            <div className="grid grid-cols-2">
+              {gridCell('where', 'Where', whereChosen, 'border-r border-b border-stone-200')}
+              {gridCell('when', 'When', whenChosen, 'border-b border-stone-200')}
+              {gridCell('who', 'Who', guestChosen, 'border-r border-stone-200')}
+              <button
+                type="button"
+                onClick={runSearch}
+                className="min-h-[56px] bg-emerald-700 hover:bg-emerald-800 text-white flex items-center justify-center gap-2 font-semibold transition"
               >
-                {LOCATIONS.map((l) => (
-                  <option key={l.value} value={l.value}>
-                    {l.label}
-                  </option>
-                ))}
-              </select>,
-            )}
-            {mobileRow('when', 'When', whenChosen, whenContent('mobile'))}
-            {mobileRow('who', 'Who', guestChosen, guestContent('mobile'))}
-          </div>
+                {searchIcon('w-4 h-4')}
+                Search
+              </button>
+            </div>
 
-          <button
-            type="button"
-            onClick={runSearch}
-            className="mt-3 w-full bg-emerald-700 hover:bg-emerald-800 text-white rounded-full py-4 flex items-center justify-center gap-2 font-semibold transition shadow-lg"
-          >
-            {searchIcon('w-5 h-5')}
-            Search
-          </button>
+            {openContent && (
+              <div className="border-t border-stone-200 px-4 py-4">{openContent}</div>
+            )}
+          </div>
         </div>
 
         {/* Search Bar — desktop. Unchanged apart from being hidden on phones. */}
