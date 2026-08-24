@@ -234,6 +234,25 @@ export default function JoinAsProvider() {
             await supabase.from('service_areas').insert(rows);
         }
 
+        // Told last, once the row and its areas are both written, so the
+        // email describes what was actually saved rather than what was about
+        // to be. It cannot email us itself — lib/email holds the API key and
+        // must never reach the browser — so a route does it.
+        //
+        // Nothing here is shown to them if it fails. They have done their
+        // part; a problem reaching us is ours, and the route logs it.
+        if (submit) {
+            try {
+                await fetch('/api/services/submitted', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ id }),
+                });
+            } catch (err) {
+                // Deliberately swallowed — see above.
+            }
+        }
+
         setSaving(false);
 
         if (submit) {

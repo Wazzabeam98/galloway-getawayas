@@ -30,6 +30,14 @@ export const AUDIENCES = [
     { key: 'both', label: 'Both', hint: 'Sold to guests and to owners.' },
 ] as const;
 
+// Who they sell to, said the way the admin screen says it.
+export function audienceLabel(audience: string): string {
+    if (audience === 'both') return 'guests and owners';
+    if (audience === 'guest') return 'guests';
+    if (audience === 'host') return 'owners';
+    return 'not said';
+}
+
 // How long a new provider gets before anything is charged. Nothing is charged
 // during the trial at all — this only decides what the summary email says is
 // coming.
