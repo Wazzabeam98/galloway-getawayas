@@ -29,6 +29,7 @@ function load(options: {
     ownerId?: string;
     declinedAt?: string | null;
     areas?: any[];
+    approvedDigest?: string | null;
 } = {}) {
     const delivered = options.delivered !== false;
     const sent: any[] = [];
@@ -47,6 +48,10 @@ function load(options: {
         contact_phone: null,
         status: options.status || 'pending_review',
         declined_at: options.declinedAt === undefined ? null : options.declinedAt,
+        description: 'Changeover cleans for holiday cottages across the Stewartry.',
+        photos: ['providers/a.jpg'],
+        approved_digest: options.approvedDigest === undefined ? null : options.approvedDigest,
+        changes_pending_at: null,
     };
 
     const areas = options.areas === undefined
@@ -133,8 +138,8 @@ test('it carries enough to triage without opening the site', async () => {
     assert.match(html, /Kirkcudbright \+ 10 miles/, 'coverage, with the radius');
     assert.match(html, /Castle Douglas \+ 5 miles/, 'every area, not just the first');
     assert.match(html, /hello@solwaysparkle\.test/, 'how to reach them');
-    assert.match(html, /\[Open the queue\]\(http:\/\/example\.invalid\/admin\/providers\)/,
-        'a link straight to the queue');
+    assert.match(html, /\[Review application\]\(http:\/\/example\.invalid\/admin\/providers\)/,
+        'the button says what he is about to do, not the name of a page');
     assert.match(html, /48 hours/, 'what was promised');
 });
 
@@ -203,4 +208,62 @@ test('somebody else’s application cannot be announced', async () => {
 
     assert.equal(res.status, 403);
     assert.equal(sent.length, 0);
+});
+
+
+// ---------------------------------------------------------------------------
+// A live provider editing their shop window.
+//
+// Not the same job as an application: they are on the site either way, so it
+// is never urgent in the way a waiting business is — but it is still a job,
+// and nothing announced it before.
+// ---------------------------------------------------------------------------
+
+const STALE = 'business_name=Solway Sparkle|trade=sponge|description=Something else entirely.|audience=host|photos=providers/a.jpg';
+
+test('a live provider changing their description is announced', async () => {
+    const { route, sent } = load({ status: 'approved', approvedDigest: STALE });
+    const res: any = await route.POST(call());
+
+    assert.equal(res.body.emailed, true);
+    assert.equal(sent.length, 1, 'nothing announced this before');
+    assert.match(sent[0].subject, /Changes to look at/);
+});
+
+test('the alert names what changed, so it can be triaged from a phone', async () => {
+    const { route, sent } = load({ status: 'approved', approvedDigest: STALE });
+    await route.POST(call());
+
+    assert.match(sent[0].html, /has changed description/,
+        '"something changed" sends you to the site to find out; naming it does not');
+    assert.match(sent[0].html, /stayed on the site/, 'and says they did not vanish');
+    assert.match(sent[0].html, /\[Review the changes\]/);
+});
+
+test('a live provider who changed nothing reviewable is not announced', async () => {
+    // approved_digest matches the row exactly — a contact detail or a coverage
+    // area moved, and neither is anybody's business but theirs.
+    const { route, sent } = load({
+        status: 'approved',
+        approvedDigest: 'business_name=Solway Sparkle|trade=sponge|description=Changeover cleans for holiday cottages across the Stewartry.|audience=host|photos=providers/a.jpg',
+    });
+    const res: any = await route.POST(call());
+
+    assert.equal(sent.length, 0, 'this is the case that must stay quiet');
+    assert.equal(res.body.emailed, false);
+    assert.equal(res.body.skipped, 'nothing to look at');
+});
+
+test('a live provider approved before the digest existed is not announced', async () => {
+    const { route, sent } = load({ status: 'approved', approvedDigest: null });
+    await route.POST(call());
+    assert.equal(sent.length, 0, 'no baseline means no way to tell, and flagging everything is noise');
+});
+
+test('a changes alert that did not send is logged as such', async () => {
+    const { route, logged } = load({ status: 'approved', approvedDigest: STALE, delivered: false });
+    await route.POST(call());
+
+    assert.equal(logged.length, 1);
+    assert.equal(logged[0].detail.kind, 'changes');
 });

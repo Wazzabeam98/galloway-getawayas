@@ -4,7 +4,14 @@ import { NextResponse } from 'next/server';
 import { adminClient } from '@/lib/supabaseAdmin';
 import { sendEmail, emailLayout, escapeHtml, detailRows, button, SITE_URL } from '@/lib/email';
 import { logError } from '@/lib/logError';
-import { tradeLabel, audienceLabel, REVIEW_WITHIN_HOURS } from '@/lib/serviceProviders';
+import {
+    tradeLabel,
+    audienceLabel,
+    hasUnreviewedChanges,
+    changedFields,
+    fieldLabel,
+    REVIEW_WITHIN_HOURS,
+} from '@/lib/serviceProviders';
 
 export const dynamic = 'force-dynamic';
 
@@ -37,7 +44,7 @@ export async function POST(req: Request) {
 
         const { data: provider } = await admin
             .from('service_providers')
-            .select('id, owner_id, business_name, trade, audience, contact_email, contact_phone, status, declined_at')
+            .select('id, owner_id, business_name, trade, description, audience, photos, contact_email, contact_phone, status, declined_at, approved_digest, changes_pending_at')
             .eq('id', id)
             .maybeSingle();
 
@@ -51,10 +58,31 @@ export async function POST(req: Request) {
             return NextResponse.json({ ok: false, error: 'Not yours.' }, { status: 403 });
         }
 
-        // Only something actually waiting is worth announcing. A save that did
-        // not submit leaves the row as a draft and must not ring the bell.
-        if (provider.status !== 'pending_review') {
-            return NextResponse.json({ ok: true, emailed: false, skipped: 'not waiting' });
+        // Two things are worth announcing, and they are different jobs.
+        //
+        //   waiting   an application, new or sent back after a decline
+        //   changed   somebody already live has edited their shop window
+        //
+        // A save that did not submit leaves a draft, and a live provider who
+        // only fixed their phone number has changed nothing anybody needs to
+        // look at. Neither rings the bell.
+        const waiting = provider.status === 'pending_review';
+        const changed = hasUnreviewedChanges(provider);
+
+        if (!waiting && !changed) {
+            return NextResponse.json({ ok: true, emailed: false, skipped: 'nothing to look at' });
+        }
+
+        // Stamped server-side, so the queue has a time to sort by. It is only
+        // a convenience: the queue works out what has changed from the digest,
+        // which a provider cannot write, so declining to call this route wins
+        // nobody anything.
+        if (changed && !provider.changes_pending_at) {
+            await admin
+                .from('service_providers')
+                .update({ changes_pending_at: new Date().toISOString() })
+                .eq('id', id)
+                .eq('status', 'approved');
         }
 
         const { data: areas } = await admin
@@ -70,7 +98,7 @@ export async function POST(req: Request) {
         // the moment somebody has fixed what we asked for and is waiting on us
         // again. `declined_at` is not cleared when they send it back, so a
         // pending row that carries one has been round before.
-        const again = !!provider.declined_at;
+        const again = waiting && !!provider.declined_at;
 
         const name = escapeHtml(provider.business_name || 'A business');
 
@@ -86,22 +114,38 @@ export async function POST(req: Request) {
             return NextResponse.json({ ok: true, emailed: false });
         }
 
+        // Naming the fields, because "they changed something" sends you to the
+        // site to find out and "they changed the description" does not.
+        const edits = changed
+            ? changedFields(provider).map(fieldLabel).join(', ')
+            : '';
+
+        const subject = changed
+            ? 'Changes to look at: ' + (provider.business_name || 'a business')
+            : (again ? 'Sent back for review: ' : 'New business waiting: ')
+                + (provider.business_name || 'a business');
+
+        const opening = changed
+            ? '<p style="margin:0 0 16px;font-size:16px;"><strong>' + name + '</strong> is live and has changed '
+                + escapeHtml(edits || 'something') + '. They have stayed on the site — this is only for you to look at.</p>'
+            : '<p style="margin:0 0 16px;font-size:16px;"><strong>' + name + '</strong> '
+                + (again
+                    ? 'has changed what you asked about and sent it back.'
+                    : 'has applied to be listed.')
+                + ' You said you would decide within ' + REVIEW_WITHIN_HOURS + ' hours.</p>';
+
         const emailed = await sendEmail(
             to,
-            (again ? 'Sent back for review: ' : 'New business waiting: ') + (provider.business_name || 'a business'),
+            subject,
             emailLayout(
-                '<p style="margin:0 0 16px;font-size:16px;"><strong>' + name + '</strong> '
-                    + (again
-                        ? 'has changed what you asked about and sent it back.'
-                        : 'has applied to be listed.')
-                    + ' You said you would decide within ' + REVIEW_WITHIN_HOURS + ' hours.</p>'
+                opening
                     + detailRows([
                         { label: 'Category', value: escapeHtml(tradeLabel(String(provider.trade || ''))) },
                         { label: 'Sells to', value: escapeHtml(audienceLabel(String(provider.audience || ''))) },
                         { label: 'Covers', value: covers },
                         { label: 'Contact', value: escapeHtml(provider.contact_email || '—') },
                     ])
-                    + button(SITE_URL + '/admin/providers', 'Open the queue'),
+                    + button(SITE_URL + '/admin/providers', changed ? 'Review the changes' : 'Review application'),
                 'You are receiving this because you review businesses on Galloway Getaways.'
             )
         );
@@ -110,7 +154,7 @@ export async function POST(req: Request) {
             await logError('service-provider-submitted-email', {
                 provider: id,
                 to: to,
-                resubmission: again,
+                kind: changed ? 'changes' : (again ? 'resubmission' : 'new'),
             });
         }
 

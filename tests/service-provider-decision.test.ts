@@ -30,7 +30,13 @@ const PROVIDER_ID = 'prov-1';
 
 // `delivered` is what the stubbed sendEmail hands back — true for a send that
 // reached Resend, false for the preview environment with no API key.
-function load(options: { delivered?: boolean; isAdmin?: boolean; status?: string } = {}) {
+function load(options: {
+    delivered?: boolean;
+    isAdmin?: boolean;
+    status?: string;
+    approvedDigest?: string | null;
+    changesPendingAt?: string | null;
+} = {}) {
     const delivered = options.delivered !== false;
     const sent: any[] = [];
     const logged: any[] = [];
@@ -41,6 +47,12 @@ function load(options: { delivered?: boolean; isAdmin?: boolean; status?: string
         business_name: 'Solway Sparkle',
         contact_email: 'hello@solwaysparkle.test',
         status: options.status || 'pending_review',
+        trade: 'sponge',
+        description: 'Changeover cleans for holiday cottages across the Stewartry.',
+        audience: 'host',
+        photos: ['providers/a.jpg'],
+        approved_digest: options.approvedDigest === undefined ? null : options.approvedDigest,
+        changes_pending_at: options.changesPendingAt === undefined ? null : options.changesPendingAt,
     };
 
     function builder(table: string) {
@@ -214,4 +226,121 @@ test('a reason typed over several lines arrives as several lines', async () => {
 
     assert.match(html, /Two things\.<br>The photos are dark\.<br>The description is one word\./,
         'HTML collapses newlines, so they have to become <br> or the reason arrives as one line');
+});
+
+
+// ---------------------------------------------------------------------------
+// Deciding a live provider's edits.
+//
+// The rule the whole thing exists for: an edit must never take a live business
+// off the site. `status` used to do two jobs, so asking for another look meant
+// taking them down, and somebody fixing a typo vanished without knowing why.
+// ---------------------------------------------------------------------------
+
+const { reviewDigest } = require('../lib/serviceProviders');
+
+const CHANGED = 'stale-digest-from-before-the-edit';
+
+test('accepting a live provider’s changes leaves them live', async () => {
+    const { route, updates } = load({
+        status: 'approved', approvedDigest: CHANGED, changesPendingAt: '2026-08-25T09:00:00.000Z',
+    });
+    const res: any = await route.POST(call('approve_changes'));
+
+    assert.equal(res.status, 200);
+    assert.equal(updates.length, 1);
+    assert.equal(updates[0].patch.status, undefined,
+        'status must not be touched — they were live and they stay live');
+    assert.equal(updates[0].patch.changes_pending_at, null, 'and they leave the queue');
+});
+
+test('accepting changes moves the digest, so they do not come round again', async () => {
+    const { route, updates } = load({
+        status: 'approved', approvedDigest: CHANGED, changesPendingAt: '2026-08-25T09:00:00.000Z',
+    });
+    await route.POST(call('approve_changes'));
+
+    assert.notEqual(updates[0].patch.approved_digest, CHANGED);
+    assert.equal(typeof updates[0].patch.approved_digest, 'string');
+});
+
+test('turning changes down without hiding leaves the listing up', async () => {
+    const { route, updates } = load({
+        status: 'approved', approvedDigest: CHANGED, changesPendingAt: '2026-08-25T09:00:00.000Z',
+    });
+    const res: any = await route.POST(call('decline_changes', 'That is not what we listed you for.'));
+
+    assert.equal(res.status, 200);
+    assert.equal(updates[0].patch.status, undefined, 'not hidden unless asked');
+    assert.equal(updates[0].patch.review_note, 'That is not what we listed you for.');
+});
+
+test('turning changes down with hide takes them off the site', async () => {
+    const { route, updates } = load({
+        status: 'approved', approvedDigest: CHANGED, changesPendingAt: '2026-08-25T09:00:00.000Z',
+    });
+    const res: any = await route.POST(
+        new Request('http://example.invalid/api/admin/providers', {
+            method: 'POST',
+            headers: { 'content-type': 'application/json' },
+            body: JSON.stringify({ id: PROVIDER_ID, decision: 'decline_changes', note: 'No.', hide: true }),
+        })
+    );
+
+    assert.equal(res.status, 200);
+    assert.equal(updates[0].patch.status, 'hidden');
+});
+
+test('turning changes down still needs a reason', async () => {
+    const { route, updates } = load({
+        status: 'approved', approvedDigest: CHANGED, changesPendingAt: '2026-08-25T09:00:00.000Z',
+    });
+    const res: any = await route.POST(call('decline_changes'));
+
+    assert.equal(res.status, 400);
+    assert.equal(updates.length, 0, 'nothing is written without one');
+});
+
+test('a decision has to match the state it was made against', async () => {
+    // Approving an application on a row that has since gone live.
+    const live = load({ status: 'approved', approvedDigest: CHANGED, changesPendingAt: '2026-08-25T09:00:00.000Z' });
+    const a: any = await live.route.POST(call('approve'));
+    assert.equal(a.status, 409);
+    assert.equal(live.updates.length, 0);
+
+    // Accepting changes on a row that is actually a fresh application.
+    const fresh = load({ status: 'pending_review' });
+    const b: any = await fresh.route.POST(call('approve_changes'));
+    assert.equal(b.status, 409);
+    assert.equal(fresh.updates.length, 0);
+});
+
+test('there is nothing to accept when no changes are outstanding', async () => {
+    const { route, updates } = load({ status: 'approved', approvedDigest: CHANGED, changesPendingAt: null });
+    const res: any = await route.POST(call('approve_changes'));
+
+    assert.equal(res.status, 409);
+    assert.equal(updates.length, 0);
+});
+
+test('approving an application stamps the digest so later edits are noticed', async () => {
+    const { route, updates } = load();
+    await route.POST(call('approve'));
+
+    assert.equal(updates[0].patch.status, 'approved');
+    assert.equal(typeof updates[0].patch.approved_digest, 'string');
+    assert.ok(updates[0].patch.approved_digest.length > 0,
+        'without this, nothing they change afterwards can ever be detected');
+});
+
+test('both changes decisions email the provider', async () => {
+    const ok = load({ status: 'approved', approvedDigest: CHANGED, changesPendingAt: '2026-08-25T09:00:00.000Z' });
+    await ok.route.POST(call('approve_changes'));
+    assert.equal(ok.sent.length, 1, 'we promised to come back to them');
+    assert.match(ok.sent[0].html, /stayed on the site/);
+
+    const no = load({ status: 'approved', approvedDigest: CHANGED, changesPendingAt: '2026-08-25T09:00:00.000Z' });
+    await no.route.POST(call('decline_changes', 'Not that.'));
+    assert.equal(no.sent.length, 1);
+    assert.match(no.sent[0].html, /still up/, 'and it says whether they are still up');
 });

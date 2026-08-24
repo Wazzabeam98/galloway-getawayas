@@ -49,6 +49,128 @@ export function trialEndsAt(from: Date): string {
     return end.toISOString();
 }
 
+
+// What a re-check is actually for.
+//
+// The line: re-check what somebody chooses them on, not what they need to keep
+// accurate. These five are the shop window, and they are the route by which a
+// business approved as one thing could become another.
+//
+// Contact details and coverage are deliberately absent. A stale phone number
+// costs the provider work and there is nothing to judge; coverage is their own
+// knowledge, changes legitimately and often, and friction there makes people
+// under-declare it, which makes matching worse rather than safer.
+export const REVIEWABLE_FIELDS = [
+    'business_name',
+    'trade',
+    'description',
+    'audience',
+    'photos',
+] as const;
+
+// A fingerprint of the reviewable fields, stable across key order and across
+// the order photos happen to come back in.
+//
+// This is the trustworthy half of the gate. A provider writes their own row
+// from the browser, so anything the browser stamps is something they could
+// decline to stamp — but the digest is written only by the admin decision
+// route, so a mismatch is a fact they cannot suppress.
+export function reviewDigest(provider: any): string {
+    const parts = REVIEWABLE_FIELDS.map((field) => {
+        const value = provider ? provider[field] : null;
+
+        if (field === 'photos') {
+            const photos = Array.isArray(value) ? value.slice().sort() : [];
+            return field + '=' + photos.join(',');
+        }
+
+        // Trimmed, because trailing whitespace is not a change anybody needs
+        // to look at.
+        return field + '=' + String(value === null || value === undefined ? '' : value).trim();
+    });
+
+    return parts.join('|');
+}
+
+// Whether a live provider has edited something that has not been looked at.
+//
+// A null digest means nothing outstanding: anything approved before the digest
+// existed is trusted until its next approval fills it in.
+export function hasUnreviewedChanges(provider: any): boolean {
+    if (!provider || provider.status !== 'approved') return false;
+    if (!provider.approved_digest) return false;
+    return reviewDigest(provider) !== provider.approved_digest;
+}
+
+// Which of the reviewable fields differ from what was last approved.
+//
+// The digest is field-tagged for exactly this: it can be taken apart again, so
+// the alert can say "they changed the description" rather than "something
+// changed", which is the difference between triaging from a phone and having
+// to open the site.
+export function changedFields(provider: any): string[] {
+    if (!provider || !provider.approved_digest) return [];
+
+    const before: Record<string, string> = {};
+    for (const part of String(provider.approved_digest).split('|')) {
+        const at = part.indexOf('=');
+        if (at > 0) before[part.slice(0, at)] = part.slice(at + 1);
+    }
+
+    const now = reviewDigest(provider);
+    const changed: string[] = [];
+
+    for (const part of now.split('|')) {
+        const at = part.indexOf('=');
+        if (at <= 0) continue;
+        const field = part.slice(0, at);
+        // A field the old digest never carried is a new field, not an edit.
+        if (!(field in before)) continue;
+        if (before[field] !== part.slice(at + 1)) changed.push(field);
+    }
+
+    return changed;
+}
+
+// The same field names, said the way a person would say them.
+export function fieldLabel(field: string): string {
+    if (field === 'business_name') return 'business name';
+    if (field === 'trade') return 'category';
+    if (field === 'description') return 'description';
+    if (field === 'audience') return 'who they sell to';
+    if (field === 'photos') return 'photos';
+    return field;
+}
+
+// What a save does to the status fields, given where the provider already is.
+//
+// Extracted from the sign-up page on purpose. The rule it encodes — a live
+// provider is never knocked back into the queue by their own edit — is the
+// whole point of the changes model, and while it sat inside a client component
+// nothing could test it: a mutation that put the old destructive behaviour
+// back was caught by no test at all.
+export function submitStatusPatch(
+    currentStatus: string,
+    now: Date,
+    firstTimeOrDraft: boolean
+): Record<string, any> {
+    // Already live. Their edits are live too, and the queue works out from the
+    // digest whether any of them want looking at.
+    if (currentStatus === 'approved') return {};
+
+    const patch: Record<string, any> = {
+        status: 'pending_review',
+        submitted_at: now.toISOString(),
+        review_note: null,
+    };
+
+    // Set once, when they first apply, so the trial is measured from the day
+    // they joined rather than the day we got round to them.
+    if (firstTimeOrDraft) patch.trial_ends_at = trialEndsAt(now);
+
+    return patch;
+}
+
 export const REVIEW_WITHIN_HOURS = 48;
 
 export interface ProviderDraft {

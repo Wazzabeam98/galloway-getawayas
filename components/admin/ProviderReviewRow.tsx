@@ -34,8 +34,12 @@ export default function ProviderReviewRow({
     const [decliningOpen, setDecliningOpen] = useState(false);
     const [note, setNote] = useState('');
 
-    const decide = async (decision: 'approve' | 'decline') => {
-        if (decision === 'decline' && !note.trim()) {
+    // Whether a turned-down set of changes also comes off the site. Some
+    // edits are worth a word; some cannot stay up. Asked rather than assumed.
+    const [hide, setHide] = useState(false);
+
+    const decide = async (decision: 'approve' | 'decline' | 'approve_changes' | 'decline_changes') => {
+        if ((decision === 'decline' || decision === 'decline_changes') && !note.trim()) {
             toast.error('Say why — it goes to them in the email.', { theme: 'colored' });
             return;
         }
@@ -45,7 +49,7 @@ export default function ProviderReviewRow({
         const res = await fetch('/api/admin/providers', {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ id: provider.id, decision, note: note.trim() }),
+            body: JSON.stringify({ id: provider.id, decision, note: note.trim(), hide }),
         });
 
         setBusy(false);
@@ -62,12 +66,12 @@ export default function ProviderReviewRow({
         // would leave them waiting on a decision that has already been made.
         if (body.emailed === false) {
             toast.warning(
-                (decision === 'approve' ? 'Approved' : 'Declined')
+                (decision.indexOf('approve') === 0 ? 'Approved' : 'Declined')
                     + ', but the email did not send — tell them yourself.',
                 { theme: 'colored', autoClose: false }
             );
         } else {
-            toast.success(decision === 'approve' ? 'Approved.' : 'Declined.', { theme: 'colored' });
+            toast.success(decision.indexOf('approve') === 0 ? 'Approved.' : 'Declined.', { theme: 'colored' });
         }
 
         setDecliningOpen(false);
@@ -75,6 +79,10 @@ export default function ProviderReviewRow({
     };
 
     const pending = provider.status === 'pending_review';
+
+    // Set by the page, and only for the group that has edits outstanding.
+    const changed: string[] = provider.changedFields || [];
+    const hasChanges = changed.length > 0;
 
     return (
         <div className="rounded-2xl border border-slate-200 bg-white p-5">
@@ -113,6 +121,83 @@ export default function ProviderReviewRow({
                     {photoUrls.map((u) => (
                         <img key={u} src={u} alt="" className="w-24 h-20 object-cover rounded-lg bg-slate-100" />
                     ))}
+                </div>
+            )}
+
+            {hasChanges && (
+                <div className="mt-5 pt-4 border-t border-slate-200">
+                    <p className="text-sm text-slate-700 mb-3">
+                        Live, and has changed{' '}
+                        <strong className="font-semibold text-slate-900">{changed.join(', ')}</strong>
+                        {' '}since you last looked. The new version is what is on the site now.
+                    </p>
+
+                    {!decliningOpen ? (
+                        <div className="flex flex-wrap gap-3">
+                            <button
+                                type="button"
+                                onClick={() => decide('approve_changes')}
+                                disabled={busy}
+                                className="rounded-full bg-emerald-700 hover:bg-emerald-800 text-white px-5 py-2.5 text-sm font-semibold transition disabled:opacity-60"
+                            >
+                                {busy ? 'Saving…' : 'These are fine'}
+                            </button>
+                            <button
+                                type="button"
+                                onClick={() => setDecliningOpen(true)}
+                                disabled={busy}
+                                className="rounded-full border border-slate-300 px-5 py-2.5 text-sm font-semibold text-slate-700 hover:border-slate-500 transition"
+                            >
+                                Turn these down
+                            </button>
+                        </div>
+                    ) : (
+                        <div>
+                            <label className="block text-sm font-semibold text-slate-900 mb-1.5">
+                                What is wrong with them? They will see this.
+                            </label>
+                            <textarea
+                                value={note}
+                                onChange={(e) => setNote(e.target.value)}
+                                rows={3}
+                                className="w-full rounded-xl border border-slate-300 px-3 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-emerald-700"
+                                placeholder="The new description says you do wedding catering, which is not what we listed you for."
+                            />
+
+                            <label className="flex items-start gap-2.5 mt-3 text-sm text-slate-700">
+                                <input
+                                    type="checkbox"
+                                    checked={hide}
+                                    onChange={(e) => setHide(e.target.checked)}
+                                    className="mt-0.5 w-4 h-4 rounded border-slate-300"
+                                />
+                                <span>
+                                    Take them off the site until they fix it.
+                                    <span className="block text-slate-500">
+                                        Leave this unticked to let the listing stand while they sort it out.
+                                    </span>
+                                </span>
+                            </label>
+
+                            <div className="flex gap-3 mt-3">
+                                <button
+                                    type="button"
+                                    onClick={() => decide('decline_changes')}
+                                    disabled={busy}
+                                    className="rounded-full bg-rose-700 hover:bg-rose-800 text-white px-5 py-2.5 text-sm font-semibold transition disabled:opacity-60"
+                                >
+                                    {busy ? 'Saving…' : hide ? 'Turn down and hide' : 'Turn down'}
+                                </button>
+                                <button
+                                    type="button"
+                                    onClick={() => setDecliningOpen(false)}
+                                    className="rounded-full border border-slate-300 px-5 py-2.5 text-sm font-semibold text-slate-700"
+                                >
+                                    Cancel
+                                </button>
+                            </div>
+                        </div>
+                    )}
                 </div>
             )}
 

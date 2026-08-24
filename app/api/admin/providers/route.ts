@@ -4,6 +4,7 @@ import { NextResponse } from 'next/server';
 import { adminClient } from '@/lib/supabaseAdmin';
 import { sendEmail, emailLayout, escapeHtml, button, SITE_URL } from '@/lib/email';
 import { logError } from '@/lib/logError';
+import { reviewDigest } from '@/lib/serviceProviders';
 
 export const dynamic = 'force-dynamic';
 
@@ -59,12 +60,21 @@ export async function POST(req: Request) {
         const id = String(body.id || '');
         const decision = String(body.decision || '');
         const note = String(body.note || '').trim();
+        const hide = body.hide === true;
 
-        if (!id || (decision !== 'approve' && decision !== 'decline')) {
+        // Four decisions, not two. An application is approved or declined;
+        // a live provider's edits are accepted or turned down. They are named
+        // separately rather than inferred from the row, so a click made
+        // against a stale screen is refused instead of doing the other thing.
+        const DECISIONS = ['approve', 'decline', 'approve_changes', 'decline_changes'];
+
+        if (!id || DECISIONS.indexOf(decision) === -1) {
             return NextResponse.json({ ok: false, error: 'Nothing to decide.' }, { status: 400 });
         }
 
-        if (decision === 'decline' && !note) {
+        const declining = decision === 'decline' || decision === 'decline_changes';
+
+        if (declining && !note) {
             return NextResponse.json(
                 { ok: false, error: 'A decline needs a reason — it is sent to them.' },
                 { status: 400 }
@@ -73,7 +83,7 @@ export async function POST(req: Request) {
 
         const { data: provider } = await admin
             .from('service_providers')
-            .select('id, business_name, contact_email, status')
+            .select('id, business_name, contact_email, status, approved_digest, changes_pending_at, trade, description, audience, photos')
             .eq('id', id)
             .maybeSingle();
 
@@ -81,29 +91,66 @@ export async function POST(req: Request) {
             return NextResponse.json({ ok: false, error: 'That business no longer exists.' }, { status: 404 });
         }
 
-        // Only something actually waiting can be decided. Without this, a
-        // second click on a slow connection would re-approve and send a second
-        // email.
-        if (provider.status !== 'pending_review') {
+        const decidingChanges = decision === 'approve_changes' || decision === 'decline_changes';
+
+        // A decision has to match the state it was made against. Without this,
+        // a second click on a slow connection would decide twice and send two
+        // emails — and approving an application from a screen that has since
+        // gone live would clear the wrong thing.
+        const expected = decidingChanges ? 'approved' : 'pending_review';
+
+        if (provider.status !== expected) {
             return NextResponse.json(
                 { ok: false, error: 'That has already been decided.' },
                 { status: 409 }
             );
         }
 
+        if (decidingChanges && !provider.changes_pending_at) {
+            return NextResponse.json(
+                { ok: false, error: 'There are no changes waiting on that one.' },
+                { status: 409 }
+            );
+        }
+
         const now = new Date().toISOString();
 
-        const patch = decision === 'approve'
-            ? { status: 'approved', approved_at: now, declined_at: null, review_note: null, updated_at: now }
-            : { status: 'declined', declined_at: now, review_note: note, updated_at: now };
+        // The digest is stamped from the row as it stands, which is what has
+        // just been looked at. It is written here and nowhere else — that is
+        // what stops a provider deciding for themselves that their own edits
+        // need no review.
+        const digest = reviewDigest(provider);
+
+        let patch: any;
+
+        if (decision === 'approve') {
+            patch = {
+                status: 'approved', approved_at: now, declined_at: null, review_note: null,
+                approved_digest: digest, changes_pending_at: null, updated_at: now,
+            };
+        } else if (decision === 'decline') {
+            patch = { status: 'declined', declined_at: now, review_note: note, updated_at: now };
+        } else if (decision === 'approve_changes') {
+            // Still live, still approved — the edits were already on the site.
+            // All that changes is that they have now been seen.
+            patch = { approved_digest: digest, changes_pending_at: null, review_note: null, updated_at: now };
+        } else {
+            // Turned down. Hiding is a separate choice: some edits are worth a
+            // word and some cannot stay up. The digest still moves, because
+            // this version has been looked at and should not come back round.
+            patch = {
+                review_note: note, changes_pending_at: null, approved_digest: digest, updated_at: now,
+            };
+            if (hide) patch.status = 'hidden';
+        }
 
         const { error: writeError } = await admin
             .from('service_providers')
             .update(patch)
             .eq('id', id)
-            // Decided from the waiting state only, checked again at the write.
-            // Two admins clicking at once otherwise both succeed.
-            .eq('status', 'pending_review');
+            // Decided from the state it was read in, checked again at the
+            // write. Two admins clicking at once otherwise both succeed.
+            .eq('status', expected);
 
         if (writeError) {
             return NextResponse.json({ ok: false, error: writeError.message }, { status: 500 });
@@ -123,26 +170,56 @@ export async function POST(req: Request) {
             if (provider.contact_email) {
                 const name = escapeHtml(provider.business_name || 'your business');
 
-                const subject = decision === 'approve'
-                    ? 'You are listed on Galloway Getaways'
-                    : 'About your Galloway Getaways listing';
+                const FOOT = 'You are receiving this because you listed a business on Galloway Getaways.';
 
-                const html = decision === 'approve'
-                    ? emailLayout(
+                let subject: string;
+                let html: string;
+
+                if (decision === 'approve') {
+                    subject = 'You are listed on Galloway Getaways';
+                    html = emailLayout(
                         '<p style="margin:0 0 16px;font-size:16px;">Good news — <strong>' + name
                             + '</strong> has been approved and is now on the site.</p>'
                             + '<p style="margin:0 0 16px;font-size:16px;">People looking for your trade in the areas you cover can now find you. We will email you whenever somebody asks for work.</p>'
                             + button(SITE_URL + '/services/join', 'See your listing'),
-                        'You are receiving this because you listed a business on Galloway Getaways.'
-                    )
-                    : emailLayout(
+                        FOOT
+                    );
+                } else if (decision === 'decline') {
+                    subject = 'About your Galloway Getaways listing';
+                    html = emailLayout(
                         '<p style="margin:0 0 16px;font-size:16px;">Thanks for sending in <strong>' + name
                             + '</strong>. We are not able to list it as it stands.</p>'
                             + quoted(note)
                             + '<p style="margin:0 0 16px;font-size:16px;">You can change it and send it back to us whenever you like.</p>'
                             + button(SITE_URL + '/services/join', 'Update your details'),
-                        'You are receiving this because you listed a business on Galloway Getaways.'
+                        FOOT
                     );
+                } else if (decision === 'approve_changes') {
+                    // They were told we would look and come back to them, so
+                    // we do — even though nothing visible changes, because a
+                    // promise that quietly expires is worse than no promise.
+                    subject = 'Your changes have been checked';
+                    html = emailLayout(
+                        '<p style="margin:0 0 16px;font-size:16px;">We have looked at the changes you made to <strong>'
+                            + name + '</strong>. Nothing needs doing — you stayed on the site throughout.</p>'
+                            + button(SITE_URL + '/services/join', 'See your listing'),
+                        FOOT
+                    );
+                } else {
+                    subject = 'About the changes to your listing';
+                    html = emailLayout(
+                        '<p style="margin:0 0 16px;font-size:16px;">We have looked at the changes you made to <strong>'
+                            + name + '</strong>, and we are not able to leave them as they are.</p>'
+                            + quoted(note)
+                            + '<p style="margin:0 0 16px;font-size:16px;">'
+                            + (hide
+                                ? 'Your listing is hidden for now. Change it and send it back to us, and we will put it straight back up.'
+                                : 'Your listing is still up. Change it whenever you can and we will take another look.')
+                            + '</p>'
+                            + button(SITE_URL + '/services/join', 'Update your details'),
+                        FOOT
+                    );
+                }
 
                 emailed = await sendEmail(provider.contact_email, subject, html);
             }

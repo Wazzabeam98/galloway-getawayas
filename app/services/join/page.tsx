@@ -16,6 +16,7 @@ import {
     submitProblems,
     statusSummary,
     trialEndsAt,
+    submitStatusPatch,
     REVIEW_WITHIN_HOURS,
     TRIAL_DAYS,
 } from '@/lib/serviceProviders';
@@ -182,13 +183,11 @@ export default function JoinAsProvider() {
             updated_at: now.toISOString(),
         };
 
+        // What this does to the status fields is decided in lib, not here, so
+        // that the rule can be tested: an approved provider is never knocked
+        // back into the queue by their own edit.
         if (submit) {
-            payload.status = 'pending_review';
-            payload.submitted_at = now.toISOString();
-            payload.review_note = null;
-            // Set once, when they first apply, so the trial is measured from
-            // the day they joined rather than the day we got round to them.
-            if (!providerId || status === 'draft') payload.trial_ends_at = trialEndsAt(now);
+            Object.assign(payload, submitStatusPatch(status, now, !providerId || status === 'draft'));
         }
 
         let id = providerId;
@@ -241,7 +240,7 @@ export default function JoinAsProvider() {
         //
         // Nothing here is shown to them if it fails. They have done their
         // part; a problem reaching us is ours, and the route logs it.
-        if (submit) {
+        if (submit || status === 'approved') {
             try {
                 await fetch('/api/services/submitted', {
                     method: 'POST',
@@ -255,7 +254,9 @@ export default function JoinAsProvider() {
 
         setSaving(false);
 
-        if (submit) {
+        if (submit && status === 'approved') {
+            toast.success('Saved. You are still live.', { theme: 'colored' });
+        } else if (submit) {
             setStatus('pending_review');
             toast.success('Sent to us for review.', { theme: 'colored' });
         } else {
@@ -509,27 +510,54 @@ export default function JoinAsProvider() {
             </fieldset>
 
             {!locked && (
-                <div className="flex flex-wrap items-center gap-3 border-t border-slate-200 pt-6">
-                    <button
-                        type="button"
-                        onClick={() => save(true)}
-                        disabled={saving}
-                        className="rounded-full bg-emerald-700 hover:bg-emerald-800 text-white px-7 py-3 font-semibold transition disabled:opacity-60"
-                    >
-                        {saving ? 'Sending…' : 'Send for review'}
-                    </button>
-                    <button
-                        type="button"
-                        onClick={() => save(false)}
-                        disabled={saving}
-                        className="rounded-full border border-slate-300 px-6 py-3 font-semibold text-slate-700 hover:border-slate-500 transition disabled:opacity-60"
-                    >
-                        Save and finish later
-                    </button>
-                    <p className="text-sm text-slate-500 flex items-center gap-1.5">
-                        <Check className="w-4 h-4 text-emerald-700" />
-                        Free for {TRIAL_DAYS} days
-                    </p>
+                <div className="border-t border-slate-200 pt-6">
+                    {/* A live business is not re-applying. One button, and it
+                        says what it does — and the consequence is stated
+                        before they press it rather than discovered after. */}
+                    {status === 'approved' ? (
+                        <>
+                            <p className="text-sm text-slate-600 mb-4">
+                                You will stay live while we look. Changing your{' '}
+                                <strong className="font-semibold text-slate-800">
+                                    business name, category, description, photos, or who you sell to
+                                </strong>{' '}
+                                means we check it again and email you — your listing stays up the whole
+                                time. Contact details and the areas you cover change straight away, with
+                                nothing to wait for.
+                            </p>
+                            <button
+                                type="button"
+                                onClick={() => save(true)}
+                                disabled={saving}
+                                className="rounded-full bg-emerald-700 hover:bg-emerald-800 text-white px-7 py-3 font-semibold transition disabled:opacity-60"
+                            >
+                                {saving ? 'Saving…' : 'Save changes'}
+                            </button>
+                        </>
+                    ) : (
+                        <div className="flex flex-wrap items-center gap-3">
+                            <button
+                                type="button"
+                                onClick={() => save(true)}
+                                disabled={saving}
+                                className="rounded-full bg-emerald-700 hover:bg-emerald-800 text-white px-7 py-3 font-semibold transition disabled:opacity-60"
+                            >
+                                {saving ? 'Sending…' : 'Send for review'}
+                            </button>
+                            <button
+                                type="button"
+                                onClick={() => save(false)}
+                                disabled={saving}
+                                className="rounded-full border border-slate-300 px-6 py-3 font-semibold text-slate-700 hover:border-slate-500 transition disabled:opacity-60"
+                            >
+                                Save and finish later
+                            </button>
+                            <p className="text-sm text-slate-500 flex items-center gap-1.5">
+                                <Check className="w-4 h-4 text-emerald-700" />
+                                Free for {TRIAL_DAYS} days
+                            </p>
+                        </div>
+                    )}
                 </div>
             )}
         </div>

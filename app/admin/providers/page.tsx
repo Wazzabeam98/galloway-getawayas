@@ -4,7 +4,7 @@ import { cookies } from 'next/headers';
 import Link from 'next/link';
 import { notFound } from 'next/navigation';
 import { getImageUrl } from '@/lib/utils';
-import { tradeLabel } from '@/lib/serviceProviders';
+import { tradeLabel, hasUnreviewedChanges, changedFields, fieldLabel } from '@/lib/serviceProviders';
 import ProviderReviewRow from '@/components/admin/ProviderReviewRow';
 
 export const dynamic = 'force-dynamic';
@@ -42,7 +42,7 @@ export default async function AdminProviders() {
     // are silently piling up.
     const { data: providers, error } = await admin
         .from('service_providers')
-        .select('id, business_name, trade, description, photos, audience, kind, status, plan, trial_ends_at, contact_email, contact_phone, submitted_at, created_at, owner_id')
+        .select('id, business_name, trade, description, photos, audience, kind, status, plan, trial_ends_at, contact_email, contact_phone, submitted_at, created_at, owner_id, approved_digest, changes_pending_at')
         .order('submitted_at', { ascending: false, nullsFirst: false });
 
     if (error) {
@@ -75,8 +75,19 @@ export default async function AdminProviders() {
         areaRows.filter((a: any) => a.provider_id === id)
             .map((a: any) => a.label + ' · ' + Number(a.radius_miles) + ' mi');
 
+    // Three groups, not two. A live provider who has edited their shop window
+    // is a job, but it is not the same job as an application — they are on the
+    // site either way, so it is never urgent in the way a waiting business is.
+    //
+    // Worked out from the digest rather than from `changes_pending_at`,
+    // because providers write their own row and could decline to stamp it.
+    // The stamp is only what this sorts by.
     const waiting = rows.filter((r: any) => r.status === 'pending_review');
-    const rest = rows.filter((r: any) => r.status !== 'pending_review');
+    const changed = rows.filter((r: any) => hasUnreviewedChanges(r));
+    const changedIds = changed.map((r: any) => r.id);
+    const rest = rows.filter(
+        (r: any) => r.status !== 'pending_review' && changedIds.indexOf(r.id) === -1
+    );
 
     return (
         <div className="max-w-4xl mx-auto px-4 sm:px-6 py-10">
@@ -86,9 +97,12 @@ export default async function AdminProviders() {
 
             <h1 className="text-2xl font-bold text-slate-900 mt-4">Service providers</h1>
             <p className="text-slate-600 text-sm mt-1 mb-8">
-                {waiting.length === 0
+                {waiting.length === 0 && changed.length === 0
                     ? 'Nothing waiting for you.'
-                    : waiting.length + ' waiting for a decision.'}
+                    : [
+                        waiting.length ? waiting.length + ' waiting for a decision' : '',
+                        changed.length ? changed.length + ' live with changes to look at' : '',
+                    ].filter(Boolean).join(' · ') + '.'}
             </p>
 
             {waiting.length > 0 && (
@@ -101,6 +115,28 @@ export default async function AdminProviders() {
                             <ProviderReviewRow
                                 key={p.id}
                                 provider={{ ...p, tradeLabel: tradeLabel(p.trade) }}
+                                areas={areasFor(p.id)}
+                                photoUrls={(p.photos || []).slice(0, 3).map((x: string) => getImageUrl(x))}
+                            />
+                        ))}
+                    </div>
+                </section>
+            )}
+
+            {changed.length > 0 && (
+                <section className="mb-12">
+                    <h2 className="text-xs font-bold uppercase tracking-wider text-slate-500 mb-3">
+                        Live, with changes to look at
+                    </h2>
+                    <div className="space-y-4">
+                        {changed.map((p: any) => (
+                            <ProviderReviewRow
+                                key={p.id}
+                                provider={{
+                                    ...p,
+                                    tradeLabel: tradeLabel(p.trade),
+                                    changedFields: changedFields(p).map(fieldLabel),
+                                }}
                                 areas={areasFor(p.id)}
                                 photoUrls={(p.photos || []).slice(0, 3).map((x: string) => getImageUrl(x))}
                             />
