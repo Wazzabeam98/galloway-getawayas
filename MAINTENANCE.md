@@ -359,7 +359,30 @@ Please:
 
   `rm -rf .test-build && npm test` before trusting a count, and always after
   `git checkout`. This is the third time this suite has claimed more than it
-  tested; the other two are directly above.
+  tested; the other two are directly above and the fourth is directly below.
+
+- **Coverage of the API routes is opt-in, and the suite is silent about what
+  it leaves out.** `tsconfig.test.json` has an `include` array that names route
+  files **one at a time**, alongside `tests/**` and `lib/**`. As of 24 August
+  2026 that list holds **7 of the 43 route files under `app/api`** — 36 routes
+  are never compiled into `.test-build` at all, so no test can require one. A
+  test written against a route that is not on the list fails with
+  `MODULE_NOT_FOUND` rather than a real assertion, which reads like a broken
+  test rather than a missing one.
+
+  Among the 36 left out are `stripe/checkout`, `stripe/balance-checkout`,
+  `stripe/refund`, `stripe/connect`, `stripe/payout-schedule`,
+  `bookings/cancel`, `bookings/host-refund` and `admin/commission` — every one
+  of them money-touching.
+
+  Found on 24 August 2026: 227 tests passed over a services approval route that
+  wrote the row, told the admin "Approved." in green and emailed nobody. The
+  route was not in the build, and the `lib/` tests beside it — the distance
+  maths, the validation — passed happily.
+
+  **Add the route to `include` in the same commit that adds the route**, and
+  make the new test fail once before trusting it to pass. A green suite says
+  nothing whatever about a route it does not compile.
 
 - **Stripe's Adaptive Pricing is on by default and will offer euros.** It
   converts a GBP price into whatever currency it decides the guest's country
