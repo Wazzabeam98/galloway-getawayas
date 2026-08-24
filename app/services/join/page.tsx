@@ -283,8 +283,23 @@ export default function JoinAsProvider() {
             {status === 'declined' && (
                 <div className="mb-8 rounded-2xl border border-rose-300 bg-rose-50 p-5">
                     <p className="font-semibold text-rose-900">{summary.label}</p>
-                    <p className="text-sm text-rose-900/80 mt-1">
-                        {reviewNote || 'We could not approve this as it stands.'} Change what you need to and send it again.
+
+                    {/* What we said is quoted, on its own, so it cannot run
+                        into our own sentence and read as one broken line. A
+                        reason can be a single word, and "no" followed by
+                        "Change what you need to" looked like a mistake. */}
+                    {reviewNote ? (
+                        <blockquote className="mt-3 rounded-r-lg border-l-4 border-rose-400 bg-white/70 px-4 py-3">
+                            <p className="text-sm text-rose-900 whitespace-pre-line">{reviewNote}</p>
+                        </blockquote>
+                    ) : (
+                        <p className="text-sm text-rose-900/80 mt-3">
+                            We could not approve this as it stands.
+                        </p>
+                    )}
+
+                    <p className="text-sm text-rose-900/80 mt-3">
+                        Change what you need to and send it again.
                     </p>
                 </div>
             )}

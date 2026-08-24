@@ -182,3 +182,36 @@ test('an email that did send reports so, and logs nothing', async () => {
     assert.equal(res.body.emailed, true);
     assert.equal(logged.length, 0);
 });
+
+// ---------------------------------------------------------------------------
+// The reason is quoted, not run into our own sentence.
+//
+// On the join page "no" — a real reason somebody typed — rendered as
+// "no Change what you need to and send it again.", one broken-looking line.
+// The email never had that exact bug, because the reason was already its own
+// <p>, but it was in the same size and colour as the sentences either side, so
+// a one-word reason read as part of ours rather than as a quote of ours.
+// ---------------------------------------------------------------------------
+
+test('the reason is set apart from the sentence that follows it', async () => {
+    const { route, sent } = load();
+    await route.POST(call('decline', 'no'));
+
+    const html = sent[0].html;
+
+    assert.match(html, /border-left:4px solid/, 'the reason sits behind a rule');
+    assert.doesNotMatch(html, /no You can change it/,
+        'the reason must never run straight into our own sentence');
+    assert.match(html, /<\/table><p[^>]*>You can change it/,
+        'our sentence starts a new block after the quote closes');
+});
+
+test('a reason typed over several lines arrives as several lines', async () => {
+    const { route, sent } = load();
+    await route.POST(call('decline', 'Two things.\nThe photos are dark.\nThe description is one word.'));
+
+    const html = sent[0].html;
+
+    assert.match(html, /Two things\.<br>The photos are dark\.<br>The description is one word\./,
+        'HTML collapses newlines, so they have to become <br> or the reason arrives as one line');
+});

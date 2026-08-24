@@ -7,6 +7,26 @@ import { logError } from '@/lib/logError';
 
 export const dynamic = 'force-dynamic';
 
+// The reason, set apart from our own words.
+//
+// It used to be a plain paragraph in the same size and colour as the two
+// sentences either side of it, so a short reason — "no" is a real one somebody
+// typed — read as part of our sentence rather than as a quote of ours. Indented
+// behind a rule, it is obviously the thing we said.
+//
+// Newlines survive as <br>: HTML collapses them, so a reason typed over three
+// lines otherwise arrives as one. Escaped first, so the <br> we add is the only
+// markup that gets through.
+function quoted(note: string): string {
+    const body = escapeHtml(note).split('\n').join('<br>');
+
+    return '<table role="presentation" cellpadding="0" cellspacing="0" border="0" width="100%" style="margin:0 0 16px;">'
+        + '<tr><td style="border-left:4px solid #e5e7eb;padding:2px 0 2px 16px;">'
+        + '<p style="margin:0;font-size:16px;color:#374151;">' + body + '</p>'
+        + '</td></tr></table>';
+}
+
+
 // Approving or declining a business application.
 //
 // A route rather than a write from the browser, for two reasons: the decision
@@ -118,7 +138,7 @@ export async function POST(req: Request) {
                     : emailLayout(
                         '<p style="margin:0 0 16px;font-size:16px;">Thanks for sending in <strong>' + name
                             + '</strong>. We are not able to list it as it stands.</p>'
-                            + '<p style="margin:0 0 16px;font-size:16px;">' + escapeHtml(note) + '</p>'
+                            + quoted(note)
                             + '<p style="margin:0 0 16px;font-size:16px;">You can change it and send it back to us whenever you like.</p>'
                             + button(SITE_URL + '/services/join', 'Update your details'),
                         'You are receiving this because you listed a business on Galloway Getaways.'
