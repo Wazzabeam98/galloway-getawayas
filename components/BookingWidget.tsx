@@ -1,6 +1,6 @@
 'use client';
 
-import { useEffect, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { createClientComponentClient } from '@supabase/auth-helpers-nextjs';
 import { DateRangePicker, Range, RangeKeyDict } from 'react-date-range';
 import { addDays, addMonths } from 'date-fns';
@@ -92,6 +92,78 @@ export default function BookingWidget({
     const [session, setSession] = useState<any>(null);
     const [loadingSession, setLoadingSession] = useState(true);
     const [disabledDates, setDisabledDates] = useState<Date[]>([]);
+    const calendarRef = useRef<HTMLDivElement>(null);
+
+    // Which nights are already taken, as 'yyyy-mm-dd', so the day renderer can
+    // answer without comparing Date objects on every cell.
+    const disabledKeys = new Set(
+        disabledDates.map(
+            (d) =>
+                d.getFullYear()
+                + '-' + String(d.getMonth() + 1).padStart(2, '0')
+                + '-' + String(d.getDate()).padStart(2, '0')
+        )
+    );
+
+    // A date a guest cannot have was signalled by nothing but grey. Grey is
+    // also what this calendar uses for the days either side of the month, and
+    // for anything before today — so with reduced colour vision there was no
+    // way to tell a taken night from a free one. The line through the number
+    // is the signal that does not depend on seeing a colour, and the hidden
+    // word is what a screen reader reads out.
+    const renderDay = (date: Date) => {
+        const key =
+            date.getFullYear()
+            + '-' + String(date.getMonth() + 1).padStart(2, '0')
+            + '-' + String(date.getDate()).padStart(2, '0');
+
+        if (!disabledKeys.has(key)) return <span>{date.getDate()}</span>;
+
+        return (
+            <span className="line-through decoration-2 decoration-slate-400">
+                {date.getDate()}
+                <span className="sr-only"> unavailable</span>
+            </span>
+        );
+    };
+
+    // react-date-range renders the month and year dropdowns itself and gives
+    // no way to label them, so they arrive as two selects a screen reader
+    // announces as nothing at all. Same for the day buttons it marks disabled:
+    // the class is there but the `disabled` property is false and there is no
+    // aria-disabled, so they read as ordinary buttons.
+    //
+    // The observer is not decoration. Both sets of nodes are replaced whenever
+    // the guest changes month, and a one-off pass after mount would label the
+    // first month and nothing after it.
+    useEffect(() => {
+        const root = calendarRef.current;
+        if (!root) return;
+
+        const label = () => {
+            const month = root.querySelector('.rdrMonthPicker select');
+            if (month) month.setAttribute('aria-label', 'Month');
+
+            const year = root.querySelector('.rdrYearPicker select');
+            if (year) year.setAttribute('aria-label', 'Year');
+
+            root.querySelectorAll('.rdrDay').forEach((day) => {
+                const off = day.classList.contains('rdrDayDisabled');
+                if (off) {
+                    day.setAttribute('aria-disabled', 'true');
+                } else {
+                    day.removeAttribute('aria-disabled');
+                }
+            });
+        };
+
+        label();
+
+        const observer = new MutationObserver(label);
+        observer.observe(root, { childList: true, subtree: true });
+        return () => observer.disconnect();
+    }, [disabledDates]);
+
     const [priceOverrides, setPriceOverrides] = useState<Record<string, number>>({});
     const [adults, setAdults] = useState(1);
     const [children, setChildren] = useState(0);
@@ -338,7 +410,7 @@ export default function BookingWidget({
                 {weekendPrice && <span className="text-xs text-slate-400 block mt-0.5">£{weekendPrice} on Fri &amp; Sat nights</span>}
             </div>
 
-            <div className="border rounded-xl overflow-hidden mb-4">
+            <div ref={calendarRef} className="border rounded-xl overflow-hidden mb-4">
                 <DateRangePicker
                     ranges={[dateRange]}
                     onChange={handleSelect}
@@ -349,6 +421,14 @@ export default function BookingWidget({
                     direction="vertical"
                     rangeColors={['#047857']}
                     showDateDisplay={false}
+                    // The preset sidebar this library ships with offers
+                    // "Today", "Yesterday" and "Last Week", which mean nothing
+                    // when picking a stay. globals.css already hides it; these
+                    // stop it being built at all, so its two unlabelled inputs
+                    // are not in the page either.
+                    staticRanges={[]}
+                    inputRanges={[]}
+                    dayContentRenderer={renderDay}
                 />
             </div>
 

@@ -10,6 +10,10 @@ module.exports = {
   theme: {
     container: {
       center: true,
+      // Desktop keeps 2rem. The phone override lives in globals.css, because
+      // breakpoint-keyed padding here is silently dropped for any breakpoint
+      // missing from `screens` below — and `screens` is narrowed to 2xl, so a
+      // `md` key generates no CSS at all and desktop quietly loses its margin.
       padding: "2rem",
       screens: {
         "2xl": "1400px",
