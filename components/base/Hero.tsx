@@ -239,10 +239,11 @@ export default function Hero() {
   const whereSummary =
     LOCATIONS.find((l) => l.value === location && l.value !== '')?.label || 'Where to?';
 
-  // What the guest has actually picked, or nothing. The desktop bar shows a
-  // prompt in this slot — "Add dates" and the like — because it has no room
-  // for a separate label. The stacked rows already say Where, When and Who, so
-  // a prompt underneath only repeats the label back.
+  // What the guest has actually picked, or nothing — the card falls back to
+  // its own quiet hint ("Anywhere", "Any week", "Add guests") when a slot is
+  // empty, so no cell reads as unfinished. Deliberately not the desktop bar's
+  // wording: that bar has no labels above its fields, so its prompts have to
+  // name the field as well as invite a value.
   const whereChosen = whereSummary === 'Where to?' ? '' : whereSummary;
   const whenChosen = whenSummary === 'Add dates' ? '' : whenSummary;
   const guestChosen = guestSummary === 'Add guests' ? '' : guestSummary;
@@ -472,6 +473,7 @@ export default function Hero() {
     key: 'where' | 'when' | 'who',
     label: string,
     chosen: string,
+    hint: string,
     edges: string,
   ) => {
     const open = activePopover === key;
@@ -480,15 +482,19 @@ export default function Hero() {
         type="button"
         aria-expanded={open}
         onClick={() => setActivePopover(open ? null : key)}
-        className={`min-h-[56px] min-w-0 px-4 py-3 flex items-baseline gap-2 text-left transition ${edges} ${
+        className={`min-h-[52px] min-w-0 px-4 py-3 flex items-baseline gap-2 text-left transition ${edges} ${
           open ? 'bg-white/[0.45]' : 'bg-transparent'
         }`}
       >
         <span className="shrink-0 text-[10px] font-bold tracking-wider uppercase text-stone-700">
           {label}
         </span>
-        <span className="min-w-0 flex-1 truncate text-sm font-medium text-stone-900">
-          {chosen}
+        <span
+          className={`min-w-0 flex-1 truncate text-sm ${
+            chosen ? 'font-medium text-stone-900' : 'font-normal text-stone-500'
+          }`}
+        >
+          {chosen || hint}
         </span>
       </button>
     );
@@ -611,13 +617,13 @@ export default function Hero() {
         <div className="md:hidden mt-auto mb-8 md:mb-0 w-full max-w-md text-stone-800">
           <div className="bg-white/[0.85] backdrop-blur-md rounded-3xl shadow-2xl border border-white/60 overflow-hidden">
             <div className="grid grid-cols-2">
-              {gridCell('where', 'Where', whereChosen, 'border-r border-b border-stone-200')}
-              {gridCell('when', 'When', whenChosen, 'border-b border-stone-200')}
-              {gridCell('who', 'Who', guestChosen, 'border-r border-stone-200')}
+              {gridCell('where', 'Where', whereChosen, 'Anywhere', 'border-r border-b border-stone-200')}
+              {gridCell('when', 'When', whenChosen, 'Any week', 'border-b border-stone-200')}
+              {gridCell('who', 'Who', guestChosen, 'Add guests', 'border-r border-stone-200')}
               <button
                 type="button"
                 onClick={runSearch}
-                className="min-h-[56px] bg-emerald-700 hover:bg-emerald-800 text-white flex items-center justify-center gap-2 font-semibold transition"
+                className="min-h-[52px] bg-emerald-700 hover:bg-emerald-800 text-white flex items-center justify-center gap-2 font-semibold transition"
               >
                 {searchIcon('w-4 h-4')}
                 Search
