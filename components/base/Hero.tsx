@@ -239,6 +239,14 @@ export default function Hero() {
   const whereSummary =
     LOCATIONS.find((l) => l.value === location && l.value !== '')?.label || 'Where to?';
 
+  // What the guest has actually picked, or nothing. The desktop bar shows a
+  // prompt in this slot — "Add dates" and the like — because it has no room
+  // for a separate label. The stacked rows already say Where, When and Who, so
+  // a prompt underneath only repeats the label back.
+  const whereChosen = whereSummary === 'Where to?' ? '' : whereSummary;
+  const whenChosen = whenSummary === 'Add dates' ? '' : whenSummary;
+  const guestChosen = guestSummary === 'Add guests' ? '' : guestSummary;
+
   // One search, run from both layouts. Anything the guest left alone is left
   // out of the URL entirely, so a bare `/` still means "show me everything".
   const runSearch = () => {
@@ -458,8 +466,7 @@ export default function Hero() {
   const mobileRow = (
     key: 'where' | 'when' | 'who',
     label: string,
-    summary: string,
-    placeholder: string,
+    chosen: string,
     body: React.ReactNode,
   ) => {
     const open = activePopover === key;
@@ -475,12 +482,11 @@ export default function Hero() {
             <span className="block text-[10px] font-bold tracking-wider uppercase text-stone-700">
               {label}
             </span>
-            <span
-              className={`block text-base font-medium truncate ${
-                summary === placeholder ? 'text-stone-400' : 'text-stone-900'
-              }`}
-            >
-              {summary}
+            {/* The slot is always here, filled or not, so the rows keep
+                the same height and the labels stay on one line as choices
+                are made. Empty until the guest picks something. */}
+            <span className="block min-h-[1.5rem] text-base font-medium truncate text-stone-900">
+              {chosen}
             </span>
           </span>
           <svg
@@ -574,8 +580,7 @@ export default function Hero() {
             {mobileRow(
               'where',
               'Where',
-              whereSummary,
-              'Where to?',
+              whereChosen,
               <select
                 value={location}
                 onChange={(e) => setLocation(e.target.value)}
@@ -589,8 +594,8 @@ export default function Hero() {
                 ))}
               </select>,
             )}
-            {mobileRow('when', 'When', whenSummary, 'Add dates', whenContent('mobile'))}
-            {mobileRow('who', 'Who', guestSummary, 'Add guests', guestContent('mobile'))}
+            {mobileRow('when', 'When', whenChosen, whenContent('mobile'))}
+            {mobileRow('who', 'Who', guestChosen, guestContent('mobile'))}
           </div>
 
           <button
