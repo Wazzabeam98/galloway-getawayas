@@ -6,6 +6,7 @@ import { stripeRequest } from '@/lib/stripe';
 import { SITE_URL } from '@/lib/email';
 import { freeCancelDateOrNull } from '@/lib/cancellation';
 import { quoteBooking, totalsMatch, dateFromKey, dateKey } from '@/lib/pricing';
+import { blockedNightsFromEvents } from '@/lib/availability';
 import { rateFor } from '@/lib/fees';
 import { logError } from '@/lib/logError';
 
@@ -156,20 +157,12 @@ export async function POST(request: Request) {
             .select('id, label, events')
             .eq('listing_id', booking.listing_id);
 
+        // Expanded by lib/availability, which is also what search filters
+        // with — so a stay search calls free and a stay checkout calls taken
+        // cannot come apart.
         (icalFeeds || []).forEach(function (feed: any) {
-            (feed.events || []).forEach(function (ev: any) {
-                if (!ev || !ev.start || !ev.end) return;
-
-                const from = dateFromKey(ev.start);
-                const to = dateFromKey(ev.end);
-
-                // An iCal event runs to its checkout date, which is itself
-                // free — the same convention as a booking here.
-                const day = new Date(from.getTime());
-                while (day < to) {
-                    blockedDates[dateKey(day)] = true;
-                    day.setDate(day.getDate() + 1);
-                }
+            blockedNightsFromEvents(feed.events).forEach(function (night: string) {
+                blockedDates[night] = true;
             });
         });
 

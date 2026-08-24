@@ -280,3 +280,34 @@
   scrollbar-width: thin;
   scrollbar-color: #d6d3d1 transparent;
 }
+
+/* The phone's copy of the search calendar. It reuses .airbnb-compact-calendar
+   for sizing, but that styling assumes the desktop layout — two months side by
+   side, each labelled by .rdrMonthName, with the month/year bar collapsed to
+   nothing. Stacked vertically the first month has no .rdrMonthName at all, so
+   without this the guest gets a grid of dates with no month written anywhere.
+   These rules put the month/year bar back, for this variant only. */
+.airbnb-mobile-calendar .rdrMonthAndYearWrapper {
+  height: auto;
+  padding: 0 0 0.5em 0;
+  position: static;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+}
+
+.airbnb-mobile-calendar .rdrMonthAndYearPickers {
+  display: flex;
+}
+
+.airbnb-mobile-calendar .rdrNextPrevButton {
+  position: static;
+  width: 34px;
+  height: 34px;
+}
+
+/* Each stacked month keeps its own heading, and the sheet itself does the
+   scrolling rather than a scroll area inside a scroll area. */
+.airbnb-mobile-calendar .rdrMonthsVertical {
+  overflow: visible;
+}
