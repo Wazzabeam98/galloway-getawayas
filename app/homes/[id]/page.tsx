@@ -11,6 +11,9 @@ import HostReplyBox from '@/components/HostReplyBox';
 import ReviewsSummary from '@/components/ReviewsSummary';
 import { hasPublicScore, MIN_PUBLIC_REVIEWS } from '@/lib/reviews';
 import PropertyMap from '@/components/PropertyMap';
+import ShowMoreText from '@/components/ShowMoreText';
+import AmenityList from '@/components/AmenityList';
+import MobileBookingBar from '@/components/MobileBookingBar';
 import { KeyRound, Zap, Car, Bath, Waves, Flame, PawPrint, Briefcase, Plug, Users, MapPin, DoorOpen, BadgeCheck, Clock } from 'lucide-react';
 
 // Turns the wizard's plural category into a noun that reads naturally in
@@ -314,7 +317,7 @@ const FindHome = async ({ params }: { params: { id: string } }) => {
     const showScore = hasPublicScore(reviewCount);
 
     return (
-        <div className='max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 mb-10'>
+        <div className='max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 mb-10 pb-24 lg:pb-0'>
             <div className='mt-4'>
                 <h1 className='text-2xl md:text-3xl font-bold text-slate-900'>{home.title}</h1>
                 <div className='flex items-center gap-1.5 mt-1.5 text-sm text-slate-600'>
@@ -330,10 +333,7 @@ const FindHome = async ({ params }: { params: { id: string } }) => {
                             {reviewCount} review{reviewCount > 1 ? 's' : ''} so far
                         </span>
                     ) : (
-                        <span className='inline-flex items-center gap-1.5 font-semibold text-slate-900'>
-                            <span className='bg-emerald-50 text-emerald-800 text-xs px-2 py-0.5 rounded-full'>New</span>
-                            Newly listed
-                        </span>
+                        <span className='bg-emerald-50 text-emerald-800 text-xs px-2 py-0.5 rounded-full font-semibold'>New</span>
                     )}
                 </div>
 
@@ -401,7 +401,7 @@ const FindHome = async ({ params }: { params: { id: string } }) => {
                 <PhotoGallery images={images} title={home.title} />
 
                 <div className='grid grid-cols-1 lg:grid-cols-3 gap-10 mt-5'>
-                    <div className='lg:col-span-2'>
+                    <div className='order-2 lg:order-1 lg:col-span-2'>
                         <h2 className='text-xl md:text-2xl font-bold text-slate-900'>
                             {describePlace(home.privacy_type, home.property_type)}
                             {placeSummary(home.location) ? ` in ${placeSummary(home.location)}` : ''}
@@ -449,7 +449,7 @@ const FindHome = async ({ params }: { params: { id: string } }) => {
                         </div>
 
                         {(home.check_in_time || home.check_out_time) && (
-                            <div className='mt-5 pt-5 border-t'>
+                            <div className='mt-8 pt-8 lg:mt-5 lg:pt-5 border-t'>
                                 <div className='flex items-start gap-4'>
                                     <Clock className='w-6 h-6 text-slate-700 flex-shrink-0 mt-0.5' />
                                     <div>
@@ -476,7 +476,7 @@ const FindHome = async ({ params }: { params: { id: string } }) => {
                         )}
 
                         {highlights.length > 0 && (
-                            <div className='mt-5 pt-5 border-t space-y-4'>
+                            <div className='mt-8 pt-8 lg:mt-5 lg:pt-5 border-t space-y-4'>
                                 {highlights.map((h) => (
                                     <div key={h.title} className='flex items-start gap-4'>
                                         <h.icon className='w-6 h-6 text-slate-700 flex-shrink-0 mt-0.5' strokeWidth={1.5} />
@@ -490,22 +490,16 @@ const FindHome = async ({ params }: { params: { id: string } }) => {
                         )}
 
                         {home.amenities && home.amenities.length > 0 && (
-                            <div className='mt-5'>
-                                <h2 className='text-xl font-semibold mb-2'>What this place offers</h2>
-                                <div className='flex flex-wrap gap-2'>
-                                    {home.amenities.map((a: string) => (
-                                        <span key={a} className='text-sm bg-slate-100 px-3 py-1 rounded-full'>{a}</span>
-                                    ))}
-                                </div>
+                            <div className='mt-8 pt-8 lg:mt-5 lg:pt-0 border-t lg:border-t-0'>
+                                <h2 className='text-xl font-semibold mb-3'>What this place offers</h2>
+                                <AmenityList amenities={home.amenities} />
                             </div>
                         )}
 
-                        <h1 className='mt-5 font-semibold text-2xl'>
+                        <h1 className='mt-8 pt-8 lg:mt-5 lg:pt-0 border-t lg:border-t-0 font-semibold text-2xl'>
                             About this place
                         </h1>
-                        <div className='mt-2 whitespace-pre-line'>
-                            {home.description}
-                        </div>
+                        <ShowMoreText text={home.description || ''} />
 
                         {Array.isArray(home.nearby) && home.nearby.length > 0 && (
                             <div className='mt-8 pt-8 border-t'>
@@ -608,7 +602,9 @@ const FindHome = async ({ params }: { params: { id: string } }) => {
                         )}
                     </div>
 
-                    <div>
+                    {/* Under the photos on a phone, second column from lg up
+                        exactly as before. `order` is all that moves. */}
+                    <div id='book' className='order-1 lg:order-2 scroll-mt-6'>
                         <BookingWidget
                             listingId={home.id}
                             hostId={home.host_id}
@@ -632,6 +628,11 @@ const FindHome = async ({ params }: { params: { id: string } }) => {
                     </div>
                 </div>
             </div>
+            <MobileBookingBar
+                pricePerNight={home.price_per_night}
+                label={home.instant_book === true ? 'Reserve' : 'Request to book'}
+                targetId='book'
+            />
         </div>
     )
 }
