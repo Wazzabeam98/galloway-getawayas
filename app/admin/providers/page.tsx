@@ -1,0 +1,133 @@
+import { createServerComponentClient } from '@supabase/auth-helpers-nextjs';
+import { adminClient } from '@/lib/supabaseAdmin';
+import { cookies } from 'next/headers';
+import Link from 'next/link';
+import { notFound } from 'next/navigation';
+import { getImageUrl } from '@/lib/utils';
+import { tradeLabel } from '@/lib/serviceProviders';
+import ProviderReviewRow from '@/components/admin/ProviderReviewRow';
+
+export const dynamic = 'force-dynamic';
+
+// Businesses waiting to appear on the site, and everyone already on it.
+//
+// They fill their own details in; nothing shows publicly until it has been
+// through here. These people go to guests' properties, so the gate is the
+// point of the screen.
+export default async function AdminProviders() {
+    const supabase = createServerComponentClient({ cookies });
+
+    // getUser(), not getSession() — the latter only decodes the cookie and
+    // never checks its signature, so the id below would be whatever the caller
+    // wrote in it.
+    const { data: auth } = await supabase.auth.getUser();
+    if (!auth || !auth.user) notFound();
+
+    const { data: me } = await supabase
+        .from('profiles')
+        .select('is_admin')
+        .eq('id', auth.user.id)
+        .maybeSingle();
+
+    if (!me || me.is_admin !== true) notFound();
+
+    const admin = adminClient();
+
+    // Service role: a pending application is invisible to everyone but its
+    // owner under RLS, which is the whole point — and would make this page
+    // permanently empty read as the signed-in user.
+    //
+    // The error is checked rather than discarded, because an empty list and a
+    // broken key look identical on screen, and one of them means applications
+    // are silently piling up.
+    const { data: providers, error } = await admin
+        .from('service_providers')
+        .select('id, business_name, trade, description, photos, audience, kind, status, plan, trial_ends_at, contact_email, contact_phone, submitted_at, created_at, owner_id')
+        .order('submitted_at', { ascending: false, nullsFirst: false });
+
+    if (error) {
+        return (
+            <div className="max-w-4xl mx-auto px-4 sm:px-6 py-10">
+                <Link href="/admin" className="text-sm text-slate-500 hover:text-slate-800 underline">
+                    &larr; Owner tools
+                </Link>
+                <h1 className="text-2xl font-bold text-slate-900 mt-4 mb-2">Service providers</h1>
+                <div className="rounded-2xl border-2 border-red-300 bg-red-50 p-5">
+                    <div className="font-bold text-red-900">The providers could not be read</div>
+                    <p className="text-sm text-red-900 mt-1">{error.message}</p>
+                    <p className="text-sm text-red-900 mt-2">
+                        This is not an empty list — applications may be waiting behind it.
+                    </p>
+                </div>
+            </div>
+        );
+    }
+
+    const rows = providers || [];
+    const areaRows = rows.length
+        ? (await admin
+              .from('service_areas')
+              .select('provider_id, label, radius_miles')
+              .in('provider_id', rows.map((r: any) => r.id))).data || []
+        : [];
+
+    const areasFor = (id: string) =>
+        areaRows.filter((a: any) => a.provider_id === id)
+            .map((a: any) => a.label + ' · ' + Number(a.radius_miles) + ' mi');
+
+    const waiting = rows.filter((r: any) => r.status === 'pending_review');
+    const rest = rows.filter((r: any) => r.status !== 'pending_review');
+
+    return (
+        <div className="max-w-4xl mx-auto px-4 sm:px-6 py-10">
+            <Link href="/admin" className="text-sm text-slate-500 hover:text-slate-800 underline">
+                &larr; Owner tools
+            </Link>
+
+            <h1 className="text-2xl font-bold text-slate-900 mt-4">Service providers</h1>
+            <p className="text-slate-600 text-sm mt-1 mb-8">
+                {waiting.length === 0
+                    ? 'Nothing waiting for you.'
+                    : waiting.length + ' waiting for a decision.'}
+            </p>
+
+            {waiting.length > 0 && (
+                <section className="mb-12">
+                    <h2 className="text-xs font-bold uppercase tracking-wider text-slate-500 mb-3">
+                        Waiting for review
+                    </h2>
+                    <div className="space-y-4">
+                        {waiting.map((p: any) => (
+                            <ProviderReviewRow
+                                key={p.id}
+                                provider={{ ...p, tradeLabel: tradeLabel(p.trade) }}
+                                areas={areasFor(p.id)}
+                                photoUrls={(p.photos || []).slice(0, 3).map((x: string) => getImageUrl(x))}
+                            />
+                        ))}
+                    </div>
+                </section>
+            )}
+
+            <section>
+                <h2 className="text-xs font-bold uppercase tracking-wider text-slate-500 mb-3">
+                    Everyone else
+                </h2>
+                {rest.length === 0 ? (
+                    <p className="text-sm text-slate-500">Nobody has signed up yet.</p>
+                ) : (
+                    <div className="space-y-4">
+                        {rest.map((p: any) => (
+                            <ProviderReviewRow
+                                key={p.id}
+                                provider={{ ...p, tradeLabel: tradeLabel(p.trade) }}
+                                areas={areasFor(p.id)}
+                                photoUrls={(p.photos || []).slice(0, 3).map((x: string) => getImageUrl(x))}
+                            />
+                        ))}
+                    </div>
+                )}
+            </section>
+        </div>
+    );
+}
