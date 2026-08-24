@@ -1,7 +1,6 @@
 'use client';
 
 import React, { useState, useRef, useEffect } from 'react';
-import { createPortal } from 'react-dom';
 import Image from 'next/image';
 import { useRouter } from 'next/navigation';
 import { DateRangePicker, Range, RangeKeyDict } from 'react-date-range';
@@ -119,18 +118,6 @@ export default function Hero() {
   const router = useRouter();
   const [activePopover, setActivePopover] = useState<'where' | 'when' | 'who' | null>(null);
 
-  // The full-screen picker, small screens only. Airbnb's phone pattern: the
-  // bar collapses to a single pill, because three columns and a button will
-  // not fit across 375px, and the calendar needs a whole screen rather than a
-  // popover hanging off the side of one.
-  const [mobileOpen, setMobileOpen] = useState(false);
-
-  // Portals need a DOM to aim at, so nothing is rendered until after
-  // hydration. Without this the server render and the first client render
-  // disagree and React complains.
-  const [mounted, setMounted] = useState(false);
-  useEffect(() => setMounted(true), []);
-
   // Search State
   const [location, setLocation] = useState('');
   const [dateTab, setDateTab] = useState<'dates' | 'flexible'>('dates');
@@ -187,12 +174,6 @@ export default function Hero() {
   }, []);
 
   useEffect(() => {
-    // Only relevant to the desktop popovers, which hang off the bar inside
-    // heroRef. The mobile panel is portalled out to <body>, so every tap in it
-    // reads as "outside" — hence the guard, or opening a row would close it
-    // again immediately.
-    if (mobileOpen) return;
-
     const handleClickOutside = (event: Event) => {
       if (heroRef.current && !heroRef.current.contains(event.target as Node)) {
         setActivePopover(null);
@@ -206,17 +187,7 @@ export default function Hero() {
       document.removeEventListener('mousedown', handleClickOutside);
       document.removeEventListener('touchstart', handleClickOutside);
     };
-  }, [mobileOpen]);
-
-  // The page behind a full-screen panel should not scroll under it.
-  useEffect(() => {
-    if (!mobileOpen) return;
-    const previous = document.body.style.overflow;
-    document.body.style.overflow = 'hidden';
-    return () => {
-      document.body.style.overflow = previous;
-    };
-  }, [mobileOpen]);
+  }, []);
 
   const handleSelectDates = (ranges: RangeKeyDict) => {
     setDateRange(ranges.selection);
@@ -286,7 +257,6 @@ export default function Hero() {
     if (totalGuests > 0) params.set('guests', String(totalGuests));
     if (pets > 0) params.set('pets', '1');
 
-    setMobileOpen(false);
     setActivePopover(null);
 
     const query = params.toString();
@@ -494,7 +464,7 @@ export default function Hero() {
   ) => {
     const open = activePopover === key;
     return (
-      <div className="border-b border-stone-200 last:border-b-0">
+      <div>
         <button
           type="button"
           aria-expanded={open}
@@ -531,7 +501,7 @@ export default function Hero() {
 
   return (
     <div
-      className="relative z-40 w-full h-[460px] md:h-[500px] flex items-center justify-center bg-stone-600 text-white overflow-visible"
+      className="relative z-40 w-full min-h-[460px] md:h-[500px] py-10 md:py-0 flex items-center justify-center bg-stone-600 text-white overflow-visible"
       ref={heroRef}
     >
       {/* Rotating background images */}
@@ -594,27 +564,44 @@ export default function Hero() {
           Book direct for our best rate guarantee & lower booking fees
         </p>
 
-        {/* Collapsed pill — small screens only. Everything the guest has
-            chosen so far, on one line, over the top of the photo. */}
-        <button
-          type="button"
-          onClick={() => {
-            setActivePopover(null);
-            setMobileOpen(true);
-          }}
-          className="md:hidden w-full max-w-md bg-white rounded-full py-3.5 pl-5 pr-3 shadow-2xl text-stone-800 flex items-center gap-3 border border-stone-100"
-        >
-          <span className="flex-1 min-w-0 text-left text-sm font-medium truncate">
-            <span className={location ? 'text-stone-900' : 'text-stone-500'}>{whereSummary}</span>
-            <span className="text-stone-300"> · </span>
-            <span className="text-stone-500">{whenSummary}</span>
-            <span className="text-stone-300"> · </span>
-            <span className="text-stone-500">{guestSummary}</span>
-          </span>
-          <span className="bg-emerald-700 text-white rounded-full p-2.5 flex items-center justify-center shrink-0 shadow-md">
-            {searchIcon('w-4 h-4')}
-          </span>
-        </button>
+        {/* Stacked search — small screens only. The same three controls as
+            the desktop bar, one per row instead of three across, because
+            three columns and a button do not fit across 375px. Nothing about
+            how any of them work changes: same towns, same date picker, same
+            counters, same submit. */}
+        <div className="md:hidden w-full max-w-md text-stone-800">
+          <div className="bg-white rounded-3xl shadow-2xl border border-stone-100 overflow-hidden divide-y divide-stone-200">
+            {mobileRow(
+              'where',
+              'Where',
+              whereSummary,
+              'Where to?',
+              <select
+                value={location}
+                onChange={(e) => setLocation(e.target.value)}
+                aria-label="Where"
+                className="w-full rounded-xl border border-stone-300 bg-white px-4 py-3 text-base font-medium text-stone-900 focus:outline-none focus:ring-2 focus:ring-emerald-700"
+              >
+                {LOCATIONS.map((l) => (
+                  <option key={l.value} value={l.value}>
+                    {l.label}
+                  </option>
+                ))}
+              </select>,
+            )}
+            {mobileRow('when', 'When', whenSummary, 'Add dates', whenContent('mobile'))}
+            {mobileRow('who', 'Who', guestSummary, 'Add guests', guestContent('mobile'))}
+          </div>
+
+          <button
+            type="button"
+            onClick={runSearch}
+            className="mt-3 w-full bg-emerald-700 hover:bg-emerald-800 text-white rounded-full py-4 flex items-center justify-center gap-2 font-semibold transition shadow-lg"
+          >
+            {searchIcon('w-5 h-5')}
+            Search
+          </button>
+        </div>
 
         {/* Search Bar — desktop. Unchanged apart from being hidden on phones. */}
         <div className="hidden md:flex w-full max-w-3xl bg-white rounded-full p-1.5 shadow-2xl text-stone-800 items-center relative border border-stone-100">
@@ -713,68 +700,6 @@ export default function Hero() {
         </div>
       </div>
 
-      {/* Full-screen picker — small screens only.
-          Portalled to <body> on purpose: the navbar is `sticky z-50` and this
-          hero is `z-40`, which makes a stacking context. A fixed overlay left
-          inside it renders *underneath* the navbar however high its z-index
-          goes. Moving it out of the hero is the only thing that fixes that. */}
-      {mounted &&
-        mobileOpen &&
-        createPortal(
-          <div className="md:hidden fixed inset-0 z-[100] bg-white text-stone-900 flex flex-col">
-            <div className="flex items-center justify-between px-4 py-3 border-b border-stone-200 shrink-0">
-              <button
-                type="button"
-                onClick={() => setMobileOpen(false)}
-                aria-label="Close search"
-                className="w-10 h-10 rounded-full border border-stone-300 flex items-center justify-center text-stone-700"
-              >
-                <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
-                </svg>
-              </button>
-              <p className="text-sm font-semibold">Find a stay</p>
-              {/* Balances the close button so the title sits centred. */}
-              <span className="w-10" aria-hidden="true" />
-            </div>
-
-            <div className="flex-1 overflow-y-auto overscroll-contain">
-              <div className="m-4 rounded-2xl border border-stone-200 shadow-sm overflow-hidden">
-                {mobileRow(
-                  'where',
-                  'Where',
-                  whereSummary,
-                  'Where to?',
-                  <select
-                    value={location}
-                    onChange={(e) => setLocation(e.target.value)}
-                    className="w-full rounded-xl border border-stone-300 bg-white px-4 py-3 text-base font-medium text-stone-900 focus:outline-none focus:ring-2 focus:ring-emerald-700"
-                  >
-                    {LOCATIONS.map((l) => (
-                      <option key={l.value} value={l.value}>
-                        {l.label}
-                      </option>
-                    ))}
-                  </select>,
-                )}
-                {mobileRow('when', 'When', whenSummary, 'Add dates', whenContent('mobile'))}
-                {mobileRow('who', 'Who', guestSummary, 'Add guests', guestContent('mobile'))}
-              </div>
-            </div>
-
-            <div className="shrink-0 border-t border-stone-200 p-4 pb-[max(1rem,env(safe-area-inset-bottom))]">
-              <button
-                type="button"
-                onClick={runSearch}
-                className="w-full bg-emerald-700 hover:bg-emerald-800 text-white rounded-full py-4 flex items-center justify-center gap-2 font-semibold transition shadow-md"
-              >
-                {searchIcon('w-5 h-5')}
-                Search
-              </button>
-            </div>
-          </div>,
-          document.body,
-        )}
     </div>
   );
 }
