@@ -100,6 +100,23 @@ Please:
   pages, components, app and src only, so no CSS is generated and elements
   render invisible — white text on no background. Use hex values via inline
   style, or `currentColor`.
+- **Narrowing `theme.container.screens` silently kills breakpoint-keyed
+  container padding.** `screens` here is `{ "2xl": "1400px" }`, and that list
+  is also what decides which breakpoints `theme.container.padding` may use. A
+  value like `padding: { DEFAULT: "1rem", md: "2rem" }` therefore generates the
+  `1rem` and nothing else — no warning, no error, no `md` rule anywhere in the
+  output. Every screen gets the phone padding, so desktop quietly loses its
+  margin while the config reads as though it has one.
+
+  This is worse than a broken build because the result looks plausible: a page
+  that is a bit wide, not a page that is obviously wrong. It cost a round of
+  measuring at 1280px to spot, having been called done once already.
+
+  Put per-breakpoint container padding in `app/globals.css` as a plain media
+  query, after `@tailwind utilities`, and say why in a comment — there is one
+  there now capped at `max-width: 767px`. Check it by measuring, not by
+  reading: `getComputedStyle(document.querySelector('.container')).paddingLeft`
+  at two widths.
 - **Check column and table names against the repo before writing a query.**
   Invented names have got as far as being sent more than once.
 - **New status values need the check constraint widening first.** Adding
@@ -326,6 +343,23 @@ Please:
   they were never given, in `host-payouts`, `balance-charges` and `webhook` —
   and the passes meant no more than the failures did. Any loader that stubs
   Supabase must `clearModule('@/lib/supabaseAdmin')` as well as the route.
+
+- **Delete `.test-build` before any run that matters — compiled tests from
+  another branch survive a branch switch.** `npm test` is
+  `tsc -p tsconfig.test.json && node --test .test-build/tests`. `tsc` writes
+  into that directory but never cleans it, so a test file that exists on one
+  branch and not another stays compiled and keeps running after you switch
+  away. The count goes up, everything passes, and the extra tests are exercising
+  source that is no longer checked out.
+
+  Seen on 24 August 2026: a branch with 20 test files reported **214 passing**,
+  the exact figure from the branch it was cut from, which has 24. The honest
+  number was 210. Nothing failed, so nothing drew attention to it — a suite
+  reporting *more* than it has is invisible in a way a failure never is.
+
+  `rm -rf .test-build && npm test` before trusting a count, and always after
+  `git checkout`. This is the third time this suite has claimed more than it
+  tested; the other two are directly above.
 
 - **Stripe's Adaptive Pricing is on by default and will offer euros.** It
   converts a GBP price into whatever currency it decides the guest's country
