@@ -256,7 +256,7 @@ const FindHome = async ({ params }: { params: { id: string } }) => {
     if (!home) {
         return (
             <div className='container mb-10'>
-                <div className='container mt-10 text-center text-slate-500'>
+                <div className='mt-10 text-center text-slate-500'>
                     This listing couldn't be found.
                 </div>
             </div>
@@ -268,7 +268,7 @@ const FindHome = async ({ params }: { params: { id: string } }) => {
         if (user?.id !== home.host_id) {
             return (
                 <div className='container mb-10'>
-                    <div className='container mt-10 text-center text-slate-500'>
+                    <div className='mt-10 text-center text-slate-500'>
                         This listing isn't published yet.
                     </div>
                 </div>
@@ -315,7 +315,7 @@ const FindHome = async ({ params }: { params: { id: string } }) => {
 
     return (
         <div className='container mb-10'>
-            <div className='container mt-4'>
+            <div className='mt-4'>
                 <h1 className='text-2xl md:text-3xl font-bold text-slate-900'>{home.title}</h1>
                 <div className='flex items-center gap-1.5 mt-1.5 text-sm text-slate-600'>
                     {showScore ? (

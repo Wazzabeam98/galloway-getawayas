@@ -2,6 +2,24 @@
 @tailwind components;
 @tailwind utilities;
 
+/* `.container` carries 2rem of side padding, which is 64px off a 375px screen
+   before any content gets a look in — the listing page was rendering its
+   booking card at 247px and clipping Friday and Saturday out of the calendar.
+   Phones get 1rem instead.
+
+   This is here rather than in tailwind.config.js because `theme.container`
+   narrows `screens` to 2xl, and a breakpoint-keyed padding value is dropped
+   without warning when its breakpoint is not in that list — a `md` key there
+   produces nothing, leaving desktop on the phone padding.
+
+   Below `md` only. Nothing at or above 768px is touched. */
+@media (max-width: 767px) {
+  .container {
+    padding-left: 1rem;
+    padding-right: 1rem;
+  }
+}
+
 @layer base {
   :root {
     --background: 0 0% 100%;
