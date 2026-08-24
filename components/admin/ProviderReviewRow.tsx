@@ -50,13 +50,26 @@ export default function ProviderReviewRow({
 
         setBusy(false);
 
+        const body = await res.json().catch(() => ({}));
+
         if (!res.ok) {
-            const body = await res.json().catch(() => ({}));
             toast.error(body.error || 'That did not save.', { theme: 'colored' });
             return;
         }
 
-        toast.success(decision === 'approve' ? 'Approved.' : 'Declined.', { theme: 'colored' });
+        // The decision is saved either way. But the business only knows about
+        // it if the email went, so saying nothing about a send that failed
+        // would leave them waiting on a decision that has already been made.
+        if (body.emailed === false) {
+            toast.warning(
+                (decision === 'approve' ? 'Approved' : 'Declined')
+                    + ', but the email did not send — tell them yourself.',
+                { theme: 'colored', autoClose: false }
+            );
+        } else {
+            toast.success(decision === 'approve' ? 'Approved.' : 'Declined.', { theme: 'colored' });
+        }
+
         setDecliningOpen(false);
         router.refresh();
     };

@@ -90,44 +90,57 @@ export async function POST(req: Request) {
         }
 
         // The decision is saved by this point. An email that fails must not
-        // undo it or report failure to the admin — it would leave the record
-        // decided and the screen saying otherwise.
+        // undo it — but it must not be passed off as having gone, either. The
+        // whole point of the decision is that the business hears about it.
+        //
+        // sendEmail returns false rather than throwing, so the try/catch below
+        // catches nothing on the ordinary failure path: no API key, a refusal
+        // from Resend, a dead network. Those come back as `false` and have to
+        // be read.
+        let emailed = false;
+
         try {
             if (provider.contact_email) {
                 const name = escapeHtml(provider.business_name || 'your business');
 
-                if (decision === 'approve') {
-                    await sendEmail(
-                        provider.contact_email,
-                        'You are listed on Galloway Getaways',
-                        emailLayout(
-                            '<p style="margin:0 0 16px;font-size:16px;">Good news — <strong>' + name
-                                + '</strong> has been approved and is now on the site.</p>'
-                                + '<p style="margin:0 0 16px;font-size:16px;">People looking for your trade in the areas you cover can now find you. We will email you whenever somebody asks for work.</p>'
-                                + button(SITE_URL + '/services/join', 'See your listing'),
-                            'You are receiving this because you listed a business on Galloway Getaways.'
-                        )
+                const subject = decision === 'approve'
+                    ? 'You are listed on Galloway Getaways'
+                    : 'About your Galloway Getaways listing';
+
+                const html = decision === 'approve'
+                    ? emailLayout(
+                        '<p style="margin:0 0 16px;font-size:16px;">Good news — <strong>' + name
+                            + '</strong> has been approved and is now on the site.</p>'
+                            + '<p style="margin:0 0 16px;font-size:16px;">People looking for your trade in the areas you cover can now find you. We will email you whenever somebody asks for work.</p>'
+                            + button(SITE_URL + '/services/join', 'See your listing'),
+                        'You are receiving this because you listed a business on Galloway Getaways.'
+                    )
+                    : emailLayout(
+                        '<p style="margin:0 0 16px;font-size:16px;">Thanks for sending in <strong>' + name
+                            + '</strong>. We are not able to list it as it stands.</p>'
+                            + '<p style="margin:0 0 16px;font-size:16px;">' + escapeHtml(note) + '</p>'
+                            + '<p style="margin:0 0 16px;font-size:16px;">You can change it and send it back to us whenever you like.</p>'
+                            + button(SITE_URL + '/services/join', 'Update your details'),
+                        'You are receiving this because you listed a business on Galloway Getaways.'
                     );
-                } else {
-                    await sendEmail(
-                        provider.contact_email,
-                        'About your Galloway Getaways listing',
-                        emailLayout(
-                            '<p style="margin:0 0 16px;font-size:16px;">Thanks for sending in <strong>' + name
-                                + '</strong>. We are not able to list it as it stands.</p>'
-                                + '<p style="margin:0 0 16px;font-size:16px;">' + escapeHtml(note) + '</p>'
-                                + '<p style="margin:0 0 16px;font-size:16px;">You can change it and send it back to us whenever you like.</p>'
-                                + button(SITE_URL + '/services/join', 'Update your details'),
-                            'You are receiving this because you listed a business on Galloway Getaways.'
-                        )
-                    );
-                }
+
+                emailed = await sendEmail(provider.contact_email, subject, html);
             }
         } catch (mailErr: any) {
-            await logError('service-provider-decision-email', mailErr);
+            emailed = false;
         }
 
-        return NextResponse.json({ ok: true });
+        if (!emailed) {
+            await logError('service-provider-decision-email', {
+                provider: id,
+                decision: decision,
+                to: provider.contact_email || null,
+            });
+        }
+
+        // The decision stands either way, so this is not an error status. The
+        // screen decides what to say about `emailed`.
+        return NextResponse.json({ ok: true, emailed: emailed });
     } catch (err: any) {
         await logError('service-provider-decision', err);
         return NextResponse.json({ ok: false, error: 'Something went wrong.' }, { status: 500 });
