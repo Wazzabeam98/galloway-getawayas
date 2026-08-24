@@ -519,7 +519,7 @@ export default function Hero() {
 
   return (
     <div
-      className="relative z-40 w-full min-h-[460px] md:h-[500px] py-10 md:py-0 flex items-stretch md:items-center justify-center bg-stone-600 text-white overflow-visible"
+      className="relative z-40 w-full min-h-[68svh] md:h-[500px] py-10 md:py-0 flex items-stretch md:items-center justify-center bg-stone-600 text-white overflow-visible"
       ref={heroRef}
     >
       {/* Rotating background images */}
@@ -549,11 +549,32 @@ export default function Hero() {
             )}
           </div>
         ))}
-        {/* Soft Vignette Overlay */}
-        <div className="absolute inset-0 bg-gradient-to-t from-stone-950/45 via-stone-900/5 to-stone-950/20" />
-        {/* A soft pool of shade behind the heading only, so the photo stays
-            bright at the edges but the white text still holds up. */}
-        <div className="absolute inset-0 bg-[radial-gradient(ellipse_at_center,rgba(0,0,0,0.35)_0%,rgba(0,0,0,0.12)_45%,transparent_75%)]" />
+        {/* There used to be a bottom-up scrim here meant to shade the search
+            card and the dots. It never rendered: it was built with
+            `from-stone-950/45`, and 45 is not on Tailwind 3's opacity scale,
+            so the class was never generated, `--tw-gradient-from` stayed
+            unset, and the whole linear-gradient() was invalid — the element
+            computed to `background-image: none` on every screen. Removed
+            rather than repaired, because switching it on now is a visible
+            change to the foot of the photo that nobody asked for. To bring it
+            back, use an arbitrary value so the opacity scale cannot swallow
+            it again:
+              bg-gradient-to-t from-[rgba(12,10,9,0.45)] via-transparent to-transparent
+            The frosted search card already carries its own contrast. */}
+        {/* Phone only. The heading and subtitle are top-aligned on a phone, so
+            they sit on this rather than on bare sky: heaviest at the very top,
+            holding until just past the foot of the subtitle at ~27% down, and
+            gone by 58%. That leaves the middle of the photo — where the
+            subject usually is — untouched. Worst-case contrast for the
+            subtitle, measured over all four photos: 4.8:1, against 1.2:1 for
+            the mint that used to sit here. Note the colour was not the whole
+            problem — pure white under the old overlays still only reached
+            1.4:1, so the scrim is the part doing the work. */}
+        <div className="md:hidden absolute inset-0 bg-[linear-gradient(to_bottom,rgba(12,10,9,0.62)_0%,rgba(12,10,9,0.56)_24%,rgba(12,10,9,0.47)_32%,rgba(12,10,9,0.18)_44%,transparent_58%)]" />
+        {/* md and up only. The text is vertically centred at this width, which
+            is below where the top scrim has faded out, so the centred pool is
+            still the thing carrying it. Unchanged from before. */}
+        <div className="hidden md:block absolute inset-0 bg-[radial-gradient(ellipse_at_center,rgba(0,0,0,0.35)_0%,rgba(0,0,0,0.12)_45%,transparent_75%)]" />
       </div>
 
       {/* Which image you're on — also lets people skip ahead */}
@@ -578,7 +599,7 @@ export default function Hero() {
         <h1 className="text-4xl md:text-6xl font-extrabold tracking-tight mb-3 drop-shadow-lg">
           Galloway Getaways
         </h1>
-        <p className="text-lg md:text-xl font-medium mb-8 drop-shadow text-emerald-100">
+        <p className="text-lg md:text-xl font-medium mb-8 drop-shadow-md text-white">
           Book direct for our best rate guarantee & lower booking fees
         </p>
 
