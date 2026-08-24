@@ -117,6 +117,26 @@ Please:
   there now capped at `max-width: 767px`. Check it by measuring, not by
   reading: `getComputedStyle(document.querySelector('.container')).paddingLeft`
   at two widths.
+- **An opacity Tailwind does not have generates no class at all, and the
+  failure looks like success.** `bg-white/85` produces nothing: 85 is not in
+  the default opacity scale, which goes 0, 5, 10, 20, 25, 30, 40, 50, 60, 70,
+  75, 80, 90, 95, 100. No warning, no error, no rule in the output.
+
+  What made this one nasty is what it looked like on screen. The frosted search
+  card was `bg-white/85 backdrop-blur-md`. The blur is a real class, so it
+  applied — and a 12px backdrop blur over a *fully transparent* background
+  still visibly blurs the photo behind it. The card looked frosted. It was a
+  blur with no white in it at all, and the difference from the intended 85%
+  white is subtle enough to argue about in a screenshot.
+
+  Caught by reading `getComputedStyle(el).backgroundColor` and getting
+  `rgba(0, 0, 0, 0)` where it should have said `rgba(255, 255, 255, 0.85)`.
+  Reading the class name would never have found it, because the class name was
+  exactly what was intended.
+
+  Use an arbitrary value for anything off the scale — `bg-white/[0.85]` — and
+  check the computed value, not the markup. Same family as the container
+  padding above: Tailwind drops what it cannot generate and says nothing.
 - **Check column and table names against the repo before writing a query.**
   Invented names have got as far as being sent more than once.
 - **New status values need the check constraint widening first.** Adding

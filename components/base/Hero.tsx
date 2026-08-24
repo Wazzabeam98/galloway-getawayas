@@ -481,7 +481,7 @@ export default function Hero() {
         aria-expanded={open}
         onClick={() => setActivePopover(open ? null : key)}
         className={`min-h-[56px] min-w-0 px-4 py-3 flex items-baseline gap-2 text-left transition ${edges} ${
-          open ? 'bg-stone-50' : 'bg-white'
+          open ? 'bg-white/[0.45]' : 'bg-transparent'
         }`}
       >
         <span className="shrink-0 text-[10px] font-bold tracking-wider uppercase text-stone-700">
@@ -587,8 +587,8 @@ export default function Hero() {
             the bottom of the hero so the photo is clear above it. Same three
             controls as the desktop bar, and nothing about how they work
             changes. */}
-        <div className="md:hidden mt-auto w-full max-w-md text-stone-800">
-          <div className="bg-white rounded-3xl shadow-2xl border border-stone-100 overflow-hidden">
+        <div className="md:hidden mt-auto mb-8 md:mb-0 w-full max-w-md text-stone-800">
+          <div className="bg-white/[0.85] backdrop-blur-md rounded-3xl shadow-2xl border border-white/60 overflow-hidden">
             <div className="grid grid-cols-2">
               {gridCell('where', 'Where', whereChosen, 'border-r border-b border-stone-200')}
               {gridCell('when', 'When', whenChosen, 'border-b border-stone-200')}
