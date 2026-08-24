@@ -14,6 +14,7 @@ import { rateFor } from '@/lib/fees';
 import { buildLocation, splitLocation, DEFAULT_REGION } from '@/lib/places';
 import { buildStreetAddress, tidyPostcode } from '@/lib/address';
 import { fromRow, newProblems, publishProblems } from '@/lib/listingRules';
+import { compressImage } from '@/lib/compressImage';
 import IcalFeeds from '@/components/IcalFeeds';
 import {
     HomeIcon, Trees, Waves, Compass, Building2, Sparkles, Minus, Plus, Check,
@@ -182,6 +183,7 @@ export default function EditListing() {
     const [nonRefundableOption, setNonRefundableOption] = useState(false);
 
     const [submitting, setSubmitting] = useState(false);
+    const [processingPhotos, setProcessingPhotos] = useState(false);
     const [formError, setFormError] = useState('');
     const [draggedIndex, setDraggedIndex] = useState<number | null>(null);
     const [dragOverIndex, setDragOverIndex] = useState<number | null>(null);
@@ -290,9 +292,32 @@ export default function EditListing() {
         setAmenities((prev) => (prev.includes(name) ? prev.filter((a) => a !== name) : [...prev, name]));
     };
 
-    const handlePhotosChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+    // Shrunk here rather than at upload, the way addhome does it, so the
+    // preview a host sees is the photo that actually gets stored.
+    //
+    // This screen used to upload the raw file. A photo straight off a phone is
+    // 4-12MB and 4000px wide, and this is the path a host uses every time they
+    // add a photo to a listing that already exists — so it is the normal path,
+    // not the rare one. Two 4032px files reached production storage that way.
+    const handlePhotosChange = async (e: React.ChangeEvent<HTMLInputElement>) => {
         const files = Array.from(e.target.files || []);
-        if (files.length) setPhotos((prev) => [...prev, ...files.map((file) => ({ kind: 'new' as const, file }))]);
+        if (!files.length) return;
+
+        setProcessingPhotos(true);
+        setFormError('');
+
+        const ready: File[] = [];
+        for (const file of files) {
+            try {
+                ready.push(await compressImage(file));
+            } catch (err) {
+                setFormError('One of those photos couldn\u2019t be read. Try a different one.');
+            }
+        }
+
+        setProcessingPhotos(false);
+
+        if (ready.length) setPhotos((prev) => [...prev, ...ready.map((file) => ({ kind: 'new' as const, file }))]);
         e.target.value = '';
     };
 
@@ -827,8 +852,11 @@ export default function EditListing() {
                                     </div>
                                 )}
                                 <label className="h-24 rounded-2xl border-2 border-dashed border-slate-300 hover:border-slate-400 flex flex-col items-center justify-center cursor-pointer text-slate-500 text-sm">
-                                    <span className="font-semibold">+ Add photos</span>
-                                    <input type="file" accept="image/png, image/jpeg" multiple onChange={handlePhotosChange} className="hidden" />
+                                    <span className="font-semibold">
+                                        {processingPhotos ? 'Preparing your photos...' : '+ Add photos'}
+                                    </span>
+                                    <span className="text-xs mt-0.5">Straight from your phone is fine</span>
+                                    <input type="file" accept="image/png, image/jpeg" multiple onChange={handlePhotosChange} className="hidden" disabled={processingPhotos} />
                                 </label>
                             </section>
                         )}

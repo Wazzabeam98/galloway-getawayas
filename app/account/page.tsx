@@ -14,6 +14,7 @@ import LoginModel from '@/components/auth/LoginModel';
 import { toast } from 'react-toastify';
 import { getImageUrl, formatTime } from '@/lib/utils';
 import Env from '@/config/Env';
+import { compressImage } from '@/lib/compressImage';
 import NotificationsSection from '@/components/account/NotificationsSection';
 import PaymentsSection from '@/components/account/PaymentsSection';
 import {
@@ -377,13 +378,26 @@ export default function AccountSettings() {
 
         setUploadingAvatar(true);
 
-        // Stored alongside listing photos, in an avatars/ folder.
-        const ext = (file.name.split('.').pop() || 'jpg').toLowerCase();
-        const path = `avatars/${session.user.id}-${Date.now()}.${ext}`;
+        // Shrunk the same way listing photos are. Without this a profile photo
+        // went to storage at whatever the phone produced — 4000px and several
+        // megabytes, to be shown in a 32px circle.
+        let ready = file;
+        try {
+            ready = await compressImage(file);
+        } catch (err) {
+            setUploadingAvatar(false);
+            toast.error('That image couldn\u2019t be read. Try a different one.', { theme: 'colored' });
+            return;
+        }
+
+        // Always .jpg: compressImage re-encodes to JPEG whatever went in, so
+        // taking the extension from the original name would put JPEG bytes
+        // behind a .heic or .png path.
+        const path = `avatars/${session.user.id}-${Date.now()}.jpg`;
 
         const { error: uploadError } = await supabase.storage
             .from(Env.S3_BUCKET)
-            .upload(path, file, { upsert: true });
+            .upload(path, ready, { upsert: true, contentType: 'image/jpeg' });
 
         if (uploadError) {
             setUploadingAvatar(false);
