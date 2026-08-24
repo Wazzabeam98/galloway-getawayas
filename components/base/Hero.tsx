@@ -482,16 +482,21 @@ export default function Hero() {
         type="button"
         aria-expanded={open}
         onClick={() => setActivePopover(open ? null : key)}
-        className={`min-h-[52px] min-w-0 px-4 py-3 flex items-baseline gap-2 text-left transition ${edges} ${
+        className={`min-w-0 px-4 py-3 flex items-center gap-2 text-left transition ${edges} ${
           open ? 'bg-white/[0.45]' : 'bg-transparent'
         }`}
       >
-        <span className="shrink-0 text-[10px] font-bold tracking-wider uppercase text-stone-700">
+        <span className="shrink-0 text-[11px] font-bold tracking-wider uppercase text-stone-700">
           {label}
         </span>
+        {/* leading-5 on both states so the row is the same height whether it
+            holds a hint or a choice — otherwise picking a date would nudge the
+            whole card taller. */}
         <span
-          className={`min-w-0 flex-1 truncate text-sm ${
-            chosen ? 'font-medium text-stone-900' : 'font-normal text-stone-500'
+          className={`min-w-0 flex-1 truncate leading-5 ${
+            chosen
+              ? 'text-sm font-medium text-stone-900'
+              : 'text-[10px] font-normal text-stone-500'
           }`}
         >
           {chosen || hint}
@@ -623,7 +628,7 @@ export default function Hero() {
               <button
                 type="button"
                 onClick={runSearch}
-                className="min-h-[52px] bg-emerald-700 hover:bg-emerald-800 text-white flex items-center justify-center gap-2 font-semibold transition"
+                className="bg-emerald-700 hover:bg-emerald-800 text-white flex items-center justify-center gap-2 font-semibold transition"
               >
                 {searchIcon('w-4 h-4')}
                 Search
