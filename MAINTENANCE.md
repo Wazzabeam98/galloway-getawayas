@@ -100,43 +100,58 @@ Please:
   pages, components, app and src only, so no CSS is generated and elements
   render invisible — white text on no background. Use hex values via inline
   style, or `currentColor`.
-- **Narrowing `theme.container.screens` silently kills breakpoint-keyed
-  container padding.** `screens` here is `{ "2xl": "1400px" }`, and that list
-  is also what decides which breakpoints `theme.container.padding` may use. A
-  value like `padding: { DEFAULT: "1rem", md: "2rem" }` therefore generates the
-  `1rem` and nothing else — no warning, no error, no `md` rule anywhere in the
-  output. Every screen gets the phone padding, so desktop quietly loses its
-  margin while the config reads as though it has one.
+- **A Tailwind class with an off-scale number generates nothing, fails
+  silently, and looks plausible. Check the computed value, not the class
+  name.** This is the single most expensive recurring bug in this repo — three
+  instances so far, each one found by measuring rather than by reading.
 
-  This is worse than a broken build because the result looks plausible: a page
-  that is a bit wide, not a page that is obviously wrong. It cost a round of
-  measuring at 1280px to spot, having been called done once already.
+  Tailwind only emits a class when the number in it is on a scale it knows
+  about. Give it one that is not and it does not warn, does not error, and
+  writes no rule. The markup still reads exactly as intended, so the place you
+  would naturally look to check is the place that lies to you. The result is
+  never an obviously broken page — it is a page that is slightly wrong in a way
+  you can argue about in a screenshot.
 
-  Put per-breakpoint container padding in `app/globals.css` as a plain media
-  query, after `@tailwind utilities`, and say why in a comment — there is one
-  there now capped at `max-width: 767px`. Check it by measuring, not by
-  reading: `getComputedStyle(document.querySelector('.container')).paddingLeft`
-  at two widths.
-- **An opacity Tailwind does not have generates no class at all, and the
-  failure looks like success.** `bg-white/85` produces nothing: 85 is not in
-  the default opacity scale, which goes 0, 5, 10, 20, 25, 30, 40, 50, 60, 70,
-  75, 80, 90, 95, 100. No warning, no error, no rule in the output.
+  The default opacity scale is 0, 5, 10, 20, 25, 30, 40, 50, 60, 70, 75, 80,
+  90, 95, 100. Anything off it needs an arbitrary value.
 
-  What made this one nasty is what it looked like on screen. The frosted search
-  card was `bg-white/85 backdrop-blur-md`. The blur is a real class, so it
-  applied — and a 12px backdrop blur over a *fully transparent* background
-  still visibly blurs the photo behind it. The card looked frosted. It was a
-  blur with no white in it at all, and the difference from the intended 85%
-  white is subtle enough to argue about in a screenshot.
+  **The check, always:** read the computed value in the browser, not the class
+  list. `getComputedStyle(el).backgroundColor`, `.backgroundImage`,
+  `.paddingLeft`. A missing class shows up as the initial value — `none`,
+  `rgba(0, 0, 0, 0)`, `0px` — where you expected something. Grepping the built
+  CSS for the class name works too, and is faster when you already suspect it.
 
-  Caught by reading `getComputedStyle(el).backgroundColor` and getting
-  `rgba(0, 0, 0, 0)` where it should have said `rgba(255, 255, 255, 0.85)`.
-  Reading the class name would never have found it, because the class name was
-  exactly what was intended.
+  The three, and what each needs:
 
-  Use an arbitrary value for anything off the scale — `bg-white/[0.85]` — and
-  check the computed value, not the markup. Same family as the container
-  padding above: Tailwind drops what it cannot generate and says nothing.
+  - `bg-white/85` on the frosted search card. 85 is off the opacity scale, so
+    no class. What made it nasty: `backdrop-blur-md` alongside it is real, and
+    a 12px backdrop blur over a *fully transparent* background still visibly
+    blurs the photo behind it. The card looked frosted. It was a blur with no
+    white in it. Caught by `getComputedStyle(el).backgroundColor` returning
+    `rgba(0, 0, 0, 0)`. Fix: `bg-white/[0.85]`.
+
+  - `from-stone-950/45` on the hero's bottom vignette. Same cause, worse blast
+    radius: a gradient needs all of its stops. With `--tw-gradient-from` unset
+    the whole `linear-gradient()` was invalid, so the element computed to
+    `background-image: none` and *the entire overlay had never rendered on any
+    screen since it was written* — while `via-*` and `to-*` beside it compiled
+    fine, which is what makes the class list look healthy. Fix:
+    `from-[rgba(12,10,9,0.45)]`.
+
+  - Breakpoint-keyed `theme.container.padding`. Different mechanism, same
+    failure. `theme.container.screens` is `{ "2xl": "1400px" }`, and that list
+    also decides which breakpoints `padding` may use, so
+    `padding: { DEFAULT: "1rem", md: "2rem" }` generates the `1rem` and no `md`
+    rule anywhere. Every screen got the phone padding and desktop quietly lost
+    its margin. Cost a round of measuring at 1280px, having been called done
+    once already. Fix: put per-breakpoint container padding in
+    `app/globals.css` as a plain media query after `@tailwind utilities`, with
+    a comment saying why — there is one there now capped at
+    `max-width: 767px`.
+
+  Prefer an arbitrary value any time the number is not obviously on a scale.
+  It costs nothing when it was on the scale anyway, and it cannot be silently
+  swallowed.
 - **Check column and table names against the repo before writing a query.**
   Invented names have got as far as being sent more than once.
 - **New status values need the check constraint widening first.** Adding
