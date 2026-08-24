@@ -255,7 +255,7 @@ const FindHome = async ({ params }: { params: { id: string } }) => {
 
     if (!home) {
         return (
-            <div className='container mb-10'>
+            <div className='max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 mb-10'>
                 <div className='mt-10 text-center text-slate-500'>
                     This listing couldn't be found.
                 </div>
@@ -267,7 +267,7 @@ const FindHome = async ({ params }: { params: { id: string } }) => {
         const { data: { user } } = await supabase.auth.getUser();
         if (user?.id !== home.host_id) {
             return (
-                <div className='container mb-10'>
+                <div className='max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 mb-10'>
                     <div className='mt-10 text-center text-slate-500'>
                         This listing isn't published yet.
                     </div>
@@ -314,7 +314,7 @@ const FindHome = async ({ params }: { params: { id: string } }) => {
     const showScore = hasPublicScore(reviewCount);
 
     return (
-        <div className='container mb-10'>
+        <div className='max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 mb-10'>
             <div className='mt-4'>
                 <h1 className='text-2xl md:text-3xl font-bold text-slate-900'>{home.title}</h1>
                 <div className='flex items-center gap-1.5 mt-1.5 text-sm text-slate-600'>

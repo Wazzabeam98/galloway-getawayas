@@ -1,6 +1,7 @@
 import { createServerComponentClient } from '@supabase/auth-helpers-nextjs';
 import { cookies } from 'next/headers';
 import Link from 'next/link';
+import Image from 'next/image';
 import { getImageUrl, formatTime } from '@/lib/utils';
 import { formatUk } from '@/lib/cancellation';
 import { publicArea } from '@/lib/places';
@@ -84,11 +85,13 @@ export default async function UpcomingTrip() {
 
             <div className="rounded-3xl overflow-hidden border border-stone-200 bg-white flex flex-col md:flex-row">
                 {image && (
-                    <div className="md:w-2/5 lg:w-1/3 h-56 md:h-auto md:min-h-[20rem] flex-shrink-0">
-                        <img
+                    <div className="relative md:w-2/5 lg:w-1/3 h-56 md:h-auto md:min-h-[20rem] flex-shrink-0">
+                        <Image
                             src={image}
                             alt={listing.title}
-                            className="w-full h-full object-cover"
+                            fill
+                            sizes="(max-width: 768px) 100vw, 420px"
+                            className="object-cover"
                         />
                     </div>
                 )}

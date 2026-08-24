@@ -8,6 +8,7 @@ import { cookies } from 'next/headers';
 import { getImageUrl } from '@/lib/utils';
 import { format, parseISO } from 'date-fns';
 import Link from 'next/link';
+import Image from 'next/image';
 import { Home, Star } from 'lucide-react';
 import { hasPublicScore } from '@/lib/reviews';
 
@@ -174,10 +175,16 @@ export default async function HomePage({
                                 >
                                     <div className="w-full h-64 rounded-2xl overflow-hidden bg-stone-200 relative">
                                         {property.images && property.images.length > 0 ? (
-                                            <img
+                                            <Image
                                                 src={getImageUrl(property.images[0])}
                                                 alt={property.title}
-                                                className="w-full h-full object-cover group-hover:scale-105 transition duration-300"
+                                                fill
+                                                // One card per row on a phone, two on a
+                                                // tablet, four on a laptop — so the browser
+                                                // asks for a photo the size of the card
+                                                // rather than whatever was uploaded.
+                                                sizes="(max-width: 640px) 100vw, (max-width: 768px) 50vw, (max-width: 1024px) 33vw, 25vw"
+                                                className="object-cover group-hover:scale-105 transition duration-300"
                                             />
                                         ) : (
                                             <div className="flex items-center justify-center h-full text-stone-400">

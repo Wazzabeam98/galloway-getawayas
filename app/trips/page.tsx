@@ -1,6 +1,7 @@
 'use client';
 
 import TripGroup from '@/components/TripGroup';
+import Image from 'next/image';
 import { useEffect, useState } from 'react';
 import { createClientComponentClient } from '@supabase/auth-helpers-nextjs';
 import Logo from '@/components/base/Logo';
@@ -258,9 +259,9 @@ export default function TripsPage() {
             // rather than at the top of a list of them.
             <div key={b.id} id={'trip-' + b.id} className="border rounded-2xl p-5 scroll-mt-6">
                 <div className="flex items-center gap-4">
-                    <div className="w-16 h-16 rounded-xl overflow-hidden bg-slate-200 flex-shrink-0">
+                    <div className="relative w-16 h-16 rounded-xl overflow-hidden bg-slate-200 flex-shrink-0">
                         {listing?.images?.[0] && (
-                            <img src={getImageUrl(listing.images[0])} alt={listing.title} className="w-full h-full object-cover" />
+                            <Image src={getImageUrl(listing.images[0])} alt={listing.title} fill sizes="64px" className="object-cover" />
                         )}
                     </div>
                     <div className="flex-1">
@@ -438,7 +439,7 @@ export default function TripsPage() {
     };
 
     return (
-        <div className="max-w-3xl mx-auto px-6 py-10">
+        <div className="max-w-5xl mx-auto px-4 sm:px-6 py-10">
             <div className="flex items-baseline justify-between gap-4 flex-wrap mb-8">
                 <h1 className="text-2xl md:text-3xl font-bold text-slate-900">Your trips</h1>
                 {hasCompletedStay && (

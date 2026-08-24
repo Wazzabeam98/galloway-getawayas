@@ -1,6 +1,7 @@
 "use client"
 
 import React, { useState, useEffect } from 'react';
+import Image from 'next/image';
 import { getImageUrl } from '@/lib/utils';
 
 // Airbnb-style photo mosaic: one large image on the left, four smaller
@@ -49,11 +50,16 @@ export default function PhotoGallery({
             <div className="relative my-4">
                 {/* One photo only — let it run full width */}
                 {images.length === 1 ? (
-                    <img
-                        src={getImageUrl(hero)}
-                        alt={title}
-                        className="w-full h-[300px] md:h-[460px] object-cover rounded-2xl"
-                    />
+                    <div className="relative w-full h-[300px] md:h-[460px]">
+                        <Image
+                            src={getImageUrl(hero)}
+                            alt={title}
+                            fill
+                            priority
+                            sizes="(max-width: 1024px) 100vw, 1216px"
+                            className="object-cover rounded-2xl"
+                        />
+                    </div>
                 ) : (
                     <div className="grid grid-cols-1 md:grid-cols-4 md:grid-rows-2 gap-2 h-[300px] md:h-[460px] rounded-2xl overflow-hidden">
                         <button
@@ -61,10 +67,13 @@ export default function PhotoGallery({
                             onClick={() => setOpen(true)}
                             className="md:col-span-2 md:row-span-2 relative group h-full w-full"
                         >
-                            <img
+                            <Image
                                 src={getImageUrl(hero)}
                                 alt={title}
-                                className="w-full h-full object-cover"
+                                fill
+                                priority
+                                sizes="(max-width: 768px) 100vw, 608px"
+                                className="object-cover"
                             />
                             <span className="absolute inset-0 bg-black/0 group-hover:bg-black/10 transition" />
                         </button>
@@ -76,10 +85,15 @@ export default function PhotoGallery({
                                 onClick={() => setOpen(true)}
                                 className="hidden md:block relative group h-full w-full"
                             >
-                                <img
+                                <Image
                                     src={getImageUrl(img)}
                                     alt={`${title} — photo ${i + 2}`}
-                                    className="w-full h-full object-cover"
+                                    fill
+                                    // Hidden below md, and a quarter of the
+                                    // gallery above it — so these never need
+                                    // to be more than about 300px wide.
+                                    sizes="(max-width: 768px) 1px, 304px"
+                                    className="object-cover"
                                 />
                                 <span className="absolute inset-0 bg-black/0 group-hover:bg-black/10 transition" />
                             </button>
@@ -126,11 +140,19 @@ export default function PhotoGallery({
 
                     <div className="max-w-3xl mx-auto px-4 md:px-0 py-6 space-y-4">
                         {images.map((img, i) => (
-                            <img
+                            <Image
                                 key={i}
                                 src={getImageUrl(img)}
                                 alt={`${title} — photo ${i + 1}`}
-                                className="w-full rounded-xl"
+                                // The lightbox column is 768px at most, so
+                                // there is no reason to send the original.
+                                // width/height only set the ratio Next
+                                // reserves space with — h-auto lets each
+                                // photo keep its own shape.
+                                width={1536}
+                                height={1024}
+                                sizes="(max-width: 768px) 100vw, 768px"
+                                className="w-full h-auto rounded-xl"
                             />
                         ))}
                     </div>

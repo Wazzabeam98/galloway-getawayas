@@ -4,6 +4,7 @@ import { useEffect, useState } from 'react';
 import { createClientComponentClient } from '@supabase/auth-helpers-nextjs';
 import { useParams, useRouter } from 'next/navigation';
 import Link from 'next/link';
+import Image from 'next/image';
 import Logo from '@/components/base/Logo';
 import LoginModel from '@/components/auth/LoginModel';
 import { toast } from 'react-toastify';
@@ -309,9 +310,9 @@ export default function ReviewPage() {
     return (
         <div className="max-w-xl mx-auto px-6 py-8 md:py-12">
             <div className="flex items-center gap-4 mb-8">
-                <div className="w-14 h-14 rounded-xl overflow-hidden bg-slate-200 shrink-0">
+                <div className="relative w-14 h-14 rounded-xl overflow-hidden bg-slate-200 shrink-0">
                     {listing?.images?.[0] && (
-                        <img src={getImageUrl(listing.images[0])} alt={listing.title} className="w-full h-full object-cover" />
+                        <Image src={getImageUrl(listing.images[0])} alt={listing.title} fill sizes="56px" className="object-cover" />
                     )}
                 </div>
                 <div className="min-w-0">

@@ -2,6 +2,7 @@ import { createServerComponentClient } from '@supabase/auth-helpers-nextjs';
 import { createClient } from '@supabase/supabase-js';
 import { cookies } from 'next/headers';
 import Link from 'next/link';
+import Image from 'next/image';
 import { notFound } from 'next/navigation';
 import { getImageUrl } from '@/lib/utils';
 import { formatUk } from '@/lib/cancellation';
@@ -79,7 +80,9 @@ export default async function TripInvitePage({ params }: { params: { token: stri
 
             <div className="border rounded-2xl overflow-hidden mb-6">
                 {image && (
-                    <img src={image} alt={listing?.title || ''} className="w-full h-52 object-cover" />
+                    <div className="relative w-full h-52">
+                        <Image src={image} alt={listing?.title || ''} fill sizes="(max-width: 640px) 100vw, 512px" className="object-cover" />
+                    </div>
                 )}
                 <div className="p-5">
                     <h1 className="text-xl font-bold text-slate-900">

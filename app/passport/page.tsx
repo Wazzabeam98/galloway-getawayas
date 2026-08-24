@@ -80,7 +80,7 @@ export default async function PassportPage() {
     const totalNights = collected.reduce((sum, s) => sum + s.nights, 0);
 
     return (
-        <div className="max-w-3xl mx-auto px-6 py-12">
+        <div className="max-w-5xl mx-auto px-4 sm:px-6 py-12">
             <h1 className="text-2xl md:text-3xl font-bold text-stone-900 mb-1">Your passport</h1>
             <p className="text-stone-600 mb-10">
                 A stamp for every place in Dumfries &amp; Galloway you&apos;ve stayed with us.
