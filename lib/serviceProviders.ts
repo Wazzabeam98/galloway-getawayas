@@ -889,6 +889,14 @@ export const SERVICE_EXTRAS: ServiceExtra[] = [
         key: 'plumb_leak', trade: 'plumber', type: 'toggle', group: 'faults',
         label: 'Leaks',
     },
+    // Rural Galloway runs on private supplies, boreholes and pumps as much as
+    // on the mains, so "nothing is coming out of the tap" is its own fault
+    // rather than a symptom of a leak — and with guests in the cottage it is
+    // the most urgent one on the list.
+    {
+        key: 'plumb_no_water', trade: 'plumber', type: 'toggle', group: 'faults',
+        label: 'No water at all',
+    },
     {
         key: 'plumb_no_hot_water', trade: 'plumber', type: 'toggle', group: 'faults',
         label: 'No hot water',

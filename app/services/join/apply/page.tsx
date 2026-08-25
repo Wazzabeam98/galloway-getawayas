@@ -1103,21 +1103,15 @@ function ApplicationForm() {
                 )}
                 </div>
 
-                {/* What they picked on the way in, and a way back to it.
-                    Somebody will choose wrong, and the fix should not be
-                    starting again. */}
+                {/* What they picked on the way in. A label, not a control:
+                    the Back button at the top of the page returns to the
+                    picker, and two ways to do the same thing is one too many —
+                    the second one only makes somebody wonder what the
+                    difference is. */}
                 <section className="mb-8">
-                    <div className="flex items-center justify-between gap-3 rounded-xl border border-slate-200 bg-slate-50 px-4 py-3">
-                        <div className="flex items-center gap-3 min-w-0">
-                            <TradeIcon className="w-5 h-5 text-emerald-700 shrink-0" strokeWidth={1.5} />
-                            <span className="text-sm font-semibold text-slate-900 truncate">{tradeLabel(trade)}</span>
-                        </div>
-                        <Link
-                            href="/services/join?change=1"
-                            className="text-sm font-semibold text-emerald-700 hover:text-emerald-800 underline shrink-0"
-                        >
-                            Change
-                        </Link>
+                    <div className="flex items-center gap-3 rounded-xl border border-slate-200 bg-slate-50 px-4 py-3">
+                        <TradeIcon className="w-5 h-5 text-emerald-700 shrink-0" strokeWidth={1.5} />
+                        <span className="text-sm font-semibold text-slate-900 truncate">{tradeLabel(trade)}</span>
                     </div>
                 </section>
 
