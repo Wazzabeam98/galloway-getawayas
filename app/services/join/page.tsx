@@ -17,6 +17,7 @@ import {
     initialsFor,
     groupIsOffered,
     groupGate,
+    EXTRA_GROUPS,
     COVERAGE_TOWNS,
     townByKey,
     submitProblems,
@@ -78,7 +79,7 @@ export default function JoinAsProvider() {
     // Keyed by extra. Price stays a string for the same reason band prices
     // do — a half-typed number should not be coerced mid-keystroke.
     const [extras, setExtras] = useState<Record<string, { offered: boolean; price: string; notes: string }>>({});
-    const [laundryOpen, setLaundryOpen] = useState<boolean | null>(null);
+    const [gateOpen, setGateOpen] = useState<Record<string, boolean | null>>({});
     const [calloutFee, setCalloutFee] = useState('');
     const [hourlyRate, setHourlyRate] = useState('');
 
@@ -131,7 +132,11 @@ export default function JoinAsProvider() {
                     };
                 }
                 setExtras(loadedExtras);
-                setLaundryOpen(groupIsOffered('laundry', existing.trade || 'sponge', loadedExtras));
+                const t = existing.trade || 'sponge';
+                setGateOpen({
+                    laundry: groupIsOffered('laundry', t, loadedExtras),
+                    hot_tub: groupIsOffered('hot_tub', t, loadedExtras),
+                });
 
                 const loaded: Record<string, { price: string; typical_hours: string }> = {};
                 for (const row of priceRows || []) {
@@ -179,6 +184,9 @@ export default function JoinAsProvider() {
     const model = pricingModelFor(trade);
     const tradeExtras = extrasFor(trade);
     const extrasIn = (group: string) => tradeExtras.filter((e) => e.group === group);
+    // Every group that asks a question before showing its prices. Laundry and
+    // hot tubs both do; the mechanism is the group's, not either of theirs.
+    const gatedGroups = EXTRA_GROUPS.filter((g: any) => g.gate && extrasIn(g.key).length > 0);
 
     const extraOf = (key: string) => extras[key] || { offered: false, price: '', notes: '' };
     const setExtra = (key: string, field: 'offered' | 'price' | 'notes', value: any) =>
@@ -546,20 +554,28 @@ export default function JoinAsProvider() {
                     </div>
                 </section>
 
+                <section className="mb-8">
+                    <label className="block text-sm font-semibold text-slate-900 mb-1.5">About your business</label>
+                    <textarea
+                        value={description}
+                        onChange={(e) => setDescription(e.target.value)}
+                        rows={5}
+                        placeholder="What you do, how long you have been doing it, anything that makes you the right choice."
+                        className="w-full rounded-xl border border-slate-300 px-4 py-3 focus:outline-none focus:ring-2 focus:ring-emerald-700"
+                    />
+                    {problemFor('description') && (
+                        <p className="text-sm text-rose-700 mt-1.5">{problemFor('description')!.message}</p>
+                    )}
+                </section>
+
                 {/* What they charge. Driven by the trade rather than by a
                     choice, so two cleaners are always comparable and a host is
                     never asked to weigh a price against a rate. */}
                 {model === 'bands' && (
                     <section className="mb-8">
                         <h2 className="text-sm font-semibold text-slate-900 mb-1.5">Your prices</h2>
-                        <p className="text-sm text-slate-500 mb-1">
-                            {trade === 'trees'
-                                ? 'We set the sizes so owners can compare like for like. Bedrooms tell you nothing about a garden, so gardening goes by the plot.'
-                                : 'We set the sizes so owners can compare like for like. They come from the property, so the owner types nothing.'}
-                        </p>
                         <p className="text-sm text-slate-500 mb-4">
-                            <strong className="font-semibold text-slate-700">Leave blank any size you do not cover.</strong>{' '}
-                            A blank keeps you out of results for it, rather than showing an empty price.
+                            Leave blank any size you do not cover.
                         </p>
 
                         <div className="space-y-3">
@@ -630,18 +646,6 @@ export default function JoinAsProvider() {
                             <p className="text-sm text-rose-700 mt-2">{problemFor('prices')!.message}</p>
                         )}
 
-                        {/* Said here, at the point they type it, rather than
-                            left to be found in terms afterwards. */}
-                        <div className="mt-4 rounded-xl bg-slate-50 border border-slate-200 p-4 text-sm text-slate-700 space-y-2">
-                            <p>
-                                <strong className="font-semibold text-slate-900">Your price is the most you can charge.</strong>{' '}
-                                You can charge less on the day &mdash; never more. Our 10% comes off this figure.
-                            </p>
-                            <p>
-                                The hours are a guide for the owner, not what you are paid. You are paid the
-                                price for the size, whether it takes you two hours or four.
-                            </p>
-                        </div>
                     </section>
                 )}
 
@@ -729,59 +733,53 @@ export default function JoinAsProvider() {
                             </div>
                         )}
 
-                        {extrasIn('laundry').length > 0 && (
-                            <div className="mb-6">
-                                <h3 className="text-xs font-bold uppercase tracking-wider text-slate-500 mb-2">
-                                    Laundry
-                                </h3>
+                        {gatedGroups.map((group: any) => {
+                            const open = gateOpen[group.key];
+                            const rows = extrasIn(group.key);
 
-                                <div className="rounded-xl border border-slate-300 p-3.5">
-                                    <p className="text-sm font-medium text-slate-900 mb-2.5">
-                                        {groupGate('laundry')}
-                                    </p>
+                            return (
+                                <div key={group.key} className="mb-6">
+                                    <div className="rounded-xl border border-slate-300 p-3.5">
+                                        <p className="text-sm font-medium text-slate-900 mb-2.5">{group.gate}</p>
 
-                                    <div className="flex gap-2">
-                                        {[true, false].map((yes) => (
-                                            <button
-                                                key={String(yes)}
-                                                type="button"
-                                                onClick={() => {
-                                                    setLaundryOpen(yes);
-                                                    // Saying no clears the rates, so the
-                                                    // answer and the boxes cannot disagree.
-                                                    if (!yes) {
-                                                        for (const e of extrasIn('laundry')) setExtra(e.key, 'price', '');
-                                                    }
-                                                }}
-                                                aria-pressed={laundryOpen === yes}
-                                                className={`rounded-full border px-5 py-2 text-sm font-semibold transition ${
-                                                    laundryOpen === yes
-                                                        ? 'border-emerald-700 bg-emerald-700 text-white'
-                                                        : 'border-slate-300 text-slate-700 hover:border-slate-500'
-                                                }`}
-                                            >
-                                                {yes ? 'Yes' : 'No'}
-                                            </button>
-                                        ))}
-                                    </div>
+                                        <div className="flex gap-2">
+                                            {[true, false].map((yes) => (
+                                                <button
+                                                    key={String(yes)}
+                                                    type="button"
+                                                    onClick={() => {
+                                                        setGateOpen((prev) => ({ ...prev, [group.key]: yes }));
+                                                        // Saying no clears the prices, so the
+                                                        // answer and the boxes cannot disagree.
+                                                        if (!yes) {
+                                                            for (const e of rows) setExtra(e.key, 'price', '');
+                                                        }
+                                                    }}
+                                                    aria-pressed={open === yes}
+                                                    className={`rounded-full border px-5 py-2 text-sm font-semibold transition ${
+                                                        open === yes
+                                                            ? 'border-emerald-700 bg-emerald-700 text-white'
+                                                            : 'border-slate-300 text-slate-700 hover:border-slate-500'
+                                                    }`}
+                                                >
+                                                    {yes ? 'Yes' : 'No'}
+                                                </button>
+                                            ))}
+                                        </div>
 
-                                    {laundryOpen === true && (
-                                        <div className="mt-4">
-                                            <p className="text-sm text-slate-500 mb-3">
-                                                A rate per bed. Leave blank any size you do not do.
-                                            </p>
-
-                                            <div className="space-y-2.5">
-                                                {extrasIn('laundry').map((extra) => {
+                                        {open === true && (
+                                            <div className="mt-4 space-y-2.5">
+                                                {rows.map((extra) => {
                                                     const entry = extraOf(extra.key);
                                                     const problem = problemFor('extra_price_' + extra.key);
+                                                    const perUnit = extra.unit === 'each';
 
                                                     return (
                                                         <div key={extra.key}>
                                                             <div className="flex items-center gap-3">
                                                                 <label
                                                                     htmlFor={'rate-' + extra.key}
-                                                                    className="w-16 shrink-0 text-sm font-medium text-slate-900"
+                                                                    className={`shrink-0 text-sm font-medium text-slate-900 ${perUnit ? 'w-16' : ''}`}
                                                                 >
                                                                     {extra.label}
                                                                 </label>
@@ -793,74 +791,26 @@ export default function JoinAsProvider() {
                                                                         inputMode="decimal"
                                                                         value={entry.price}
                                                                         onChange={(e) => setExtra(extra.key, 'price', e.target.value)}
-                                                                        placeholder="8"
+                                                                        placeholder={perUnit ? '8' : '25'}
                                                                         className="w-full min-w-0 rounded-lg border border-slate-300 px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-emerald-700"
                                                                     />
-                                                                    <span className="text-sm text-slate-500 whitespace-nowrap">per bed</span>
+                                                                    {perUnit && (
+                                                                        <span className="text-sm text-slate-500 whitespace-nowrap">per bed</span>
+                                                                    )}
                                                                 </div>
                                                             </div>
                                                             {problem && (
-                                                                <p className="text-xs text-rose-700 mt-1 ml-[76px]">{problem.message}</p>
+                                                                <p className="text-xs text-rose-700 mt-1">{problem.message}</p>
                                                             )}
                                                         </div>
                                                     );
                                                 })}
                                             </div>
-
-                                            <p className="text-xs text-slate-500 mt-2.5">
-                                                The owner says how many of each when they ask, so these are rates
-                                                rather than totals.
-                                            </p>
-                                        </div>
-                                    )}
+                                        )}
+                                    </div>
                                 </div>
-                            </div>
-                        )}
-
-                        {extrasIn('priced').length > 0 && (
-                            <div className="mb-6">
-                                <h3 className="text-xs font-bold uppercase tracking-wider text-slate-500 mb-2">
-                                    Charged on top
-                                </h3>
-                                <div className="space-y-2">
-                                    {extrasIn('priced').map((extra) => {
-                                        const entry = extraOf(extra.key);
-                                        const problem = problemFor('extra_price_' + extra.key);
-
-                                        return (
-                                            <div key={extra.key} className="rounded-xl border border-slate-300 p-3.5">
-                                                <div className="text-sm font-medium text-slate-900">{extra.label}</div>
-                                                {extra.hint && (
-                                                    <div className="text-sm text-slate-500 mt-0.5">{extra.hint}</div>
-                                                )}
-
-                                                <div className="mt-2.5 flex items-center gap-2 max-w-xs">
-                                                    <span className="text-slate-500">&pound;</span>
-                                                    <input
-                                                        type="text"
-                                                        inputMode="decimal"
-                                                        value={entry.price}
-                                                        onChange={(e) => setExtra(extra.key, 'price', e.target.value)}
-                                                        placeholder="Leave blank if you do not offer it"
-                                                        className="w-full rounded-lg border border-slate-300 px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-emerald-700"
-                                                    />
-                                                    {extra.unit === 'each' && (
-                                                        <span className="text-sm text-slate-500 whitespace-nowrap">each</span>
-                                                    )}
-                                                </div>
-                                                {problem && (
-                                                    <p className="text-xs text-rose-700 mt-1">{problem.message}</p>
-                                                )}
-                                            </div>
-                                        );
-                                    })}
-                                </div>
-                                <p className="text-xs text-slate-500 mt-2">
-                                    These are added to the price for the size, and the total is the most you can
-                                    charge. Our 10% comes off that total.
-                                </p>
-                            </div>
-                        )}
+                            );
+                        })}
 
                         {extrasIn('reimbursed').length > 0 && (
                             <div>
@@ -946,19 +896,6 @@ export default function JoinAsProvider() {
                     </section>
                 )}
 
-                <section className="mb-8">
-                    <label className="block text-sm font-semibold text-slate-900 mb-1.5">About your business</label>
-                    <textarea
-                        value={description}
-                        onChange={(e) => setDescription(e.target.value)}
-                        rows={5}
-                        placeholder="What you do, how long you have been doing it, anything that makes you the right choice."
-                        className="w-full rounded-xl border border-slate-300 px-4 py-3 focus:outline-none focus:ring-2 focus:ring-emerald-700"
-                    />
-                    {problemFor('description') && (
-                        <p className="text-sm text-rose-700 mt-1.5">{problemFor('description')!.message}</p>
-                    )}
-                </section>
 
                 <section className="mb-8">
                     <h2 className="text-sm font-semibold text-slate-900 mb-1.5">Where do you cover?</h2>

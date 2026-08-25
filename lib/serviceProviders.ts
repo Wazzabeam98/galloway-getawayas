@@ -427,6 +427,7 @@ export type ExtraType = 'toggle' | 'priced' | 'reimbursed';
 export const EXTRA_GROUPS = [
     { key: 'about', label: '' },
     { key: 'laundry', label: 'Laundry', gate: 'Do you offer a laundry service?' },
+    { key: 'hot_tub', label: 'Hot tubs', gate: 'Do you service hot tubs?' },
     { key: 'priced', label: 'Charged on top' },
     { key: 'reimbursed', label: 'Bought for the owner and paid back' },
 ] as const;
@@ -442,7 +443,7 @@ export interface ServiceExtra {
     type: ExtraType;
     // Where it renders. `receipts_provided` is a toggle that belongs with the
     // reimbursed ones, so how it is stored and where it is shown are separate.
-    group: 'about' | 'laundry' | 'priced' | 'reimbursed';
+    group: 'about' | 'laundry' | 'hot_tub' | 'priced' | 'reimbursed';
     label: string;
     hint?: string;
     // Priced only. 'each' means the host says how many when they ask; absent
@@ -479,18 +480,18 @@ export const SERVICE_EXTRAS: ServiceExtra[] = [
         label: 'King',
     },
     {
-        key: 'hot_tub_service', trade: 'sponge', type: 'priced', group: 'priced',
+        key: 'hot_tub_service', trade: 'sponge', type: 'priced', group: 'hot_tub',
         label: 'Hot tub servicing',
         hint: 'A flat fee on top of the clean.',
     },
     {
         key: 'consumables', trade: 'sponge', type: 'reimbursed', group: 'reimbursed',
-        label: 'Consumables, when asked',
+        label: 'Consumables on request',
         hint: 'Loo roll, bin bags, dishwasher tablets.',
     },
     {
         key: 'welcome_gifts', trade: 'sponge', type: 'reimbursed', group: 'reimbursed',
-        label: 'Welcome gifts, when asked',
+        label: 'Welcome gifts on request',
     },
     {
         key: 'receipts_provided', trade: 'sponge', type: 'toggle', group: 'reimbursed',
