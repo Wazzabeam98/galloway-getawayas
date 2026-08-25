@@ -1370,9 +1370,9 @@ function ApplicationForm() {
                                         className="mt-0.5 w-4 h-4 rounded border-slate-300"
                                     />
                                     <span>
-                                        I do gas work
+                                        Gas Safe registered
                                         <span className="block text-slate-500">
-                                            Boilers, hobs, fires — anything on mains gas or LPG.
+                                            Boilers, hobs and fires on mains gas or LPG.
                                         </span>
                                     </span>
                                 </label>
@@ -1385,9 +1385,9 @@ function ApplicationForm() {
                                         className="mt-0.5 w-4 h-4 rounded border-slate-300"
                                     />
                                     <span>
-                                        I do oil work
+                                        OFTEC registered
                                         <span className="block text-slate-500">
-                                            Most of Galloway is off the gas grid, so this is worth saying.
+                                            Oil boilers, burners and tanks.
                                         </span>
                                     </span>
                                 </label>
