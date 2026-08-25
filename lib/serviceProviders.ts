@@ -766,6 +766,10 @@ export const SERVICE_EXTRAS: ServiceExtra[] = [
         key: 'elec_immersion', trade: 'electrician', type: 'toggle', group: 'faults',
         label: 'Immersion heater not heating',
     },
+    {
+        key: 'elec_shower', trade: 'electrician', type: 'toggle', group: 'faults',
+        label: 'Electric shower not working',
+    },
 
     {
         key: 'elec_eicr', trade: 'electrician', type: 'toggle', group: 'planned',
@@ -837,6 +841,10 @@ export const SERVICE_EXTRAS: ServiceExtra[] = [
     {
         key: 'joiner_floorboards', trade: 'joiner', type: 'toggle', group: 'faults',
         label: 'Damaged floorboards',
+    },
+    {
+        key: 'joiner_broken_window', trade: 'joiner', type: 'toggle', group: 'faults',
+        label: 'Broken or cracked window',
     },
 
     {
@@ -987,6 +995,12 @@ export const SERVICE_EXTRAS: ServiceExtra[] = [
         key: 'roof_chimney_leak', trade: 'roofer', type: 'toggle', group: 'faults',
         label: 'Chimney or flashing leaking',
     },
+    // A rural job that nothing else on the list covered, and one a host hears
+    // about from the guests rather than from looking.
+    {
+        key: 'roof_loft_intruder', trade: 'roofer', type: 'toggle', group: 'faults',
+        label: 'Something has got into the loft',
+    },
 
     {
         key: 'roof_slate', trade: 'roofer', type: 'toggle', group: 'planned',
@@ -1053,6 +1067,12 @@ export const SERVICE_EXTRAS: ServiceExtra[] = [
     {
         key: 'paint_damp_stain', trade: 'painter', type: 'toggle', group: 'about',
         label: 'Sealing and covering damp patches and stains',
+    },
+    // The job that follows the plumber out of the door. Nobody thinks to look
+    // for it until a repair has left a room worse than it found it.
+    {
+        key: 'paint_making_good', trade: 'painter', type: 'toggle', group: 'about',
+        label: 'Making good after a leak or a repair',
     },
     {
         key: 'paint_wallpaper', trade: 'painter', type: 'toggle', group: 'about',

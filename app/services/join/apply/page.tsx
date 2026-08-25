@@ -464,6 +464,13 @@ function ApplicationForm() {
         const items = extrasIn(group);
         if (items.length === 0) return null;
 
+        // Availability is three questions and will stay three — same day, out
+        // of hours, and winter for empty properties is the whole of it. In two
+        // columns that leaves a hole, and the only way to fill it would be to
+        // invent a fourth. One column instead: the block is short, and the
+        // gap was the only thing wrong with it.
+        const oneColumn = group === 'availability';
+
         return (
             <div className="mb-6">
                 {heading && (
@@ -471,7 +478,9 @@ function ApplicationForm() {
                         {heading}
                     </h3>
                 )}
-                <div className="space-y-2 md:space-y-0 md:grid md:grid-cols-2 md:gap-3">
+                <div className={oneColumn
+                    ? 'space-y-2'
+                    : 'space-y-2 md:space-y-0 md:grid md:grid-cols-2 md:gap-3'}>
                     {items.map((extra) => (
                         <label
                             key={extra.key}
@@ -1739,7 +1748,9 @@ function ApplicationForm() {
 
                 <section className="mb-8 grid sm:grid-cols-2 gap-4">
                     <div>
-                        <label className="block text-sm font-semibold text-slate-900 mb-1.5">Email for job requests</label>
+                        <label className="block text-sm font-semibold text-slate-900 mb-1.5">
+                            Email for us to reach you on
+                        </label>
                         <input
                             value={contactEmail}
                             onChange={(e) => setContactEmail(e.target.value)}
@@ -1759,6 +1770,16 @@ function ApplicationForm() {
                             className="w-full rounded-xl border border-slate-300 px-4 py-3 focus:outline-none focus:ring-2 focus:ring-emerald-700"
                         />
                     </div>
+
+                    {/* Said once, plainly, and true today: nothing renders
+                        these publicly. It is here because the labels used to
+                        say "for job requests", which promised an owner would
+                        write to them directly — and the direction is the
+                        opposite of that. */}
+                    <p className="sm:col-span-2 text-sm text-slate-500">
+                        Neither of these goes on your listing. We use them to tell you about
+                        your application and about work coming in.
+                    </p>
                 </section>
             </fieldset>
 
