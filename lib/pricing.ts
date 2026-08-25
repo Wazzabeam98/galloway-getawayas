@@ -143,3 +143,67 @@ export function quoteBooking(
 export function totalsMatch(a: number, b: number): boolean {
     return Math.abs(money(a) - money(b)) < 0.005;
 }
+
+// ---------------------------------------------------------------------------
+// What a service job is quoted at, and what the commission comes off.
+//
+// Here rather than in lib/serviceProviders.ts because this is a total, and a
+// total is worked out in one place. serviceProviders holds the vocabulary —
+// which extras exist and what type each is — and this holds the arithmetic.
+//
+// The ceiling is the band price plus the priced extras. It is a ceiling in the
+// real sense: a provider may charge less on the day, never more, and the 10%
+// comes off this figure.
+//
+// Reimbursed extras are absent by construction, not by subtraction. The
+// provider spends the host's money on consumables or a welcome gift and is
+// paid back directly against a receipt — it never touches Stripe, it is not
+// revenue for anybody, and no number for it exists when the quote is given.
+// Only 'priced' is summed below, so there is no branch that could let one
+// through. tests/service-extras.test.ts asserts that both behaviourally and by
+// reading this file.
+// ---------------------------------------------------------------------------
+
+export interface ServiceCeilingInput {
+    bandPrice?: any;
+    // Keyed by extra key. `quantity` matters only for per-unit extras, and is
+    // what the host says when they ask — bedding is a fact about the booking,
+    // not about the property.
+    extras?: Record<string, { offered?: boolean; price?: any; quantity?: any }> | null;
+}
+
+export function serviceCeiling(
+    input: ServiceCeilingInput,
+    catalogue: Array<{ key: string; type: string; unit?: string }>
+): number {
+    let total = Number(input.bandPrice) > 0 ? Number(input.bandPrice) : 0;
+
+    const chosen = input.extras || {};
+
+    for (const extra of catalogue) {
+        if (extra.type !== 'priced') continue;
+
+        const entry = chosen[extra.key];
+        if (!entry || entry.offered !== true) continue;
+
+        const price = Number(entry.price);
+        if (!(price > 0)) continue;
+
+        if (extra.unit === 'each') {
+            const quantity = Math.floor(Number(entry.quantity));
+            if (!(quantity > 0)) continue;
+            total += price * quantity;
+        } else {
+            total += price;
+        }
+    }
+
+    return money(total);
+}
+
+// The commission, off the ceiling. Rounded once, at the end, so it can never
+// disagree with what was quoted by a penny.
+export function serviceCommission(ceiling: number, rate: number): number {
+    const amount = Number(ceiling) * Number(rate);
+    return money(amount > 0 ? amount : 0);
+}

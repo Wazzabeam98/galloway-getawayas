@@ -11,6 +11,8 @@ import LoginModel from '@/components/auth/LoginModel';
 import {
     tradesFor,
     audienceForTrade,
+    extrasFor,
+    extrasProblems,
     COVERAGE_TOWNS,
     townByKey,
     submitProblems,
@@ -67,6 +69,9 @@ export default function JoinAsProvider() {
     // Keyed by band. Kept as strings so a half-typed price is not coerced to a
     // number mid-keystroke, and blank stays genuinely blank rather than 0.
     const [prices, setPrices] = useState<Record<string, { price: string; typical_hours: string }>>({});
+    // Keyed by extra. Price stays a string for the same reason band prices
+    // do — a half-typed number should not be coerced mid-keystroke.
+    const [extras, setExtras] = useState<Record<string, { offered: boolean; price: string; notes: string }>>({});
     const [calloutFee, setCalloutFee] = useState('');
     const [hourlyRate, setHourlyRate] = useState('');
 
@@ -103,6 +108,21 @@ export default function JoinAsProvider() {
                     .from('service_provider_prices')
                     .select('band_key, price, typical_hours')
                     .eq('provider_id', existing.id);
+
+                const { data: extraRows } = await supabase
+                    .from('service_provider_extras')
+                    .select('extra_key, offered, price, notes')
+                    .eq('provider_id', existing.id);
+
+                const loadedExtras: Record<string, { offered: boolean; price: string; notes: string }> = {};
+                for (const row of extraRows || []) {
+                    loadedExtras[row.extra_key] = {
+                        offered: row.offered === true,
+                        price: row.price === null || row.price === undefined ? '' : String(row.price),
+                        notes: row.notes || '',
+                    };
+                }
+                setExtras(loadedExtras);
 
                 const loaded: Record<string, { price: string; typical_hours: string }> = {};
                 for (const row of priceRows || []) {
@@ -144,9 +164,20 @@ export default function JoinAsProvider() {
         prices,
         callout_fee: calloutFee,
         hourly_rate: hourlyRate,
+        extras,
     });
 
     const model = pricingModelFor(trade);
+    const tradeExtras = extrasFor(trade);
+    const extrasIn = (group: string) => tradeExtras.filter((e) => e.group === group);
+
+    const extraOf = (key: string) => extras[key] || { offered: false, price: '', notes: '' };
+    const setExtra = (key: string, field: 'offered' | 'price' | 'notes', value: any) =>
+        setExtras((prev) => ({
+            ...prev,
+            [key]: Object.assign({ offered: false, price: '', notes: '' }, prev[key] || {}, { [field]: value }),
+        }));
+
     const bands = bandsFor(trade);
 
     const setBand = (key: string, field: 'price' | 'typical_hours', value: string) =>
@@ -255,6 +286,32 @@ export default function JoinAsProvider() {
             }
             id = data.id;
             setProviderId(id);
+        }
+
+        // Extras are replaced wholesale, like the prices and the areas. Only
+        // what is offered is written — a row that is not there is a no.
+        await supabase.from('service_provider_extras').delete().eq('provider_id', id);
+
+        const extraRows = tradeExtras
+            .filter((extra) => extraOf(extra.key).offered)
+            .map((extra) => {
+                const entry = extraOf(extra.key);
+                const priced = extra.type === 'priced' && String(entry.price).trim() !== '' && Number(entry.price) > 0;
+                return {
+                    provider_id: id,
+                    extra_key: extra.key,
+                    offered: true,
+                    // Null for a toggle, and null for a reimbursed one: the
+                    // amount is whatever the receipt says, weeks later. It is
+                    // paid host to provider directly and never through us.
+                    price: priced ? Number(entry.price) : null,
+                    notes: String(entry.notes || '').trim() || null,
+                    updated_at: now.toISOString(),
+                };
+            });
+
+        if (extraRows.length) {
+            await supabase.from('service_provider_extras').insert(extraRows);
         }
 
         // Prices are replaced wholesale, like the areas. A row that is not
@@ -587,6 +644,163 @@ export default function JoinAsProvider() {
                                 )}
                             </div>
                         </div>
+                    </section>
+                )}
+
+                {/* Extras. Three types, and they behave differently
+                    where it matters: a toggle is comparison, a priced one is
+                    part of the ceiling, and a reimbursed one is money that
+                    never comes near us. */}
+                {tradeExtras.length > 0 && (
+                    <section className="mb-8">
+                        <h2 className="text-sm font-semibold text-slate-900 mb-1.5">What else do you offer?</h2>
+                        <p className="text-sm text-slate-500 mb-4">
+                            All optional. Owners compare on these, so it is worth saying yes to what you
+                            actually do.
+                        </p>
+
+                        {extrasIn('about').length > 0 && (
+                            <div className="space-y-2 mb-6">
+                                {extrasIn('about').map((extra) => (
+                                    <label
+                                        key={extra.key}
+                                        className="flex items-start gap-3 rounded-xl border border-slate-300 p-3.5 cursor-pointer hover:border-slate-400 transition"
+                                    >
+                                        <input
+                                            type="checkbox"
+                                            checked={extraOf(extra.key).offered}
+                                            onChange={(e) => setExtra(extra.key, 'offered', e.target.checked)}
+                                            className="mt-0.5 w-4 h-4 rounded border-slate-300 shrink-0"
+                                        />
+                                        <span>
+                                            <span className="block text-sm font-medium text-slate-900">{extra.label}</span>
+                                            {extra.hint && (
+                                                <span className="block text-sm text-slate-500 mt-0.5">{extra.hint}</span>
+                                            )}
+                                        </span>
+                                    </label>
+                                ))}
+                            </div>
+                        )}
+
+                        {extrasIn('priced').length > 0 && (
+                            <div className="mb-6">
+                                <h3 className="text-xs font-bold uppercase tracking-wider text-slate-500 mb-2">
+                                    Charged on top
+                                </h3>
+                                <div className="space-y-2">
+                                    {extrasIn('priced').map((extra) => {
+                                        const entry = extraOf(extra.key);
+                                        const problem = problemFor('extra_price_' + extra.key);
+
+                                        return (
+                                            <div key={extra.key} className="rounded-xl border border-slate-300 p-3.5">
+                                                <label className="flex items-start gap-3 cursor-pointer">
+                                                    <input
+                                                        type="checkbox"
+                                                        checked={entry.offered}
+                                                        onChange={(e) => setExtra(extra.key, 'offered', e.target.checked)}
+                                                        className="mt-0.5 w-4 h-4 rounded border-slate-300 shrink-0"
+                                                    />
+                                                    <span>
+                                                        <span className="block text-sm font-medium text-slate-900">{extra.label}</span>
+                                                        {extra.hint && (
+                                                            <span className="block text-sm text-slate-500 mt-0.5">{extra.hint}</span>
+                                                        )}
+                                                    </span>
+                                                </label>
+
+                                                {entry.offered && (
+                                                    <div className="mt-3 pl-7">
+                                                        <div className="flex items-center gap-2 max-w-xs">
+                                                            <span className="text-slate-500">&pound;</span>
+                                                            <input
+                                                                type="text"
+                                                                inputMode="decimal"
+                                                                value={entry.price}
+                                                                onChange={(e) => setExtra(extra.key, 'price', e.target.value)}
+                                                                placeholder="8"
+                                                                className="w-full rounded-lg border border-slate-300 px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-emerald-700"
+                                                            />
+                                                            {extra.unit === 'each' && (
+                                                                <span className="text-sm text-slate-500 whitespace-nowrap">each</span>
+                                                            )}
+                                                        </div>
+                                                        {extra.unit === 'each' && (
+                                                            <p className="text-xs text-slate-500 mt-1.5">
+                                                                The owner says how many {extra.quantityLabel} when they ask,
+                                                                so this is a rate rather than a total.
+                                                            </p>
+                                                        )}
+                                                        {problem && (
+                                                            <p className="text-xs text-rose-700 mt-1">{problem.message}</p>
+                                                        )}
+                                                    </div>
+                                                )}
+                                            </div>
+                                        );
+                                    })}
+                                </div>
+                                <p className="text-xs text-slate-500 mt-2">
+                                    These are added to the price for the size, and the total is the most you can
+                                    charge. Our 10% comes off that total.
+                                </p>
+                            </div>
+                        )}
+
+                        {extrasIn('reimbursed').length > 0 && (
+                            <div>
+                                <h3 className="text-xs font-bold uppercase tracking-wider text-slate-500 mb-2">
+                                    Bought for the owner and paid back
+                                </h3>
+
+                                <div className="space-y-2">
+                                    {extrasIn('reimbursed').map((extra) => {
+                                        const entry = extraOf(extra.key);
+
+                                        return (
+                                            <div key={extra.key} className="rounded-xl border border-slate-300 p-3.5">
+                                                <label className="flex items-start gap-3 cursor-pointer">
+                                                    <input
+                                                        type="checkbox"
+                                                        checked={entry.offered}
+                                                        onChange={(e) => setExtra(extra.key, 'offered', e.target.checked)}
+                                                        className="mt-0.5 w-4 h-4 rounded border-slate-300 shrink-0"
+                                                    />
+                                                    <span>
+                                                        <span className="block text-sm font-medium text-slate-900">{extra.label}</span>
+                                                        {extra.hint && (
+                                                            <span className="block text-sm text-slate-500 mt-0.5">{extra.hint}</span>
+                                                        )}
+                                                    </span>
+                                                </label>
+
+                                                {entry.offered && extra.type === 'reimbursed' && (
+                                                    <div className="mt-3 pl-7">
+                                                        <input
+                                                            type="text"
+                                                            value={entry.notes}
+                                                            onChange={(e) => setExtra(extra.key, 'notes', e.target.value)}
+                                                            placeholder="Anything the owner should know — where you shop, what you usually get."
+                                                            className="w-full rounded-lg border border-slate-300 px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-emerald-700"
+                                                        />
+                                                    </div>
+                                                )}
+                                            </div>
+                                        );
+                                    })}
+                                </div>
+
+                                <div className="mt-3 rounded-xl bg-slate-50 border border-slate-200 p-4 text-sm text-slate-700">
+                                    <p>
+                                        <strong className="font-semibold text-slate-900">You are paid back for these by the owner, directly.</strong>{' '}
+                                        Send them the receipt and they settle it with you. It does not go through
+                                        us, there is no commission on it, and it is not part of your quoted price
+                                        &mdash; there is no figure for it until you have bought it.
+                                    </p>
+                                </div>
+                            </div>
+                        )}
                     </section>
                 )}
 

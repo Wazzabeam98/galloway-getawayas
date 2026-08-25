@@ -293,6 +293,7 @@ export interface PricingDraft {
     prices?: Record<string, { price?: any; typical_hours?: any }> | null;
     callout_fee?: any;
     hourly_rate?: any;
+    extras?: Record<string, { offered?: boolean; price?: any; notes?: any }> | null;
 }
 
 // A price has to be a positive number. Blank is a real answer — it means "I do
@@ -353,6 +354,136 @@ export function pricingProblems(draft: PricingDraft): Problem[] {
     return problems;
 }
 
+// ---------------------------------------------------------------------------
+// Extras.
+//
+// Three types, because they behave differently where it matters — money:
+//
+//   toggle      a yes/no. Matching and comparison, never a line on a bill.
+//   priced      the provider sets the rate, and it is part of the ceiling the
+//               10% comes off. Flat, or per unit where the host counts them.
+//   reimbursed  the provider spends the host's money and is paid back directly
+//               with a receipt. Off Stripe entirely: no number exists at quote
+//               time, nothing passes through us, and it is not revenue for
+//               either of us. It must never reach a ceiling or a commission.
+//
+// Keyed by trade and kept here rather than in columns, so gardening's hedge
+// cutting and green waste are an entry in this list and not a migration. The
+// key list is validated here too — deliberately not a database check
+// constraint, because that would be a migration every time one is added.
+// ---------------------------------------------------------------------------
+
+export type ExtraType = 'toggle' | 'priced' | 'reimbursed';
+
+export interface ServiceExtra {
+    key: string;
+    trade: string;
+    type: ExtraType;
+    // Where it renders. `receipts_provided` is a toggle that belongs with the
+    // reimbursed ones, so how it is stored and where it is shown are separate.
+    group: 'about' | 'priced' | 'reimbursed';
+    label: string;
+    hint?: string;
+    // Priced only. 'each' means the host says how many when they ask; absent
+    // means a flat fee.
+    unit?: 'each';
+    quantityLabel?: string;
+}
+
+export const SERVICE_EXTRAS: ServiceExtra[] = [
+    // --- cleaning ----------------------------------------------------------
+    {
+        key: 'equipment_provided', trade: 'sponge', type: 'toggle', group: 'about',
+        label: 'I bring my own equipment and materials',
+    },
+    {
+        key: 'same_day_changeover', trade: 'sponge', type: 'toggle', group: 'about',
+        label: 'I can do a same-day changeover',
+        hint: 'Guests out at 10, the next in at 4. In season this is the one owners ask about.',
+    },
+    {
+        key: 'damage_photos', trade: 'sponge', type: 'toggle', group: 'about',
+        label: 'I report damage with photos',
+    },
+    // Two toggles rather than one choice: both on means either suits them,
+    // both off means they do not do laundry. A single yes/no could not say
+    // the difference between "taken away" and "not offered".
+    {
+        key: 'laundry_on_site', trade: 'sponge', type: 'toggle', group: 'about',
+        label: 'I do the laundry on site',
+    },
+    {
+        key: 'laundry_taken_away', trade: 'sponge', type: 'toggle', group: 'about',
+        label: 'I take the laundry away and bring it back',
+    },
+    {
+        key: 'bedding_single', trade: 'sponge', type: 'priced', group: 'priced',
+        unit: 'each', quantityLabel: 'single beds',
+        label: 'Bedding changed, per single bed',
+    },
+    {
+        key: 'bedding_double', trade: 'sponge', type: 'priced', group: 'priced',
+        unit: 'each', quantityLabel: 'double beds',
+        label: 'Bedding changed, per double bed',
+    },
+    {
+        key: 'hot_tub_service', trade: 'sponge', type: 'priced', group: 'priced',
+        label: 'Hot tub servicing',
+        hint: 'A flat fee on top of the clean.',
+    },
+    {
+        key: 'consumables', trade: 'sponge', type: 'reimbursed', group: 'reimbursed',
+        label: 'Consumables, when asked',
+        hint: 'Loo roll, bin bags, dishwasher tablets.',
+    },
+    {
+        key: 'welcome_gifts', trade: 'sponge', type: 'reimbursed', group: 'reimbursed',
+        label: 'Welcome gifts, when asked',
+    },
+    {
+        key: 'receipts_provided', trade: 'sponge', type: 'toggle', group: 'reimbursed',
+        label: 'I provide receipts for anything I buy',
+    },
+];
+
+export function extrasFor(trade: string): ServiceExtra[] {
+    return SERVICE_EXTRAS.filter((e) => e.trade === trade);
+}
+
+export function extraByKey(key: string): ServiceExtra | null {
+    return SERVICE_EXTRAS.filter((e) => e.key === key)[0] || null;
+}
+
+export interface ExtrasDraft {
+    trade?: string | null;
+    extras?: Record<string, { offered?: boolean; price?: any; notes?: any }> | null;
+}
+
+// An extra is optional. Offering a priced one without a price is not.
+export function extrasProblems(draft: ExtrasDraft): Problem[] {
+    const problems: Problem[] = [];
+    const extras = draft.extras || {};
+
+    for (const extra of extrasFor(String(draft.trade || ''))) {
+        const entry = extras[extra.key];
+        if (!entry || entry.offered !== true) continue;
+
+        if (extra.type !== 'priced') continue;
+
+        const raw = entry.price;
+        const price = Number(raw);
+
+        if (raw === undefined || raw === null || String(raw).trim() === '' || !(price > 0)) {
+            problems.push({
+                field: 'extra_price_' + extra.key,
+                message: 'Add a price, or turn this off.',
+            });
+        }
+    }
+
+    return problems;
+}
+
 export const REVIEW_WITHIN_HOURS = 48;
 
 export interface ProviderDraft {
@@ -366,6 +497,7 @@ export interface ProviderDraft {
     prices?: Record<string, { price?: any; typical_hours?: any }> | null;
     callout_fee?: any;
     hourly_rate?: any;
+    extras?: Record<string, { offered?: boolean; price?: any; notes?: any }> | null;
 }
 
 export interface Problem {
@@ -418,6 +550,7 @@ export function submitProblems(draft: ProviderDraft): Problem[] {
     }
 
     for (const problem of pricingProblems(draft)) problems.push(problem);
+    for (const problem of extrasProblems(draft)) problems.push(problem);
 
     return problems;
 }
