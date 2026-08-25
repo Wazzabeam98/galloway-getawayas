@@ -7,6 +7,7 @@
 
 export const TRADES = [
     { key: 'sponge', label: 'Cleaning' },
+    { key: 'bin', label: 'Waste removal' },
     { key: 'spanner', label: 'Maintenance & repairs' },
     { key: 'trees', label: 'Gardening & grounds' },
     { key: 'droplet', label: 'Window cleaning' },
@@ -171,6 +172,160 @@ export function submitStatusPatch(
     return patch;
 }
 
+// ---------------------------------------------------------------------------
+// What a provider charges.
+//
+// Three shapes, chosen by the trade rather than by the provider, so that two
+// cleaners are always comparable and a host is never asked to compare a price
+// with a rate.
+//
+//   bands           a price per size band, bands defined here so they are the
+//                   same for everybody. Most host trades are this.
+//   callout_hourly  a fixed call-out fee then an hourly rate. Maintenance
+//                   only: you cannot band a repair.
+//   quoted          priced per job when asked. Everything guest-facing, where
+//                   what is wanted varies more than the property does.
+// ---------------------------------------------------------------------------
+
+export type PricingModel = 'bands' | 'callout_hourly' | 'quoted';
+
+// Bedrooms as the axis, because it is already on the listing — the host enters
+// nothing and cannot shade it to land in a cheaper band.
+export const BEDROOM_BANDS = [
+    { key: 'beds_1_2', label: '1–2 bedrooms' },
+    { key: 'beds_3_4', label: '3–4 bedrooms' },
+    { key: 'beds_5_plus', label: '5 or more bedrooms' },
+] as const;
+
+// Bedrooms tell you nothing about a garden — a two-bed cottage can sit in an
+// acre. Physical anchors rather than adjectives, so that two hosts reading
+// "medium" do not mean different things.
+export const PLOT_BANDS = [
+    { key: 'plot_yard', label: 'Courtyard or yard, no lawn' },
+    { key: 'plot_garden', label: 'Garden up to about the size of a tennis court' },
+    { key: 'plot_grounds', label: 'Larger than that, or paddock and orchard' },
+] as const;
+
+const TRADE_PRICING: Record<string, PricingModel> = {
+    sponge: 'bands',
+    bin: 'bands',
+    trees: 'bands',
+    spanner: 'callout_hourly',
+};
+
+const TRADE_BANDS: Record<string, 'bedrooms' | 'plot'> = {
+    sponge: 'bedrooms',
+    bin: 'bedrooms',
+    trees: 'plot',
+};
+
+export function pricingModelFor(trade: string): PricingModel {
+    return TRADE_PRICING[trade] || 'quoted';
+}
+
+export function bandsFor(trade: string): Array<{ key: string; label: string }> {
+    const which = TRADE_BANDS[trade];
+    if (which === 'bedrooms') return BEDROOM_BANDS.map((b) => ({ key: b.key, label: b.label }));
+    if (which === 'plot') return PLOT_BANDS.map((b) => ({ key: b.key, label: b.label }));
+    return [];
+}
+
+export function bandLabel(key: string): string {
+    const all = [...BEDROOM_BANDS, ...PLOT_BANDS];
+    const found = all.filter((b) => b.key === key)[0];
+    return found ? found.label : key;
+}
+
+// Which band a property falls in, from what the listing already knows. This is
+// the whole claim that a host enters nothing, so it is worth having in one
+// place rather than inline in a query.
+export function bandForBedrooms(bedrooms: number | null | undefined): string | null {
+    const n = Number(bedrooms);
+    if (!n || n < 1) return null;
+    if (n <= 2) return 'beds_1_2';
+    if (n <= 4) return 'beds_3_4';
+    return 'beds_5_plus';
+}
+
+// Plot has no equivalent on the listing yet, so it is stored rather than
+// derived. Null means the host has not said, which is a prompt, not a refusal.
+export function bandForPlot(plotBand: string | null | undefined): string | null {
+    const key = String(plotBand || '');
+    return PLOT_BANDS.some((b) => b.key === key) ? key : null;
+}
+
+// Maintenance is priced as a call-out plus an hourly rate, so the total only
+// exists once the job is done — and nothing yet confirms that a job is done.
+// Providers can sign up; they cannot be requested until it does.
+export function canBeRequested(trade: string): boolean {
+    return pricingModelFor(trade) !== 'callout_hourly';
+}
+
+export interface PricingDraft {
+    trade?: string | null;
+    prices?: Record<string, { price?: any; typical_hours?: any }> | null;
+    callout_fee?: any;
+    hourly_rate?: any;
+}
+
+// A price has to be a positive number. Blank is a real answer — it means "I do
+// not cover that size" — so it is never a problem on its own, only when every
+// band is blank and the provider would reach nobody.
+export function pricingProblems(draft: PricingDraft): Problem[] {
+    const problems: Problem[] = [];
+    const model = pricingModelFor(String(draft.trade || ''));
+
+    if (model === 'callout_hourly') {
+        const callout = Number(draft.callout_fee);
+        const hourly = Number(draft.hourly_rate);
+
+        if (!(callout > 0)) {
+            problems.push({ field: 'callout_fee', message: 'Add your call-out fee.' });
+        }
+        if (!(hourly > 0)) {
+            problems.push({ field: 'hourly_rate', message: 'Add your hourly rate after the call-out.' });
+        }
+        return problems;
+    }
+
+    if (model !== 'bands') return problems;
+
+    const bands = bandsFor(String(draft.trade || ''));
+    const prices = draft.prices || {};
+    let priced = 0;
+
+    for (const band of bands) {
+        const entry = prices[band.key] || {};
+        const raw = entry.price;
+
+        if (raw === undefined || raw === null || String(raw).trim() === '') continue;
+
+        const price = Number(raw);
+        if (!(price > 0)) {
+            problems.push({ field: 'price_' + band.key, message: 'That is not a price. Leave it blank if you do not cover it.' });
+            continue;
+        }
+        priced++;
+
+        const hoursRaw = entry.typical_hours;
+        if (hoursRaw !== undefined && hoursRaw !== null && String(hoursRaw).trim() !== '') {
+            const hours = Number(hoursRaw);
+            if (!(hours > 0)) {
+                problems.push({ field: 'hours_' + band.key, message: 'Hours have to be a number, or left blank.' });
+            }
+        }
+    }
+
+    if (priced === 0) {
+        problems.push({
+            field: 'prices',
+            message: 'Price at least one size — a provider who prices nothing reaches nobody.',
+        });
+    }
+
+    return problems;
+}
+
 export const REVIEW_WITHIN_HOURS = 48;
 
 export interface ProviderDraft {
@@ -181,6 +336,9 @@ export interface ProviderDraft {
     audience?: string | null;
     photos?: string[] | null;
     areaCount?: number;
+    prices?: Record<string, { price?: any; typical_hours?: any }> | null;
+    callout_fee?: any;
+    hourly_rate?: any;
 }
 
 export interface Problem {
@@ -231,6 +389,8 @@ export function submitProblems(draft: ProviderDraft): Problem[] {
             message: 'Add at least one area you cover, so we know who to show you to.',
         });
     }
+
+    for (const problem of pricingProblems(draft)) problems.push(problem);
 
     return problems;
 }

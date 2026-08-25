@@ -28,6 +28,9 @@ const complete = {
     contact_email: 'hello@solwaysparkle.test',
     audience: 'host',
     areaCount: 1,
+    // A banded trade has to price at least one band before it can be sent.
+    // See tests/service-pricing.test.ts for the rule itself.
+    prices: { beds_1_2: { price: '60' } },
 };
 
 test('a complete application can be sent', () => {
@@ -39,6 +42,8 @@ test('each missing piece is named, and named once', () => {
     const problems = submitProblems({});
     const fields = problems.map((p: any) => p.field).sort();
 
+    // No trade means no pricing shape, so pricing has nothing to complain
+    // about yet — the trade problem stands in for it.
     assert.deepEqual(fields, ['areas', 'audience', 'business_name', 'contact_email', 'description', 'trade']);
     assert.equal(new Set(fields).size, fields.length, 'no field should be reported twice');
 });

@@ -3,7 +3,7 @@
 import { useEffect, useState } from 'react';
 import { createClientComponentClient } from '@supabase/auth-helpers-nextjs';
 import { toast } from 'react-toastify';
-import { Sparkles, Wrench, Trees, Droplet, ChefHat, Cake, ShoppingBasket, PawPrint, Check, Plus, X } from 'lucide-react';
+import { Sparkles, Wrench, Trees, Droplet, ChefHat, Cake, ShoppingBasket, PawPrint, Trash2, Check, Plus, X } from 'lucide-react';
 import { compressImage } from '@/lib/compressImage';
 import { getImageUrl, generateRandomNumber } from '@/lib/utils';
 import Env from '@/config/Env';
@@ -17,6 +17,9 @@ import {
     statusSummary,
     trialEndsAt,
     submitStatusPatch,
+    pricingModelFor,
+    bandsFor,
+    canBeRequested,
     REVIEW_WITHIN_HOURS,
     TRIAL_DAYS,
 } from '@/lib/serviceProviders';
@@ -30,6 +33,7 @@ const TRADE_ICONS: Record<string, any> = {
     cake: Cake,
     basket: ShoppingBasket,
     paw: PawPrint,
+    bin: Trash2,
 };
 
 interface AreaRow {
@@ -61,6 +65,12 @@ export default function JoinAsProvider() {
     const [processingPhotos, setProcessingPhotos] = useState(false);
     const [touchedSubmit, setTouchedSubmit] = useState(false);
 
+    // Keyed by band. Kept as strings so a half-typed price is not coerced to a
+    // number mid-keystroke, and blank stays genuinely blank rather than 0.
+    const [prices, setPrices] = useState<Record<string, { price: string; typical_hours: string }>>({});
+    const [calloutFee, setCalloutFee] = useState('');
+    const [hourlyRate, setHourlyRate] = useState('');
+
     useEffect(() => {
         const load = async () => {
             const { data: { session } } = await supabase.auth.getSession();
@@ -73,7 +83,7 @@ export default function JoinAsProvider() {
 
             const { data: existing } = await supabase
                 .from('service_providers')
-                .select('id, business_name, trade, description, contact_email, contact_phone, audience, photos, status, review_note')
+                .select('id, business_name, trade, description, contact_email, contact_phone, audience, photos, status, review_note, callout_fee, hourly_rate')
                 .eq('owner_id', session.user.id)
                 .maybeSingle();
 
@@ -88,6 +98,24 @@ export default function JoinAsProvider() {
                 setPhotos(existing.photos || []);
                 setStatus(existing.status || 'draft');
                 setReviewNote(existing.review_note || null);
+                setCalloutFee(existing.callout_fee === null || existing.callout_fee === undefined ? '' : String(existing.callout_fee));
+                setHourlyRate(existing.hourly_rate === null || existing.hourly_rate === undefined ? '' : String(existing.hourly_rate));
+
+                const { data: priceRows } = await supabase
+                    .from('service_provider_prices')
+                    .select('band_key, price, typical_hours')
+                    .eq('provider_id', existing.id);
+
+                const loaded: Record<string, { price: string; typical_hours: string }> = {};
+                for (const row of priceRows || []) {
+                    loaded[row.band_key] = {
+                        price: String(row.price),
+                        typical_hours: row.typical_hours === null || row.typical_hours === undefined
+                            ? ''
+                            : String(row.typical_hours),
+                    };
+                }
+                setPrices(loaded);
 
                 const { data: areaRows } = await supabase
                     .from('service_areas')
@@ -115,7 +143,19 @@ export default function JoinAsProvider() {
         contact_email: contactEmail,
         audience,
         areaCount: areas.length,
+        prices,
+        callout_fee: calloutFee,
+        hourly_rate: hourlyRate,
     });
+
+    const model = pricingModelFor(trade);
+    const bands = bandsFor(trade);
+
+    const setBand = (key: string, field: 'price' | 'typical_hours', value: string) =>
+        setPrices((prev) => ({
+            ...prev,
+            [key]: Object.assign({ price: '', typical_hours: '' }, prev[key] || {}, { [field]: value }),
+        }));
 
     const problemFor = (field: string) =>
         touchedSubmit ? (problems.filter((p) => p.field === field)[0] || null) : null;
@@ -180,6 +220,10 @@ export default function JoinAsProvider() {
             contact_phone: contactPhone.trim() || null,
             audience,
             photos,
+            // Only meaningful for a call-out trade; cleared otherwise so a
+            // provider who switches trade does not carry a stale rate.
+            callout_fee: model === 'callout_hourly' && calloutFee.trim() !== '' ? Number(calloutFee) : null,
+            hourly_rate: model === 'callout_hourly' && hourlyRate.trim() !== '' ? Number(hourlyRate) : null,
             updated_at: now.toISOString(),
         };
 
@@ -213,6 +257,36 @@ export default function JoinAsProvider() {
             }
             id = data.id;
             setProviderId(id);
+        }
+
+        // Prices are replaced wholesale, like the areas. A row that is not
+        // there is the blank band, and a blank band is a real answer — it means
+        // "I do not cover that size" and keeps them out of results for it.
+        await supabase.from('service_provider_prices').delete().eq('provider_id', id);
+
+        if (model === 'bands') {
+            const priceRows = bandsFor(trade)
+                .filter((band) => {
+                    const entry = prices[band.key];
+                    return entry && String(entry.price).trim() !== '' && Number(entry.price) > 0;
+                })
+                .map((band) => {
+                    const entry = prices[band.key];
+                    const hours = String(entry.typical_hours || '').trim();
+                    return {
+                        provider_id: id,
+                        band_key: band.key,
+                        price: Number(entry.price),
+                        // Stored as hours, never a rate, and never multiplied
+                        // by anything. See tests/service-pricing.test.ts.
+                        typical_hours: hours === '' || !(Number(hours) > 0) ? null : Number(hours),
+                        updated_at: now.toISOString(),
+                    };
+                });
+
+            if (priceRows.length) {
+                await supabase.from('service_provider_prices').insert(priceRows);
+            }
         }
 
         // Areas are replaced wholesale — there are only ever a handful, and
@@ -369,6 +443,181 @@ export default function JoinAsProvider() {
                         })}
                     </div>
                 </section>
+
+                {/* What they charge. Driven by the trade rather than by a
+                    choice, so two cleaners are always comparable and a host is
+                    never asked to weigh a price against a rate. */}
+                {model === 'bands' && (
+                    <section className="mb-8">
+                        <h2 className="text-sm font-semibold text-slate-900 mb-1.5">Your prices</h2>
+                        <p className="text-sm text-slate-500 mb-1">
+                            {trade === 'trees'
+                                ? 'We set the sizes so owners can compare like for like. Bedrooms tell you nothing about a garden, so gardening goes by the plot.'
+                                : 'We set the sizes so owners can compare like for like. They come from the property, so the owner types nothing.'}
+                        </p>
+                        <p className="text-sm text-slate-500 mb-4">
+                            <strong className="font-semibold text-slate-700">Leave blank any size you do not cover.</strong>{' '}
+                            A blank keeps you out of results for it, rather than showing an empty price.
+                        </p>
+
+                        <div className="space-y-3">
+                            {bands.map((band) => {
+                                const entry = prices[band.key] || { price: '', typical_hours: '' };
+                                const priceProblem = problemFor('price_' + band.key);
+                                const hoursProblem = problemFor('hours_' + band.key);
+
+                                return (
+                                    <div key={band.key} className="rounded-xl border border-slate-300 p-3.5">
+                                        <div className="text-sm font-medium text-slate-900 mb-2.5">{band.label}</div>
+
+                                        <div className="grid sm:grid-cols-2 gap-3">
+                                            <div>
+                                                <label className="block text-xs font-semibold text-slate-500 mb-1">Price per visit</label>
+                                                <div className="flex items-center gap-2">
+                                                    <span className="text-slate-500">&pound;</span>
+                                                    <input
+                                                        type="text"
+                                                        inputMode="decimal"
+                                                        value={entry.price}
+                                                        onChange={(e) => setBand(band.key, 'price', e.target.value)}
+                                                        placeholder="Leave blank if you do not cover this"
+                                                        className="w-full rounded-lg border border-slate-300 px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-emerald-700"
+                                                    />
+                                                </div>
+                                                {priceProblem && (
+                                                    <p className="text-xs text-rose-700 mt-1">{priceProblem.message}</p>
+                                                )}
+                                            </div>
+
+                                            <div>
+                                                <label className="block text-xs font-semibold text-slate-500 mb-1">
+                                                    Usually takes <span className="font-normal">(optional)</span>
+                                                </label>
+                                                <div className="flex items-center gap-2">
+                                                    <input
+                                                        type="text"
+                                                        inputMode="decimal"
+                                                        value={entry.typical_hours}
+                                                        onChange={(e) => setBand(band.key, 'typical_hours', e.target.value)}
+                                                        placeholder="2"
+                                                        className="w-full rounded-lg border border-slate-300 px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-emerald-700"
+                                                    />
+                                                    <span className="text-sm text-slate-500 whitespace-nowrap">hours</span>
+                                                </div>
+                                                {hoursProblem && (
+                                                    <p className="text-xs text-rose-700 mt-1">{hoursProblem.message}</p>
+                                                )}
+                                            </div>
+                                        </div>
+
+                                        {entry.price && Number(entry.price) > 0 && (
+                                            <p className="text-xs text-slate-500 mt-2.5">
+                                                Shows as &ldquo;&pound;{entry.price} per visit
+                                                {entry.typical_hours && Number(entry.typical_hours) > 0
+                                                    ? ', usually about ' + entry.typical_hours + ' hours'
+                                                    : ''}
+                                                &rdquo;
+                                            </p>
+                                        )}
+                                    </div>
+                                );
+                            })}
+                        </div>
+
+                        {problemFor('prices') && (
+                            <p className="text-sm text-rose-700 mt-2">{problemFor('prices')!.message}</p>
+                        )}
+
+                        {/* Said here, at the point they type it, rather than
+                            left to be found in terms afterwards. */}
+                        <div className="mt-4 rounded-xl bg-slate-50 border border-slate-200 p-4 text-sm text-slate-700 space-y-2">
+                            <p>
+                                <strong className="font-semibold text-slate-900">Your price is the most you can charge.</strong>{' '}
+                                You can charge less on the day &mdash; never more. Our 10% comes off this figure.
+                            </p>
+                            <p>
+                                The hours are a guide for the owner, not what you are paid. You are paid the
+                                price for the size, whether it takes you two hours or four.
+                            </p>
+                        </div>
+                    </section>
+                )}
+
+                {model === 'callout_hourly' && (
+                    <section className="mb-8">
+                        <h2 className="text-sm font-semibold text-slate-900 mb-1.5">Your rates</h2>
+                        <p className="text-sm text-slate-500 mb-4">
+                            A repair cannot be sized in advance, so maintenance is a call-out fee and then an
+                            hourly rate &mdash; not a price per property size.
+                        </p>
+
+                        <div className="grid sm:grid-cols-2 gap-4">
+                            <div>
+                                <label className="block text-xs font-semibold text-slate-500 mb-1">Call-out fee</label>
+                                <div className="flex items-center gap-2">
+                                    <span className="text-slate-500">&pound;</span>
+                                    <input
+                                        type="text"
+                                        inputMode="decimal"
+                                        value={calloutFee}
+                                        onChange={(e) => setCalloutFee(e.target.value)}
+                                        placeholder="45"
+                                        className="w-full rounded-lg border border-slate-300 px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-emerald-700"
+                                    />
+                                </div>
+                                {problemFor('callout_fee') && (
+                                    <p className="text-xs text-rose-700 mt-1">{problemFor('callout_fee')!.message}</p>
+                                )}
+                            </div>
+
+                            <div>
+                                <label className="block text-xs font-semibold text-slate-500 mb-1">Hourly rate after that</label>
+                                <div className="flex items-center gap-2">
+                                    <span className="text-slate-500">&pound;</span>
+                                    <input
+                                        type="text"
+                                        inputMode="decimal"
+                                        value={hourlyRate}
+                                        onChange={(e) => setHourlyRate(e.target.value)}
+                                        placeholder="30"
+                                        className="w-full rounded-lg border border-slate-300 px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-emerald-700"
+                                    />
+                                </div>
+                                {problemFor('hourly_rate') && (
+                                    <p className="text-xs text-rose-700 mt-1">{problemFor('hourly_rate')!.message}</p>
+                                )}
+                            </div>
+                        </div>
+                    </section>
+                )}
+
+                {!canBeRequested(trade) && (
+                    <section className="mb-8">
+                        <div className="rounded-2xl border border-amber-300 bg-amber-50 p-5">
+                            <p className="font-semibold text-amber-900">
+                                Maintenance jobs cannot be booked through the site yet
+                            </p>
+                            <p className="text-sm text-amber-900/80 mt-1">
+                                Because the price depends on how long the work takes, we cannot settle it until
+                                somebody confirms the job is finished &mdash; and that part is not built. Sign up
+                                now and we will approve you; owners will be able to request work as soon as it is
+                                ready, and we will email you when it is.
+                            </p>
+                        </div>
+                    </section>
+                )}
+
+                {model === 'quoted' && (
+                    <section className="mb-8">
+                        <div className="rounded-2xl border border-slate-200 bg-slate-50 p-5">
+                            <p className="font-semibold text-slate-900">You price each job when you are asked</p>
+                            <p className="text-sm text-slate-600 mt-1">
+                                What people want from you varies more than the property does, so there is nothing
+                                to fill in here. You will get the details and reply with a price.
+                            </p>
+                        </div>
+                    </section>
+                )}
 
                 <section className="mb-8">
                     <label className="block text-sm font-semibold text-slate-900 mb-1.5">About your business</label>
