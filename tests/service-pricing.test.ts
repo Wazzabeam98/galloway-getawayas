@@ -217,3 +217,72 @@ test('typical hours never enter any calculation', () => {
     assert.deepEqual(offending, [],
         'hours are a guide shown to the host, never a term in a total');
 });
+
+// ---------------------------------------------------------------------------
+// Two sign-ups, not one with a question.
+//
+// A business at the host sign-up can see it is for property owners, and the
+// trade list in front of them only has host trades — so asking who they sell
+// to asks them to confirm what the page already said. The audience comes from
+// the trade instead, which also means the record cannot disagree with itself.
+// ---------------------------------------------------------------------------
+
+const {
+    HOST_TRADES,
+    GUEST_TRADES,
+    tradesFor,
+    audienceForTrade,
+    TRADES,
+} = require('@/lib/serviceProviders');
+
+test('every trade belongs to exactly one sign-up', () => {
+    for (const t of TRADES) {
+        const inHost = HOST_TRADES.indexOf(t.key) !== -1;
+        const inGuest = GUEST_TRADES.indexOf(t.key) !== -1;
+
+        assert.equal(inHost || inGuest, true,
+            t.key + ' is on neither sign-up, so nobody can ever choose it');
+        assert.equal(inHost && inGuest, false,
+            t.key + ' is on both, so the audience it implies is ambiguous');
+    }
+});
+
+test('the host sign-up offers the property trades and nothing else', () => {
+    const keys = tradesFor('host').map((t: any) => t.key);
+
+    assert.deepEqual(keys.slice().sort(), ['bin', 'droplet', 'spanner', 'sponge', 'trees']);
+    assert.equal(keys.indexOf('cake'), -1, 'a baker is not supplying a property owner');
+    assert.equal(keys.indexOf('chef'), -1);
+});
+
+test('the guest sign-up offers the experience trades', () => {
+    const keys = tradesFor('guest').map((t: any) => t.key);
+
+    assert.deepEqual(keys.slice().sort(), ['basket', 'cake', 'chef', 'paw']);
+    assert.equal(keys.indexOf('sponge'), -1, 'a changeover clean is not bought by a guest');
+});
+
+test('the audience is derived from the trade, never asked', () => {
+    assert.equal(audienceForTrade('sponge'), 'host');
+    assert.equal(audienceForTrade('bin'), 'host');
+    assert.equal(audienceForTrade('trees'), 'host');
+    assert.equal(audienceForTrade('spanner'), 'host');
+    assert.equal(audienceForTrade('droplet'), 'host');
+
+    assert.equal(audienceForTrade('cake'), 'guest');
+    assert.equal(audienceForTrade('chef'), 'guest');
+});
+
+test('an unknown trade yields no audience rather than a wrong one', () => {
+    assert.equal(audienceForTrade('nonsense'), '',
+        'guessing here would file a business into the wrong shop silently');
+});
+
+test('every banded trade is a host trade', () => {
+    for (const t of TRADES) {
+        if (pricingModelFor(t.key) === 'bands') {
+            assert.equal(HOST_TRADES.indexOf(t.key) !== -1, true,
+                t.key + ' is banded on a property, so it cannot be a guest trade');
+        }
+    }
+});

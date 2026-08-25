@@ -24,6 +24,33 @@ export function tradeLabel(key: string): string {
     return found ? found.label : 'Service';
 }
 
+// Which sign-up a trade belongs to.
+//
+// Two pages, not one page with a question. A business arriving at the host
+// sign-up can already see it is for property owners, and the trade list in
+// front of them only contains host trades — so asking "who do you sell to?"
+// is asking them to confirm something the page has already told them.
+//
+// Every trade belongs to exactly one of these, and there is a test that says
+// so: a trade in neither would appear on no sign-up at all, which is a page
+// nobody can reach rather than a visible mistake.
+export const HOST_TRADES = ['sponge', 'bin', 'trees', 'droplet', 'spanner'] as const;
+export const GUEST_TRADES = ['chef', 'cake', 'basket', 'paw'] as const;
+
+export function tradesFor(audience: string): Array<{ key: string; label: string }> {
+    const keys: readonly string[] = audience === 'guest' ? GUEST_TRADES : HOST_TRADES;
+    return TRADES.filter((t) => keys.indexOf(t.key) !== -1).map((t) => ({ key: t.key, label: t.label }));
+}
+
+// The audience comes from the trade rather than from an answer, so the record
+// can never disagree with itself — and the guest page needs no code of its own
+// to set it.
+export function audienceForTrade(trade: string): string {
+    if ((GUEST_TRADES as readonly string[]).indexOf(trade) !== -1) return 'guest';
+    if ((HOST_TRADES as readonly string[]).indexOf(trade) !== -1) return 'host';
+    return '';
+}
+
 // Which of the two shops it appears in.
 export const AUDIENCES = [
     { key: 'guest', label: 'Guests staying nearby', hint: 'Cakes, chefs, hampers — bought by someone on holiday.' },

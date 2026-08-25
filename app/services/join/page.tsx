@@ -9,8 +9,8 @@ import { getImageUrl, generateRandomNumber } from '@/lib/utils';
 import Env from '@/config/Env';
 import LoginModel from '@/components/auth/LoginModel';
 import {
-    TRADES,
-    AUDIENCES,
+    tradesFor,
+    audienceForTrade,
     COVERAGE_TOWNS,
     townByKey,
     submitProblems,
@@ -57,7 +57,6 @@ export default function JoinAsProvider() {
     const [description, setDescription] = useState('');
     const [contactEmail, setContactEmail] = useState('');
     const [contactPhone, setContactPhone] = useState('');
-    const [audience, setAudience] = useState('host');
     const [photos, setPhotos] = useState<string[]>([]);
     const [areas, setAreas] = useState<AreaRow[]>([]);
 
@@ -94,7 +93,6 @@ export default function JoinAsProvider() {
                 setDescription(existing.description || '');
                 setContactEmail(existing.contact_email || session.user.email || '');
                 setContactPhone(existing.contact_phone || '');
-                setAudience(existing.audience || 'host');
                 setPhotos(existing.photos || []);
                 setStatus(existing.status || 'draft');
                 setReviewNote(existing.review_note || null);
@@ -141,7 +139,7 @@ export default function JoinAsProvider() {
         trade,
         description,
         contact_email: contactEmail,
-        audience,
+        audience: audienceForTrade(trade),
         areaCount: areas.length,
         prices,
         callout_fee: calloutFee,
@@ -218,7 +216,7 @@ export default function JoinAsProvider() {
             description: description.trim(),
             contact_email: contactEmail.trim(),
             contact_phone: contactPhone.trim() || null,
-            audience,
+            audience: audienceForTrade(trade),
             photos,
             // Only meaningful for a call-out trade; cleared otherwise so a
             // provider who switches trade does not carry a stale rate.
@@ -345,7 +343,7 @@ export default function JoinAsProvider() {
     if (!session) {
         return (
             <div className="max-w-md mx-auto px-4 sm:px-6 py-24 text-center">
-                <h1 className="text-2xl font-bold text-slate-900 mb-2">List your business</h1>
+                <h1 className="text-2xl font-bold text-slate-900 mb-2">Work for holiday lets</h1>
                 <p className="text-slate-600 mb-6">Sign in to get started — it takes a few minutes.</p>
                 <LoginModel />
             </div>
@@ -357,9 +355,10 @@ export default function JoinAsProvider() {
 
     return (
         <div className="max-w-3xl mx-auto px-4 sm:px-6 py-10 pb-24">
-            <h1 className="text-3xl font-bold text-slate-900">List your business</h1>
+            <h1 className="text-3xl font-bold text-slate-900">Work for holiday lets</h1>
             <p className="text-slate-600 mt-2 mb-8">
-                Cleaners, gardeners, chefs, bakers and trades across Dumfries &amp; Galloway.
+                Cleaning, waste, gardening and maintenance for holiday cottages across Dumfries
+                &amp; Galloway. The people who own them find you here and ask you for work.
                 It is free for your first {TRIAL_DAYS} days and we will tell you before that changes.
             </p>
 
@@ -421,9 +420,9 @@ export default function JoinAsProvider() {
 
                 <section className="mb-8">
                     <h2 className="text-sm font-semibold text-slate-900 mb-1.5">What do you do?</h2>
-                    <p className="text-sm text-slate-500 mb-3">This picks the icon people see.</p>
+                    <p className="text-sm text-slate-500 mb-3">This decides how you are priced and who finds you.</p>
                     <div className="grid grid-cols-2 sm:grid-cols-4 gap-2">
-                        {TRADES.map((t) => {
+                        {tradesFor('host').map((t) => {
                             const Icon = TRADE_ICONS[t.key] || Sparkles;
                             const on = trade === t.key;
                             return (
@@ -631,26 +630,6 @@ export default function JoinAsProvider() {
                     {problemFor('description') && (
                         <p className="text-sm text-rose-700 mt-1.5">{problemFor('description')!.message}</p>
                     )}
-                </section>
-
-                <section className="mb-8">
-                    <h2 className="text-sm font-semibold text-slate-900 mb-3">Who do you sell to?</h2>
-                    <div className="space-y-2">
-                        {AUDIENCES.map((a) => (
-                            <button
-                                key={a.key}
-                                type="button"
-                                onClick={() => setAudience(a.key)}
-                                aria-pressed={audience === a.key}
-                                className={`w-full rounded-xl border p-4 text-left transition ${
-                                    audience === a.key ? 'border-emerald-700 ring-2 ring-emerald-700 bg-emerald-50' : 'border-slate-300 hover:border-slate-400'
-                                }`}
-                            >
-                                <span className="block font-medium text-slate-900">{a.label}</span>
-                                <span className="block text-sm text-slate-600 mt-0.5">{a.hint}</span>
-                            </button>
-                        ))}
-                    </div>
                 </section>
 
                 <section className="mb-8">
