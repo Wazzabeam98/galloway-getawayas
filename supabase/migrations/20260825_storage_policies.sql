@@ -1,0 +1,73 @@
+-- The row-level security policies on the storage bucket.
+--
+-- PLACEHOLDER. The policy bodies below have NOT been filled in — see "How to
+-- fill this in". Do not run it as it stands; it would drop working policies on
+-- production and put nothing back.
+--
+-- Why this file exists at all:
+--
+-- Storage policies are ordinary RLS policies on `storage.objects`. The
+-- dashboard's policy editor is a form that runs `create policy` for you, so
+-- they can live in a migration exactly like every other policy in this folder
+-- — and until now they did not, so the only record of what they should be was
+-- production's live database.
+--
+-- The cost of that showed up on 25 Aug 2026. On the test project an ordinary
+-- authenticated user is refused with "new row violates row-level security
+-- policy" on BOTH `providers/` and `avatars/`, and `avatars/` demonstrably
+-- works on production. The `listings` bucket on test is empty — nothing has
+-- ever been uploaded to it. The two projects had drifted on the thing that
+-- decides whether anybody can upload a photo, and nothing in the repo could
+-- say so. That is the same drift that was closed out on message templates.
+--
+-- The buckets themselves already match, checked the same day:
+--
+--   test        yefoqcabuijcowoqewtc   listings public=true, listings-removed public=false
+--   production  hviwjxigqivjfhmhpjiy   listings public=true, listings-removed public=false
+--
+-- So the policies are the whole difference.
+--
+-- ---------------------------------------------------------------------------
+-- HOW TO FILL THIS IN
+-- ---------------------------------------------------------------------------
+--
+-- Run this on PRODUCTION. It is read-only — it writes nothing, it just makes
+-- production print its own policies as ready-to-run statements:
+--
+--   select
+--       'drop policy if exists ' || quote_ident(policyname) || ' on storage.objects;' || chr(10) ||
+--       'create policy ' || quote_ident(policyname) || ' on storage.objects' || chr(10) ||
+--       '    as ' || permissive || chr(10) ||
+--       '    for ' || cmd || chr(10) ||
+--       '    to ' || array_to_string(roles, ', ') || chr(10) ||
+--       coalesce('    using (' || qual || ')' || chr(10), '') ||
+--       coalesce('    with check (' || with_check || ')' || chr(10), '') ||
+--       ';' as statement
+--   from pg_policies
+--   where schemaname = 'storage' and tablename = 'objects'
+--   order by policyname;
+--
+-- Paste the `statement` column in below, replacing this comment block's
+-- marker. Then run this file on TEST, and the two projects match — with
+-- nothing invented by anybody.
+--
+-- ---------------------------------------------------------------------------
+-- A NOTE ON RUNNING IT
+-- ---------------------------------------------------------------------------
+--
+-- `storage.objects` is owned by `supabase_storage_admin`, not by `postgres`.
+-- From the SQL editor these statements work. If this project ever moves to
+-- `supabase db push`, check that before assuming — it is the one thing about
+-- storage policies that is not like the rest of this folder.
+--
+-- Pre-flight, on either project, to see what is actually there:
+--   select policyname, cmd, roles, qual, with_check
+--     from pg_policies
+--    where schemaname = 'storage' and tablename = 'objects'
+--    order by policyname;
+--
+-- Safe to run twice once filled in: every statement is drop-if-exists then
+-- create, the same shape as the policies in 20260824_service_providers.sql.
+
+
+-- >>> POLICIES GO HERE — paste production's output, then delete this line. <<<
