@@ -39,7 +39,6 @@ import {
     submitStatusPatch,
     pricingModelFor,
     bandsFor,
-    canBeRequested,
     REVIEW_WITHIN_HOURS,
 } from '@/lib/serviceProviders';
 
@@ -1647,22 +1646,6 @@ function ApplicationForm() {
                                 </p>
                             </div>
                         )}
-                    </section>
-                )}
-
-                {!canBeRequested(trade) && (
-                    <section className="mb-8">
-                        <div className="rounded-2xl border border-amber-300 bg-amber-50 p-5">
-                            <p className="font-semibold text-amber-900">
-                                Maintenance jobs cannot be booked through the site yet
-                            </p>
-                            <p className="text-sm text-amber-900/80 mt-1">
-                                Because the price depends on how long the work takes, we cannot settle it until
-                                somebody confirms the job is finished &mdash; and that part is not built. Sign up
-                                now and we will approve you; owners will be able to request work as soon as it is
-                                ready, and we will email you when it is.
-                            </p>
-                        </div>
                     </section>
                 )}
 

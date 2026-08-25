@@ -740,16 +740,17 @@ export const SERVICE_EXTRAS: ServiceExtra[] = [
     {
         key: 'elec_eicr', trade: 'electrician', type: 'toggle', group: 'about',
         label: 'I do EICR inspections and certificates',
-        hint: 'A let has to have one every five years.',
+        hint: 'A short-term let licence needs one every five years.',
     },
     {
         key: 'elec_pat', trade: 'electrician', type: 'toggle', group: 'about',
         label: 'I do PAT testing',
+        hint: 'How most owners show the appliances in a let are safe.',
     },
     {
         key: 'elec_alarms', trade: 'electrician', type: 'toggle', group: 'about',
         label: 'I fit interlinked smoke and heat alarms',
-        hint: 'The standard every Scottish home has had to meet since 2022.',
+        hint: 'A licence condition, and the standard for every Scottish home since 2022.',
     },
     {
         key: 'elec_hot_tub', trade: 'electrician', type: 'toggle', group: 'about',
@@ -815,6 +816,17 @@ export const SERVICE_EXTRAS: ServiceExtra[] = [
         key: 'plumb_boiler_service', trade: 'plumber', type: 'toggle', group: 'about',
         label: 'I service boilers',
     },
+    // Not the same thing as a service, and it is the one an owner is actually
+    // obliged to have: the annual gas safety check is a licence condition
+    // wherever there is gas, and only a Gas Safe engineer can issue it. Shown
+    // to every plumber rather than gated on does_gas, because a plumber who
+    // does not do gas simply leaves it unticked, and gating it would hide the
+    // question from somebody deciding whether to say they do gas at all.
+    {
+        key: 'plumb_gas_certificate', trade: 'plumber', type: 'toggle', group: 'about',
+        label: 'I issue annual gas safety certificates',
+        hint: 'The yearly check a let with gas has to have.',
+    },
     {
         key: 'plumb_unvented', trade: 'plumber', type: 'toggle', group: 'about',
         label: 'Unvented hot water cylinders',
@@ -834,7 +846,7 @@ export const SERVICE_EXTRAS: ServiceExtra[] = [
     {
         key: 'plumb_legionella', trade: 'plumber', type: 'toggle', group: 'about',
         label: 'I do legionella risk assessments',
-        hint: 'Every let needs one, and most owners have never been asked for it.',
+        hint: 'Asked for as part of short-term let licensing.',
     },
 
     // --- roofer ------------------------------------------------------------
