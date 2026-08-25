@@ -78,6 +78,8 @@ function ApplicationForm() {
     const [photos, setPhotos] = useState<string[]>([]);
     const [logo, setLogo] = useState<string | null>(null);
     const [uploadingLogo, setUploadingLogo] = useState(false);
+    const [removing, setRemoving] = useState(false);
+    const [confirmRemove, setConfirmRemove] = useState(false);
     const [areas, setAreas] = useState<AreaRow[]>([]);
 
     const [saving, setSaving] = useState(false);
@@ -305,6 +307,38 @@ function ApplicationForm() {
         setUploadingLogo(false);
         // So the same file can be chosen again after a failure.
         e.target.value = '';
+    };
+
+    // Removing a draft. Drafts only: an application we are looking at, or a
+    // business already on the site, is not something to throw away with a
+    // button — those come off through us.
+    //
+    // This is also the answer to picking the wrong trade. One business per
+    // trade means the "change" link makes a second application rather than
+    // converting the first, so the way to undo a wrong pick is to remove the
+    // draft it left behind.
+    const removeDraft = async () => {
+        if (!providerId || status !== 'draft') return;
+
+        setRemoving(true);
+
+        // The status is matched at the write as well as checked here, so a
+        // stale screen cannot delete something that has since been sent.
+        const { error } = await supabase
+            .from('service_providers')
+            .delete()
+            .eq('id', providerId)
+            .eq('status', 'draft');
+
+        setRemoving(false);
+
+        if (error) {
+            toast.error(error.message, { theme: 'colored' });
+            return;
+        }
+
+        toast.success('Removed.', { theme: 'colored' });
+        router.push('/services/join');
     };
 
     const addArea = () => {
@@ -652,7 +686,7 @@ function ApplicationForm() {
                             <span className="text-sm font-semibold text-slate-900 truncate">{tradeLabel(trade)}</span>
                         </div>
                         <Link
-                            href="/services/join"
+                            href="/services/join?change=1"
                             className="text-sm font-semibold text-emerald-700 hover:text-emerald-800 underline shrink-0"
                         >
                             Change
@@ -1147,6 +1181,46 @@ function ApplicationForm() {
                                 <Check className="w-4 h-4 text-emerald-700" />
                                 Free for {TRIAL_DAYS} days
                             </p>
+                        </div>
+                    )}
+
+                    {/* Only a draft, and only one they have actually started.
+                        Nothing is recoverable afterwards, so it asks first. */}
+                    {status === 'draft' && providerId && (
+                        <div className="mt-8 pt-6 border-t border-slate-200">
+                            {!confirmRemove ? (
+                                <button
+                                    type="button"
+                                    onClick={() => setConfirmRemove(true)}
+                                    className="text-sm font-semibold text-rose-700 hover:text-rose-800 underline"
+                                >
+                                    Remove this
+                                </button>
+                            ) : (
+                                <div>
+                                    <p className="text-sm text-slate-700 mb-3">
+                                        Remove this {tradeLabel(trade).toLowerCase()} application? Everything you have
+                                        filled in goes with it, and it cannot be got back.
+                                    </p>
+                                    <div className="flex flex-wrap gap-3">
+                                        <button
+                                            type="button"
+                                            onClick={removeDraft}
+                                            disabled={removing}
+                                            className="rounded-full bg-rose-700 hover:bg-rose-800 text-white px-5 py-2.5 text-sm font-semibold transition disabled:opacity-60"
+                                        >
+                                            {removing ? 'Removing…' : 'Remove for good'}
+                                        </button>
+                                        <button
+                                            type="button"
+                                            onClick={() => setConfirmRemove(false)}
+                                            className="rounded-full border border-slate-300 px-5 py-2.5 text-sm font-semibold text-slate-700"
+                                        >
+                                            Keep it
+                                        </button>
+                                    </div>
+                                </div>
+                            )}
                         </div>
                     )}
                 </div>

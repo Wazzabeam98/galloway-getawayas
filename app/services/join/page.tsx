@@ -1,7 +1,7 @@
 'use client';
 
 import { Suspense, useEffect, useState } from 'react';
-import { useRouter } from 'next/navigation';
+import { useRouter, useSearchParams } from 'next/navigation';
 import { createClientComponentClient } from '@supabase/auth-helpers-nextjs';
 import { Sparkles, Wrench, Trees, Droplet, Trash2, ChevronRight } from 'lucide-react';
 import { tradesFor, unclaimedTrades, tradeLabel, statusSummary } from '@/lib/serviceProviders';
@@ -40,6 +40,12 @@ const STATUS_STYLE: Record<string, string> = {
 function TradePicker() {
     const supabase = createClientComponentClient();
     const router = useRouter();
+    const params = useSearchParams();
+
+    // Arriving from "change" means they want the list, not the shortcut —
+    // otherwise the redirect below would bounce them straight back into the
+    // business they were trying to get out of.
+    const changing = params.get('change') === '1';
 
     const [loading, setLoading] = useState(true);
     const [mine, setMine] = useState<any[]>([]);
@@ -55,6 +61,15 @@ function TradePicker() {
                     .select('id, trade, business_name, status')
                     .eq('owner_id', session.user.id);
 
+                // One business is the only case that exists today, and the
+                // decision emails all point here — so a one-row list is a
+                // pointless tap on the way to the only thing it could show.
+                // With two there is nothing to choose on their behalf.
+                if (!changing && (data || []).length === 1) {
+                    router.replace('/services/join/apply?trade=' + encodeURIComponent(data![0].trade || 'sponge'));
+                    return;
+                }
+
                 setMine(data || []);
             } catch (err) {
                 // A failed read just means they see every trade as new, which
@@ -64,7 +79,7 @@ function TradePicker() {
             }
         };
         load();
-    }, [supabase]);
+    }, [supabase, router, changing]);
 
     const open = (trade: string) =>
         router.push('/services/join/apply?trade=' + encodeURIComponent(trade));
