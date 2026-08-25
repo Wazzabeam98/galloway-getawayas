@@ -247,6 +247,23 @@ export const BEDROOM_BANDS = [
 // Bedrooms tell you nothing about a garden — a two-bed cottage can sit in an
 // acre. Physical anchors rather than adjectives, so that two hosts reading
 // "medium" do not mean different things.
+// What the building is, for the trades where access decides the job.
+//
+// NOT listings.property_type — that column holds the marketing categories a
+// place is sold under (Cottages, Coastal Stays, Luxury Stays) and answers a
+// different question. A cottage can be a bungalow or two storeys.
+export const BUILDING_TYPES = [
+    { key: 'bungalow', label: 'Bungalow' },
+    { key: 'semi_detached', label: 'Semi-detached' },
+    { key: 'detached', label: 'Detached' },
+    { key: 'flat', label: 'Flat or apartment' },
+] as const;
+
+export function buildingTypeLabel(key: string): string {
+    const found = BUILDING_TYPES.filter((b) => b.key === key)[0];
+    return found ? found.label : '';
+}
+
 export const STOREY_BANDS = [
     { key: 'storeys_one', label: 'All on one floor — nothing above head height' },
     { key: 'storeys_two', label: 'Two floors — upstairs windows need a ladder' },
@@ -527,6 +544,22 @@ export const SERVICE_EXTRAS: ServiceExtra[] = [
     //
     // No "do you go upstairs" toggle: they use long poles, so it is not a real
     // distinction. Height is priced, not offered or withheld.
+    {
+        key: 'pressure_washing', trade: 'droplet', type: 'toggle', group: 'about',
+        label: 'Pressure washing',
+    },
+    {
+        key: 'gutter_cleaning', trade: 'droplet', type: 'toggle', group: 'about',
+        label: 'Gutter cleaning',
+    },
+    {
+        key: 'fascias_soffits', trade: 'droplet', type: 'toggle', group: 'about',
+        label: 'Fascias and soffits cleaning',
+    },
+    {
+        key: 'solar_panels', trade: 'droplet', type: 'toggle', group: 'about',
+        label: 'Solar panel cleaning',
+    },
     {
         key: 'upstairs_surcharge', trade: 'droplet', type: 'priced', group: 'priced',
         label: 'Extra for upstairs windows',

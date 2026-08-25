@@ -23,6 +23,8 @@ const {
     bandForPlot,
     bandForStoreys,
     storeyLabel,
+    BUILDING_TYPES,
+    buildingTypeLabel,
     STOREY_BANDS,
     canBeRequested,
     showsTimeGuide,
@@ -120,6 +122,22 @@ test('window cleaning offers no time guide, the banded trades do', () => {
     assert.equal(showsTimeGuide('droplet'), false, 'quick work — a guide on every band is noise');
     assert.equal(showsTimeGuide('sponge'), true, 'an hour either way on a changeover is worth knowing');
     assert.equal(showsTimeGuide('trees'), true);
+});
+
+test('a building type is not the marketing category on a listing', () => {
+    const keys = BUILDING_TYPES.map((b: any) => b.key);
+    assert.deepEqual(keys, ['bungalow', 'semi_detached', 'detached', 'flat']);
+
+    // listings.property_type holds Cottages, Farmhouses, Coastal Stays,
+    // Cabins & Pods, Townhouses, Luxury Stays — how a place is sold, not what
+    // it is built as. A cottage can be a bungalow or two storeys.
+    const marketing = ['Cottages', 'Farmhouses', 'Coastal Stays', 'Cabins & Pods', 'Townhouses', 'Luxury Stays'];
+    for (const m of marketing) {
+        assert.equal(keys.indexOf(m), -1, m + ' is a category, not a building type');
+    }
+
+    assert.equal(buildingTypeLabel('flat'), 'Flat or apartment');
+    assert.equal(buildingTypeLabel('Cottages'), '');
 });
 
 test('a storey band is only a band if it is one of ours', () => {

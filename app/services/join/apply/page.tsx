@@ -5,7 +5,7 @@ import Link from 'next/link';
 import { useRouter, useSearchParams } from 'next/navigation';
 import { createClientComponentClient } from '@supabase/auth-helpers-nextjs';
 import { toast } from 'react-toastify';
-import { Sparkles, Wrench, Trees, Droplet, ChefHat, Cake, ShoppingBasket, PawPrint, Trash2, Check, Plus, X } from 'lucide-react';
+import { Sparkles, Wrench, Trees, Droplet, ChefHat, Cake, ShoppingBasket, PawPrint, Trash2, Plus, X } from 'lucide-react';
 import { compressImage } from '@/lib/compressImage';
 import { getImageUrl, generateRandomNumber } from '@/lib/utils';
 import Env from '@/config/Env';
@@ -19,6 +19,7 @@ import {
     imageryFor,
     initialsFor,
     showsTimeGuide,
+    BUILDING_TYPES,
     groupIsOffered,
     groupGate,
     EXTRA_GROUPS,
@@ -32,7 +33,6 @@ import {
     bandsFor,
     canBeRequested,
     REVIEW_WITHIN_HOURS,
-    TRIAL_DAYS,
 } from '@/lib/serviceProviders';
 
 const TRADE_ICONS: Record<string, any> = {
@@ -84,6 +84,8 @@ function ApplicationForm() {
     const [uploadingLogo, setUploadingLogo] = useState(false);
     const [removing, setRemoving] = useState(false);
     const [confirmRemove, setConfirmRemove] = useState(false);
+    const [buildingType, setBuildingType] = useState('');
+    const [panes, setPanes] = useState('');
     // True once the form has either loaded a saved record or restored a local
     // draft. Nothing is written to storage before it, or the empty defaults
     // would overwrite the thing being restored.
@@ -842,6 +844,71 @@ function ApplicationForm() {
                     )}
                 </section>
 
+                {/* Facts about the property, not about the provider — a
+                    window cleaner does not have a building type. They are here
+                    so that real window cleaners can see what they will be told
+                    before they quote, and they move to the owner's side once
+                    that is built.
+
+                    Deliberately not saved anywhere: there is no column for
+                    them on a provider and there should not be one, so the
+                    panel says so rather than quietly losing what is typed. */}
+                {trade === 'droplet' && (
+                    <section className="mb-8">
+                        <div className="rounded-2xl border border-dashed border-slate-300 bg-slate-50 p-5">
+                            <div className="flex items-start justify-between gap-3 mb-1">
+                                <h2 className="text-sm font-semibold text-slate-900">About the property</h2>
+                                <span className="shrink-0 text-xs font-semibold text-slate-500 bg-slate-200 rounded-full px-2.5 py-1">
+                                    Preview
+                                </span>
+                            </div>
+                            <p className="text-sm text-slate-500 mb-5">
+                                The owner will answer these, not you. Shown here so you can see what you
+                                will be given before you price a job. Nothing here is saved yet.
+                            </p>
+
+                            <div className="mb-5">
+                                <div className="text-sm font-semibold text-slate-900 mb-2">What kind of building</div>
+                                <div className="grid grid-cols-2 sm:grid-cols-4 gap-2">
+                                    {BUILDING_TYPES.map((b) => {
+                                        const on = buildingType === b.key;
+                                        return (
+                                            <button
+                                                key={b.key}
+                                                type="button"
+                                                onClick={() => setBuildingType(on ? '' : b.key)}
+                                                aria-pressed={on}
+                                                className={`rounded-xl border px-3 py-2.5 text-sm text-left transition ${
+                                                    on
+                                                        ? 'border-emerald-700 ring-2 ring-emerald-700 bg-emerald-50 text-slate-900'
+                                                        : 'border-slate-300 text-slate-700 hover:border-slate-400 bg-white'
+                                                }`}
+                                            >
+                                                {b.label}
+                                            </button>
+                                        );
+                                    })}
+                                </div>
+                            </div>
+
+                            <div>
+                                <label htmlFor="panes" className="block text-sm font-semibold text-slate-900 mb-2">
+                                    Number of panes
+                                </label>
+                                <input
+                                    id="panes"
+                                    type="text"
+                                    inputMode="numeric"
+                                    value={panes}
+                                    onChange={(e) => setPanes(e.target.value)}
+                                    placeholder="24"
+                                    className="w-full sm:max-w-[10rem] rounded-lg border border-slate-300 px-3 py-2 text-sm bg-white focus:outline-none focus:ring-2 focus:ring-emerald-700"
+                                />
+                            </div>
+                        </div>
+                    </section>
+                )}
+
                 {/* What they charge. Driven by the trade rather than by a
                     choice, so two cleaners are always comparable and a host is
                     never asked to weigh a price against a rate. */}
@@ -1332,10 +1399,6 @@ function ApplicationForm() {
                             >
                                 Save and finish later
                             </button>
-                            <p className="text-sm text-slate-500 flex items-center gap-1.5">
-                                <Check className="w-4 h-4 text-emerald-700" />
-                                Free for {TRIAL_DAYS} days
-                            </p>
                         </div>
                     )}
 

@@ -133,10 +133,43 @@ test('window cleaning charges for height, and does not ask whether they go up', 
 
     // Long poles: going upstairs is not a real distinction, so height is
     // priced rather than offered or withheld.
-    assert.deepEqual(keys, ['upstairs_surcharge', 'high_access_surcharge']);
+    assert.deepEqual(keys, [
+        'pressure_washing', 'gutter_cleaning', 'fascias_soffits', 'solar_panels',
+        'upstairs_surcharge', 'high_access_surcharge',
+    ]);
     assert.equal(extraByKey('upstairs_windows'), null);
     assert.equal(extraByKey('upstairs_surcharge').type, 'priced');
     assert.equal(extraByKey('high_access_surcharge').type, 'priced');
+});
+
+test('the four things a window cleaner turns up to do are toggles, not prices', () => {
+    // Shown so a host can see what a cleaner covers. Pricing comes once real
+    // window cleaners have said how they want to charge for them.
+    for (const key of ['pressure_washing', 'gutter_cleaning', 'fascias_soffits', 'solar_panels']) {
+        const extra = extraByKey(key);
+        assert.equal(extra.trade, 'droplet', key + ' belongs to window cleaning');
+        assert.equal(extra.type, 'toggle', key + ' carries no price yet');
+        assert.equal(extra.group, 'about');
+    }
+});
+
+test('none of the four adds anything to a ceiling', () => {
+    const clean = serviceCeiling({ bandPrice: 35 }, extrasFor('droplet'));
+    const withAll = serviceCeiling(
+        {
+            bandPrice: 35,
+            extras: {
+                pressure_washing: { offered: true, price: 50 },
+                gutter_cleaning: { offered: true, price: 60 },
+                fascias_soffits: { offered: true, price: 40 },
+                solar_panels: { offered: true, price: 30 },
+            },
+        },
+        extrasFor('droplet')
+    );
+
+    assert.equal(withAll, clean, 'a toggle is never a line on a bill, whatever is attached to it');
+    assert.equal(withAll, 35);
 });
 
 test('a storey surcharge is a flat amount, not a rate per anything', () => {
