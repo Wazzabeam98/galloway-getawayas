@@ -26,6 +26,7 @@ const {
     STOREY_BANDS,
     canBeRequested,
     showsTimeGuide,
+    unclaimedTrades,
     pricingProblems,
     submitProblems,
     BEDROOM_BANDS,
@@ -76,6 +77,43 @@ test('the storey bands say what the cleaner faces, not how many floors', () => {
         false,
         '"two storeys" is counted differently depending on whether the ground floor is one'
     );
+});
+
+// One business per trade, so the picker is a list of what somebody has plus
+// what is left — not a question they have already answered.
+
+test('somebody with nothing yet is offered every host trade', () => {
+    const left = unclaimedTrades([], 'host').map((t: any) => t.key);
+    assert.deepEqual(left, ['sponge', 'bin', 'spanner', 'trees', 'droplet'].filter(k => left.indexOf(k) !== -1));
+    assert.equal(left.length, 5);
+});
+
+test('a trade already signed up for is not offered again', () => {
+    const left = unclaimedTrades([{ trade: 'sponge' }], 'host').map((t: any) => t.key);
+
+    assert.equal(left.indexOf('sponge'), -1, 'they already have a cleaning business');
+    assert.equal(left.length, 4);
+});
+
+test('a cleaning firm and a window round leave three trades open', () => {
+    const left = unclaimedTrades([{ trade: 'sponge' }, { trade: 'droplet' }], 'host').map((t: any) => t.key);
+
+    assert.deepEqual(left.sort(), ['bin', 'spanner', 'trees']);
+});
+
+test('somebody with every trade is offered none', () => {
+    const all = ['sponge', 'bin', 'spanner', 'trees', 'droplet'].map((trade) => ({ trade }));
+    assert.deepEqual(unclaimedTrades(all, 'host'), []);
+});
+
+test('a guest-side business does not use up a host trade', () => {
+    const left = unclaimedTrades([{ trade: 'cake' }], 'host').map((t: any) => t.key);
+    assert.equal(left.length, 5, 'a baker has not signed up as a cleaner');
+});
+
+test('no providers at all is the same as none', () => {
+    assert.equal(unclaimedTrades(null, 'host').length, 5);
+    assert.equal(unclaimedTrades(undefined, 'host').length, 5);
 });
 
 test('window cleaning offers no time guide, the banded trades do', () => {

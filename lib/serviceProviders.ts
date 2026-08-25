@@ -45,6 +45,18 @@ export function tradesFor(audience: string): Array<{ key: string; label: string 
 // The audience comes from the trade rather than from an answer, so the record
 // can never disagree with itself — and the guest page needs no code of its own
 // to set it.
+// Which trades this person has not signed up for yet.
+//
+// One business per trade, so the picker is a list of what they have plus what
+// is left — rather than a question they have already answered.
+export function unclaimedTrades(
+    existing: Array<{ trade?: string | null }> | null | undefined,
+    audience: string
+): Array<{ key: string; label: string }> {
+    const taken = (existing || []).map((p) => String(p.trade || ''));
+    return tradesFor(audience).filter((t) => taken.indexOf(t.key) === -1);
+}
+
 export function audienceForTrade(trade: string): string {
     if ((GUEST_TRADES as readonly string[]).indexOf(trade) !== -1) return 'guest';
     if ((HOST_TRADES as readonly string[]).indexOf(trade) !== -1) return 'host';

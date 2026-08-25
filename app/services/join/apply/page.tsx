@@ -121,12 +121,18 @@ function ApplicationForm() {
                     .from('service_providers')
                     .select('id, business_name, trade, description, contact_email, contact_phone, audience, photos, logo, status, review_note, callout_fee, hourly_rate')
                     .eq('owner_id', session.user.id)
+                    // Keyed on the trade as well as the owner. One person can
+                    // run a cleaning firm and a window cleaning round, and the
+                    // database now allows exactly one business per trade — so
+                    // this is the application for the trade they picked, not
+                    // "their application".
+                    .eq('trade', tradeFromUrl)
                     .maybeSingle();
 
                 if (existing) {
                     setProviderId(existing.id);
                     setBusinessName(existing.business_name || '');
-                    setTrade(tradeFromUrl || existing.trade || 'sponge');
+                    setTrade(existing.trade || tradeFromUrl);
                     setDescription(existing.description || '');
                     setContactEmail(existing.contact_email || session.user.email || '');
                     setContactPhone(existing.contact_phone || '');
@@ -646,7 +652,7 @@ function ApplicationForm() {
                             <span className="text-sm font-semibold text-slate-900 truncate">{tradeLabel(trade)}</span>
                         </div>
                         <Link
-                            href="/services/join?change=1"
+                            href="/services/join"
                             className="text-sm font-semibold text-emerald-700 hover:text-emerald-800 underline shrink-0"
                         >
                             Change
