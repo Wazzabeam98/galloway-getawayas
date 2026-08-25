@@ -36,18 +36,30 @@ function load(options: {
     status?: string;
     approvedDigest?: string | null;
     changesPendingAt?: string | null;
+    trade?: string;
+    doesGas?: boolean;
+    doesOil?: boolean;
+    registrations?: any[];
 } = {}) {
     const delivered = options.delivered !== false;
     const sent: any[] = [];
     const logged: any[] = [];
     const updates: any[] = [];
 
+    // Nested, the way the route reads it now. The business is a table of its
+    // own; the route flattens it back onto one row for the digest.
     const provider = {
         id: PROVIDER_ID,
-        business_name: 'Solway Sparkle',
-        contact_email: 'hello@solwaysparkle.test',
+        business_id: 'biz-1',
+        service_businesses: {
+            business_name: 'Solway Sparkle',
+            logo: null,
+            contact_email: 'hello@solwaysparkle.test',
+        },
         status: options.status || 'pending_review',
-        trade: 'sponge',
+        trade: options.trade || 'sponge',
+        does_gas: options.doesGas === true,
+        does_oil: options.doesOil === true,
         description: 'Changeover cleans for holiday cottages across the Stewartry.',
         audience: 'host',
         photos: ['providers/a.jpg'],
@@ -73,6 +85,9 @@ function load(options: {
                     }
                     if (table === 'service_providers') {
                         return (resolve: any) => resolve({ data: provider, error: null });
+                    }
+                    if (table === 'service_provider_registrations') {
+                        return (resolve: any) => resolve({ data: options.registrations || [], error: null });
                     }
                     return (resolve: any) => resolve({ data: null, error: null });
                 }
@@ -343,4 +358,101 @@ test('both changes decisions email the provider', async () => {
     await no.route.POST(call('decline_changes', 'Not that.'));
     assert.equal(no.sent.length, 1);
     assert.match(no.sent[0].html, /still up/, 'and it says whether they are still up');
+});
+
+// ---------------------------------------------------------------------------
+// Restricted work does not go live unchecked.
+//
+// The admin screen disables the Approve button off the same function, but a
+// disabled button is a courtesy. This is the control: a stale tab, a second
+// click, or a provider who edited their number since the page loaded all
+// arrive here, and here is where it has to be refused.
+// ---------------------------------------------------------------------------
+
+test('a gas plumber whose number has not been checked cannot be approved', async () => {
+    const { route, sent, updates } = load({
+        trade: 'plumber',
+        doesGas: true,
+        registrations: [{ provider_id: PROVIDER_ID, scheme: 'gas_safe', number: '123456' }],
+    });
+
+    const res: any = await route.POST(call('approve'));
+
+    assert.equal(res.status, 409);
+    assert.match(res.body.error, /not been checked/);
+    assert.equal(updates.length, 0, 'nothing is written');
+    assert.equal(sent.length, 0, 'and they are not told they are live');
+});
+
+test('a gas plumber with no number at all cannot be approved', async () => {
+    const { route, updates } = load({ trade: 'plumber', doesGas: true, registrations: [] });
+
+    const res: any = await route.POST(call('approve'));
+
+    assert.equal(res.status, 409);
+    assert.match(res.body.error, /Gas Safe/);
+    assert.equal(updates.length, 0);
+});
+
+test('a checked number lets the approval through', async () => {
+    const { route, sent, updates } = load({
+        trade: 'plumber',
+        doesGas: true,
+        registrations: [{
+            provider_id: PROVIDER_ID,
+            scheme: 'gas_safe',
+            number: '123456',
+            verified_at: '2026-08-01T00:00:00.000Z',
+            verified_number: '123456',
+        }],
+    });
+
+    const res: any = await route.POST(call('approve'));
+
+    assert.equal(res.status, 200);
+    assert.equal(updates[0].patch.status, 'approved');
+    assert.equal(sent.length, 1);
+});
+
+// The sequence the whole design exists to stop: checked in March, number
+// edited in June, still wearing the tick. It is not wearing the tick, because
+// "verified" is the two values agreeing rather than a flag on its own.
+test('a number edited since it was checked is refused again', async () => {
+    const { route, updates } = load({
+        trade: 'plumber',
+        doesGas: true,
+        registrations: [{
+            provider_id: PROVIDER_ID,
+            scheme: 'gas_safe',
+            number: '999999',
+            verified_at: '2026-03-01T00:00:00.000Z',
+            verified_number: '123456',
+        }],
+    });
+
+    const res: any = await route.POST(call('approve'));
+
+    assert.equal(res.status, 409);
+    assert.match(res.body.error, /not been checked/);
+    assert.equal(updates.length, 0);
+});
+
+test('a trade that needs no registration is unaffected', async () => {
+    const { route, updates } = load({ trade: 'joiner', registrations: [] });
+
+    const res: any = await route.POST(call('approve'));
+
+    assert.equal(res.status, 200);
+    assert.equal(updates[0].patch.status, 'approved');
+});
+
+test('a decline is never blocked by a missing number', async () => {
+    // Declining somebody because their paperwork is missing is exactly what
+    // the queue is for. Refusing the decline as well would leave no way out.
+    const { route, updates } = load({ trade: 'plumber', doesGas: true, registrations: [] });
+
+    const res: any = await route.POST(call('decline', 'We need your Gas Safe number before we can list you.'));
+
+    assert.equal(res.status, 200);
+    assert.equal(updates[0].patch.status, 'declined');
 });

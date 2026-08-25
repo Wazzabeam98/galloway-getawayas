@@ -127,7 +127,7 @@ test('receipts sits with the reimbursed ones but is stored as a toggle', () => {
 
 test('a trade with no extras yet has none rather than the cleaning ones', () => {
     assert.deepEqual(extrasFor('trees'), []);
-    assert.deepEqual(extrasFor('spanner'), []);
+    assert.deepEqual(extrasFor('bin'), []);
 });
 
 test('window cleaning offers exactly the shapes the trade is being asked about', () => {

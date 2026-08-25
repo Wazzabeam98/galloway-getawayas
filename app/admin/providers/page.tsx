@@ -4,7 +4,17 @@ import { cookies } from 'next/headers';
 import Link from 'next/link';
 import { notFound } from 'next/navigation';
 import { getImageUrl } from '@/lib/utils';
-import { tradeLabel, hasUnreviewedChanges, changedFields, fieldLabel, initialsFor } from '@/lib/serviceProviders';
+import {
+    tradeLabel,
+    hasUnreviewedChanges,
+    changedFields,
+    fieldLabel,
+    initialsFor,
+    schemeLabel,
+    registrationVerified,
+    registrationExpired,
+    registrationBlockers,
+} from '@/lib/serviceProviders';
 import ProviderReviewRow from '@/components/admin/ProviderReviewRow';
 
 export const dynamic = 'force-dynamic';
@@ -40,9 +50,13 @@ export default async function AdminProviders() {
     // The error is checked rather than discarded, because an empty list and a
     // broken key look identical on screen, and one of them means applications
     // are silently piling up.
+    // The business comes back nested, then is flattened onto the row below.
+    // Everything downstream — the digest, the card, the decision route — was
+    // written against one flat row and there is no reason for a table split to
+    // become a shape change in six other places.
     const { data: providers, error } = await admin
         .from('service_providers')
-        .select('id, business_name, trade, description, photos, logo, audience, kind, status, plan, trial_ends_at, contact_email, contact_phone, submitted_at, created_at, owner_id, approved_digest, changes_pending_at')
+        .select('id, business_id, trade, description, photos, audience, status, submitted_at, created_at, approved_digest, changes_pending_at, does_gas, does_oil, service_businesses ( id, owner_id, business_name, logo, contact_email, contact_phone, kind, plan, trial_ends_at )')
         .order('submitted_at', { ascending: false, nullsFirst: false });
 
     if (error) {
@@ -63,7 +77,39 @@ export default async function AdminProviders() {
         );
     }
 
-    const rows = providers || [];
+    const rows = (providers || []).map((r: any) => {
+        const business = r.service_businesses || {};
+        return {
+            ...r,
+            owner_id: business.owner_id || null,
+            business_name: business.business_name || '',
+            logo: business.logo || null,
+            contact_email: business.contact_email || '',
+            contact_phone: business.contact_phone || '',
+            kind: business.kind || 'external',
+            plan: business.plan || 'trial',
+            trial_ends_at: business.trial_ends_at || null,
+        };
+    });
+
+    // Gas Safe, OFTEC and the Part P schemes. Read for every row rather than
+    // only the waiting ones, because a live electrician whose registration has
+    // run out is exactly the thing this screen should be able to show.
+    const regRows = rows.length
+        ? (await admin
+              .from('service_provider_registrations')
+              .select('provider_id, scheme, number, verified_at, verified_number, expires_at')
+              .in('provider_id', rows.map((r: any) => r.id))).data || []
+        : [];
+
+    const regsFor = (id: string) =>
+        regRows.filter((r: any) => r.provider_id === id).map((r: any) => ({
+            ...r,
+            schemeLabel: schemeLabel(String(r.scheme || '')),
+            verified: registrationVerified(r),
+            expired: registrationExpired(r),
+        }));
+
     const areaRows = rows.length
         ? (await admin
               .from('service_areas')
@@ -82,7 +128,15 @@ export default async function AdminProviders() {
     // Worked out from the digest rather than from `changes_pending_at`,
     // because providers write their own row and could decline to stamp it.
     // The stamp is only what this sorts by.
+    const blockersFor = (row: any) => registrationBlockers(row, regsFor(row.id));
+
     const waiting = rows.filter((r: any) => r.status === 'pending_review');
+
+    // Counted separately in the summary line. A business waiting on a number
+    // being checked is not waiting on a judgement — it is waiting on ten
+    // minutes with the Gas Safe register open, which is a different job and
+    // one that can be done before ever reading their description.
+    const needChecking = rows.filter((r: any) => blockersFor(r).length > 0);
     const changed = rows.filter((r: any) => hasUnreviewedChanges(r));
     const changedIds = changed.map((r: any) => r.id);
     const rest = rows.filter(
@@ -97,11 +151,12 @@ export default async function AdminProviders() {
 
             <h1 className="text-2xl font-bold text-slate-900 mt-4">Service providers</h1>
             <p className="text-slate-600 text-sm mt-1 mb-8">
-                {waiting.length === 0 && changed.length === 0
+                {waiting.length === 0 && changed.length === 0 && needChecking.length === 0
                     ? 'Nothing waiting for you.'
                     : [
                         waiting.length ? waiting.length + ' waiting for a decision' : '',
                         changed.length ? changed.length + ' live with changes to look at' : '',
+                        needChecking.length ? needChecking.length + ' with a registration to check' : '',
                     ].filter(Boolean).join(' · ') + '.'}
             </p>
 
@@ -117,6 +172,8 @@ export default async function AdminProviders() {
                                 provider={{ ...p, tradeLabel: tradeLabel(p.trade), logoUrl: p.logo ? getImageUrl(p.logo) : null, initials: initialsFor(p.business_name) }}
                                 areas={areasFor(p.id)}
                                 photoUrls={(p.photos || []).slice(0, 3).map((x: string) => getImageUrl(x))}
+                                registrations={regsFor(p.id)}
+                                blockers={blockersFor(p)}
                             />
                         ))}
                     </div>
@@ -141,6 +198,8 @@ export default async function AdminProviders() {
                                 }}
                                 areas={areasFor(p.id)}
                                 photoUrls={(p.photos || []).slice(0, 3).map((x: string) => getImageUrl(x))}
+                                registrations={regsFor(p.id)}
+                                blockers={blockersFor(p)}
                             />
                         ))}
                     </div>
@@ -161,6 +220,8 @@ export default async function AdminProviders() {
                                 provider={{ ...p, tradeLabel: tradeLabel(p.trade), logoUrl: p.logo ? getImageUrl(p.logo) : null, initials: initialsFor(p.business_name) }}
                                 areas={areasFor(p.id)}
                                 photoUrls={(p.photos || []).slice(0, 3).map((x: string) => getImageUrl(x))}
+                                registrations={regsFor(p.id)}
+                                blockers={blockersFor(p)}
                             />
                         ))}
                     </div>

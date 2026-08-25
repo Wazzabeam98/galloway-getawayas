@@ -5,12 +5,24 @@
 // so it can be used on the server and in the browser and tested without a
 // database anywhere near it.
 
+// Nobody searches for "maintenance". They search for a plumber.
+//
+// 'spanner' — Maintenance & repairs — used to be a trade of its own, and the
+// six below were buried inside it. It is now a group on the picker (see
+// TRADE_GROUPS) rather than anything that gets stored, because a trade is how
+// somebody is found and a roofer found only by looking under handymen is not
+// really listed at all.
 export const TRADES = [
     { key: 'sponge', label: 'Cleaning' },
     { key: 'bin', label: 'Waste removal' },
-    { key: 'spanner', label: 'Maintenance & repairs' },
     { key: 'trees', label: 'Gardening & grounds' },
     { key: 'droplet', label: 'Window cleaning' },
+    { key: 'electrician', label: 'Electrician' },
+    { key: 'joiner', label: 'Joiner' },
+    { key: 'plumber', label: 'Plumber' },
+    { key: 'roofer', label: 'Roofer' },
+    { key: 'painter', label: 'Painter & decorator' },
+    { key: 'handyman', label: 'Handyman' },
     { key: 'chef', label: 'Private chef' },
     { key: 'cake', label: 'Cakes & baking' },
     { key: 'basket', label: 'Hampers & shopping' },
@@ -34,8 +46,79 @@ export function tradeLabel(key: string): string {
 // Every trade belongs to exactly one of these, and there is a test that says
 // so: a trade in neither would appear on no sign-up at all, which is a page
 // nobody can reach rather than a visible mistake.
-export const HOST_TRADES = ['sponge', 'bin', 'trees', 'droplet', 'spanner'] as const;
+export const HOST_TRADES = [
+    'sponge', 'bin', 'trees', 'droplet',
+    'electrician', 'joiner', 'plumber', 'roofer', 'painter', 'handyman',
+] as const;
 export const GUEST_TRADES = ['chef', 'cake', 'basket', 'paw'] as const;
+
+// A heading on the picker, not a thing anybody is.
+//
+// Six trades would swamp a page that otherwise has four entries on it, and
+// they belong together in a way the others do not — somebody who needs one of
+// them usually knows which. So the picker shows "Maintenance & repairs", and
+// choosing it opens a second page of the actual trades.
+//
+// There is no cap on how many of them one business may hold, deliberately.
+// Somebody ticking all six is telling us something worth seeing rather than
+// something worth preventing — and a genuine handyman picks handyman.
+export const TRADE_GROUPS = [
+    {
+        key: 'maintenance',
+        label: 'Maintenance & repairs',
+        hint: 'Electrician, joiner, plumber, roofer, painter, handyman.',
+        trades: ['electrician', 'joiner', 'plumber', 'roofer', 'painter', 'handyman'],
+    },
+] as const;
+
+export function groupByKey(key: string): { key: string; label: string; hint: string; trades: readonly string[] } | null {
+    const found = TRADE_GROUPS.filter((g) => g.key === key)[0];
+    return found ? { key: found.key, label: found.label, hint: found.hint, trades: found.trades } : null;
+}
+
+export function groupForTrade(trade: string): string | null {
+    const found = TRADE_GROUPS.filter((g) => (g.trades as readonly string[]).indexOf(trade) !== -1)[0];
+    return found ? found.key : null;
+}
+
+// What step one shows: the ungrouped trades they have not claimed, plus any
+// group that still has something left in it.
+//
+// A group with every trade taken drops off the page rather than opening onto
+// an empty second step, which is the same rule the flat list already follows.
+export function pickerEntries(
+    existing: Array<{ trade?: string | null }> | null | undefined,
+    audience: string
+): Array<{ kind: 'trade' | 'group'; key: string; label: string; hint?: string; left?: number }> {
+    const left = unclaimedTrades(existing, audience);
+    const entries: Array<{ kind: 'trade' | 'group'; key: string; label: string; hint?: string; left?: number }> = [];
+    const seenGroups: string[] = [];
+
+    for (const trade of left) {
+        const group = groupForTrade(trade.key);
+
+        if (!group) {
+            entries.push({ kind: 'trade', key: trade.key, label: trade.label });
+            continue;
+        }
+
+        if (seenGroups.indexOf(group) !== -1) continue;
+        seenGroups.push(group);
+
+        const meta = groupByKey(group);
+        if (!meta) continue;
+
+        entries.push({
+            kind: 'group',
+            key: group,
+            label: meta.label,
+            hint: meta.hint,
+            left: left.filter((t) => groupForTrade(t.key) === group).length,
+        });
+    }
+
+    return entries;
+}
 
 export function tradesFor(audience: string): Array<{ key: string; label: string }> {
     const keys: readonly string[] = audience === 'guest' ? GUEST_TRADES : HOST_TRADES;
@@ -100,6 +183,16 @@ export function trialEndsAt(from: Date): string {
 // costs the provider work and there is nothing to judge; coverage is their own
 // knowledge, changes legitimately and often, and friction there makes people
 // under-declare it, which makes matching worse rather than safer.
+// `business_name` and `logo` moved to service_businesses, so a provider row on
+// its own no longer carries them. The digest is computed from a row joined to
+// its business — see the select in app/admin/providers/page.tsx — which keeps
+// the fingerprint covering everything a reviewer actually looked at.
+//
+// `does_gas` and `does_oil` are in here because turning one on after approval
+// is a new claim about work the law restricts, and it should come back round
+// rather than appear quietly. The registration numbers themselves are not:
+// they live in their own table, and they have a stronger check of their own —
+// changing a number un-verifies it in the same statement.
 export const REVIEWABLE_FIELDS = [
     'business_name',
     'trade',
@@ -107,6 +200,8 @@ export const REVIEWABLE_FIELDS = [
     'audience',
     'photos',
     'logo',
+    'does_gas',
+    'does_oil',
 ] as const;
 
 // A fingerprint of the reviewable fields, stable across key order and across
@@ -187,6 +282,8 @@ export function fieldLabel(field: string): string {
     if (field === 'audience') return 'who they sell to';
     if (field === 'photos') return 'photos';
     if (field === 'logo') return 'logo';
+    if (field === 'does_gas') return 'whether they do gas work';
+    if (field === 'does_oil') return 'whether they do oil work';
     return field;
 }
 
@@ -286,12 +383,20 @@ export const PLOT_BANDS = [
     { key: 'plot_grounds', label: 'Larger than that, or paddock and orchard' },
 ] as const;
 
+// Every maintenance trade is a call-out plus an hourly rate. None of them can
+// be priced off the size of the property the way a changeover clean can —
+// a leak is a leak whether the cottage has two bedrooms or five.
 const TRADE_PRICING: Record<string, PricingModel> = {
     sponge: 'bands',
     bin: 'bands',
     trees: 'bands',
     droplet: 'bands',
-    spanner: 'callout_hourly',
+    electrician: 'callout_hourly',
+    joiner: 'callout_hourly',
+    plumber: 'callout_hourly',
+    roofer: 'callout_hourly',
+    painter: 'callout_hourly',
+    handyman: 'callout_hourly',
 };
 
 const TRADE_BANDS: Record<string, 'bedrooms' | 'plot'> = {
@@ -620,6 +725,211 @@ export const SERVICE_EXTRAS: ServiceExtra[] = [
         key: 'receipts_provided', trade: 'sponge', type: 'toggle', group: 'reimbursed',
         label: 'I provide receipts for anything I buy',
     },
+
+    // --- electrician -------------------------------------------------------
+    //
+    // The maintenance trades are all priced as a call-out plus an hour, so
+    // these are mostly about what somebody actually turns up and does. The
+    // ones worth having are the ones a cottage owner would otherwise have to
+    // ring round and ask.
+    {
+        key: 'elec_emergency', trade: 'electrician', type: 'toggle', group: 'about',
+        label: 'I take emergency call-outs',
+        hint: 'No power, something tripping, a burning smell.',
+    },
+    {
+        key: 'elec_eicr', trade: 'electrician', type: 'toggle', group: 'about',
+        label: 'I do EICR inspections and certificates',
+        hint: 'A let has to have one every five years.',
+    },
+    {
+        key: 'elec_pat', trade: 'electrician', type: 'toggle', group: 'about',
+        label: 'I do PAT testing',
+    },
+    {
+        key: 'elec_alarms', trade: 'electrician', type: 'toggle', group: 'about',
+        label: 'I fit interlinked smoke and heat alarms',
+        hint: 'The standard every Scottish home has had to meet since 2022.',
+    },
+    {
+        key: 'elec_hot_tub', trade: 'electrician', type: 'toggle', group: 'about',
+        label: 'I can wire a hot tub supply',
+    },
+    {
+        key: 'elec_ev', trade: 'electrician', type: 'toggle', group: 'about',
+        label: 'I install EV chargers',
+    },
+    {
+        key: 'elec_eicr_fee', trade: 'electrician', type: 'priced', group: 'priced',
+        label: 'EICR for a typical cottage',
+        hint: 'Leave blank if it depends too much to say.',
+    },
+
+    // --- joiner ------------------------------------------------------------
+    {
+        key: 'joiner_doors_windows', trade: 'joiner', type: 'toggle', group: 'about',
+        label: 'Doors and windows',
+    },
+    {
+        key: 'joiner_locks', trade: 'joiner', type: 'toggle', group: 'about',
+        label: 'Locks and door furniture',
+        hint: 'Changeover day, a key snapped in the lock.',
+    },
+    {
+        key: 'joiner_kitchens', trade: 'joiner', type: 'toggle', group: 'about',
+        label: 'Kitchen fitting',
+    },
+    {
+        key: 'joiner_flooring', trade: 'joiner', type: 'toggle', group: 'about',
+        label: 'Floor laying and repairs',
+    },
+    {
+        key: 'joiner_decking', trade: 'joiner', type: 'toggle', group: 'about',
+        label: 'Decking, steps and outdoor timber',
+    },
+    {
+        key: 'joiner_bespoke', trade: 'joiner', type: 'toggle', group: 'about',
+        label: 'Built-in storage and bespoke pieces',
+    },
+    {
+        key: 'joiner_workshop', trade: 'joiner', type: 'toggle', group: 'about',
+        label: 'I have a workshop for off-site work',
+    },
+
+    // --- plumber -----------------------------------------------------------
+    //
+    // Gas and oil are NOT here. They are columns on the listing, because they
+    // decide whether it can be approved at all and an owner needs to see the
+    // answer before they ring rather than after.
+    {
+        key: 'plumb_emergency', trade: 'plumber', type: 'toggle', group: 'about',
+        label: 'I take emergency call-outs',
+        hint: 'Leaks, no water, no heating.',
+    },
+    {
+        key: 'plumb_frozen', trade: 'plumber', type: 'toggle', group: 'about',
+        label: 'I turn out for frozen and burst pipes in winter',
+        hint: 'An empty cottage in January is the one that floods.',
+    },
+    {
+        key: 'plumb_boiler_service', trade: 'plumber', type: 'toggle', group: 'about',
+        label: 'I service boilers',
+    },
+    {
+        key: 'plumb_unvented', trade: 'plumber', type: 'toggle', group: 'about',
+        label: 'Unvented hot water cylinders',
+    },
+    {
+        key: 'plumb_bathrooms', trade: 'plumber', type: 'toggle', group: 'about',
+        label: 'Full bathroom installations',
+    },
+    {
+        key: 'plumb_drains', trade: 'plumber', type: 'toggle', group: 'about',
+        label: 'Blocked drains and waste',
+    },
+    {
+        key: 'plumb_hot_tub', trade: 'plumber', type: 'toggle', group: 'about',
+        label: 'Hot tub plumbing and filtration',
+    },
+    {
+        key: 'plumb_legionella', trade: 'plumber', type: 'toggle', group: 'about',
+        label: 'I do legionella risk assessments',
+        hint: 'Every let needs one, and most owners have never been asked for it.',
+    },
+
+    // --- roofer ------------------------------------------------------------
+    {
+        key: 'roof_emergency', trade: 'roofer', type: 'toggle', group: 'about',
+        label: 'I take emergency call-outs',
+        hint: 'Storm damage, a leak coming through a ceiling.',
+    },
+    {
+        key: 'roof_slate', trade: 'roofer', type: 'toggle', group: 'about',
+        label: 'Slate and tile repairs',
+    },
+    {
+        key: 'roof_flat', trade: 'roofer', type: 'toggle', group: 'about',
+        label: 'Flat roofs and felting',
+    },
+    {
+        key: 'roof_gutters', trade: 'roofer', type: 'toggle', group: 'about',
+        label: 'Gutters, fascias and soffits',
+    },
+    {
+        key: 'roof_chimney', trade: 'roofer', type: 'toggle', group: 'about',
+        label: 'Chimneys and lead work',
+    },
+    {
+        key: 'roof_moss', trade: 'roofer', type: 'toggle', group: 'about',
+        label: 'Moss removal and roof cleaning',
+    },
+    {
+        key: 'roof_scaffold', trade: 'roofer', type: 'toggle', group: 'about',
+        label: 'I arrange my own scaffolding or tower',
+        hint: 'Worth saying — otherwise the owner assumes it is on top of the bill.',
+    },
+    {
+        key: 'roof_survey', trade: 'roofer', type: 'priced', group: 'priced',
+        label: 'Roof survey with photographs',
+    },
+
+    // --- painter and decorator ---------------------------------------------
+    {
+        key: 'paint_interior', trade: 'painter', type: 'toggle', group: 'about',
+        label: 'Interior decorating',
+    },
+    {
+        key: 'paint_exterior', trade: 'painter', type: 'toggle', group: 'about',
+        label: 'Exterior painting and masonry',
+    },
+    {
+        key: 'paint_changeover', trade: 'painter', type: 'toggle', group: 'about',
+        label: 'Touch-ups between changeovers',
+        hint: 'A day between guests, scuffs and chips seen to.',
+    },
+    {
+        key: 'paint_wallpaper', trade: 'painter', type: 'toggle', group: 'about',
+        label: 'Wallpapering',
+    },
+    {
+        key: 'paint_windows', trade: 'painter', type: 'toggle', group: 'about',
+        label: 'Sash windows and outside woodwork',
+    },
+    {
+        key: 'paint_out_of_season', trade: 'painter', type: 'toggle', group: 'about',
+        label: 'I can work out of season, when the cottage is empty',
+    },
+
+    // --- handyman ----------------------------------------------------------
+    {
+        key: 'handy_snag_list', trade: 'handyman', type: 'toggle', group: 'about',
+        label: 'I will work through a list in one visit',
+        hint: 'The thing most owners actually want and cannot find.',
+    },
+    {
+        key: 'handy_small_repairs', trade: 'handyman', type: 'toggle', group: 'about',
+        label: 'Small repairs and odd jobs',
+    },
+    {
+        key: 'handy_fixings', trade: 'handyman', type: 'toggle', group: 'about',
+        label: 'Shelves, curtain poles, blinds and TV brackets',
+    },
+    {
+        key: 'handy_flatpack', trade: 'handyman', type: 'toggle', group: 'about',
+        label: 'Flat-pack assembly',
+    },
+    {
+        key: 'handy_appliances', trade: 'handyman', type: 'toggle', group: 'about',
+        label: 'Swapping over appliances',
+    },
+    {
+        key: 'handy_outdoor', trade: 'handyman', type: 'toggle', group: 'about',
+        label: 'Fence panels, gates and sheds',
+    },
+    {
+        key: 'handy_keysafe', trade: 'handyman', type: 'toggle', group: 'about',
+        label: 'I can fit key safes and house numbers',
+    },
 ];
 
 export const PRICING_GROUPS = ['pane_flat', 'pane_storey'] as const;
@@ -691,6 +1001,239 @@ export function groupIsOffered(
         });
 }
 
+// ---------------------------------------------------------------------------
+// REGISTRATION
+// ---------------------------------------------------------------------------
+//
+// Three kinds of work are restricted by law rather than by skill: gas, oil and
+// electrics. The trade alone does not decide it — most plumbers do gas, plenty
+// also do oil, and in Dumfries & Galloway, where most of the region is off the
+// gas grid, both at once is ordinary. So gas and oil are questions inside the
+// plumber's application rather than trades of their own.
+//
+// Part P is a section of the Building Regulations, not a register. An
+// electrician does not have "a Part P number" — they have membership of a
+// competent person scheme, and the scheme has to be named or the number cannot
+// be checked against anything.
+export const REGISTRATION_SCHEMES = [
+    {
+        key: 'gas_safe',
+        label: 'Gas Safe',
+        body: 'Gas Safe Register',
+        numberLabel: 'Gas Safe registration number',
+        // Publicly searchable by design, which is why the number goes on the
+        // listing rather than being hidden — an owner can check it themselves.
+        publicRegister: true,
+    },
+    {
+        key: 'oftec',
+        label: 'OFTEC',
+        body: 'OFTEC',
+        numberLabel: 'OFTEC registration number',
+        publicRegister: true,
+    },
+    {
+        key: 'part_p_niceic',
+        label: 'NICEIC',
+        body: 'NICEIC',
+        numberLabel: 'NICEIC enrolment number',
+        publicRegister: true,
+    },
+    {
+        key: 'part_p_napit',
+        label: 'NAPIT',
+        body: 'NAPIT',
+        numberLabel: 'NAPIT membership number',
+        publicRegister: true,
+    },
+    {
+        key: 'part_p_elecsa',
+        label: 'ELECSA',
+        body: 'ELECSA',
+        numberLabel: 'ELECSA enrolment number',
+        publicRegister: true,
+    },
+    {
+        key: 'part_p_stroma',
+        label: 'STROMA',
+        body: 'STROMA Certification',
+        numberLabel: 'STROMA membership number',
+        publicRegister: true,
+    },
+] as const;
+
+export const PART_P_SCHEMES = ['part_p_niceic', 'part_p_napit', 'part_p_elecsa', 'part_p_stroma'] as const;
+
+export function schemeLabel(key: string): string {
+    const found = REGISTRATION_SCHEMES.filter((s) => s.key === key)[0];
+    return found ? found.label : key;
+}
+
+export function schemeNumberLabel(key: string): string {
+    const found = REGISTRATION_SCHEMES.filter((s) => s.key === key)[0];
+    return found ? found.numberLabel : 'Registration number';
+}
+
+export function isPartP(key: string): boolean {
+    return (PART_P_SCHEMES as readonly string[]).indexOf(key) !== -1;
+}
+
+// Whether the trade asks the gas and oil questions at all. Only the plumber
+// does: a roofer ticking "I do gas work" is a question nobody should be shown.
+export function asksAboutFuel(trade: string): boolean {
+    return trade === 'plumber';
+}
+
+export interface RegistrationDraft {
+    trade?: string | null;
+    does_gas?: boolean | null;
+    does_oil?: boolean | null;
+}
+
+// Which registrations this listing must produce before it can go live.
+//
+// Returned as a list, not one value, because a rural plumber doing gas in the
+// towns and oil off-grid holds two at once and both have to be checked.
+export function requiredSchemes(draft: RegistrationDraft): string[] {
+    const trade = String(draft.trade || '');
+    const needed: string[] = [];
+
+    // An electrician always needs one, and which body it is with is theirs to
+    // say — so the requirement is "one of the four", not a named scheme.
+    if (trade === 'electrician') needed.push('part_p');
+
+    if (asksAboutFuel(trade)) {
+        if (draft.does_gas) needed.push('gas_safe');
+        if (draft.does_oil) needed.push('oftec');
+    }
+
+    return needed;
+}
+
+// Which schemes this listing may offer at all. A handyman claiming NICEIC
+// membership is not something to capture and check, it is something not to ask.
+export function offerableSchemes(draft: RegistrationDraft): string[] {
+    const trade = String(draft.trade || '');
+    const allowed: string[] = [];
+
+    if (trade === 'electrician') for (const key of PART_P_SCHEMES) allowed.push(key);
+    if (asksAboutFuel(trade)) {
+        if (draft.does_gas) allowed.push('gas_safe');
+        if (draft.does_oil) allowed.push('oftec');
+    }
+
+    return allowed;
+}
+
+export interface RegistrationRow {
+    scheme?: string | null;
+    number?: string | null;
+    verified_at?: string | null;
+    verified_number?: string | null;
+    expires_at?: string | null;
+}
+
+// The whole gate, in one function.
+//
+// Never `!!row.verified_at`. The number as it was checked has to still be the
+// number on the row, so a provider who was checked in March and edits their
+// number in June is not verified in June — no cron job, no trigger, nothing to
+// remember to clear. The columns behind it cannot be written from a browser at
+// all; see the grants in 20260826_trade_registration.sql.
+export function registrationVerified(row: RegistrationRow | null | undefined): boolean {
+    if (!row || !row.verified_at) return false;
+
+    const checked = String(row.verified_number || '').trim();
+    if (!checked) return false;
+
+    return checked === String(row.number || '').trim();
+}
+
+// Expired is not the same as unverified, and they read differently in the
+// queue: one was never checked, the other was checked and has run out.
+export function registrationExpired(row: RegistrationRow | null | undefined, today?: Date): boolean {
+    if (!row || !row.expires_at) return false;
+
+    const when = new Date(String(row.expires_at) + 'T00:00:00Z');
+    if (isNaN(when.getTime())) return false;
+
+    const now = today || new Date();
+    return when.getTime() < now.getTime();
+}
+
+// What stops a listing being approved: a required registration missing
+// altogether, or one nobody has checked, or one that has run out.
+//
+// This is what the admin queue shows and what the decision route refuses on.
+// It takes the rows rather than reading them, so it can be tested without a
+// database anywhere near it.
+export function registrationBlockers(
+    draft: RegistrationDraft,
+    rows: RegistrationRow[] | null | undefined,
+    today?: Date
+): string[] {
+    const have = (rows || []).filter((r) => String(r.number || '').trim() !== '');
+    const blockers: string[] = [];
+
+    for (const required of requiredSchemes(draft)) {
+        const matching = required === 'part_p'
+            ? have.filter((r) => isPartP(String(r.scheme || '')))
+            : have.filter((r) => String(r.scheme || '') === required);
+
+        if (matching.length === 0) {
+            blockers.push(
+                required === 'part_p'
+                    ? 'No competent person scheme given for the electrical work.'
+                    : 'No ' + schemeLabel(required) + ' number given.'
+            );
+            continue;
+        }
+
+        for (const row of matching) {
+            if (!registrationVerified(row)) {
+                blockers.push(schemeLabel(String(row.scheme || '')) + ' number has not been checked yet.');
+            } else if (registrationExpired(row, today)) {
+                blockers.push(schemeLabel(String(row.scheme || '')) + ' registration has expired.');
+            }
+        }
+    }
+
+    return blockers;
+}
+
+// What the provider is told while filling the form in. Deliberately narrower
+// than the blockers above: they can see that a number is missing, they cannot
+// see and must not be able to change whether it has been checked.
+export function registrationProblems(
+    draft: RegistrationDraft,
+    rows: RegistrationRow[] | null | undefined
+): Problem[] {
+    const problems: Problem[] = [];
+    const have = (rows || []).filter((r) => String(r.number || '').trim() !== '');
+
+    for (const required of requiredSchemes(draft)) {
+        const matching = required === 'part_p'
+            ? have.filter((r) => isPartP(String(r.scheme || '')))
+            : have.filter((r) => String(r.scheme || '') === required);
+
+        if (matching.length > 0) continue;
+
+        problems.push(
+            required === 'part_p'
+                ? {
+                    field: 'registration_part_p',
+                    message: 'Electrical work has to be notified under Part P. Choose your scheme and add your number.',
+                }
+                : {
+                    field: 'registration_' + required,
+                    message: 'Add your ' + schemeLabel(required) + ' number — we check it before you go live.',
+                }
+        );
+    }
+
+    return problems;
+}
+
 export const REVIEW_WITHIN_HOURS = 48;
 
 export interface ProviderDraft {
@@ -705,6 +1248,9 @@ export interface ProviderDraft {
     callout_fee?: any;
     hourly_rate?: any;
     extras?: Record<string, { offered?: boolean; price?: any; notes?: any }> | null;
+    does_gas?: boolean | null;
+    does_oil?: boolean | null;
+    registrations?: RegistrationRow[] | null;
 }
 
 export interface Problem {
@@ -758,6 +1304,11 @@ export function submitProblems(draft: ProviderDraft): Problem[] {
 
     for (const problem of pricingProblems(draft)) problems.push(problem);
     for (const problem of extrasProblems(draft)) problems.push(problem);
+
+    // Restricted work needs its number before it can be sent, not before it
+    // goes live — otherwise the first time somebody hears they need one is
+    // after a decline, which is a slower way of saying the same thing.
+    for (const problem of registrationProblems(draft, draft.registrations)) problems.push(problem);
 
     return problems;
 }

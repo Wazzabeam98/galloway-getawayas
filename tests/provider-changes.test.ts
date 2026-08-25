@@ -39,7 +39,27 @@ const approved = (p: any) => ({ ...p, approved_digest: reviewDigest(p) });
 test('the reviewable fields are the shop window, and nothing else', () => {
     assert.deepEqual(
         [...REVIEWABLE_FIELDS].sort(),
-        ['audience', 'business_name', 'description', 'logo', 'photos', 'trade']
+        [
+            'audience', 'business_name', 'description',
+            // Turning one of these on after approval is a new claim about work
+            // the law restricts, so it comes back round rather than appearing
+            // quietly. The numbers themselves are not in here: they live in
+            // their own table with a stronger check, where editing one
+            // un-verifies it in the same statement.
+            'does_gas', 'does_oil',
+            'logo', 'photos', 'trade',
+        ]
+    );
+});
+
+test('a live plumber who starts claiming gas work comes back round', () => {
+    const plumber = approved({ ...live, trade: 'plumber', does_gas: false, does_oil: false });
+
+    assert.equal(hasUnreviewedChanges(plumber), false, 'nothing has changed yet');
+    assert.equal(
+        hasUnreviewedChanges({ ...plumber, does_gas: true }),
+        true,
+        'saying you do gas work is not a quiet edit'
     );
 });
 

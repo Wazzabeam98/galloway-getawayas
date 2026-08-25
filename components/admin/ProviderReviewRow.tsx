@@ -24,13 +24,23 @@ export default function ProviderReviewRow({
     provider,
     areas,
     photoUrls,
+    registrations,
+    blockers,
 }: {
     provider: any;
     areas: string[];
     photoUrls: string[];
+    // Gas Safe, OFTEC or a Part P scheme, where the trade needs one. Empty for
+    // the trades that need none, which is most of them.
+    registrations?: any[];
+    // Why this cannot be approved yet, in words. Worked out on the server from
+    // the same function the decision route refuses on, so the button being
+    // disabled and the route saying no can never disagree.
+    blockers?: string[];
 }) {
     const router = useRouter();
     const [busy, setBusy] = useState(false);
+    const [expiry, setExpiry] = useState<Record<string, string>>({});
     const [decliningOpen, setDecliningOpen] = useState(false);
     const [note, setNote] = useState('');
 
@@ -78,7 +88,42 @@ export default function ProviderReviewRow({
         router.refresh();
     };
 
+    // Marking a registration number as checked.
+    //
+    // A separate call rather than part of the approval, because it is a
+    // separate act: looking a number up on the Gas Safe register happens in
+    // another tab, minutes before the decision, and might well end in a
+    // decline instead. Recording what was checked is worth doing either way.
+    const verify = async (scheme: string) => {
+        setBusy(true);
+
+        const res = await fetch('/api/admin/providers', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+                id: provider.id,
+                decision: 'verify_registration',
+                scheme: scheme,
+                expires_at: expiry[scheme] || null,
+            }),
+        });
+
+        setBusy(false);
+
+        const body = await res.json().catch(() => ({}));
+
+        if (!res.ok) {
+            toast.error(body.error || 'That did not save.', { theme: 'colored' });
+            return;
+        }
+
+        toast.success('Checked.', { theme: 'colored' });
+        router.refresh();
+    };
+
     const pending = provider.status === 'pending_review';
+    const regs: any[] = registrations || [];
+    const stops: string[] = blockers || [];
 
     // Set by the page, and only for the group that has edits outstanding.
     const changed: string[] = provider.changedFields || [];
@@ -125,6 +170,80 @@ export default function ProviderReviewRow({
                     <dd className="text-slate-900 truncate">{provider.contact_email}{provider.contact_phone ? ' · ' + provider.contact_phone : ''}</dd>
                 </div>
             </dl>
+
+            {(regs.length > 0 || provider.does_gas || provider.does_oil || stops.length > 0) && (
+                <div className="mt-4 rounded-xl border border-slate-200 bg-slate-50 p-4">
+                    <h4 className="text-xs font-bold uppercase tracking-wider text-slate-500 mb-3">
+                        Registration
+                    </h4>
+
+                    {(provider.does_gas || provider.does_oil) && (
+                        <p className="text-sm text-slate-700 mb-3">
+                            Says they do{' '}
+                            {[provider.does_gas ? 'gas' : '', provider.does_oil ? 'oil' : '']
+                                .filter(Boolean).join(' and ')}
+                            {' '}work.
+                        </p>
+                    )}
+
+                    {regs.length === 0 && (
+                        <p className="text-sm text-slate-500">Nothing given.</p>
+                    )}
+
+                    <div className="space-y-3">
+                        {regs.map((r: any) => (
+                            <div key={r.scheme} className="flex flex-wrap items-center gap-x-3 gap-y-2">
+                                <span className="text-sm font-semibold text-slate-900">{r.schemeLabel}</span>
+                                {/* Selectable, not just readable: the whole
+                                    point is copying it into the register's own
+                                    search box in the next tab. */}
+                                <code className="text-sm bg-white border border-slate-200 rounded px-2 py-0.5 select-all">
+                                    {r.number}
+                                </code>
+
+                                {r.verified ? (
+                                    <span className={`text-xs font-semibold px-2 py-0.5 rounded-full ${
+                                        r.expired
+                                            ? 'bg-rose-100 text-rose-900'
+                                            : 'bg-emerald-100 text-emerald-900'
+                                    }`}>
+                                        {r.expired
+                                            ? 'Checked, but expired ' + r.expires_at
+                                            : 'Checked' + (r.expires_at ? ', good to ' + r.expires_at : '')}
+                                    </span>
+                                ) : (
+                                    <span className="flex flex-wrap items-center gap-2">
+                                        <span className="text-xs font-semibold px-2 py-0.5 rounded-full bg-amber-100 text-amber-900">
+                                            Not checked
+                                        </span>
+                                        <input
+                                            type="date"
+                                            value={expiry[r.scheme] || ''}
+                                            onChange={(e) => setExpiry({ ...expiry, [r.scheme]: e.target.value })}
+                                            className="rounded-lg border border-slate-300 px-2 py-1 text-xs"
+                                            aria-label="Runs out"
+                                        />
+                                        <button
+                                            type="button"
+                                            onClick={() => verify(r.scheme)}
+                                            disabled={busy}
+                                            className="rounded-full bg-slate-900 hover:bg-slate-800 text-white px-3 py-1 text-xs font-semibold transition disabled:opacity-60"
+                                        >
+                                            I have checked this
+                                        </button>
+                                    </span>
+                                )}
+                            </div>
+                        ))}
+                    </div>
+
+                    {stops.length > 0 && (
+                        <ul className="mt-3 text-sm text-rose-800 list-disc list-inside">
+                            {stops.map((b) => <li key={b}>{b}</li>)}
+                        </ul>
+                    )}
+                </div>
+            )}
 
             {photoUrls.length > 0 && (
                 <div className="flex gap-2 mt-4">
@@ -215,10 +334,15 @@ export default function ProviderReviewRow({
                 <div className="mt-5 pt-4 border-t border-slate-200">
                     {!decliningOpen ? (
                         <div className="flex flex-wrap gap-3">
+                            {/* Disabled rather than hidden, so the reason
+                                underneath has something to be about. The route
+                                refuses as well — this is the courtesy, not the
+                                control. */}
                             <button
                                 type="button"
                                 onClick={() => decide('approve')}
-                                disabled={busy}
+                                disabled={busy || stops.length > 0}
+                                title={stops.length > 0 ? stops.join(' ') : undefined}
                                 className="rounded-full bg-emerald-700 hover:bg-emerald-800 text-white px-5 py-2.5 text-sm font-semibold transition disabled:opacity-60"
                             >
                                 {busy ? 'Saving…' : 'Approve'}

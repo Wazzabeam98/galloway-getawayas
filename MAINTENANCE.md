@@ -545,6 +545,29 @@ Please:
   from anything stable across attempts left a four-hour window in which a
   manual re-run recorded a refusal that never happened.
 
+## The service tables are mid-split on test
+
+The service migrations were corrected in place rather than patched, because
+none of them have ever run on production. Production gets the right shape first
+time; test already ran the old versions, and Supabase records migrations as
+applied by filename, so the edited files will not re-run there.
+
+`scripts/test-catch-up/` is what brings test into line, by hand, once. Two
+files, and the order is the whole point:
+
+1. `1-add-and-backfill.sql` — run **before** deploying. Adds only, so the site
+   keeps working with both shapes in the database at once.
+2. `2-drop-old-columns.sql` — run **after** the deploy is live and you have
+   loaded the sign-up, the admin queue and the trade picker.
+
+Running step two early does not degrade those pages, it errors them:
+`business_name`, `owner_id` and `contact_email` are named in selects in three
+places, and a select naming a column that is gone fails outright.
+
+If the catch-up has already been run and you are looking at test wondering why
+`service_providers` has no `business_name`, this is why. It lives on
+`service_businesses` now, one row per person, and the listing hangs off it.
+
 ## Email — two separate systems
 
 - **Auth email** (confirm signup, password reset, magic links) is sent by

@@ -4,7 +4,7 @@ import { NextResponse } from 'next/server';
 import { adminClient } from '@/lib/supabaseAdmin';
 import { sendEmail, emailLayout, escapeHtml, button, SITE_URL } from '@/lib/email';
 import { logError } from '@/lib/logError';
-import { reviewDigest } from '@/lib/serviceProviders';
+import { reviewDigest, registrationBlockers, schemeLabel } from '@/lib/serviceProviders';
 
 export const dynamic = 'force-dynamic';
 
@@ -66,7 +66,7 @@ export async function POST(req: Request) {
         // a live provider's edits are accepted or turned down. They are named
         // separately rather than inferred from the row, so a click made
         // against a stale screen is refused instead of doing the other thing.
-        const DECISIONS = ['approve', 'decline', 'approve_changes', 'decline_changes'];
+        const DECISIONS = ['approve', 'decline', 'approve_changes', 'decline_changes', 'verify_registration'];
 
         if (!id || DECISIONS.indexOf(decision) === -1) {
             return NextResponse.json({ ok: false, error: 'Nothing to decide.' }, { status: 400 });
@@ -81,14 +81,91 @@ export async function POST(req: Request) {
             );
         }
 
-        const { data: provider } = await admin
+        const { data: row } = await admin
             .from('service_providers')
-            .select('id, business_name, contact_email, status, approved_digest, changes_pending_at, trade, description, audience, photos')
+            .select('id, business_id, status, approved_digest, changes_pending_at, trade, description, audience, photos, does_gas, does_oil, service_businesses ( business_name, logo, contact_email )')
             .eq('id', id)
             .maybeSingle();
 
-        if (!provider) {
+        if (!row) {
             return NextResponse.json({ ok: false, error: 'That business no longer exists.' }, { status: 404 });
+        }
+
+        // Flattened, because the digest is a fingerprint of what a reviewer
+        // looked at and the name and logo are part of that even though they
+        // live on the business now.
+        const business: any = (row as any).service_businesses || {};
+        const provider: any = {
+            ...row,
+            business_name: business.business_name || '',
+            logo: business.logo || null,
+            contact_email: business.contact_email || '',
+        };
+
+        const { data: regRows } = await admin
+            .from('service_provider_registrations')
+            .select('provider_id, scheme, number, verified_at, verified_number, expires_at')
+            .eq('provider_id', id);
+
+        const registrations = regRows || [];
+
+        // Recording that a number has been checked. Its own decision because
+        // it is its own act — done in another tab, against the register
+        // itself, and it might still end in a decline.
+        //
+        // `verified_number` is stamped from the row as it stands, which is the
+        // number that was just looked up. That is what makes the tick mean
+        // something: edit the number afterwards and it stops matching, so the
+        // listing is unverified again without anybody having to remember.
+        if (decision === 'verify_registration') {
+            const scheme = String(body.scheme || '');
+            const found = registrations.filter((r: any) => String(r.scheme || '') === scheme)[0];
+
+            if (!found) {
+                return NextResponse.json(
+                    { ok: false, error: 'They have not given a number for that scheme.' },
+                    { status: 404 }
+                );
+            }
+
+            const expires = String(body.expires_at || '').trim();
+
+            const { error: verifyError } = await admin
+                .from('service_provider_registrations')
+                .update({
+                    verified_at: new Date().toISOString(),
+                    verified_by: auth.user.id,
+                    verified_number: found.number,
+                    expires_at: expires || null,
+                    updated_at: new Date().toISOString(),
+                })
+                .eq('provider_id', id)
+                .eq('scheme', scheme);
+
+            if (verifyError) {
+                return NextResponse.json({ ok: false, error: verifyError.message }, { status: 500 });
+            }
+
+            // Nothing is emailed. The business is told when the decision goes
+            // out; being told their number was looked at is noise.
+            return NextResponse.json({ ok: true, emailed: false, verified: schemeLabel(scheme) });
+        }
+
+        // Nothing restricted goes live unchecked.
+        //
+        // The screen disables the button for the same reason and off the same
+        // function, but a disabled button is a courtesy — this is the control.
+        // A stale tab, a second click, or somebody who has edited their number
+        // since the page loaded all arrive here.
+        if (decision === 'approve') {
+            const stops = registrationBlockers(provider, registrations);
+
+            if (stops.length > 0) {
+                return NextResponse.json(
+                    { ok: false, error: stops.join(' ') },
+                    { status: 409 }
+                );
+            }
         }
 
         const decidingChanges = decision === 'approve_changes' || decision === 'decline_changes';

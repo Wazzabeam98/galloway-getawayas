@@ -52,9 +52,13 @@ test('gardening is banded on the plot, not on bedrooms', () => {
         'a two-bed cottage can sit in an acre');
 });
 
-test('maintenance is a call-out plus an hourly rate, and cannot be banded', () => {
-    assert.equal(pricingModelFor('spanner'), 'callout_hourly');
-    assert.deepEqual(bandsFor('spanner'), []);
+test('every maintenance trade is a call-out plus an hourly rate, and cannot be banded', () => {
+    // A leak is a leak whether the cottage has two bedrooms or five, so none
+    // of these can be priced off the size of the property.
+    for (const trade of ['electrician', 'joiner', 'plumber', 'roofer', 'painter', 'handyman']) {
+        assert.equal(pricingModelFor(trade), 'callout_hourly', trade + ' is priced by the hour');
+        assert.deepEqual(bandsFor(trade), [], trade + ' has no size bands');
+    }
 });
 
 test('waste removal exists as a trade and reads as something', () => {
@@ -84,38 +88,47 @@ test('the storey bands say what the cleaner faces, not how many floors', () => {
 // One business per trade, so the picker is a list of what somebody has plus
 // what is left — not a question they have already answered.
 
+const HOST_KEYS = [
+    'sponge', 'bin', 'trees', 'droplet',
+    'electrician', 'joiner', 'plumber', 'roofer', 'painter', 'handyman',
+];
+
 test('somebody with nothing yet is offered every host trade', () => {
     const left = unclaimedTrades([], 'host').map((t: any) => t.key);
-    assert.deepEqual(left, ['sponge', 'bin', 'spanner', 'trees', 'droplet'].filter(k => left.indexOf(k) !== -1));
-    assert.equal(left.length, 5);
+    assert.deepEqual(left.slice().sort(), HOST_KEYS.slice().sort());
 });
 
 test('a trade already signed up for is not offered again', () => {
     const left = unclaimedTrades([{ trade: 'sponge' }], 'host').map((t: any) => t.key);
 
     assert.equal(left.indexOf('sponge'), -1, 'they already have a cleaning business');
-    assert.equal(left.length, 4);
+    assert.equal(left.length, HOST_KEYS.length - 1);
 });
 
-test('a cleaning firm and a window round leave three trades open', () => {
-    const left = unclaimedTrades([{ trade: 'sponge' }, { trade: 'droplet' }], 'host').map((t: any) => t.key);
+// The case the whole split exists for: one person, two trades, and nothing
+// about holding one that stops them holding the other.
+test('a plumber who also joins is offered neither again, and everything else still', () => {
+    const left = unclaimedTrades([{ trade: 'plumber' }, { trade: 'joiner' }], 'host').map((t: any) => t.key);
 
-    assert.deepEqual(left.sort(), ['bin', 'spanner', 'trees']);
+    assert.equal(left.indexOf('plumber'), -1);
+    assert.equal(left.indexOf('joiner'), -1);
+    assert.equal(left.indexOf('roofer') !== -1, true, 'the other trades are untouched');
+    assert.equal(left.length, HOST_KEYS.length - 2);
 });
 
 test('somebody with every trade is offered none', () => {
-    const all = ['sponge', 'bin', 'spanner', 'trees', 'droplet'].map((trade) => ({ trade }));
+    const all = HOST_KEYS.map((trade) => ({ trade }));
     assert.deepEqual(unclaimedTrades(all, 'host'), []);
 });
 
 test('a guest-side business does not use up a host trade', () => {
     const left = unclaimedTrades([{ trade: 'cake' }], 'host').map((t: any) => t.key);
-    assert.equal(left.length, 5, 'a baker has not signed up as a cleaner');
+    assert.equal(left.length, HOST_KEYS.length, 'a baker has not signed up as a cleaner');
 });
 
 test('no providers at all is the same as none', () => {
-    assert.equal(unclaimedTrades(null, 'host').length, 5);
-    assert.equal(unclaimedTrades(undefined, 'host').length, 5);
+    assert.equal(unclaimedTrades(null, 'host').length, HOST_KEYS.length);
+    assert.equal(unclaimedTrades(undefined, 'host').length, HOST_KEYS.length);
 });
 
 test('window cleaning offers no time guide, the banded trades do', () => {
@@ -200,7 +213,7 @@ test('a plot band is only a band if it is one of ours', () => {
 // --- maintenance cannot be requested yet -----------------------------------
 
 test('maintenance cannot be requested until completion exists', () => {
-    assert.equal(canBeRequested('spanner'), false,
+    assert.equal(canBeRequested('plumber'), false,
         'the total only exists once the job is done, and nothing confirms that yet');
     assert.equal(canBeRequested('sponge'), true);
     assert.equal(canBeRequested('trees'), true);
@@ -244,12 +257,12 @@ test('typical hours that are not a number are caught', () => {
 });
 
 test('maintenance needs both numbers', () => {
-    assert.deepEqual(pricingProblems({ trade: 'spanner', callout_fee: '45', hourly_rate: '30' }), []);
+    assert.deepEqual(pricingProblems({ trade: 'plumber', callout_fee: '45', hourly_rate: '30' }), []);
 
-    const noFee = pricingProblems({ trade: 'spanner', hourly_rate: '30' });
+    const noFee = pricingProblems({ trade: 'plumber', hourly_rate: '30' });
     assert.equal(noFee.some((p: any) => p.field === 'callout_fee'), true);
 
-    const noRate = pricingProblems({ trade: 'spanner', callout_fee: '45' });
+    const noRate = pricingProblems({ trade: 'plumber', callout_fee: '45' });
     assert.equal(noRate.some((p: any) => p.field === 'hourly_rate'), true);
 });
 
@@ -344,7 +357,10 @@ test('every trade belongs to exactly one sign-up', () => {
 test('the host sign-up offers the property trades and nothing else', () => {
     const keys = tradesFor('host').map((t: any) => t.key);
 
-    assert.deepEqual(keys.slice().sort(), ['bin', 'droplet', 'spanner', 'sponge', 'trees']);
+    assert.deepEqual(keys.slice().sort(), [
+        'bin', 'droplet', 'electrician', 'handyman', 'joiner',
+        'painter', 'plumber', 'roofer', 'sponge', 'trees',
+    ]);
     assert.equal(keys.indexOf('cake'), -1, 'a baker is not supplying a property owner');
     assert.equal(keys.indexOf('chef'), -1);
 });
@@ -360,7 +376,8 @@ test('the audience is derived from the trade, never asked', () => {
     assert.equal(audienceForTrade('sponge'), 'host');
     assert.equal(audienceForTrade('bin'), 'host');
     assert.equal(audienceForTrade('trees'), 'host');
-    assert.equal(audienceForTrade('spanner'), 'host');
+    assert.equal(audienceForTrade('plumber'), 'host');
+    assert.equal(audienceForTrade('roofer'), 'host');
     assert.equal(audienceForTrade('droplet'), 'host');
 
     assert.equal(audienceForTrade('cake'), 'guest');

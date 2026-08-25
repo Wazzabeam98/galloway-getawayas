@@ -30,6 +30,7 @@ function load(options: {
     declinedAt?: string | null;
     areas?: any[];
     approvedDigest?: string | null;
+    registrations?: any[];
 } = {}) {
     const delivered = options.delivered !== false;
     const sent: any[] = [];
@@ -38,14 +39,24 @@ function load(options: {
     if (options.alertTo === null) delete process.env.SERVICES_ALERT_EMAIL;
     else process.env.SERVICES_ALERT_EMAIL = options.alertTo || 'support@gallowaygetaways.co.uk';
 
+    // Shaped the way the route now reads it: the business comes back nested
+    // under the listing and is flattened onto the row inside the route. A
+    // stub that kept owner_id on the listing would pass while the real query
+    // returned undefined.
     const provider = {
         id: PROVIDER_ID,
-        owner_id: options.ownerId || OWNER,
-        business_name: 'Solway Sparkle',
+        business_id: 'biz-1',
+        service_businesses: {
+            owner_id: options.ownerId || OWNER,
+            business_name: 'Solway Sparkle',
+            logo: null,
+            contact_email: 'hello@solwaysparkle.test',
+            contact_phone: null,
+        },
         trade: 'sponge',
         audience: 'host',
-        contact_email: 'hello@solwaysparkle.test',
-        contact_phone: null,
+        does_gas: false,
+        does_oil: false,
         status: options.status || 'pending_review',
         declined_at: options.declinedAt === undefined ? null : options.declinedAt,
         description: 'Changeover cleans for holiday cottages across the Stewartry.',
@@ -64,6 +75,9 @@ function load(options: {
                 if (prop === 'then') {
                     if (table === 'service_providers') return (r: any) => r({ data: provider, error: null });
                     if (table === 'service_areas') return (r: any) => r({ data: areas, error: null });
+                    if (table === 'service_provider_registrations') {
+                        return (r: any) => r({ data: options.registrations || [], error: null });
+                    }
                     return (r: any) => r({ data: null, error: null });
                 }
                 return () => chain;

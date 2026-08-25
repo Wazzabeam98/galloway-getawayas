@@ -4,15 +4,35 @@ import { Suspense, useEffect, useState } from 'react';
 import Link from 'next/link';
 import { useRouter, useSearchParams } from 'next/navigation';
 import { createClientComponentClient } from '@supabase/auth-helpers-nextjs';
-import { Sparkles, Wrench, Trees, Droplet, Trash2, ChevronRight, ChevronLeft } from 'lucide-react';
-import { tradesFor, unclaimedTrades, tradeLabel, statusSummary } from '@/lib/serviceProviders';
+import {
+    Sparkles, Wrench, Trees, Droplet, Trash2, ChevronRight, ChevronLeft,
+    Zap, Hammer, Paintbrush, Home,
+} from 'lucide-react';
+import {
+    tradesFor,
+    unclaimedTrades,
+    pickerEntries,
+    groupByKey,
+    groupForTrade,
+    tradeLabel,
+    statusSummary,
+} from '@/lib/serviceProviders';
 
 const TRADE_ICONS: Record<string, any> = {
     sponge: Sparkles,
     bin: Trash2,
-    spanner: Wrench,
     trees: Trees,
     droplet: Droplet,
+    electrician: Zap,
+    joiner: Hammer,
+    plumber: Droplet,
+    roofer: Home,
+    painter: Paintbrush,
+    handyman: Wrench,
+};
+
+const GROUP_ICONS: Record<string, any> = {
+    maintenance: Wrench,
 };
 
 const STATUS_STYLE: Record<string, string> = {
@@ -30,10 +50,17 @@ const STATUS_STYLE: Record<string, string> = {
 // the "change" link on the application is an ordinary link rather than a state
 // reset.
 //
+// The same reasoning is why the maintenance trades are a second page at
+// ?group=maintenance rather than an expanding panel. Nobody searches for
+// "maintenance" — they search for a plumber — so the trades have to be real
+// choices with a page of their own, and a roofer must not be something you
+// find by opening a drawer labelled handyman.
+//
 // It is a list rather than a question, because one person can run a cleaning
-// firm and a window cleaning round. Those are different trades, and one
-// business per trade is what the database now enforces — so what they already
-// have is shown as it stands, and what is left is offered.
+// firm and a window cleaning round, or plumb and joiner. Those are different
+// trades, one listing per trade is what the database enforces, and there is no
+// limit on how many somebody holds — so what they already have is shown as it
+// stands, and what is left is offered.
 //
 // No sign-in gate. Somebody can choose their trade first and sign in on the
 // application, and the choice survives because it travels in the query string
@@ -47,6 +74,8 @@ function TradePicker() {
     // otherwise the redirect below would bounce them straight back into the
     // business they were trying to get out of.
     const changing = params.get('change') === '1';
+    const group = String(params.get('group') || '');
+    const groupMeta = group ? groupByKey(group) : null;
 
     const [loading, setLoading] = useState(true);
     const [mine, setMine] = useState<any[]>([]);
@@ -57,21 +86,32 @@ function TradePicker() {
                 const { data: { session } } = await supabase.auth.getSession();
                 if (!session) return;
 
+                // One query, two tables. The listings hang off the business
+                // now, so there is no owner_id on a listing to filter by —
+                // and asking for the business first is also how the name and
+                // the phone number stop being typed once per trade.
                 const { data } = await supabase
-                    .from('service_providers')
-                    .select('id, trade, business_name, status')
-                    .eq('owner_id', session.user.id);
+                    .from('service_businesses')
+                    .select('id, business_name, service_providers (id, trade, status)')
+                    .eq('owner_id', session.user.id)
+                    .maybeSingle();
 
-                // One business is the only case that exists today, and the
+                const listings = (data && (data as any).service_providers) || [];
+
+                // One listing is the only case that exists today, and the
                 // decision emails all point here — so a one-row list is a
                 // pointless tap on the way to the only thing it could show.
                 // With two there is nothing to choose on their behalf.
-                if (!changing && (data || []).length === 1) {
-                    router.replace('/services/join/apply?trade=' + encodeURIComponent(data![0].trade || 'sponge'));
+                //
+                // Not done when a group is open: they came here to add a
+                // second trade, so sending them back into the first is the
+                // opposite of what they asked for.
+                if (!changing && !group && listings.length === 1) {
+                    router.replace('/services/join/apply?trade=' + encodeURIComponent(listings[0].trade || 'sponge'));
                     return;
                 }
 
-                setMine(data || []);
+                setMine(listings);
             } catch (err) {
                 // A failed read just means they see every trade as new, which
                 // is the right page for somebody who has never applied.
@@ -80,7 +120,7 @@ function TradePicker() {
             }
         };
         load();
-    }, [supabase, router, changing]);
+    }, [supabase, router, changing, group]);
 
     const open = (trade: string) =>
         router.push('/services/join/apply?trade=' + encodeURIComponent(trade));
@@ -89,6 +129,63 @@ function TradePicker() {
         return <div className="max-w-3xl mx-auto px-4 sm:px-6 py-16 text-slate-500">Loading…</div>;
     }
 
+    // ---- step two: the trades inside a group ------------------------------
+    if (groupMeta) {
+        const taken = mine.map((p: any) => String(p.trade || ''));
+        const inGroup = tradesFor('host').filter((t) => groupForTrade(t.key) === groupMeta.key);
+
+        return (
+            <div className="max-w-3xl mx-auto px-4 sm:px-6 py-10 pb-24">
+                <Link
+                    href="/services/join"
+                    className="inline-flex items-center gap-1.5 text-sm font-semibold text-slate-600 hover:text-slate-900 mb-6"
+                >
+                    <ChevronLeft className="w-4 h-4" />
+                    Back
+                </Link>
+
+                <h1 className="text-3xl sm:text-4xl font-extrabold tracking-tight text-slate-900">
+                    What is your trade?
+                </h1>
+                <p className="text-slate-600 mt-3 mb-8">
+                    Pick the one people would ask for by name. You can add another afterwards
+                    if you do more than one.
+                </p>
+
+                <div className="grid grid-cols-2 sm:grid-cols-3 gap-3">
+                    {inGroup.map((t) => {
+                        const Icon = TRADE_ICONS[t.key] || Wrench;
+                        const already = taken.indexOf(t.key) !== -1;
+
+                        return (
+                            <button
+                                key={t.key}
+                                type="button"
+                                onClick={() => open(t.key)}
+                                className="rounded-2xl border border-slate-300 p-4 text-left hover:border-emerald-700 hover:bg-emerald-50/40 transition"
+                            >
+                                <Icon className="w-7 h-7 text-emerald-700 mb-3" strokeWidth={1.5} />
+                                <span className="block font-semibold text-slate-900">{t.label}</span>
+                                {already && (
+                                    <span className="block text-xs text-slate-500 mt-1">You have this one</span>
+                                )}
+                            </button>
+                        );
+                    })}
+                </div>
+
+                {/* Said once, here, rather than on every trade that needs it.
+                    Somebody who reads it now is not surprised by it later. */}
+                <p className="text-xs text-slate-500 mt-8">
+                    Gas work needs Gas Safe registration, oil needs OFTEC, and electrical work has to be
+                    notified under Part P. We ask for your number and check it before you go live.
+                </p>
+            </div>
+        );
+    }
+
+    // ---- step one ---------------------------------------------------------
+    const entries = pickerEntries(mine, 'host');
     const left = unclaimedTrades(mine, 'host');
     const hasSome = mine.length > 0;
 
@@ -106,7 +203,7 @@ function TradePicker() {
             </Link>
 
             <h1 className="text-3xl sm:text-4xl font-extrabold tracking-tight text-slate-900">
-                {hasSome ? 'Your businesses' : 'What do you do?'}
+                {hasSome ? 'Your trades' : 'What do you do?'}
             </h1>
             <p className="text-slate-600 mt-3 mb-8">
                 {hasSome
@@ -116,7 +213,7 @@ function TradePicker() {
 
             {hasSome && (
                 <div className="space-y-3 mb-10">
-                    {mine.map((p) => {
+                    {mine.map((p: any) => {
                         const Icon = TRADE_ICONS[p.trade] || Sparkles;
                         const summary = statusSummary(p.status);
                         return (
@@ -128,10 +225,14 @@ function TradePicker() {
                             >
                                 <Icon className="w-6 h-6 text-emerald-700 shrink-0" strokeWidth={1.5} />
                                 <span className="min-w-0 flex-1">
+                                    {/* The trade is the title now. The
+                                        business name used to be, and it is the
+                                        same on every row here — one business,
+                                        several trades — so it told you nothing
+                                        about which one you were opening. */}
                                     <span className="block font-semibold text-slate-900 truncate">
-                                        {p.business_name || tradeLabel(p.trade)}
+                                        {tradeLabel(p.trade)}
                                     </span>
-                                    <span className="block text-sm text-slate-500">{tradeLabel(p.trade)}</span>
                                 </span>
                                 <span
                                     className={`shrink-0 text-xs font-semibold px-2.5 py-1 rounded-full ${
@@ -147,7 +248,7 @@ function TradePicker() {
                 </div>
             )}
 
-            {left.length > 0 && (
+            {entries.length > 0 && (
                 <>
                     {hasSome && (
                         <h2 className="text-xs font-bold uppercase tracking-wider text-slate-500 mb-3">
@@ -155,17 +256,27 @@ function TradePicker() {
                         </h2>
                     )}
                     <div className="grid grid-cols-2 sm:grid-cols-3 gap-3">
-                        {left.map((t) => {
-                            const Icon = TRADE_ICONS[t.key] || Sparkles;
+                        {entries.map((entry) => {
+                            const Icon = entry.kind === 'group'
+                                ? (GROUP_ICONS[entry.key] || Wrench)
+                                : (TRADE_ICONS[entry.key] || Sparkles);
+
+                            const href = entry.kind === 'group'
+                                ? '/services/join?group=' + encodeURIComponent(entry.key)
+                                : null;
+
                             return (
                                 <button
-                                    key={t.key}
+                                    key={entry.kind + ':' + entry.key}
                                     type="button"
-                                    onClick={() => open(t.key)}
+                                    onClick={() => (href ? router.push(href) : open(entry.key))}
                                     className="rounded-2xl border border-slate-300 p-4 text-left hover:border-emerald-700 hover:bg-emerald-50/40 transition"
                                 >
                                     <Icon className="w-7 h-7 text-emerald-700 mb-3" strokeWidth={1.5} />
-                                    <span className="block font-semibold text-slate-900">{t.label}</span>
+                                    <span className="block font-semibold text-slate-900">{entry.label}</span>
+                                    {entry.kind === 'group' && (
+                                        <span className="block text-xs text-slate-500 mt-1">{entry.hint}</span>
+                                    )}
                                 </button>
                             );
                         })}

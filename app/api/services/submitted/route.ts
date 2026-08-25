@@ -11,6 +11,8 @@ import {
     changedFields,
     fieldLabel,
     REVIEW_WITHIN_HOURS,
+    schemeLabel,
+    registrationVerified,
 } from '@/lib/serviceProviders';
 
 export const dynamic = 'force-dynamic';
@@ -42,18 +44,32 @@ export async function POST(req: Request) {
 
         const admin = adminClient();
 
-        const { data: provider } = await admin
+        const { data: row } = await admin
             .from('service_providers')
-            .select('id, owner_id, business_name, trade, description, audience, photos, contact_email, contact_phone, status, declined_at, approved_digest, changes_pending_at')
+            .select('id, business_id, trade, description, audience, photos, status, declined_at, approved_digest, changes_pending_at, does_gas, does_oil, service_businesses ( owner_id, business_name, logo, contact_email, contact_phone )')
             .eq('id', id)
             .maybeSingle();
 
-        if (!provider) {
+        if (!row) {
             return NextResponse.json({ ok: false, error: 'No such business.' }, { status: 404 });
         }
 
+        // Flattened onto one row, because the digest fingerprints what a
+        // reviewer looked at and the name and logo are part of that even
+        // though they live on the business now.
+        const business: any = (row as any).service_businesses || {};
+        const provider: any = {
+            ...row,
+            owner_id: business.owner_id || null,
+            business_name: business.business_name || '',
+            logo: business.logo || null,
+            contact_email: business.contact_email || '',
+            contact_phone: business.contact_phone || '',
+        };
+
         // Their own row only. Without this, a signed-in stranger could make us
-        // email ourselves about somebody else's application.
+        // email ourselves about somebody else's application. Ownership is one
+        // hop away now — it is the business that has an owner, not the listing.
         if (provider.owner_id !== auth.user.id) {
             return NextResponse.json({ ok: false, error: 'Not yours.' }, { status: 403 });
         }
@@ -89,6 +105,19 @@ export async function POST(req: Request) {
             .from('service_areas')
             .select('label, radius_miles')
             .eq('provider_id', id);
+
+        // Named in the alert so the job is obvious from the phone: an
+        // application with a Gas Safe number to look up is a different piece
+        // of work from one without, and knowing which before opening the site
+        // is most of the value of the email.
+        const { data: regRows } = await admin
+            .from('service_provider_registrations')
+            .select('provider_id, scheme, number, verified_at, verified_number, expires_at')
+            .eq('provider_id', id);
+
+        const toCheck = (regRows || [])
+            .filter((r: any) => !registrationVerified(r))
+            .map((r: any) => schemeLabel(String(r.scheme || '')) + ' ' + String(r.number || ''));
 
         const covers = (areas || []).length
             ? (areas || []).map((a: any) => escapeHtml(a.label) + ' + ' + Number(a.radius_miles) + ' miles').join('<br>')
@@ -144,7 +173,14 @@ export async function POST(req: Request) {
                         { label: 'Sells to', value: escapeHtml(audienceLabel(String(provider.audience || ''))) },
                         { label: 'Covers', value: covers },
                         { label: 'Contact', value: escapeHtml(provider.contact_email || '—') },
-                    ])
+                    ].concat(
+                        toCheck.length
+                            ? [{
+                                label: 'To check first',
+                                value: '<strong>' + escapeHtml(toCheck.join(', ')) + '</strong>',
+                            }]
+                            : []
+                    ))
                     + button(SITE_URL + '/admin/providers', changed ? 'Review the changes' : 'Review application'),
                 'You are receiving this because you review businesses on Galloway Getaways.'
             )

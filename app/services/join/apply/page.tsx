@@ -23,6 +23,12 @@ import {
     offeringsFor,
     isPricingGroup,
     groupIsOffered,
+    offerableSchemes,
+    schemeLabel,
+    schemeNumberLabel,
+    isPartP,
+    asksAboutFuel,
+    PART_P_SCHEMES,
     groupGate,
     EXTRA_GROUPS,
     COVERAGE_TOWNS,
@@ -73,6 +79,10 @@ function ApplicationForm() {
     const [session, setSession] = useState<any>(null);
 
     const [providerId, setProviderId] = useState<string | null>(null);
+    // The business behind the listing. One per person, shared by every trade
+    // they hold — which is the point of it being a row of its own: a plumber
+    // who also joins types their phone number once.
+    const [businessId, setBusinessId] = useState<string | null>(null);
     const [status, setStatus] = useState('draft');
     const [reviewNote, setReviewNote] = useState<string | null>(null);
 
@@ -115,6 +125,16 @@ function ApplicationForm() {
     const [calloutFee, setCalloutFee] = useState('');
     const [hourlyRate, setHourlyRate] = useState('');
 
+    // Gas and oil are questions inside the plumber's application rather than
+    // trades of their own, because most plumbers do one and plenty do both.
+    // They are also the two answers an owner with a dead boiler needs before
+    // they ring, so they go on the listing rather than into the extras.
+    const [doesGas, setDoesGas] = useState(false);
+    const [doesOil, setDoesOil] = useState(false);
+    // Keyed by scheme. Strings, because a registration number is not a number
+    // — Gas Safe numbers have leading zeros that Number() would eat.
+    const [registrations, setRegistrations] = useState<Record<string, string>>({});
+
     useEffect(() => {
         if (!tradeFromUrl && !HOST_TRADES.includes(tradeFromUrl as any)) {
             // No trade in the URL means they have not been through step one.
@@ -141,31 +161,62 @@ function ApplicationForm() {
                     return;
                 }
 
-                const { data: existing } = await supabase
-                    .from('service_providers')
-                    .select('id, business_name, trade, description, contact_email, contact_phone, audience, photos, logo, status, review_note, callout_fee, hourly_rate')
+                // The business first, and on its own. It loads whether or not
+                // there is a listing for this trade yet — that is what makes
+                // the second trade a shorter form than the first, with the
+                // name, the logo and the phone number already filled in.
+                const { data: business } = await supabase
+                    .from('service_businesses')
+                    .select('id, business_name, logo, contact_email, contact_phone')
                     .eq('owner_id', session.user.id)
-                    // Keyed on the trade as well as the owner. One person can
-                    // run a cleaning firm and a window cleaning round, and the
-                    // database now allows exactly one business per trade — so
-                    // this is the application for the trade they picked, not
-                    // "their application".
-                    .eq('trade', tradeFromUrl)
                     .maybeSingle();
+
+                if (business) {
+                    setBusinessId(business.id);
+                    setBusinessName(business.business_name || '');
+                    setLogo(business.logo || null);
+                    setContactEmail(business.contact_email || session.user.email || '');
+                    setContactPhone(business.contact_phone || '');
+                }
+
+                // Keyed on the trade as well as the business. One person can
+                // run a cleaning firm and a window cleaning round, or plumb
+                // and joiner, and the database allows exactly one listing per
+                // trade — so this is the application for the trade they
+                // picked, not "their application".
+                const { data: existing } = business
+                    ? (await supabase
+                        .from('service_providers')
+                        .select('id, trade, description, audience, photos, status, review_note, callout_fee, hourly_rate, does_gas, does_oil')
+                        .eq('business_id', business.id)
+                        .eq('trade', tradeFromUrl)
+                        .maybeSingle())
+                    : { data: null };
 
                 if (existing) {
                     setProviderId(existing.id);
-                    setBusinessName(existing.business_name || '');
                     setTrade(existing.trade || tradeFromUrl);
                     setDescription(existing.description || '');
-                    setContactEmail(existing.contact_email || session.user.email || '');
-                    setContactPhone(existing.contact_phone || '');
                     setPhotos(existing.photos || []);
-                    setLogo(existing.logo || null);
                     setStatus(existing.status || 'draft');
+                    setDoesGas(existing.does_gas === true);
+                    setDoesOil(existing.does_oil === true);
                     setReviewNote(existing.review_note || null);
                     setCalloutFee(existing.callout_fee === null || existing.callout_fee === undefined ? '' : String(existing.callout_fee));
                     setHourlyRate(existing.hourly_rate === null || existing.hourly_rate === undefined ? '' : String(existing.hourly_rate));
+
+                    // The numbers only. Whether one has been checked is not
+                    // read here and not shown here — it is not theirs to see
+                    // or to change, and a form that displayed it would invite
+                    // somebody to try.
+                    const { data: regRows } = await supabase
+                        .from('service_provider_registrations')
+                        .select('scheme, number')
+                        .eq('provider_id', existing.id);
+
+                    const loadedRegs: Record<string, string> = {};
+                    for (const row of regRows || []) loadedRegs[row.scheme] = row.number || '';
+                    setRegistrations(loadedRegs);
 
                     const { data: priceRows } = await supabase
                         .from('service_provider_prices')
@@ -222,7 +273,13 @@ function ApplicationForm() {
                 } else {
                     // Signed in, nothing saved for this trade — so anything
                     // they typed before signing in is still the newest thing.
-                    restoreDraft();
+                    //
+                    // The business details loaded above are deliberately not
+                    // treated as a draft to restore over: somebody adding
+                    // joinery to their plumbing has already told us their
+                    // name, and being asked again would be the bug this table
+                    // split exists to fix.
+                    restoreDraft(!!business);
                     setContactEmail((prev) => prev || session.user.email || '');
                 }
 
@@ -258,16 +315,24 @@ function ApplicationForm() {
     // It survives closing the tab, a refresh, and the trip out to Google and
     // back. It does not survive clearing browser data, a private window, or
     // moving to another device.
-    const restoreDraft = () => {
+    // `haveBusiness` means the details they already gave us win over anything
+    // sitting in local storage. A draft is what somebody typed before they had
+    // an account; a saved business is what they typed after. The second is
+    // newer by definition, and restoring over it would show a returning
+    // provider an old version of their own name.
+    const restoreDraft = (haveBusiness?: boolean) => {
         try {
             const raw = window.localStorage.getItem(draftKey(tradeFromUrl));
             if (!raw) return;
 
             const d = JSON.parse(raw);
-            if (d.businessName) setBusinessName(d.businessName);
+            if (d.businessName && !haveBusiness) setBusinessName(d.businessName);
             if (d.description) setDescription(d.description);
-            if (d.contactEmail) setContactEmail(d.contactEmail);
-            if (d.contactPhone) setContactPhone(d.contactPhone);
+            if (d.contactEmail && !haveBusiness) setContactEmail(d.contactEmail);
+            if (d.contactPhone && !haveBusiness) setContactPhone(d.contactPhone);
+            if (d.doesGas !== undefined) setDoesGas(d.doesGas === true);
+            if (d.doesOil !== undefined) setDoesOil(d.doesOil === true);
+            if (d.registrations) setRegistrations(d.registrations);
             if (d.prices) setPrices(d.prices);
             if (d.extras) setExtras(d.extras);
             if (d.calloutFee) setCalloutFee(d.calloutFee);
@@ -299,6 +364,7 @@ function ApplicationForm() {
                 JSON.stringify({
                     businessName, description, contactEmail, contactPhone,
                     prices, extras, calloutFee, hourlyRate, areas,
+                    doesGas, doesOil, registrations,
                 })
             );
         } catch (err) {
@@ -308,7 +374,18 @@ function ApplicationForm() {
         hydrated, providerId, tradeFromUrl,
         businessName, description, contactEmail, contactPhone,
         prices, extras, calloutFee, hourlyRate, areas,
+        doesGas, doesOil, registrations,
     ]);
+
+    // Which registration boxes this application shows at all. An electrician
+    // always sees the Part P schemes; a plumber sees Gas Safe or OFTEC only
+    // once they have said they do that work; nobody else sees any of it.
+    const showableSchemes = offerableSchemes({ trade, does_gas: doesGas, does_oil: doesOil });
+
+    const registrationRows = showableSchemes.map((scheme) => ({
+        scheme,
+        number: registrations[scheme] || '',
+    }));
 
     const problems = submitProblems({
         business_name: businessName,
@@ -321,6 +398,9 @@ function ApplicationForm() {
         callout_fee: calloutFee,
         hourly_rate: hourlyRate,
         extras,
+        does_gas: doesGas,
+        does_oil: doesOil,
+        registrations: registrationRows,
     });
 
     // One block of £ boxes for a pricing structure. Nothing computes from
@@ -513,16 +593,71 @@ function ApplicationForm() {
         setSaving(true);
 
         const now = new Date();
-        const payload: any = {
+
+        // The business first, because the listing needs its id.
+        //
+        // Written on every save rather than only when it is new: this is where
+        // a change of phone number lands, and it lands once for every trade
+        // they hold instead of once per listing.
+        const businessPayload: any = {
             owner_id: session.user.id,
             business_name: businessName.trim(),
-            trade,
-            description: description.trim(),
             contact_email: contactEmail.trim(),
             contact_phone: contactPhone.trim() || null,
+            logo,
+            updated_at: now.toISOString(),
+        };
+
+        let bId = businessId;
+
+        // They may have signed in to an account that already has a business —
+        // a second tab, or an application started months ago. One per person
+        // is a constraint, so find it rather than collide with it.
+        if (!bId) {
+            const { data: already } = await supabase
+                .from('service_businesses')
+                .select('id')
+                .eq('owner_id', session.user.id)
+                .maybeSingle();
+            if (already) bId = already.id;
+        }
+
+        if (bId) {
+            const { error } = await supabase
+                .from('service_businesses')
+                .update(businessPayload)
+                .eq('id', bId);
+
+            if (error) {
+                setSaving(false);
+                toast.error(error.message, { theme: 'colored' });
+                return;
+            }
+        } else {
+            const { data, error } = await supabase
+                .from('service_businesses')
+                .insert(businessPayload)
+                .select('id')
+                .single();
+
+            if (error || !data) {
+                setSaving(false);
+                toast.error((error && error.message) || 'Could not save that.', { theme: 'colored' });
+                return;
+            }
+            bId = data.id;
+        }
+
+        setBusinessId(bId);
+
+        const payload: any = {
+            business_id: bId,
+            trade,
+            description: description.trim(),
             audience: audienceForTrade(trade),
             photos,
-            logo,
+            does_gas: asksAboutFuel(trade) ? doesGas : false,
+            does_oil: asksAboutFuel(trade) ? doesOil : false,
             // Only meaningful for a call-out trade; cleared otherwise so a
             // provider who switches trade does not carry a stale rate.
             callout_fee: model === 'callout_hourly' && calloutFee.trim() !== '' ? Number(calloutFee) : null,
@@ -539,14 +674,14 @@ function ApplicationForm() {
 
         let id = providerId;
 
-        // They may have signed in to an account that already has a business
-        // in this trade — a second tab, or an application started months ago.
-        // One per trade is a constraint, so find it rather than collide.
+        // They may already have a listing in this trade — a second tab, or an
+        // application started months ago. One per trade is a constraint, so
+        // find it rather than collide.
         if (!id) {
             const { data: already } = await supabase
                 .from('service_providers')
                 .select('id')
-                .eq('owner_id', session.user.id)
+                .eq('business_id', bId)
                 .eq('trade', trade)
                 .maybeSingle();
             if (already) {
@@ -576,6 +711,64 @@ function ApplicationForm() {
             }
             id = data.id;
             setProviderId(id);
+        }
+
+        // Registrations are NOT replaced wholesale, unlike everything below.
+        //
+        // Deleting and re-inserting would throw away `verified_at` on every
+        // save — a Gas Safe number checked in March would go back to unchecked
+        // because they fixed a typo in their description in June. So each row
+        // is written only when its number has actually changed, which is also
+        // exactly when the check should be thrown away.
+        //
+        // The verified columns are not sent at all. They cannot be: they are
+        // revoked from `authenticated` in 20260826_trade_registration.sql, so
+        // a payload mentioning one would be refused rather than trusted.
+        {
+            const { data: haveRegs } = await supabase
+                .from('service_provider_registrations')
+                .select('scheme, number')
+                .eq('provider_id', id);
+
+            const wanted = showableSchemes
+                .map((scheme) => ({ scheme, number: String(registrations[scheme] || '').trim() }))
+                .filter((r) => r.number !== '');
+
+            const wantedSchemes = wanted.map((r) => r.scheme);
+
+            // A plumber who has stopped doing oil takes the OFTEC row off, and
+            // with it the record that it was ever checked. That is right: they
+            // are no longer claiming it.
+            const goners = (haveRegs || [])
+                .filter((r: any) => wantedSchemes.indexOf(String(r.scheme)) === -1)
+                .map((r: any) => String(r.scheme));
+
+            if (goners.length) {
+                await supabase
+                    .from('service_provider_registrations')
+                    .delete()
+                    .eq('provider_id', id)
+                    .in('scheme', goners);
+            }
+
+            for (const row of wanted) {
+                const before = (haveRegs || []).filter((r: any) => String(r.scheme) === row.scheme)[0];
+
+                if (!before) {
+                    await supabase.from('service_provider_registrations').insert({
+                        provider_id: id,
+                        scheme: row.scheme,
+                        number: row.number,
+                        updated_at: now.toISOString(),
+                    });
+                } else if (String(before.number || '').trim() !== row.number) {
+                    await supabase
+                        .from('service_provider_registrations')
+                        .update({ number: row.number, updated_at: now.toISOString() })
+                        .eq('provider_id', id)
+                        .eq('scheme', row.scheme);
+                }
+            }
         }
 
         // Extras are replaced wholesale, like the prices and the areas. Only
@@ -1148,6 +1341,144 @@ function ApplicationForm() {
                                 )}
                             </div>
                         </div>
+                    </section>
+                )}
+
+                {/* Registration. Above the extras rather than among them,
+                    because it is not something they offer — it is what decides
+                    whether the listing may go up at all.
+
+                    An owner sees the answer on the listing, not after asking:
+                    somebody with a dead boiler needs to know which plumbers
+                    can legally touch it before they pick up the phone. */}
+                {(asksAboutFuel(trade) || trade === 'electrician') && (
+                    <section className="mb-8">
+                        <h2 className="text-sm font-semibold text-slate-900 mb-1.5">
+                            Registration
+                        </h2>
+                        <p className="text-sm text-slate-500 mb-4">
+                            We check this before you go live, and owners can see it on your listing.
+                        </p>
+
+                        {asksAboutFuel(trade) && (
+                            <div className="space-y-2 mb-4">
+                                <label className="flex items-start gap-2.5 text-sm text-slate-800">
+                                    <input
+                                        type="checkbox"
+                                        checked={doesGas}
+                                        onChange={(e) => setDoesGas(e.target.checked)}
+                                        className="mt-0.5 w-4 h-4 rounded border-slate-300"
+                                    />
+                                    <span>
+                                        I do gas work
+                                        <span className="block text-slate-500">
+                                            Boilers, hobs, fires — anything on mains gas or LPG.
+                                        </span>
+                                    </span>
+                                </label>
+
+                                <label className="flex items-start gap-2.5 text-sm text-slate-800">
+                                    <input
+                                        type="checkbox"
+                                        checked={doesOil}
+                                        onChange={(e) => setDoesOil(e.target.checked)}
+                                        className="mt-0.5 w-4 h-4 rounded border-slate-300"
+                                    />
+                                    <span>
+                                        I do oil work
+                                        <span className="block text-slate-500">
+                                            Most of Galloway is off the gas grid, so this is worth saying.
+                                        </span>
+                                    </span>
+                                </label>
+                            </div>
+                        )}
+
+                        {/* An electrician chooses their scheme; there is no
+                            such thing as a Part P number, only membership of
+                            one of these. A plumber gets no choice — the work
+                            they ticked decides which body it has to be. */}
+                        {trade === 'electrician' && (
+                            <div className="mb-4">
+                                <label className="block text-sm font-medium text-slate-900 mb-1.5">
+                                    Which competent person scheme are you with?
+                                </label>
+                                <div className="grid grid-cols-2 sm:grid-cols-4 gap-2">
+                                    {PART_P_SCHEMES.map((scheme) => {
+                                        const chosen = String(registrations[scheme] || '') !== ''
+                                            || (registrations[scheme] === '' && scheme in registrations);
+                                        return (
+                                            <button
+                                                key={scheme}
+                                                type="button"
+                                                onClick={() => {
+                                                    // One scheme at a time: the
+                                                    // others are cleared, so a
+                                                    // number left behind from a
+                                                    // change of mind is never
+                                                    // sent for checking.
+                                                    const next: Record<string, string> = {};
+                                                    for (const key of Object.keys(registrations)) {
+                                                        if (!isPartP(key)) next[key] = registrations[key];
+                                                    }
+                                                    next[scheme] = registrations[scheme] || '';
+                                                    setRegistrations(next);
+                                                }}
+                                                className={`rounded-xl border px-3 py-2 text-sm font-semibold transition ${
+                                                    chosen
+                                                        ? 'border-emerald-700 bg-emerald-50 text-emerald-900'
+                                                        : 'border-slate-300 text-slate-700 hover:border-slate-500'
+                                                }`}
+                                            >
+                                                {schemeLabel(scheme)}
+                                            </button>
+                                        );
+                                    })}
+                                </div>
+                                {problemFor('registration_part_p') && (
+                                    <p className="text-xs text-rose-700 mt-1.5">
+                                        {problemFor('registration_part_p')!.message}
+                                    </p>
+                                )}
+                            </div>
+                        )}
+
+                        <div className="space-y-3">
+                            {showableSchemes
+                                .filter((scheme) => !isPartP(scheme) || scheme in registrations)
+                                .map((scheme) => (
+                                    <div key={scheme}>
+                                        <label
+                                            htmlFor={'reg-' + scheme}
+                                            className="block text-sm font-medium text-slate-900 mb-1.5"
+                                        >
+                                            {schemeNumberLabel(scheme)}
+                                        </label>
+                                        <input
+                                            id={'reg-' + scheme}
+                                            type="text"
+                                            inputMode="numeric"
+                                            value={registrations[scheme] || ''}
+                                            onChange={(e) =>
+                                                setRegistrations({ ...registrations, [scheme]: e.target.value })
+                                            }
+                                            className="w-full sm:w-64 rounded-xl border border-slate-300 px-3 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-emerald-700"
+                                        />
+                                        {problemFor('registration_' + scheme) && (
+                                            <p className="text-xs text-rose-700 mt-1">
+                                                {problemFor('registration_' + scheme)!.message}
+                                            </p>
+                                        )}
+                                    </div>
+                                ))}
+                        </div>
+
+                        {showableSchemes.length > 0 && (
+                            <p className="text-xs text-slate-500 mt-3">
+                                Your number appears on your listing. These registers are public, so an owner
+                                can look you up themselves — which is rather the point of it.
+                            </p>
+                        )}
                     </section>
                 )}
 
