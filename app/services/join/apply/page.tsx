@@ -333,7 +333,7 @@ function ApplicationForm() {
                 <div key={extra.key} className="flex items-center gap-3">
                     <label
                         htmlFor={'rate-' + extra.key}
-                        className="w-40 shrink-0 text-sm font-medium text-slate-900"
+                        className="w-40 md:w-28 shrink-0 text-sm font-medium text-slate-900"
                     >
                         {extra.label}
                     </label>
@@ -915,9 +915,10 @@ function ApplicationForm() {
                                 will be given before you price a job. Nothing here is saved yet.
                             </p>
 
-                            <div className="mb-5">
+                            <div className="md:grid md:grid-cols-2 md:gap-6 md:items-start">
+                            <div className="mb-5 md:mb-0">
                                 <div className="text-sm font-semibold text-slate-900 mb-2">What kind of building</div>
-                                <div className="grid grid-cols-2 sm:grid-cols-4 gap-2">
+                                <div className="grid grid-cols-2 sm:grid-cols-4 md:grid-cols-2 gap-2">
                                     {BUILDING_TYPES.map((b) => {
                                         const on = buildingType === b.key;
                                         return (
@@ -952,6 +953,7 @@ function ApplicationForm() {
                                     placeholder="24"
                                     className="w-full sm:max-w-[10rem] rounded-lg border border-slate-300 px-3 py-2 text-sm bg-white focus:outline-none focus:ring-2 focus:ring-emerald-700"
                                 />
+                            </div>
                             </div>
                         </div>
                     </section>
@@ -1075,7 +1077,7 @@ function ApplicationForm() {
                             window cleaners which of these fits before we settle on one.
                         </p>
 
-                        <div className="space-y-4">
+                        <div className="space-y-4 md:space-y-0 md:grid md:grid-cols-2 md:gap-4 md:items-start">
                             <div className="rounded-xl border border-slate-300 p-4">
                                 <h3 className="text-sm font-semibold text-slate-900 mb-3">
                                     Call-out plus a rate per pane
@@ -1093,29 +1095,6 @@ function ApplicationForm() {
                                 <div className="space-y-2.5">{priceRows('pane_storey')}</div>
                             </div>
 
-                            <div className="rounded-xl border border-slate-300 p-4">
-                                <h3 className="text-sm font-semibold text-slate-900 mb-3">
-                                    Quote each job
-                                </h3>
-                                {extrasIn('quote').map((extra) => {
-                                    const entry = extraOf(extra.key);
-                                    return (
-                                        <label key={extra.key} className="flex items-start gap-3 cursor-pointer">
-                                            <input
-                                                type="checkbox"
-                                                checked={entry.offered}
-                                                onChange={(e) => setExtra(extra.key, 'offered', e.target.checked)}
-                                                className="mt-0.5 w-4 h-4 rounded border-slate-300 shrink-0"
-                                            />
-                                            <span className="text-sm text-slate-900">{extra.label}</span>
-                                        </label>
-                                    );
-                                })}
-                                <p className="text-sm text-slate-500 mt-2">
-                                    No prices up front — the owner sends what they want and you reply with a
-                                    figure.
-                                </p>
-                            </div>
                         </div>
                     </section>
                 )}

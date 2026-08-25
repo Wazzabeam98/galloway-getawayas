@@ -139,7 +139,6 @@ test('window cleaning offers exactly the shapes the trade is being asked about',
         'pressure_washing', 'gutter_cleaning', 'fascias_soffits', 'solar_panels',
         'callout_base', 'pane_rate',
         'pane_ground', 'pane_first', 'pane_second_plus',
-        'quote_per_job',
     ]);
     assert.equal(extraByKey('upstairs_windows'), null);
 });
@@ -166,11 +165,10 @@ test('each extra service is asked, then priced, on its own', () => {
     assert.equal(new Set(pairs.map((p) => p[1])).size, 4);
 });
 
-test('the four pricing structures are all on the page at once', () => {
+test('the three pricing structures are all on the page at once', () => {
     const shapes = {
         pane_flat: ['callout_base', 'pane_rate'],
         pane_storey: ['pane_ground', 'pane_first', 'pane_second_plus'],
-        quote: ['quote_per_job'],
     };
 
     for (const group of Object.keys(shapes)) {
@@ -180,8 +178,9 @@ test('the four pricing structures are all on the page at once', () => {
         assert.equal(groupGate(group), null, 'nothing is hidden behind a toggle — they are all visible');
     }
 
-    // Quote-per-job carries no price at all, by definition.
-    assert.equal(extraByKey('quote_per_job').type, 'toggle');
+    // Three shapes, not four: quote-per-job is gone, so a window cleaner is
+    // choosing between ways of pricing rather than whether to price at all.
+    assert.equal(extraByKey('quote_per_job'), null);
 });
 
 test('a pricing structure is never summed as if it were an extra', () => {

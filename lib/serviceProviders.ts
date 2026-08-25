@@ -494,7 +494,6 @@ export const EXTRA_GROUPS = [
     // extras, so they are not offered under "what else do you offer".
     { key: 'pane_flat', label: 'Per pane' },
     { key: 'pane_storey', label: 'Per pane, by storey' },
-    { key: 'quote', label: 'Quote per job' },
     { key: 'priced', label: 'Charged on top' },
     { key: 'reimbursed', label: 'Bought for the owner and paid back' },
 ] as const;
@@ -512,7 +511,7 @@ export interface ServiceExtra {
     // reimbursed ones, so how it is stored and where it is shown are separate.
     group: 'about' | 'laundry' | 'hot_tub' | 'priced' | 'reimbursed'
         | 'svc_pressure' | 'svc_gutter' | 'svc_fascias' | 'svc_solar'
-        | 'pane_flat' | 'pane_storey' | 'quote';
+        | 'pane_flat' | 'pane_storey';
     label: string;
     hint?: string;
     // Priced only. 'each' means the host says how many when they ask; absent
@@ -581,7 +580,7 @@ export const SERVICE_EXTRAS: ServiceExtra[] = [
         label: 'Solar panel cleaning',
     },
 
-    // The four shapes a window cleaner might use, all on the page at once.
+    // The three shapes a window cleaner might use, all on the page at once.
     // Nothing computes from them yet: they are here so real window cleaners
     // can say which one they actually use before one is chosen for them.
     {
@@ -609,10 +608,6 @@ export const SERVICE_EXTRAS: ServiceExtra[] = [
         label: 'Second floor or higher',
     },
     {
-        key: 'quote_per_job', trade: 'droplet', type: 'toggle', group: 'quote',
-        label: 'I price each job when I am asked',
-    },
-    {
         key: 'consumables', trade: 'sponge', type: 'reimbursed', group: 'reimbursed',
         label: 'Consumables on request',
         hint: 'Loo roll, bin bags, dishwasher tablets.',
@@ -627,7 +622,7 @@ export const SERVICE_EXTRAS: ServiceExtra[] = [
     },
 ];
 
-export const PRICING_GROUPS = ['pane_flat', 'pane_storey', 'quote'] as const;
+export const PRICING_GROUPS = ['pane_flat', 'pane_storey'] as const;
 
 export function isPricingGroup(group: string): boolean {
     return (PRICING_GROUPS as readonly string[]).indexOf(group) !== -1;
