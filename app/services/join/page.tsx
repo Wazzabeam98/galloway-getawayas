@@ -80,6 +80,9 @@ export default function JoinAsProvider() {
     // do — a half-typed number should not be coerced mid-keystroke.
     const [extras, setExtras] = useState<Record<string, { offered: boolean; price: string; notes: string }>>({});
     const [gateOpen, setGateOpen] = useState<Record<string, boolean | null>>({});
+    // Which bands have the optional time guide showing. Open where one is
+    // already set, so a returning provider sees what they typed.
+    const [hoursOpen, setHoursOpen] = useState<Record<string, boolean>>({});
     const [calloutFee, setCalloutFee] = useState('');
     const [hourlyRate, setHourlyRate] = useState('');
 
@@ -148,6 +151,12 @@ export default function JoinAsProvider() {
                     };
                 }
                 setPrices(loaded);
+
+                const openHours: Record<string, boolean> = {};
+                for (const key of Object.keys(loaded)) {
+                    if (loaded[key].typical_hours) openHours[key] = true;
+                }
+                setHoursOpen(openHours);
 
                 const { data: areaRows } = await supabase
                     .from('service_areas')
@@ -469,8 +478,7 @@ export default function JoinAsProvider() {
             <h1 className="text-3xl font-bold text-slate-900">Work for holiday lets</h1>
             <p className="text-slate-600 mt-2 mb-8">
                 Cleaning, waste, gardening and maintenance for holiday cottages across Dumfries
-                &amp; Galloway. The people who own them find you here and ask you for work.
-                It is free for your first {TRIAL_DAYS} days and we will tell you before that changes.
+                &amp; Galloway.
             </p>
 
             {/* Sent, and waiting on us. */}
@@ -588,44 +596,67 @@ export default function JoinAsProvider() {
                                     <div key={band.key} className="rounded-xl border border-slate-300 p-3.5">
                                         <div className="text-sm font-medium text-slate-900 mb-2.5">{band.label}</div>
 
-                                        <div className="grid sm:grid-cols-2 gap-3">
-                                            <div>
-                                                <label className="block text-xs font-semibold text-slate-500 mb-1">Price per visit</label>
-                                                <div className="flex items-center gap-2">
-                                                    <span className="text-slate-500">&pound;</span>
-                                                    <input
-                                                        type="text"
-                                                        inputMode="decimal"
-                                                        value={entry.price}
-                                                        onChange={(e) => setBand(band.key, 'price', e.target.value)}
-                                                        placeholder="Leave blank if you do not cover this"
-                                                        className="w-full rounded-lg border border-slate-300 px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-emerald-700"
-                                                    />
-                                                </div>
-                                                {priceProblem && (
-                                                    <p className="text-xs text-rose-700 mt-1">{priceProblem.message}</p>
-                                                )}
+                                        <div>
+                                            <label className="block text-xs font-semibold text-slate-500 mb-1">Price per visit</label>
+                                            <div className="flex items-center gap-2">
+                                                <span className="text-slate-500">&pound;</span>
+                                                <input
+                                                    type="text"
+                                                    inputMode="decimal"
+                                                    value={entry.price}
+                                                    onChange={(e) => setBand(band.key, 'price', e.target.value)}
+                                                    placeholder="Leave blank if you do not cover this"
+                                                    className="w-full rounded-lg border border-slate-300 px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-emerald-700"
+                                                />
                                             </div>
+                                            {priceProblem && (
+                                                <p className="text-xs text-rose-700 mt-1">{priceProblem.message}</p>
+                                            )}
 
-                                            <div>
-                                                <label className="block text-xs font-semibold text-slate-500 mb-1">
-                                                    Usually takes <span className="font-normal">(optional)</span>
-                                                </label>
-                                                <div className="flex items-center gap-2">
-                                                    <input
-                                                        type="text"
-                                                        inputMode="decimal"
-                                                        value={entry.typical_hours}
-                                                        onChange={(e) => setBand(band.key, 'typical_hours', e.target.value)}
-                                                        placeholder="2"
-                                                        className="w-full rounded-lg border border-slate-300 px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-emerald-700"
-                                                    />
-                                                    <span className="text-sm text-slate-500 whitespace-nowrap">hours</span>
+                                            {/* Optional, and the single biggest
+                                                thing on the page for the least
+                                                it does — so it is a link until
+                                                somebody wants it. */}
+                                            {hoursOpen[band.key] ? (
+                                                <div className="mt-2.5">
+                                                    <label className="block text-xs font-semibold text-slate-500 mb-1">
+                                                        Usually takes
+                                                    </label>
+                                                    <div className="flex items-center gap-2">
+                                                        <input
+                                                            type="text"
+                                                            inputMode="decimal"
+                                                            value={entry.typical_hours}
+                                                            onChange={(e) => setBand(band.key, 'typical_hours', e.target.value)}
+                                                            placeholder="2"
+                                                            className="w-full rounded-lg border border-slate-300 px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-emerald-700"
+                                                        />
+                                                        <span className="text-sm text-slate-500 whitespace-nowrap">hours</span>
+                                                        <button
+                                                            type="button"
+                                                            onClick={() => {
+                                                                setBand(band.key, 'typical_hours', '');
+                                                                setHoursOpen((prev) => ({ ...prev, [band.key]: false }));
+                                                            }}
+                                                            aria-label="Remove the time guide"
+                                                            className="shrink-0 w-8 h-8 rounded-full border border-slate-300 flex items-center justify-center text-slate-500"
+                                                        >
+                                                            <X className="w-3.5 h-3.5" />
+                                                        </button>
+                                                    </div>
+                                                    {hoursProblem && (
+                                                        <p className="text-xs text-rose-700 mt-1">{hoursProblem.message}</p>
+                                                    )}
                                                 </div>
-                                                {hoursProblem && (
-                                                    <p className="text-xs text-rose-700 mt-1">{hoursProblem.message}</p>
-                                                )}
-                                            </div>
+                                            ) : (
+                                                <button
+                                                    type="button"
+                                                    onClick={() => setHoursOpen((prev) => ({ ...prev, [band.key]: true }))}
+                                                    className="mt-2 text-xs font-semibold text-emerald-700 hover:text-emerald-800 underline"
+                                                >
+                                                    Add a time guide
+                                                </button>
+                                            )}
                                         </div>
 
                                         {entry.price && Number(entry.price) > 0 && (
@@ -645,6 +676,12 @@ export default function JoinAsProvider() {
                         {problemFor('prices') && (
                             <p className="text-sm text-rose-700 mt-2">{problemFor('prices')!.message}</p>
                         )}
+
+                        {/* Beside the number it governs, not a section away.
+                            This is the one a provider will argue about later. */}
+                        <p className="text-sm text-slate-600 mt-3">
+                            <strong className="font-semibold text-slate-900">Your price is the most you can charge.</strong>
+                        </p>
 
                     </section>
                 )}
@@ -855,14 +892,9 @@ export default function JoinAsProvider() {
                                     })}
                                 </div>
 
-                                <div className="mt-3 rounded-xl bg-slate-50 border border-slate-200 p-4 text-sm text-slate-700">
-                                    <p>
-                                        <strong className="font-semibold text-slate-900">You are paid back for these by the owner, directly.</strong>{' '}
-                                        Send them the receipt and they settle it with you. It does not go through
-                                        us, there is no commission on it, and it is not part of your quoted price
-                                        &mdash; there is no figure for it until you have bought it.
-                                    </p>
-                                </div>
+                                <p className="text-sm text-slate-500 mt-2.5">
+                                    Paid back by the owner against a receipt. Not through us, and no commission.
+                                </p>
                             </div>
                         )}
                     </section>
