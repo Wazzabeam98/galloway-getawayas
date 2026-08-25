@@ -25,6 +25,9 @@ const {
     extrasFor,
     extraByKey,
     extrasProblems,
+    groupIsOffered,
+    groupGate,
+    EXTRA_GROUPS,
     submitProblems,
     HOST_TRADES,
 } = require('@/lib/serviceProviders');
@@ -39,7 +42,7 @@ test('every extra belongs to a real trade and has a type', () => {
     for (const e of SERVICE_EXTRAS) {
         assert.equal(HOST_TRADES.indexOf(e.trade) !== -1, true, e.key + ' is on no host trade');
         assert.equal(['toggle', 'priced', 'reimbursed'].indexOf(e.type) !== -1, true, e.key + ' has no type');
-        assert.equal(['about', 'priced', 'reimbursed'].indexOf(e.group) !== -1, true, e.key + ' has no group');
+        assert.equal(EXTRA_GROUPS.some((g: any) => g.key === e.group), true, e.key + ' is in no known group');
         assert.ok(e.label && e.label.length > 3, e.key + ' has no label');
     }
 });
@@ -62,24 +65,55 @@ test('cleaning carries the extras that were asked for', () => {
 
     for (const expected of [
         'equipment_provided', 'same_day_changeover', 'damage_photos',
-        'laundry_on_site', 'laundry_taken_away',
-        'bedding_single', 'bedding_double', 'hot_tub_service',
+        'bedding_single', 'bedding_double', 'bedding_king', 'hot_tub_service',
         'consumables', 'welcome_gifts', 'receipts_provided',
     ]) {
         assert.equal(keys.indexOf(expected) !== -1, true, expected + ' is missing');
     }
 
     assert.equal(keys.some((k: string) => /pet/.test(k)), false, 'the pet surcharge was dropped');
+    assert.equal(keys.indexOf('laundry_on_site'), -1, 'the two laundry toggles were dropped');
+    assert.equal(keys.indexOf('laundry_taken_away'), -1);
 });
 
-test('laundry is two independent toggles, not one lossy yes/no', () => {
-    const onSite = extraByKey('laundry_on_site');
-    const takenAway = extraByKey('laundry_taken_away');
+test('the three bedding rates sit behind one question', () => {
+    const beds = cleaning().filter((e: any) => e.group === 'laundry');
 
-    assert.equal(onSite.type, 'toggle');
-    assert.equal(takenAway.type, 'toggle');
-    assert.notEqual(onSite.key, takenAway.key,
-        'one toggle could not tell "taken away" from "does not do laundry"');
+    assert.deepEqual(beds.map((e: any) => e.key), ['bedding_single', 'bedding_double', 'bedding_king']);
+    assert.equal(groupGate('laundry'), 'Do you offer a laundry service?');
+
+    for (const b of beds) {
+        assert.equal(b.type, 'priced');
+        assert.equal(b.unit, 'each', b.key + ' is a rate per bed, not a total');
+    }
+});
+
+test('king is a catalogue entry and needs no column', () => {
+    const king = extraByKey('bedding_king');
+
+    assert.equal(king.group, 'laundry');
+    assert.equal(king.type, 'priced');
+    // The table constrains the shape of a key, not a list of them — which is
+    // why a new size is a line in lib rather than a migration.
+    assert.match(king.key, /^[a-z][a-z0-9_]{2,48}$/);
+});
+
+test('the gate is worked out from the prices, never stored', () => {
+    const trade = 'sponge';
+
+    assert.equal(groupIsOffered('laundry', trade, {}), false);
+    assert.equal(groupIsOffered('laundry', trade, { bedding_double: { price: '' } }), false,
+        'a blank box is not an offer');
+    assert.equal(groupIsOffered('laundry', trade, { bedding_double: { price: '0' } }), false);
+    assert.equal(groupIsOffered('laundry', trade, { bedding_double: { price: '8' } }), true,
+        'one rate filled in is a laundry service');
+    assert.equal(groupIsOffered('laundry', trade, { bedding_king: { price: '12' } }), true);
+});
+
+test('only groups that need a question have one', () => {
+    assert.equal(groupGate('priced'), null);
+    assert.equal(groupGate('about'), null);
+    assert.equal(groupGate('reimbursed'), null);
 });
 
 test('receipts sits with the reimbursed ones but is stored as a toggle', () => {
@@ -101,14 +135,32 @@ test('offering nothing is fine', () => {
     assert.deepEqual(extrasProblems(offered({})), []);
 });
 
-test('a priced extra turned on needs a price', () => {
-    const problems = extrasProblems(offered({ hot_tub_service: { offered: true } }));
-    assert.equal(problems.length, 1);
-    assert.equal(problems[0].field, 'extra_price_hot_tub_service');
+test('a blank price is a real answer, not a mistake', () => {
+    assert.deepEqual(extrasProblems(offered({ hot_tub_service: { price: '' } })), [],
+        'a price is the yes and a blank is the no, exactly as the size bands work');
+    assert.deepEqual(extrasProblems(offered({ bedding_king: { price: '' } })), []);
 });
 
-test('a priced extra turned off needs nothing', () => {
-    assert.deepEqual(extrasProblems(offered({ hot_tub_service: { offered: false } })), []);
+test('something typed into a price box that is not a price is caught', () => {
+    const problems = extrasProblems(offered({ hot_tub_service: { price: 'twenty' } }));
+    assert.equal(problems.length, 1);
+    assert.equal(problems[0].field, 'extra_price_hot_tub_service');
+
+    assert.equal(
+        extrasProblems(offered({ bedding_single: { price: '-4' } }))
+            .some((p: any) => p.field === 'extra_price_bedding_single'),
+        true
+    );
+});
+
+test('a priced extra has no tick to disagree with its price', () => {
+    // The price alone decides. Offering nothing and offering a blank are the
+    // same answer, and there is no state where a tick says yes and the box
+    // says nothing.
+    assert.deepEqual(
+        extrasProblems(offered({ hot_tub_service: { price: '25' } })),
+        extrasProblems(offered({ hot_tub_service: { offered: true, price: '25' } }))
+    );
 });
 
 test('a toggle never needs a price', () => {
@@ -134,7 +186,7 @@ test('extras are part of the one submit gate', () => {
 
     assert.deepEqual(submitProblems(base), []);
     assert.equal(
-        submitProblems({ ...base, extras: { bedding_double: { offered: true } } })
+        submitProblems({ ...base, extras: { bedding_double: { price: 'eight' } } })
             .some((p: any) => p.field === 'extra_price_bedding_double'),
         true
     );
@@ -161,11 +213,12 @@ test('a per-unit extra multiplies by what the host asked for', () => {
             extras: {
                 bedding_double: { offered: true, price: 8, quantity: 3 },
                 bedding_single: { offered: true, price: 5, quantity: 2 },
+                bedding_king: { offered: true, price: 12, quantity: 1 },
             },
         },
         cleaning()
     );
-    assert.equal(ceiling, 60 + 24 + 10);
+    assert.equal(ceiling, 60 + 24 + 10 + 12);
 });
 
 test('a per-unit extra with no quantity adds nothing', () => {

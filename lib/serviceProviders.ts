@@ -375,13 +375,32 @@ export function pricingProblems(draft: PricingDraft): Problem[] {
 
 export type ExtraType = 'toggle' | 'priced' | 'reimbursed';
 
+// Where a set of extras renders, and whether it sits behind a question.
+//
+// A gate is presentation, not data. "Do you offer a laundry service?" is
+// answerable from the prices — yes exactly when one of them is filled in — so
+// storing it would be a second source of truth able to disagree with the rates
+// it describes. It is held in the form while they are filling it in and never
+// written down.
+export const EXTRA_GROUPS = [
+    { key: 'about', label: '' },
+    { key: 'laundry', label: 'Laundry', gate: 'Do you offer a laundry service?' },
+    { key: 'priced', label: 'Charged on top' },
+    { key: 'reimbursed', label: 'Bought for the owner and paid back' },
+] as const;
+
+export function groupGate(group: string): string | null {
+    const found = EXTRA_GROUPS.filter((g) => g.key === group)[0] as any;
+    return (found && found.gate) || null;
+}
+
 export interface ServiceExtra {
     key: string;
     trade: string;
     type: ExtraType;
     // Where it renders. `receipts_provided` is a toggle that belongs with the
     // reimbursed ones, so how it is stored and where it is shown are separate.
-    group: 'about' | 'priced' | 'reimbursed';
+    group: 'about' | 'laundry' | 'priced' | 'reimbursed';
     label: string;
     hint?: string;
     // Priced only. 'each' means the host says how many when they ask; absent
@@ -405,26 +424,22 @@ export const SERVICE_EXTRAS: ServiceExtra[] = [
         key: 'damage_photos', trade: 'sponge', type: 'toggle', group: 'about',
         label: 'I report damage with photos',
     },
-    // Two toggles rather than one choice: both on means either suits them,
-    // both off means they do not do laundry. A single yes/no could not say
-    // the difference between "taken away" and "not offered".
+    // Three rates behind one question. No tick of their own — a price is
+    // already a yes, and a blank is already a no, which is how the bands work.
     {
-        key: 'laundry_on_site', trade: 'sponge', type: 'toggle', group: 'about',
-        label: 'I do the laundry on site',
-    },
-    {
-        key: 'laundry_taken_away', trade: 'sponge', type: 'toggle', group: 'about',
-        label: 'I take the laundry away and bring it back',
-    },
-    {
-        key: 'bedding_single', trade: 'sponge', type: 'priced', group: 'priced',
+        key: 'bedding_single', trade: 'sponge', type: 'priced', group: 'laundry',
         unit: 'each', quantityLabel: 'single beds',
-        label: 'Bedding changed, per single bed',
+        label: 'Single',
     },
     {
-        key: 'bedding_double', trade: 'sponge', type: 'priced', group: 'priced',
+        key: 'bedding_double', trade: 'sponge', type: 'priced', group: 'laundry',
         unit: 'each', quantityLabel: 'double beds',
-        label: 'Bedding changed, per double bed',
+        label: 'Double',
+    },
+    {
+        key: 'bedding_king', trade: 'sponge', type: 'priced', group: 'laundry',
+        unit: 'each', quantityLabel: 'king beds',
+        label: 'King',
     },
     {
         key: 'hot_tub_service', trade: 'sponge', type: 'priced', group: 'priced',
@@ -459,29 +474,48 @@ export interface ExtrasDraft {
     extras?: Record<string, { offered?: boolean; price?: any; notes?: any }> | null;
 }
 
-// An extra is optional. Offering a priced one without a price is not.
+// Everything here is optional. A priced extra has no tick of its own: the
+// price is the yes and a blank is the no, exactly as the size bands work. So
+// the only thing that can be wrong is something typed into the box that is not
+// a price.
 export function extrasProblems(draft: ExtrasDraft): Problem[] {
     const problems: Problem[] = [];
     const extras = draft.extras || {};
 
     for (const extra of extrasFor(String(draft.trade || ''))) {
-        const entry = extras[extra.key];
-        if (!entry || entry.offered !== true) continue;
-
         if (extra.type !== 'priced') continue;
 
-        const raw = entry.price;
-        const price = Number(raw);
+        const entry = extras[extra.key];
+        if (!entry) continue;
 
-        if (raw === undefined || raw === null || String(raw).trim() === '' || !(price > 0)) {
+        const raw = entry.price;
+        if (raw === undefined || raw === null || String(raw).trim() === '') continue;
+
+        if (!(Number(raw) > 0)) {
             problems.push({
                 field: 'extra_price_' + extra.key,
-                message: 'Add a price, or turn this off.',
+                message: 'That is not a price. Leave it blank if you do not offer it.',
             });
         }
     }
 
     return problems;
+}
+
+// Whether a gated group has anything in it. This is what the yes/no would have
+// stored, worked out from the prices instead.
+export function groupIsOffered(
+    group: string,
+    trade: string,
+    extras: Record<string, { price?: any }> | null | undefined
+): boolean {
+    const chosen = extras || {};
+    return extrasFor(trade)
+        .filter((e) => e.group === group && e.type === 'priced')
+        .some((e) => {
+            const entry = chosen[e.key];
+            return !!entry && String(entry.price || '').trim() !== '' && Number(entry.price) > 0;
+        });
 }
 
 export const REVIEW_WITHIN_HOURS = 48;

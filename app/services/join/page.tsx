@@ -13,6 +13,8 @@ import {
     audienceForTrade,
     extrasFor,
     extrasProblems,
+    groupIsOffered,
+    groupGate,
     COVERAGE_TOWNS,
     townByKey,
     submitProblems,
@@ -72,6 +74,7 @@ export default function JoinAsProvider() {
     // Keyed by extra. Price stays a string for the same reason band prices
     // do — a half-typed number should not be coerced mid-keystroke.
     const [extras, setExtras] = useState<Record<string, { offered: boolean; price: string; notes: string }>>({});
+    const [laundryOpen, setLaundryOpen] = useState<boolean | null>(null);
     const [calloutFee, setCalloutFee] = useState('');
     const [hourlyRate, setHourlyRate] = useState('');
 
@@ -123,6 +126,7 @@ export default function JoinAsProvider() {
                     };
                 }
                 setExtras(loadedExtras);
+                setLaundryOpen(groupIsOffered('laundry', existing.trade || 'sponge', loadedExtras));
 
                 const loaded: Record<string, { price: string; typical_hours: string }> = {};
                 for (const row of priceRows || []) {
@@ -293,7 +297,15 @@ export default function JoinAsProvider() {
         await supabase.from('service_provider_extras').delete().eq('provider_id', id);
 
         const extraRows = tradeExtras
-            .filter((extra) => extraOf(extra.key).offered)
+            .filter((extra) => {
+                const entry = extraOf(extra.key);
+                // A priced extra says yes by having a price. Nothing else to
+                // agree or disagree with, and a blank is a no.
+                if (extra.type === 'priced') {
+                    return String(entry.price).trim() !== '' && Number(entry.price) > 0;
+                }
+                return entry.offered;
+            })
             .map((extra) => {
                 const entry = extraOf(extra.key);
                 const priced = extra.type === 'priced' && String(entry.price).trim() !== '' && Number(entry.price) > 0;
@@ -683,6 +695,87 @@ export default function JoinAsProvider() {
                             </div>
                         )}
 
+                        {extrasIn('laundry').length > 0 && (
+                            <div className="mb-6">
+                                <h3 className="text-xs font-bold uppercase tracking-wider text-slate-500 mb-2">
+                                    Laundry
+                                </h3>
+
+                                <div className="rounded-xl border border-slate-300 p-3.5">
+                                    <p className="text-sm font-medium text-slate-900 mb-2.5">
+                                        {groupGate('laundry')}
+                                    </p>
+
+                                    <div className="flex gap-2">
+                                        {[true, false].map((yes) => (
+                                            <button
+                                                key={String(yes)}
+                                                type="button"
+                                                onClick={() => {
+                                                    setLaundryOpen(yes);
+                                                    // Saying no clears the rates, so the
+                                                    // answer and the boxes cannot disagree.
+                                                    if (!yes) {
+                                                        for (const e of extrasIn('laundry')) setExtra(e.key, 'price', '');
+                                                    }
+                                                }}
+                                                aria-pressed={laundryOpen === yes}
+                                                className={`rounded-full border px-5 py-2 text-sm font-semibold transition ${
+                                                    laundryOpen === yes
+                                                        ? 'border-emerald-700 bg-emerald-700 text-white'
+                                                        : 'border-slate-300 text-slate-700 hover:border-slate-500'
+                                                }`}
+                                            >
+                                                {yes ? 'Yes' : 'No'}
+                                            </button>
+                                        ))}
+                                    </div>
+
+                                    {laundryOpen === true && (
+                                        <div className="mt-4">
+                                            <p className="text-sm text-slate-500 mb-3">
+                                                A rate per bed. Leave blank any size you do not do.
+                                            </p>
+
+                                            <div className="grid sm:grid-cols-3 gap-3">
+                                                {extrasIn('laundry').map((extra) => {
+                                                    const entry = extraOf(extra.key);
+                                                    const problem = problemFor('extra_price_' + extra.key);
+
+                                                    return (
+                                                        <div key={extra.key}>
+                                                            <label className="block text-xs font-semibold text-slate-500 mb-1">
+                                                                {extra.label}
+                                                            </label>
+                                                            <div className="flex items-center gap-2">
+                                                                <span className="text-slate-500">&pound;</span>
+                                                                <input
+                                                                    type="text"
+                                                                    inputMode="decimal"
+                                                                    value={entry.price}
+                                                                    onChange={(e) => setExtra(extra.key, 'price', e.target.value)}
+                                                                    placeholder="8"
+                                                                    className="w-full rounded-lg border border-slate-300 px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-emerald-700"
+                                                                />
+                                                            </div>
+                                                            {problem && (
+                                                                <p className="text-xs text-rose-700 mt-1">{problem.message}</p>
+                                                            )}
+                                                        </div>
+                                                    );
+                                                })}
+                                            </div>
+
+                                            <p className="text-xs text-slate-500 mt-2.5">
+                                                The owner says how many of each when they ask, so these are rates
+                                                rather than totals.
+                                            </p>
+                                        </div>
+                                    )}
+                                </div>
+                            </div>
+                        )}
+
                         {extrasIn('priced').length > 0 && (
                             <div className="mb-6">
                                 <h3 className="text-xs font-bold uppercase tracking-wider text-slate-500 mb-2">
@@ -695,47 +788,27 @@ export default function JoinAsProvider() {
 
                                         return (
                                             <div key={extra.key} className="rounded-xl border border-slate-300 p-3.5">
-                                                <label className="flex items-start gap-3 cursor-pointer">
-                                                    <input
-                                                        type="checkbox"
-                                                        checked={entry.offered}
-                                                        onChange={(e) => setExtra(extra.key, 'offered', e.target.checked)}
-                                                        className="mt-0.5 w-4 h-4 rounded border-slate-300 shrink-0"
-                                                    />
-                                                    <span>
-                                                        <span className="block text-sm font-medium text-slate-900">{extra.label}</span>
-                                                        {extra.hint && (
-                                                            <span className="block text-sm text-slate-500 mt-0.5">{extra.hint}</span>
-                                                        )}
-                                                    </span>
-                                                </label>
+                                                <div className="text-sm font-medium text-slate-900">{extra.label}</div>
+                                                {extra.hint && (
+                                                    <div className="text-sm text-slate-500 mt-0.5">{extra.hint}</div>
+                                                )}
 
-                                                {entry.offered && (
-                                                    <div className="mt-3 pl-7">
-                                                        <div className="flex items-center gap-2 max-w-xs">
-                                                            <span className="text-slate-500">&pound;</span>
-                                                            <input
-                                                                type="text"
-                                                                inputMode="decimal"
-                                                                value={entry.price}
-                                                                onChange={(e) => setExtra(extra.key, 'price', e.target.value)}
-                                                                placeholder="8"
-                                                                className="w-full rounded-lg border border-slate-300 px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-emerald-700"
-                                                            />
-                                                            {extra.unit === 'each' && (
-                                                                <span className="text-sm text-slate-500 whitespace-nowrap">each</span>
-                                                            )}
-                                                        </div>
-                                                        {extra.unit === 'each' && (
-                                                            <p className="text-xs text-slate-500 mt-1.5">
-                                                                The owner says how many {extra.quantityLabel} when they ask,
-                                                                so this is a rate rather than a total.
-                                                            </p>
-                                                        )}
-                                                        {problem && (
-                                                            <p className="text-xs text-rose-700 mt-1">{problem.message}</p>
-                                                        )}
-                                                    </div>
+                                                <div className="mt-2.5 flex items-center gap-2 max-w-xs">
+                                                    <span className="text-slate-500">&pound;</span>
+                                                    <input
+                                                        type="text"
+                                                        inputMode="decimal"
+                                                        value={entry.price}
+                                                        onChange={(e) => setExtra(extra.key, 'price', e.target.value)}
+                                                        placeholder="Leave blank if you do not offer it"
+                                                        className="w-full rounded-lg border border-slate-300 px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-emerald-700"
+                                                    />
+                                                    {extra.unit === 'each' && (
+                                                        <span className="text-sm text-slate-500 whitespace-nowrap">each</span>
+                                                    )}
+                                                </div>
+                                                {problem && (
+                                                    <p className="text-xs text-rose-700 mt-1">{problem.message}</p>
                                                 )}
                                             </div>
                                         );
