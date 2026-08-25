@@ -21,6 +21,9 @@ const {
     bandLabel,
     bandForBedrooms,
     bandForPlot,
+    bandForStoreys,
+    storeyLabel,
+    STOREY_BANDS,
     canBeRequested,
     pricingProblems,
     submitProblems,
@@ -52,6 +55,34 @@ test('maintenance is a call-out plus an hourly rate, and cannot be banded', () =
 
 test('waste removal exists as a trade and reads as something', () => {
     assert.equal(tradeLabel('bin'), 'Waste removal');
+});
+
+test('window cleaning is banded on bedrooms, not on panes', () => {
+    // Per-pane was rejected: a six-over-six sash is one window and twelve
+    // panes, and it would have been the only place on the site where a host
+    // has to go outside and count something.
+    assert.equal(pricingModelFor('droplet'), 'bands');
+    assert.deepEqual(bandsFor('droplet').map((b: any) => b.key), ['beds_1_2', 'beds_3_4', 'beds_5_plus']);
+});
+
+test('the storey bands say what the cleaner faces, not how many floors', () => {
+    const labels = STOREY_BANDS.map((b: any) => b.label);
+
+    assert.equal(STOREY_BANDS.length, 3);
+    assert.match(labels.join(' '), /ladder/, 'the cost driver, said out loud');
+    assert.equal(
+        labels.some((l: string) => /^\s*(one|two|three) storey/i.test(l)),
+        false,
+        '"two storeys" is counted differently depending on whether the ground floor is one'
+    );
+});
+
+test('a storey band is only a band if it is one of ours', () => {
+    assert.equal(bandForStoreys('storeys_two'), 'storeys_two');
+    assert.equal(bandForStoreys('two-ish'), null);
+    assert.equal(bandForStoreys(null), null, 'not said is a prompt, not a refusal');
+    assert.equal(storeyLabel('storeys_one').length > 5, true);
+    assert.equal(storeyLabel('nonsense'), '');
 });
 
 test('anything else prices per job', () => {

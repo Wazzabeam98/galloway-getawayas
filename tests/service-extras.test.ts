@@ -128,6 +128,34 @@ test('a trade with no extras yet has none rather than the cleaning ones', () => 
     assert.deepEqual(extrasFor('spanner'), []);
 });
 
+test('window cleaning charges for height, and says whether it goes up at all', () => {
+    const keys = extrasFor('droplet').map((e: any) => e.key);
+
+    assert.deepEqual(keys, ['upstairs_windows', 'upstairs_surcharge', 'high_access_surcharge']);
+
+    // The toggle and the surcharge are separate because a blank surcharge on
+    // its own cannot tell "I go upstairs and it costs no more" from "I do not
+    // go upstairs" — opposite answers to a host with a two-storey cottage.
+    assert.equal(extraByKey('upstairs_windows').type, 'toggle');
+    assert.equal(extraByKey('upstairs_surcharge').type, 'priced');
+    assert.equal(extraByKey('high_access_surcharge').type, 'priced');
+});
+
+test('a storey surcharge is a flat amount, not a rate per anything', () => {
+    for (const key of ['upstairs_surcharge', 'high_access_surcharge']) {
+        assert.equal(extraByKey(key).unit, undefined,
+            key + ' must be a flat figure — a host should not have to do arithmetic');
+    }
+});
+
+test('the storey surcharges are part of the ceiling', () => {
+    const ceiling = serviceCeiling(
+        { bandPrice: 35, extras: { upstairs_surcharge: { offered: true, price: 15 } } },
+        extrasFor('droplet')
+    );
+    assert.equal(ceiling, 50);
+});
+
 // --- what has to be filled in ----------------------------------------------
 
 const offered = (extras: Record<string, any>) => ({ trade: 'sponge', extras });

@@ -235,6 +235,22 @@ export const BEDROOM_BANDS = [
 // Bedrooms tell you nothing about a garden — a two-bed cottage can sit in an
 // acre. Physical anchors rather than adjectives, so that two hosts reading
 // "medium" do not mean different things.
+export const STOREY_BANDS = [
+    { key: 'storeys_one', label: 'All on one floor — nothing above head height' },
+    { key: 'storeys_two', label: 'Two floors — upstairs windows need a ladder' },
+    { key: 'storeys_three_plus', label: 'Three floors or more, or windows in attic rooms' },
+] as const;
+
+export function storeyLabel(key: string): string {
+    const found = STOREY_BANDS.filter((b) => b.key === key)[0];
+    return found ? found.label : '';
+}
+
+export function bandForStoreys(storeyBand: string | null | undefined): string | null {
+    const key = String(storeyBand || '');
+    return STOREY_BANDS.some((b) => b.key === key) ? key : null;
+}
+
 export const PLOT_BANDS = [
     { key: 'plot_yard', label: 'Courtyard or yard, no lawn' },
     { key: 'plot_garden', label: 'Garden up to about the size of a tennis court' },
@@ -245,6 +261,7 @@ const TRADE_PRICING: Record<string, PricingModel> = {
     sponge: 'bands',
     bin: 'bands',
     trees: 'bands',
+    droplet: 'bands',
     spanner: 'callout_hourly',
 };
 
@@ -252,6 +269,7 @@ const TRADE_BANDS: Record<string, 'bedrooms' | 'plot'> = {
     sponge: 'bedrooms',
     bin: 'bedrooms',
     trees: 'plot',
+    droplet: 'bedrooms',
 };
 
 export function pricingModelFor(trade: string): PricingModel {
@@ -483,6 +501,26 @@ export const SERVICE_EXTRAS: ServiceExtra[] = [
         key: 'hot_tub_service', trade: 'sponge', type: 'priced', group: 'hot_tub',
         label: 'Hot tub servicing',
         hint: 'A flat fee on top of the clean.',
+    },
+    // --- window cleaning ---------------------------------------------------
+    //
+    // The toggle and the surcharge are separate on purpose. A blank surcharge
+    // on its own could not tell "I go upstairs and it costs no more" from "I
+    // do not go upstairs", and those are opposite answers to a host with a
+    // two-storey cottage.
+    {
+        key: 'upstairs_windows', trade: 'droplet', type: 'toggle', group: 'about',
+        label: 'I clean upstairs windows',
+    },
+    {
+        key: 'upstairs_surcharge', trade: 'droplet', type: 'priced', group: 'priced',
+        label: 'Extra for upstairs windows',
+        hint: 'On a two-floor property. Leave blank if it is included in your price.',
+    },
+    {
+        key: 'high_access_surcharge', trade: 'droplet', type: 'priced', group: 'priced',
+        label: 'Extra for three floors or attic windows',
+        hint: 'Leave blank if it is included, or if you do not go that high.',
     },
     {
         key: 'consumables', trade: 'sponge', type: 'reimbursed', group: 'reimbursed',

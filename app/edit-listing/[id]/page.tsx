@@ -14,6 +14,7 @@ import { rateFor } from '@/lib/fees';
 import { buildLocation, splitLocation, DEFAULT_REGION } from '@/lib/places';
 import { buildStreetAddress, tidyPostcode } from '@/lib/address';
 import { fromRow, newProblems, publishProblems } from '@/lib/listingRules';
+import { PLOT_BANDS, STOREY_BANDS } from '@/lib/serviceProviders';
 import { compressImage } from '@/lib/compressImage';
 import IcalFeeds from '@/components/IcalFeeds';
 import {
@@ -87,6 +88,57 @@ const AMENITY_CATEGORIES: { category: string; items: { name: string; icon: any; 
 ];
 
 
+
+// One choice from three, for the facts the services side needs. Shared by both
+// so a third one later is a call rather than another copy of this markup.
+//
+// Radio-style buttons rather than a <select>: the options are sentences, and a
+// dropdown hides two of the three at the moment somebody is choosing between
+// them. "Not said" is a real state and stays reachable — a host who has not
+// decided should be able to leave it, and clear it again.
+function BandChoice({
+    label,
+    options,
+    value,
+    onChange,
+}: {
+    label: string;
+    options: readonly { key: string; label: string }[];
+    value: string;
+    onChange: (v: string) => void;
+}) {
+    return (
+        <div>
+            <div className="text-sm font-semibold text-slate-900 mb-2">{label}</div>
+            <div className="space-y-2">
+                {options.map((o) => {
+                    const on = value === o.key;
+                    return (
+                        <button
+                            key={o.key}
+                            type="button"
+                            onClick={() => onChange(on ? '' : o.key)}
+                            aria-pressed={on}
+                            className={`w-full text-left rounded-xl border px-4 py-3 text-sm transition ${
+                                on
+                                    ? 'border-emerald-700 ring-2 ring-emerald-700 bg-emerald-50 text-slate-900'
+                                    : 'border-slate-300 text-slate-700 hover:border-slate-400'
+                            }`}
+                        >
+                            {o.label}
+                        </button>
+                    );
+                })}
+            </div>
+            {!value && (
+                <p className="text-xs text-slate-500 mt-2">
+                    Not said yet. They cannot price a visit here until you pick one.
+                </p>
+            )}
+        </div>
+    );
+}
+
 const SECTIONS = [
     { key: 'basics', label: 'Basics & guests', icon: LayoutGrid },
     { key: 'location', label: 'Location', icon: MapPin },
@@ -142,6 +194,8 @@ export default function EditListing() {
     const [bedrooms, setBedrooms] = useState(1);
     const [beds, setBeds] = useState(1);
     const [bathrooms, setBathrooms] = useState(1);
+    const [plotBand, setPlotBand] = useState<string>('');
+    const [storeyBand, setStoreyBand] = useState<string>('');
     const [amenities, setAmenities] = useState<string[]>([]);
     const [photos, setPhotos] = useState<Photo[]>([]);
     const [coverIndex, setCoverIndex] = useState(0);
@@ -257,6 +311,8 @@ export default function EditListing() {
             setBedrooms(listing.bedrooms ?? 1);
             setBeds(listing.beds ?? 1);
             setBathrooms(listing.bathrooms ?? 1);
+            setPlotBand(listing.plot_band || '');
+            setStoreyBand(listing.storey_band || '');
             setAmenities(listing.amenities || []);
             setPhotos((listing.images || []).map((path: string) => ({ kind: 'existing', path })));
             setNewListingPromo(listing.new_listing_promo ?? true);
@@ -442,6 +498,8 @@ export default function EditListing() {
                     bedrooms,
                     beds,
                     bathrooms,
+                    plot_band: plotBand || null,
+                    storey_band: storeyBand || null,
                     amenities,
                     new_listing_promo: newListingPromo,
                     last_minute_discount: lastMinuteDiscount,
@@ -675,6 +733,40 @@ export default function EditListing() {
                                     <Counter label="Bedrooms" value={bedrooms} onChange={setBedrooms} min={0} />
                                     <Counter label="Beds" value={beds} onChange={setBeds} min={1} />
                                     <Counter label="Bathrooms" value={bathrooms} onChange={setBathrooms} min={0.5} />
+                                </section>
+
+                                {/* Asked once, and only because the services side
+                                    cannot work them out. Bedrooms above already
+                                    carry the cleaning and waste bands; nothing on
+                                    a listing says how big the garden is or how
+                                    high the windows go.
+
+                                    Both optional: a blank one means that trade
+                                    cannot quote for this property yet, which is a
+                                    prompt when they first look, not a blocked
+                                    save. */}
+                                <section>
+                                    <h2 className="text-xl font-bold text-slate-900 mb-1">For local services</h2>
+                                    <p className="text-sm text-slate-500 mb-5">
+                                        Two things a gardener or window cleaner needs before they can price a
+                                        visit. Answer once and they both quote from it.
+                                    </p>
+
+                                    <BandChoice
+                                        label="The garden or grounds"
+                                        options={PLOT_BANDS}
+                                        value={plotBand}
+                                        onChange={setPlotBand}
+                                    />
+
+                                    <div className="mt-6">
+                                        <BandChoice
+                                            label="How high the windows go"
+                                            options={STOREY_BANDS}
+                                            value={storeyBand}
+                                            onChange={setStoreyBand}
+                                        />
+                                    </div>
                                 </section>
                             </div>
                         )}
