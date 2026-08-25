@@ -484,6 +484,17 @@ export const EXTRA_GROUPS = [
     { key: 'about', label: '' },
     { key: 'laundry', label: 'Laundry', gate: 'Do you offer a laundry service?' },
     { key: 'hot_tub', label: 'Hot tubs', gate: 'Do you service hot tubs?' },
+    // Each of the extra services a window cleaner turns up to do gets its own
+    // question, then one price — the same shape as the laundry gate.
+    { key: 'svc_pressure', label: 'Pressure washing', gate: 'Do you do pressure washing?' },
+    { key: 'svc_gutter', label: 'Gutter cleaning', gate: 'Do you clean gutters?' },
+    { key: 'svc_fascias', label: 'Fascias and soffits', gate: 'Do you clean fascias and soffits?' },
+    { key: 'svc_solar', label: 'Solar panels', gate: 'Do you clean solar panels?' },
+    // Pricing structures. Rendered with the prices rather than with the
+    // extras, so they are not offered under "what else do you offer".
+    { key: 'pane_flat', label: 'Per pane' },
+    { key: 'pane_storey', label: 'Per pane, by storey' },
+    { key: 'quote', label: 'Quote per job' },
     { key: 'priced', label: 'Charged on top' },
     { key: 'reimbursed', label: 'Bought for the owner and paid back' },
 ] as const;
@@ -499,7 +510,9 @@ export interface ServiceExtra {
     type: ExtraType;
     // Where it renders. `receipts_provided` is a toggle that belongs with the
     // reimbursed ones, so how it is stored and where it is shown are separate.
-    group: 'about' | 'laundry' | 'hot_tub' | 'priced' | 'reimbursed';
+    group: 'about' | 'laundry' | 'hot_tub' | 'priced' | 'reimbursed'
+        | 'svc_pressure' | 'svc_gutter' | 'svc_fascias' | 'svc_solar'
+        | 'pane_flat' | 'pane_storey' | 'quote';
     label: string;
     hint?: string;
     // Priced only. 'each' means the host says how many when they ask; absent
@@ -544,21 +557,55 @@ export const SERVICE_EXTRAS: ServiceExtra[] = [
     //
     // No "do you go upstairs" toggle: they use long poles, so it is not a real
     // distinction. Height is priced, not offered or withheld.
+    // Each one asked, then priced. No price is a real answer while the trade
+    // is still telling us how they want to charge.
     {
-        key: 'pressure_washing', trade: 'droplet', type: 'toggle', group: 'about',
+        key: 'pressure_washing', trade: 'droplet', type: 'priced', group: 'svc_pressure',
         label: 'Pressure washing',
     },
     {
-        key: 'gutter_cleaning', trade: 'droplet', type: 'toggle', group: 'about',
+        key: 'gutter_cleaning', trade: 'droplet', type: 'priced', group: 'svc_gutter',
         label: 'Gutter cleaning',
     },
     {
-        key: 'fascias_soffits', trade: 'droplet', type: 'toggle', group: 'about',
+        key: 'fascias_soffits', trade: 'droplet', type: 'priced', group: 'svc_fascias',
         label: 'Fascias and soffits cleaning',
     },
     {
-        key: 'solar_panels', trade: 'droplet', type: 'toggle', group: 'about',
+        key: 'solar_panels', trade: 'droplet', type: 'priced', group: 'svc_solar',
         label: 'Solar panel cleaning',
+    },
+
+    // The four shapes a window cleaner might use, all on the page at once.
+    // Nothing computes from them yet: they are here so real window cleaners
+    // can say which one they actually use before one is chosen for them.
+    {
+        key: 'callout_base', trade: 'droplet', type: 'priced', group: 'pane_flat',
+        label: 'Call-out',
+    },
+    {
+        key: 'pane_rate', trade: 'droplet', type: 'priced', group: 'pane_flat',
+        unit: 'each', quantityLabel: 'panes',
+        label: 'Per pane',
+    },
+    {
+        key: 'pane_ground', trade: 'droplet', type: 'priced', group: 'pane_storey',
+        unit: 'each', quantityLabel: 'panes',
+        label: 'Ground floor',
+    },
+    {
+        key: 'pane_first', trade: 'droplet', type: 'priced', group: 'pane_storey',
+        unit: 'each', quantityLabel: 'panes',
+        label: 'First floor',
+    },
+    {
+        key: 'pane_second_plus', trade: 'droplet', type: 'priced', group: 'pane_storey',
+        unit: 'each', quantityLabel: 'panes',
+        label: 'Second floor or higher',
+    },
+    {
+        key: 'quote_per_job', trade: 'droplet', type: 'toggle', group: 'quote',
+        label: 'I price each job when I am asked',
     },
     {
         key: 'upstairs_surcharge', trade: 'droplet', type: 'priced', group: 'priced',
@@ -585,8 +632,20 @@ export const SERVICE_EXTRAS: ServiceExtra[] = [
     },
 ];
 
+export const PRICING_GROUPS = ['pane_flat', 'pane_storey', 'quote'] as const;
+
+export function isPricingGroup(group: string): boolean {
+    return (PRICING_GROUPS as readonly string[]).indexOf(group) !== -1;
+}
+
 export function extrasFor(trade: string): ServiceExtra[] {
     return SERVICE_EXTRAS.filter((e) => e.trade === trade);
+}
+
+// What belongs under "what else do you offer" — everything except the pricing
+// structures, which render beside the prices.
+export function offeringsFor(trade: string): ServiceExtra[] {
+    return extrasFor(trade).filter((e) => !isPricingGroup(e.group));
 }
 
 export function extraByKey(key: string): ServiceExtra | null {

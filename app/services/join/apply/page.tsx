@@ -5,7 +5,7 @@ import Link from 'next/link';
 import { useRouter, useSearchParams } from 'next/navigation';
 import { createClientComponentClient } from '@supabase/auth-helpers-nextjs';
 import { toast } from 'react-toastify';
-import { Sparkles, Wrench, Trees, Droplet, ChefHat, Cake, ShoppingBasket, PawPrint, Trash2, Plus, X } from 'lucide-react';
+import { Sparkles, Wrench, Trees, Droplet, ChefHat, Cake, ShoppingBasket, PawPrint, Trash2, Plus, X, ChevronLeft } from 'lucide-react';
 import { compressImage } from '@/lib/compressImage';
 import { getImageUrl, generateRandomNumber } from '@/lib/utils';
 import Env from '@/config/Env';
@@ -20,6 +20,8 @@ import {
     initialsFor,
     showsTimeGuide,
     BUILDING_TYPES,
+    offeringsFor,
+    isPricingGroup,
     groupIsOffered,
     groupGate,
     EXTRA_GROUPS,
@@ -321,13 +323,49 @@ function ApplicationForm() {
         extras,
     });
 
+    // One block of £ boxes for a pricing structure. Nothing computes from
+    // these yet — they are on the page so real window cleaners can say which
+    // shape they actually use before one is picked for them.
+    const priceRows = (group: string) =>
+        extrasIn(group).map((extra) => {
+            const entry = extraOf(extra.key);
+            return (
+                <div key={extra.key} className="flex items-center gap-3">
+                    <label
+                        htmlFor={'rate-' + extra.key}
+                        className="w-40 shrink-0 text-sm font-medium text-slate-900"
+                    >
+                        {extra.label}
+                    </label>
+                    <div className="flex items-center gap-2 flex-1 min-w-0">
+                        <span className="text-slate-500">&pound;</span>
+                        <input
+                            id={'rate-' + extra.key}
+                            type="text"
+                            inputMode="decimal"
+                            value={entry.price}
+                            onChange={(e) => setExtra(extra.key, 'price', e.target.value)}
+                            placeholder="Leave blank"
+                            className="w-full min-w-0 rounded-lg border border-slate-300 px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-emerald-700"
+                        />
+                        {extra.unit === 'each' && (
+                            <span className="text-sm text-slate-500 whitespace-nowrap">per pane</span>
+                        )}
+                    </div>
+                </div>
+            );
+        });
+
     const TradeIcon = TRADE_ICONS[trade] || Sparkles;
     const model = pricingModelFor(trade);
     const tradeExtras = extrasFor(trade);
+    const offerings = offeringsFor(trade);
     const extrasIn = (group: string) => tradeExtras.filter((e) => e.group === group);
     // Every group that asks a question before showing its prices. Laundry and
     // hot tubs both do; the mechanism is the group's, not either of theirs.
-    const gatedGroups = EXTRA_GROUPS.filter((g: any) => g.gate && extrasIn(g.key).length > 0);
+    const gatedGroups = EXTRA_GROUPS.filter(
+        (g: any) => g.gate && !isPricingGroup(g.key) && extrasIn(g.key).length > 0
+    );
 
     const extraOf = (key: string) => extras[key] || { offered: false, price: '', notes: '' };
     const setExtra = (key: string, field: 'offered' | 'price' | 'notes', value: any) =>
@@ -676,6 +714,16 @@ function ApplicationForm() {
 
     return (
         <div className="max-w-3xl md:max-w-4xl mx-auto px-4 sm:px-6 py-10 pb-24">
+            {/* The "Change" link beside the trade is easy to miss; somebody who
+                picked wrong should not have to hunt for the way out. */}
+            <Link
+                href="/services/join?change=1"
+                className="inline-flex items-center gap-1.5 text-sm font-semibold text-slate-600 hover:text-slate-900 mb-6"
+            >
+                <ChevronLeft className="w-4 h-4" />
+                Back
+            </Link>
+
             <h1 className="text-3xl font-bold text-slate-900">Work for holiday lets</h1>
             <p className="text-slate-600 mt-2 mb-8">
                 Cleaning, waste, gardening and maintenance for holiday cottages across Dumfries
@@ -1019,6 +1067,59 @@ function ApplicationForm() {
                     </section>
                 )}
 
+                {trade === 'droplet' && (
+                    <section className="mb-8">
+                        <h2 className="text-sm font-semibold text-slate-900 mb-1.5">Other ways to price</h2>
+                        <p className="text-sm text-slate-500 mb-4">
+                            Fill in whichever you actually use and leave the rest blank. We are asking
+                            window cleaners which of these fits before we settle on one.
+                        </p>
+
+                        <div className="space-y-4">
+                            <div className="rounded-xl border border-slate-300 p-4">
+                                <h3 className="text-sm font-semibold text-slate-900 mb-3">
+                                    Call-out plus a rate per pane
+                                </h3>
+                                <div className="space-y-2.5">{priceRows('pane_flat')}</div>
+                            </div>
+
+                            <div className="rounded-xl border border-slate-300 p-4">
+                                <h3 className="text-sm font-semibold text-slate-900 mb-1">
+                                    A rate per pane, by storey
+                                </h3>
+                                <p className="text-sm text-slate-500 mb-3">
+                                    For where the ladder work is what costs.
+                                </p>
+                                <div className="space-y-2.5">{priceRows('pane_storey')}</div>
+                            </div>
+
+                            <div className="rounded-xl border border-slate-300 p-4">
+                                <h3 className="text-sm font-semibold text-slate-900 mb-3">
+                                    Quote each job
+                                </h3>
+                                {extrasIn('quote').map((extra) => {
+                                    const entry = extraOf(extra.key);
+                                    return (
+                                        <label key={extra.key} className="flex items-start gap-3 cursor-pointer">
+                                            <input
+                                                type="checkbox"
+                                                checked={entry.offered}
+                                                onChange={(e) => setExtra(extra.key, 'offered', e.target.checked)}
+                                                className="mt-0.5 w-4 h-4 rounded border-slate-300 shrink-0"
+                                            />
+                                            <span className="text-sm text-slate-900">{extra.label}</span>
+                                        </label>
+                                    );
+                                })}
+                                <p className="text-sm text-slate-500 mt-2">
+                                    No prices up front — the owner sends what they want and you reply with a
+                                    figure.
+                                </p>
+                            </div>
+                        </div>
+                    </section>
+                )}
+
                 {model === 'callout_hourly' && (
                     <section className="mb-8">
                         <h2 className="text-sm font-semibold text-slate-900 mb-1.5">Your rates</h2>
@@ -1071,7 +1172,7 @@ function ApplicationForm() {
                     where it matters: a toggle is comparison, a priced one is
                     part of the ceiling, and a reimbursed one is money that
                     never comes near us. */}
-                {tradeExtras.length > 0 && (
+                {offerings.length > 0 && (
                     <section className="mb-8">
                         <h2 className="text-sm font-semibold text-slate-900 mb-1.5">What else do you offer?</h2>
                         <p className="text-sm text-slate-500 mb-4">

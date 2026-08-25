@@ -27,6 +27,8 @@ const {
     extrasProblems,
     groupIsOffered,
     groupGate,
+    offeringsFor,
+    isPricingGroup,
     EXTRA_GROUPS,
     submitProblems,
     HOST_TRADES,
@@ -135,6 +137,9 @@ test('window cleaning charges for height, and does not ask whether they go up', 
     // priced rather than offered or withheld.
     assert.deepEqual(keys, [
         'pressure_washing', 'gutter_cleaning', 'fascias_soffits', 'solar_panels',
+        'callout_base', 'pane_rate',
+        'pane_ground', 'pane_first', 'pane_second_plus',
+        'quote_per_job',
         'upstairs_surcharge', 'high_access_surcharge',
     ]);
     assert.equal(extraByKey('upstairs_windows'), null);
@@ -142,34 +147,70 @@ test('window cleaning charges for height, and does not ask whether they go up', 
     assert.equal(extraByKey('high_access_surcharge').type, 'priced');
 });
 
-test('the four things a window cleaner turns up to do are toggles, not prices', () => {
-    // Shown so a host can see what a cleaner covers. Pricing comes once real
-    // window cleaners have said how they want to charge for them.
-    for (const key of ['pressure_washing', 'gutter_cleaning', 'fascias_soffits', 'solar_panels']) {
+test('each extra service is asked, then priced, on its own', () => {
+    // Same shape as the laundry gate: a question, then one price. Each has its
+    // own group so switching one on does not reveal the other three.
+    const pairs = [
+        ['pressure_washing', 'svc_pressure'],
+        ['gutter_cleaning', 'svc_gutter'],
+        ['fascias_soffits', 'svc_fascias'],
+        ['solar_panels', 'svc_solar'],
+    ];
+
+    for (const [key, group] of pairs) {
         const extra = extraByKey(key);
-        assert.equal(extra.trade, 'droplet', key + ' belongs to window cleaning');
-        assert.equal(extra.type, 'toggle', key + ' carries no price yet');
-        assert.equal(extra.group, 'about');
+        assert.equal(extra.trade, 'droplet');
+        assert.equal(extra.type, 'priced', key + ' takes a price now');
+        assert.equal(extra.group, group, key + ' has a gate of its own');
+        assert.ok(groupGate(group), group + ' needs a question in front of it');
     }
+
+    // One group each, so they cannot reveal one another.
+    assert.equal(new Set(pairs.map((p) => p[1])).size, 4);
 });
 
-test('none of the four adds anything to a ceiling', () => {
-    const clean = serviceCeiling({ bandPrice: 35 }, extrasFor('droplet'));
-    const withAll = serviceCeiling(
+test('the four pricing structures are all on the page at once', () => {
+    const shapes = {
+        pane_flat: ['callout_base', 'pane_rate'],
+        pane_storey: ['pane_ground', 'pane_first', 'pane_second_plus'],
+        quote: ['quote_per_job'],
+    };
+
+    for (const group of Object.keys(shapes)) {
+        const keys = extrasFor('droplet').filter((e: any) => e.group === group).map((e: any) => e.key);
+        assert.deepEqual(keys, (shapes as any)[group]);
+        assert.equal(isPricingGroup(group), true, group + ' is a way of pricing, not a thing offered');
+        assert.equal(groupGate(group), null, 'nothing is hidden behind a toggle — they are all visible');
+    }
+
+    // Quote-per-job carries no price at all, by definition.
+    assert.equal(extraByKey('quote_per_job').type, 'toggle');
+});
+
+test('a pricing structure is never summed as if it were an extra', () => {
+    // The trap: the structures are priced rows too, so a ceiling built from
+    // the whole catalogue would add a per-pane rate to a band price and to
+    // every other structure at once. Ceilings are built from offeringsFor,
+    // which leaves them out.
+    const offered = offeringsFor('droplet').map((e: any) => e.key);
+
+    for (const key of ['callout_base', 'pane_rate', 'pane_ground', 'pane_first', 'pane_second_plus', 'quote_per_job']) {
+        assert.equal(offered.indexOf(key), -1, key + ' must not be offered as an extra');
+    }
+
+    const ceiling = serviceCeiling(
         {
             bandPrice: 35,
             extras: {
-                pressure_washing: { offered: true, price: 50 },
+                pane_rate: { offered: true, price: 2.5, quantity: 40 },
+                callout_base: { offered: true, price: 20 },
                 gutter_cleaning: { offered: true, price: 60 },
-                fascias_soffits: { offered: true, price: 40 },
-                solar_panels: { offered: true, price: 30 },
             },
         },
-        extrasFor('droplet')
+        offeringsFor('droplet')
     );
 
-    assert.equal(withAll, clean, 'a toggle is never a line on a bill, whatever is attached to it');
-    assert.equal(withAll, 35);
+    assert.equal(ceiling, 95, 'the band plus the gutter clean — not the per-pane rate as well');
 });
 
 test('a storey surcharge is a flat amount, not a rate per anything', () => {
