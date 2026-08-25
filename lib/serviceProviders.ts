@@ -310,6 +310,15 @@ export function bandForPlot(plotBand: string | null | undefined): string | null 
 // Maintenance is priced as a call-out plus an hourly rate, so the total only
 // exists once the job is done — and nothing yet confirms that a job is done.
 // Providers can sign up; they cannot be requested until it does.
+// Whether a band price offers the optional "usually takes" guide.
+//
+// It earns its place on a changeover or a garden visit, where an hour either
+// way is worth knowing. Window cleaning is quick work by the nature of it, and
+// the guide is noise on every band.
+export function showsTimeGuide(trade: string): boolean {
+    return trade !== 'droplet';
+}
+
 export function canBeRequested(trade: string): boolean {
     return pricingModelFor(trade) !== 'callout_hourly';
 }
@@ -504,14 +513,8 @@ export const SERVICE_EXTRAS: ServiceExtra[] = [
     },
     // --- window cleaning ---------------------------------------------------
     //
-    // The toggle and the surcharge are separate on purpose. A blank surcharge
-    // on its own could not tell "I go upstairs and it costs no more" from "I
-    // do not go upstairs", and those are opposite answers to a host with a
-    // two-storey cottage.
-    {
-        key: 'upstairs_windows', trade: 'droplet', type: 'toggle', group: 'about',
-        label: 'I clean upstairs windows',
-    },
+    // No "do you go upstairs" toggle: they use long poles, so it is not a real
+    // distinction. Height is priced, not offered or withheld.
     {
         key: 'upstairs_surcharge', trade: 'droplet', type: 'priced', group: 'priced',
         label: 'Extra for upstairs windows',

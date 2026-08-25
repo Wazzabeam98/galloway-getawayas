@@ -128,15 +128,13 @@ test('a trade with no extras yet has none rather than the cleaning ones', () => 
     assert.deepEqual(extrasFor('spanner'), []);
 });
 
-test('window cleaning charges for height, and says whether it goes up at all', () => {
+test('window cleaning charges for height, and does not ask whether they go up', () => {
     const keys = extrasFor('droplet').map((e: any) => e.key);
 
-    assert.deepEqual(keys, ['upstairs_windows', 'upstairs_surcharge', 'high_access_surcharge']);
-
-    // The toggle and the surcharge are separate because a blank surcharge on
-    // its own cannot tell "I go upstairs and it costs no more" from "I do not
-    // go upstairs" — opposite answers to a host with a two-storey cottage.
-    assert.equal(extraByKey('upstairs_windows').type, 'toggle');
+    // Long poles: going upstairs is not a real distinction, so height is
+    // priced rather than offered or withheld.
+    assert.deepEqual(keys, ['upstairs_surcharge', 'high_access_surcharge']);
+    assert.equal(extraByKey('upstairs_windows'), null);
     assert.equal(extraByKey('upstairs_surcharge').type, 'priced');
     assert.equal(extraByKey('high_access_surcharge').type, 'priced');
 });

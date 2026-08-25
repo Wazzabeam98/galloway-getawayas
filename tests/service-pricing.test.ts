@@ -25,6 +25,7 @@ const {
     storeyLabel,
     STOREY_BANDS,
     canBeRequested,
+    showsTimeGuide,
     pricingProblems,
     submitProblems,
     BEDROOM_BANDS,
@@ -75,6 +76,12 @@ test('the storey bands say what the cleaner faces, not how many floors', () => {
         false,
         '"two storeys" is counted differently depending on whether the ground floor is one'
     );
+});
+
+test('window cleaning offers no time guide, the banded trades do', () => {
+    assert.equal(showsTimeGuide('droplet'), false, 'quick work — a guide on every band is noise');
+    assert.equal(showsTimeGuide('sponge'), true, 'an hour either way on a changeover is worth knowing');
+    assert.equal(showsTimeGuide('trees'), true);
 });
 
 test('a storey band is only a band if it is one of ours', () => {

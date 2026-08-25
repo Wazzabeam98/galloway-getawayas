@@ -3,9 +3,9 @@
 import { useEffect, useState } from 'react';
 import { useRouter, useSearchParams } from 'next/navigation';
 import { createClientComponentClient } from '@supabase/auth-helpers-nextjs';
-import { Sparkles, Wrench, Trees, Droplet, Trash2, Check } from 'lucide-react';
+import { Sparkles, Wrench, Trees, Droplet, Trash2 } from 'lucide-react';
 import { Suspense } from 'react';
-import { tradesFor, TRIAL_DAYS } from '@/lib/serviceProviders';
+import { tradesFor } from '@/lib/serviceProviders';
 
 const TRADE_ICONS: Record<string, any> = {
     sponge: Sparkles,
@@ -100,10 +100,6 @@ function TradePicker() {
                 })}
             </div>
 
-            <p className="text-sm text-slate-500 flex items-center gap-1.5 mt-8">
-                <Check className="w-4 h-4 text-emerald-700" />
-                Free for your first {TRIAL_DAYS} days
-            </p>
         </div>
     );
 }

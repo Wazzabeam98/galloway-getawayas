@@ -18,6 +18,7 @@ import {
     extrasProblems,
     imageryFor,
     initialsFor,
+    showsTimeGuide,
     groupIsOffered,
     groupGate,
     EXTRA_GROUPS,
@@ -570,8 +571,7 @@ function ApplicationForm() {
                     <section className="mb-8">
                         <h2 className="text-sm font-semibold text-slate-900 mb-1.5">Your logo</h2>
                         <p className="text-sm text-slate-500 mb-3">
-                            Optional. If you have not got one we will show your initials, which is
-                            perfectly normal and does not count against you.
+                            Optional. If you have not got one we will show your initials.
                         </p>
 
                         <div className="flex items-center gap-4">
@@ -662,7 +662,7 @@ function ApplicationForm() {
                         value={description}
                         onChange={(e) => setDescription(e.target.value)}
                         rows={5}
-                        placeholder="What you do, how long you have been doing it, anything that makes you the right choice."
+                        placeholder="What do you offer? Describe your business."
                         className="w-full md:max-w-xl rounded-xl border border-slate-300 px-4 py-3 focus:outline-none focus:ring-2 focus:ring-emerald-700"
                     />
                     {problemFor('description') && (
@@ -711,7 +711,7 @@ function ApplicationForm() {
                                                 thing on the page for the least
                                                 it does — so it is a link until
                                                 somebody wants it. */}
-                                            {hoursOpen[band.key] ? (
+                                            {!showsTimeGuide(trade) ? null : hoursOpen[band.key] ? (
                                                 <div className="mt-2.5">
                                                     <label className="block text-xs font-semibold text-slate-500 mb-1">
                                                         Usually takes
