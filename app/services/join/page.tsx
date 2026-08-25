@@ -88,91 +88,100 @@ export default function JoinAsProvider() {
 
     useEffect(() => {
         const load = async () => {
-            const { data: { session } } = await supabase.auth.getSession();
-            setSession(session);
+            // Anything in here that throws used to leave the page on
+            // "Loading…" for good, because setLoading(false) only ran on the
+            // way out of the happy path. A truncated auth cookie is enough to
+            // do it — the Supabase client throws while it is being built, so
+            // not one request is even attempted and the screen never changes.
+            try {
+                const { data: { session } } = await supabase.auth.getSession();
+                setSession(session);
 
-            if (!session) {
+                if (!session) return;
+
+                const { data: existing } = await supabase
+                    .from('service_providers')
+                    .select('id, business_name, trade, description, contact_email, contact_phone, audience, photos, logo, status, review_note, callout_fee, hourly_rate')
+                    .eq('owner_id', session.user.id)
+                    .maybeSingle();
+
+                if (existing) {
+                    setProviderId(existing.id);
+                    setBusinessName(existing.business_name || '');
+                    setTrade(existing.trade || 'sponge');
+                    setDescription(existing.description || '');
+                    setContactEmail(existing.contact_email || session.user.email || '');
+                    setContactPhone(existing.contact_phone || '');
+                    setPhotos(existing.photos || []);
+                    setLogo(existing.logo || null);
+                    setStatus(existing.status || 'draft');
+                    setReviewNote(existing.review_note || null);
+                    setCalloutFee(existing.callout_fee === null || existing.callout_fee === undefined ? '' : String(existing.callout_fee));
+                    setHourlyRate(existing.hourly_rate === null || existing.hourly_rate === undefined ? '' : String(existing.hourly_rate));
+
+                    const { data: priceRows } = await supabase
+                        .from('service_provider_prices')
+                        .select('band_key, price, typical_hours')
+                        .eq('provider_id', existing.id);
+
+                    const { data: extraRows } = await supabase
+                        .from('service_provider_extras')
+                        .select('extra_key, offered, price, notes')
+                        .eq('provider_id', existing.id);
+
+                    const loadedExtras: Record<string, { offered: boolean; price: string; notes: string }> = {};
+                    for (const row of extraRows || []) {
+                        loadedExtras[row.extra_key] = {
+                            offered: row.offered === true,
+                            price: row.price === null || row.price === undefined ? '' : String(row.price),
+                            notes: row.notes || '',
+                        };
+                    }
+                    setExtras(loadedExtras);
+                    const t = existing.trade || 'sponge';
+                    setGateOpen({
+                        laundry: groupIsOffered('laundry', t, loadedExtras),
+                        hot_tub: groupIsOffered('hot_tub', t, loadedExtras),
+                    });
+
+                    const loaded: Record<string, { price: string; typical_hours: string }> = {};
+                    for (const row of priceRows || []) {
+                        loaded[row.band_key] = {
+                            price: String(row.price),
+                            typical_hours: row.typical_hours === null || row.typical_hours === undefined
+                                ? ''
+                                : String(row.typical_hours),
+                        };
+                    }
+                    setPrices(loaded);
+
+                    const openHours: Record<string, boolean> = {};
+                    for (const key of Object.keys(loaded)) {
+                        if (loaded[key].typical_hours) openHours[key] = true;
+                    }
+                    setHoursOpen(openHours);
+
+                    const { data: areaRows } = await supabase
+                        .from('service_areas')
+                        .select('id, label, radius_miles')
+                        .eq('provider_id', existing.id);
+
+                    setAreas((areaRows || []).map((a: any) => ({
+                        id: a.id,
+                        town: a.label,
+                        radius_miles: Number(a.radius_miles),
+                    })));
+                } else {
+                    setContactEmail(session.user.email || '');
+                }
+
+            } catch (err) {
+                // Nothing to show them but the empty form; a stuck spinner is
+                // worse than a form that starts blank.
+                toast.error('We could not load your details. Try refreshing.', { theme: 'colored' });
+            } finally {
                 setLoading(false);
-                return;
             }
-
-            const { data: existing } = await supabase
-                .from('service_providers')
-                .select('id, business_name, trade, description, contact_email, contact_phone, audience, photos, logo, status, review_note, callout_fee, hourly_rate')
-                .eq('owner_id', session.user.id)
-                .maybeSingle();
-
-            if (existing) {
-                setProviderId(existing.id);
-                setBusinessName(existing.business_name || '');
-                setTrade(existing.trade || 'sponge');
-                setDescription(existing.description || '');
-                setContactEmail(existing.contact_email || session.user.email || '');
-                setContactPhone(existing.contact_phone || '');
-                setPhotos(existing.photos || []);
-                setLogo(existing.logo || null);
-                setStatus(existing.status || 'draft');
-                setReviewNote(existing.review_note || null);
-                setCalloutFee(existing.callout_fee === null || existing.callout_fee === undefined ? '' : String(existing.callout_fee));
-                setHourlyRate(existing.hourly_rate === null || existing.hourly_rate === undefined ? '' : String(existing.hourly_rate));
-
-                const { data: priceRows } = await supabase
-                    .from('service_provider_prices')
-                    .select('band_key, price, typical_hours')
-                    .eq('provider_id', existing.id);
-
-                const { data: extraRows } = await supabase
-                    .from('service_provider_extras')
-                    .select('extra_key, offered, price, notes')
-                    .eq('provider_id', existing.id);
-
-                const loadedExtras: Record<string, { offered: boolean; price: string; notes: string }> = {};
-                for (const row of extraRows || []) {
-                    loadedExtras[row.extra_key] = {
-                        offered: row.offered === true,
-                        price: row.price === null || row.price === undefined ? '' : String(row.price),
-                        notes: row.notes || '',
-                    };
-                }
-                setExtras(loadedExtras);
-                const t = existing.trade || 'sponge';
-                setGateOpen({
-                    laundry: groupIsOffered('laundry', t, loadedExtras),
-                    hot_tub: groupIsOffered('hot_tub', t, loadedExtras),
-                });
-
-                const loaded: Record<string, { price: string; typical_hours: string }> = {};
-                for (const row of priceRows || []) {
-                    loaded[row.band_key] = {
-                        price: String(row.price),
-                        typical_hours: row.typical_hours === null || row.typical_hours === undefined
-                            ? ''
-                            : String(row.typical_hours),
-                    };
-                }
-                setPrices(loaded);
-
-                const openHours: Record<string, boolean> = {};
-                for (const key of Object.keys(loaded)) {
-                    if (loaded[key].typical_hours) openHours[key] = true;
-                }
-                setHoursOpen(openHours);
-
-                const { data: areaRows } = await supabase
-                    .from('service_areas')
-                    .select('id, label, radius_miles')
-                    .eq('provider_id', existing.id);
-
-                setAreas((areaRows || []).map((a: any) => ({
-                    id: a.id,
-                    town: a.label,
-                    radius_miles: Number(a.radius_miles),
-                })));
-            } else {
-                setContactEmail(session.user.email || '');
-            }
-
-            setLoading(false);
         };
         load();
     }, [supabase]);
@@ -474,7 +483,7 @@ export default function JoinAsProvider() {
     const locked = status === 'pending_review';
 
     return (
-        <div className="max-w-3xl mx-auto px-4 sm:px-6 py-10 pb-24">
+        <div className="max-w-3xl md:max-w-4xl mx-auto px-4 sm:px-6 py-10 pb-24">
             <h1 className="text-3xl font-bold text-slate-900">Work for holiday lets</h1>
             <p className="text-slate-600 mt-2 mb-8">
                 Cleaning, waste, gardening and maintenance for holiday cottages across Dumfries
@@ -524,18 +533,91 @@ export default function JoinAsProvider() {
             )}
 
             <fieldset disabled={locked} className={locked ? 'opacity-70' : ''}>
-                <section className="mb-8">
-                    <label className="block text-sm font-semibold text-slate-900 mb-1.5">Business name</label>
-                    <input
-                        value={businessName}
-                        onChange={(e) => setBusinessName(e.target.value)}
-                        placeholder="Solway Sparkle"
-                        className="w-full rounded-xl border border-slate-300 px-4 py-3 focus:outline-none focus:ring-2 focus:ring-emerald-700"
-                    />
-                    {problemFor('business_name') && (
-                        <p className="text-sm text-rose-700 mt-1.5">{problemFor('business_name')!.message}</p>
-                    )}
-                </section>
+                <div className="md:grid md:grid-cols-2 md:gap-8 md:items-start">
+                    <section className="mb-8">
+                        <label className="block text-sm font-semibold text-slate-900 mb-1.5">Business name</label>
+                        <input
+                            type="text"
+                            value={businessName}
+                            onChange={(e) => setBusinessName(e.target.value)}
+                            placeholder="Solway Sparkle"
+                            className="w-full md:max-w-sm rounded-xl border border-slate-300 px-3.5 py-3 focus:outline-none focus:ring-2 focus:ring-emerald-700"
+                        />
+                        {problemFor('business_name') && (
+                            <p className="text-sm text-rose-700 mt-1.5">{problemFor('business_name')!.message}</p>
+                        )}
+                    </section>
+
+                {imageryFor(trade) === 'logo' ? (
+                    <section className="mb-8">
+                        <h2 className="text-sm font-semibold text-slate-900 mb-1.5">Your logo</h2>
+                        <p className="text-sm text-slate-500 mb-3">
+                            Optional. If you have not got one we will show your initials, which is
+                            perfectly normal and does not count against you.
+                        </p>
+
+                        <div className="flex items-center gap-4">
+                            <div className="w-20 h-20 shrink-0 rounded-full overflow-hidden bg-slate-900 text-white flex items-center justify-center text-xl font-semibold">
+                                {logo ? (
+                                    <img src={getImageUrl(logo)} alt="" className="w-full h-full object-cover" />
+                                ) : (
+                                    initialsFor(businessName) || <Sparkles className="w-6 h-6" strokeWidth={1.5} />
+                                )}
+                            </div>
+
+                            <div className="flex flex-wrap gap-2">
+                                <label className="inline-flex items-center gap-2 rounded-xl border-2 border-dashed border-slate-300 px-4 py-2.5 cursor-pointer text-sm text-slate-600 hover:border-slate-400">
+                                    <Plus className="w-4 h-4" />
+                                    {uploadingLogo ? 'Uploading…' : logo ? 'Replace' : 'Add a logo'}
+                                    <input
+                                        type="file"
+                                        accept="image/png, image/jpeg"
+                                        onChange={uploadLogo}
+                                        className="hidden"
+                                        disabled={uploadingLogo}
+                                    />
+                                </label>
+
+                                {logo && (
+                                    <button
+                                        type="button"
+                                        onClick={() => setLogo(null)}
+                                        className="inline-flex items-center gap-1.5 rounded-xl border border-slate-300 px-4 py-2.5 text-sm text-slate-600 hover:border-slate-500"
+                                    >
+                                        <X className="w-3.5 h-3.5" />
+                                        Remove
+                                    </button>
+                                )}
+                            </div>
+                        </div>
+                    </section>
+                ) : (
+                    <section className="mb-8">
+                        <h2 className="text-sm font-semibold text-slate-900 mb-3">Photos of your work</h2>
+                        <div className="grid grid-cols-3 gap-2 mb-3">
+                            {photos.map((p) => (
+                                <div key={p} className="relative aspect-[4/3] rounded-xl overflow-hidden bg-slate-100">
+                                    <img src={getImageUrl(p)} alt="" className="w-full h-full object-cover" />
+                                    <button
+                                        type="button"
+                                        onClick={() => setPhotos((prev) => prev.filter((x) => x !== p))}
+                                        aria-label="Remove photo"
+                                        className="absolute top-1.5 right-1.5 w-7 h-7 rounded-full bg-white/90 flex items-center justify-center"
+                                    >
+                                        <X className="w-3.5 h-3.5" />
+                                    </button>
+                                </div>
+                            ))}
+                        </div>
+                        <label className="inline-flex items-center gap-2 rounded-xl border-2 border-dashed border-slate-300 px-4 py-3 cursor-pointer text-sm text-slate-600 hover:border-slate-400">
+                            <Plus className="w-4 h-4" />
+                            {processingPhotos ? 'Preparing your photos…' : 'Add photos'}
+                            <input type="file" accept="image/png, image/jpeg" multiple onChange={addPhotos} className="hidden" disabled={processingPhotos} />
+                        </label>
+                    </section>
+                )}
+                </div>
+
 
                 <section className="mb-8">
                     <h2 className="text-sm font-semibold text-slate-900 mb-1.5">What do you do?</h2>
@@ -564,12 +646,14 @@ export default function JoinAsProvider() {
 
                 <section className="mb-8">
                     <label className="block text-sm font-semibold text-slate-900 mb-1.5">About your business</label>
+                    {/* Capped to a measure rather than the window: past about
+                        70 characters a line is harder to read, not easier. */}
                     <textarea
                         value={description}
                         onChange={(e) => setDescription(e.target.value)}
                         rows={5}
                         placeholder="What you do, how long you have been doing it, anything that makes you the right choice."
-                        className="w-full rounded-xl border border-slate-300 px-4 py-3 focus:outline-none focus:ring-2 focus:ring-emerald-700"
+                        className="w-full md:max-w-xl rounded-xl border border-slate-300 px-4 py-3 focus:outline-none focus:ring-2 focus:ring-emerald-700"
                     />
                     {problemFor('description') && (
                         <p className="text-sm text-rose-700 mt-1.5">{problemFor('description')!.message}</p>
@@ -586,7 +670,7 @@ export default function JoinAsProvider() {
                             Leave blank any size you do not cover.
                         </p>
 
-                        <div className="space-y-3">
+                        <div className="space-y-3 md:space-y-0 md:grid md:grid-cols-3 md:gap-4">
                             {bands.map((band) => {
                                 const entry = prices[band.key] || { price: '', typical_hours: '' };
                                 const priceProblem = problemFor('price_' + band.key);
@@ -747,7 +831,7 @@ export default function JoinAsProvider() {
                         </p>
 
                         {extrasIn('about').length > 0 && (
-                            <div className="space-y-2 mb-6">
+                            <div className="space-y-2 md:space-y-0 md:grid md:grid-cols-2 md:gap-3 mb-6">
                                 {extrasIn('about').map((extra) => (
                                     <label
                                         key={extra.key}
@@ -770,6 +854,7 @@ export default function JoinAsProvider() {
                             </div>
                         )}
 
+                        <div className="md:grid md:grid-cols-2 md:gap-4 md:items-start">
                         {gatedGroups.map((group: any) => {
                             const open = gateOpen[group.key];
                             const rows = extrasIn(group.key);
@@ -848,6 +933,7 @@ export default function JoinAsProvider() {
                                 </div>
                             );
                         })}
+                        </div>
 
                         {extrasIn('reimbursed').length > 0 && (
                             <div>
@@ -855,7 +941,7 @@ export default function JoinAsProvider() {
                                     Bought for the owner and paid back
                                 </h3>
 
-                                <div className="space-y-2">
+                                <div className="space-y-2 md:space-y-0 md:grid md:grid-cols-3 md:gap-3">
                                     {extrasIn('reimbursed').map((extra) => {
                                         const entry = extraOf(extra.key);
 
@@ -984,75 +1070,6 @@ export default function JoinAsProvider() {
                         <p className="text-sm text-rose-700 mt-2">{problemFor('areas')!.message}</p>
                     )}
                 </section>
-
-                {imageryFor(trade) === 'logo' ? (
-                    <section className="mb-8">
-                        <h2 className="text-sm font-semibold text-slate-900 mb-1.5">Your logo</h2>
-                        <p className="text-sm text-slate-500 mb-3">
-                            Optional. If you have not got one we will show your initials, which is
-                            perfectly normal and does not count against you.
-                        </p>
-
-                        <div className="flex items-center gap-4">
-                            <div className="w-20 h-20 shrink-0 rounded-full overflow-hidden bg-slate-900 text-white flex items-center justify-center text-xl font-semibold">
-                                {logo ? (
-                                    <img src={getImageUrl(logo)} alt="" className="w-full h-full object-cover" />
-                                ) : (
-                                    initialsFor(businessName) || <Sparkles className="w-6 h-6" strokeWidth={1.5} />
-                                )}
-                            </div>
-
-                            <div className="flex flex-wrap gap-2">
-                                <label className="inline-flex items-center gap-2 rounded-xl border-2 border-dashed border-slate-300 px-4 py-2.5 cursor-pointer text-sm text-slate-600 hover:border-slate-400">
-                                    <Plus className="w-4 h-4" />
-                                    {uploadingLogo ? 'Uploading…' : logo ? 'Replace' : 'Add a logo'}
-                                    <input
-                                        type="file"
-                                        accept="image/png, image/jpeg"
-                                        onChange={uploadLogo}
-                                        className="hidden"
-                                        disabled={uploadingLogo}
-                                    />
-                                </label>
-
-                                {logo && (
-                                    <button
-                                        type="button"
-                                        onClick={() => setLogo(null)}
-                                        className="inline-flex items-center gap-1.5 rounded-xl border border-slate-300 px-4 py-2.5 text-sm text-slate-600 hover:border-slate-500"
-                                    >
-                                        <X className="w-3.5 h-3.5" />
-                                        Remove
-                                    </button>
-                                )}
-                            </div>
-                        </div>
-                    </section>
-                ) : (
-                    <section className="mb-8">
-                        <h2 className="text-sm font-semibold text-slate-900 mb-3">Photos of your work</h2>
-                        <div className="grid grid-cols-3 gap-2 mb-3">
-                            {photos.map((p) => (
-                                <div key={p} className="relative aspect-[4/3] rounded-xl overflow-hidden bg-slate-100">
-                                    <img src={getImageUrl(p)} alt="" className="w-full h-full object-cover" />
-                                    <button
-                                        type="button"
-                                        onClick={() => setPhotos((prev) => prev.filter((x) => x !== p))}
-                                        aria-label="Remove photo"
-                                        className="absolute top-1.5 right-1.5 w-7 h-7 rounded-full bg-white/90 flex items-center justify-center"
-                                    >
-                                        <X className="w-3.5 h-3.5" />
-                                    </button>
-                                </div>
-                            ))}
-                        </div>
-                        <label className="inline-flex items-center gap-2 rounded-xl border-2 border-dashed border-slate-300 px-4 py-3 cursor-pointer text-sm text-slate-600 hover:border-slate-400">
-                            <Plus className="w-4 h-4" />
-                            {processingPhotos ? 'Preparing your photos…' : 'Add photos'}
-                            <input type="file" accept="image/png, image/jpeg" multiple onChange={addPhotos} className="hidden" disabled={processingPhotos} />
-                        </label>
-                    </section>
-                )}
 
                 <section className="mb-8 grid sm:grid-cols-2 gap-4">
                     <div>
