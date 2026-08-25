@@ -13,6 +13,8 @@ import {
     audienceForTrade,
     extrasFor,
     extrasProblems,
+    imageryFor,
+    initialsFor,
     groupIsOffered,
     groupGate,
     COVERAGE_TOWNS,
@@ -62,6 +64,8 @@ export default function JoinAsProvider() {
     const [contactEmail, setContactEmail] = useState('');
     const [contactPhone, setContactPhone] = useState('');
     const [photos, setPhotos] = useState<string[]>([]);
+    const [logo, setLogo] = useState<string | null>(null);
+    const [uploadingLogo, setUploadingLogo] = useState(false);
     const [areas, setAreas] = useState<AreaRow[]>([]);
 
     const [saving, setSaving] = useState(false);
@@ -90,7 +94,7 @@ export default function JoinAsProvider() {
 
             const { data: existing } = await supabase
                 .from('service_providers')
-                .select('id, business_name, trade, description, contact_email, contact_phone, audience, photos, status, review_note, callout_fee, hourly_rate')
+                .select('id, business_name, trade, description, contact_email, contact_phone, audience, photos, logo, status, review_note, callout_fee, hourly_rate')
                 .eq('owner_id', session.user.id)
                 .maybeSingle();
 
@@ -102,6 +106,7 @@ export default function JoinAsProvider() {
                 setContactEmail(existing.contact_email || session.user.email || '');
                 setContactPhone(existing.contact_phone || '');
                 setPhotos(existing.photos || []);
+                setLogo(existing.logo || null);
                 setStatus(existing.status || 'draft');
                 setReviewNote(existing.review_note || null);
                 setCalloutFee(existing.callout_fee === null || existing.callout_fee === undefined ? '' : String(existing.callout_fee));
@@ -223,6 +228,34 @@ export default function JoinAsProvider() {
 
     // One row per circle. The town carries the coordinates, so a tradesperson
     // picks a place and a distance rather than a latitude.
+    const uploadLogo = async (e: React.ChangeEvent<HTMLInputElement>) => {
+        const file = (e.target.files || [])[0];
+        if (!file || !session) return;
+
+        setUploadingLogo(true);
+
+        try {
+            const ready = await compressImage(file);
+            const path = 'providers/logo-' + session.user.id + '-' + Date.now() + '.jpg';
+
+            const { error } = await supabase.storage
+                .from(Env.S3_BUCKET)
+                .upload(path, ready, { contentType: 'image/jpeg' });
+
+            if (error) {
+                toast.error(error.message, { theme: 'colored' });
+            } else {
+                setLogo(path);
+            }
+        } catch (err) {
+            toast.error('That image could not be read. Try a different one.', { theme: 'colored' });
+        }
+
+        setUploadingLogo(false);
+        // So the same file can be chosen again after a failure.
+        e.target.value = '';
+    };
+
     const addArea = () => {
         const used = areas.map((a) => a.town);
         const next = COVERAGE_TOWNS.filter((t) => used.indexOf(t.label) === -1)[0];
@@ -253,6 +286,7 @@ export default function JoinAsProvider() {
             contact_phone: contactPhone.trim() || null,
             audience: audienceForTrade(trade),
             photos,
+            logo,
             // Only meaningful for a call-out trade; cleared otherwise so a
             // provider who switches trade does not carry a stale rate.
             callout_fee: model === 'callout_hourly' && calloutFee.trim() !== '' ? Number(calloutFee) : null,
@@ -982,29 +1016,74 @@ export default function JoinAsProvider() {
                     )}
                 </section>
 
-                <section className="mb-8">
-                    <h2 className="text-sm font-semibold text-slate-900 mb-3">Photos of your work</h2>
-                    <div className="grid grid-cols-3 gap-2 mb-3">
-                        {photos.map((p) => (
-                            <div key={p} className="relative aspect-[4/3] rounded-xl overflow-hidden bg-slate-100">
-                                <img src={getImageUrl(p)} alt="" className="w-full h-full object-cover" />
-                                <button
-                                    type="button"
-                                    onClick={() => setPhotos((prev) => prev.filter((x) => x !== p))}
-                                    aria-label="Remove photo"
-                                    className="absolute top-1.5 right-1.5 w-7 h-7 rounded-full bg-white/90 flex items-center justify-center"
-                                >
-                                    <X className="w-3.5 h-3.5" />
-                                </button>
+                {imageryFor(trade) === 'logo' ? (
+                    <section className="mb-8">
+                        <h2 className="text-sm font-semibold text-slate-900 mb-1.5">Your logo</h2>
+                        <p className="text-sm text-slate-500 mb-3">
+                            Optional. If you have not got one we will show your initials, which is
+                            perfectly normal and does not count against you.
+                        </p>
+
+                        <div className="flex items-center gap-4">
+                            <div className="w-20 h-20 shrink-0 rounded-full overflow-hidden bg-slate-900 text-white flex items-center justify-center text-xl font-semibold">
+                                {logo ? (
+                                    <img src={getImageUrl(logo)} alt="" className="w-full h-full object-cover" />
+                                ) : (
+                                    initialsFor(businessName) || <Sparkles className="w-6 h-6" strokeWidth={1.5} />
+                                )}
                             </div>
-                        ))}
-                    </div>
-                    <label className="inline-flex items-center gap-2 rounded-xl border-2 border-dashed border-slate-300 px-4 py-3 cursor-pointer text-sm text-slate-600 hover:border-slate-400">
-                        <Plus className="w-4 h-4" />
-                        {processingPhotos ? 'Preparing your photos…' : 'Add photos'}
-                        <input type="file" accept="image/png, image/jpeg" multiple onChange={addPhotos} className="hidden" disabled={processingPhotos} />
-                    </label>
-                </section>
+
+                            <div className="flex flex-wrap gap-2">
+                                <label className="inline-flex items-center gap-2 rounded-xl border-2 border-dashed border-slate-300 px-4 py-2.5 cursor-pointer text-sm text-slate-600 hover:border-slate-400">
+                                    <Plus className="w-4 h-4" />
+                                    {uploadingLogo ? 'Uploading…' : logo ? 'Replace' : 'Add a logo'}
+                                    <input
+                                        type="file"
+                                        accept="image/png, image/jpeg"
+                                        onChange={uploadLogo}
+                                        className="hidden"
+                                        disabled={uploadingLogo}
+                                    />
+                                </label>
+
+                                {logo && (
+                                    <button
+                                        type="button"
+                                        onClick={() => setLogo(null)}
+                                        className="inline-flex items-center gap-1.5 rounded-xl border border-slate-300 px-4 py-2.5 text-sm text-slate-600 hover:border-slate-500"
+                                    >
+                                        <X className="w-3.5 h-3.5" />
+                                        Remove
+                                    </button>
+                                )}
+                            </div>
+                        </div>
+                    </section>
+                ) : (
+                    <section className="mb-8">
+                        <h2 className="text-sm font-semibold text-slate-900 mb-3">Photos of your work</h2>
+                        <div className="grid grid-cols-3 gap-2 mb-3">
+                            {photos.map((p) => (
+                                <div key={p} className="relative aspect-[4/3] rounded-xl overflow-hidden bg-slate-100">
+                                    <img src={getImageUrl(p)} alt="" className="w-full h-full object-cover" />
+                                    <button
+                                        type="button"
+                                        onClick={() => setPhotos((prev) => prev.filter((x) => x !== p))}
+                                        aria-label="Remove photo"
+                                        className="absolute top-1.5 right-1.5 w-7 h-7 rounded-full bg-white/90 flex items-center justify-center"
+                                    >
+                                        <X className="w-3.5 h-3.5" />
+                                    </button>
+                                </div>
+                            ))}
+                        </div>
+                        <label className="inline-flex items-center gap-2 rounded-xl border-2 border-dashed border-slate-300 px-4 py-3 cursor-pointer text-sm text-slate-600 hover:border-slate-400">
+                            <Plus className="w-4 h-4" />
+                            {processingPhotos ? 'Preparing your photos…' : 'Add photos'}
+                            <input type="file" accept="image/png, image/jpeg" multiple onChange={addPhotos} className="hidden" disabled={processingPhotos} />
+                        </label>
+                    </section>
+                )}
 
                 <section className="mb-8 grid sm:grid-cols-2 gap-4">
                     <div>
@@ -1041,7 +1120,7 @@ export default function JoinAsProvider() {
                             <p className="text-sm text-slate-600 mb-4">
                                 You will stay live while we look. Changing your{' '}
                                 <strong className="font-semibold text-slate-800">
-                                    business name, category, description, photos, or who you sell to
+                                    business name, category, description, logo, or who you sell to
                                 </strong>{' '}
                                 means we check it again and email you — your listing stays up the whole
                                 time. Contact details and the areas you cover change straight away, with

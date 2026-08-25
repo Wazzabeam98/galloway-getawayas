@@ -4,7 +4,7 @@ import { cookies } from 'next/headers';
 import Link from 'next/link';
 import { notFound } from 'next/navigation';
 import { getImageUrl } from '@/lib/utils';
-import { tradeLabel, hasUnreviewedChanges, changedFields, fieldLabel } from '@/lib/serviceProviders';
+import { tradeLabel, hasUnreviewedChanges, changedFields, fieldLabel, initialsFor } from '@/lib/serviceProviders';
 import ProviderReviewRow from '@/components/admin/ProviderReviewRow';
 
 export const dynamic = 'force-dynamic';
@@ -42,7 +42,7 @@ export default async function AdminProviders() {
     // are silently piling up.
     const { data: providers, error } = await admin
         .from('service_providers')
-        .select('id, business_name, trade, description, photos, audience, kind, status, plan, trial_ends_at, contact_email, contact_phone, submitted_at, created_at, owner_id, approved_digest, changes_pending_at')
+        .select('id, business_name, trade, description, photos, logo, audience, kind, status, plan, trial_ends_at, contact_email, contact_phone, submitted_at, created_at, owner_id, approved_digest, changes_pending_at')
         .order('submitted_at', { ascending: false, nullsFirst: false });
 
     if (error) {
@@ -114,7 +114,7 @@ export default async function AdminProviders() {
                         {waiting.map((p: any) => (
                             <ProviderReviewRow
                                 key={p.id}
-                                provider={{ ...p, tradeLabel: tradeLabel(p.trade) }}
+                                provider={{ ...p, tradeLabel: tradeLabel(p.trade), logoUrl: p.logo ? getImageUrl(p.logo) : null, initials: initialsFor(p.business_name) }}
                                 areas={areasFor(p.id)}
                                 photoUrls={(p.photos || []).slice(0, 3).map((x: string) => getImageUrl(x))}
                             />
@@ -135,6 +135,8 @@ export default async function AdminProviders() {
                                 provider={{
                                     ...p,
                                     tradeLabel: tradeLabel(p.trade),
+                                    logoUrl: p.logo ? getImageUrl(p.logo) : null,
+                                    initials: initialsFor(p.business_name),
                                     changedFields: changedFields(p).map(fieldLabel),
                                 }}
                                 areas={areasFor(p.id)}
@@ -156,7 +158,7 @@ export default async function AdminProviders() {
                         {rest.map((p: any) => (
                             <ProviderReviewRow
                                 key={p.id}
-                                provider={{ ...p, tradeLabel: tradeLabel(p.trade) }}
+                                provider={{ ...p, tradeLabel: tradeLabel(p.trade), logoUrl: p.logo ? getImageUrl(p.logo) : null, initials: initialsFor(p.business_name) }}
                                 areas={areasFor(p.id)}
                                 photoUrls={(p.photos || []).slice(0, 3).map((x: string) => getImageUrl(x))}
                             />

@@ -87,7 +87,16 @@ export default function ProviderReviewRow({
     return (
         <div className="rounded-2xl border border-slate-200 bg-white p-5">
             <div className="flex flex-wrap items-start justify-between gap-3">
-                <div className="min-w-0">
+                <div className="min-w-0 flex items-start gap-3">
+                    {/* A logo where they have one, initials where they have
+                        not — the same stand-in the account avatars use, so a
+                        firm without one does not look broken. */}
+                    <div className="w-11 h-11 shrink-0 rounded-full overflow-hidden bg-slate-900 text-white flex items-center justify-center text-sm font-semibold">
+                        {provider.logoUrl
+                            ? <img src={provider.logoUrl} alt="" className="w-full h-full object-cover" />
+                            : provider.initials}
+                    </div>
+                    <div className="min-w-0">
                     <h3 className="font-bold text-slate-900">{provider.business_name}</h3>
                     <p className="text-sm text-slate-600 mt-0.5">
                         {provider.tradeLabel}
@@ -95,6 +104,7 @@ export default function ProviderReviewRow({
                         {provider.audience === 'both' ? 'guests and owners' : provider.audience === 'guest' ? 'guests' : 'owners'}
                         {provider.kind === 'in_house' ? ' · in-house' : ''}
                     </p>
+                    </div>
                 </div>
                 <span className={`shrink-0 text-xs font-semibold px-2.5 py-1 rounded-full border ${STATUS_STYLE[provider.status] || STATUS_STYLE.draft}`}>
                     {STATUS_LABEL[provider.status] || provider.status}

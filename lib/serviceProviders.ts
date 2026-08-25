@@ -94,6 +94,7 @@ export const REVIEWABLE_FIELDS = [
     'description',
     'audience',
     'photos',
+    'logo',
 ] as const;
 
 // A fingerprint of the reviewable fields, stable across key order and across
@@ -127,7 +128,13 @@ export function reviewDigest(provider: any): string {
 export function hasUnreviewedChanges(provider: any): boolean {
     if (!provider || provider.status !== 'approved') return false;
     if (!provider.approved_digest) return false;
-    return reviewDigest(provider) !== provider.approved_digest;
+
+    // Field by field, not string against string. Comparing whole digests meant
+    // that adding a field to REVIEWABLE_FIELDS put every approved provider in
+    // the queue at once, because their stored digest could not carry a field
+    // that did not exist when they were approved. changedFields already treats
+    // a field the old digest never held as a new field rather than an edit.
+    return changedFields(provider).length > 0;
 }
 
 // Which of the reviewable fields differ from what was last approved.
@@ -167,6 +174,7 @@ export function fieldLabel(field: string): string {
     if (field === 'description') return 'description';
     if (field === 'audience') return 'who they sell to';
     if (field === 'photos') return 'photos';
+    if (field === 'logo') return 'logo';
     return field;
 }
 
@@ -352,6 +360,40 @@ export function pricingProblems(draft: PricingDraft): Problem[] {
     }
 
     return problems;
+}
+
+// What a provider shows of themselves.
+//
+// Per trade, like the pricing model and the bands, but the default comes from
+// the audience because that is what the question really turns on: an owner
+// hiring a contractor wants to see a business, and a guest buying a cake wants
+// to see the cake.
+//
+// Host trades therefore take a logo and guest trades take work photos. A clean
+// kitchen tells an owner nothing. Kept as a per-trade function rather than a
+// per-audience one so that gardening — the one host trade where before-and-
+// after shots would genuinely sell — is a single entry in TRADE_IMAGERY later
+// rather than a reshape.
+export type Imagery = 'logo' | 'photos';
+
+const TRADE_IMAGERY: Record<string, Imagery> = {};
+
+export function imageryFor(trade: string): Imagery {
+    if (TRADE_IMAGERY[trade]) return TRADE_IMAGERY[trade];
+    return audienceForTrade(trade) === 'guest' ? 'photos' : 'logo';
+}
+
+// A stand-in when there is no logo, the same shape the account avatars use.
+// Plenty of small firms have no logo and it must not look broken.
+export function initialsFor(name: string | null | undefined): string {
+    const words = String(name || '')
+        .split(/[^A-Za-z0-9]+/)
+        .filter((w) => w.length > 0);
+
+    if (words.length === 0) return '';
+    if (words.length === 1) return words[0].charAt(0).toUpperCase();
+
+    return (words[0].charAt(0) + words[1].charAt(0)).toUpperCase();
 }
 
 // ---------------------------------------------------------------------------

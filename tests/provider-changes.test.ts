@@ -39,7 +39,7 @@ const approved = (p: any) => ({ ...p, approved_digest: reviewDigest(p) });
 test('the reviewable fields are the shop window, and nothing else', () => {
     assert.deepEqual(
         [...REVIEWABLE_FIELDS].sort(),
-        ['audience', 'business_name', 'description', 'photos', 'trade']
+        ['audience', 'business_name', 'description', 'logo', 'photos', 'trade']
     );
 });
 
