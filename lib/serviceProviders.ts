@@ -601,6 +601,20 @@ export const EXTRA_GROUPS = [
     { key: 'pane_storey', label: 'Per pane, by storey' },
     { key: 'priced', label: 'Charged on top' },
     { key: 'reimbursed', label: 'Bought for the owner and paid back' },
+    // The maintenance trades, which answer three different questions rather
+    // than one.
+    //
+    // A host with a blocked toilet and guests still in the cottage is not
+    // reading a list of capabilities — they are looking for the person who
+    // deals with that, tonight. A host thinking about next month's gas
+    // certificate is doing something else entirely, and mixing the two put
+    // the urgent half in grey subtitles underneath headings like "I take
+    // emergency call-outs", where nobody searching for a leak would find it.
+    //
+    // So: what has gone wrong, what you can do, and how fast you turn out.
+    { key: 'faults', label: 'Something has gone wrong' },
+    { key: 'planned', label: 'Work booked in advance' },
+    { key: 'availability', label: 'When you turn out' },
 ] as const;
 
 export function groupGate(group: string): string | null {
@@ -616,7 +630,8 @@ export interface ServiceExtra {
     // reimbursed ones, so how it is stored and where it is shown are separate.
     group: 'about' | 'laundry' | 'hot_tub' | 'priced' | 'reimbursed'
         | 'svc_pressure' | 'svc_gutter' | 'svc_fascias' | 'svc_solar'
-        | 'pane_flat' | 'pane_storey';
+        | 'pane_flat' | 'pane_storey'
+        | 'faults' | 'planned' | 'availability';
     label: string;
     hint?: string;
     // Priced only. 'each' means the host says how many when they ask; absent
@@ -728,37 +743,56 @@ export const SERVICE_EXTRAS: ServiceExtra[] = [
 
     // --- electrician -------------------------------------------------------
     //
-    // The maintenance trades are all priced as a call-out plus an hour, so
-    // these are mostly about what somebody actually turns up and does. The
-    // ones worth having are the ones a cottage owner would otherwise have to
-    // ring round and ask.
+    // Three lists, not one, and the order matters: what has gone wrong first,
+    // because that is the search somebody makes with a problem in front of
+    // them. See the note on EXTRA_GROUPS.
     {
-        key: 'elec_emergency', trade: 'electrician', type: 'toggle', group: 'about',
-        label: 'I take emergency call-outs',
-        hint: 'No power, something tripping, a burning smell.',
+        key: 'elec_no_power', trade: 'electrician', type: 'toggle', group: 'faults',
+        label: 'No power at all',
     },
     {
-        key: 'elec_eicr', trade: 'electrician', type: 'toggle', group: 'about',
-        label: 'I do EICR inspections and certificates',
+        key: 'elec_tripping', trade: 'electrician', type: 'toggle', group: 'faults',
+        label: 'Something keeps tripping',
+    },
+    {
+        key: 'elec_burning', trade: 'electrician', type: 'toggle', group: 'faults',
+        label: 'Burning smell or a scorched socket',
+    },
+    {
+        key: 'elec_dead_circuit', trade: 'electrician', type: 'toggle', group: 'faults',
+        label: 'Lights or sockets not working',
+    },
+    {
+        key: 'elec_immersion', trade: 'electrician', type: 'toggle', group: 'faults',
+        label: 'Immersion heater not heating',
+    },
+
+    {
+        key: 'elec_eicr', trade: 'electrician', type: 'toggle', group: 'planned',
+        label: 'EICR inspections and certificates',
         hint: 'A short-term let licence needs one every five years.',
     },
     {
-        key: 'elec_pat', trade: 'electrician', type: 'toggle', group: 'about',
-        label: 'I do PAT testing',
+        key: 'elec_pat', trade: 'electrician', type: 'toggle', group: 'planned',
+        label: 'PAT testing',
         hint: 'How most owners show the appliances in a let are safe.',
     },
     {
-        key: 'elec_alarms', trade: 'electrician', type: 'toggle', group: 'about',
-        label: 'I fit interlinked smoke and heat alarms',
+        key: 'elec_alarms', trade: 'electrician', type: 'toggle', group: 'planned',
+        label: 'Interlinked smoke and heat alarms',
         hint: 'A licence condition, and the standard for every Scottish home since 2022.',
     },
     {
-        key: 'elec_hot_tub', trade: 'electrician', type: 'toggle', group: 'about',
-        label: 'I can wire a hot tub supply',
+        key: 'elec_hot_tub', trade: 'electrician', type: 'toggle', group: 'planned',
+        label: 'Hot tub supply',
     },
     {
-        key: 'elec_ev', trade: 'electrician', type: 'toggle', group: 'about',
-        label: 'I install EV chargers',
+        key: 'elec_ev', trade: 'electrician', type: 'toggle', group: 'planned',
+        label: 'EV chargers',
+    },
+    {
+        key: 'elec_extra_points', trade: 'electrician', type: 'toggle', group: 'planned',
+        label: 'Extra sockets and lighting',
     },
     {
         key: 'elec_eicr_fee', trade: 'electrician', type: 'priced', group: 'priced',
@@ -766,35 +800,84 @@ export const SERVICE_EXTRAS: ServiceExtra[] = [
         hint: 'Leave blank if it depends too much to say.',
     },
 
+    {
+        key: 'elec_same_day', trade: 'electrician', type: 'toggle', group: 'availability',
+        label: 'I turn out same day',
+    },
+    {
+        key: 'elec_out_of_hours', trade: 'electrician', type: 'toggle', group: 'availability',
+        label: 'I answer out of hours and at weekends',
+    },
+    // An empty cottage is the one that gets hurt by this. A tripped supply in
+    // January means no heating tonight and frozen pipes by morning, and there
+    // is nobody there to notice — which is why this sits with the plumber and
+    // the roofer rather than being an electrician's afterthought.
+    {
+        key: 'elec_winter', trade: 'electrician', type: 'toggle', group: 'availability',
+        label: 'I turn out in winter for empty properties',
+    },
+
     // --- joiner ------------------------------------------------------------
     {
-        key: 'joiner_doors_windows', trade: 'joiner', type: 'toggle', group: 'about',
+        key: 'joiner_wont_shut', trade: 'joiner', type: 'toggle', group: 'faults',
+        label: "Door or window won't shut",
+    },
+    {
+        key: 'joiner_lock_broken', trade: 'joiner', type: 'toggle', group: 'faults',
+        label: 'Lock broken or key snapped',
+    },
+    {
+        key: 'joiner_locked_out', trade: 'joiner', type: 'toggle', group: 'faults',
+        label: 'Guest locked out',
+    },
+    {
+        key: 'joiner_broken_furniture', trade: 'joiner', type: 'toggle', group: 'faults',
+        label: 'Broken bed, drawer or furniture',
+    },
+    {
+        key: 'joiner_floorboards', trade: 'joiner', type: 'toggle', group: 'faults',
+        label: 'Damaged floorboards',
+    },
+
+    {
+        key: 'joiner_doors_windows', trade: 'joiner', type: 'toggle', group: 'planned',
         label: 'Doors and windows',
     },
+    // Locks are on both lists on purpose. A snapped key on changeover day and
+    // a planned re-key between seasons are the same tradesman and completely
+    // different jobs.
     {
-        key: 'joiner_locks', trade: 'joiner', type: 'toggle', group: 'about',
-        label: 'Locks and door furniture',
-        hint: 'Changeover day, a key snapped in the lock.',
+        key: 'joiner_locks', trade: 'joiner', type: 'toggle', group: 'planned',
+        label: 'Lock changes and door furniture',
     },
     {
-        key: 'joiner_kitchens', trade: 'joiner', type: 'toggle', group: 'about',
+        key: 'joiner_kitchens', trade: 'joiner', type: 'toggle', group: 'planned',
         label: 'Kitchen fitting',
     },
     {
-        key: 'joiner_flooring', trade: 'joiner', type: 'toggle', group: 'about',
+        key: 'joiner_flooring', trade: 'joiner', type: 'toggle', group: 'planned',
         label: 'Floor laying and repairs',
     },
     {
-        key: 'joiner_decking', trade: 'joiner', type: 'toggle', group: 'about',
+        key: 'joiner_decking', trade: 'joiner', type: 'toggle', group: 'planned',
         label: 'Decking, steps and outdoor timber',
     },
     {
-        key: 'joiner_bespoke', trade: 'joiner', type: 'toggle', group: 'about',
+        key: 'joiner_bespoke', trade: 'joiner', type: 'toggle', group: 'planned',
         label: 'Built-in storage and bespoke pieces',
     },
     {
-        key: 'joiner_workshop', trade: 'joiner', type: 'toggle', group: 'about',
+        key: 'joiner_workshop', trade: 'joiner', type: 'toggle', group: 'planned',
         label: 'I have a workshop for off-site work',
+    },
+
+    {
+        key: 'joiner_same_day', trade: 'joiner', type: 'toggle', group: 'availability',
+        label: 'I turn out same day',
+    },
+    {
+        key: 'joiner_out_of_hours', trade: 'joiner', type: 'toggle', group: 'availability',
+        label: 'I answer out of hours and at weekends',
     },
 
     // --- plumber -----------------------------------------------------------
@@ -803,80 +886,122 @@ export const SERVICE_EXTRAS: ServiceExtra[] = [
     // decide whether it can be approved at all and an owner needs to see the
     // answer before they ring rather than after.
     {
-        key: 'plumb_emergency', trade: 'plumber', type: 'toggle', group: 'about',
-        label: 'I take emergency call-outs',
-        hint: 'Leaks, no water, no heating.',
+        key: 'plumb_leak', trade: 'plumber', type: 'toggle', group: 'faults',
+        label: 'Leaks',
     },
     {
-        key: 'plumb_frozen', trade: 'plumber', type: 'toggle', group: 'about',
-        label: 'I turn out for frozen and burst pipes in winter',
-        hint: 'An empty cottage in January is the one that floods.',
+        key: 'plumb_no_hot_water', trade: 'plumber', type: 'toggle', group: 'faults',
+        label: 'No hot water',
     },
     {
-        key: 'plumb_boiler_service', trade: 'plumber', type: 'toggle', group: 'about',
-        label: 'I service boilers',
+        key: 'plumb_no_heating', trade: 'plumber', type: 'toggle', group: 'faults',
+        label: 'No heating',
     },
-    // Not the same thing as a service, and it is the one an owner is actually
-    // obliged to have: the annual gas safety check is a licence condition
-    // wherever there is gas, and only a Gas Safe engineer can issue it. Shown
-    // to every plumber rather than gated on does_gas, because a plumber who
-    // does not do gas simply leaves it unticked, and gating it would hide the
-    // question from somebody deciding whether to say they do gas at all.
     {
-        key: 'plumb_gas_certificate', trade: 'plumber', type: 'toggle', group: 'about',
-        label: 'I issue annual gas safety certificates',
+        key: 'plumb_boiler_fault', trade: 'plumber', type: 'toggle', group: 'faults',
+        label: 'Boiler not firing',
+    },
+    {
+        key: 'plumb_burst_frozen', trade: 'plumber', type: 'toggle', group: 'faults',
+        label: 'Burst or frozen pipes',
+    },
+    // Kept apart from the outside drains below, which is the whole point of
+    // splitting this list up. A blocked gully is a job for next week. A
+    // blocked toilet is a job for tonight, because the guests who blocked it
+    // are still in the cottage.
+    {
+        key: 'plumb_blocked_toilet', trade: 'plumber', type: 'toggle', group: 'faults',
+        label: 'Blocked toilet or shower',
+    },
+    {
+        key: 'plumb_drains', trade: 'plumber', type: 'toggle', group: 'faults',
+        label: 'Blocked outside drains and gullies',
+    },
+
+    {
+        key: 'plumb_gas_certificate', trade: 'plumber', type: 'toggle', group: 'planned',
+        label: 'Annual gas safety certificates',
         hint: 'The yearly check a let with gas has to have.',
     },
     {
-        key: 'plumb_unvented', trade: 'plumber', type: 'toggle', group: 'about',
-        label: 'Unvented hot water cylinders',
+        key: 'plumb_legionella', trade: 'plumber', type: 'toggle', group: 'planned',
+        label: 'Legionella risk assessments',
+        hint: 'Asked for as part of short-term let licensing.',
     },
     {
-        key: 'plumb_bathrooms', trade: 'plumber', type: 'toggle', group: 'about',
+        key: 'plumb_boiler_service', trade: 'plumber', type: 'toggle', group: 'planned',
+        label: 'Boiler servicing',
+    },
+    {
+        key: 'plumb_bathrooms', trade: 'plumber', type: 'toggle', group: 'planned',
         label: 'Full bathroom installations',
     },
     {
-        key: 'plumb_drains', trade: 'plumber', type: 'toggle', group: 'about',
-        label: 'Blocked drains and waste',
+        key: 'plumb_unvented', trade: 'plumber', type: 'toggle', group: 'planned',
+        label: 'Unvented hot water cylinders',
     },
     {
-        key: 'plumb_hot_tub', trade: 'plumber', type: 'toggle', group: 'about',
+        key: 'plumb_hot_tub', trade: 'plumber', type: 'toggle', group: 'planned',
         label: 'Hot tub plumbing and filtration',
     },
+
     {
-        key: 'plumb_legionella', trade: 'plumber', type: 'toggle', group: 'about',
-        label: 'I do legionella risk assessments',
-        hint: 'Asked for as part of short-term let licensing.',
+        key: 'plumb_same_day', trade: 'plumber', type: 'toggle', group: 'availability',
+        label: 'I turn out same day',
+    },
+    {
+        key: 'plumb_out_of_hours', trade: 'plumber', type: 'toggle', group: 'availability',
+        label: 'I answer out of hours and at weekends',
+    },
+    {
+        key: 'plumb_winter', trade: 'plumber', type: 'toggle', group: 'availability',
+        label: 'I turn out in winter for empty properties',
     },
 
     // --- roofer ------------------------------------------------------------
     {
-        key: 'roof_emergency', trade: 'roofer', type: 'toggle', group: 'about',
-        label: 'I take emergency call-outs',
-        hint: 'Storm damage, a leak coming through a ceiling.',
+        key: 'roof_ceiling_leak', trade: 'roofer', type: 'toggle', group: 'faults',
+        label: 'Water coming through a ceiling',
     },
     {
-        key: 'roof_slate', trade: 'roofer', type: 'toggle', group: 'about',
+        key: 'roof_storm', trade: 'roofer', type: 'toggle', group: 'faults',
+        label: 'Storm damage',
+    },
+    {
+        key: 'roof_slates_off', trade: 'roofer', type: 'toggle', group: 'faults',
+        label: 'Slates or tiles off',
+    },
+    {
+        key: 'roof_gutter_fault', trade: 'roofer', type: 'toggle', group: 'faults',
+        label: 'Gutter overflowing or come down',
+    },
+    {
+        key: 'roof_chimney_leak', trade: 'roofer', type: 'toggle', group: 'faults',
+        label: 'Chimney or flashing leaking',
+    },
+
+    {
+        key: 'roof_slate', trade: 'roofer', type: 'toggle', group: 'planned',
         label: 'Slate and tile repairs',
     },
     {
-        key: 'roof_flat', trade: 'roofer', type: 'toggle', group: 'about',
+        key: 'roof_flat', trade: 'roofer', type: 'toggle', group: 'planned',
         label: 'Flat roofs and felting',
     },
     {
-        key: 'roof_gutters', trade: 'roofer', type: 'toggle', group: 'about',
+        key: 'roof_gutters', trade: 'roofer', type: 'toggle', group: 'planned',
         label: 'Gutters, fascias and soffits',
     },
     {
-        key: 'roof_chimney', trade: 'roofer', type: 'toggle', group: 'about',
+        key: 'roof_chimney', trade: 'roofer', type: 'toggle', group: 'planned',
         label: 'Chimneys and lead work',
     },
     {
-        key: 'roof_moss', trade: 'roofer', type: 'toggle', group: 'about',
+        key: 'roof_moss', trade: 'roofer', type: 'toggle', group: 'planned',
         label: 'Moss removal and roof cleaning',
     },
     {
-        key: 'roof_scaffold', trade: 'roofer', type: 'toggle', group: 'about',
+        key: 'roof_scaffold', trade: 'roofer', type: 'toggle', group: 'planned',
         label: 'I arrange my own scaffolding or tower',
         hint: 'Worth saying — otherwise the owner assumes it is on top of the bill.',
     },
@@ -885,7 +1010,25 @@ export const SERVICE_EXTRAS: ServiceExtra[] = [
         label: 'Roof survey with photographs',
     },
 
+    {
+        key: 'roof_same_day', trade: 'roofer', type: 'toggle', group: 'availability',
+        label: 'I turn out same day',
+    },
+    {
+        key: 'roof_out_of_hours', trade: 'roofer', type: 'toggle', group: 'availability',
+        label: 'I answer out of hours and at weekends',
+    },
+    {
+        key: 'roof_winter', trade: 'roofer', type: 'toggle', group: 'availability',
+        label: 'I turn out in winter for empty properties',
+    },
+
     // --- painter and decorator ---------------------------------------------
+    //
+    // One list, deliberately. Painting is almost never a fault, and splitting
+    // it would have meant inventing urgent-sounding entries to fill a column —
+    // a scuffed wall is not a leak. What varies between painters is how fast
+    // they can get in and out, which is what the availability toggles say.
     {
         key: 'paint_interior', trade: 'painter', type: 'toggle', group: 'about',
         label: 'Interior decorating',
@@ -900,6 +1043,10 @@ export const SERVICE_EXTRAS: ServiceExtra[] = [
         hint: 'A day between guests, scuffs and chips seen to.',
     },
     {
+        key: 'paint_damp_stain', trade: 'painter', type: 'toggle', group: 'about',
+        label: 'Sealing and covering damp patches and stains',
+    },
+    {
         key: 'paint_wallpaper', trade: 'painter', type: 'toggle', group: 'about',
         label: 'Wallpapering',
     },
@@ -912,35 +1059,63 @@ export const SERVICE_EXTRAS: ServiceExtra[] = [
         label: 'I can work out of season, when the cottage is empty',
     },
 
+    {
+        key: 'paint_same_day', trade: 'painter', type: 'toggle', group: 'availability',
+        label: 'I can get in at short notice between bookings',
+    },
+
     // --- handyman ----------------------------------------------------------
     {
-        key: 'handy_snag_list', trade: 'handyman', type: 'toggle', group: 'about',
+        key: 'handy_guest_reported', trade: 'handyman', type: 'toggle', group: 'faults',
+        label: 'Something a guest has reported broken',
+    },
+    {
+        key: 'handy_wont_close', trade: 'handyman', type: 'toggle', group: 'faults',
+        label: 'Door, window or gate not closing',
+    },
+    {
+        key: 'handy_small_breakages', trade: 'handyman', type: 'toggle', group: 'faults',
+        label: 'Small breakages mid-stay',
+        hint: 'Toilet seat, shower head, curtain pole.',
+    },
+    {
+        key: 'handy_appliance_dead', trade: 'handyman', type: 'toggle', group: 'faults',
+        label: 'Appliance stopped working',
+    },
+
+    {
+        key: 'handy_snag_list', trade: 'handyman', type: 'toggle', group: 'planned',
         label: 'I will work through a list in one visit',
         hint: 'The thing most owners actually want and cannot find.',
     },
     {
-        key: 'handy_small_repairs', trade: 'handyman', type: 'toggle', group: 'about',
-        label: 'Small repairs and odd jobs',
-    },
-    {
-        key: 'handy_fixings', trade: 'handyman', type: 'toggle', group: 'about',
+        key: 'handy_fixings', trade: 'handyman', type: 'toggle', group: 'planned',
         label: 'Shelves, curtain poles, blinds and TV brackets',
     },
     {
-        key: 'handy_flatpack', trade: 'handyman', type: 'toggle', group: 'about',
+        key: 'handy_flatpack', trade: 'handyman', type: 'toggle', group: 'planned',
         label: 'Flat-pack assembly',
     },
     {
-        key: 'handy_appliances', trade: 'handyman', type: 'toggle', group: 'about',
+        key: 'handy_appliances', trade: 'handyman', type: 'toggle', group: 'planned',
         label: 'Swapping over appliances',
     },
     {
-        key: 'handy_outdoor', trade: 'handyman', type: 'toggle', group: 'about',
+        key: 'handy_outdoor', trade: 'handyman', type: 'toggle', group: 'planned',
         label: 'Fence panels, gates and sheds',
     },
     {
-        key: 'handy_keysafe', trade: 'handyman', type: 'toggle', group: 'about',
+        key: 'handy_keysafe', trade: 'handyman', type: 'toggle', group: 'planned',
         label: 'I can fit key safes and house numbers',
+    },
+
+    {
+        key: 'handy_same_day', trade: 'handyman', type: 'toggle', group: 'availability',
+        label: 'I turn out same day',
+    },
+    {
+        key: 'handy_out_of_hours', trade: 'handyman', type: 'toggle', group: 'availability',
+        label: 'I answer out of hours and at weekends',
     },
 ];
 

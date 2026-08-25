@@ -401,3 +401,68 @@ test('reimbursed money is absent by construction, not by subtraction', () => {
     assert.match(src, /extra\.type !== 'priced'\) continue;/,
         'only priced extras are summed, by name');
 });
+
+// ---------------------------------------------------------------------------
+// The three axes on the maintenance trades.
+//
+// A host with a problem searches for the problem. Before this, the faults were
+// grey subtitles under headings like "I take emergency call-outs", so somebody
+// looking for a leak found nothing — the list described what kind of plumber
+// somebody was rather than what had gone wrong.
+// ---------------------------------------------------------------------------
+
+const MAINTENANCE = ['electrician', 'joiner', 'plumber', 'roofer', 'handyman'];
+
+test('every maintenance trade separates faults from planned work', () => {
+    for (const trade of MAINTENANCE) {
+        const groups = extrasFor(trade).map((e: any) => e.group);
+
+        assert.equal(groups.indexOf('faults') !== -1, true, trade + ' has a faults list');
+        assert.equal(groups.indexOf('planned') !== -1, true, trade + ' has a planned list');
+        assert.equal(groups.indexOf('availability') !== -1, true, trade + ' says when it turns out');
+    }
+});
+
+// Deliberate, not an omission. Painting is almost never a fault, and inventing
+// urgent-sounding entries to fill a column would be dressing up a scuffed wall
+// as a leak.
+test('the painter has no faults list, on purpose', () => {
+    const groups = extrasFor('painter').map((e: any) => e.group);
+
+    assert.equal(groups.indexOf('faults'), -1, 'a scuffed wall is not an emergency');
+    assert.equal(groups.indexOf('availability') !== -1, true, 'but how fast they get in still matters');
+});
+
+test('a blocked toilet is not filed with the outside drains', () => {
+    const faults = extrasFor('plumber')
+        .filter((e: any) => e.group === 'faults')
+        .map((e: any) => e.key);
+
+    // The guests who blocked it are still in the cottage. A blocked gully is
+    // next week. Merging them loses the only distinction that matters.
+    assert.equal(faults.indexOf('plumb_blocked_toilet') !== -1, true);
+    assert.equal(faults.indexOf('plumb_drains') !== -1, true);
+    assert.notEqual('plumb_blocked_toilet', 'plumb_drains');
+});
+
+test('the trades that serve empty cottages in winter say so', () => {
+    // An empty property is the one that gets hurt: no heating tonight means
+    // frozen pipes by morning, and nobody is there to notice.
+    for (const trade of ['plumber', 'roofer', 'electrician']) {
+        const winter = extrasFor(trade).filter((e: any) => e.key.indexOf('_winter') !== -1);
+        assert.equal(winter.length, 1, trade + ' offers a winter turnout');
+        assert.equal(winter[0].group, 'availability');
+    }
+});
+
+test('what a host searches for is a heading, never only a hint', () => {
+    // The bug this replaced: "leaks and no heating" existed only in the grey
+    // line under "I take emergency call-outs". Every fault is its own entry
+    // with its own label, so nothing a host would search for is buried.
+    for (const trade of MAINTENANCE) {
+        for (const extra of extrasFor(trade).filter((e: any) => e.group === 'faults')) {
+            assert.equal(typeof extra.label === 'string' && extra.label.length > 0, true,
+                extra.key + ' has a label of its own');
+        }
+    }
+});

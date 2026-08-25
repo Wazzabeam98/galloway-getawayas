@@ -453,6 +453,59 @@ function ApplicationForm() {
             [key]: Object.assign({ offered: false, price: '', notes: '' }, prev[key] || {}, { [field]: value }),
         }));
 
+    // One headed block of tick boxes.
+    //
+    // The maintenance trades answer three questions rather than one — what has
+    // gone wrong, what you can do, and how fast you turn out — and each gets
+    // its own heading so the urgent list is a list rather than a subtitle
+    // under something else. The older trades have a single unheaded block and
+    // pass '' as the heading.
+    const toggleBlock = (group: string, heading: string) => {
+        const items = extrasIn(group);
+        if (items.length === 0) return null;
+
+        return (
+            <div className="mb-6">
+                {heading && (
+                    <h3 className="text-xs font-bold uppercase tracking-wider text-slate-500 mb-2.5">
+                        {heading}
+                    </h3>
+                )}
+                <div className="space-y-2 md:space-y-0 md:grid md:grid-cols-2 md:gap-3">
+                    {items.map((extra) => (
+                        <label
+                            key={extra.key}
+                            className="flex items-start gap-3 rounded-xl border border-slate-300 p-3.5 cursor-pointer hover:border-slate-400 transition"
+                        >
+                            <input
+                                type="checkbox"
+                                checked={extraOf(extra.key).offered}
+                                onChange={(e) => setExtra(extra.key, 'offered', e.target.checked)}
+                                className="mt-0.5 w-4 h-4 rounded border-slate-300 shrink-0"
+                            />
+                            <span>
+                                <span className="block text-sm font-medium text-slate-900">{extra.label}</span>
+                                {extra.hint && (
+                                    <span className="block text-sm text-slate-500 mt-0.5">{extra.hint}</span>
+                                )}
+                            </span>
+                        </label>
+                    ))}
+                </div>
+            </div>
+        );
+    };
+
+    const groupLabel = (key: string) => {
+        const found = EXTRA_GROUPS.filter((g: any) => g.key === key)[0] as any;
+        return (found && found.label) || '';
+    };
+
+    // Whether this trade uses the three-way split. Drives the wording at the
+    // top of the section, which is about comparison for a cleaner and about
+    // being found for a plumber.
+    const hasFaults = extrasIn('faults').length > 0;
+
     const bands = bandsFor(trade);
 
     const setBand = (key: string, field: 'price' | 'typical_hours', value: string) =>
@@ -1487,35 +1540,19 @@ function ApplicationForm() {
                     never comes near us. */}
                 {offerings.length > 0 && (
                     <section className="mb-8">
-                        <h2 className="text-sm font-semibold text-slate-900 mb-1.5">What else do you offer?</h2>
+                        <h2 className="text-sm font-semibold text-slate-900 mb-1.5">
+                            {hasFaults ? 'What do you get called out for?' : 'What else do you offer?'}
+                        </h2>
                         <p className="text-sm text-slate-500 mb-4">
-                            All optional. Owners compare on these, so it is worth saying yes to what you
-                            actually do.
+                            {hasFaults
+                                ? 'All optional, but this is how owners find you. Somebody with a problem searches for the problem, not for a trade.'
+                                : 'All optional. Owners compare on these, so it is worth saying yes to what you actually do.'}
                         </p>
 
-                        {extrasIn('about').length > 0 && (
-                            <div className="space-y-2 md:space-y-0 md:grid md:grid-cols-2 md:gap-3 mb-6">
-                                {extrasIn('about').map((extra) => (
-                                    <label
-                                        key={extra.key}
-                                        className="flex items-start gap-3 rounded-xl border border-slate-300 p-3.5 cursor-pointer hover:border-slate-400 transition"
-                                    >
-                                        <input
-                                            type="checkbox"
-                                            checked={extraOf(extra.key).offered}
-                                            onChange={(e) => setExtra(extra.key, 'offered', e.target.checked)}
-                                            className="mt-0.5 w-4 h-4 rounded border-slate-300 shrink-0"
-                                        />
-                                        <span>
-                                            <span className="block text-sm font-medium text-slate-900">{extra.label}</span>
-                                            {extra.hint && (
-                                                <span className="block text-sm text-slate-500 mt-0.5">{extra.hint}</span>
-                                            )}
-                                        </span>
-                                    </label>
-                                ))}
-                            </div>
-                        )}
+                        {toggleBlock('about', '')}
+                        {toggleBlock('faults', groupLabel('faults'))}
+                        {toggleBlock('planned', groupLabel('planned'))}
+                        {toggleBlock('availability', groupLabel('availability'))}
 
                         <div className="md:grid md:grid-cols-2 md:gap-4 md:items-start">
                         {gatedGroups.map((group: any) => {
