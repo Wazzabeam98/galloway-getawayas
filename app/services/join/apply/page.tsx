@@ -918,7 +918,7 @@ function ApplicationForm() {
                             <div className="md:grid md:grid-cols-2 md:gap-6 md:items-start">
                             <div className="mb-5 md:mb-0">
                                 <div className="text-sm font-semibold text-slate-900 mb-2">What kind of building</div>
-                                <div className="grid grid-cols-2 sm:grid-cols-4 md:grid-cols-2 gap-2">
+                                <div className="grid grid-cols-2 gap-2 sm:flex sm:flex-wrap">
                                     {BUILDING_TYPES.map((b) => {
                                         const on = buildingType === b.key;
                                         return (
@@ -1338,7 +1338,7 @@ function ApplicationForm() {
                         A town and how far you will travel from it. Add more than one if you cover separate areas.
                     </p>
 
-                    <div className="space-y-2">
+                    <div className="space-y-2 md:max-w-xl">
                         {areas.map((a, i) => (
                             <div key={i} className="flex items-center gap-2">
                                 <select
