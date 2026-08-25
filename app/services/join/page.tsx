@@ -1,9 +1,10 @@
 'use client';
 
 import { Suspense, useEffect, useState } from 'react';
+import Link from 'next/link';
 import { useRouter, useSearchParams } from 'next/navigation';
 import { createClientComponentClient } from '@supabase/auth-helpers-nextjs';
-import { Sparkles, Wrench, Trees, Droplet, Trash2, ChevronRight } from 'lucide-react';
+import { Sparkles, Wrench, Trees, Droplet, Trash2, ChevronRight, ChevronLeft } from 'lucide-react';
 import { tradesFor, unclaimedTrades, tradeLabel, statusSummary } from '@/lib/serviceProviders';
 
 const TRADE_ICONS: Record<string, any> = {
@@ -93,6 +94,17 @@ function TradePicker() {
 
     return (
         <div className="max-w-3xl mx-auto px-4 sm:px-6 py-10 pb-24">
+            {/* Every step has a way back: /business chooses between working for
+                owners and selling to guests, this chooses the trade, and the
+                application has its own back to here. */}
+            <Link
+                href="/business"
+                className="inline-flex items-center gap-1.5 text-sm font-semibold text-slate-600 hover:text-slate-900 mb-6"
+            >
+                <ChevronLeft className="w-4 h-4" />
+                Back
+            </Link>
+
             <h1 className="text-3xl sm:text-4xl font-extrabold tracking-tight text-slate-900">
                 {hasSome ? 'Your businesses' : 'What do you do?'}
             </h1>
