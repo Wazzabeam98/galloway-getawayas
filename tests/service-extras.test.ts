@@ -130,7 +130,7 @@ test('a trade with no extras yet has none rather than the cleaning ones', () => 
     assert.deepEqual(extrasFor('spanner'), []);
 });
 
-test('window cleaning charges for height, and does not ask whether they go up', () => {
+test('window cleaning offers exactly the shapes the trade is being asked about', () => {
     const keys = extrasFor('droplet').map((e: any) => e.key);
 
     // Long poles: going upstairs is not a real distinction, so height is
@@ -140,11 +140,8 @@ test('window cleaning charges for height, and does not ask whether they go up', 
         'callout_base', 'pane_rate',
         'pane_ground', 'pane_first', 'pane_second_plus',
         'quote_per_job',
-        'upstairs_surcharge', 'high_access_surcharge',
     ]);
     assert.equal(extraByKey('upstairs_windows'), null);
-    assert.equal(extraByKey('upstairs_surcharge').type, 'priced');
-    assert.equal(extraByKey('high_access_surcharge').type, 'priced');
 });
 
 test('each extra service is asked, then priced, on its own', () => {
@@ -213,20 +210,15 @@ test('a pricing structure is never summed as if it were an extra', () => {
     assert.equal(ceiling, 95, 'the band plus the gutter clean — not the per-pane rate as well');
 });
 
-test('a storey surcharge is a flat amount, not a rate per anything', () => {
-    for (const key of ['upstairs_surcharge', 'high_access_surcharge']) {
-        assert.equal(extraByKey(key).unit, undefined,
-            key + ' must be a flat figure — a host should not have to do arithmetic');
-    }
+test('there is no fifth way to price height', () => {
+    // A flat surcharge on top of the bands was one shape too many next to the
+    // four the trade is choosing between, and height is what the
+    // per-pane-by-storey shape is for.
+    assert.equal(extraByKey('upstairs_surcharge'), null);
+    assert.equal(extraByKey('high_access_surcharge'), null);
+    assert.deepEqual(extrasFor('droplet').filter((e: any) => e.group === 'priced'), []);
 });
 
-test('the storey surcharges are part of the ceiling', () => {
-    const ceiling = serviceCeiling(
-        { bandPrice: 35, extras: { upstairs_surcharge: { offered: true, price: 15 } } },
-        extrasFor('droplet')
-    );
-    assert.equal(ceiling, 50);
-});
 
 // --- what has to be filled in ----------------------------------------------
 

@@ -556,7 +556,12 @@ export const SERVICE_EXTRAS: ServiceExtra[] = [
     // --- window cleaning ---------------------------------------------------
     //
     // No "do you go upstairs" toggle: they use long poles, so it is not a real
-    // distinction. Height is priced, not offered or withheld.
+    // distinction.
+    //
+    // And no flat storey surcharge either. It was a fifth way of pricing the
+    // same thing, sitting beside the four the trade is being asked to choose
+    // between — height is already the whole point of the per-pane-by-storey
+    // shape below. One more option muddies the question.
     // Each one asked, then priced. No price is a real answer while the trade
     // is still telling us how they want to charge.
     {
@@ -606,16 +611,6 @@ export const SERVICE_EXTRAS: ServiceExtra[] = [
     {
         key: 'quote_per_job', trade: 'droplet', type: 'toggle', group: 'quote',
         label: 'I price each job when I am asked',
-    },
-    {
-        key: 'upstairs_surcharge', trade: 'droplet', type: 'priced', group: 'priced',
-        label: 'Extra for upstairs windows',
-        hint: 'On a two-floor property. Leave blank if it is included in your price.',
-    },
-    {
-        key: 'high_access_surcharge', trade: 'droplet', type: 'priced', group: 'priced',
-        label: 'Extra for three floors or attic windows',
-        hint: 'Leave blank if it is included, or if you do not go that high.',
     },
     {
         key: 'consumables', trade: 'sponge', type: 'reimbursed', group: 'reimbursed',
