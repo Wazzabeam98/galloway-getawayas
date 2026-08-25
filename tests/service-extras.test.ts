@@ -64,7 +64,7 @@ test('cleaning carries the extras that were asked for', () => {
     const keys = cleaning().map((e: any) => e.key);
 
     for (const expected of [
-        'equipment_provided', 'same_day_changeover', 'damage_photos',
+        'equipment_provided', 'damage_photos',
         'bedding_single', 'bedding_double', 'bedding_king', 'hot_tub_service',
         'consumables', 'welcome_gifts', 'receipts_provided',
     ]) {
@@ -74,6 +74,7 @@ test('cleaning carries the extras that were asked for', () => {
     assert.equal(keys.some((k: string) => /pet/.test(k)), false, 'the pet surcharge was dropped');
     assert.equal(keys.indexOf('laundry_on_site'), -1, 'the two laundry toggles were dropped');
     assert.equal(keys.indexOf('laundry_taken_away'), -1);
+    assert.equal(keys.indexOf('same_day_changeover'), -1, 'and the same-day changeover toggle');
 });
 
 test('the three bedding rates sit behind one question', () => {
@@ -164,7 +165,7 @@ test('a priced extra has no tick to disagree with its price', () => {
 });
 
 test('a toggle never needs a price', () => {
-    assert.deepEqual(extrasProblems(offered({ same_day_changeover: { offered: true } })), []);
+    assert.deepEqual(extrasProblems(offered({ damage_photos: { offered: true } })), []);
 });
 
 test('a reimbursed extra never needs a price — there is no number yet', () => {

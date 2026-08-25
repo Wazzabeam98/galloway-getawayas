@@ -737,29 +737,36 @@ export default function JoinAsProvider() {
                                                 A rate per bed. Leave blank any size you do not do.
                                             </p>
 
-                                            <div className="grid sm:grid-cols-3 gap-3">
+                                            <div className="space-y-2.5">
                                                 {extrasIn('laundry').map((extra) => {
                                                     const entry = extraOf(extra.key);
                                                     const problem = problemFor('extra_price_' + extra.key);
 
                                                     return (
                                                         <div key={extra.key}>
-                                                            <label className="block text-xs font-semibold text-slate-500 mb-1">
-                                                                {extra.label}
-                                                            </label>
-                                                            <div className="flex items-center gap-2">
-                                                                <span className="text-slate-500">&pound;</span>
-                                                                <input
-                                                                    type="text"
-                                                                    inputMode="decimal"
-                                                                    value={entry.price}
-                                                                    onChange={(e) => setExtra(extra.key, 'price', e.target.value)}
-                                                                    placeholder="8"
-                                                                    className="w-full rounded-lg border border-slate-300 px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-emerald-700"
-                                                                />
+                                                            <div className="flex items-center gap-3">
+                                                                <label
+                                                                    htmlFor={'rate-' + extra.key}
+                                                                    className="w-16 shrink-0 text-sm font-medium text-slate-900"
+                                                                >
+                                                                    {extra.label}
+                                                                </label>
+                                                                <div className="flex items-center gap-2 flex-1 min-w-0">
+                                                                    <span className="text-slate-500">&pound;</span>
+                                                                    <input
+                                                                        id={'rate-' + extra.key}
+                                                                        type="text"
+                                                                        inputMode="decimal"
+                                                                        value={entry.price}
+                                                                        onChange={(e) => setExtra(extra.key, 'price', e.target.value)}
+                                                                        placeholder="8"
+                                                                        className="w-full min-w-0 rounded-lg border border-slate-300 px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-emerald-700"
+                                                                    />
+                                                                    <span className="text-sm text-slate-500 whitespace-nowrap">per bed</span>
+                                                                </div>
                                                             </div>
                                                             {problem && (
-                                                                <p className="text-xs text-rose-700 mt-1">{problem.message}</p>
+                                                                <p className="text-xs text-rose-700 mt-1 ml-[76px]">{problem.message}</p>
                                                             )}
                                                         </div>
                                                     );

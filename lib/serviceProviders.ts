@@ -416,11 +416,6 @@ export const SERVICE_EXTRAS: ServiceExtra[] = [
         label: 'I bring my own equipment and materials',
     },
     {
-        key: 'same_day_changeover', trade: 'sponge', type: 'toggle', group: 'about',
-        label: 'I can do a same-day changeover',
-        hint: 'Guests out at 10, the next in at 4. In season this is the one owners ask about.',
-    },
-    {
         key: 'damage_photos', trade: 'sponge', type: 'toggle', group: 'about',
         label: 'I report damage with photos',
     },
