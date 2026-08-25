@@ -915,7 +915,11 @@ function ApplicationForm() {
                                 will be given before you price a job. Nothing here is saved yet.
                             </p>
 
-                            <div className="md:grid md:grid-cols-2 md:gap-6 md:items-start">
+                            {/* Not two equal halves: the pane count is a ten-rem box and the
+                                building types are four short words that want one line.
+                                An even split gave the buttons 416px when they need 463,
+                                so the last one wrapped with space beside it. */}
+                            <div className="md:grid md:grid-cols-[1fr_auto] md:gap-6 md:items-start">
                             <div className="mb-5 md:mb-0">
                                 <div className="text-sm font-semibold text-slate-900 mb-2">What kind of building</div>
                                 <div className="grid grid-cols-2 gap-2 sm:flex sm:flex-wrap">
