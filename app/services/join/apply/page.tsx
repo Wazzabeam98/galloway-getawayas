@@ -53,6 +53,10 @@ interface AreaRow {
     radius_miles: number;
 }
 
+// Where an unfinished application lives before there is an account to hang
+// it on. Per trade, because somebody can be part-way through two.
+const draftKey = (trade: string) => 'gg.provider-draft.' + trade;
+
 function ApplicationForm() {
     const router = useRouter();
     const params = useSearchParams();
@@ -80,6 +84,14 @@ function ApplicationForm() {
     const [uploadingLogo, setUploadingLogo] = useState(false);
     const [removing, setRemoving] = useState(false);
     const [confirmRemove, setConfirmRemove] = useState(false);
+    // True once the form has either loaded a saved record or restored a local
+    // draft. Nothing is written to storage before it, or the empty defaults
+    // would overwrite the thing being restored.
+    const [hydrated, setHydrated] = useState(false);
+    const [restored, setRestored] = useState(false);
+    // Set when they pressed a button that needs an account. The sign-in panel
+    // appears, and the press is replayed once they are in.
+    const [wantsToSave, setWantsToSave] = useState<null | boolean>(null);
     const [areas, setAreas] = useState<AreaRow[]>([]);
 
     const [saving, setSaving] = useState(false);
@@ -117,7 +129,13 @@ function ApplicationForm() {
                 const { data: { session } } = await supabase.auth.getSession();
                 setSession(session);
 
-                if (!session) return;
+                // Signed out is a normal state here now: somebody should be
+                // able to see what they are signing up for, and fill it in,
+                // before being asked for anything.
+                if (!session) {
+                    restoreDraft();
+                    return;
+                }
 
                 const { data: existing } = await supabase
                     .from('service_providers')
@@ -198,7 +216,10 @@ function ApplicationForm() {
                         radius_miles: Number(a.radius_miles),
                     })));
                 } else {
-                    setContactEmail(session.user.email || '');
+                    // Signed in, nothing saved for this trade — so anything
+                    // they typed before signing in is still the newest thing.
+                    restoreDraft();
+                    setContactEmail((prev) => prev || session.user.email || '');
                 }
 
             } catch (err) {
@@ -207,10 +228,83 @@ function ApplicationForm() {
                 toast.error('We could not load your details. Try refreshing.', { theme: 'colored' });
             } finally {
                 setLoading(false);
+                setHydrated(true);
             }
         };
         load();
+        // eslint-disable-next-line react-hooks/exhaustive-deps
+    }, [supabase, tradeFromUrl]);
+
+    // Signing in is the only thing that changes who this belongs to, and with
+    // Google it happens by leaving the site and coming back — so the draft has
+    // to be somewhere that survives a round trip, and the press that asked for
+    // an account has to be replayed when they return.
+    useEffect(() => {
+        const { data: sub } = supabase.auth.onAuthStateChange((_event, next) => {
+            setSession(next);
+        });
+        return () => sub.subscription.unsubscribe();
     }, [supabase]);
+
+    // Kept in the browser rather than on a server: there is no owner yet, so
+    // there is no row to put it in, and a table of anonymous half-applications
+    // would be a new thing to secure, expire and clean up for a case that
+    // lasts about four minutes.
+    //
+    // It survives closing the tab, a refresh, and the trip out to Google and
+    // back. It does not survive clearing browser data, a private window, or
+    // moving to another device.
+    const restoreDraft = () => {
+        try {
+            const raw = window.localStorage.getItem(draftKey(tradeFromUrl));
+            if (!raw) return;
+
+            const d = JSON.parse(raw);
+            if (d.businessName) setBusinessName(d.businessName);
+            if (d.description) setDescription(d.description);
+            if (d.contactEmail) setContactEmail(d.contactEmail);
+            if (d.contactPhone) setContactPhone(d.contactPhone);
+            if (d.prices) setPrices(d.prices);
+            if (d.extras) setExtras(d.extras);
+            if (d.calloutFee) setCalloutFee(d.calloutFee);
+            if (d.hourlyRate) setHourlyRate(d.hourlyRate);
+            if (d.areas) setAreas(d.areas);
+            setRestored(true);
+        } catch (err) {
+            // A draft we cannot read is a draft they start again, which is
+            // better than a page that will not open.
+        }
+    };
+
+    const forgetDraft = () => {
+        try {
+            window.localStorage.removeItem(draftKey(tradeFromUrl));
+        } catch (err) {
+            /* nothing to do */
+        }
+    };
+
+    useEffect(() => {
+        if (!hydrated) return;
+        // Once it is in the database, the database is the copy that counts.
+        if (providerId) return;
+
+        try {
+            window.localStorage.setItem(
+                draftKey(tradeFromUrl),
+                JSON.stringify({
+                    businessName, description, contactEmail, contactPhone,
+                    prices, extras, calloutFee, hourlyRate, areas,
+                })
+            );
+        } catch (err) {
+            /* storage full or blocked — the form still works */
+        }
+    }, [
+        hydrated, providerId, tradeFromUrl,
+        businessName, description, contactEmail, contactPhone,
+        prices, extras, calloutFee, hourlyRate, areas,
+    ]);
 
     const problems = submitProblems({
         business_name: businessName,
@@ -283,7 +377,17 @@ function ApplicationForm() {
     // picks a place and a distance rather than a latitude.
     const uploadLogo = async (e: React.ChangeEvent<HTMLInputElement>) => {
         const file = (e.target.files || [])[0];
-        if (!file || !session) return;
+        if (!file) return;
+
+        // The bucket will not take a file from somebody with no account, and
+        // a silent nothing looks like a broken button.
+        if (!session) {
+            toast.info('Make an account first and you can add your logo — everything else is kept.', {
+                theme: 'colored',
+            });
+            e.target.value = '';
+            return;
+        }
 
         setUploadingLogo(true);
 
@@ -349,7 +453,14 @@ function ApplicationForm() {
     };
 
     const save = async (submit: boolean) => {
-        if (!session) return;
+        // The account is asked for here, at the end, rather than at the door.
+        // What they typed is already in local storage, so signing in — even
+        // via Google, which leaves the site — does not cost them the form.
+        if (!session) {
+            setWantsToSave(submit);
+            if (submit) setTouchedSubmit(true);
+            return;
+        }
 
         if (submit) {
             setTouchedSubmit(true);
@@ -387,6 +498,22 @@ function ApplicationForm() {
         }
 
         let id = providerId;
+
+        // They may have signed in to an account that already has a business
+        // in this trade — a second tab, or an application started months ago.
+        // One per trade is a constraint, so find it rather than collide.
+        if (!id) {
+            const { data: already } = await supabase
+                .from('service_providers')
+                .select('id')
+                .eq('owner_id', session.user.id)
+                .eq('trade', trade)
+                .maybeSingle();
+            if (already) {
+                id = already.id;
+                setProviderId(already.id);
+            }
+        }
 
         if (id) {
             const { error } = await supabase.from('service_providers').update(payload).eq('id', id);
@@ -512,6 +639,9 @@ function ApplicationForm() {
             }
         }
 
+        forgetDraft();
+        setRestored(false);
+
         setSaving(false);
 
         if (submit && status === 'approved') {
@@ -524,18 +654,19 @@ function ApplicationForm() {
         }
     };
 
+    // Signed in after pressing a button that needed it: carry on where they
+    // left off rather than making them find the button again.
+    useEffect(() => {
+        if (session && wantsToSave !== null && !saving) {
+            const submit = wantsToSave;
+            setWantsToSave(null);
+            save(submit);
+        }
+        // eslint-disable-next-line react-hooks/exhaustive-deps
+    }, [session, wantsToSave]);
+
     if (loading) {
         return <div className="max-w-3xl mx-auto px-4 sm:px-6 py-16 text-slate-500">Loading…</div>;
-    }
-
-    if (!session) {
-        return (
-            <div className="max-w-md mx-auto px-4 sm:px-6 py-24 text-center">
-                <h1 className="text-2xl font-bold text-slate-900 mb-2">Work for holiday lets</h1>
-                <p className="text-slate-600 mb-6">Sign in to get started — it takes a few minutes.</p>
-                <LoginModel />
-            </div>
-        );
     }
 
     const summary = statusSummary(status);
@@ -612,6 +743,7 @@ function ApplicationForm() {
                         <h2 className="text-sm font-semibold text-slate-900 mb-1.5">Your logo</h2>
                         <p className="text-sm text-slate-500 mb-3">
                             Optional. If you have not got one we will show your initials.
+                            {!session && ' You can add one once you have an account.'}
                         </p>
 
                         <div className="flex items-center gap-4">
@@ -1133,6 +1265,29 @@ function ApplicationForm() {
                     </div>
                 </section>
             </fieldset>
+
+            {restored && !providerId && (
+                <div className="rounded-2xl border border-emerald-300 bg-emerald-50 p-4 mb-8">
+                    <p className="text-sm text-emerald-900">
+                        We kept what you filled in last time. Carry on where you left off.
+                    </p>
+                </div>
+            )}
+
+            {!session && wantsToSave !== null && (
+                <div className="rounded-2xl border-2 border-emerald-700 bg-emerald-50 p-5 mb-8">
+                    <p className="font-semibold text-emerald-900">
+                        {problems.length
+                            ? 'Nearly — a few things still need filling in above.'
+                            : 'One last thing: an account to save it to.'}
+                    </p>
+                    <p className="text-sm text-emerald-900/80 mt-1 mb-4">
+                        Nothing you have typed is lost. Sign in or make an account and we will save it
+                        straight away.
+                    </p>
+                    <LoginModel />
+                </div>
+            )}
 
             {!locked && (
                 <div className="border-t border-slate-200 pt-6">
