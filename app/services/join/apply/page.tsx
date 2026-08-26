@@ -108,9 +108,21 @@ function ApplicationForm() {
     // would overwrite the thing being restored.
     const [hydrated, setHydrated] = useState(false);
     const [restored, setRestored] = useState(false);
-    // Set when they pressed a button that needs an account. The sign-in panel
+    // Set when they pressed a button that needs an account. The account panel
     // appears, and the press is replayed once they are in.
     const [wantsToSave, setWantsToSave] = useState<null | boolean>(null);
+
+    // The account, made from what they have already typed rather than behind a
+    // door. A tradesman who has just filled in a whole form and is then asked
+    // to go and register somewhere else has been asked to do the work twice.
+    const [acctPassword, setAcctPassword] = useState('');
+    const [acctBusy, setAcctBusy] = useState(false);
+    const [acctError, setAcctError] = useState('');
+    const [acctConsent, setAcctConsent] = useState(false);
+    const [checkYourEmail, setCheckYourEmail] = useState(false);
+    // For somebody who has been here before. Not the default, because most
+    // people arriving at this point have no account.
+    const [showSignIn, setShowSignIn] = useState(false);
     const [areas, setAreas] = useState<AreaRow[]>([]);
 
     const [saving, setSaving] = useState(false);
@@ -347,6 +359,10 @@ function ApplicationForm() {
             if (d.registrations) setRegistrations(d.registrations);
             if (d.calloutWaived !== undefined) setCalloutWaived(d.calloutWaived === true);
             if (Array.isArray(d.skills)) setSkills(d.skills);
+            if (Array.isArray(d.photos)) setPhotos(d.photos);
+            if (d.logo) setLogo(d.logo);
+            if (d.buildingType) setBuildingType(d.buildingType);
+            if (d.panes) setPanes(d.panes);
             if (d.prices) setPrices(d.prices);
             if (d.extras) setExtras(d.extras);
             if (d.calloutFee) setCalloutFee(d.calloutFee);
@@ -379,6 +395,13 @@ function ApplicationForm() {
                     businessName, description, contactEmail, contactPhone,
                     prices, extras, calloutFee, hourlyRate, areas,
                     doesGas, doesOil, registrations, calloutWaived, skills,
+                    // Photos and the logo are storage paths, not files — they
+                    // are already uploaded by this point, so the path is the
+                    // whole of what there is to keep. Leaving them out meant
+                    // somebody who uploaded four photos and then went to sign
+                    // in came back to none of them, with the files sitting in
+                    // the bucket.
+                    photos, logo, buildingType, panes,
                 })
             );
         } catch (err) {
@@ -389,6 +412,7 @@ function ApplicationForm() {
         businessName, description, contactEmail, contactPhone,
         prices, extras, calloutFee, hourlyRate, areas,
         doesGas, doesOil, registrations, calloutWaived, skills,
+        photos, logo, buildingType, panes,
     ]);
 
     // Which registration boxes this application shows at all. An electrician
@@ -712,14 +736,123 @@ function ApplicationForm() {
         setAreas((prev) => [...prev, { town: next.label, radius_miles: 10 }]);
     };
 
+    // Making the account out of what they have already typed.
+    //
+    // Their contact email is the account email: asking for a second address at
+    // the end of a form that already has one is asking a question we know the
+    // answer to. The password is the only new thing, and the tick box is the
+    // consent — an account should not appear because somebody pressed Save.
+    const createAccount = async (): Promise<any> => {
+        const email = contactEmail.trim();
+
+        if (!email || email.indexOf('@') === -1) {
+            setAcctError('Add an email address above — that is the one your account will use.');
+            return null;
+        }
+
+        if (acctPassword.length < 8) {
+            setAcctError('Pick a password of at least 8 characters.');
+            return null;
+        }
+
+        if (!acctConsent) {
+            setAcctError('Tick the box and we will make your account.');
+            return null;
+        }
+
+        setAcctBusy(true);
+        setAcctError('');
+
+        try {
+            // signUp returns Supabase's own errors but THROWS anything else —
+            // a dropped connection, a 5xx, a CORS refusal. Without this catch
+            // the throw escapes and the button sits there having said nothing.
+            const { data, error } = await supabase.auth.signUp({
+                email: email,
+                password: acctPassword,
+                options: {
+                    data: { name: businessName.trim() },
+                    // Straight back to this form, with the trade, so a
+                    // confirmed address lands on the thing they were doing
+                    // rather than on the home page.
+                    emailRedirectTo: window.location.origin
+                        + '/auth/callback?next='
+                        + encodeURIComponent('/services/join/apply?trade=' + tradeFromUrl),
+                },
+            });
+
+            setAcctBusy(false);
+
+            if (error) {
+                const message = String(error.message || '');
+                setAcctError(
+                    /already/i.test(message)
+                        ? 'There is already an account on that address. Sign in below and we will save this to it.'
+                        : message || 'That did not work.'
+                );
+                if (/already/i.test(message)) setShowSignIn(true);
+                return null;
+            }
+
+            // With email confirmation switched on, signUp returns a user and
+            // NO session — so nothing can be written yet. The form is already
+            // in local storage and the link comes back here, so this is a
+            // pause rather than a loss, but it has to be SAID: silently doing
+            // nothing looks exactly like a broken button.
+            if (!data.session) {
+                setCheckYourEmail(true);
+                return null;
+            }
+
+            await supabase.from('profiles').upsert(
+                {
+                    id: data.session.user.id,
+                    email: email,
+                    full_name: businessName.trim(),
+                    is_host: false,
+                },
+                { onConflict: 'id' }
+            );
+
+            setSession(data.session);
+            return data.session;
+        } catch (err: any) {
+            setAcctBusy(false);
+            setAcctError('Something went wrong making your account. Try again.');
+            return null;
+        }
+    };
+
     const save = async (submit: boolean) => {
-        // The account is asked for here, at the end, rather than at the door.
-        // What they typed is already in local storage, so signing in — even
-        // via Google, which leaves the site — does not cost them the form.
+        let active: any = session;
+
+        // No detour. The details they have entered make the account, and the
+        // same press that makes it saves the form — rather than sending
+        // somebody who has just filled in twenty fields off to register
+        // elsewhere and hope their work is still here when they get back.
+        //
+        // What they typed is in local storage on every keystroke regardless,
+        // so any route out of this page is survivable.
         if (!session) {
             setWantsToSave(submit);
             if (submit) setTouchedSubmit(true);
-            return;
+
+            // Still gate on the form being right. Making an account for
+            // somebody whose application cannot be sent is the worst order to
+            // do these two things in.
+            if (submit && problems.length) {
+                toast.error('A few things still need filling in.', { theme: 'colored' });
+                return;
+            }
+
+            const made = await createAccount();
+            if (!made) return;
+
+            // Carried in a local rather than read back off state: setSession
+            // does not take effect until the next render, and everything below
+            // needs the id NOW. Reading `session` here would be null and the
+            // save would fall over on the press that was supposed to work.
+            active = made;
         }
 
         if (submit) {
@@ -735,7 +868,7 @@ function ApplicationForm() {
         const now = new Date();
 
         const payload: any = {
-            owner_id: session.user.id,
+            owner_id: active.user.id,
             business_name: businessName.trim(),
             trade,
             description: description.trim(),
@@ -773,7 +906,7 @@ function ApplicationForm() {
             const { data: already } = await supabase
                 .from('service_providers')
                 .select('id')
-                .eq('owner_id', session.user.id)
+                .eq('owner_id', active.user.id)
                 .eq('trade', trade)
                 .maybeSingle();
             if (already) {
@@ -2044,18 +2177,84 @@ function ApplicationForm() {
                 </div>
             )}
 
-            {!session && wantsToSave !== null && (
+            {/* The account, inline, made out of what they have already typed.
+                This was a login wall: a tradesman filled in the whole form and
+                then met a door. Now the last field on the form is a password
+                and the button that sends it also makes the account.
+
+                No second email box. Their contact address is the account
+                address — asking again is asking a question we know the answer
+                to, and two addresses that can disagree is a support problem
+                waiting to happen. */}
+            {!session && !checkYourEmail && (
+                <div className="rounded-2xl border border-slate-300 p-5 mb-8">
+                    <h2 className="text-sm font-semibold text-slate-900 mb-1.5">
+                        Set a password
+                    </h2>
+                    <p className="text-sm text-slate-500 mb-4">
+                        So you can come back and change any of this. We will use{' '}
+                        <strong className="text-slate-900">{contactEmail.trim() || 'the email address above'}</strong>.
+                    </p>
+
+                    <input
+                        type="password"
+                        value={acctPassword}
+                        onChange={(e) => { setAcctPassword(e.target.value); setAcctError(''); }}
+                        autoComplete="new-password"
+                        placeholder="At least 8 characters"
+                        className="w-full md:max-w-sm rounded-xl border border-slate-300 px-3.5 py-3 focus:outline-none focus:ring-2 focus:ring-emerald-700"
+                    />
+
+                    <label className="flex items-start gap-2.5 mt-3 text-sm text-slate-800">
+                        <input
+                            type="checkbox"
+                            checked={acctConsent}
+                            onChange={(e) => { setAcctConsent(e.target.checked); setAcctError(''); }}
+                            className="mt-0.5 w-4 h-4 rounded border-slate-300 shrink-0"
+                        />
+                        <span>I am happy to create an account</span>
+                    </label>
+
+                    {acctError && (
+                        <p className="text-sm text-rose-700 mt-2">{acctError}</p>
+                    )}
+
+                    {/* Offered, not imposed. Somebody who has been here before
+                        should not be made to invent a second account, but most
+                        people at this point have none — so it is a link rather
+                        than half the panel. */}
+                    {!showSignIn ? (
+                        <button
+                            type="button"
+                            onClick={() => setShowSignIn(true)}
+                            className="text-sm font-semibold text-emerald-700 hover:text-emerald-800 underline mt-4"
+                        >
+                            I already have an account
+                        </button>
+                    ) : (
+                        <div className="mt-4 pt-4 border-t border-slate-200">
+                            <p className="text-sm text-slate-600 mb-3">
+                                Sign in and we will save this straight to your account. Nothing you have
+                                typed is lost.
+                            </p>
+                            <LoginModel />
+                        </div>
+                    )}
+                </div>
+            )}
+
+            {/* Email confirmation is on, so signUp gave us a user and no
+                session and nothing can be written yet. Saying so matters: a
+                button that silently does nothing looks broken, and the form is
+                safe in local storage whether or not they believe us. */}
+            {checkYourEmail && (
                 <div className="rounded-2xl border-2 border-emerald-700 bg-emerald-50 p-5 mb-8">
-                    <p className="font-semibold text-emerald-900">
-                        {problems.length
-                            ? 'Nearly — a few things still need filling in above.'
-                            : 'One last thing: an account to save it to.'}
+                    <p className="font-semibold text-emerald-900">Check your email</p>
+                    <p className="text-sm text-emerald-900/80 mt-1">
+                        We have sent a link to <strong>{contactEmail.trim()}</strong>. Open it and you will
+                        come straight back here with everything you have filled in still on the page —
+                        then press send.
                     </p>
-                    <p className="text-sm text-emerald-900/80 mt-1 mb-4">
-                        Nothing you have typed is lost. Sign in or make an account and we will save it
-                        straight away.
-                    </p>
-                    <LoginModel />
                 </div>
             )}
 
@@ -2086,22 +2285,48 @@ function ApplicationForm() {
                         </>
                     ) : (
                         <div className="flex flex-wrap items-center gap-3">
+                            {/* One press does both when they are signed out:
+                                the account is made from what they typed and
+                                the application goes in. The label says so,
+                                because "Send for review" while a password box
+                                sits above it leaves somebody wondering whether
+                                they have to do something else first. */}
                             <button
                                 type="button"
                                 onClick={() => save(true)}
-                                disabled={saving}
+                                disabled={saving || acctBusy}
                                 className="rounded-full bg-emerald-700 hover:bg-emerald-800 text-white px-7 py-3 font-semibold transition disabled:opacity-60"
                             >
-                                {saving ? 'Sending…' : 'Send for review'}
+                                {acctBusy
+                                    ? 'Making your account…'
+                                    : saving
+                                        ? 'Sending…'
+                                        : session
+                                            ? 'Send for review'
+                                            : 'Create account and send'}
                             </button>
-                            <button
-                                type="button"
-                                onClick={() => save(false)}
-                                disabled={saving}
-                                className="rounded-full border border-slate-300 px-6 py-3 font-semibold text-slate-700 hover:border-slate-500 transition disabled:opacity-60"
-                            >
-                                Save and finish later
-                            </button>
+
+                            {/* "Save and finish later" is a promise that needs
+                                somewhere to save TO. Signed out there is no
+                                such place, and it used to open the login wall
+                                — so it says what actually happens instead: the
+                                form is in this browser and will be here when
+                                they come back. */}
+                            {session ? (
+                                <button
+                                    type="button"
+                                    onClick={() => save(false)}
+                                    disabled={saving}
+                                    className="rounded-full border border-slate-300 px-6 py-3 font-semibold text-slate-700 hover:border-slate-500 transition disabled:opacity-60"
+                                >
+                                    Save and finish later
+                                </button>
+                            ) : (
+                                <p className="text-sm text-slate-500">
+                                    Everything you have typed stays on this device, so you can close
+                                    this and come back to it.
+                                </p>
+                            )}
                         </div>
                     )}
 
