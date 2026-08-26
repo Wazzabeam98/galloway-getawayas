@@ -35,7 +35,6 @@ import {
     townByKey,
     submitProblems,
     statusSummary,
-    trialEndsAt,
     submitStatusPatch,
     pricingModelFor,
     bandsFor,
@@ -78,10 +77,6 @@ function ApplicationForm() {
     const [session, setSession] = useState<any>(null);
 
     const [providerId, setProviderId] = useState<string | null>(null);
-    // The business behind the listing. One per person, shared by every trade
-    // they hold — which is the point of it being a row of its own: a plumber
-    // who also joins types their phone number once.
-    const [businessId, setBusinessId] = useState<string | null>(null);
     const [status, setStatus] = useState('draft');
     const [reviewNote, setReviewNote] = useState<string | null>(null);
 
@@ -160,43 +155,27 @@ function ApplicationForm() {
                     return;
                 }
 
-                // The business first, and on its own. It loads whether or not
-                // there is a listing for this trade yet — that is what makes
-                // the second trade a shorter form than the first, with the
-                // name, the logo and the phone number already filled in.
-                const { data: business } = await supabase
-                    .from('service_businesses')
-                    .select('id, business_name, logo, contact_email, contact_phone')
+                // Keyed on the trade as well as the owner. One person can run
+                // a cleaning round and a window round, or plumb and joiner —
+                // and each is its own business with its own name, so this is
+                // the application for the trade they picked and nothing about
+                // it is inherited from another one they hold.
+                const { data: existing } = await supabase
+                    .from('service_providers')
+                    .select('id, business_name, trade, description, contact_email, contact_phone, audience, photos, logo, status, review_note, callout_fee, hourly_rate, does_gas, does_oil')
                     .eq('owner_id', session.user.id)
+                    .eq('trade', tradeFromUrl)
                     .maybeSingle();
-
-                if (business) {
-                    setBusinessId(business.id);
-                    setBusinessName(business.business_name || '');
-                    setLogo(business.logo || null);
-                    setContactEmail(business.contact_email || session.user.email || '');
-                    setContactPhone(business.contact_phone || '');
-                }
-
-                // Keyed on the trade as well as the business. One person can
-                // run a cleaning firm and a window cleaning round, or plumb
-                // and joiner, and the database allows exactly one listing per
-                // trade — so this is the application for the trade they
-                // picked, not "their application".
-                const { data: existing } = business
-                    ? (await supabase
-                        .from('service_providers')
-                        .select('id, trade, description, audience, photos, status, review_note, callout_fee, hourly_rate, does_gas, does_oil')
-                        .eq('business_id', business.id)
-                        .eq('trade', tradeFromUrl)
-                        .maybeSingle())
-                    : { data: null };
 
                 if (existing) {
                     setProviderId(existing.id);
+                    setBusinessName(existing.business_name || '');
                     setTrade(existing.trade || tradeFromUrl);
                     setDescription(existing.description || '');
+                    setContactEmail(existing.contact_email || session.user.email || '');
+                    setContactPhone(existing.contact_phone || '');
                     setPhotos(existing.photos || []);
+                    setLogo(existing.logo || null);
                     setStatus(existing.status || 'draft');
                     setDoesGas(existing.does_gas === true);
                     setDoesOil(existing.does_oil === true);
@@ -272,13 +251,7 @@ function ApplicationForm() {
                 } else {
                     // Signed in, nothing saved for this trade — so anything
                     // they typed before signing in is still the newest thing.
-                    //
-                    // The business details loaded above are deliberately not
-                    // treated as a draft to restore over: somebody adding
-                    // joinery to their plumbing has already told us their
-                    // name, and being asked again would be the bug this table
-                    // split exists to fix.
-                    restoreDraft(!!business);
+                    restoreDraft();
                     setContactEmail((prev) => prev || session.user.email || '');
                 }
 
@@ -314,21 +287,16 @@ function ApplicationForm() {
     // It survives closing the tab, a refresh, and the trip out to Google and
     // back. It does not survive clearing browser data, a private window, or
     // moving to another device.
-    // `haveBusiness` means the details they already gave us win over anything
-    // sitting in local storage. A draft is what somebody typed before they had
-    // an account; a saved business is what they typed after. The second is
-    // newer by definition, and restoring over it would show a returning
-    // provider an old version of their own name.
-    const restoreDraft = (haveBusiness?: boolean) => {
+    const restoreDraft = () => {
         try {
             const raw = window.localStorage.getItem(draftKey(tradeFromUrl));
             if (!raw) return;
 
             const d = JSON.parse(raw);
-            if (d.businessName && !haveBusiness) setBusinessName(d.businessName);
+            if (d.businessName) setBusinessName(d.businessName);
             if (d.description) setDescription(d.description);
-            if (d.contactEmail && !haveBusiness) setContactEmail(d.contactEmail);
-            if (d.contactPhone && !haveBusiness) setContactPhone(d.contactPhone);
+            if (d.contactEmail) setContactEmail(d.contactEmail);
+            if (d.contactPhone) setContactPhone(d.contactPhone);
             if (d.doesGas !== undefined) setDoesGas(d.doesGas === true);
             if (d.doesOil !== undefined) setDoesOil(d.doesOil === true);
             if (d.registrations) setRegistrations(d.registrations);
@@ -655,68 +623,16 @@ function ApplicationForm() {
 
         const now = new Date();
 
-        // The business first, because the listing needs its id.
-        //
-        // Written on every save rather than only when it is new: this is where
-        // a change of phone number lands, and it lands once for every trade
-        // they hold instead of once per listing.
-        const businessPayload: any = {
+        const payload: any = {
             owner_id: session.user.id,
             business_name: businessName.trim(),
-            contact_email: contactEmail.trim(),
-            contact_phone: contactPhone.trim() || null,
-            logo,
-            updated_at: now.toISOString(),
-        };
-
-        let bId = businessId;
-
-        // They may have signed in to an account that already has a business —
-        // a second tab, or an application started months ago. One per person
-        // is a constraint, so find it rather than collide with it.
-        if (!bId) {
-            const { data: already } = await supabase
-                .from('service_businesses')
-                .select('id')
-                .eq('owner_id', session.user.id)
-                .maybeSingle();
-            if (already) bId = already.id;
-        }
-
-        if (bId) {
-            const { error } = await supabase
-                .from('service_businesses')
-                .update(businessPayload)
-                .eq('id', bId);
-
-            if (error) {
-                setSaving(false);
-                toast.error(error.message, { theme: 'colored' });
-                return;
-            }
-        } else {
-            const { data, error } = await supabase
-                .from('service_businesses')
-                .insert(businessPayload)
-                .select('id')
-                .single();
-
-            if (error || !data) {
-                setSaving(false);
-                toast.error((error && error.message) || 'Could not save that.', { theme: 'colored' });
-                return;
-            }
-            bId = data.id;
-        }
-
-        setBusinessId(bId);
-
-        const payload: any = {
-            business_id: bId,
             trade,
             description: description.trim(),
+            contact_email: contactEmail.trim(),
+            contact_phone: contactPhone.trim() || null,
             audience: audienceForTrade(trade),
             photos,
+            logo,
             does_gas: asksAboutFuel(trade) ? doesGas : false,
             does_oil: asksAboutFuel(trade) ? doesOil : false,
             // Only meaningful for a call-out trade; cleared otherwise so a
@@ -730,19 +646,19 @@ function ApplicationForm() {
         // that the rule can be tested: an approved provider is never knocked
         // back into the queue by their own edit.
         if (submit) {
-            Object.assign(payload, submitStatusPatch(status, now, !providerId || status === 'draft'));
+            Object.assign(payload, submitStatusPatch(status, now));
         }
 
         let id = providerId;
 
-        // They may already have a listing in this trade — a second tab, or an
+        // They may already have a business in this trade — a second tab, or an
         // application started months ago. One per trade is a constraint, so
         // find it rather than collide.
         if (!id) {
             const { data: already } = await supabase
                 .from('service_providers')
                 .select('id')
-                .eq('business_id', bId)
+                .eq('owner_id', session.user.id)
                 .eq('trade', trade)
                 .maybeSingle();
             if (already) {

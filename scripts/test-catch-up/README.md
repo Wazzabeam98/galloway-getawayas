@@ -1,22 +1,29 @@
-# Bringing the test database into line
+# Undoing the business/listing split, on test
 
-Two SQL files, run by hand in the Supabase SQL editor against **test**. They
-are not migrations and must never be copied into `supabase/migrations`.
-
-The service migrations were corrected in place rather than patched, because
-none of them have ever run on production — so production gets the right shape
-first time. Test already ran the old versions, and Supabase records migrations
-as applied by filename, so the edited files will not re-run there.
+One file, run by hand in the Supabase SQL editor against **test**. Not a
+migration, never copied into `supabase/migrations`, and it runs once.
 
 ```
-1-add-and-backfill.sql   run BEFORE deploying    adds only, site keeps working
-        ...deploy...
-2-drop-old-columns.sql   run AFTER the deploy    removes the old columns
+undo-the-split.sql
 ```
 
-Both refuse to run rather than half-finish, and both are safe to run twice.
+## Why it exists
 
-Do not run step two until the deploy is live and the sign-up, the admin queue
-and the trade picker have all been loaded once. Between the two steps the
-database carries both shapes at the same time, which is the point — that is
-the window the deploy lands in.
+`service_providers` was briefly two tables — a business and its trade listings
+— so that somebody holding several trades typed their name once. That was
+wrong: a cleaning round and a window round are two businesses under two names,
+and each trade should be set up from scratch. The migrations are back to their
+original shape, where the listing carries its own name and `unique(owner_id,
+trade)` gives one business per trade per person.
+
+Test had run step one of the old catch-up. **Step two never ran**, which is the
+only reason this is cheap — step two was the half that dropped `owner_id`,
+`business_name` and `contact_email`, and they are all still here and still
+populated. If you find this file having already run step two, stop: the data
+those columns held has to come back from `service_businesses` before anything
+else, and this script assumes it never left.
+
+It also takes the trial out. There is no free trial; it is 10% per job from the
+first job.
+
+Safe to run twice, and it stops rather than half-finishing.

@@ -165,31 +165,32 @@ test('an approval from before the digest existed is trusted', () => {
 const WHEN = new Date('2026-08-25T10:00:00.000Z');
 
 test('a live provider saving changes is not knocked back into the queue', () => {
-    const patch = submitStatusPatch('approved', WHEN, false);
+    const patch = submitStatusPatch('approved', WHEN);
 
     assert.deepEqual(patch, {},
         'this is the bug: editing a description took a live business off the site');
 });
 
-test('a first application goes into the queue and starts the trial', () => {
-    const patch = submitStatusPatch('draft', WHEN, true);
+test('a first application goes into the queue', () => {
+    const patch = submitStatusPatch('draft', WHEN);
 
     assert.equal(patch.status, 'pending_review');
     assert.equal(patch.submitted_at, WHEN.toISOString());
     assert.equal(patch.review_note, null);
-    assert.equal(typeof patch.trial_ends_at, 'string', 'the trial runs from the day they joined');
+
+    // There is no trial. It is 10% per job from the first job, so a submission
+    // starts nothing and promises nothing.
+    assert.equal('trial_ends_at' in patch, false, 'nothing here starts a trial');
 });
 
 test('sending it back after a decline queues them and clears the old reason', () => {
-    const patch = submitStatusPatch('declined', WHEN, false);
+    const patch = submitStatusPatch('declined', WHEN);
 
     assert.equal(patch.status, 'pending_review');
     assert.equal(patch.review_note, null, 'the reason they fixed should not still be on screen');
-    assert.equal(patch.trial_ends_at, undefined,
-        'the trial started when they first applied, not when we got round to them');
 });
 
 test('a hidden provider sending it back goes into the queue', () => {
-    const patch = submitStatusPatch('hidden', WHEN, false);
+    const patch = submitStatusPatch('hidden', WHEN);
     assert.equal(patch.status, 'pending_review');
 });

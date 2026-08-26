@@ -23,11 +23,11 @@
 -- claiming two Gas Safe numbers, and says nothing about holding a Gas Safe and
 -- an OFTEC at the same time, which is what actually happens.
 --
--- ON THE LISTING, NOT THE BUSINESS
+-- PER PROVIDER ROW, WHICH IS PER TRADE
 --
--- The requirement attaches to the trade. A firm that plumbs and joins needs a
--- Gas Safe number for one listing and nothing for the other, and approving the
--- joinery must not be blocked on an electrician's paperwork.
+-- The requirement attaches to the trade. Somebody who plumbs and joins is two
+-- businesses here, one per trade, and only the plumbing one needs a Gas Safe
+-- number — approving the joinery must not be blocked on it.
 --
 -- WHY IT IS PUBLIC
 --
@@ -149,15 +149,13 @@ create policy "owners manage their own registrations"
     on "public"."service_provider_registrations"
     using (exists (
         select 1 from "public"."service_providers" p
-          join "public"."service_businesses" b on b."id" = p."business_id"
          where p."id" = "service_provider_registrations"."provider_id"
-           and b."owner_id" = auth.uid()
+           and p."owner_id" = auth.uid()
     ))
     with check (exists (
         select 1 from "public"."service_providers" p
-          join "public"."service_businesses" b on b."id" = p."business_id"
          where p."id" = "service_provider_registrations"."provider_id"
-           and b."owner_id" = auth.uid()
+           and p."owner_id" = auth.uid()
     ));
 
 drop policy if exists "registrations of approved providers are public" on "public"."service_provider_registrations";

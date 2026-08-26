@@ -17,8 +17,6 @@ const {
     milesBetween,
     coversPoint,
     tradeLabel,
-    trialEndsAt,
-    TRIAL_DAYS,
 } = require('@/lib/serviceProviders');
 
 const complete = {
@@ -115,9 +113,7 @@ test('an unknown trade still reads as something', () => {
     assert.equal(tradeLabel('nonsense'), 'Service');
 });
 
-test('the trial ends the right number of days out', () => {
-    const start = new Date('2026-09-01T00:00:00.000Z');
-    const end = new Date(trialEndsAt(start));
-    const days = Math.round((end.getTime() - start.getTime()) / 86400000);
-    assert.equal(days, TRIAL_DAYS);
-});
+// There is no trial, so there is nothing here to test. TRIAL_DAYS and
+// trialEndsAt() are gone from lib/serviceProviders.ts rather than left unused:
+// it is 10% per job from the first job, and a dormant trial helper is one
+// query away from putting "Free for 90 days" back on a page.

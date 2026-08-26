@@ -63,15 +63,13 @@ create policy "owners manage their own extras"
     on "public"."service_provider_extras"
     using (exists (
         select 1 from "public"."service_providers" p
-          join "public"."service_businesses" b on b."id" = p."business_id"
          where p."id" = "service_provider_extras"."provider_id"
-           and b."owner_id" = auth.uid()
+           and p."owner_id" = auth.uid()
     ))
     with check (exists (
         select 1 from "public"."service_providers" p
-          join "public"."service_businesses" b on b."id" = p."business_id"
          where p."id" = "service_provider_extras"."provider_id"
-           and b."owner_id" = auth.uid()
+           and p."owner_id" = auth.uid()
     ));
 
 -- A host is comparing providers on these before anybody has asked for

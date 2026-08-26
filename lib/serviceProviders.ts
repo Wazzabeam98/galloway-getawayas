@@ -161,16 +161,13 @@ export function audienceLabel(audience: string): string {
     return 'not said';
 }
 
-// How long a new provider gets before anything is charged. Nothing is charged
-// during the trial at all — this only decides what the summary email says is
-// coming.
-export const TRIAL_DAYS = 90;
-
-export function trialEndsAt(from: Date): string {
-    const end = new Date(from.getTime());
-    end.setDate(end.getDate() + TRIAL_DAYS);
-    return end.toISOString();
-}
+// There is no free trial. It is 10% per job from the first job, and the rate
+// lives in `commission_rate` on the provider row.
+//
+// TRIAL_DAYS and trialEndsAt() used to live here, and "Free for 90 days" was
+// on the sign-up until commit ccbc10c took the words off the page. The
+// machinery outlived the copy by a few commits, which is exactly how a promise
+// nobody meant to make gets made again — so it is gone rather than dormant.
 
 
 // What a re-check is actually for.
@@ -183,11 +180,6 @@ export function trialEndsAt(from: Date): string {
 // costs the provider work and there is nothing to judge; coverage is their own
 // knowledge, changes legitimately and often, and friction there makes people
 // under-declare it, which makes matching worse rather than safer.
-// `business_name` and `logo` moved to service_businesses, so a provider row on
-// its own no longer carries them. The digest is computed from a row joined to
-// its business — see the select in app/admin/providers/page.tsx — which keeps
-// the fingerprint covering everything a reviewer actually looked at.
-//
 // `does_gas` and `does_oil` are in here because turning one on after approval
 // is a new claim about work the law restricts, and it should come back round
 // rather than appear quietly. The registration numbers themselves are not:
@@ -296,24 +288,17 @@ export function fieldLabel(field: string): string {
 // back was caught by no test at all.
 export function submitStatusPatch(
     currentStatus: string,
-    now: Date,
-    firstTimeOrDraft: boolean
+    now: Date
 ): Record<string, any> {
     // Already live. Their edits are live too, and the queue works out from the
     // digest whether any of them want looking at.
     if (currentStatus === 'approved') return {};
 
-    const patch: Record<string, any> = {
+    return {
         status: 'pending_review',
         submitted_at: now.toISOString(),
         review_note: null,
     };
-
-    // Set once, when they first apply, so the trial is measured from the day
-    // they joined rather than the day we got round to them.
-    if (firstTimeOrDraft) patch.trial_ends_at = trialEndsAt(now);
-
-    return patch;
 }
 
 // ---------------------------------------------------------------------------

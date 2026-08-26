@@ -545,28 +545,31 @@ Please:
   from anything stable across attempts left a four-hour window in which a
   manual re-run recorded a refusal that never happened.
 
-## The service tables are mid-split on test
+## The service tables were briefly split, and are not any more
 
-The service migrations were corrected in place rather than patched, because
-none of them have ever run on production. Production gets the right shape first
-time; test already ran the old versions, and Supabase records migrations as
-applied by filename, so the edited files will not re-run there.
+`service_providers` was split into a business and its trade listings for a few
+hours on 26 Aug 2026, so somebody holding two trades would type their name
+once. That was the wrong shape — a cleaning round and a window round are two
+businesses under two names — so the migrations are back to carrying the name on
+the listing, with `unique(owner_id, trade)` giving one business per trade per
+person.
 
-`scripts/test-catch-up/` is what brings test into line, by hand, once. Two
-files, and the order is the whole point:
+Step one of the old catch-up ran on test. **Step two never did**, which is why
+undoing it cost nothing: step two was the half that dropped `owner_id`,
+`business_name` and `contact_email`, and they were still there and still
+populated the whole time. `scripts/test-catch-up/undo-the-split.sql` puts test
+back and is the only thing in that folder now.
 
-1. `1-add-and-backfill.sql` — run **before** deploying. Adds only, so the site
-   keeps working with both shapes in the database at once.
-2. `2-drop-old-columns.sql` — run **after** the deploy is live and you have
-   loaded the sign-up, the admin queue and the trade picker.
+The lesson worth keeping: the two-step order — add, deploy, then drop — is what
+made a change of mind cheap rather than a reconstruction job. It was written to
+survive a bad deploy and it ended up surviving a bad decision.
 
-Running step two early does not degrade those pages, it errors them:
-`business_name`, `owner_id` and `contact_email` are named in selects in three
-places, and a select naming a column that is gone fails outright.
-
-If the catch-up has already been run and you are looking at test wondering why
-`service_providers` has no `business_name`, this is why. It lives on
-`service_businesses` now, one row per person, and the listing hangs off it.
+**There is no free trial.** It is 10% per job from the first job, at
+`commission_rate` on the provider row. `TRIAL_DAYS`, `trialEndsAt()` and
+`trial_ends_at` are all gone rather than left dormant — the words "Free for 90
+days" came off the sign-up in commit `ccbc10c` while the machinery behind them
+lived on for several commits, which is how a promise nobody meant to make gets
+made again.
 
 ## Email — two separate systems
 

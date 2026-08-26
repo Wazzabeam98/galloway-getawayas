@@ -86,17 +86,15 @@ function TradePicker() {
                 const { data: { session } } = await supabase.auth.getSession();
                 if (!session) return;
 
-                // One query, two tables. The listings hang off the business
-                // now, so there is no owner_id on a listing to filter by —
-                // and asking for the business first is also how the name and
-                // the phone number stop being typed once per trade.
+                // Each trade is its own business with its own name, so this
+                // is a list of businesses rather than one business with
+                // several sides to it.
                 const { data } = await supabase
-                    .from('service_businesses')
-                    .select('id, business_name, service_providers (id, trade, status)')
-                    .eq('owner_id', session.user.id)
-                    .maybeSingle();
+                    .from('service_providers')
+                    .select('id, trade, business_name, status')
+                    .eq('owner_id', session.user.id);
 
-                const listings = (data && (data as any).service_providers) || [];
+                const listings = data || [];
 
                 // One listing is the only case that exists today, and the
                 // decision emails all point here — so a one-row list is a
@@ -203,11 +201,11 @@ function TradePicker() {
             </Link>
 
             <h1 className="text-3xl sm:text-4xl font-extrabold tracking-tight text-slate-900">
-                {hasSome ? 'Your trades' : 'What do you do?'}
+                {hasSome ? 'Your businesses' : 'What do you do?'}
             </h1>
             <p className="text-slate-600 mt-3 mb-8">
                 {hasSome
-                    ? 'Open one to change it, or add another trade.'
+                    ? 'Open one to change it, or set up another trade as its own business.'
                     : 'Pick the one that fits best. It decides what we ask you next, and who finds you.'}
             </p>
 
@@ -225,14 +223,15 @@ function TradePicker() {
                             >
                                 <Icon className="w-6 h-6 text-emerald-700 shrink-0" strokeWidth={1.5} />
                                 <span className="min-w-0 flex-1">
-                                    {/* The trade is the title now. The
-                                        business name used to be, and it is the
-                                        same on every row here — one business,
-                                        several trades — so it told you nothing
-                                        about which one you were opening. */}
+                                    {/* The name they trade under, with the
+                                        trade underneath. Each one is its own
+                                        business and they are often not called
+                                        the same thing, so the name is what
+                                        tells them apart. */}
                                     <span className="block font-semibold text-slate-900 truncate">
-                                        {tradeLabel(p.trade)}
+                                        {p.business_name || tradeLabel(p.trade)}
                                     </span>
+                                    <span className="block text-sm text-slate-500">{tradeLabel(p.trade)}</span>
                                 </span>
                                 <span
                                     className={`shrink-0 text-xs font-semibold px-2.5 py-1 rounded-full ${

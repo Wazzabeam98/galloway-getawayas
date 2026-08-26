@@ -81,26 +81,15 @@ export async function POST(req: Request) {
             );
         }
 
-        const { data: row } = await admin
+        const { data: provider } = await admin
             .from('service_providers')
-            .select('id, business_id, status, approved_digest, changes_pending_at, trade, description, audience, photos, does_gas, does_oil, service_businesses ( business_name, logo, contact_email )')
+            .select('id, business_name, logo, contact_email, status, approved_digest, changes_pending_at, trade, description, audience, photos, does_gas, does_oil')
             .eq('id', id)
             .maybeSingle();
 
-        if (!row) {
+        if (!provider) {
             return NextResponse.json({ ok: false, error: 'That business no longer exists.' }, { status: 404 });
         }
-
-        // Flattened, because the digest is a fingerprint of what a reviewer
-        // looked at and the name and logo are part of that even though they
-        // live on the business now.
-        const business: any = (row as any).service_businesses || {};
-        const provider: any = {
-            ...row,
-            business_name: business.business_name || '',
-            logo: business.logo || null,
-            contact_email: business.contact_email || '',
-        };
 
         const { data: regRows } = await admin
             .from('service_provider_registrations')

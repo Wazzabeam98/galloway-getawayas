@@ -44,32 +44,18 @@ export async function POST(req: Request) {
 
         const admin = adminClient();
 
-        const { data: row } = await admin
+        const { data: provider } = await admin
             .from('service_providers')
-            .select('id, business_id, trade, description, audience, photos, status, declined_at, approved_digest, changes_pending_at, does_gas, does_oil, service_businesses ( owner_id, business_name, logo, contact_email, contact_phone )')
+            .select('id, owner_id, business_name, logo, trade, description, audience, photos, contact_email, contact_phone, status, declined_at, approved_digest, changes_pending_at, does_gas, does_oil')
             .eq('id', id)
             .maybeSingle();
 
-        if (!row) {
+        if (!provider) {
             return NextResponse.json({ ok: false, error: 'No such business.' }, { status: 404 });
         }
 
-        // Flattened onto one row, because the digest fingerprints what a
-        // reviewer looked at and the name and logo are part of that even
-        // though they live on the business now.
-        const business: any = (row as any).service_businesses || {};
-        const provider: any = {
-            ...row,
-            owner_id: business.owner_id || null,
-            business_name: business.business_name || '',
-            logo: business.logo || null,
-            contact_email: business.contact_email || '',
-            contact_phone: business.contact_phone || '',
-        };
-
         // Their own row only. Without this, a signed-in stranger could make us
-        // email ourselves about somebody else's application. Ownership is one
-        // hop away now — it is the business that has an owner, not the listing.
+        // email ourselves about somebody else's application.
         if (provider.owner_id !== auth.user.id) {
             return NextResponse.json({ ok: false, error: 'Not yours.' }, { status: 403 });
         }

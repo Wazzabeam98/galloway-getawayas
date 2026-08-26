@@ -46,16 +46,11 @@ function load(options: {
     const logged: any[] = [];
     const updates: any[] = [];
 
-    // Nested, the way the route reads it now. The business is a table of its
-    // own; the route flattens it back onto one row for the digest.
     const provider = {
         id: PROVIDER_ID,
-        business_id: 'biz-1',
-        service_businesses: {
-            business_name: 'Solway Sparkle',
-            logo: null,
-            contact_email: 'hello@solwaysparkle.test',
-        },
+        business_name: 'Solway Sparkle',
+        logo: null,
+        contact_email: 'hello@solwaysparkle.test',
         status: options.status || 'pending_review',
         trade: options.trade || 'sponge',
         does_gas: options.doesGas === true,

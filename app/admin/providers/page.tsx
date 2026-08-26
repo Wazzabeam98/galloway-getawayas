@@ -50,13 +50,9 @@ export default async function AdminProviders() {
     // The error is checked rather than discarded, because an empty list and a
     // broken key look identical on screen, and one of them means applications
     // are silently piling up.
-    // The business comes back nested, then is flattened onto the row below.
-    // Everything downstream — the digest, the card, the decision route — was
-    // written against one flat row and there is no reason for a table split to
-    // become a shape change in six other places.
     const { data: providers, error } = await admin
         .from('service_providers')
-        .select('id, business_id, trade, description, photos, audience, status, submitted_at, created_at, approved_digest, changes_pending_at, does_gas, does_oil, service_businesses ( id, owner_id, business_name, logo, contact_email, contact_phone, kind, plan, trial_ends_at )')
+        .select('id, business_name, trade, description, photos, logo, audience, kind, status, plan, contact_email, contact_phone, submitted_at, created_at, owner_id, approved_digest, changes_pending_at, does_gas, does_oil')
         .order('submitted_at', { ascending: false, nullsFirst: false });
 
     if (error) {
@@ -77,20 +73,7 @@ export default async function AdminProviders() {
         );
     }
 
-    const rows = (providers || []).map((r: any) => {
-        const business = r.service_businesses || {};
-        return {
-            ...r,
-            owner_id: business.owner_id || null,
-            business_name: business.business_name || '',
-            logo: business.logo || null,
-            contact_email: business.contact_email || '',
-            contact_phone: business.contact_phone || '',
-            kind: business.kind || 'external',
-            plan: business.plan || 'trial',
-            trial_ends_at: business.trial_ends_at || null,
-        };
-    });
+    const rows = providers || [];
 
     // Gas Safe, OFTEC and the Part P schemes. Read for every row rather than
     // only the waiting ones, because a live electrician whose registration has

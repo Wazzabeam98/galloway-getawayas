@@ -39,20 +39,13 @@ function load(options: {
     if (options.alertTo === null) delete process.env.SERVICES_ALERT_EMAIL;
     else process.env.SERVICES_ALERT_EMAIL = options.alertTo || 'support@gallowaygetaways.co.uk';
 
-    // Shaped the way the route now reads it: the business comes back nested
-    // under the listing and is flattened onto the row inside the route. A
-    // stub that kept owner_id on the listing would pass while the real query
-    // returned undefined.
     const provider = {
         id: PROVIDER_ID,
-        business_id: 'biz-1',
-        service_businesses: {
-            owner_id: options.ownerId || OWNER,
-            business_name: 'Solway Sparkle',
-            logo: null,
-            contact_email: 'hello@solwaysparkle.test',
-            contact_phone: null,
-        },
+        owner_id: options.ownerId || OWNER,
+        business_name: 'Solway Sparkle',
+        logo: null,
+        contact_email: 'hello@solwaysparkle.test',
+        contact_phone: null,
         trade: 'sponge',
         audience: 'host',
         does_gas: false,
