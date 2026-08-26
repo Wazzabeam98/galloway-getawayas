@@ -6,6 +6,7 @@ import { notFound } from 'next/navigation';
 import { getImageUrl } from '@/lib/utils';
 import {
     tradeLabel,
+    calloutLine,
     hasUnreviewedChanges,
     changedFields,
     fieldLabel,
@@ -52,7 +53,7 @@ export default async function AdminProviders() {
     // are silently piling up.
     const { data: providers, error } = await admin
         .from('service_providers')
-        .select('id, business_name, trade, description, photos, logo, audience, kind, status, plan, contact_email, contact_phone, submitted_at, created_at, owner_id, approved_digest, changes_pending_at, does_gas, does_oil')
+        .select('id, business_name, trade, description, photos, logo, audience, kind, status, plan, contact_email, contact_phone, submitted_at, created_at, owner_id, approved_digest, changes_pending_at, does_gas, does_oil, callout_fee, hourly_rate, callout_waived')
         .order('submitted_at', { ascending: false, nullsFirst: false });
 
     if (error) {
@@ -152,7 +153,7 @@ export default async function AdminProviders() {
                         {waiting.map((p: any) => (
                             <ProviderReviewRow
                                 key={p.id}
-                                provider={{ ...p, tradeLabel: tradeLabel(p.trade), logoUrl: p.logo ? getImageUrl(p.logo) : null, initials: initialsFor(p.business_name) }}
+                                provider={{ ...p, tradeLabel: tradeLabel(p.trade), logoUrl: p.logo ? getImageUrl(p.logo) : null, initials: initialsFor(p.business_name), calloutLine: calloutLine(p.callout_fee, p.callout_waived) }}
                                 areas={areasFor(p.id)}
                                 photoUrls={(p.photos || []).slice(0, 3).map((x: string) => getImageUrl(x))}
                                 registrations={regsFor(p.id)}
@@ -178,6 +179,7 @@ export default async function AdminProviders() {
                                     logoUrl: p.logo ? getImageUrl(p.logo) : null,
                                     initials: initialsFor(p.business_name),
                                     changedFields: changedFields(p).map(fieldLabel),
+                                    calloutLine: calloutLine(p.callout_fee, p.callout_waived),
                                 }}
                                 areas={areasFor(p.id)}
                                 photoUrls={(p.photos || []).slice(0, 3).map((x: string) => getImageUrl(x))}
@@ -200,7 +202,7 @@ export default async function AdminProviders() {
                         {rest.map((p: any) => (
                             <ProviderReviewRow
                                 key={p.id}
-                                provider={{ ...p, tradeLabel: tradeLabel(p.trade), logoUrl: p.logo ? getImageUrl(p.logo) : null, initials: initialsFor(p.business_name) }}
+                                provider={{ ...p, tradeLabel: tradeLabel(p.trade), logoUrl: p.logo ? getImageUrl(p.logo) : null, initials: initialsFor(p.business_name), calloutLine: calloutLine(p.callout_fee, p.callout_waived) }}
                                 areas={areasFor(p.id)}
                                 photoUrls={(p.photos || []).slice(0, 3).map((x: string) => getImageUrl(x))}
                                 registrations={regsFor(p.id)}

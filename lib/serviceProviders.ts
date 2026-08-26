@@ -368,20 +368,31 @@ export const PLOT_BANDS = [
     { key: 'plot_grounds', label: 'Larger than that, or paddock and orchard' },
 ] as const;
 
-// Every maintenance trade is a call-out plus an hourly rate. None of them can
-// be priced off the size of the property the way a changeover clean can —
-// a leak is a leak whether the cottage has two bedrooms or five.
+// No maintenance trade can be priced off the size of the property the way a
+// changeover clean can — a leak is a leak whether the cottage has two bedrooms
+// or five. But they do not all price the same way either.
+//
+//   callout_hourly  turn up, diagnose, charge for the time. A dead boiler, a
+//                   tripped supply, a list of small jobs.
+//   quoted          look at it, then say what the job costs. A re-slate, a
+//                   kitchen, a house to paint.
+//
+// The three quoted trades were callout_hourly, which made an hourly rate
+// compulsory before they could apply. No roofer prices a re-slate by the hour,
+// so that number was going to be invented to get past the form — which is
+// worse than not asking, because an invented number is one a host can hold
+// them to.
 const TRADE_PRICING: Record<string, PricingModel> = {
     sponge: 'bands',
     bin: 'bands',
     trees: 'bands',
     droplet: 'bands',
     electrician: 'callout_hourly',
-    joiner: 'callout_hourly',
     plumber: 'callout_hourly',
-    roofer: 'callout_hourly',
-    painter: 'callout_hourly',
     handyman: 'callout_hourly',
+    roofer: 'quoted',
+    joiner: 'quoted',
+    painter: 'quoted',
 };
 
 const TRADE_BANDS: Record<string, 'bedrooms' | 'plot'> = {
@@ -438,8 +449,20 @@ export function showsTimeGuide(trade: string): boolean {
     return trade !== 'droplet';
 }
 
+// Whether a host can ask for this through the site, rather than being given
+// somebody to ring.
+//
+// This used to read `pricingModelFor(trade) !== 'callout_hourly'`, which was a
+// proxy for the real rule and stopped being true the moment the roofer, the
+// joiner and the painter moved to `quoted` — they would have become
+// requestable, with no price, no total and no completion step behind them, and
+// every test would still have passed because they all named the plumber.
+//
+// The rule is about maintenance, not about how it is priced. So it asks that
+// instead: nothing in the maintenance group can be requested until quoting and
+// completion exist, however that trade happens to charge.
 export function canBeRequested(trade: string): boolean {
-    return pricingModelFor(trade) !== 'callout_hourly';
+    return groupForTrade(trade) === null;
 }
 
 export interface PricingDraft {
@@ -1434,6 +1457,34 @@ export function registrationProblems(
     return problems;
 }
 
+// What a host reads about the call-out fee, in one place so the admin card and
+// the directory cannot word it differently.
+//
+// The waiver is the provider's own offer, not a platform rule — plenty of
+// trades do it and it is a real advantage to the one offering it, so it is
+// said in the same breath as the fee rather than buried as a footnote.
+//
+// Null when there is no fee, because "no call-out fee" and "they have not said"
+// are different things and only one of them is ours to announce.
+export function calloutLine(
+    fee: number | string | null | undefined,
+    waived?: boolean | null
+): string | null {
+    const raw = String(fee === null || fee === undefined ? '' : fee).trim();
+    if (raw === '') return null;
+
+    const amount = Number(raw);
+    if (!(amount > 0)) return null;
+
+    // Whole pounds where it is whole pounds. "£40.00 call-out" reads like a
+    // system wrote it.
+    const shown = Number.isInteger(amount) ? String(amount) : amount.toFixed(2);
+
+    return waived
+        ? '£' + shown + ' call-out, waived if you go ahead'
+        : '£' + shown + ' call-out';
+}
+
 export const REVIEW_WITHIN_HOURS = 48;
 
 export interface ProviderDraft {
@@ -1447,6 +1498,7 @@ export interface ProviderDraft {
     prices?: Record<string, { price?: any; typical_hours?: any }> | null;
     callout_fee?: any;
     hourly_rate?: any;
+    callout_waived?: boolean | null;
     extras?: Record<string, { offered?: boolean; price?: any; notes?: any }> | null;
     does_gas?: boolean | null;
     does_oil?: boolean | null;

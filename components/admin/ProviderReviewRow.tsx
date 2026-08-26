@@ -161,6 +161,19 @@ export default function ProviderReviewRow({
             )}
 
             <dl className="grid sm:grid-cols-2 gap-x-6 gap-y-1.5 text-sm mt-4">
+                {/* Worded by lib/serviceProviders.ts calloutLine, so this and
+                    the directory cannot say it differently. Absent rather than
+                    "none" when there is no fee: not charging one and not having
+                    said are different, and only one is ours to announce. */}
+                {provider.calloutLine && (
+                    <div className="flex gap-2">
+                        <dt className="text-slate-500 shrink-0">Call-out</dt>
+                        <dd className="text-slate-900">
+                            {provider.calloutLine}
+                            {provider.hourly_rate ? ' · £' + provider.hourly_rate + ' an hour' : ''}
+                        </dd>
+                    </div>
+                )}
                 <div className="flex gap-2">
                     <dt className="text-slate-500 shrink-0">Covers</dt>
                     <dd className="text-slate-900">{areas.length ? areas.join(', ') : <span className="text-rose-700">nowhere</span>}</dd>

@@ -27,6 +27,7 @@ const {
     buildingTypeLabel,
     STOREY_BANDS,
     canBeRequested,
+    calloutLine,
     showsTimeGuide,
     unclaimedTrades,
     pricingProblems,
@@ -52,12 +53,27 @@ test('gardening is banded on the plot, not on bedrooms', () => {
         'a two-bed cottage can sit in an acre');
 });
 
-test('every maintenance trade is a call-out plus an hourly rate, and cannot be banded', () => {
-    // A leak is a leak whether the cottage has two bedrooms or five, so none
-    // of these can be priced off the size of the property.
-    for (const trade of ['electrician', 'joiner', 'plumber', 'roofer', 'painter', 'handyman']) {
-        assert.equal(pricingModelFor(trade), 'callout_hourly', trade + ' is priced by the hour');
+const MAINTENANCE_TRADES = ['electrician', 'joiner', 'plumber', 'roofer', 'painter', 'handyman'];
+
+test('no maintenance trade can be priced by the size of the property', () => {
+    // A leak is a leak whether the cottage has two bedrooms or five.
+    for (const trade of MAINTENANCE_TRADES) {
         assert.deepEqual(bandsFor(trade), [], trade + ' has no size bands');
+    }
+});
+
+test('the trades that bill by the hour, and the trades that quote', () => {
+    // Turn up, diagnose, charge for the time.
+    for (const trade of ['electrician', 'plumber', 'handyman']) {
+        assert.equal(pricingModelFor(trade), 'callout_hourly', trade + ' bills by the hour');
+    }
+
+    // Look at it, then say what the job costs. These were callout_hourly,
+    // which made an hourly rate compulsory before they could apply — and no
+    // roofer prices a re-slate by the hour, so that number would have been
+    // invented to get past the form.
+    for (const trade of ['roofer', 'joiner', 'painter']) {
+        assert.equal(pricingModelFor(trade), 'quoted', trade + ' quotes per job');
     }
 });
 
@@ -212,9 +228,19 @@ test('a plot band is only a band if it is one of ours', () => {
 
 // --- maintenance cannot be requested yet -----------------------------------
 
-test('maintenance cannot be requested until completion exists', () => {
-    assert.equal(canBeRequested('plumber'), false,
-        'the total only exists once the job is done, and nothing confirms that yet');
+test('no maintenance trade can be requested, however it is priced', () => {
+    // This named only the plumber, and the rule underneath it was written as
+    // "not priced by the hour" rather than "not maintenance". Moving the
+    // roofer, the joiner and the painter to `quoted` flipped all three to
+    // requestable — a job with no price, no total and no completion step —
+    // and the suite stayed green, because none of them were named.
+    //
+    // So it loops, and the rule it checks is the one that was meant.
+    for (const trade of MAINTENANCE_TRADES) {
+        assert.equal(canBeRequested(trade), false,
+            trade + ' cannot be requested until quoting and completion exist');
+    }
+
     assert.equal(canBeRequested('sponge'), true);
     assert.equal(canBeRequested('trees'), true);
     assert.equal(canBeRequested('cake'), true);
@@ -256,7 +282,7 @@ test('typical hours that are not a number are caught', () => {
     assert.equal(problems.some((p: any) => p.field === 'hours_beds_1_2'), true);
 });
 
-test('maintenance needs both numbers', () => {
+test('an hourly trade needs both numbers', () => {
     assert.deepEqual(pricingProblems({ trade: 'plumber', callout_fee: '45', hourly_rate: '30' }), []);
 
     const noFee = pricingProblems({ trade: 'plumber', hourly_rate: '30' });
@@ -264,6 +290,17 @@ test('maintenance needs both numbers', () => {
 
     const noRate = pricingProblems({ trade: 'plumber', callout_fee: '45' });
     assert.equal(noRate.some((p: any) => p.field === 'hourly_rate'), true);
+});
+
+// The mirror. A roofer with nothing filled in is a complete application: the
+// job is quoted once they have seen it, and a call-out fee is theirs to charge
+// or not.
+test('a quoted trade needs no numbers at all', () => {
+    for (const trade of ['roofer', 'joiner', 'painter']) {
+        assert.deepEqual(pricingProblems({ trade }), [], trade + ' can apply with nothing priced');
+        assert.deepEqual(pricingProblems({ trade, callout_fee: '40' }), [],
+            trade + ' can give a call-out fee and no hourly rate');
+    }
 });
 
 test('a quote-per-job trade needs no prices at all', () => {
@@ -396,4 +433,50 @@ test('every banded trade is a host trade', () => {
                 t.key + ' is banded on a property, so it cannot be a guest trade');
         }
     }
+});
+
+// ---------------------------------------------------------------------------
+// The call-out line a host reads.
+//
+// Worded in one place so the admin card and the directory cannot disagree, and
+// because the waiver is the tradesman's own offer rather than a platform rule
+// — it has to sit in the same sentence as the fee to read as an advantage
+// rather than as a footnote.
+// ---------------------------------------------------------------------------
+
+test('a fee on its own says what it is', () => {
+    assert.equal(calloutLine(40), '£40 call-out');
+    assert.equal(calloutLine('40'), '£40 call-out');
+});
+
+test('a waived fee says so in the same breath', () => {
+    assert.equal(calloutLine(40, true), '£40 call-out, waived if you go ahead');
+});
+
+test('no fee is nothing at all, not "none"', () => {
+    // Not charging a call-out fee and not having said are different things,
+    // and only one of them is ours to announce on somebody's behalf.
+    assert.equal(calloutLine(null), null);
+    assert.equal(calloutLine(undefined), null);
+    assert.equal(calloutLine(''), null);
+    assert.equal(calloutLine('   '), null);
+    assert.equal(calloutLine(0), null);
+});
+
+test('a waiver with no fee behind it says nothing', () => {
+    // The toggle only appears once a fee is typed, but a stale draft or an old
+    // row could carry the tick without the number.
+    assert.equal(calloutLine(null, true), null);
+    assert.equal(calloutLine(0, true), null);
+});
+
+test('a nonsense fee is not shown to anybody', () => {
+    assert.equal(calloutLine('about forty quid'), null);
+    assert.equal(calloutLine(-40), null);
+});
+
+test('whole pounds read as whole pounds', () => {
+    // "£40.00 call-out" reads like a system wrote it.
+    assert.equal(calloutLine(40), '£40 call-out');
+    assert.equal(calloutLine(37.5), '£37.50 call-out');
 });

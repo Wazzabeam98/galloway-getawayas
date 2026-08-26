@@ -24,6 +24,8 @@ import {
     isPricingGroup,
     groupIsOffered,
     offerableSchemes,
+    calloutLine,
+    groupForTrade,
     schemeLabel,
     schemeNumberLabel,
     isPartP,
@@ -118,6 +120,7 @@ function ApplicationForm() {
     const [hoursOpen, setHoursOpen] = useState<Record<string, boolean>>({});
     const [calloutFee, setCalloutFee] = useState('');
     const [hourlyRate, setHourlyRate] = useState('');
+    const [calloutWaived, setCalloutWaived] = useState(false);
 
     // Gas and oil are questions inside the plumber's application rather than
     // trades of their own, because most plumbers do one and plenty do both.
@@ -162,7 +165,7 @@ function ApplicationForm() {
                 // it is inherited from another one they hold.
                 const { data: existing } = await supabase
                     .from('service_providers')
-                    .select('id, business_name, trade, description, contact_email, contact_phone, audience, photos, logo, status, review_note, callout_fee, hourly_rate, does_gas, does_oil')
+                    .select('id, business_name, trade, description, contact_email, contact_phone, audience, photos, logo, status, review_note, callout_fee, hourly_rate, callout_waived, does_gas, does_oil')
                     .eq('owner_id', session.user.id)
                     .eq('trade', tradeFromUrl)
                     .maybeSingle();
@@ -182,6 +185,7 @@ function ApplicationForm() {
                     setReviewNote(existing.review_note || null);
                     setCalloutFee(existing.callout_fee === null || existing.callout_fee === undefined ? '' : String(existing.callout_fee));
                     setHourlyRate(existing.hourly_rate === null || existing.hourly_rate === undefined ? '' : String(existing.hourly_rate));
+                    setCalloutWaived(existing.callout_waived === true);
 
                     // The numbers only. Whether one has been checked is not
                     // read here and not shown here — it is not theirs to see
@@ -300,6 +304,7 @@ function ApplicationForm() {
             if (d.doesGas !== undefined) setDoesGas(d.doesGas === true);
             if (d.doesOil !== undefined) setDoesOil(d.doesOil === true);
             if (d.registrations) setRegistrations(d.registrations);
+            if (d.calloutWaived !== undefined) setCalloutWaived(d.calloutWaived === true);
             if (d.prices) setPrices(d.prices);
             if (d.extras) setExtras(d.extras);
             if (d.calloutFee) setCalloutFee(d.calloutFee);
@@ -331,7 +336,7 @@ function ApplicationForm() {
                 JSON.stringify({
                     businessName, description, contactEmail, contactPhone,
                     prices, extras, calloutFee, hourlyRate, areas,
-                    doesGas, doesOil, registrations,
+                    doesGas, doesOil, registrations, calloutWaived,
                 })
             );
         } catch (err) {
@@ -341,7 +346,7 @@ function ApplicationForm() {
         hydrated, providerId, tradeFromUrl,
         businessName, description, contactEmail, contactPhone,
         prices, extras, calloutFee, hourlyRate, areas,
-        doesGas, doesOil, registrations,
+        doesGas, doesOil, registrations, calloutWaived,
     ]);
 
     // Which registration boxes this application shows at all. An electrician
@@ -364,6 +369,7 @@ function ApplicationForm() {
         prices,
         callout_fee: calloutFee,
         hourly_rate: hourlyRate,
+        callout_waived: calloutWaived,
         extras,
         does_gas: doesGas,
         does_oil: doesOil,
@@ -482,6 +488,10 @@ function ApplicationForm() {
     // top of the section, which is about comparison for a cleaner and about
     // being found for a plumber.
     const hasFaults = extrasIn('faults').length > 0;
+
+    // The maintenance trades, however they charge. A guest-side quoted trade —
+    // a chef, a cake — has no call-out fee and no rates section at all.
+    const isCallout = model === 'callout_hourly' || (model === 'quoted' && groupForTrade(trade) !== null);
 
     const bands = bandsFor(trade);
 
@@ -635,10 +645,14 @@ function ApplicationForm() {
             logo,
             does_gas: asksAboutFuel(trade) ? doesGas : false,
             does_oil: asksAboutFuel(trade) ? doesOil : false,
-            // Only meaningful for a call-out trade; cleared otherwise so a
-            // provider who switches trade does not carry a stale rate.
-            callout_fee: model === 'callout_hourly' && calloutFee.trim() !== '' ? Number(calloutFee) : null,
+            // A call-out fee is optional on both models — a roofer who turns
+            // out for a leak charges one even though the re-slate is quoted.
+            // The hourly rate belongs only to the trades that actually bill by
+            // the hour, and is cleared otherwise so a provider who switches
+            // trade does not carry a stale rate.
+            callout_fee: calloutFee.trim() !== '' ? Number(calloutFee) : null,
             hourly_rate: model === 'callout_hourly' && hourlyRate.trim() !== '' ? Number(hourlyRate) : null,
+            callout_waived: calloutFee.trim() !== '' ? calloutWaived : false,
             updated_at: now.toISOString(),
         };
 
@@ -1275,50 +1289,91 @@ function ApplicationForm() {
                     </section>
                 )}
 
-                {model === 'callout_hourly' && (
+                {/* Rates, for the trades that cannot be sized in advance.
+                    Two shapes behind one section:
+
+                      callout_hourly  turn up, diagnose, charge for the time.
+                      quoted          look at it, then say what it costs.
+
+                    The quoted trades used to be asked for an hourly rate as
+                    well, which no roofer has for a re-slate — so the number
+                    would have been invented to get past the form, and an
+                    invented number is one a host can hold them to. */}
+                {isCallout && (
                     <section className="mb-8">
                         <h2 className="text-sm font-semibold text-slate-900 mb-1.5">Your rates</h2>
                         <p className="text-sm text-slate-500 mb-4">
-                            A repair cannot be sized in advance, so maintenance is a call-out fee and then an
-                            hourly rate &mdash; not a price per property size.
+                            {model === 'callout_hourly'
+                                ? 'A repair cannot be sized in advance, so this is a call-out fee and then an hourly rate — not a price per property size.'
+                                : 'This work is quoted once you have seen it, so there is nothing to set here beyond a call-out fee if you charge one.'}
                         </p>
 
                         <div className="grid sm:grid-cols-2 gap-4">
                             <div>
-                                <label className="block text-xs font-semibold text-slate-500 mb-1">Call-out fee</label>
+                                <label className="block text-xs font-semibold text-slate-500 mb-1">
+                                    Call-out fee
+                                    {model === 'quoted' && (
+                                        <span className="font-normal text-slate-400"> (optional)</span>
+                                    )}
+                                </label>
                                 <div className="flex items-center gap-2">
                                     <span className="text-slate-500">&pound;</span>
+                                    {/* No placeholder and no suggested amount.
+                                        If every roofer showed the same figure
+                                        it would read as a platform charge
+                                        rather than as their own price. */}
                                     <input
                                         type="text"
                                         inputMode="decimal"
                                         value={calloutFee}
                                         onChange={(e) => setCalloutFee(e.target.value)}
-                                        placeholder="45"
                                         className="w-full rounded-lg border border-slate-300 px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-emerald-700"
                                     />
                                 </div>
                                 {problemFor('callout_fee') && (
                                     <p className="text-xs text-rose-700 mt-1">{problemFor('callout_fee')!.message}</p>
                                 )}
-                            </div>
 
-                            <div>
-                                <label className="block text-xs font-semibold text-slate-500 mb-1">Hourly rate after that</label>
-                                <div className="flex items-center gap-2">
-                                    <span className="text-slate-500">&pound;</span>
-                                    <input
-                                        type="text"
-                                        inputMode="decimal"
-                                        value={hourlyRate}
-                                        onChange={(e) => setHourlyRate(e.target.value)}
-                                        placeholder="30"
-                                        className="w-full rounded-lg border border-slate-300 px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-emerald-700"
-                                    />
-                                </div>
-                                {problemFor('hourly_rate') && (
-                                    <p className="text-xs text-rose-700 mt-1">{problemFor('hourly_rate')!.message}</p>
+                                {/* Their offer, not our rule. Only worth asking
+                                    once there is a fee for it to apply to. */}
+                                {calloutFee.trim() !== '' && (
+                                    <label className="flex items-start gap-2.5 mt-2.5 text-sm text-slate-800">
+                                        <input
+                                            type="checkbox"
+                                            checked={calloutWaived}
+                                            onChange={(e) => setCalloutWaived(e.target.checked)}
+                                            className="mt-0.5 w-4 h-4 rounded border-slate-300 shrink-0"
+                                        />
+                                        <span>
+                                            Waived if the job goes ahead
+                                            {calloutLine(calloutFee, calloutWaived) && (
+                                                <span className="block text-slate-500">
+                                                    Owners will see &ldquo;{calloutLine(calloutFee, calloutWaived)}&rdquo;.
+                                                </span>
+                                            )}
+                                        </span>
+                                    </label>
                                 )}
                             </div>
+
+                            {model === 'callout_hourly' && (
+                                <div>
+                                    <label className="block text-xs font-semibold text-slate-500 mb-1">Hourly rate after that</label>
+                                    <div className="flex items-center gap-2">
+                                        <span className="text-slate-500">&pound;</span>
+                                        <input
+                                            type="text"
+                                            inputMode="decimal"
+                                            value={hourlyRate}
+                                            onChange={(e) => setHourlyRate(e.target.value)}
+                                            className="w-full rounded-lg border border-slate-300 px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-emerald-700"
+                                        />
+                                    </div>
+                                    {problemFor('hourly_rate') && (
+                                        <p className="text-xs text-rose-700 mt-1">{problemFor('hourly_rate')!.message}</p>
+                                    )}
+                                </div>
+                            )}
                         </div>
                     </section>
                 )}
