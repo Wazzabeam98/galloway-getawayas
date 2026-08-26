@@ -890,6 +890,13 @@ export const SERVICE_EXTRAS: ServiceExtra[] = [
         key: 'joiner_bespoke', trade: 'joiner', type: 'toggle', group: 'planned',
         label: 'Built-in storage and bespoke pieces',
     },
+    // Steep and loose stairs are both common in an old cottage and a safety
+    // matter in a let, so this is a job owners ring about rather than one they
+    // plan.
+    {
+        key: 'joiner_stairs', trade: 'joiner', type: 'toggle', group: 'planned',
+        label: 'Staircases and bannisters',
+    },
     {
         key: 'joiner_workshop', trade: 'joiner', type: 'toggle', group: 'planned',
         label: 'I have a workshop for off-site work',
