@@ -31,6 +31,7 @@ import {
     isPricingGroup,
     groupIsOffered,
     offerableSchemes,
+    asksAboutSkills,
     calloutLine,
     groupForTrade,
     schemeLabel,
@@ -533,10 +534,7 @@ function ApplicationForm() {
     // a chef, a cake — has no call-out fee and no rates section at all.
     const isCallout = model === 'callout_hourly' || (model === 'quoted' && groupForTrade(trade) !== null);
 
-    // Skills are for the maintenance trades. A cleaner's work is described by
-    // the bands and the extras; a handyman's is not describable in advance at
-    // all, which is the whole reason these exist.
-    const hasSkills = groupForTrade(trade) !== null;
+    const hasSkills = asksAboutSkills(trade);
 
     const skillSuggestions = suggestSkills(allSkills, skillTyped, skills);
     const skillIsNew = wouldCreateNew(allSkills, skillTyped);
@@ -1624,9 +1622,18 @@ function ApplicationForm() {
                         <h2 className="text-sm font-semibold text-slate-900 mb-1.5">
                             What else can you turn your hand to?
                         </h2>
-                        <p className="text-sm text-slate-500 mb-4">
-                            The things that do not fit a tick box — bricklaying, fencing, laying slabs,
-                            dyking. Pick from the list where you can, so owners looking for that job find you.
+                        <p className="text-sm text-slate-500 mb-1.5">
+                            The things that do not fit a tick box &mdash; bricklaying, fencing, laying slabs,
+                            dyking.
+                        </p>
+                        {/* Not small print. "Pick from the list" is the whole
+                            anti-fragmentation mechanism: somebody offered
+                            "bricklaying" takes it, and somebody who reads past
+                            this types "brick laying" and splits the tag. It is
+                            an instruction, so it is weighted like one. */}
+                        <p className="text-sm font-medium text-slate-800 mb-4">
+                            Pick from the list where you can &mdash; it is how owners looking for that job
+                            find you.
                         </p>
 
                         {skills.length > 0 && (

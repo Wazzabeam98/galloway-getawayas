@@ -1309,6 +1309,22 @@ export function asksAboutFuel(trade: string): boolean {
     return trade === 'plumber';
 }
 
+// Whether the trade is asked for free-text skills.
+//
+// Only the handyman, and the reason is what the tags are for rather than who
+// might have something to say. A roofer's work is a roof; a joiner's is
+// joinery; both are already described by their trade and their offerings, so
+// a tag box is a blank field to fill in for no gain.
+//
+// A handyman is the case where the trade name genuinely does not say what he
+// does — bricklaying, fencing, dyking — and where a host would otherwise have
+// no way to know without asking.
+//
+// This was briefly on all six. It was friction on five of them.
+export function asksAboutSkills(trade: string): boolean {
+    return trade === 'handyman';
+}
+
 export interface RegistrationDraft {
     trade?: string | null;
     does_gas?: boolean | null;

@@ -209,3 +209,25 @@ test('a new tag is only new when nothing matches', () => {
     assert.equal(wouldCreateNew(POOL, 'Bricklaying'), false);
     assert.equal(wouldCreateNew(POOL, 'dry stone dyking'), true);
 });
+
+// --- who is asked at all ---------------------------------------------------
+
+const { asksAboutSkills } = require('@/lib/serviceProviders');
+
+test('only the handyman is asked for skills', () => {
+    // A roofer's work is a roof and a joiner's is joinery — both already said
+    // by the trade and the offerings, so a tag box there is a blank field to
+    // fill in for no gain. This was briefly on all six maintenance trades and
+    // was friction on five of them.
+    assert.equal(asksAboutSkills('handyman'), true);
+
+    for (const trade of ['electrician', 'joiner', 'plumber', 'roofer', 'painter']) {
+        assert.equal(asksAboutSkills(trade), false, trade + ' is not asked for skills');
+    }
+});
+
+test('the trades outside maintenance are not asked either', () => {
+    for (const trade of ['sponge', 'bin', 'trees', 'droplet', 'cake', 'chef']) {
+        assert.equal(asksAboutSkills(trade), false, trade + ' is not asked for skills');
+    }
+});
