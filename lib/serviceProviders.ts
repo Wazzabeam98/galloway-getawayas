@@ -482,15 +482,21 @@ export function pricingProblems(draft: PricingDraft): Problem[] {
     const problems: Problem[] = [];
     const model = pricingModelFor(String(draft.trade || ''));
 
+    // The hourly rate is the one that is load-bearing: for a trade that bills
+    // by the hour it IS the price, and a listing without it tells a host
+    // nothing.
+    //
+    // The call-out fee is optional, and used to be compulsory. Plenty of
+    // handymen charge an hourly rate with no call-out at all, or a day rate —
+    // so requiring it made them invent a number to get past the form, which is
+    // the same fault as asking a roofer to price a re-slate by the hour. An
+    // invented number is worse than a missing one, because a host can hold
+    // them to it.
     if (model === 'callout_hourly') {
-        const callout = Number(draft.callout_fee);
         const hourly = Number(draft.hourly_rate);
 
-        if (!(callout > 0)) {
-            problems.push({ field: 'callout_fee', message: 'Add your call-out fee.' });
-        }
         if (!(hourly > 0)) {
-            problems.push({ field: 'hourly_rate', message: 'Add your hourly rate after the call-out.' });
+            problems.push({ field: 'hourly_rate', message: 'Add your hourly rate.' });
         }
         return problems;
     }

@@ -282,14 +282,31 @@ test('typical hours that are not a number are caught', () => {
     assert.equal(problems.some((p: any) => p.field === 'hours_beds_1_2'), true);
 });
 
-test('an hourly trade needs both numbers', () => {
+test('an hourly trade needs an hourly rate, and only that', () => {
     assert.deepEqual(pricingProblems({ trade: 'plumber', callout_fee: '45', hourly_rate: '30' }), []);
 
-    const noFee = pricingProblems({ trade: 'plumber', hourly_rate: '30' });
-    assert.equal(noFee.some((p: any) => p.field === 'callout_fee'), true);
+    // The call-out fee used to be compulsory here. Plenty of handymen charge
+    // an hourly rate and no call-out, or a day rate — so requiring it made
+    // them invent a number to get past the form, which is the same fault as
+    // asking a roofer to price a re-slate by the hour.
+    assert.deepEqual(pricingProblems({ trade: 'plumber', hourly_rate: '30' }), [],
+        'a call-out fee is theirs to charge or not');
 
     const noRate = pricingProblems({ trade: 'plumber', callout_fee: '45' });
-    assert.equal(noRate.some((p: any) => p.field === 'hourly_rate'), true);
+    assert.equal(noRate.some((p: any) => p.field === 'hourly_rate'), true,
+        'the hourly rate IS the price for a trade that bills by the hour');
+});
+
+test('all three hourly trades are the same about it', () => {
+    for (const trade of ['plumber', 'electrician', 'handyman']) {
+        assert.deepEqual(pricingProblems({ trade, hourly_rate: '30' }), [],
+            trade + ' can apply with no call-out fee');
+        assert.equal(
+            pricingProblems({ trade, callout_fee: '45' }).some((p: any) => p.field === 'hourly_rate'),
+            true,
+            trade + ' still needs an hourly rate'
+        );
+    }
 });
 
 // The mirror. A roofer with nothing filled in is a complete application: the

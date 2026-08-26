@@ -1566,17 +1566,19 @@ function ApplicationForm() {
                         <h2 className="text-sm font-semibold text-slate-900 mb-1.5">Your rates</h2>
                         <p className="text-sm text-slate-500 mb-4">
                             {model === 'callout_hourly'
-                                ? 'A repair cannot be sized in advance, so this is a call-out fee and then an hourly rate — not a price per property size.'
+                                ? 'A repair cannot be sized in advance, so this is an hourly rate — with a call-out fee on top if you charge one — rather than a price per property size.'
                                 : 'This work is quoted once you have seen it, so there is nothing to set here beyond a call-out fee if you charge one.'}
                         </p>
 
                         <div className="grid sm:grid-cols-2 gap-4">
                             <div>
+                                {/* Optional on both models, so the label says
+                                    so on both. It read as required for the
+                                    hourly trades while behaving optional,
+                                    which is the worst of the three. */}
                                 <label className="block text-xs font-semibold text-slate-500 mb-1">
                                     Call-out fee
-                                    {model === 'quoted' && (
-                                        <span className="font-normal text-slate-400"> (optional)</span>
-                                    )}
+                                    <span className="font-normal text-slate-400"> (optional)</span>
                                 </label>
                                 <div className="flex items-center gap-2">
                                     <span className="text-slate-500">&pound;</span>
@@ -1620,7 +1622,7 @@ function ApplicationForm() {
 
                             {model === 'callout_hourly' && (
                                 <div>
-                                    <label className="block text-xs font-semibold text-slate-500 mb-1">Hourly rate after that</label>
+                                    <label className="block text-xs font-semibold text-slate-500 mb-1">Hourly rate</label>
                                     <div className="flex items-center gap-2">
                                         <span className="text-slate-500">&pound;</span>
                                         <input
