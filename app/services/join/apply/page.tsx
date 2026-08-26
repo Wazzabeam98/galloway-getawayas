@@ -15,6 +15,7 @@ import {
     wouldCreateNew,
     regulatedConceptFor,
     schemesSatisfying,
+    blockedSkillReason,
 } from '@/lib/serviceSkills';
 import LoginModel from '@/components/auth/LoginModel';
 import {
@@ -551,10 +552,47 @@ function ApplicationForm() {
         setSkillTyped('');
     };
 
-    // What they will be asked to prove. Said as they type rather than after
-    // saving, because "boiler repair" is a reasonable thing for a handyman to
-    // believe they can list.
-    const typedConcept = regulatedConceptFor(skillTyped);
+    // What a tag needs, whether it came off the list or was typed. An existing
+    // tag carries its concept; a brand new one is matched on the words.
+    const conceptOf = (label: string): string | null => {
+        const key = skillKey(label);
+        if (!key) return null;
+
+        const known = allSkills.filter((x: any) => String(x.slug || '') === key.slug)[0];
+        if (known) return known.regulated_concept || null;
+
+        return regulatedConceptFor(key.slug);
+    };
+
+    // Whether THIS trade is ever asked for that registration. A handyman is
+    // asked for none of them, which is exactly why the message has to route
+    // rather than say "add your number" — there is no field here to add it to.
+    const asksForConcept = (concept: string | null): boolean => {
+        if (concept === 'electrical') return trade === 'electrician';
+        if (concept === 'gas' || concept === 'oil') return asksAboutFuel(trade);
+        return false;
+    };
+
+    const reasonFor = (label: string): string | null => {
+        const concept = conceptOf(label);
+        if (!concept) return null;
+        if (asksForConcept(concept) && registrations[schemesSatisfying(concept as any)[0]]) return null;
+
+        return blockedSkillReason(
+            { label: (skillKey(label) || { label }).label, regulated_concept: concept },
+            tradeLabel(trade).toLowerCase(),
+            asksForConcept(concept)
+        );
+    };
+
+    // Tags they are holding that will not appear. Not a scolding — mostly it
+    // is somebody who does the work and cannot prove it here.
+    const blockedHeld = skills
+        .map((label) => ({ label, reason: reasonFor(label) }))
+        .filter((x) => x.reason);
+
+    const typedConcept = conceptOf(skillTyped);
+    const typedReason = skillTyped.trim() === '' ? null : reasonFor(skillTyped);
 
     const bands = bandsFor(trade);
 
@@ -1641,9 +1679,16 @@ function ApplicationForm() {
                                 {skills.map((label) => (
                                     <span
                                         key={label}
-                                        className="inline-flex items-center gap-1.5 rounded-full border border-slate-300 bg-slate-50 pl-3 pr-1.5 py-1 text-sm text-slate-900"
+                                        className={`inline-flex items-center gap-1.5 rounded-full pl-3 pr-1.5 py-1 text-sm ${
+                                            reasonFor(label)
+                                                ? 'border border-amber-300 bg-amber-50 text-amber-900'
+                                                : 'border border-slate-300 bg-slate-50 text-slate-900'
+                                        }`}
                                     >
                                         {label}
+                                        {reasonFor(label) && (
+                                            <span className="text-xs font-semibold">will not show</span>
+                                        )}
                                         <button
                                             type="button"
                                             onClick={() => setSkills(skills.filter((x) => x !== label))}
@@ -1683,8 +1728,17 @@ function ApplicationForm() {
                                         className="block w-full text-left rounded-lg px-3 py-2 text-sm text-slate-900 hover:bg-slate-100"
                                     >
                                         {suggestion.label}
+                                        {/* Which registration, not "needs
+                                            proof" — a handyman reading that
+                                            learns nothing about what proof, or
+                                            why, or what to do instead. */}
                                         {suggestion.regulated_concept && (
-                                            <span className="text-slate-500"> · needs proof</span>
+                                            <span className="text-slate-500">
+                                                {' · '}
+                                                {suggestion.regulated_concept === 'gas' ? 'Gas Safe work'
+                                                    : suggestion.regulated_concept === 'oil' ? 'OFTEC work'
+                                                    : 'Part P work'}
+                                            </span>
                                         )}
                                     </button>
                                 ))}
@@ -1704,17 +1758,34 @@ function ApplicationForm() {
                             </div>
                         )}
 
-                        {/* Said while they type, not after they save. "Boiler
-                            repair" is a reasonable thing for a handyman to
-                            think he can list, and finding out afterwards that
-                            it never appeared is the bad version of this. */}
-                        {typedConcept && (
-                            <p className="text-xs text-slate-500 mt-2 md:max-w-sm">
-                                That is{' '}
-                                {typedConcept === 'gas' ? 'Gas Safe' : typedConcept === 'oil' ? 'OFTEC' : 'Part P'}
-                                {' '}work. We will show it once we have checked your number
-                                {schemesSatisfying(typedConcept).length > 1 ? ' for your scheme' : ''}.
-                            </p>
+                        {/* Said while they type, and again for anything they
+                            are already holding — because "boiler repair" is a
+                            reasonable thing for a handyman to think he can
+                            list, and finding out afterwards that it never
+                            appeared is the bad version of this.
+
+                            The valuable part is the routing, not the refusal.
+                            "Needs proof" tells somebody nothing: not what
+                            proof, not why, and not what to do instead. So it
+                            says which registration, that we do not ask this
+                            trade for it, and where the tag would show. */}
+                        {(typedReason || blockedHeld.length > 0) && (
+                            <div className="mt-4 rounded-xl border border-amber-300 bg-amber-50 p-4 md:max-w-lg">
+                                {typedReason && (
+                                    <p className="text-sm text-amber-900">{typedReason}</p>
+                                )}
+
+                                {blockedHeld.map((x) => (
+                                    <p key={x.label} className="text-sm text-amber-900 mt-1 first:mt-0">
+                                        {x.reason}
+                                    </p>
+                                ))}
+
+                                <p className="text-xs text-amber-900/70 mt-2">
+                                    You can leave it on if you like &mdash; everything else you have added still
+                                    shows.
+                                </p>
+                            </div>
                         )}
                     </section>
                 )}

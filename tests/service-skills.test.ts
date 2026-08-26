@@ -167,6 +167,37 @@ test('electrical work routes to the electrician', () => {
     assert.match(blockedSkillReason(tag, 'handyman', false), /Electrician/);
 });
 
+test('oil routes to the plumber, like gas', () => {
+    const tag = { id: '4', label: 'Oil boiler servicing', regulated_concept: 'oil' };
+    const message = blockedSkillReason(tag, 'handyman', false);
+    assert.match(message, /OFTEC/);
+    assert.match(message, /Plumber/);
+});
+
+// "Needs proof" was the first wording, and it tells somebody nothing: not what
+// proof, not why, and not what to do instead. Every version of this message
+// has to carry all three.
+test('every routed message names the registration, the trade, and where to list it', () => {
+    const cases = [
+        { concept: 'gas', body: /Gas Safe/, where: /Plumber/ },
+        { concept: 'oil', body: /OFTEC/, where: /Plumber/ },
+        { concept: 'electrical', body: /Part P/, where: /Electrician/ },
+    ];
+
+    for (const c of cases) {
+        const message = blockedSkillReason(
+            { id: 'x', label: 'Something', regulated_concept: c.concept },
+            'handyman',
+            false
+        );
+
+        assert.match(message, c.body, c.concept + ' names the registration');
+        assert.match(message, c.where, c.concept + ' says where to list it');
+        assert.match(message, /handyman/, c.concept + ' says who is not asked for it');
+        assert.equal(/needs proof/i.test(message), false, c.concept + ' does not just say "needs proof"');
+    }
+});
+
 // --- the type-ahead, which IS the mechanism --------------------------------
 
 const POOL = [
