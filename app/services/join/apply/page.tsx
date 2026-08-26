@@ -665,8 +665,20 @@ function ApplicationForm() {
 
         // The bucket will not take a file from somebody with no account, and
         // a silent nothing looks like a broken button.
+        //
+        // The wording matters more than it looks. "Make an account first and
+        // you can add your logo — everything else is kept" reads as though the
+        // logo is the thing that is NOT kept, and somebody who has just picked
+        // a file hears that as losing it. It is not lost; it was never
+        // uploaded, and it can be added any time afterwards without redoing
+        // anything.
         if (!session) {
-            toast.info('Make an account first and you can add your logo — everything else is kept.', {
+            // "Once your account exists" was written when an account was a
+            // separate errand. The same button makes it now, so this says when
+            // rather than what has to happen first — and it says the file has
+            // not gone anywhere, because somebody who has just picked one and
+            // seen nothing happen assumes it has.
+            toast.info('Your logo can go on as soon as this is sent — nothing has been lost, just pick it again then.', {
                 theme: 'colored',
             });
             e.target.value = '';
@@ -1247,7 +1259,7 @@ function ApplicationForm() {
                         <h2 className="text-sm font-semibold text-slate-900 mb-1.5">Your logo</h2>
                         <p className="text-sm text-slate-500 mb-3">
                             Optional. If you have not got one we will show your initials.
-                            {!session && ' You can add one once you have an account.'}
+                            {!session && ' You can add one as soon as this is sent — it does not hold up your listing, and you will not have to fill anything in again.'}
                         </p>
 
                         <div className="flex items-center gap-4">
