@@ -894,10 +894,18 @@ function ApplicationForm() {
                 Back
             </Link>
 
-            <h1 className="text-3xl font-bold text-slate-900">Work for holiday lets</h1>
+            {/* Read by a tradesperson deciding whether to sign up, not by a
+                host looking for one — so it says what they get, not what we
+                sell. "List your business" also stays true once they are live
+                and have come back to change something, which "Apply to be
+                listed" would not.
+
+                The old line listed the trades, which meant it had to be edited
+                every time the list moved and was wrong the moment it was not.
+                The trade they picked is on the card below anyway. */}
+            <h1 className="text-3xl font-bold text-slate-900">List your business</h1>
             <p className="text-slate-600 mt-2 mb-8">
-                Cleaning, waste, gardening and maintenance for holiday cottages across Dumfries
-                &amp; Galloway.
+                Get work from holiday lets across Dumfries &amp; Galloway.
             </p>
 
             {/* Sent, and waiting on us. */}
