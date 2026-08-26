@@ -26,6 +26,7 @@ export default function ProviderReviewRow({
     photoUrls,
     registrations,
     blockers,
+    skills,
 }: {
     provider: any;
     areas: string[];
@@ -33,6 +34,9 @@ export default function ProviderReviewRow({
     // Gas Safe, OFTEC or a Part P scheme, where the trade needs one. Empty for
     // the trades that need none, which is most of them.
     registrations?: any[];
+    // Free-text tags. `public` is worked out from the registrations rather
+    // than stored, so a tag goes private the moment its number is edited.
+    skills?: any[];
     // Why this cannot be approved yet, in words. Worked out on the server from
     // the same function the decision route refuses on, so the button being
     // disabled and the route saying no can never disagree.
@@ -123,6 +127,8 @@ export default function ProviderReviewRow({
 
     const pending = provider.status === 'pending_review';
     const regs: any[] = registrations || [];
+    const tags: any[] = skills || [];
+    const hiddenTags = tags.filter((t) => !t.public);
     const stops: string[] = blockers || [];
 
     // Set by the page, and only for the group that has edits outstanding.
@@ -183,6 +189,38 @@ export default function ProviderReviewRow({
                     <dd className="text-slate-900 truncate">{provider.contact_email}{provider.contact_phone ? ' · ' + provider.contact_phone : ''}</dd>
                 </div>
             </dl>
+
+            {tags.length > 0 && (
+                <div className="mt-4">
+                    <h4 className="text-xs font-bold uppercase tracking-wider text-slate-500 mb-2">
+                        Skills
+                    </h4>
+                    <div className="flex flex-wrap gap-2">
+                        {tags.map((tag: any) => (
+                            <span
+                                key={tag.id}
+                                className={`inline-flex items-center gap-1.5 rounded-full px-3 py-1 text-sm ${
+                                    tag.public
+                                        ? 'border border-slate-300 bg-slate-50 text-slate-900'
+                                        : 'border border-amber-300 bg-amber-50 text-amber-900'
+                                }`}
+                                title={tag.public ? undefined : tag.reason}
+                            >
+                                {tag.label}
+                                {!tag.public && <span className="text-xs font-semibold">not shown</span>}
+                            </span>
+                        ))}
+                    </div>
+
+                    {/* Never an accusation. Most of these are somebody who
+                        does the work and has not given us their number yet. */}
+                    {hiddenTags.length > 0 && (
+                        <p className="text-sm text-amber-900 mt-2">
+                            {hiddenTags[0].reason}
+                        </p>
+                    )}
+                </div>
+            )}
 
             {(regs.length > 0 || provider.does_gas || provider.does_oil || stops.length > 0) && (
                 <div className="mt-4 rounded-xl border border-slate-200 bg-slate-50 p-4">

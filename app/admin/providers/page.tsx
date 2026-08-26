@@ -15,7 +15,12 @@ import {
     registrationVerified,
     registrationExpired,
     registrationBlockers,
+    needsAttention,
+    attentionLabel,
+    ATTENTION_REASONS,
 } from '@/lib/serviceProviders';
+import { skillIsPublic, blockedSkillReason } from '@/lib/serviceSkills';
+import { asksAboutFuel } from '@/lib/serviceProviders';
 import ProviderReviewRow from '@/components/admin/ProviderReviewRow';
 
 export const dynamic = 'force-dynamic';
@@ -94,6 +99,19 @@ export default async function AdminProviders() {
             expired: registrationExpired(r),
         }));
 
+    const skillRows = rows.length
+        ? (await admin
+              .from('service_provider_skills')
+              .select('provider_id, service_skills ( id, label, slug, regulated_concept )')
+              .in('provider_id', rows.map((r: any) => r.id))).data || []
+        : [];
+
+    const skillsFor = (id: string) =>
+        skillRows
+            .filter((r: any) => r.provider_id === id)
+            .map((r: any) => r.service_skills)
+            .filter(Boolean);
+
     const areaRows = rows.length
         ? (await admin
               .from('service_areas')
@@ -114,15 +132,30 @@ export default async function AdminProviders() {
     // The stamp is only what this sorts by.
     const blockersFor = (row: any) => registrationBlockers(row, regsFor(row.id));
 
-    const waiting = rows.filter((r: any) => r.status === 'pending_review');
+    // Why each listing wants looking at, asked once.
+    //
+    // This used to be three independent filters written out here, and a fourth
+    // reason could be added to the model without any of them noticing — the
+    // row just never appeared and the first anybody heard was a provider
+    // asking why their tag never went live. needsAttention holds the list, and
+    // a test loops every reason in it.
+    const reasonsFor = (row: any) => needsAttention(row, regsFor(row.id), skillsFor(row.id));
 
-    // Counted separately in the summary line. A business waiting on a number
-    // being checked is not waiting on a judgement — it is waiting on ten
-    // minutes with the Gas Safe register open, which is a different job and
-    // one that can be done before ever reading their description.
-    const needChecking = rows.filter((r: any) => blockersFor(r).length > 0);
-    const changed = rows.filter((r: any) => hasUnreviewedChanges(r));
+    const waiting = rows.filter((r: any) => reasonsFor(r).indexOf('application') !== -1);
+    const changed = rows.filter((r: any) => reasonsFor(r).indexOf('changes') !== -1);
     const changedIds = changed.map((r: any) => r.id);
+
+    // Counted in the summary line rather than grouped. A business waiting on a
+    // number being checked is not waiting on a judgement — it is waiting on
+    // ten minutes with the Gas Safe register open, which is a different job
+    // and one that can be done before ever reading their description.
+    const counts: Record<string, number> = {};
+    for (const reason of ATTENTION_REASONS) {
+        counts[reason] = rows.filter((r: any) => reasonsFor(r).indexOf(reason) !== -1).length;
+    }
+
+    const anythingWaiting = ATTENTION_REASONS.some((reason) => counts[reason] > 0);
+
     const rest = rows.filter(
         (r: any) => r.status !== 'pending_review' && changedIds.indexOf(r.id) === -1
     );
@@ -135,13 +168,15 @@ export default async function AdminProviders() {
 
             <h1 className="text-2xl font-bold text-slate-900 mt-4">Service providers</h1>
             <p className="text-slate-600 text-sm mt-1 mb-8">
-                {waiting.length === 0 && changed.length === 0 && needChecking.length === 0
+                {/* Built from ATTENTION_REASONS rather than written out, so a
+                    new reason appears here the day it is added rather than the
+                    day somebody notices it is missing. */}
+                {!anythingWaiting
                     ? 'Nothing waiting for you.'
-                    : [
-                        waiting.length ? waiting.length + ' waiting for a decision' : '',
-                        changed.length ? changed.length + ' live with changes to look at' : '',
-                        needChecking.length ? needChecking.length + ' with a registration to check' : '',
-                    ].filter(Boolean).join(' · ') + '.'}
+                    : ATTENTION_REASONS
+                        .filter((reason) => counts[reason] > 0)
+                        .map((reason) => counts[reason] + ' ' + attentionLabel(reason))
+                        .join(' · ') + '.'}
             </p>
 
             {waiting.length > 0 && (
@@ -158,6 +193,17 @@ export default async function AdminProviders() {
                                 photoUrls={(p.photos || []).slice(0, 3).map((x: string) => getImageUrl(x))}
                                 registrations={regsFor(p.id)}
                                 blockers={blockersFor(p)}
+                                skills={skillsFor(p.id).map((skill: any) => ({
+                                    ...skill,
+                                    public: skillIsPublic(skill, regsFor(p.id).map((r: any) => ({
+                                        scheme: r.scheme,
+                                        verified: r.verified,
+                                    }))),
+                                    reason: blockedSkillReason(skill, p.trade,
+                                        skill.regulated_concept === 'electrical'
+                                            ? p.trade === 'electrician'
+                                            : asksAboutFuel(p.trade)),
+                                }))}
                             />
                         ))}
                     </div>
@@ -185,6 +231,17 @@ export default async function AdminProviders() {
                                 photoUrls={(p.photos || []).slice(0, 3).map((x: string) => getImageUrl(x))}
                                 registrations={regsFor(p.id)}
                                 blockers={blockersFor(p)}
+                                skills={skillsFor(p.id).map((skill: any) => ({
+                                    ...skill,
+                                    public: skillIsPublic(skill, regsFor(p.id).map((r: any) => ({
+                                        scheme: r.scheme,
+                                        verified: r.verified,
+                                    }))),
+                                    reason: blockedSkillReason(skill, p.trade,
+                                        skill.regulated_concept === 'electrical'
+                                            ? p.trade === 'electrician'
+                                            : asksAboutFuel(p.trade)),
+                                }))}
                             />
                         ))}
                     </div>
@@ -207,6 +264,17 @@ export default async function AdminProviders() {
                                 photoUrls={(p.photos || []).slice(0, 3).map((x: string) => getImageUrl(x))}
                                 registrations={regsFor(p.id)}
                                 blockers={blockersFor(p)}
+                                skills={skillsFor(p.id).map((skill: any) => ({
+                                    ...skill,
+                                    public: skillIsPublic(skill, regsFor(p.id).map((r: any) => ({
+                                        scheme: r.scheme,
+                                        verified: r.verified,
+                                    }))),
+                                    reason: blockedSkillReason(skill, p.trade,
+                                        skill.regulated_concept === 'electrical'
+                                            ? p.trade === 'electrician'
+                                            : asksAboutFuel(p.trade)),
+                                }))}
                             />
                         ))}
                     </div>

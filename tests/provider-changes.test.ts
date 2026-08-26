@@ -194,3 +194,124 @@ test('a hidden provider sending it back goes into the queue', () => {
     const patch = submitStatusPatch('hidden', WHEN);
     assert.equal(patch.status, 'pending_review');
 });
+
+// ---------------------------------------------------------------------------
+// WHY A LISTING IS IN THE QUEUE
+//
+// The admin page used to be three independent filters written out inline, and
+// a fourth reason could be added to the model without any of them noticing —
+// the row simply never appeared and the first anybody heard of it was a
+// provider asking why their tag never went live. Same shape as canBeRequested
+// reading "not priced by the hour" instead of "not maintenance": the page
+// asserted the reasons that existed rather than the rule.
+//
+// So the reasons are a list, and this loops it. A fifth reason added to
+// ATTENTION_REASONS without a case here fails the last test in this file,
+// which is the point of writing it that way.
+// ---------------------------------------------------------------------------
+
+const {
+    needsAttention,
+    ATTENTION_REASONS,
+    attentionLabel,
+} = require('@/lib/serviceProviders');
+
+const gasSkill = { id: 's1', label: 'Boiler repair', regulated_concept: 'gas' };
+const plainSkill = { id: 's2', label: 'Bricklaying', regulated_concept: null };
+
+const verifiedGas = {
+    scheme: 'gas_safe',
+    number: '123456',
+    verified_at: '2026-08-01T00:00:00.000Z',
+    verified_number: '123456',
+};
+
+test('a settled live listing wants nothing from anybody', () => {
+    const settled = approved({ ...live, trade: 'plumber' });
+    assert.deepEqual(needsAttention(settled, [], []), []);
+});
+
+test('an application waiting for a decision', () => {
+    assert.deepEqual(
+        needsAttention({ ...live, status: 'pending_review' }, [], []),
+        ['application']
+    );
+});
+
+test('a live listing that has been edited', () => {
+    const edited = { ...approved(live), description: 'Something else entirely, at length.' };
+    assert.deepEqual(needsAttention(edited, [], []), ['changes']);
+});
+
+test('a registration nobody has checked', () => {
+    const plumber = approved({ ...live, trade: 'plumber', does_gas: true });
+    const reasons = needsAttention(plumber, [{ scheme: 'gas_safe', number: '123456' }], []);
+    assert.deepEqual(reasons, ['registration']);
+});
+
+test('a skill claiming work they have not proved they may do', () => {
+    const handyman = approved({ ...live, trade: 'handyman' });
+    assert.deepEqual(needsAttention(handyman, [], [gasSkill]), ['skills']);
+});
+
+test('an ordinary skill is not a reason to look at anybody', () => {
+    const handyman = approved({ ...live, trade: 'handyman' });
+    assert.deepEqual(needsAttention(handyman, [], [plainSkill]), []);
+});
+
+test('a regulated skill with a checked number behind it is settled', () => {
+    const plumber = approved({ ...live, trade: 'plumber', does_gas: true });
+    assert.deepEqual(needsAttention(plumber, [verifiedGas], [gasSkill]), []);
+});
+
+test('several reasons at once are all reported, not just the first', () => {
+    // The queue counts each reason separately, so one row can be in more than
+    // one count — and a listing waiting on a decision AND carrying an
+    // unchecked number is two jobs, not one.
+    const plumber = { ...live, status: 'pending_review', trade: 'plumber', does_gas: true };
+    const reasons = needsAttention(plumber, [{ scheme: 'gas_safe', number: '123456' }], [gasSkill]);
+
+    assert.equal(reasons.indexOf('application') !== -1, true);
+    assert.equal(reasons.indexOf('registration') !== -1, true);
+    assert.equal(reasons.indexOf('skills') !== -1, true);
+});
+
+test('nothing at all is not a reason', () => {
+    assert.deepEqual(needsAttention(null, [], []), []);
+    assert.deepEqual(needsAttention(undefined, null, null), []);
+});
+
+// The guard. Add a reason to ATTENTION_REASONS and this fails until there is a
+// case above that produces it — which is the difference between a queue that
+// grows with the model and one that quietly stops being complete.
+test('every reason in the list can actually be produced', () => {
+    const produced: string[] = [];
+
+    const cases = [
+        needsAttention({ ...live, status: 'pending_review' }, [], []),
+        needsAttention({ ...approved(live), description: 'Something else entirely, at length.' }, [], []),
+        needsAttention(approved({ ...live, trade: 'plumber', does_gas: true }),
+            [{ scheme: 'gas_safe', number: '123456' }], []),
+        needsAttention(approved({ ...live, trade: 'handyman' }), [], [gasSkill]),
+    ];
+
+    for (const reasons of cases) {
+        for (const reason of reasons) {
+            if (produced.indexOf(reason) === -1) produced.push(reason);
+        }
+    }
+
+    for (const reason of ATTENTION_REASONS) {
+        assert.equal(produced.indexOf(reason) !== -1, true,
+            reason + ' is in ATTENTION_REASONS but nothing here produces it — '
+            + 'add a case, and check the admin queue actually shows it');
+    }
+});
+
+test('every reason reads as something in the summary line', () => {
+    for (const reason of ATTENTION_REASONS) {
+        const label = attentionLabel(reason);
+        assert.equal(typeof label === 'string' && label.length > 0, true, reason + ' has words');
+        assert.notEqual(label, reason, reason + ' is not shown to a human as its own key');
+    }
+});

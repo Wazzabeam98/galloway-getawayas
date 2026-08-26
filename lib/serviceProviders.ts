@@ -5,6 +5,8 @@
 // so it can be used on the server and in the browser and tested without a
 // database anywhere near it.
 
+import { blockedSkills, SkillRow } from '@/lib/serviceSkills';
+
 // Nobody searches for "maintenance". They search for a plumber.
 //
 // 'spanner' — Maintenance & repairs — used to be a trade of its own, and the
@@ -1483,6 +1485,71 @@ export function calloutLine(
     return waived
         ? '£' + shown + ' call-out, waived if you go ahead'
         : '£' + shown + ' call-out';
+}
+
+// ---------------------------------------------------------------------------
+// WHY A LISTING IS IN THE QUEUE
+// ---------------------------------------------------------------------------
+//
+// One function, because the admin page used to be three independent filters —
+// `status === 'pending_review'`, `hasUnreviewedChanges`, and a registration
+// blocker check — and adding a fourth reason a listing needs looking at broke
+// nothing and showed nothing. The row simply never appeared, and the first
+// anybody heard of it was a provider asking why their tag never went live.
+//
+// Same shape as canBeRequested reading "not priced by the hour" instead of
+// "not maintenance": the page asserted the list of reasons that existed rather
+// than the rule, which is "show me anything waiting on me".
+//
+// So the reasons live here, together, and there is a test that loops all of
+// them. A fifth reason added to this list without being handled fails it.
+export type AttentionReason = 'application' | 'changes' | 'registration' | 'skills';
+
+export const ATTENTION_REASONS: AttentionReason[] = [
+    'application',
+    'changes',
+    'registration',
+    'skills',
+];
+
+export function needsAttention(
+    provider: any,
+    registrations?: RegistrationRow[] | null,
+    skills?: SkillRow[] | null,
+    today?: Date
+): AttentionReason[] {
+    const reasons: AttentionReason[] = [];
+    if (!provider) return reasons;
+
+    // Waiting on a decision.
+    if (provider.status === 'pending_review') reasons.push('application');
+
+    // Live, and has changed something worth re-reading.
+    if (hasUnreviewedChanges(provider)) reasons.push('changes');
+
+    // A number to look up on somebody else's register.
+    if (registrationBlockers(provider, registrations, today).length > 0) {
+        reasons.push('registration');
+    }
+
+    // A tag claiming restricted work without a verified registration behind
+    // it. Not an accusation — most of these are somebody who does the work and
+    // has not given us their number yet.
+    const verified = (registrations || []).map((r) => ({
+        scheme: r.scheme,
+        verified: registrationVerified(r),
+    }));
+
+    if (blockedSkills(skills, verified).length > 0) reasons.push('skills');
+
+    return reasons;
+}
+
+export function attentionLabel(reason: AttentionReason): string {
+    if (reason === 'application') return 'waiting for a decision';
+    if (reason === 'changes') return 'live with changes to look at';
+    if (reason === 'registration') return 'a registration to check';
+    return 'a skill needing proof';
 }
 
 export const REVIEW_WITHIN_HOURS = 48;

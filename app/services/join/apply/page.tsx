@@ -9,6 +9,13 @@ import { Sparkles, Wrench, Trees, Droplet, ChefHat, Cake, ShoppingBasket, PawPri
 import { compressImage } from '@/lib/compressImage';
 import { getImageUrl, generateRandomNumber } from '@/lib/utils';
 import Env from '@/config/Env';
+import {
+    skillKey,
+    suggestSkills,
+    wouldCreateNew,
+    regulatedConceptFor,
+    schemesSatisfying,
+} from '@/lib/serviceSkills';
 import LoginModel from '@/components/auth/LoginModel';
 import {
     tradeLabel,
@@ -122,6 +129,16 @@ function ApplicationForm() {
     const [hourlyRate, setHourlyRate] = useState('');
     const [calloutWaived, setCalloutWaived] = useState(false);
 
+    // Skills tags. Held as labels rather than ids, because a tag they typed
+    // before signing in does not have an id yet — the route settles all of
+    // that when it reconciles the set.
+    const [skills, setSkills] = useState<string[]>([]);
+    const [skillTyped, setSkillTyped] = useState('');
+    // Every existing tag, for the type-ahead. That list IS the mechanism:
+    // somebody offered "bricklaying" takes it, and somebody offered nothing
+    // types "brick laying".
+    const [allSkills, setAllSkills] = useState<any[]>([]);
+
     // Gas and oil are questions inside the plumber's application rather than
     // trades of their own, because most plumbers do one and plenty do both.
     // They are also the two answers an owner with a dead boiler needs before
@@ -147,6 +164,17 @@ function ApplicationForm() {
             // do it — the Supabase client throws while it is being built, so
             // not one request is even attempted and the screen never changes.
             try {
+                // Read whether or not they are signed in — the type-ahead has
+                // to work before there is an account, which is when somebody
+                // is most likely to invent a new spelling.
+                const { data: skillRows } = await supabase
+                    .from('service_skills')
+                    .select('id, label, slug, regulated_concept, merged_into')
+                    .is('merged_into', null)
+                    .order('label');
+
+                setAllSkills(skillRows || []);
+
                 const { data: { session } } = await supabase.auth.getSession();
                 setSession(session);
 
@@ -199,6 +227,17 @@ function ApplicationForm() {
                     const loadedRegs: Record<string, string> = {};
                     for (const row of regRows || []) loadedRegs[row.scheme] = row.number || '';
                     setRegistrations(loadedRegs);
+
+                    const { data: mySkills } = await supabase
+                        .from('service_provider_skills')
+                        .select('service_skills ( label )')
+                        .eq('provider_id', existing.id);
+
+                    setSkills(
+                        (mySkills || [])
+                            .map((r: any) => (r.service_skills && r.service_skills.label) || '')
+                            .filter(Boolean)
+                    );
 
                     const { data: priceRows } = await supabase
                         .from('service_provider_prices')
@@ -305,6 +344,7 @@ function ApplicationForm() {
             if (d.doesOil !== undefined) setDoesOil(d.doesOil === true);
             if (d.registrations) setRegistrations(d.registrations);
             if (d.calloutWaived !== undefined) setCalloutWaived(d.calloutWaived === true);
+            if (Array.isArray(d.skills)) setSkills(d.skills);
             if (d.prices) setPrices(d.prices);
             if (d.extras) setExtras(d.extras);
             if (d.calloutFee) setCalloutFee(d.calloutFee);
@@ -336,7 +376,7 @@ function ApplicationForm() {
                 JSON.stringify({
                     businessName, description, contactEmail, contactPhone,
                     prices, extras, calloutFee, hourlyRate, areas,
-                    doesGas, doesOil, registrations, calloutWaived,
+                    doesGas, doesOil, registrations, calloutWaived, skills,
                 })
             );
         } catch (err) {
@@ -346,7 +386,7 @@ function ApplicationForm() {
         hydrated, providerId, tradeFromUrl,
         businessName, description, contactEmail, contactPhone,
         prices, extras, calloutFee, hourlyRate, areas,
-        doesGas, doesOil, registrations, calloutWaived,
+        doesGas, doesOil, registrations, calloutWaived, skills,
     ]);
 
     // Which registration boxes this application shows at all. An electrician
@@ -492,6 +532,31 @@ function ApplicationForm() {
     // The maintenance trades, however they charge. A guest-side quoted trade —
     // a chef, a cake — has no call-out fee and no rates section at all.
     const isCallout = model === 'callout_hourly' || (model === 'quoted' && groupForTrade(trade) !== null);
+
+    // Skills are for the maintenance trades. A cleaner's work is described by
+    // the bands and the extras; a handyman's is not describable in advance at
+    // all, which is the whole reason these exist.
+    const hasSkills = groupForTrade(trade) !== null;
+
+    const skillSuggestions = suggestSkills(allSkills, skillTyped, skills);
+    const skillIsNew = wouldCreateNew(allSkills, skillTyped);
+
+    const addSkill = (label: string) => {
+        const key = skillKey(label);
+        if (!key) return;
+
+        // Compared on the normalised form, so somebody cannot add
+        // "Bricklaying" to a list that already has "bricklaying".
+        const held = skills.map((x) => (skillKey(x) || { compact: '' }).compact);
+        if (held.indexOf(key.compact) === -1) setSkills([...skills, key.label]);
+
+        setSkillTyped('');
+    };
+
+    // What they will be asked to prove. Said as they type rather than after
+    // saving, because "boiler repair" is a reasonable thing for a handyman to
+    // believe they can list.
+    const typedConcept = regulatedConceptFor(skillTyped);
 
     const bands = bandsFor(trade);
 
@@ -842,6 +907,34 @@ function ApplicationForm() {
                 };
             });
             await supabase.from('service_areas').insert(rows);
+        }
+
+        // Skills go through a route rather than being written from here.
+        //
+        // Not for convenience: `regulated_concept` is what stops a handyman
+        // tagging "boiler repair" and reading to a host as somebody who can
+        // touch a boiler, and a provider able to write their own skill row
+        // could set it to null. Neither skills table is writable by
+        // `authenticated` at all.
+        //
+        // Failures are surfaced, unlike the alert below — a tag that silently
+        // did not save is one they think is on their profile.
+        if (hasSkills) {
+            try {
+                const skillRes = await fetch('/api/services/skills', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ providerId: id, labels: skills }),
+                });
+
+                if (!skillRes.ok) {
+                    toast.warning('Your details saved, but the skills did not. Try that part again.',
+                        { theme: 'colored' });
+                }
+            } catch (err) {
+                toast.warning('Your details saved, but the skills did not. Try that part again.',
+                    { theme: 'colored' });
+            }
         }
 
         // Told last, once the row and its areas are both written, so the
@@ -1511,6 +1604,109 @@ function ApplicationForm() {
                             <p className="text-xs text-slate-500 mt-3">
                                 Your number appears on your listing. These registers are public, so an owner
                                 can look you up themselves — which is rather the point of it.
+                            </p>
+                        )}
+                    </section>
+                )}
+
+                {/* Skills. Free text on purpose: a handyman is defined by
+                    what he has picked up rather than by a category anybody
+                    could write in advance.
+
+                    The type-ahead is the anti-fragmentation mechanism, not a
+                    convenience. Pure free text turns one job into
+                    "bricklaying", "brick laying", "brickwork" and "bricks",
+                    and a host searching one of them misses three tradesmen who
+                    do exactly that work — so existing tags are offered first
+                    and a new one is only made when nothing matches. */}
+                {hasSkills && (
+                    <section className="mb-8">
+                        <h2 className="text-sm font-semibold text-slate-900 mb-1.5">
+                            What else can you turn your hand to?
+                        </h2>
+                        <p className="text-sm text-slate-500 mb-4">
+                            The things that do not fit a tick box — bricklaying, fencing, laying slabs,
+                            dyking. Pick from the list where you can, so owners looking for that job find you.
+                        </p>
+
+                        {skills.length > 0 && (
+                            <div className="flex flex-wrap gap-2 mb-3">
+                                {skills.map((label) => (
+                                    <span
+                                        key={label}
+                                        className="inline-flex items-center gap-1.5 rounded-full border border-slate-300 bg-slate-50 pl-3 pr-1.5 py-1 text-sm text-slate-900"
+                                    >
+                                        {label}
+                                        <button
+                                            type="button"
+                                            onClick={() => setSkills(skills.filter((x) => x !== label))}
+                                            className="rounded-full p-0.5 text-slate-400 hover:text-slate-700"
+                                            aria-label={'Remove ' + label}
+                                        >
+                                            <X className="w-3.5 h-3.5" />
+                                        </button>
+                                    </span>
+                                ))}
+                            </div>
+                        )}
+
+                        <input
+                            type="text"
+                            value={skillTyped}
+                            onChange={(e) => setSkillTyped(e.target.value)}
+                            onKeyDown={(e) => {
+                                if (e.key !== 'Enter') return;
+                                // Otherwise Enter submits the form, which on a
+                                // half-typed tag is the worst possible moment.
+                                e.preventDefault();
+                                if (skillSuggestions.length > 0) addSkill(String(skillSuggestions[0].label));
+                                else addSkill(skillTyped);
+                            }}
+                            placeholder="Start typing"
+                            className="w-full md:max-w-sm rounded-xl border border-slate-300 px-3.5 py-3 focus:outline-none focus:ring-2 focus:ring-emerald-700"
+                        />
+
+                        {skillTyped.trim() !== '' && (
+                            <div className="mt-2 md:max-w-sm">
+                                {skillSuggestions.map((suggestion: any) => (
+                                    <button
+                                        key={suggestion.id || suggestion.slug}
+                                        type="button"
+                                        onClick={() => addSkill(String(suggestion.label))}
+                                        className="block w-full text-left rounded-lg px-3 py-2 text-sm text-slate-900 hover:bg-slate-100"
+                                    >
+                                        {suggestion.label}
+                                        {suggestion.regulated_concept && (
+                                            <span className="text-slate-500"> · needs proof</span>
+                                        )}
+                                    </button>
+                                ))}
+
+                                {/* Offered last and looking different, so
+                                    taking the existing tag is the easier of
+                                    the two. */}
+                                {skillIsNew && (
+                                    <button
+                                        type="button"
+                                        onClick={() => addSkill(skillTyped)}
+                                        className="block w-full text-left rounded-lg px-3 py-2 text-sm text-emerald-800 hover:bg-emerald-50"
+                                    >
+                                        Add &ldquo;{(skillKey(skillTyped) || { label: skillTyped }).label}&rdquo; as a new one
+                                    </button>
+                                )}
+                            </div>
+                        )}
+
+                        {/* Said while they type, not after they save. "Boiler
+                            repair" is a reasonable thing for a handyman to
+                            think he can list, and finding out afterwards that
+                            it never appeared is the bad version of this. */}
+                        {typedConcept && (
+                            <p className="text-xs text-slate-500 mt-2 md:max-w-sm">
+                                That is{' '}
+                                {typedConcept === 'gas' ? 'Gas Safe' : typedConcept === 'oil' ? 'OFTEC' : 'Part P'}
+                                {' '}work. We will show it once we have checked your number
+                                {schemesSatisfying(typedConcept).length > 1 ? ' for your scheme' : ''}.
                             </p>
                         )}
                     </section>

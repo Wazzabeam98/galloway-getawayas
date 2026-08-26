@@ -27,6 +27,8 @@
     "app/api/listings/access-code/route.ts",
     "app/api/admin/providers/route.ts",
     "app/api/services/submitted/route.ts",
+    "app/api/services/skills/route.ts",
+    "app/api/admin/skills/route.ts",
     "app/api/cron/error-digest/route.ts"
   ]
 }
