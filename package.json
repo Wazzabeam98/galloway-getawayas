@@ -7,7 +7,8 @@
     "build": "next build",
     "start": "next start",
     "lint": "next lint",
-    "test": "tsc -p tsconfig.test.json && node --test .test-build/tests"
+    "test": "tsc -p tsconfig.test.json && node --test .test-build/tests",
+    "test:e2e": "playwright test"
   },
   "dependencies": {
     "@hookform/resolvers": "^3.3.1",
@@ -43,6 +44,7 @@
     "yup": "^1.2.0"
   },
   "devDependencies": {
+    "@playwright/test": "^1.62.1",
     "@types/react-date-range": "^1.4.5",
     "pg": "^8.23.0"
   }

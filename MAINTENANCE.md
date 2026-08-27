@@ -787,7 +787,13 @@ one has been observed rather than imagined.
    no confirmation would send. That difference is what made mail look like it
    worked.
 
-2. **Nothing automated has ever pressed the button** — see below.
+2. **Nothing automated had ever pressed the button.** Partly closed on 28 Aug
+   2026: `npm run test:e2e` drives the real form in a real browser through
+   Playwright and asserts both the panel the applicant reads and the row in the
+   database. What it does NOT yet do is type through all five steps — it
+   restores a draft and drives the finish step, which is where both shipped
+   faults were. The trade picker has its own small test. Driving the coverage
+   control and the earlier steps' own inputs is the next increment.
 
 3. **An applicant whose confirmation email was refused cannot ask for another.**
    They have an account they cannot confirm and no control that offers a resend.
@@ -863,4 +869,34 @@ select created_at, detail from error_log
 was refused has an account they cannot confirm and no way to ask for another.
 That wants a resend control on the sign-up, and it wants real SMTP configured on
 production rather than the shared built-in service.
+
+## Driving the real form
+
+```
+npm run test:e2e
+```
+
+Playwright, headless Chromium, pointed at the **preview** by default —
+`playwright.config.ts` — because this signs somebody up, and an invented
+tradesman belongs in the test project rather than the real queue. Override with
+`PLAYWRIGHT_BASE_URL`, and think before pointing it anywhere backed by
+production.
+
+It cleans up after itself: the applicant and everything they own are removed
+before and after each test, through `e2e/helpers.ts`, which refuses to run
+unless `.env.local` names the test project.
+
+**Two things about the locators**, because both cost time:
+
+- The step counter (`Step 2 of 5`) is rendered twice — once for narrow screens
+  carrying the number, once wider without — so matching its text finds a
+  `sm:hidden` element on a desktop viewport and fails for a reason that has
+  nothing to do with the application. Which step is on screen is told from the
+  controls it has instead.
+- **The form's inputs carry no `id`, `name` or `aria-label`**, so `getByLabel`
+  finds nothing even though the labels are visible. Two have placeholders; the
+  contact email and phone have neither and are found by layout — the first
+  input below their label. Adding `aria-label`s would fix this properly and
+  would help anybody using a screen reader more than it helps the test. Worth
+  doing.
 
