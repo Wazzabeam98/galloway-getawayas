@@ -687,15 +687,39 @@ Not a wish list. These stop the site working properly for real people, and each
 one has been observed rather than imagined.
 
 1. **Production needs its own SMTP for auth email.** Sign-up confirmation and
-   password reset go through Supabase's built-in shared service, whose quota is
-   **project-wide** — verified 27 Aug 2026 by a brand-new address being refused
-   `429 over_email_send_rate_limit` on its first ever send, while the project's
-   allowance was spent. A launch-day burst of sign-ups is precisely when that
-   bites, and when it does, nobody can confirm an address and nobody can reset a
-   password. App email already goes through Resend with its own allowance, which
-   is why decline emails kept arriving on a night when no confirmation would
-   send. Auth email needs the same treatment: custom SMTP on the project, not
-   the shared service.
+   password reset go through Supabase's built-in service. Two things about it,
+   both from Supabase's own documentation and both worse than "it is rate
+   limited":
+
+   - **Two emails an hour, project-wide.** Not per address — verified 27 Aug
+     2026 by a brand-new address being refused `429
+     over_email_send_rate_limit` on its first ever send while the allowance was
+     spent. The limit cannot be raised without custom SMTP.
+   - **It only delivers to pre-authorized team member addresses.** It is
+     documented as being for exploration and testing, with no delivery or
+     uptime guarantee. **A real customer's address never receives anything.**
+     That matches everything seen on test: the only addresses that have ever
+     received auth mail here are Liam's own.
+
+   So this is not a throughput problem to tune later. On the built-in service a
+   member of the public **cannot confirm an address or reset a password at
+   all** — which means the guest sign-up is affected as much as the provider
+   one, today.
+
+   The fix is custom SMTP on the project (SendGrid, AWS SES, Resend — anything
+   with credentials): Authentication settings → SMTP, needing host, port,
+   username, password, sender address and sender name. Prefer a sender on
+   `gallowaygetaways.co.uk`, which already sends app mail through Resend, so
+   auth mail comes from the same domain people recognise.
+
+   Configuring it also unlocks the rate limits: the default becomes 30 an hour,
+   adjustable under Authentication → Rate Limits. Worth raising deliberately
+   before any announcement rather than discovering it during one.
+
+   App email is unaffected and always has been — it goes through Resend with
+   its own allowance, which is why decline emails kept arriving on a night when
+   no confirmation would send. That difference is what made mail look like it
+   worked.
 
 2. **Nothing automated has ever pressed the button** — see below.
 
