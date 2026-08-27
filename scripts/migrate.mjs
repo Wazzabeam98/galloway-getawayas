@@ -78,6 +78,22 @@ function die(message) {
 const env = loadEnv();
 const url = env.SUPABASE_TEST_DB_URL || process.env.SUPABASE_TEST_DB_URL;
 
+// Two lines with the same key is not an error to a .env parser — the last one
+// simply wins, silently. That is a bad way to find out why the password you
+// pasted is being ignored, so it is said out loud instead.
+try {
+    const raw = fs.readFileSync(new URL('../.env.local', import.meta.url), 'utf8');
+    const times = raw.split('\n').filter((l) => l.trim().startsWith('SUPABASE_TEST_DB_URL=')).length;
+    if (times > 1) {
+        die(
+            'SUPABASE_TEST_DB_URL appears ' + times + ' times in .env.local.\n' +
+            '  The last one wins and the others are ignored. Delete the spares.'
+        );
+    }
+} catch (err) {
+    if (err && err.message && err.message.startsWith('SUPABASE_TEST_DB_URL appears')) throw err;
+}
+
 if (!url) {
     die(
         'SUPABASE_TEST_DB_URL is not set.\n' +
@@ -85,8 +101,12 @@ if (!url) {
         '  SUPABASE_TEST_DB_URL=postgresql://postgres.' + TEST_PROJECT_REF + ':<password>@aws-0-eu-west-2.pooler.supabase.com:5432/postgres'
     );
 }
-if (url.includes('[YOUR-PASSWORD]') || url.includes('<password>')) {
-    die('SUPABASE_TEST_DB_URL still has the placeholder in it, not a real password.');
+// Every spelling of "I have not pasted it yet" that has actually turned up.
+// A placeholder that slips through does not fail here — it fails later, as an
+// authentication error, which reads like a wrong password rather than an
+// absent one.
+if (/\[?your[-_ ]?password\]?|<password>|YOUR_REAL_PASSWORD|xxxx+/i.test(url)) {
+    die('SUPABASE_TEST_DB_URL still has a placeholder in it, not a real password.');
 }
 if (url.includes(PROD_REF) || url.toLowerCase().includes(PROD_NAME)) {
     die('that connection string is PRODUCTION. This script does not run against production, ever.');
