@@ -2999,39 +2999,15 @@ function ApplicationForm() {
                                 time. Contact details and the areas you cover change straight away, with
                                 nothing to wait for.
                             </p>
-                            <button
-                                type="button"
-                                onClick={() => save(true)}
-                                disabled={saving}
-                                className="rounded-full bg-emerald-700 hover:bg-emerald-800 text-white px-7 py-3 font-semibold transition disabled:opacity-60"
-                            >
-                                {saving ? 'Saving…' : 'Save changes'}
-                            </button>
                         </>
                     ) : (
                         <div className="flex flex-wrap items-center gap-3">
-                            {/* One press does both when they are signed out:
-                                the account is made from what they typed and
-                                the application goes in. The label says so,
-                                because "Send for review" while a password box
-                                sits above it leaves somebody wondering whether
-                                they have to do something else first. */}
-                            <button
-                                type="button"
-                                onClick={() => save(true)}
-                                disabled={saving || acctBusy}
-                                className="rounded-full bg-emerald-700 hover:bg-emerald-800 text-white px-7 py-3 font-semibold transition disabled:opacity-60"
-                            >
-                                {acctBusy
-                                    ? 'Making your account…'
-                                    : saving
-                                        ? 'Sending…'
-                                        : session
-                                            ? 'Send for review'
-                                            : 'Create account and send'}
-                            </button>
+                            {/* The button that sends this is in the modal
+                                footer with Back, where every other step keeps
+                                its forward action. What stays here is the
+                                wording that only makes sense beside the form.
 
-                            {/* "Save and finish later" is a promise that needs
+                                "Save and finish later" is a promise that needs
                                 somewhere to save TO. Signed out there is no
                                 such place, and it used to open the login wall
                                 — so it says what actually happens instead: the
@@ -3112,7 +3088,7 @@ function ApplicationForm() {
                         <button
                             type="button"
                             onClick={goBack}
-                            className="inline-flex items-center gap-1.5 rounded-full border border-slate-300 px-5 py-2.5 text-sm font-semibold text-slate-700 hover:border-slate-500 transition"
+                            className="shrink-0 inline-flex items-center gap-1.5 rounded-full border border-slate-300 px-4 sm:px-5 py-2.5 text-sm font-semibold text-slate-700 hover:border-slate-500 transition"
                         >
                             <ChevronLeft className="w-4 h-4" />
                             Back
@@ -3145,6 +3121,37 @@ function ApplicationForm() {
                         >
                             Next
                             <ChevronRight className="w-4 h-4" />
+                        </button>
+                    )}
+
+                    {/* The last step's forward action, in the place every other
+                        step keeps one: Back on the left, the thing that moves
+                        you on to the right. It used to sit in the panel body,
+                        which meant the one button somebody had come five steps
+                        to press was the only one they had to go looking for.
+
+                        `min-w-0` and the truncating label are what stop it
+                        colliding with Back at 375: "Create account and send" is
+                        the longest label the form has, and the two buttons plus
+                        their padding do not fit a phone otherwise. */}
+                    {lastStep && !locked && (
+                        <button
+                            type="button"
+                            onClick={() => save(true)}
+                            disabled={saving || acctBusy}
+                            className="min-w-0 rounded-full bg-emerald-700 hover:bg-emerald-800 text-white px-5 sm:px-6 py-2.5 text-sm font-semibold transition disabled:opacity-60"
+                        >
+                            <span className="block truncate">
+                                {status === 'approved'
+                                    ? (saving ? 'Saving…' : 'Save changes')
+                                    : acctBusy
+                                        ? 'Making your account…'
+                                        : saving
+                                            ? 'Sending…'
+                                            : session
+                                                ? 'Send for review'
+                                                : 'Create account and send'}
+                            </span>
                         </button>
                     )}
                 </div>
