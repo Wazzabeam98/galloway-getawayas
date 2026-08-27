@@ -101,12 +101,29 @@ if (!url) {
         '  SUPABASE_TEST_DB_URL=postgresql://postgres.' + TEST_PROJECT_REF + ':<password>@aws-0-eu-west-2.pooler.supabase.com:5432/postgres'
     );
 }
-// Every spelling of "I have not pasted it yet" that has actually turned up.
-// A placeholder that slips through does not fail here — it fails later, as an
-// authentication error, which reads like a wrong password rather than an
-// absent one.
-if (/\[?your[-_ ]?password\]?|<password>|YOUR_REAL_PASSWORD|xxxx+/i.test(url)) {
-    die('SUPABASE_TEST_DB_URL still has a placeholder in it, not a real password.');
+// "I have not pasted it yet", in every spelling that has actually turned up.
+//
+// Matching the whole URL was the wrong test and let two through: the string
+// always contains the word "postgres", and a placeholder like
+// PASTE_PASSWORD_HERE contains neither "your" nor angle brackets. So the
+// PASSWORD COMPONENT is what gets examined, and anything reading like an
+// instruction rather than a secret is refused.
+//
+// A real password containing the word "password" would be refused too. That is
+// a password worth being refused.
+const passwordPart = (() => {
+    const m = url.match(/:\/\/[^:]+:([^@]*)@/);
+    return m ? m[1] : '';
+})();
+
+if (!passwordPart) {
+    die('SUPABASE_TEST_DB_URL has no password in it.');
+}
+if (/password|paste|placeholder|your|here|example|xxx+|<|>|\[|\]/i.test(passwordPart)) {
+    die(
+        'SUPABASE_TEST_DB_URL still has a placeholder where the password goes.\n' +
+        '  It is ' + passwordPart.length + ' characters and reads like an instruction, not a secret.'
+    );
 }
 if (url.includes(PROD_REF) || url.toLowerCase().includes(PROD_NAME)) {
     die('that connection string is PRODUCTION. This script does not run against production, ever.');
