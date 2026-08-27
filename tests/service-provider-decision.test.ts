@@ -43,6 +43,9 @@ function load(options: {
     doesOil?: boolean;
     registrations?: any[];
     trialEndsAt?: string | null;
+    kind?: string;
+    pricingChoice?: string | null;
+    bandPrices?: any[];
 } = {}) {
     const delivered = options.delivered !== false;
     const sent: any[] = [];
@@ -64,6 +67,10 @@ function load(options: {
         approved_digest: options.approvedDigest === undefined ? null : options.approvedDigest,
         changes_pending_at: options.changesPendingAt === undefined ? null : options.changesPendingAt,
         trial_ends_at: options.trialEndsAt === undefined ? null : options.trialEndsAt,
+        kind: options.kind || 'external',
+        pricing_choice: options.pricingChoice === undefined ? null : options.pricingChoice,
+        billable_hourly_rate: options.pricingChoice === 'hourly' ? 18 : null,
+        covered_bands: options.pricingChoice === 'hourly' ? ['beds_1_2'] : [],
     };
 
     function builder(table: string) {
@@ -84,6 +91,9 @@ function load(options: {
                     }
                     if (table === 'service_providers') {
                         return (resolve: any) => resolve({ data: provider, error: null });
+                    }
+                    if (table === 'service_provider_prices') {
+                        return (resolve: any) => resolve({ data: options.bandPrices || [], error: null });
                     }
                     if (table === 'service_provider_registrations') {
                         return (resolve: any) => resolve({ data: options.registrations || [], error: null });
@@ -691,4 +701,118 @@ test('the email tells a commission trade the opposite, and no date', async () =>
     assert.match(body, /10% of a job/);
     assert.equal(/a month/.test(body), false, 'a cleaner is never told about a subscription');
     assert.equal(/days are free/.test(body), false);
+});
+
+// ---------------------------------------------------------------------------
+// WHOSE BUSINESS IT IS
+//
+// `kind` decides whether a cleaner may be paid by the hour and whether
+// commission is taken at all. It was previously settable only by editing the
+// row in production by hand, which is no check on who did it and no record
+// that it happened.
+// ---------------------------------------------------------------------------
+
+test('an owner can mark a provider in-house', async () => {
+    const { route, updates, sent } = load({ trade: 'sponge', kind: 'external' });
+
+    const res: any = await route.POST(call('make_in_house'));
+
+    assert.equal(res.status, 200);
+    assert.equal(updates[0].patch.kind, 'in_house');
+    assert.equal(sent.length, 0, 'nothing is emailed -- it says whose business this is, not what they agreed');
+});
+
+test('marking in-house does not touch anything else', async () => {
+    const { route, updates } = load({ trade: 'sponge', kind: 'external' });
+
+    await route.POST(call('make_in_house'));
+    const patch = updates[0].patch;
+
+    assert.equal('status' in patch, false, 'it is not a decision about their application');
+    assert.equal('pricing_choice' in patch, false, 'and it does not choose a pricing model for them');
+    assert.equal('plan' in patch, false);
+});
+
+test('somebody who is not an admin cannot change it', async () => {
+    const { route, updates } = load({ trade: 'sponge', isAdmin: false });
+
+    const res: any = await route.POST(call('make_in_house'));
+
+    assert.equal(res.status, 403);
+    assert.equal(updates.length, 0);
+});
+
+// The case worth getting right rather than discovering.
+test('an hourly cleaner with band prices falls back onto them when made external', async () => {
+    const { route, updates } = load({
+        trade: 'sponge',
+        kind: 'in_house',
+        pricingChoice: 'hourly',
+        bandPrices: [{ band_key: 'beds_1_2', price: 80 }],
+    });
+
+    const res: any = await route.POST(call('make_external'));
+
+    assert.equal(res.status, 200);
+
+    const patch = updates[0].patch;
+    assert.equal(patch.kind, 'external');
+    // One statement, because the check constraint is evaluated against the
+    // finished row: moving kind without moving pricing_choice is refused.
+    assert.equal(patch.pricing_choice, 'bands');
+    assert.equal(patch.billable_hourly_rate, null, 'the rate goes with the permission to charge it');
+    assert.deepEqual(patch.covered_bands, [], 'and coverage comes from her prices again');
+});
+
+test('an hourly cleaner with no band prices is refused rather than hidden', async () => {
+    // Clearing the hourly fields anyway would land her on the banded model
+    // with nothing priced -- and a banded provider with no prices covers no
+    // size and disappears from every search while looking complete on screen.
+    const { route, updates } = load({
+        trade: 'sponge',
+        kind: 'in_house',
+        pricingChoice: 'hourly',
+        bandPrices: [],
+    });
+
+    const res: any = await route.POST(call('make_external'));
+
+    assert.equal(res.status, 409);
+    assert.match(res.body.error, /no prices per house size/);
+    assert.equal(updates.length, 0, 'nothing is written at all');
+});
+
+test('a band price of zero is not a price to fall back onto', async () => {
+    const { route, updates } = load({
+        trade: 'sponge',
+        kind: 'in_house',
+        pricingChoice: 'hourly',
+        bandPrices: [{ band_key: 'beds_1_2', price: 0 }],
+    });
+
+    const res: any = await route.POST(call('make_external'));
+
+    assert.equal(res.status, 409);
+    assert.equal(updates.length, 0);
+});
+
+test('a banded cleaner made external needs no fallback and clears nothing', async () => {
+    const { route, updates } = load({ trade: 'sponge', kind: 'in_house', pricingChoice: 'bands' });
+
+    const res: any = await route.POST(call('make_external'));
+
+    assert.equal(res.status, 200);
+    assert.equal(updates[0].patch.kind, 'external');
+    assert.equal('billable_hourly_rate' in updates[0].patch, false,
+        'there is nothing hourly to clear, so nothing is written');
+});
+
+test('a non-cleaning provider is unaffected by any of it', async () => {
+    const { route, updates } = load({ trade: 'plumber', kind: 'in_house' });
+
+    const res: any = await route.POST(call('make_external'));
+
+    assert.equal(res.status, 200);
+    assert.equal(updates[0].patch.kind, 'external');
+    assert.equal('pricing_choice' in updates[0].patch, false);
 });

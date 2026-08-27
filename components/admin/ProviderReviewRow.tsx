@@ -52,6 +52,7 @@ export default function ProviderReviewRow({
     // Whether a turned-down set of changes also comes off the site. Some
     // edits are worth a word; some cannot stay up. Asked rather than assumed.
     const [hide, setHide] = useState(false);
+    const [kindOpen, setKindOpen] = useState(false);
 
     const decide = async (decision: 'approve' | 'decline' | 'approve_changes' | 'decline_changes') => {
         if ((decision === 'decline' || decision === 'decline_changes') && !note.trim()) {
@@ -123,6 +124,53 @@ export default function ProviderReviewRow({
         }
 
         toast.success('Checked.', { theme: 'colored' });
+        router.refresh();
+    };
+
+    // Whose business this is.
+    //
+    // `kind` decides whether the cleaner may be paid by the hour and whether
+    // commission is taken at all, and until now the only way to set it was to
+    // edit the row in production by hand — no check on who did it and no
+    // record that it happened.
+    //
+    // A confirm step rather than a bare toggle, because flipping an hourly
+    // cleaner back to external moves her onto the banded model, and the route
+    // refuses outright if she has no band prices to land on.
+    const setKind = async (toInHouse: boolean) => {
+        setBusy(true);
+
+        const res = await fetch('/api/admin/providers', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+                id: provider.id,
+                decision: toInHouse ? 'make_in_house' : 'make_external',
+            }),
+        });
+
+        setBusy(false);
+
+        const body = await res.json().catch(() => ({}));
+
+        if (!res.ok) {
+            // Long-lived, because the refusal explains what to do next and a
+            // toast that vanishes in four seconds would not have been read.
+            toast.error(body.error || 'That did not save.', { theme: 'colored', autoClose: false });
+            return;
+        }
+
+        if (body.hourlyCleared) {
+            toast.warning(
+                'Moved to external, and her hourly rate has been cleared — she is on her '
+                    + 'per-house-size prices now.',
+                { theme: 'colored', autoClose: false }
+            );
+        } else {
+            toast.success(toInHouse ? 'Marked in-house.' : 'Marked external.', { theme: 'colored' });
+        }
+
+        setKindOpen(false);
         router.refresh();
     };
 
@@ -206,6 +254,48 @@ export default function ProviderReviewRow({
                         </dd>
                     </div>
                 )}
+
+                <div className="flex gap-2">
+                    <dt className="text-slate-500 shrink-0">Whose</dt>
+                    <dd className="text-slate-900">
+                        {provider.kind === 'in_house' ? 'Ours, in-house' : 'Theirs'}
+                        <button
+                            type="button"
+                            onClick={() => setKindOpen(!kindOpen)}
+                            className="ml-2 text-sm font-semibold text-emerald-700 hover:text-emerald-800 underline"
+                        >
+                            change
+                        </button>
+
+                        {kindOpen && (
+                            <span className="block mt-2 rounded-xl border border-slate-300 bg-slate-50 p-3">
+                                <span className="block text-sm text-slate-700 mb-2.5">
+                                    {provider.kind === 'in_house'
+                                        ? 'Make this somebody else\u2019s business? They will be charged commission, and cannot be paid by the hour.'
+                                        : 'Make this ours? No commission is taken, and a cleaner can then be paid by the hour.'}
+                                </span>
+
+                                <span className="flex flex-wrap gap-2">
+                                    <button
+                                        type="button"
+                                        disabled={busy}
+                                        onClick={() => setKind(provider.kind !== 'in_house')}
+                                        className="rounded-full bg-slate-900 hover:bg-slate-800 text-white px-4 py-2 text-sm font-semibold transition disabled:opacity-60"
+                                    >
+                                        {provider.kind === 'in_house' ? 'Mark external' : 'Mark in-house'}
+                                    </button>
+                                    <button
+                                        type="button"
+                                        onClick={() => setKindOpen(false)}
+                                        className="rounded-full border border-slate-300 px-4 py-2 text-sm font-semibold text-slate-700"
+                                    >
+                                        Leave it
+                                    </button>
+                                </span>
+                            </span>
+                        )}
+                    </dd>
+                </div>
 
                 <div className="flex gap-2">
                     <dt className="text-slate-500 shrink-0">Pays</dt>

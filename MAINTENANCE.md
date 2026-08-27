@@ -81,8 +81,24 @@ Please:
 - **read the surrounding code before changing it.** Naming collides in places —
   the Stripe webhook has a local variable called `logError`, unrelated to
   `lib/logError.ts`.
-- **run the build before proposing anything.** TypeScript has caught real bugs
-  here, not just style issues.
+- **run the build before proposing anything, and do not let a green test suite
+  stand in for it.** `npm test` and `npm run build` are not the same check, and
+  the suite is the weaker of the two: `tsconfig.test.json` sets
+  `"strict": false`, so it compiles code that `next build` refuses.
+
+  This is not hypothetical. On 28 August 2026 an interface gained four fields
+  in one place and not in the other, and `submitProblems` was handed a draft it
+  had no declaration for. 546 tests passed. `next build` failed with a type
+  error naming the exact argument.
+
+  It is also narrower than it looks: `tsconfig.test.json` has a hand-written
+  `include` list, so `lib/**` and `tests/**` are checked and app routes are
+  checked only if somebody remembered to add them. A route nobody listed is
+  invisible to `tsc` as well as to the tests.
+
+  So: **a green suite means the logic you wrote tests for is right. It does not
+  mean it compiles.** Run both. TypeScript has caught real bugs here, not just
+  style issues.
 - **say when you are unsure.** A flagged uncertainty is far cheaper than a
   confident wrong fix to a payment route.
 - **do not enter credentials into forms or CLI fields.** Keys, tokens and

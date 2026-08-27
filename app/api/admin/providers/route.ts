@@ -69,7 +69,14 @@ export async function POST(req: Request) {
         // a live provider's edits are accepted or turned down. They are named
         // separately rather than inferred from the row, so a click made
         // against a stale screen is refused instead of doing the other thing.
-        const DECISIONS = ['approve', 'decline', 'approve_changes', 'decline_changes', 'verify_registration'];
+        const DECISIONS = [
+            'approve', 'decline', 'approve_changes', 'decline_changes', 'verify_registration',
+            // Whose business it is. Not a decision about an application, but
+            // it belongs on this route for the same reason the others do: it
+            // has to be checked against is_admin on the server, and it is not
+            // a thing a provider may do to their own row.
+            'make_in_house', 'make_external',
+        ];
 
         if (!id || DECISIONS.indexOf(decision) === -1) {
             return NextResponse.json({ ok: false, error: 'Nothing to decide.' }, { status: 400 });
@@ -86,7 +93,7 @@ export async function POST(req: Request) {
 
         const { data: provider } = await admin
             .from('service_providers')
-            .select('id, business_name, logo, contact_email, status, approved_digest, changes_pending_at, trade, description, audience, photos, does_gas, does_oil, plan, trial_ends_at')
+            .select('id, business_name, logo, contact_email, status, approved_digest, changes_pending_at, trade, description, audience, photos, does_gas, does_oil, plan, trial_ends_at, kind, pricing_choice, billable_hourly_rate, covered_bands')
             .eq('id', id)
             .maybeSingle();
 
@@ -100,6 +107,96 @@ export async function POST(req: Request) {
             .eq('provider_id', id);
 
         const registrations = regRows || [];
+
+        // IN-HOUSE, OR SOMEBODY ELSE'S BUSINESS
+        //
+        // `kind` decides two things that matter: whether the cleaner may be
+        // paid by the hour, and whether commission is taken at all. It used to
+        // be settable only by editing the row in production by hand, which is
+        // the wrong tool for a setting of that weight — no check on who did
+        // it, and no record that it happened.
+        //
+        // Not emailed. It changes nothing the provider sees or agreed to; it
+        // says whose business this is.
+        if (decision === 'make_in_house' || decision === 'make_external') {
+            const toInHouse = decision === 'make_in_house';
+            const now = new Date().toISOString();
+
+            const patch: any = { kind: toInHouse ? 'in_house' : 'external', updated_at: now };
+
+            // Flipping an hourly cleaner back to external.
+            //
+            // The database refuses the flip on its own -- the check says
+            // hourly is cleaning AND in-house -- so without this the owner
+            // would get a raw constraint error and no idea what to do. Worse
+            // would be clearing the hourly fields regardless: she would land
+            // on the banded model with no band prices, and a banded provider
+            // with no prices covers no size and disappears from every search
+            // while looking perfectly complete on screen.
+            //
+            // So it is handled where handling is safe and refused where it is
+            // not. Safe means she already has at least one band price to fall
+            // back onto.
+            if (!toInHouse && String(provider.pricing_choice || '') === 'hourly') {
+                const { data: bandRows } = await admin
+                    .from('service_provider_prices')
+                    .select('band_key, price')
+                    .eq('provider_id', id);
+
+                const priced = (bandRows || []).filter((r: any) => Number(r.price) > 0);
+
+                if (priced.length === 0) {
+                    return NextResponse.json(
+                        {
+                            ok: false,
+                            error: 'She is paid by the hour and has no prices per house size to fall back on. '
+                                + 'Ask her to set at least one size price first — otherwise she would go '
+                                + 'external with nothing priced and stop appearing in any search.',
+                        },
+                        { status: 409 }
+                    );
+                }
+
+                // One statement, because the check constraint is evaluated
+                // against the finished row: moving `kind` without moving
+                // `pricing_choice` in the same update is what it refuses.
+                patch.pricing_choice = 'bands';
+                patch.billable_hourly_rate = null;
+                patch.covered_bands = [];
+            }
+
+            const { error: kindError } = await admin
+                .from('service_providers')
+                .update(patch)
+                .eq('id', id);
+
+            if (kindError) {
+                return NextResponse.json({ ok: false, error: kindError.message }, { status: 500 });
+            }
+
+            // Logged the way the other admin actions here are, and with the
+            // user on it: this decides a pricing model and whether commission
+            // is charged, so who changed it is the point of recording it.
+            await logError(
+                'service-provider-kind-changed',
+                {
+                    provider: id,
+                    business: provider.business_name || null,
+                    trade: provider.trade || null,
+                    from: provider.kind || 'external',
+                    to: patch.kind,
+                    hourly_cleared: patch.pricing_choice === 'bands',
+                },
+                { path: '/api/admin/providers', userId: auth.user.id }
+            );
+
+            return NextResponse.json({
+                ok: true,
+                emailed: false,
+                kind: patch.kind,
+                hourlyCleared: patch.pricing_choice === 'bands',
+            });
+        }
 
         // Recording that a number has been checked. Its own decision because
         // it is its own act — done in another tab, against the register
