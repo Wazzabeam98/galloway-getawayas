@@ -163,13 +163,155 @@ export function audienceLabel(audience: string): string {
     return 'not said';
 }
 
-// There is no free trial. It is 10% per job from the first job, and the rate
-// lives in `commission_rate` on the provider row.
+// ---------------------------------------------------------------------------
+// WHAT A PROVIDER PAYS
 //
-// TRIAL_DAYS and trialEndsAt() used to live here, and "Free for 90 days" was
-// on the sign-up until commit ccbc10c took the words off the page. The
-// machinery outlived the copy by a few commits, which is exactly how a promise
-// nobody meant to make gets made again — so it is gone rather than dormant.
+// Two models, decided by the trade rather than by the provider, and the line
+// between them is about who takes the customer's money:
+//
+//   commission    the platform charges the customer at acceptance, so there
+//                 is a transaction to take a percentage of. 10%, held in
+//                 `commission_rate` on the row and snapshotted onto each
+//                 enquiry, the same way bookings.commission_rate already
+//                 works — so changing the rate later never rewrites what
+//                 somebody already agreed to.
+//   subscription  the work is quoted on site and paid off-platform. There is
+//                 no transaction here to take a percentage of, and a per-job
+//                 commission could not police one if there were. £20 a month
+//                 after 90 free days, and the commission rate resolves to
+//                 zero.
+//
+// This reverses an earlier decision, and the reasoning that removed the trial
+// is worth keeping rather than pretending it was never made: a dormant
+// `trial_ends_at` is one query away from becoming a promise on a page again.
+// The answer to that is not to have no trial, it is that the trial has to be
+// stamped where the promise is actually made — at approval, in the email that
+// tells them they are live and gives them the date — rather than sitting on a
+// draft nobody has accepted yet. Submission still starts nothing.
+//
+// It is also a different shape from what was removed. 'trial' used to be a
+// value of `plan`, which meant the plan could not say what happened when the
+// trial ended. Now `plan` says which model they are on for good, and
+// `trial_ends_at` is a date on the row that passes.
+//
+// AN EXPLICIT MAP, NOT A DERIVED ONE
+//
+// The obvious shortcut is `pricingModelFor(trade) === 'quoted'`. It is wrong
+// twice over: it would sweep in all four guest trades, and it keys money off
+// a value that describes something else. This file has already been bitten by
+// exactly that — see canBeRequested below, which used the pricing model as a
+// proxy until the roofer, joiner and painter moved to `quoted` and it quietly
+// changed meaning. How a trade prices is free to be re-shuffled; what it pays
+// is not, so it is written down.
+//
+// The map is checkable rather than arbitrary: every subscription trade is one
+// of the maintenance trades, and every maintenance trade is a subscription
+// trade. There is a test asserting exactly that, so the two cannot drift.
+// ---------------------------------------------------------------------------
+
+export type ProviderPlan = 'commission' | 'subscription';
+
+const TRADE_PLANS: Record<string, ProviderPlan> = {
+    // Quoted on site, paid off-platform.
+    plumber: 'subscription',
+    electrician: 'subscription',
+    handyman: 'subscription',
+    roofer: 'subscription',
+    joiner: 'subscription',
+    painter: 'subscription',
+
+    // The platform charges the customer at acceptance.
+    sponge: 'commission',
+    bin: 'commission',
+    trees: 'commission',
+    droplet: 'commission',
+    chef: 'commission',
+    cake: 'commission',
+    basket: 'commission',
+    paw: 'commission',
+};
+
+// Commission is the safe default for a trade nobody has placed: it bills
+// nothing until there is a job, where an unplaced trade defaulting to a
+// subscription would start a clock on somebody who never agreed to one.
+export function planForTrade(trade: string): ProviderPlan {
+    return TRADE_PLANS[String(trade || '')] || 'commission';
+}
+
+// Ninety days, from approval.
+export const TRIAL_DAYS = 90;
+
+// £20 a month, said in one place so a page and an email cannot disagree.
+export const SUBSCRIPTION_MONTHLY = 20;
+
+// Nothing bills anyone yet. This is the date the free period ends, stamped at
+// approval so it starts when they are actually live rather than when they
+// happened to fill a form in.
+export function trialEndsAt(approvedAt: Date | string): string {
+    const from = approvedAt instanceof Date ? approvedAt : new Date(String(approvedAt));
+    const end = new Date(from.getTime());
+    end.setUTCDate(end.getUTCDate() + TRIAL_DAYS);
+    return end.toISOString();
+}
+
+// What comes off a job, as a rate.
+//
+// A subscription provider is 0%, whatever is sitting in `commission_rate` —
+// the column has a default of 0.10 and a row written before the plan existed
+// will still be carrying it. Reading the plan rather than the column is what
+// stops that stale 0.10 becoming a charge.
+//
+// This is the value to snapshot onto an enquiry when accepted, exactly as
+// bookings.commission_rate is snapshotted onto a booking. There is no enquiry
+// table yet, so nothing calls this in anger — but the rule is here and tested
+// rather than waiting to be invented at the point it starts costing people
+// money.
+export const DEFAULT_SERVICE_COMMISSION = 0.10;
+
+export function commissionRateFor(provider: any): number {
+    if (!provider) return 0;
+
+    const plan = String(provider.plan || planForTrade(String(provider.trade || '')));
+    if (plan === 'subscription') return 0;
+
+    // Missing and zero are different answers, and Number() collapses them:
+    // Number(null) is 0, so a null column would have read as "this provider
+    // pays nothing" rather than "nobody has said". A deliberate 0 is a real
+    // rate — the owner sets one for an in-house business — so it has to
+    // survive, and only a genuinely absent value falls back.
+    const raw = provider.commission_rate;
+    if (raw === null || raw === undefined || raw === '') return DEFAULT_SERVICE_COMMISSION;
+
+    const rate = Number(raw);
+    return rate >= 0 ? rate : DEFAULT_SERVICE_COMMISSION;
+}
+
+// What a provider is told they will pay, in one place so the sign-up, the
+// admin card and the approval email cannot say three different things.
+//
+// Said in the present tense and without a date, because at the point the
+// sign-up shows this there is no approval yet and therefore no clock. The
+// email is where the date appears, because the email is sent at the moment
+// the clock actually starts.
+export function planTerms(trade: string): string {
+    return planForTrade(trade) === 'subscription'
+        ? 'Nothing to pay for your first ' + TRIAL_DAYS + ' days once you are approved, '
+            + 'then £' + SUBSCRIPTION_MONTHLY + ' a month. We take no commission — you quote '
+            + 'and get paid direct.'
+        : 'Nothing to pay to be listed. We take 10% of a job when you accept one through '
+            + 'the site, and nothing at all when you do not.';
+}
+
+// Whether the free period is still running, for a page that wants to say so.
+export function trialActive(provider: any, now?: Date): boolean {
+    if (!provider || !provider.trial_ends_at) return false;
+    if (String(provider.plan || '') !== 'subscription') return false;
+
+    const ends = new Date(String(provider.trial_ends_at)).getTime();
+    if (!(ends > 0)) return false;
+
+    return ends > (now || new Date()).getTime();
+}
 
 
 // What a re-check is actually for.

@@ -124,12 +124,45 @@ alter table "public"."service_providers"
 alter table "public"."service_providers"
     alter column "plan" set default 'commission';
 
-alter table "public"."service_providers" drop column if exists "trial_ends_at";
+-- SUPERSEDED, AND LEFT HERE LOUD RATHER THAN QUIET.
+--
+-- This line used to read:
+--
+--     alter table "public"."service_providers" drop column if exists "trial_ends_at";
+--
+-- The trial came back on 27 August 2026 — 90 free days from approval for the
+-- maintenance trades, then £20 a month — and `trial_ends_at` is a real column
+-- again, added by 20260827_provider_trial_and_plan.sql.
+--
+-- `drop column if exists` would have taken it off again without a word,
+-- because "if exists" is precisely the phrase that turns undoing a live
+-- migration into a silent no-op. Anybody re-running this script on test would
+-- have got a database that no longer matched the code and no error to say so.
+--
+-- So it raises instead. If you are here because this script just failed, that
+-- is it working: you are running an undo written for a schema that has since
+-- moved on. Read 20260827_provider_trial_and_plan.sql, decide what you
+-- actually want, and do that rather than editing this line out.
+do $$
+begin
+    if exists (
+        select 1 from information_schema.columns
+         where table_schema = 'public'
+           and table_name = 'service_providers'
+           and column_name = 'trial_ends_at'
+    ) then
+        raise exception
+            'undo-the-split.sql would drop trial_ends_at, which is live again '
+            'as of 20260827_provider_trial_and_plan.sql. Refusing. See the '
+            'note above this block.';
+    end if;
+end $$;
 
 commit;
 
 -- Read back. This should be the original shape: owner_id and business_name on
--- the listing, no business_id, no trial_ends_at.
+-- the listing and no business_id. `trial_ends_at` IS expected now — see the
+-- refusal above; it is no longer this script's business to remove it.
 --
 --   select column_name from information_schema.columns
 --    where table_schema = 'public' and table_name = 'service_providers'

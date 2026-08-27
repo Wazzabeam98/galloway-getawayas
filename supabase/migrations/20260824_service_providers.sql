@@ -18,20 +18,33 @@
 --
 -- Two things are in here before they are used, on purpose:
 --
---   `plan`        commission today, at the rate in `commission_rate`, and
---                 nothing else is implemented. Subscription is kept as a value
---                 because a cleaner visiting the same cottage every week will
---                 swap numbers with the host and no per-job commission can
---                 police that — the day that has to change, it is a value in
---                 a column rather than a boolean to replace.
+--   `plan`        kept as a value rather than a boolean because the day the
+--                 model changed it would be a value to set rather than a
+--                 column to replace. That day came: see
+--                 20260827_provider_trial_and_plan.sql. Both values are live
+--                 now, decided by the trade, though nothing bills anybody
+--                 yet.
 --   `settlement`  only 'cash_on_arrival' is implemented. Netting an in-house
 --                 cleaning bill off a host's payout touches the payout engine
 --                 and wants its own work, but not its own migration.
 --
--- There is NO free trial and no trial column. It is 10% per job from the first
--- job. Anything that measured or announced a trial has been taken out rather
--- than left dormant, because a dormant `trial_ends_at` is one query away from
--- becoming a promise on a page again.
+-- SUPERSEDED ON 27 AUGUST 2026 by 20260827_provider_trial_and_plan.sql. This
+-- paragraph used to say there was no free trial and no trial column, and that
+-- a dormant `trial_ends_at` was one query away from becoming a promise on a
+-- page again. The warning was right about the failure it had seen; the
+-- conclusion has been reversed.
+--
+-- There is now a trial, and `trial_ends_at` is a real column. What changed is
+-- where it is written: the clock is stamped in the admin approve route, in the
+-- same write that sets `approved_at`, and said out loud in the email that
+-- tells the provider they are live. A draft starts nothing and a submission
+-- starts nothing. That is the answer to a promise made by accident — not
+-- having no column, but having no way to set one without telling somebody.
+--
+-- The model, in full: 90 free days from approval and then £20 a month for the
+-- six maintenance trades, whose work is quoted on site and paid off-platform;
+-- 10% a job for everything else, where the platform charges the customer at
+-- acceptance. Read the newer migration rather than this paragraph.
 --
 -- Attribution is deliberately NOT a counter here. Jobs and their value are a
 -- query over the service bookings table when it exists; a stored count is one

@@ -25,7 +25,7 @@ process.env.SUPABASE_SERVICE_ROLE_KEY = 'test-service-key';
 
 const ROUTE = '@/app/api/admin/providers/route';
 
-const { TRADES, requiredSchemes } = require('@/lib/serviceProviders');
+const { TRADES, requiredSchemes, planForTrade, TRIAL_DAYS } = require('@/lib/serviceProviders');
 
 const ADMIN_ID = 'admin-1';
 const PROVIDER_ID = 'prov-1';
@@ -42,6 +42,7 @@ function load(options: {
     doesGas?: boolean;
     doesOil?: boolean;
     registrations?: any[];
+    trialEndsAt?: string | null;
 } = {}) {
     const delivered = options.delivered !== false;
     const sent: any[] = [];
@@ -62,6 +63,7 @@ function load(options: {
         photos: ['providers/a.jpg'],
         approved_digest: options.approvedDigest === undefined ? null : options.approvedDigest,
         changes_pending_at: options.changesPendingAt === undefined ? null : options.changesPendingAt,
+        trial_ends_at: options.trialEndsAt === undefined ? null : options.trialEndsAt,
     };
 
     function builder(table: string) {
@@ -525,4 +527,165 @@ test('a decline is never blocked by a missing number', async () => {
 
     assert.equal(res.status, 200);
     assert.equal(updates[0].patch.status, 'declined');
+});
+
+// ---------------------------------------------------------------------------
+// WHAT APPROVAL STAMPS
+//
+// Approval is where the promise is made: it is the write that puts them on the
+// site and the email that gives them a date. So it is where the plan is fixed
+// and where the free period starts.
+//
+// The failure this guards against is the one that removed the trial the first
+// time — a clock measured somewhere nobody looks, running against somebody who
+// was never told. Here it runs from the same write as `approved_at`, or it
+// does not run at all.
+// ---------------------------------------------------------------------------
+
+test('approving a maintenance trade stamps the subscription and starts the clock', async () => {
+    const { route, updates } = load({ trade: 'plumber' });
+
+    const res: any = await route.POST(call('approve'));
+    assert.equal(res.status, 200);
+
+    const patch = updates[0].patch;
+    assert.equal(patch.plan, 'subscription');
+    assert.equal(typeof patch.trial_ends_at, 'string');
+    assert.equal(patch.commission_rate, 0, 'no commission on top of a subscription');
+
+    // Ninety days from the approval itself, not from some other moment.
+    const days = (new Date(patch.trial_ends_at).getTime() - new Date(patch.approved_at).getTime())
+        / (1000 * 60 * 60 * 24);
+    assert.equal(Math.round(days), TRIAL_DAYS);
+});
+
+test('every subscription trade gets the same treatment, not just the plumber', async () => {
+    const subscription = TRADES
+        .map((t: any) => t.key)
+        .filter((trade: string) => planForTrade(trade) === 'subscription');
+
+    assert.equal(subscription.length, 6, 'all six maintenance trades');
+
+    for (const trade of subscription) {
+        // The electrician needs a checked Part P scheme before anything else
+        // is decided, so give it one — this test is about the plan, not the
+        // paperwork.
+        const registrations = trade === 'electrician'
+            ? [{
+                provider_id: PROVIDER_ID, scheme: 'part_p_niceic', number: 'N123',
+                verified_at: '2026-08-01T00:00:00.000Z', verified_number: 'N123',
+            }]
+            : [];
+
+        const { route, updates } = load({ trade, registrations });
+
+        const res: any = await route.POST(call('approve'));
+
+        assert.equal(res.status, 200, trade + ' is approvable');
+        assert.equal(updates[0].patch.plan, 'subscription', trade + ' is on the subscription');
+        assert.equal(typeof updates[0].patch.trial_ends_at, 'string', trade + ' gets a date');
+        assert.equal(updates[0].patch.commission_rate, 0, trade + ' pays no commission');
+    }
+});
+
+test('approving a commission trade starts no clock at all', async () => {
+    const { route, updates } = load({ trade: 'sponge' });
+
+    const res: any = await route.POST(call('approve'));
+    assert.equal(res.status, 200);
+
+    const patch = updates[0].patch;
+    assert.equal(patch.plan, 'commission');
+    assert.equal('trial_ends_at' in patch, false, 'a cleaner is not on a free period');
+    assert.equal('commission_rate' in patch, false, 'the rate on their row is left as it is');
+});
+
+test('every commission trade is left on commission', async () => {
+    const commission = TRADES
+        .map((t: any) => t.key)
+        .filter((trade: string) => planForTrade(trade) === 'commission');
+
+    assert.equal(commission.length, 8, 'four banded host trades and four guest trades');
+
+    for (const trade of commission) {
+        const { route, updates } = load({ trade, registrations: [] });
+
+        const res: any = await route.POST(call('approve'));
+
+        assert.equal(res.status, 200, trade + ' is approvable');
+        assert.equal(updates[0].patch.plan, 'commission', trade + ' stays on commission');
+        assert.equal('trial_ends_at' in updates[0].patch, false, trade + ' starts no clock');
+    }
+});
+
+// The one that costs money if it is wrong. A plumber who edits their
+// description and is looked at again must not be handed another three months.
+test('re-approving does not hand out a second free period', async () => {
+    const ORIGINAL = '2026-09-01T00:00:00.000Z';
+    const { route, updates } = load({ trade: 'plumber', trialEndsAt: ORIGINAL });
+
+    const res: any = await route.POST(call('approve'));
+    assert.equal(res.status, 200);
+
+    assert.equal('trial_ends_at' in updates[0].patch, false,
+        'the date they were given already is the date that stands');
+});
+
+test('approving a change does not touch the plan or the clock', async () => {
+    const { route, updates } = load({
+        trade: 'plumber',
+        status: 'approved',
+        approvedDigest: 'business_name=Old',
+        changesPendingAt: '2026-08-26T00:00:00.000Z',
+        trialEndsAt: '2026-09-01T00:00:00.000Z',
+    });
+
+    const res: any = await route.POST(call('approve_changes'));
+    assert.equal(res.status, 200);
+
+    const patch = updates[0].patch;
+    assert.equal('plan' in patch, false);
+    assert.equal('trial_ends_at' in patch, false);
+    assert.equal('commission_rate' in patch, false);
+});
+
+test('a declined provider is put on no plan and given no date', async () => {
+    const { route, updates } = load({ trade: 'plumber' });
+
+    const res: any = await route.POST(call('decline', 'We need more detail on the work you do.'));
+    assert.equal(res.status, 200);
+
+    const patch = updates[0].patch;
+    assert.equal(patch.status, 'declined');
+    assert.equal('plan' in patch, false, 'nothing is agreed with somebody who was turned down');
+    assert.equal('trial_ends_at' in patch, false);
+});
+
+test('the email tells a subscription trade what it costs and when', async () => {
+    const { route, sent } = load({ trade: 'plumber' });
+
+    await route.POST(call('approve'));
+
+    assert.equal(sent.length, 1);
+    const body = String(sent[0].html || '');
+
+    assert.match(body, /90 days are free/);
+    assert.match(body, /£20 a month/);
+    assert.match(body, /no commission/);
+    // The date they can hold us to, not just a number of days. Matched by
+    // shape rather than by value: the clock starts when the test runs, so
+    // naming a month would have made this fail on a calendar page turning.
+    assert.match(body, /\d{1,2} (January|February|March|April|May|June|July|August|September|October|November|December) \d{4}/);
+});
+
+test('the email tells a commission trade the opposite, and no date', async () => {
+    const { route, sent } = load({ trade: 'sponge' });
+
+    await route.POST(call('approve'));
+
+    const body = String(sent[0].html || '');
+
+    assert.match(body, /10% of a job/);
+    assert.equal(/a month/.test(body), false, 'a cleaner is never told about a subscription');
+    assert.equal(/days are free/.test(body), false);
 });

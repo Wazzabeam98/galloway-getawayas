@@ -178,9 +178,15 @@ test('a first application goes into the queue', () => {
     assert.equal(patch.submitted_at, WHEN.toISOString());
     assert.equal(patch.review_note, null);
 
-    // There is no trial. It is 10% per job from the first job, so a submission
-    // starts nothing and promises nothing.
-    assert.equal('trial_ends_at' in patch, false, 'nothing here starts a trial');
+    // There IS a trial again — 90 free days for the maintenance trades — and
+    // this assertion matters more than it did when there was not one. The
+    // clock starts at approval, in the same write that puts them live and the
+    // email that gives them the date. A submission is somebody joining a
+    // queue: it must not quietly eat a free period while they wait to be
+    // looked at. See tests/service-provider-decision.test.ts for the other
+    // half of this, where the stamping actually happens.
+    assert.equal('trial_ends_at' in patch, false, 'the queue does not start the clock');
+    assert.equal('plan' in patch, false, 'and nothing is agreed before it is approved');
 });
 
 test('sending it back after a decline queues them and clears the old reason', () => {

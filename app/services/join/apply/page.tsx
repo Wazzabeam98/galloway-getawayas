@@ -47,6 +47,7 @@ import {
     submitProblems,
     statusSummary,
     submitStatusPatch,
+    planTerms,
     pricingModelFor,
     bandsFor,
     REVIEW_WITHIN_HOURS,
@@ -2218,6 +2219,16 @@ function ApplicationForm() {
                         placeholder="At least 8 characters"
                         className="w-full md:max-w-sm rounded-xl border border-slate-300 px-3.5 py-3 focus:outline-none focus:ring-2 focus:ring-emerald-700"
                     />
+
+                    {/* What it costs, beside the tick box that agrees to it.
+                        Nothing on the site said this before — the model lived
+                        in conversations — and this is the one moment somebody
+                        is agreeing to something, so it is the one place it has
+                        to appear. Worded by lib/serviceProviders.ts planTerms,
+                        so this and the approval email cannot differ. */}
+                    <p className="text-sm text-slate-600 mt-4 rounded-xl bg-slate-50 border border-slate-200 p-3.5">
+                        {planTerms(trade)}
+                    </p>
 
                     <label className="flex items-start gap-2.5 mt-3 text-sm text-slate-800">
                         <input

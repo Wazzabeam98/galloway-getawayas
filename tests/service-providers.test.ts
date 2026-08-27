@@ -17,6 +17,16 @@ const {
     milesBetween,
     coversPoint,
     tradeLabel,
+    TRADES,
+    TRADE_GROUPS,
+    planForTrade,
+    pricingModelFor,
+    commissionRateFor,
+    trialEndsAt,
+    trialActive,
+    planTerms,
+    TRIAL_DAYS,
+    SUBSCRIPTION_MONTHLY,
 } = require('@/lib/serviceProviders');
 
 const complete = {
@@ -113,7 +123,142 @@ test('an unknown trade still reads as something', () => {
     assert.equal(tradeLabel('nonsense'), 'Service');
 });
 
-// There is no trial, so there is nothing here to test. TRIAL_DAYS and
-// trialEndsAt() are gone from lib/serviceProviders.ts rather than left unused:
-// it is 10% per job from the first job, and a dormant trial helper is one
-// query away from putting "Free for 90 days" back on a page.
+// ---------------------------------------------------------------------------
+// WHAT A PROVIDER PAYS
+//
+// This block used to say there was no trial and nothing to test. There is one
+// again: 90 free days from approval, then £20 a month, for the six trades
+// whose work is quoted on site and paid off-platform. Everything else is 10%
+// of a job the platform charges the customer for.
+//
+// The old warning still stands and is why these tests exist in this shape: a
+// trial that is measured somewhere nobody looks becomes a promise nobody
+// meant to make. So the clock is asserted to start at approval and nowhere
+// else, and the words are asserted to come from the same constants as the
+// number.
+// ---------------------------------------------------------------------------
+
+test('the plan map and the maintenance group are the same six trades', () => {
+    // The checkable rule behind the map: subscription where the work is
+    // quoted on site and paid off-platform, which is exactly the maintenance
+    // group. Written out rather than derived — deriving it would key money
+    // off a value free to be re-shuffled for other reasons — but held to the
+    // group here so the two cannot drift apart unnoticed.
+    const subscription = TRADES
+        .map((t: any) => t.key)
+        .filter((trade: string) => planForTrade(trade) === 'subscription')
+        .sort();
+
+    const maintenance = TRADE_GROUPS
+        .filter((g: any) => g.key === 'maintenance')
+        .flatMap((g: any) => g.trades as string[])
+        .slice()
+        .sort();
+
+    assert.deepEqual(subscription, maintenance);
+    assert.equal(subscription.length, 6);
+});
+
+test('every trade has a plan, and the guest trades are all commission', () => {
+    for (const trade of TRADES.map((t: any) => t.key)) {
+        const plan = planForTrade(trade);
+        assert.equal(plan === 'commission' || plan === 'subscription', true, trade + ' has a plan');
+    }
+
+    // The trap in "quoted trades go on the subscription": pricingModelFor
+    // returns 'quoted' for all four of these as well, so deriving the plan
+    // from it would have put a cake baker on £20 a month.
+    for (const trade of ['chef', 'cake', 'basket', 'paw']) {
+        assert.equal(planForTrade(trade), 'commission', trade + ' sells through the site');
+        assert.equal(pricingModelFor(trade), 'quoted',
+            trade + ' is quoted, which is exactly why the plan is not read off the pricing model');
+    }
+});
+
+test('an unplaced trade falls to commission, not to a subscription', () => {
+    // Commission bills nothing until there is a job. A subscription default
+    // would start a clock on somebody who never agreed to one.
+    assert.equal(planForTrade('nonsense'), 'commission');
+    assert.equal(planForTrade(''), 'commission');
+});
+
+test('a subscription provider is 0%, whatever the column says', () => {
+    // The column defaults to 0.10 and the row is written from the browser, so
+    // a plumber's row is carrying 0.10 until something overwrites it. Reading
+    // the plan rather than the column is what stops that becoming a charge.
+    assert.equal(commissionRateFor({ trade: 'plumber', plan: 'subscription', commission_rate: 0.10 }), 0);
+    assert.equal(commissionRateFor({ trade: 'roofer', plan: 'subscription', commission_rate: 0.25 }), 0);
+});
+
+test('every subscription trade resolves to nothing per job', () => {
+    for (const trade of TRADES.map((t: any) => t.key).filter((t: string) => planForTrade(t) === 'subscription')) {
+        // Stale rate on the row, no plan stamped yet — the worst case, and
+        // the one an enquiry would snapshot if it were built today.
+        assert.equal(commissionRateFor({ trade, commission_rate: 0.10 }), 0,
+            trade + ' pays nothing per job');
+    }
+});
+
+test('a commission provider keeps the rate on their row', () => {
+    assert.equal(commissionRateFor({ trade: 'sponge', plan: 'commission', commission_rate: 0.10 }), 0.10);
+    // Snapshotting is the point: a rate somebody agreed to is not rewritten
+    // when the default moves.
+    assert.equal(commissionRateFor({ trade: 'sponge', plan: 'commission', commission_rate: 0.08 }), 0.08);
+    // A genuine zero is a rate, not a missing value.
+    assert.equal(commissionRateFor({ trade: 'sponge', plan: 'commission', commission_rate: 0 }), 0);
+});
+
+test('a commission provider with no rate falls back rather than charging nothing', () => {
+    assert.equal(commissionRateFor({ trade: 'sponge', plan: 'commission' }), 0.10);
+    assert.equal(commissionRateFor({ trade: 'sponge', plan: 'commission', commission_rate: null }), 0.10);
+});
+
+test('the trial is ninety days, counted in days rather than months', () => {
+    const end = trialEndsAt('2026-08-27T09:00:00.000Z');
+
+    // 27 August + 90 days = 25 November. Months vary in length; the promise
+    // is a number of days, so the arithmetic has to be too.
+    assert.equal(end, '2026-11-25T09:00:00.000Z');
+    assert.equal(TRIAL_DAYS, 90);
+});
+
+test('the trial clock crosses a month end and a leap year without drifting', () => {
+    assert.equal(trialEndsAt('2026-12-15T00:00:00.000Z'), '2027-03-15T00:00:00.000Z');
+    assert.equal(trialEndsAt('2027-12-15T00:00:00.000Z'), '2028-03-14T00:00:00.000Z');
+});
+
+test('a running trial is only a thing a subscription provider can have', () => {
+    const now = new Date('2026-09-01T00:00:00.000Z');
+    const ends = '2026-11-25T00:00:00.000Z';
+
+    assert.equal(trialActive({ plan: 'subscription', trial_ends_at: ends }, now), true);
+    assert.equal(trialActive({ plan: 'subscription', trial_ends_at: '2026-08-01T00:00:00.000Z' }, now), false,
+        'a date that has passed is not a free period');
+    assert.equal(trialActive({ plan: 'commission', trial_ends_at: ends }, now), false,
+        'a commission row carrying a date is not owed free months');
+    assert.equal(trialActive({ plan: 'subscription', trial_ends_at: null }, now), false);
+    assert.equal(trialActive(null, now), false);
+});
+
+test('what a provider is told they will pay comes from the same numbers', () => {
+    const plumber = planTerms('plumber');
+    assert.match(plumber, new RegExp(String(TRIAL_DAYS) + ' days'));
+    assert.match(plumber, new RegExp('£' + String(SUBSCRIPTION_MONTHLY) + ' a month'));
+    assert.equal(plumber.indexOf('10%'), -1, 'a subscription trade is not told about commission');
+
+    const cleaner = planTerms('sponge');
+    assert.match(cleaner, /10%/);
+    assert.equal(cleaner.indexOf('a month'), -1, 'a commission trade is not told about a subscription');
+});
+
+test('nothing anywhere still charges per enquiry', () => {
+    // The £15 per-accepted-enquiry lead fee was dropped before it reached the
+    // code. This is the guard against it arriving later by habit: there is one
+    // commission model and one subscription model, and neither is per enquiry.
+    const src = require('fs').readFileSync(
+        require('path').join(__dirname, '..', '..', 'lib', 'serviceProviders.ts'), 'utf8'
+    );
+
+    assert.equal(/per[- ]enquiry|lead[_ ]fee|leadFee/i.test(src), false,
+        'no per-enquiry charge has crept back into the rules');
+});

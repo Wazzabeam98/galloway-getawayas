@@ -4,7 +4,10 @@ import { NextResponse } from 'next/server';
 import { adminClient } from '@/lib/supabaseAdmin';
 import { sendEmail, emailLayout, escapeHtml, button, SITE_URL } from '@/lib/email';
 import { logError } from '@/lib/logError';
-import { reviewDigest, registrationBlockers, schemeLabel } from '@/lib/serviceProviders';
+import {
+    reviewDigest, registrationBlockers, schemeLabel,
+    planForTrade, trialEndsAt, TRIAL_DAYS, SUBSCRIPTION_MONTHLY,
+} from '@/lib/serviceProviders';
 
 export const dynamic = 'force-dynamic';
 
@@ -83,7 +86,7 @@ export async function POST(req: Request) {
 
         const { data: provider } = await admin
             .from('service_providers')
-            .select('id, business_name, logo, contact_email, status, approved_digest, changes_pending_at, trade, description, audience, photos, does_gas, does_oil')
+            .select('id, business_name, logo, contact_email, status, approved_digest, changes_pending_at, trade, description, audience, photos, does_gas, does_oil, plan, trial_ends_at')
             .eq('id', id)
             .maybeSingle();
 
@@ -194,6 +197,34 @@ export async function POST(req: Request) {
                 status: 'approved', approved_at: now, declined_at: null, review_note: null,
                 approved_digest: digest, changes_pending_at: null, updated_at: now,
             };
+
+            // What they pay, stamped in the same write that puts them live.
+            //
+            // Approval is the moment the promise is made — it is when they go
+            // on the site and when the email goes out with the date in it —
+            // so it is where the clock starts. Submission starts nothing: a
+            // draft sitting in the queue for a fortnight must not be eating a
+            // free period nobody has granted yet.
+            //
+            // The plan is re-derived from the trade rather than trusted off
+            // the row. `plan` has a column default of 'commission' and the
+            // row is written from the browser, so what is sitting there is
+            // whatever the default happened to be when they started — which
+            // for a plumber is wrong.
+            const plan = planForTrade(String(provider.trade || ''));
+            patch.plan = plan;
+
+            if (plan === 'subscription') {
+                // Only stamp it once. Re-approving after a change must not
+                // hand somebody another 90 days, and `approve_changes` does
+                // not come through this branch at all.
+                if (!provider.trial_ends_at) patch.trial_ends_at = trialEndsAt(now);
+
+                // Whatever is in the column, a subscription provider is 0%.
+                // The default is 0.10 and a row written before the plan
+                // existed is still carrying it.
+                patch.commission_rate = 0;
+            }
         } else if (decision === 'decline') {
             patch = { status: 'declined', declined_at: now, review_note: note, updated_at: now };
         } else if (decision === 'approve_changes') {
@@ -242,11 +273,38 @@ export async function POST(req: Request) {
                 let html: string;
 
                 if (decision === 'approve') {
+                    // What it costs, in the email that makes the promise.
+                    //
+                    // The date is read back off the patch rather than
+                    // recalculated, so the words and the column cannot
+                    // disagree — and a re-approval that did not re-stamp it
+                    // quotes the original date rather than a fresh one.
+                    const trialDate = patch.trial_ends_at || provider.trial_ends_at;
+
+                    const terms = patch.plan === 'subscription'
+                        ? '<p style="margin:0 0 16px;font-size:16px;">Your first '
+                            + TRIAL_DAYS + ' days are free'
+                            + (trialDate
+                                ? ', up to <strong>' + escapeHtml(
+                                    new Date(String(trialDate)).toLocaleDateString('en-GB', {
+                                        day: 'numeric', month: 'long', year: 'numeric',
+                                    })
+                                ) + '</strong>'
+                                : '')
+                            + '. After that it is £' + SUBSCRIPTION_MONTHLY
+                            + ' a month, and we take no commission on your work — you quote and get paid'
+                            + ' direct, the same as you do now. We will write to you before anything'
+                            + ' is due, and there is nothing to set up today.</p>'
+                        : '<p style="margin:0 0 16px;font-size:16px;">There is nothing to pay to be listed.'
+                            + ' We take 10% of a job when you accept one through the site, and nothing at'
+                            + ' all when you do not.</p>';
+
                     subject = 'You are listed on Galloway Getaways';
                     html = emailLayout(
                         '<p style="margin:0 0 16px;font-size:16px;">Good news — <strong>' + name
                             + '</strong> has been approved and is now on the site.</p>'
                             + '<p style="margin:0 0 16px;font-size:16px;">People looking for your trade in the areas you cover can now find you. We will email you whenever somebody asks for work.</p>'
+                            + terms
                             + button(SITE_URL + '/services/join', 'See your listing'),
                         FOOT
                     );

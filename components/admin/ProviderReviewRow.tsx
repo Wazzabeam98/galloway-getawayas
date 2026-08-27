@@ -3,6 +3,7 @@
 import { useState } from 'react';
 import { useRouter } from 'next/navigation';
 import { toast } from 'react-toastify';
+import { planForTrade, SUBSCRIPTION_MONTHLY, TRIAL_DAYS } from '@/lib/serviceProviders';
 
 const STATUS_STYLE: Record<string, string> = {
     pending_review: 'bg-amber-50 text-amber-900 border-amber-200',
@@ -180,6 +181,37 @@ export default function ProviderReviewRow({
                         </dd>
                     </div>
                 )}
+                {/* What they pay. Shown on the card the decision is made
+                    from, because approving is what starts the free period —
+                    and an owner should be able to see, before they click,
+                    which of the two things they are about to agree to. */}
+                <div className="flex gap-2">
+                    <dt className="text-slate-500 shrink-0">Pays</dt>
+                    <dd className="text-slate-900">
+                        {/* From the trade, not from the column. A row that
+                            has not been approved yet is carrying the column
+                            default, which for a plumber says the wrong thing.
+                            Approval stamps the same value this computes, so
+                            the two never disagree once it is live. */}
+                        {planForTrade(provider.trade) === 'subscription' ? (
+                            <>
+                                &pound;{SUBSCRIPTION_MONTHLY} a month
+                                {provider.trial_ends_at ? (
+                                    <span className="text-slate-500">
+                                        {' '}&middot; free until{' '}
+                                        {new Date(provider.trial_ends_at).toLocaleDateString('en-GB', {
+                                            day: 'numeric', month: 'short', year: 'numeric',
+                                        })}
+                                    </span>
+                                ) : (
+                                    <span className="text-slate-500"> &middot; {TRIAL_DAYS} free days start on approval</span>
+                                )}
+                            </>
+                        ) : (
+                            <>10% a job</>
+                        )}
+                    </dd>
+                </div>
                 <div className="flex gap-2">
                     <dt className="text-slate-500 shrink-0">Covers</dt>
                     <dd className="text-slate-900">{areas.length ? areas.join(', ') : <span className="text-rose-700">nowhere</span>}</dd>
