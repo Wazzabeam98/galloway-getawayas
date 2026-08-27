@@ -198,7 +198,12 @@ console.log('  source   ' + (file || 'inline --sql'));
 if (structural.length) console.log('  note     structural, loses no data: ' + structural.join(', '));
 if (destructive.length) console.log('  WARNING  LOSES DATA: ' + destructive.join(', '));
 
-if (!flag('apply')) {
+// A read-only --sql just runs. Requiring --apply to SELECT something taught
+// the flag to be typed by reflex, which is the one thing it must never become:
+// it is the word that stands between a migration file and the database.
+const readOnlyQuery = !!inlineSql && !writes;
+
+if (!flag('apply') && !readOnlyQuery) {
     console.log('\n  dry run — nothing was executed. Add --apply to run it.\n');
     process.exit(0);
 }
