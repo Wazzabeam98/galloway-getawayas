@@ -571,6 +571,23 @@ export default function ProviderReviewRow({
 
             {pending && (
                 <div className="mt-5 pt-4 border-t border-slate-200">
+                    {/* Said again, here, at the moment of deciding.
+                        The badge is at the top of the row and this button is at
+                        the bottom of it — on a long application the two are not
+                        on screen together, and the one that matters is the one
+                        you can see when you press.
+
+                        Approving emails them, so an address nobody has proved
+                        can receive email is worth knowing about first. It does
+                        NOT disable anything: it is a fact, not a blocker, and
+                        the decision stays the admin's. */}
+                    {emailVerified === false && !decliningOpen && (
+                        <p className="mb-3 text-sm text-amber-800 bg-amber-50 border border-amber-200 rounded-xl px-3.5 py-2.5">
+                            <strong className="font-semibold">They have not confirmed their sign-in address.</strong>{' '}
+                            Approving sends an email to <strong className="font-semibold">{provider.contact_email}</strong> —
+                            a different address, and one nothing verifies either way.
+                        </p>
+                    )}
                     {!decliningOpen ? (
                         <div className="flex flex-wrap gap-3">
                             {/* Disabled rather than hidden, so the reason
