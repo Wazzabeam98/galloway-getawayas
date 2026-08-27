@@ -198,6 +198,8 @@ function ApplicationForm() {
     // panel used to say it had been sent regardless, which is a promise the
     // applicant then waits on for ever.
     const [verificationEmailed, setVerificationEmailed] = useState(true);
+    const [resending, setResending] = useState(false);
+    const [resendSaid, setResendSaid] = useState('');
     // For somebody who has been here before. Not the default, because most
     // people arriving at this point have no account.
     const [showSignIn, setShowSignIn] = useState(false);
@@ -1388,6 +1390,31 @@ function ApplicationForm() {
     // yet. See app/api/services/apply/route.ts for why it cannot be done from
     // here: there is no session to write under until the email is confirmed,
     // and waiting for that is what lost applications.
+    // Ask again for the confirmation email. Takes the application id, never an
+    // address — see app/api/services/resend-verification/route.ts for why that
+    // distinction is the whole design.
+    const askAgainForEmail = async () => {
+        setResending(true);
+        setResendSaid('');
+        try {
+            const res = await fetch('/api/services/resend-verification', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ providerId }),
+            });
+            const out = await res.json().catch(() => ({}));
+
+            if (out.sent) setResendSaid('Sent. Give it a minute or two, and check the spam folder.');
+            else if (out.wait) setResendSaid('One is already on its way — try again in ' + out.wait + ' seconds.');
+            else if (out.capped) setResendSaid('That is as many as we can send today. Email us and we will sort it out.');
+            else if (out.alreadyConfirmed) setResendSaid('That address is already confirmed — you can sign in with it.');
+            else setResendSaid('We could not send it just now. Your application is still with us either way.');
+        } catch (err) {
+            setResendSaid('We could not reach the site. Your application is still with us either way.');
+        }
+        setResending(false);
+    };
+
     const lodgeApplication = async () => {
         const email = contactEmail.trim();
         setAccountExists(false);
@@ -3460,6 +3487,26 @@ function ApplicationForm() {
                             confirmation out and be in touch either way.
                         </p>
                     )}
+
+                    {/* Offered whether or not the first one went. "It says it
+                        sent but nothing arrived" is at least as common as a
+                        refusal, and both have the same answer. It asks for the
+                        email belonging to THIS application — there is nowhere
+                        to type an address, which is what keeps it from being a
+                        way to mail somebody else. */}
+                    <div className="mt-4 flex flex-wrap items-center gap-3">
+                        <button
+                            type="button"
+                            onClick={askAgainForEmail}
+                            disabled={resending}
+                            className="rounded-full border border-emerald-700 px-5 py-2.5 text-sm font-semibold text-emerald-900 hover:bg-emerald-100 transition disabled:opacity-60"
+                        >
+                            {resending ? 'Sending…' : 'Send the confirmation email again'}
+                        </button>
+                        {resendSaid && (
+                            <span className="text-sm text-emerald-900/80">{resendSaid}</span>
+                        )}
+                    </div>
                 </div>
             )}
 
