@@ -110,3 +110,40 @@ which does keep a log, so `last_event` shows delivery and bounces. That half is
 skipped unless `RESEND_API_KEY` is in `.env.local` — it is set in Vercel but
 not locally, and sensitive Vercel values cannot be read back out, so it has to
 be pasted in by hand to enable it.
+
+## Signed-in journey checks
+
+```
+node scripts/journeys.mjs                      # against the preview
+node scripts/journeys.mjs --host http://localhost:3000
+node scripts/journeys.mjs --reset              # remove the accounts and stop
+```
+
+What made these manual was that every interesting page is behind a login, and
+a login needed an inbox or a password. Neither is true. `generate_link` on the
+admin API hands back a token hash **without sending an email**, `/verify` turns
+it into a session, and auth-helpers stores a session as one cookie holding a
+plain JSON array — so a session can be minted on demand and thrown away.
+
+**No password is stored anywhere.** The two accounts are created with a random
+one that is discarded and never used.
+
+The accounts live on `@gallowayauto.test`, a domain nothing else uses, so the
+payment seeder's reset and the inbox runner's reset can never touch them.
+
+It covers: the signed-out bounce off `/dashboard`, that `/admin` leaks nothing
+to a signed-out visitor or an ordinary guest **and that an admin does see it**
+(without the positive half the other two would pass if `/admin` were simply
+broken), the guest pages, the provider apply page, and that a cron route
+refuses an unauthenticated call.
+
+Two things worth knowing about the assertions:
+
+- **`notFound()` answers HTTP 200**, not 404 — Next renders the not-found
+  boundary with a 200. So the status code says nothing about whether a page was
+  allowed, and these checks read the page content instead. An earlier version
+  keyed on the status and reported a hole that was not there.
+- **The RLS probe is expected to FAIL** until item 8 is closed. It writes as
+  the user, with their own access token, so the policy is genuinely in the
+  path — the service role would bypass it and prove nothing. It confirms that
+  an owner can set their own `status` to `approved`.
