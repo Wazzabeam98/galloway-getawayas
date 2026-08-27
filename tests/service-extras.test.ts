@@ -32,6 +32,7 @@ const {
     EXTRA_GROUPS,
     submitProblems,
     HOST_TRADES,
+    TRADE_GROUPS,
 } = require('@/lib/serviceProviders');
 
 const { serviceCeiling, serviceCommission } = require('@/lib/pricing');
@@ -411,14 +412,37 @@ test('reimbursed money is absent by construction, not by subtraction', () => {
 // somebody was rather than what had gone wrong.
 // ---------------------------------------------------------------------------
 
-const MAINTENANCE = ['electrician', 'joiner', 'plumber', 'roofer', 'handyman'];
+// Taken from TRADE_GROUPS rather than typed out, because a typed-out list
+// silently stops covering a trade the moment one is added to the group. This
+// was five names with `painter` missing, so the painter was never checked by
+// any of the loops below — and it was the one trade that had drifted.
+const MAINTENANCE: string[] = TRADE_GROUPS
+    .filter((g: any) => g.key === 'maintenance')
+    .flatMap((g: any) => g.trades as string[]);
+
+// The painter has no faults list, on purpose — see the test below. Everything
+// else about a maintenance trade applies to the painter too.
+const WITH_FAULTS = MAINTENANCE.filter((t) => t !== 'painter');
 
 test('every maintenance trade separates faults from planned work', () => {
-    for (const trade of MAINTENANCE) {
+    for (const trade of WITH_FAULTS) {
         const groups = extrasFor(trade).map((e: any) => e.group);
 
         assert.equal(groups.indexOf('faults') !== -1, true, trade + ' has a faults list');
         assert.equal(groups.indexOf('planned') !== -1, true, trade + ' has a planned list');
+        assert.equal(groups.indexOf('availability') !== -1, true, trade + ' says when it turns out');
+    }
+});
+
+// The two axes that are not about something having gone wrong. The painter is
+// in here: having no faults list is a reason to skip the faults assertion, not
+// a reason to go unchecked entirely, which is what the hardcoded list did.
+test('every maintenance trade says what it does and when it turns out', () => {
+    for (const trade of MAINTENANCE) {
+        const groups = extrasFor(trade).map((e: any) => e.group);
+
+        assert.equal(groups.indexOf('planned') !== -1, true,
+            trade + ' files what it does under a heading a host can read');
         assert.equal(groups.indexOf('availability') !== -1, true, trade + ' says when it turns out');
     }
 });

@@ -1075,38 +1075,48 @@ export const SERVICE_EXTRAS: ServiceExtra[] = [
     // a scuffed wall is not a leak. What varies between painters is how fast
     // they can get in and out, which is what the availability toggles say.
     {
-        key: 'paint_interior', trade: 'painter', type: 'toggle', group: 'about',
+        key: 'paint_interior', trade: 'painter', type: 'toggle', group: 'planned',
         label: 'Interior decorating',
     },
     {
-        key: 'paint_exterior', trade: 'painter', type: 'toggle', group: 'about',
+        key: 'paint_exterior', trade: 'painter', type: 'toggle', group: 'planned',
         label: 'Exterior painting and masonry',
     },
     {
-        key: 'paint_changeover', trade: 'painter', type: 'toggle', group: 'about',
+        key: 'paint_changeover', trade: 'painter', type: 'toggle', group: 'planned',
         label: 'Touch-ups between changeovers',
         hint: 'A day between guests, scuffs and chips seen to.',
     },
     {
-        key: 'paint_damp_stain', trade: 'painter', type: 'toggle', group: 'about',
+        key: 'paint_damp_stain', trade: 'painter', type: 'toggle', group: 'planned',
         label: 'Sealing and covering damp patches and stains',
     },
+    // Filed under `planned`, like every other maintenance trade, rather than
+    // under `about`. These eight were written before the three-axis split and
+    // stayed where they were: `about` renders with no heading, so a painter's
+    // work sat in an unlabelled block while the other five trades had theirs
+    // under "Work booked in advance". Nothing looked broken, because the
+    // section heading above adapts when there is no faults list — it was the
+    // host-facing shop that would have shown the painter differently from
+    // everybody else. tests/service-extras.test.ts derives the maintenance
+    // trades from TRADE_GROUPS now, so this cannot drift back unnoticed.
+    //
     // The job that follows the plumber out of the door. Nobody thinks to look
     // for it until a repair has left a room worse than it found it.
     {
-        key: 'paint_making_good', trade: 'painter', type: 'toggle', group: 'about',
+        key: 'paint_making_good', trade: 'painter', type: 'toggle', group: 'planned',
         label: 'Making good after a leak or a repair',
     },
     {
-        key: 'paint_wallpaper', trade: 'painter', type: 'toggle', group: 'about',
+        key: 'paint_wallpaper', trade: 'painter', type: 'toggle', group: 'planned',
         label: 'Wallpapering',
     },
     {
-        key: 'paint_windows', trade: 'painter', type: 'toggle', group: 'about',
+        key: 'paint_windows', trade: 'painter', type: 'toggle', group: 'planned',
         label: 'Sash windows and outside woodwork',
     },
     {
-        key: 'paint_out_of_season', trade: 'painter', type: 'toggle', group: 'about',
+        key: 'paint_out_of_season', trade: 'painter', type: 'toggle', group: 'planned',
         label: 'I can work out of season, when the cottage is empty',
     },
 
