@@ -105,11 +105,24 @@ That is the signal to watch when testing a confirmation link on a second
 device: the row appears on sign-up, and the second timestamp lands the moment
 the link is opened, wherever it is opened.
 
-App mail (bookings, payment reminders, payout breakdowns) goes through Resend,
-which does keep a log, so `last_event` shows delivery and bounces. That half is
-skipped unless `RESEND_API_KEY` is in `.env.local` — it is set in Vercel but
-not locally, and sensitive Vercel values cannot be read back out, so it has to
-be pasted in by hand to enable it.
+App mail (bookings, payment reminders, payout breakdowns, provider decisions)
+goes through Resend, which keeps a log. `RESEND_API_KEY` is in `.env.local`, so
+this half answers the question people actually ask — did it arrive:
+
+```
+DELIVERED — it arrived
+    to guest@example.com  |  "Payment received"  |  9d ago
+BOUNCED — it did not arrive
+    to typo@exmaple.com   |  "Approved"          |  2h ago
+```
+
+`delivered` is the only status that means it arrived. `sent` means Resend
+accepted it and the receiving server has not answered yet, which is not the
+same thing and is not rounded up to it. Anything that did not arrive is listed
+again at the end, because a bounce eight rows up is a bounce nobody sees.
+
+`--email` filters both halves, so one address can be followed across auth mail
+and app mail at once.
 
 ## Signed-in journey checks
 

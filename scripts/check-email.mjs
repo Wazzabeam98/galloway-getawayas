@@ -74,13 +74,56 @@ async function authAccounts() {
 async function resendSends() {
     const key = env.RESEND_API_KEY || process.env.RESEND_API_KEY;
     if (!key) return null;
-    const res = await fetch('https://api.resend.com/emails?limit=10', {
+
+    // 100 is the maximum. Worth asking for all of them: filtering by address
+    // happens here, and a bounce three days ago is exactly the thing somebody
+    // is looking for when they ask why a guest never heard back.
+    // Resend rate limits, and answers a burst with 403 error 1010 rather than
+    // 429 — which reads exactly like a bad key if you have just pasted one in.
+    // One pause and one retry is enough, and says which it was.
+    let res = await fetch('https://api.resend.com/emails?limit=100', {
         headers: { Authorization: `Bearer ${key}` },
     });
-    if (!res.ok) throw new Error(`resend responded ${res.status}`);
+    if (res.status === 403 || res.status === 429) {
+        await new Promise((r) => setTimeout(r, 3000));
+        res = await fetch('https://api.resend.com/emails?limit=100', {
+            headers: { Authorization: `Bearer ${key}` },
+        });
+    }
+    if (!res.ok) {
+        throw new Error(
+            res.status === 403
+                ? 'resend refused the key twice (403). Rate limit, or the key is send-only.'
+                : `resend responded ${res.status}`
+        );
+    }
     const body = await res.json();
-    return body.data || [];
+    let sends = body.data || [];
+
+    if (only) {
+        sends = sends.filter((s) => {
+            const to = Array.isArray(s.to) ? s.to : [s.to];
+            return to.some((a) => String(a || '').toLowerCase() === only.toLowerCase());
+        });
+    }
+    return sends;
 }
+
+// What Resend's last_event means, in the terms somebody actually asks in.
+// `delivered` is the only one that means it arrived. `sent` means Resend
+// accepted it and the receiving server has not answered yet — which is not the
+// same thing and is worth not rounding up.
+const VERDICT = {
+    delivered: 'DELIVERED — it arrived',
+    sent: 'sent — accepted by Resend, no answer from their server yet',
+    bounced: 'BOUNCED — it did not arrive',
+    complained: 'COMPLAINED — marked as spam by the recipient',
+    delivery_delayed: 'DELAYED — still trying',
+    opened: 'DELIVERED — and opened',
+    clicked: 'DELIVERED — and a link was clicked',
+    canceled: 'CANCELLED — never sent',
+    failed: 'FAILED — Resend could not send it',
+};
 
 async function report() {
     console.log('\n=== AUTH MAIL (Supabase) ===');
@@ -110,7 +153,22 @@ async function report() {
         } else {
             for (const s of sends) {
                 const to = Array.isArray(s.to) ? s.to.join(', ') : s.to;
-                console.log(`  ${s.last_event || 'unknown'}  ${to}  "${s.subject || ''}"  ${ago(s.created_at)}`);
+                const event = String(s.last_event || 'unknown');
+                const verdict = VERDICT[event] || event;
+                console.log(`  ${verdict}`);
+                console.log(`      to ${to}  |  "${s.subject || ''}"  |  ${ago(s.created_at)}`);
+            }
+
+            // Said again at the end, because a bounce eight rows up is a bounce
+            // nobody sees.
+            const bad = sends.filter((s) => ['bounced', 'complained', 'failed', 'canceled']
+                .includes(String(s.last_event)));
+            if (bad.length) {
+                console.log(`\n  ${bad.length} of these did NOT arrive:`);
+                for (const s of bad) {
+                    const to = Array.isArray(s.to) ? s.to.join(', ') : s.to;
+                    console.log(`    ${String(s.last_event).toUpperCase()}  ${to}  "${s.subject || ''}"`);
+                }
             }
         }
     } catch (err) {
