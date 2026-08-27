@@ -209,6 +209,10 @@ function ApplicationForm() {
     // that when it reconciles the set.
     const [skills, setSkills] = useState<string[]>([]);
     const [skillTyped, setSkillTyped] = useState('');
+    // Whether the whole tag list is open. Closed shows a first handful, which
+    // is enough to teach that picking is the expected move without turning the
+    // step into a wall of fifty chips.
+    const [allTagsOpen, setAllTagsOpen] = useState(false);
     // Every existing tag, for the type-ahead. That list IS the mechanism:
     // somebody offered "bricklaying" takes it, and somebody offered nothing
     // types "brick laying".
@@ -775,6 +779,31 @@ function ApplicationForm() {
     const blockedHeld = skills
         .map((label) => ({ label, reason: reasonFor(label) }))
         .filter((x) => x.reason);
+
+    // The tags worth putting in front of somebody before they type.
+    //
+    // This is the anti-fragmentation mechanism, and until now it was invisible:
+    // the copy says "pick from the list where you can" and the list only
+    // appeared once they had started typing — by which point they have already
+    // chosen their own wording and are typing "brick laying" past a
+    // "Bricklaying" they never saw. An instruction to pick from a list that is
+    // not on screen is not an instruction.
+    //
+    // Regulated tags are left out. A handyman cannot hold Gas Safe or Part P —
+    // the sign-up does not even ask them for a number — so offering "Boiler
+    // repair" as a tappable chip is offering something that comes straight back
+    // with "will not show" against it. They can still be typed, and reasonFor
+    // still explains itself when they are.
+    const TAGS_SHOWN_CLOSED = 12;
+
+    const heldCompact = skills.map((x) => (skillKey(x) || { compact: '' }).compact);
+
+    const offerableTags = (allSkills || []).filter((tag: any) =>
+        !tag.regulated_concept &&
+        heldCompact.indexOf((skillKey(String(tag.label)) || { compact: '' }).compact) === -1
+    );
+
+    const tagsToShow = allTagsOpen ? offerableTags : offerableTags.slice(0, TAGS_SHOWN_CLOSED);
 
     const typedConcept = conceptOf(skillTyped);
     const typedReason = skillTyped.trim() === '' ? null : reasonFor(skillTyped);
@@ -2386,6 +2415,49 @@ function ApplicationForm() {
                                 ))}
                             </div>
                         )}
+
+                        {/* The list itself, before anybody types. Tappable,
+                            because on a phone in somebody's driveway a chip is
+                            one thumb and typing is a spelling decision. */}
+                        {tagsToShow.length > 0 && (
+                            <div className="mb-4">
+                                <p className="text-xs font-semibold uppercase tracking-wider text-slate-500 mb-2">
+                                    Tap any that fit
+                                </p>
+                                <div className="flex flex-wrap gap-2">
+                                    {tagsToShow.map((tag: any) => (
+                                        <button
+                                            key={tag.id || tag.slug || tag.label}
+                                            type="button"
+                                            onClick={() => addSkill(String(tag.label))}
+                                            className="inline-flex items-center gap-1.5 rounded-full border border-slate-300 px-3 py-1.5 text-sm text-slate-800 hover:border-emerald-700 hover:bg-emerald-50/40 transition"
+                                        >
+                                            <Plus className="w-3.5 h-3.5 text-emerald-700" />
+                                            {tag.label}
+                                        </button>
+                                    ))}
+                                </div>
+
+                                {offerableTags.length > TAGS_SHOWN_CLOSED && (
+                                    <button
+                                        type="button"
+                                        onClick={() => setAllTagsOpen(!allTagsOpen)}
+                                        className="text-sm font-semibold text-emerald-700 hover:text-emerald-800 underline mt-3"
+                                    >
+                                        {allTagsOpen
+                                            ? 'Show fewer'
+                                            : 'Show all ' + offerableTags.length}
+                                    </button>
+                                )}
+                            </div>
+                        )}
+
+                        {/* Typing stays, for the job that genuinely is not on
+                            the list. It is the fallback now rather than the
+                            only way in. */}
+                        <p className="text-sm text-slate-500 mb-2">
+                            Not there? Type it.
+                        </p>
 
                         <input
                             type="text"
