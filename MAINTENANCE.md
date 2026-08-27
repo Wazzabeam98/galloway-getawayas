@@ -686,8 +686,38 @@ date.
 Not a wish list. These stop the site working properly for real people, and each
 one has been observed rather than imagined.
 
-1. **Production needs its own SMTP for auth email.** Sign-up confirmation and
-   password reset go through Supabase's built-in service. Two things about it,
+1. **Auth email needs its own SMTP. VERIFIED ON TEST; UNVERIFIED ON
+   PRODUCTION.**
+
+   Read this before acting on it. What follows about the built-in service is
+   documented fact, and it is *observed* on the test project. Whether
+   **production** is on the built-in service was never checked — it was
+   inferred from test's behaviour and written here as though it applied to
+   both. It may well already have custom SMTP: there is a note claiming Resend,
+   port 465, sender `bookings@`. Nothing in this repo can confirm or refute
+   that, because SMTP configuration is not exposed by any API reachable without
+   a production access token.
+
+   **How to settle it in a minute**, in the production project:
+   - Authentication → SMTP Settings. Custom SMTP enabled, with a host, tells
+     you outright.
+   - Or look at the From address on any auth email production has ever sent.
+     The built-in service sends from `noreply@mail.app.supabase.io`; custom
+     SMTP sends from whatever sender is configured.
+   - Or Authentication → Rate Limits. The email limit cannot be raised above
+     the built-in 2/hour without custom SMTP, so a higher value is proof.
+
+   DNS says only that Resend *can* send for the domain — `resend._domainkey`
+   carries a DKIM key and `send.gallowaygetaways.co.uk` has an SES SPF record,
+   which is Resend's standard setup. That is equally true whether or not
+   Supabase Auth uses it, since app mail already goes through Resend, so it
+   settles nothing on its own.
+
+   **If production does have custom SMTP, this is a test-only problem** and far
+   less urgent than the rest of this entry implies — though test still wants
+   SMTP of its own before delivery can be tested there at all.
+
+   What is not in doubt is the built-in service itself. Two things about it,
    both from Supabase's own documentation and both worse than "it is rate
    limited":
 
@@ -703,8 +733,9 @@ one has been observed rather than imagined.
 
    So this is not a throughput problem to tune later. On the built-in service a
    member of the public **cannot confirm an address or reset a password at
-   all** — which means the guest sign-up is affected as much as the provider
-   one, today.
+   all** — which is certainly true of test, and is the reason no address but
+   Liam's own has ever received auth mail there. Whether it is true of
+   production depends entirely on the check above.
 
    The fix is custom SMTP on the project (SendGrid, AWS SES, Resend — anything
    with credentials): Authentication settings → SMTP, needing host, port,
