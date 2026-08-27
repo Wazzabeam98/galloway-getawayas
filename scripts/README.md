@@ -143,7 +143,13 @@ Two things worth knowing about the assertions:
   boundary with a 200. So the status code says nothing about whether a page was
   allowed, and these checks read the page content instead. An earlier version
   keyed on the status and reported a hole that was not there.
-- **The RLS probe is expected to FAIL** until item 8 is closed. It writes as
-  the user, with their own access token, so the policy is genuinely in the
-  path — the service role would bypass it and prove nothing. It confirms that
-  an owner can set their own `status` to `approved`.
+- **The RLS probe writes as the user**, with their own access token, so the
+  policy and the column grants are both genuinely in the path — the service
+  role would bypass them and prove nothing. It checks four things: that an
+  owner cannot set their own `status` to `approved`, cannot write
+  `approved_digest` or `commission_rate`, **can** still submit through
+  `submit_service_provider`, and cannot submit somebody else's listing.
+
+  Those four FAIL until `20260829_provider_status_grants.sql` has been run on
+  the project being tested. A 404 from the function is treated as a failure
+  rather than a refusal, so "not deployed" can never be mistaken for "locked".

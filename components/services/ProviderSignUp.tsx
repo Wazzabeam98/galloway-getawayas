@@ -1335,10 +1335,17 @@ function ApplicationForm() {
 
         // What this does to the status fields is decided in lib, not here, so
         // that the rule can be tested: an approved provider is never knocked
-        // back into the queue by their own edit.
-        if (submit) {
-            Object.assign(payload, submitStatusPatch(status, now));
-        }
+        // back into the queue by their own edit. An empty patch means there is
+        // no status change to make.
+        //
+        // The patch is no longer merged into the payload. `status`,
+        // `submitted_at` and `review_note` are revoked from `authenticated` in
+        // 20260829_provider_status_grants.sql — a provider who could write
+        // `status` could approve themselves — so the one legitimate status
+        // write goes through `submit_service_provider`, which re-checks
+        // ownership and the approved case in the database. Sending any of
+        // those three here would now be refused outright, which is the point.
+        const statusPatch = submit ? submitStatusPatch(status, now) : {};
 
         let id = providerId;
 
@@ -1379,6 +1386,17 @@ function ApplicationForm() {
             }
             id = data.id;
             setProviderId(id);
+        }
+
+        // Submitting is its own step now, after the row exists and its columns
+        // are saved. The function is the only thing that may move `status`.
+        if (Object.keys(statusPatch).length > 0) {
+            const { error } = await supabase.rpc('submit_service_provider', { p_id: id });
+            if (error) {
+                setSaving(false);
+                toast.error(error.message, { theme: 'colored' });
+                return;
+            }
         }
 
         // Registrations are NOT replaced wholesale, unlike everything below.

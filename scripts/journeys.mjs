@@ -256,7 +256,9 @@ async function rlsProbe(ownerId) {
             },
         });
 
-    // A row of their own to try it on.
+    // Note what is NOT sent: `status`. It is revoked from `authenticated`, so a
+    // payload mentioning it would be refused — the column default makes this a
+    // draft, exactly as the sign-up form now does it.
     const created = await asUser('/rest/v1/service_providers', {
         method: 'POST',
         headers: { Prefer: 'return=representation' },
@@ -265,16 +267,19 @@ async function rlsProbe(ownerId) {
             trade: 'plumber',
             business_name: 'AUTO — rls probe',
             contact_email: GUEST,
-            status: 'pending_review',
         }),
     });
     const rows = await created.json();
     if (!Array.isArray(rows) || !rows[0]) {
-        record('RLS probe could not create a provider row', false, JSON.stringify(rows).slice(0, 120));
+        record('a provider can create their own draft listing', false, JSON.stringify(rows).slice(0, 140));
         return;
     }
     const id = rows[0].id;
+    record('a provider can create their own draft listing', rows[0].status === 'draft', `status=${rows[0].status}`);
 
+    // THE HOLE. Writing as the user with their own token, so the policy and the
+    // grants are both genuinely in the path — the service role would bypass
+    // them and prove nothing.
     const escalate = await asUser(`/rest/v1/service_providers?id=eq.${id}`, {
         method: 'PATCH',
         headers: { Prefer: 'return=representation' },
@@ -285,8 +290,56 @@ async function rlsProbe(ownerId) {
     record(
         'an owner CANNOT set their own status to approved',
         !nowApproved,
-        nowApproved ? 'they can — item 8 is still open' : 'blocked'
+        nowApproved ? 'they can — the hole is open' : `refused (HTTP ${escalate.status})`
     );
+
+    // Nor any of the other columns the decision owns. A lock that only covers
+    // the column somebody thought of is not a lock.
+    const sneak = await asUser(`/rest/v1/service_providers?id=eq.${id}`, {
+        method: 'PATCH',
+        headers: { Prefer: 'return=representation' },
+        body: JSON.stringify({ approved_digest: 'forged', commission_rate: 0 }),
+    });
+    const sneakRows = await sneak.json();
+    const sneaked = Array.isArray(sneakRows) && sneakRows[0] && sneakRows[0].approved_digest === 'forged';
+    record(
+        'an owner CANNOT write approved_digest or commission_rate',
+        !sneaked,
+        sneaked ? 'they can — the digest gate is not trustworthy' : `refused (HTTP ${sneak.status})`
+    );
+
+    // THE DOOR STILL OPENS. Without this the checks above would pass just as
+    // well if submitting were broken for everybody.
+    const submitted = await asUser('/rest/v1/rpc/submit_service_provider', {
+        method: 'POST',
+        body: JSON.stringify({ p_id: id }),
+    });
+    const readBack = await asUser(`/rest/v1/service_providers?id=eq.${id}&select=status,submitted_at`);
+    const state = await readBack.json();
+    const pending = Array.isArray(state) && state[0] && state[0].status === 'pending_review';
+    record(
+        'a provider CAN still submit, via submit_service_provider',
+        pending,
+        pending ? 'status=pending_review' : `HTTP ${submitted.status}, status=${state?.[0]?.status}`
+    );
+
+    // And the function must refuse a listing that is not theirs.
+    const someoneElse = await admin('/rest/v1/service_providers?select=id&limit=1&owner_id=neq.' + ownerId);
+    const others = await someoneElse.json();
+    if (Array.isArray(others) && others[0]) {
+        const stolen = await asUser('/rest/v1/rpc/submit_service_provider', {
+            method: 'POST',
+            body: JSON.stringify({ p_id: others[0].id }),
+        });
+        // 404 does not count. Before the migration every call to a function
+        // that does not exist is a 404, and "refused" for that reason would be
+        // a pass earned by the lock being absent.
+        record(
+            'submit_service_provider refuses a listing that is not yours',
+            stolen.status >= 400 && stolen.status !== 404,
+            stolen.status === 404 ? 'function not deployed yet' : `HTTP ${stolen.status}`
+        );
+    }
 
     await admin(`/rest/v1/service_providers?id=eq.${id}`, { method: 'DELETE' });
 }
