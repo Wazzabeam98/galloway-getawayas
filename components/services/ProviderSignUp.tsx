@@ -4,6 +4,7 @@ import { Suspense, useEffect, useState } from 'react';
 import Link from 'next/link';
 import { useRouter, useSearchParams } from 'next/navigation';
 import { createClientComponentClient } from '@supabase/auth-helpers-nextjs';
+import { supabaseEmailFlow } from '@/lib/supabaseEmailFlow';
 import { toast } from 'react-toastify';
 import {
     Sparkles, Wrench, Trees, Droplet, ChefHat, Cake, ShoppingBasket, PawPrint, Trash2,
@@ -1190,7 +1191,7 @@ function ApplicationForm() {
             // signUp returns Supabase's own errors but THROWS anything else —
             // a dropped connection, a 5xx, a CORS refusal. Without this catch
             // the throw escapes and the button sits there having said nothing.
-            const { data, error } = await supabase.auth.signUp({
+            const { data, error } = await supabaseEmailFlow().auth.signUp({
                 email: email,
                 password: acctPassword,
                 options: {
@@ -1226,6 +1227,13 @@ function ApplicationForm() {
                 setCheckYourEmail(true);
                 return null;
             }
+
+            // Only reachable with email confirmation switched OFF. The
+            // email-flow client keeps no session of its own, so hand it to the
+            // auth-helpers client, which owns the cookies the rest of the site
+            // reads — including the upsert immediately below, which needs to be
+            // authenticated as this user for the row policy to allow it.
+            await supabase.auth.setSession(data.session);
 
             await supabase.from('profiles').upsert(
                 {

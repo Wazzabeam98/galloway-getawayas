@@ -20,15 +20,13 @@ export const dynamic = 'force-dynamic'
 //                     because the matching verifier is in a cookie there.
 //                     This is what the OAuth buttons produce.
 //
-//   ?token_hash=&type= What the email templates send once they are switched to
-//                     {{ .TokenHash }}. The mechanism needs no verifier, so it
-//                     is the one that COULD survive request-on-laptop /
-//                     open-on-phone — which is how people actually read their
-//                     email. It does not survive it today: the browser client
-//                     is pinned to PKCE flow, so the hash arrives pkce_-prefixed
-//                     and is bound to the storage of the browser that asked.
-//                     Until that flow changes this path is same-device too, and
-//                     the session check below is what says so out loud.
+//   ?token_hash=&type= What the email templates send. No verifier, so a link
+//                     requested on a laptop still works when opened on a phone —
+//                     which is how people actually read their email. The emails
+//                     are asked for through lib/supabaseEmailFlow.ts, which runs
+//                     implicit flow precisely so that stays true; ask through
+//                     the ordinary client and the hash comes back pkce_-prefixed
+//                     and bound to one device.
 //
 // ?next= is where to go once the session exists. The reset email uses it to
 // land on the set-a-password form rather than the home page.
@@ -85,12 +83,13 @@ export async function GET(request: NextRequest) {
         // one. Checking `error` alone is not enough: absence of a complaint is
         // not presence of a session.
         //
-        // A pkce_-prefixed token hash is the way to arrive here. Sign-up runs in
-        // PKCE flow, so the verifier that hash needs sits in the storage of the
-        // browser that asked for it; opened anywhere else, /verify has nothing
-        // to hand back and says so by saying nothing. Name that case, because
-        // the fix is to ask again from the device in your hand, and no amount of
-        // retrying this link will do it.
+        // A pkce_-prefixed hash should no longer reach us — the auth emails are
+        // requested in implicit flow — but one can still arrive from a link sent
+        // before that change, or if someone wires a new email up to the ordinary
+        // client by mistake. Such a hash is bound to the storage of the browser
+        // that asked for it, so opened anywhere else /verify has nothing to hand
+        // back and says so by saying nothing. Name that case: retrying the link
+        // cannot fix it, asking for a fresh one can.
         if (!session) {
             if (tokenHash && tokenHash.startsWith('pkce_')) {
                 return backHome(
