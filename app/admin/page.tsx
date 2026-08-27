@@ -60,6 +60,11 @@ const tools = [
         title: 'Errors',
         blurb: 'Anything that broke, whether or not anyone told us.',
     },
+    {
+        href: '/admin/skills',
+        title: 'Skills',
+        blurb: 'Tidy up the tags tradesmen write for themselves, before one job becomes four words.',
+    },
 ];
 
 export default async function AdminHome() {

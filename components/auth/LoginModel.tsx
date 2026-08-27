@@ -2,6 +2,7 @@
 
 import React, { useState } from 'react';
 import { createClientComponentClient } from '@supabase/auth-helpers-nextjs';
+import { supabaseEmailFlow } from '@/lib/supabaseEmailFlow';
 import GoogleButton from './GoogleButton';
 
 const LoginModel = () => {
@@ -40,7 +41,9 @@ const LoginModel = () => {
         }
 
         setSendingReset(true);
-        const { error: resetError } = await supabase.auth.resetPasswordForEmail(email.trim(), {
+        // Email-flow client: a reset link is read wherever the person keeps
+        // their email, which is rarely the browser that asked for it.
+        const { error: resetError } = await supabaseEmailFlow().auth.resetPasswordForEmail(email.trim(), {
             redirectTo: `${window.location.origin}/auth/callback?next=/auth/reset`,
         });
         setSendingReset(false);

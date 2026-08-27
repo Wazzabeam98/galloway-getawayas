@@ -7,9 +7,14 @@ import { verifyStripeSignature, stripeRequest } from '@/lib/stripe';
 
 export const dynamic = 'force-dynamic';
 
-// Tells both directors, now. Not the 8am error digest: a dispute has a hard
-// deadline measured in days, and a summary the next morning can burn a fifth
-// of it.
+// Tells us, now. Not the 8am error digest: a dispute has a hard deadline
+// measured in days, and a summary the next morning can burn a fifth of it.
+//
+// Goes to DISPUTES_ALERT_EMAIL, not to whoever happens to have `is_admin` set.
+// That lookup read each director's own account address, which meant the one
+// email carrying an evidence deadline — with the money already taken back —
+// arrived in a personal Hotmail inbox. An alias is somewhere a deadline can be
+// seen by whoever is actually looking, and it changes without a deploy.
 async function alertDirectors(
     admin: any,
     eventType: string,
@@ -17,12 +22,16 @@ async function alertDirectors(
     bookingId: string | null
 ): Promise<void> {
     try {
-        const { data: owners } = await admin
-            .from('profiles')
-            .select('id')
-            .eq('is_admin', true);
+        const to = process.env.DISPUTES_ALERT_EMAIL || '';
 
-        if (!owners || owners.length === 0) return;
+        if (!to) {
+            await logError('[webhook] DISPUTES_ALERT_EMAIL is not set — nobody was told about a dispute', {
+                event: eventType,
+                dispute: dispute && dispute.id,
+                booking: bookingId,
+            }, { path: 'stripe/webhook' });
+            return;
+        }
 
         const amount = (Number(dispute.amount || 0) / 100).toFixed(2);
         const dueBy = dispute.evidence_details && dispute.evidence_details.due_by
@@ -66,25 +75,31 @@ async function alertDirectors(
                 + '<strong>' + escapeHtml(String(dispute.status || 'unknown')) + '</strong>.'
                 + (won ? ' The money has been returned.' : ' The money is gone.') + '</p>';
 
-        for (const owner of owners) {
-            const { data: user } = await admin.auth.admin.getUserById(owner.id);
-            const email = (user && user.user && user.user.email) || '';
-            if (!email) continue;
+        const delivered = await sendEmail(
+            to,
+            heading,
+            emailLayout(
+                '<h1 style="margin:0 0 16px 0;font-size:22px;font-weight:700;color:#111827;">'
+                    + heading + '</h1>'
+                    + body
+                    + button(
+                        SITE_URL + (bookingId ? '/dashboard/bookings/' + bookingId : '/admin'),
+                        bookingId ? 'Open the booking' : 'Owner tools'
+                    ),
+                'You are receiving this because you are a director of Galloway Getaways.'
+            )
+        );
 
-            await sendEmail(
-                email,
-                heading,
-                emailLayout(
-                    '<h1 style="margin:0 0 16px 0;font-size:22px;font-weight:700;color:#111827;">'
-                        + heading + '</h1>'
-                        + body
-                        + button(
-                            SITE_URL + (bookingId ? '/dashboard/bookings/' + bookingId : '/admin'),
-                            bookingId ? 'Open the booking' : 'Owner tools'
-                        ),
-                    'You are receiving this because you are a director of Galloway Getaways.'
-                )
-            );
+        // sendEmail returns false rather than throwing, so the catch below
+        // never sees an ordinary failure. On this email of all of them, a
+        // silent one costs the evidence window and the money with it.
+        if (!delivered) {
+            await logError('[webhook] a dispute alert did not send', {
+                event: eventType,
+                dispute: dispute && dispute.id,
+                booking: bookingId,
+                to: to,
+            }, { path: 'stripe/webhook' });
         }
     } catch (err) {
         // A dispute that was recorded but not emailed is recoverable; one that

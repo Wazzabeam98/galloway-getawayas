@@ -43,6 +43,7 @@
     "yup": "^1.2.0"
   },
   "devDependencies": {
-    "@types/react-date-range": "^1.4.5"
+    "@types/react-date-range": "^1.4.5",
+    "pg": "^8.23.0"
   }
 }

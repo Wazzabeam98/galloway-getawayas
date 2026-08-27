@@ -1,5 +1,6 @@
 import { adminClient } from '@/lib/supabaseAdmin';
 import { NextResponse } from 'next/server';
+import { logError } from '@/lib/logError';
 import { sendEmail, emailLayout, escapeHtml, button, SITE_URL } from '@/lib/email';
 
 export const dynamic = 'force-dynamic';
@@ -101,21 +102,25 @@ export async function GET(request: Request) {
         })
         .join('');
 
-    const { data: owners } = await admin
-        .from('profiles')
-        .select('id')
-        .eq('is_admin', true);
+    // Goes to ACCOUNTS_ALERT_EMAIL rather than to whoever has `is_admin` set.
+    // That lookup read each director's own account address, so the digest
+    // landed in personal inboxes; an alias is somewhere it can be read by
+    // whoever is on it, and it moves without a deploy.
+    const to = process.env.ACCOUNTS_ALERT_EMAIL || '';
+
+    if (!to) {
+        await logError('error-digest: ACCOUNTS_ALERT_EMAIL is not set — the digest went nowhere', {
+            errors: errors.length,
+            issues: issues.length,
+        });
+        return NextResponse.json({ ok: true, sent: 0, errors: errors.length, issues: issues.length });
+    }
 
     let sent = 0;
 
-    for (const owner of owners || []) {
-        const { data: user } = await admin.auth.admin.getUserById(owner.id);
-        const email = (user && user.user && user.user.email) || '';
-
-        if (!email) continue;
-
-        await sendEmail(
-            email,
+    {
+        const delivered = await sendEmail(
+            to,
             issues.length === 1
                 ? 'Something went wrong on the site yesterday'
                 : issues.length + ' things went wrong on the site yesterday',
@@ -138,7 +143,17 @@ export async function GET(request: Request) {
             )
         );
 
-        sent++;
+        // The one thing that tells us anything is broken must not be the thing
+        // that breaks quietly.
+        if (delivered) {
+            sent++;
+        } else {
+            await logError('error-digest: the digest did not send', {
+                to: to,
+                errors: errors.length,
+                issues: issues.length,
+            });
+        }
     }
 
     return NextResponse.json({

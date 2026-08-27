@@ -18,6 +18,7 @@ import { Button } from '../ui/button';
 import { registerType, registerSchema } from '@/validation/authSchema';
 import { toast } from 'react-toastify';
 import { createClientComponentClient } from '@supabase/auth-helpers-nextjs';
+import { supabaseEmailFlow } from '@/lib/supabaseEmailFlow';
 import { useRouter } from 'next/navigation';
 import SocialSignUp from './SocialSignUp';
 
@@ -85,7 +86,7 @@ const SignupModel = () => {
         // throw escaped, setLoading(false) never ran, and the button sat on
         // "Processing.." for ever having told the guest nothing whatsoever.
         try {
-            const { data, error } = await supabase.auth.signUp({
+            const { data, error } = await supabaseEmailFlow().auth.signUp({
                 email: payload.email,
                 password: payload.password,
                 options: {
@@ -117,6 +118,13 @@ const SignupModel = () => {
             // user but NO session. If it's switched off, we get a session straight
             // away and can carry on as a normal login.
             if (data.session) {
+                // Only reachable with email confirmation switched OFF. The
+                // email-flow client keeps no session of its own, so hand it to
+                // the auth-helpers client, which owns the cookies the rest of
+                // the site reads. Without this the signup would look like it
+                // worked and leave them signed out.
+                await supabase.auth.setSession(data.session);
+
                 const { error: profileError } = await supabase
                     .from('profiles')
                     .upsert(
@@ -155,7 +163,7 @@ const SignupModel = () => {
         if (!sentTo) return;
         setResending(true);
 
-        const { error } = await supabase.auth.resend({
+        const { error } = await supabaseEmailFlow().auth.resend({
             type: 'signup',
             email: sentTo,
             // The resend needs it too. Without it the second email points

@@ -81,3 +81,124 @@ Two things worth knowing if a scenario starts failing oddly:
   Scenario 13 leaves a 5% fee against the same host, and the payout run takes it
   off whichever due booking it reaches first — not necessarily scenario 14's. The
   debt-comes-off-the-next-payout behaviour is scenario 24's job.
+
+## Checking what happened to an email
+
+```
+node scripts/check-email.mjs                    # last 10 accounts
+node scripts/check-email.mjs --email you@x.com  # just that one
+node scripts/check-email.mjs --watch            # re-check every 5s
+```
+
+Read-only: it creates nothing and sends nothing, so it is safe to run in the
+middle of a test.
+
+Auth mail (sign-up confirmation, password reset) is sent by Supabase over its
+own SMTP and has no send log. What it does have is two timestamps on the user
+row, and between them they answer the question:
+
+- `confirmation_sent_at` — Supabase accepted the request and sent a link.
+- `email_confirmed_at` — somebody opened that link and it was redeemed.
+
+**Sent but never confirmed is what a broken link looks like from this side.**
+That is the signal to watch when testing a confirmation link on a second
+device: the row appears on sign-up, and the second timestamp lands the moment
+the link is opened, wherever it is opened.
+
+App mail (bookings, payment reminders, payout breakdowns) goes through Resend,
+which does keep a log, so `last_event` shows delivery and bounces. That half is
+skipped unless `RESEND_API_KEY` is in `.env.local` — it is set in Vercel but
+not locally, and sensitive Vercel values cannot be read back out, so it has to
+be pasted in by hand to enable it.
+
+## Signed-in journey checks
+
+```
+node scripts/journeys.mjs                      # against the preview
+node scripts/journeys.mjs --host http://localhost:3000
+node scripts/journeys.mjs --reset              # remove the accounts and stop
+```
+
+What made these manual was that every interesting page is behind a login, and
+a login needed an inbox or a password. Neither is true. `generate_link` on the
+admin API hands back a token hash **without sending an email**, `/verify` turns
+it into a session, and auth-helpers stores a session as one cookie holding a
+plain JSON array — so a session can be minted on demand and thrown away.
+
+**No password is stored anywhere.** The two accounts are created with a random
+one that is discarded and never used.
+
+The accounts live on `@gallowayauto.test`, a domain nothing else uses, so the
+payment seeder's reset and the inbox runner's reset can never touch them.
+
+It covers: the signed-out bounce off `/dashboard`, that `/admin` leaks nothing
+to a signed-out visitor or an ordinary guest **and that an admin does see it**
+(without the positive half the other two would pass if `/admin` were simply
+broken), the guest pages, the provider apply page, and that a cron route
+refuses an unauthenticated call.
+
+Two things worth knowing about the assertions:
+
+- **`notFound()` answers HTTP 200**, not 404 — Next renders the not-found
+  boundary with a 200. So the status code says nothing about whether a page was
+  allowed, and these checks read the page content instead. An earlier version
+  keyed on the status and reported a hole that was not there.
+- **The RLS probe writes as the user**, with their own access token, so the
+  policy and the column grants are both genuinely in the path — the service
+  role would bypass them and prove nothing. It checks four things: that an
+  owner cannot set their own `status` to `approved`, cannot write
+  `approved_digest` or `commission_rate`, **can** still submit through
+  `submit_service_provider`, and cannot submit somebody else's listing.
+
+  Those four FAIL until `20260829_provider_status_grants.sql` has been run on
+  the project being tested. A 404 from the function is treated as a failure
+  rather than a refusal, so "not deployed" can never be mistaken for "locked".
+
+## Running a migration on test
+
+```
+node scripts/migrate.mjs supabase/migrations/20260831_thing.sql            # dry run
+node scripts/migrate.mjs supabase/migrations/20260831_thing.sql --apply    # run it
+node scripts/migrate.mjs <file> --apply --read "select ..."                # run, then read back
+node scripts/migrate.mjs --sql "select ..."                                # read-only query
+```
+
+Needs one line in `.env.local`, which is gitignored:
+
+```
+SUPABASE_TEST_DB_URL=postgresql://postgres.yefoqcabuijcowoqewtc:<password>@aws-0-eu-west-2.pooler.supabase.com:5432/postgres
+```
+
+The name says TEST deliberately. A production string in a slot called
+`SUPABASE_TEST_DB_URL` is wrong on its face, and the guards refuse it anyway:
+the URL must carry the test project ref, and is refused outright if it carries
+the production ref or that project's name. Both halves are checked, so a string
+passes only by being the test database. The URL is never printed — only a
+redacted form, including in error messages.
+
+Three things it will not do:
+
+- **Run without being asked.** No `--apply` is a dry run: it prints the plan and
+  stops.
+- **Lose data quietly.** Statements that drop tables or columns, truncate, or
+  delete without a `where` need `--destructive` *as well as* `--apply`.
+  Structural changes that lose no data — dropping a policy, a constraint, an
+  index, or revoking a grant — are named in the plan but need no extra flag,
+  because most of `supabase/migrations` does them.
+- **Reach production.** Ever. Production migrations stay a paste into the
+  dashboard, by hand, by Liam.
+
+### The CLI is no longer linked to production
+
+`supabase/.temp/` used to hold `project-ref`, `linked-project.json` and
+`pooler-url`, all pointing at `hviwjxigqivjfhmhpjiy` (`supabase-pink-elephant`)
+— production. Every other tool in this repo is pinned to test, so the CLI was
+the one thing that was not, and it was the one thing that runs DDL. A stray
+`supabase db push` would have applied every pending migration to the live
+database.
+
+Those three files are removed. `supabase db push` now fails with
+`Cannot find project ref` instead of reaching production. `scripts/migrate.mjs`
+is unaffected: it passes `--db-url` and never uses the link.
+
+To link again deliberately: `supabase link --project-ref <ref>`.

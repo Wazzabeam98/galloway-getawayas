@@ -81,8 +81,24 @@ Please:
 - **read the surrounding code before changing it.** Naming collides in places —
   the Stripe webhook has a local variable called `logError`, unrelated to
   `lib/logError.ts`.
-- **run the build before proposing anything.** TypeScript has caught real bugs
-  here, not just style issues.
+- **run the build before proposing anything, and do not let a green test suite
+  stand in for it.** `npm test` and `npm run build` are not the same check, and
+  the suite is the weaker of the two: `tsconfig.test.json` sets
+  `"strict": false`, so it compiles code that `next build` refuses.
+
+  This is not hypothetical. On 28 August 2026 an interface gained four fields
+  in one place and not in the other, and `submitProblems` was handed a draft it
+  had no declaration for. 546 tests passed. `next build` failed with a type
+  error naming the exact argument.
+
+  It is also narrower than it looks: `tsconfig.test.json` has a hand-written
+  `include` list, so `lib/**` and `tests/**` are checked and app routes are
+  checked only if somebody remembered to add them. A route nobody listed is
+  invisible to `tsc` as well as to the tests.
+
+  So: **a green suite means the logic you wrote tests for is right. It does not
+  mean it compiles.** Run both. TypeScript has caught real bugs here, not just
+  style issues.
 - **say when you are unsure.** A flagged uncertainty is far cheaper than a
   confident wrong fix to a payment route.
 - **do not enter credentials into forms or CLI fields.** Keys, tokens and
@@ -394,7 +410,30 @@ Please:
 
   `rm -rf .test-build && npm test` before trusting a count, and always after
   `git checkout`. This is the third time this suite has claimed more than it
-  tested; the other two are directly above.
+  tested; the other two are directly above and the fourth is directly below.
+
+- **Coverage of the API routes is opt-in, and the suite is silent about what
+  it leaves out.** `tsconfig.test.json` has an `include` array that names route
+  files **one at a time**, alongside `tests/**` and `lib/**`. As of 24 August
+  2026 that list holds **7 of the 43 route files under `app/api`** — 36 routes
+  are never compiled into `.test-build` at all, so no test can require one. A
+  test written against a route that is not on the list fails with
+  `MODULE_NOT_FOUND` rather than a real assertion, which reads like a broken
+  test rather than a missing one.
+
+  Among the 36 left out are `stripe/checkout`, `stripe/balance-checkout`,
+  `stripe/refund`, `stripe/connect`, `stripe/payout-schedule`,
+  `bookings/cancel`, `bookings/host-refund` and `admin/commission` — every one
+  of them money-touching.
+
+  Found on 24 August 2026: 227 tests passed over a services approval route that
+  wrote the row, told the admin "Approved." in green and emailed nobody. The
+  route was not in the build, and the `lib/` tests beside it — the distance
+  maths, the validation — passed happily.
+
+  **Add the route to `include` in the same commit that adds the route**, and
+  make the new test fail once before trusting it to pass. A green suite says
+  nothing whatever about a route it does not compile.
 
 - **Stripe's Adaptive Pricing is on by default and will offer euros.** It
   converts a GBP price into whatever currency it decides the guest's country
@@ -557,6 +596,32 @@ Please:
   from anything stable across attempts left a four-hour window in which a
   manual re-run recorded a refusal that never happened.
 
+## The service tables were briefly split, and are not any more
+
+`service_providers` was split into a business and its trade listings for a few
+hours on 26 Aug 2026, so somebody holding two trades would type their name
+once. That was the wrong shape — a cleaning round and a window round are two
+businesses under two names — so the migrations are back to carrying the name on
+the listing, with `unique(owner_id, trade)` giving one business per trade per
+person.
+
+Step one of the old catch-up ran on test. **Step two never did**, which is why
+undoing it cost nothing: step two was the half that dropped `owner_id`,
+`business_name` and `contact_email`, and they were still there and still
+populated the whole time. `scripts/test-catch-up/undo-the-split.sql` puts test
+back and is the only thing in that folder now.
+
+The lesson worth keeping: the two-step order — add, deploy, then drop — is what
+made a change of mind cheap rather than a reconstruction job. It was written to
+survive a bad deploy and it ended up surviving a bad decision.
+
+**There is no free trial.** It is 10% per job from the first job, at
+`commission_rate` on the provider row. `TRIAL_DAYS`, `trialEndsAt()` and
+`trial_ends_at` are all gone rather than left dormant — the words "Free for 90
+days" came off the sign-up in commit `ccbc10c` while the machinery behind them
+lived on for several commits, which is how a promise nobody meant to make gets
+made again.
+
 ## Email — two separate systems
 
 - **Auth email** (confirm signup, password reset, magic links) is sent by
@@ -650,3 +715,152 @@ date.
   an opaque auth error.
 - `lib/places.ts` — the only place a free-text location is parsed
   (`publicArea` / `townOf` / `townKey`).
+
+## Launch blockers
+
+Not a wish list. These stop the site working properly for real people, and each
+one has been observed rather than imagined.
+
+1. **Auth email needs its own SMTP. VERIFIED ON TEST; UNVERIFIED ON
+   PRODUCTION.**
+
+   Read this before acting on it. What follows about the built-in service is
+   documented fact, and it is *observed* on the test project. Whether
+   **production** is on the built-in service was never checked — it was
+   inferred from test's behaviour and written here as though it applied to
+   both. It may well already have custom SMTP: there is a note claiming Resend,
+   port 465, sender `bookings@`. Nothing in this repo can confirm or refute
+   that, because SMTP configuration is not exposed by any API reachable without
+   a production access token.
+
+   **How to settle it in a minute**, in the production project:
+   - Authentication → SMTP Settings. Custom SMTP enabled, with a host, tells
+     you outright.
+   - Or look at the From address on any auth email production has ever sent.
+     The built-in service sends from `noreply@mail.app.supabase.io`; custom
+     SMTP sends from whatever sender is configured.
+   - Or Authentication → Rate Limits. The email limit cannot be raised above
+     the built-in 2/hour without custom SMTP, so a higher value is proof.
+
+   DNS says only that Resend *can* send for the domain — `resend._domainkey`
+   carries a DKIM key and `send.gallowaygetaways.co.uk` has an SES SPF record,
+   which is Resend's standard setup. That is equally true whether or not
+   Supabase Auth uses it, since app mail already goes through Resend, so it
+   settles nothing on its own.
+
+   **If production does have custom SMTP, this is a test-only problem** and far
+   less urgent than the rest of this entry implies — though test still wants
+   SMTP of its own before delivery can be tested there at all.
+
+   What is not in doubt is the built-in service itself. Two things about it,
+   both from Supabase's own documentation and both worse than "it is rate
+   limited":
+
+   - **Two emails an hour, project-wide.** Not per address — verified 27 Aug
+     2026 by a brand-new address being refused `429
+     over_email_send_rate_limit` on its first ever send while the allowance was
+     spent. The limit cannot be raised without custom SMTP.
+   - **It only delivers to pre-authorized team member addresses.** It is
+     documented as being for exploration and testing, with no delivery or
+     uptime guarantee. **A real customer's address never receives anything.**
+     That matches everything seen on test: the only addresses that have ever
+     received auth mail here are Liam's own.
+
+   So this is not a throughput problem to tune later. On the built-in service a
+   member of the public **cannot confirm an address or reset a password at
+   all** — which is certainly true of test, and is the reason no address but
+   Liam's own has ever received auth mail there. Whether it is true of
+   production depends entirely on the check above.
+
+   The fix is custom SMTP on the project (SendGrid, AWS SES, Resend — anything
+   with credentials): Authentication settings → SMTP, needing host, port,
+   username, password, sender address and sender name. Prefer a sender on
+   `gallowaygetaways.co.uk`, which already sends app mail through Resend, so
+   auth mail comes from the same domain people recognise.
+
+   Configuring it also unlocks the rate limits: the default becomes 30 an hour,
+   adjustable under Authentication → Rate Limits. Worth raising deliberately
+   before any announcement rather than discovering it during one.
+
+   App email is unaffected and always has been — it goes through Resend with
+   its own allowance, which is why decline emails kept arriving on a night when
+   no confirmation would send. That difference is what made mail look like it
+   worked.
+
+2. **Nothing automated has ever pressed the button** — see below.
+
+3. **An applicant whose confirmation email was refused cannot ask for another.**
+   They have an account they cannot confirm and no control that offers a resend.
+   Scoped but not built; the abuse surface is the reason it needs designing
+   rather than adding.
+
+## Before launch: nothing automated has ever pressed the button
+
+A manual walk through the provider sign-up has now caught the same class of
+fault twice, both times while the automated checks were green and correct about
+what they tested:
+
+1. **27 Aug 2026** — the confirmation link carried the wrong trade, so the draft
+   was looked for under a key nothing had written, and the form opened on step
+   two looking empty.
+2. **27 Aug 2026, later** — a *successful* application put the applicant on step
+   two with no confirmation, because clearing the restore banner released the
+   rule that decides which step to open on. A sent application and a refused one
+   ended on the same screen.
+
+Both are the same shape: **the round trip ends somewhere the work is not, and
+success is indistinguishable from failure.** Neither was a server fault, and
+`scripts/journeys.mjs` was green through both — it posts to `/api/services/apply`
+directly and never assembles a payload or presses a button.
+
+The rule from the second one now lives in `lib/joinSteps.ts` as `openingStep`
+and is unit-tested, so that specific fault cannot come back. The gap it came
+from is still open: **no automated check drives the real form.**
+
+Closing it needs a headless browser — Playwright as a devDependency, and the
+browser download that comes with it. The test worth writing is small: plant a
+draft in local storage, load `/services/join?trade=…`, tick the box, type a
+password, press the button, and assert the confirmation panel appears and the
+row exists. That is exactly the walk that found both faults.
+
+**Do this before launch.** Until then, a manual walk is the only thing covering
+the client half of the sign-up, and it should be repeated after any change to
+`ProviderSignUp.tsx`.
+
+## Auth email on test is rate limited, and it is not silent
+
+The test project has no SMTP of its own, so auth email — sign-up confirmation,
+password reset — goes through Supabase's built-in service, which allows a
+handful an hour **for the whole project**. A day of testing exhausts it:
+
+```
+429 over_email_send_rate_limit   "email rate limit exceeded"
+```
+
+Two things follow, both observed on 27 Aug 2026:
+
+- **Addresses on reserved TLDs are refused outright.** `@gallowayauto.test` and
+  anything else under `.test` comes back as `Email address "..." is invalid`.
+  The automation accounts therefore never receive mail, by design and not by
+  accident — `scripts/journeys.mjs` does not depend on any arriving.
+- **A failed send no longer costs the applicant anything.** `/api/services/apply`
+  writes the row first and asks for the email afterwards, so the application is
+  lodged whether or not the mail is accepted. The route reports
+  `verificationEmailed` and the sign-up says which happened, rather than
+  claiming a link is on its way regardless.
+
+Every failure is written to `error_log` under
+`service-apply-verification-email`, so "no email arrived" is answerable without
+guessing:
+
+```
+select created_at, detail from error_log
+ where label = 'service-apply-verification-email'
+ order by created_at desc limit 10;
+```
+
+**Still open, and needed before launch:** an applicant whose confirmation email
+was refused has an account they cannot confirm and no way to ask for another.
+That wants a resend control on the sign-up, and it wants real SMTP configured on
+production rather than the shared built-in service.
+

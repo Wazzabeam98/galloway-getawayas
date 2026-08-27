@@ -4,6 +4,8 @@ import './globals.css';
 import 'react-toastify/dist/ReactToastify.css';
 import Navbar from '@/components/base/Navbar';
 import Footer from '@/components/base/Footer';
+import FooterMinimal from '@/components/base/FooterMinimal';
+import FooterSwitch from '@/components/base/FooterSwitch';
 import { ToastContainer } from 'react-toastify';
 import { Suspense } from 'react';
 import Toast from '@/components/base/Toast';
@@ -109,7 +111,7 @@ export default function RootLayout({
         />
         <Navbar />
         {children}
-        <Footer />
+        <FooterSwitch full={<Footer />} minimal={<FooterMinimal />} />
         <ToastContainer position="top-center" />
         {/* Reads ?error= and ?success= off the URL and shows it. It was only
             on the dashboard, so every message the auth callback and the

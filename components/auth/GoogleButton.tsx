@@ -36,9 +36,23 @@ export default function GoogleButton({ divider }: Props) {
     if (!enabled) return null;
 
     const signIn = async () => {
+        // Back to the page they pressed it on, not the home page.
+        //
+        // This button is mounted inside the provider sign-up as well as the
+        // login modal, and a tradesman half way through an application who
+        // signs in with Google was being returned to the front page — with his
+        // draft still in local storage but no way of knowing that, which reads
+        // as the form having thrown the lot away.
+        //
+        // safeNext in the callback rejects anything that is not one of our own
+        // paths, so this cannot become an open redirect.
+        const here = window.location.pathname + window.location.search;
+
         const { error } = await supabase.auth.signInWithOAuth({
             provider: 'google',
-            options: { redirectTo: `${window.location.origin}/auth/callback` },
+            options: {
+                redirectTo: `${window.location.origin}/auth/callback?next=${encodeURIComponent(here)}`,
+            },
         });
         if (error) {
             toast.error(error.message, { theme: 'colored' });
