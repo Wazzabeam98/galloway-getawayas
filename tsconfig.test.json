@@ -29,6 +29,7 @@
     "app/api/services/submitted/route.ts",
     "app/api/services/skills/route.ts",
     "app/api/admin/skills/route.ts",
-    "app/api/cron/error-digest/route.ts"
+    "app/api/cron/error-digest/route.ts",
+    "app/auth/callback/route.ts"
   ]
 }

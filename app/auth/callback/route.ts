@@ -21,9 +21,14 @@ export const dynamic = 'force-dynamic'
 //                     This is what the OAuth buttons produce.
 //
 //   ?token_hash=&type= What the email templates send once they are switched to
-//                     {{ .TokenHash }}. No verifier, so a link requested on a
-//                     laptop still works when opened on a phone — which is how
-//                     people actually read their email.
+//                     {{ .TokenHash }}. The mechanism needs no verifier, so it
+//                     is the one that COULD survive request-on-laptop /
+//                     open-on-phone — which is how people actually read their
+//                     email. It does not survive it today: the browser client
+//                     is pinned to PKCE flow, so the hash arrives pkce_-prefixed
+//                     and is bound to the storage of the browser that asked.
+//                     Until that flow changes this path is same-device too, and
+//                     the session check below is what says so out loud.
 //
 // ?next= is where to go once the session exists. The reset email uses it to
 // land on the set-a-password form rather than the home page.
@@ -61,12 +66,42 @@ export async function GET(request: NextRequest) {
     // Both of these THROW on a bad link rather than returning an error — which
     // is what made the old version look like it worked. Catch, don't destructure.
     try {
+        let session = null
+
         if (tokenHash && type) {
-            const { error } = await supabase.auth.verifyOtp({ type, token_hash: tokenHash })
+            const { data, error } = await supabase.auth.verifyOtp({ type, token_hash: tokenHash })
             if (error) throw error
+            session = data.session
         } else {
-            const { error } = await supabase.auth.exchangeCodeForSession(code as string)
+            const { data, error } = await supabase.auth.exchangeCodeForSession(code as string)
             if (error) throw error
+            session = data.session
+        }
+
+        // No error AND no session is the quiet failure this route used to wave
+        // through. It redirected to `next`, the page rendered signed out, and a
+        // link that had not worked was indistinguishable from one that had —
+        // which is exactly how a broken confirmation link looked like a working
+        // one. Checking `error` alone is not enough: absence of a complaint is
+        // not presence of a session.
+        //
+        // A pkce_-prefixed token hash is the way to arrive here. Sign-up runs in
+        // PKCE flow, so the verifier that hash needs sits in the storage of the
+        // browser that asked for it; opened anywhere else, /verify has nothing
+        // to hand back and says so by saying nothing. Name that case, because
+        // the fix is to ask again from the device in your hand, and no amount of
+        // retrying this link will do it.
+        if (!session) {
+            if (tokenHash && tokenHash.startsWith('pkce_')) {
+                return backHome(
+                    origin,
+                    'That link has to be opened on the device you signed up from. Ask for a new one here and it will work.'
+                )
+            }
+            return backHome(
+                origin,
+                'That link was accepted but did not sign you in. Please ask for a new one.'
+            )
         }
     } catch (err: any) {
         const message: string = (err && err.message) || 'That link could not be used.'
