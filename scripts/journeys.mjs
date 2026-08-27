@@ -308,6 +308,45 @@ async function rlsProbe(ownerId) {
         sneaked ? 'they can — the digest gate is not trustworthy' : `refused (HTTP ${sneak.status})`
     );
 
+    // THE GRANT LIST MATCHES THE FORM. Every column ProviderSignUp actually
+    // sends, written as the user in one go. A column missing from the grant
+    // list in 20260829 would break saving in the browser and every other check
+    // here would still be green — the lock would be perfect and the door
+    // welded shut. Keep this payload in step with `payload` in
+    // components/services/ProviderSignUp.tsx.
+    const formShaped = await asUser(`/rest/v1/service_providers?id=eq.${id}`, {
+        method: 'PATCH',
+        headers: { Prefer: 'return=representation' },
+        body: JSON.stringify({
+            owner_id: ownerId,
+            business_name: 'AUTO — full form payload',
+            trade: 'plumber',
+            description: 'every column the form sends',
+            contact_email: GUEST,
+            contact_phone: null,
+            audience: 'host',
+            photos: [],
+            logo: null,
+            does_gas: false,
+            does_oil: false,
+            callout_fee: 45,
+            hourly_rate: 30,
+            callout_waived: false,
+            pricing_choice: null,
+            billable_hourly_rate: null,
+            covered_bands: [],
+            updated_at: new Date().toISOString(),
+        }),
+    });
+    const savedRows = await formShaped.json();
+    record(
+        'the full sign-up payload still saves',
+        formShaped.status < 300,
+        formShaped.status < 300
+            ? 'every granted column accepted'
+            : `HTTP ${formShaped.status}: ${JSON.stringify(savedRows).slice(0, 160)}`
+    );
+
     // THE DOOR STILL OPENS. Without this the checks above would pass just as
     // well if submitting were broken for everybody.
     const submitted = await asUser('/rest/v1/rpc/submit_service_provider', {
