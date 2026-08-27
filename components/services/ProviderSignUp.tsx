@@ -439,12 +439,12 @@ function ApplicationForm() {
     // through a link, or they have a saved record -- so opening on the trade
     // picker would make them answer it twice. No trade means step one.
     useEffect(() => {
-        if (!hydrated || restored) return;
+        if (!hydrated || restored || lodged) return;
 
         setStep(tradeFromUrl ? 'business' : 'trade');
         setVisited(tradeFromUrl ? ['trade'] : []);
         // eslint-disable-next-line react-hooks/exhaustive-deps
-    }, [hydrated, restored, tradeFromUrl]);
+    }, [hydrated, restored, lodged, tradeFromUrl]);
 
     // ONE SOURCE OF TRUTH FOR THE TRADE.
     //
@@ -1425,11 +1425,25 @@ function ApplicationForm() {
             }
 
             // It is in. Nothing to come back and press.
+            //
+            // ORDER AND STEP MATTER HERE, and getting them wrong is what made a
+            // successful application look like a failed one.
+            //
+            // `setRestored(false)` used to be in this list, to clear the "your
+            // details have been saved" banner. It also un-did the one condition
+            // holding the open-on-this-step effect back, so that effect ran
+            // again and put them on step two — of a form now locked, with no
+            // confirmation anywhere, because the panel that says "your
+            // application is in" only renders on the finish step.
+            //
+            // A successful send and a failed one therefore looked identical:
+            // both ended on step two. The step is now pinned to finish and
+            // `lodged` holds that effect off for good.
             forgetDraft();
-            setRestored(false);
             setProviderId(out.providerId);
             setStatus('pending_review');
             setLodged(true);
+            setStep('finish');
             scrollPanelToTop();
         } catch (err: any) {
             setSaving(false);
