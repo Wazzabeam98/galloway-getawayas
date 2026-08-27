@@ -45,6 +45,9 @@ if (!SUPABASE_URL || !SUPABASE_URL.includes(TEST_PROJECT_REF)) {
 const AUTO_DOMAIN = 'gallowayauto.test';
 const GUEST = `auto-guest@${AUTO_DOMAIN}`;
 const ADMIN = `auto-admin@${AUTO_DOMAIN}`;
+// The stranger who applies. Its own address so the round trip starts from
+// nothing every run.
+const APPLICANT = `auto-applicant@${AUTO_DOMAIN}`;
 
 const PROJECT_REF = new URL(SUPABASE_URL).hostname.split('.')[0];
 const COOKIE_NAME = `sb-${PROJECT_REF}-auth-token`;
@@ -230,6 +233,9 @@ async function run() {
     console.log('\n--- RLS: can an owner approve themselves? (known hole, item 8) ---');
     await rlsProbe(guest.id);
 
+    console.log('\n--- the whole application round trip ---');
+    await applyRoundTrip();
+
     const failed = results.filter((r) => !r.ok);
     console.log(`\n${results.length - failed.length}/${results.length} passed`);
     if (failed.length) process.exitCode = 1;
@@ -383,9 +389,134 @@ async function rlsProbe(ownerId) {
     await admin(`/rest/v1/service_providers?id=eq.${id}`, { method: 'DELETE' });
 }
 
+
+/**
+ * A stranger applies, and everything that is supposed to happen, happens.
+ *
+ * This is the path that was broken: the press used to make an account, send a
+ * confirmation email and write NOTHING, so an application could be lost with no
+ * trace to chase. It now goes through /api/services/apply in one request.
+ *
+ * It also drives `submit_service_provider`, which until now nothing exercised —
+ * neither the unit tests nor this file. The RPC is not on the lodging path (the
+ * route is the platform and writes the status itself); it is how a signed-in
+ * provider re-submits, so that is what is driven here, on a real session.
+ */
+async function applyRoundTrip() {
+    const stamp = Math.abs(hashOf(HOST + APPLICANT)).toString(36);
+    const email = APPLICANT;
+
+    // Start from nothing, so a leftover from a previous run cannot make a
+    // failure look like a pass — or a unique constraint make a pass look like a
+    // failure, which is exactly what happened once.
+    await removeApplicant();
+
+    const res = await fetch(`${HOST}/api/services/apply`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+            email,
+            password: 'auto-harness-' + stamp,
+            name: 'AUTO Joinery',
+            provider: {
+                business_name: 'AUTO Joinery',
+                trade: 'joiner',
+                description: 'Created by scripts/journeys.mjs.',
+                contact_email: email,
+                callout_fee: 45,
+                hourly_rate: 30,
+                // Things a stranger must not be able to decide for themselves.
+                status: 'approved',
+                approved_digest: 'forged',
+                commission_rate: 0,
+            },
+            areas: [{ label: 'Kirkcudbright', centre_lat: 54.84, centre_lng: -4.05, radius_miles: 10 }],
+            registrations: [],
+            prices: [],
+            extras: [],
+            skills: [],
+        }),
+    });
+    const out = await res.json().catch(() => ({}));
+    record('an application can be lodged with no account', res.ok && out.ok, `HTTP ${res.status} ${out.error || ''}`);
+    if (!out.ok) return;
+
+    // The row exists NOW, not after somebody opens an inbox.
+    const { data: rows } = await adminJson(`/rest/v1/service_providers?id=eq.${out.providerId}&select=status,submitted_at,owner_id,approved_digest,commission_rate`);
+    const row = rows && rows[0];
+    record('the row exists immediately', !!row, row ? `status=${row.status}` : 'missing');
+    record('it is lodged, not a draft', row && row.status === 'pending_review', row ? row.status : '—');
+    record('the forged columns were dropped', row && row.approved_digest === null, row ? String(row.approved_digest) : '—');
+
+    const { data: areas } = await adminJson(`/rest/v1/service_areas?provider_id=eq.${out.providerId}&select=label`);
+    record('its coverage was written too', Array.isArray(areas) && areas.length === 1, `${(areas || []).length} area(s)`);
+
+    // The applicant is real but unverified — which is what the queue badge reads.
+    const { users } = await adminJson('/auth/v1/admin/users?per_page=200', true);
+    const applicant = (users || []).find((u) => (u.email || '').toLowerCase() === email);
+    record('the account exists', !!applicant, applicant ? applicant.id : 'missing');
+    record(
+        'and is UNVERIFIED, so the badge has something true to say',
+        applicant && !applicant.email_confirmed_at && !applicant.confirmed_at,
+        applicant && (applicant.email_confirmed_at || applicant.confirmed_at) ? 'already confirmed' : 'unconfirmed'
+    );
+
+    // Now the half nothing was exercising. Confirm the address the way opening
+    // the link would, take a real session, and re-submit through the RPC.
+    const cookie = await sessionCookie(email);
+    const { accessToken } = cookie;
+
+    await fetch(`${SUPABASE_URL}/rest/v1/service_providers?id=eq.${out.providerId}`, {
+        method: 'PATCH',
+        headers: { apikey: ANON_KEY, Authorization: `Bearer ${accessToken}`, 'Content-Type': 'application/json' },
+        body: JSON.stringify({ description: 'Edited by the harness.' }),
+    });
+
+    const submitted = await fetch(`${SUPABASE_URL}/rest/v1/rpc/submit_service_provider`, {
+        method: 'POST',
+        headers: { apikey: ANON_KEY, Authorization: `Bearer ${accessToken}`, 'Content-Type': 'application/json' },
+        body: JSON.stringify({ p_id: out.providerId }),
+    });
+    const { data: after } = await adminJson(`/rest/v1/service_providers?id=eq.${out.providerId}&select=status,description`);
+    record(
+        'the provider can edit and re-submit through the RPC',
+        submitted.status < 300 && after && after[0] && after[0].description === 'Edited by the harness.',
+        `HTTP ${submitted.status}`
+    );
+
+    await removeApplicant();
+}
+
+function hashOf(s) {
+    let h = 0;
+    for (let i = 0; i < s.length; i++) h = (h * 31 + s.charCodeAt(i)) | 0;
+    return h;
+}
+
+async function adminJson(path, raw = false) {
+    const res = await admin(path);
+    const body = await res.json().catch(() => null);
+    return raw ? body : { data: body };
+}
+
+async function removeApplicant() {
+    const { users } = await adminJson('/auth/v1/admin/users?per_page=200', true);
+    const found = (users || []).find((u) => (u.email || '').toLowerCase() === APPLICANT);
+    if (!found) return;
+    const { data: theirs } = await adminJson(`/rest/v1/service_providers?owner_id=eq.${found.id}&select=id`);
+    for (const p of theirs || []) {
+        await admin(`/rest/v1/service_areas?provider_id=eq.${p.id}`, { method: 'DELETE' });
+        await admin(`/rest/v1/service_providers?id=eq.${p.id}`, { method: 'DELETE' });
+    }
+    await admin(`/rest/v1/profiles?id=eq.${found.id}`, { method: 'DELETE' });
+    await admin(`/auth/v1/admin/users/${found.id}`, { method: 'DELETE' });
+}
+
 /* ----------------------------------------------------------------- reset */
 
 async function reset() {
+    await removeApplicant();
+    console.log(`  ${APPLICANT}: removed`);
     for (const email of [GUEST, ADMIN]) {
         const user = await findUser(email);
         if (!user) {

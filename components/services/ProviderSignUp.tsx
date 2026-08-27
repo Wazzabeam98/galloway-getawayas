@@ -185,6 +185,9 @@ function ApplicationForm() {
     const [acctError, setAcctError] = useState('');
     const [acctConsent, setAcctConsent] = useState(false);
     const [checkYourEmail, setCheckYourEmail] = useState(false);
+    // The application is in. Not "an email is on its way and you must come
+    // back" — that shape is gone; see lodgeApplication.
+    const [lodged, setLodged] = useState(false);
     // For somebody who has been here before. Not the default, because most
     // people arriving at this point have no account.
     const [showSignIn, setShowSignIn] = useState(false);
@@ -442,6 +445,22 @@ function ApplicationForm() {
         setVisited(tradeFromUrl ? ['trade'] : []);
         // eslint-disable-next-line react-hooks/exhaustive-deps
     }, [hydrated, restored, tradeFromUrl]);
+
+    // ONE SOURCE OF TRUTH FOR THE TRADE.
+    //
+    // The URL is it. `trade` state mirrors it and never leads it.
+    //
+    // They used to be two answers to the same question: the draft was keyed on
+    // the URL, the form was driven by the state, and the confirmation email was
+    // built from the URL. Anything that moved one without the other wrote the
+    // draft under one key and sent the applicant back to another — where the
+    // key missed, no draft was found, and the form opened on step two of a
+    // trade they had not picked, with everything they had typed apparently
+    // gone. It was not gone; it was filed under a name nothing was looking for.
+    useEffect(() => {
+        if (tradeFromUrl && tradeFromUrl !== trade) setTrade(tradeFromUrl);
+        // eslint-disable-next-line react-hooks/exhaustive-deps
+    }, [tradeFromUrl]);
 
     // Signing in is the only thing that changes who this belongs to, and with
     // Google it happens by leaving the site and coming back — so the draft has
@@ -1254,6 +1273,170 @@ function ApplicationForm() {
         }
     };
 
+    // The rows this application is made of, built in one place.
+    //
+    // There are two ways they get written and they must not drift. A signed-in
+    // provider writes them straight from the browser under RLS. A FIRST
+    // application has no session — the account is made in the same breath — so
+    // it posts them to /api/services/apply, which writes them on behalf of the
+    // account it has just created.
+    //
+    // Same shapes, same rules, one definition. `owner_id` is deliberately not
+    // here: the browser knows it, the route decides it, and neither should be
+    // taking the other's word for it.
+    const applicationRows = (now: Date) => {
+        const provider: any = {
+            business_name: businessName.trim(),
+            trade,
+            description: description.trim(),
+            contact_email: contactEmail.trim(),
+            contact_phone: contactPhone.trim() || null,
+            audience: audienceForTrade(trade),
+            photos,
+            logo,
+            does_gas: asksAboutFuel(trade) ? doesGas : false,
+            does_oil: asksAboutFuel(trade) ? doesOil : false,
+            callout_fee: calloutFee.trim() !== '' ? Number(calloutFee) : null,
+            hourly_rate: model === 'callout_hourly' && hourlyRate.trim() !== '' ? Number(hourlyRate) : null,
+            callout_waived: calloutFee.trim() !== '' ? calloutWaived : false,
+            pricing_choice: trade === 'sponge' ? (hourlyAllowed && pricingChoice === 'hourly' ? 'hourly' : 'bands') : null,
+            billable_hourly_rate: hourlyAllowed && pricingChoice === 'hourly' && billableHourlyRate.trim() !== ''
+                ? Number(billableHourlyRate)
+                : null,
+            covered_bands: hourlyAllowed && pricingChoice === 'hourly' ? coveredBands : [],
+            updated_at: now.toISOString(),
+        };
+
+        const registrations_ = showableSchemes
+            .map((scheme) => ({ scheme, number: String(registrations[scheme] || '').trim() }))
+            .filter((r) => r.number !== '');
+
+        const extras_ = tradeExtras
+            .filter((extra) => {
+                const entry = extraOf(extra.key);
+                if (extra.type === 'priced') {
+                    return String(entry.price).trim() !== '' && Number(entry.price) > 0;
+                }
+                return entry.offered;
+            })
+            .map((extra) => {
+                const entry = extraOf(extra.key);
+                const priced = extra.type === 'priced' && String(entry.price).trim() !== '' && Number(entry.price) > 0;
+                return {
+                    extra_key: extra.key,
+                    offered: true,
+                    price: priced ? Number(entry.price) : null,
+                    notes: String(entry.notes || '').trim() || null,
+                    updated_at: now.toISOString(),
+                };
+            });
+
+        const prices_ = model === 'bands'
+            ? bandsFor(trade)
+                .filter((band) => {
+                    const entry = prices[band.key];
+                    return entry && String(entry.price).trim() !== '' && Number(entry.price) > 0;
+                })
+                .map((band) => {
+                    const entry = prices[band.key];
+                    const hours = String(entry.typical_hours || '').trim();
+                    return {
+                        band_key: band.key,
+                        price: Number(entry.price),
+                        typical_hours: hours === '' || !(Number(hours) > 0) ? null : Number(hours),
+                        updated_at: now.toISOString(),
+                    };
+                })
+            : [];
+
+        const areas_ = areas.map((a) => {
+            const town = COVERAGE_TOWNS.filter((t) => t.label === a.town)[0];
+            return {
+                label: a.town,
+                centre_lat: town ? town.lat : 0,
+                centre_lng: town ? town.lng : 0,
+                radius_miles: a.radius_miles,
+            };
+        });
+
+        return {
+            provider,
+            registrations: registrations_,
+            extras: extras_,
+            prices: prices_,
+            areas: areas_,
+            skills: hasSkills ? skills : [],
+        };
+    };
+
+    // The whole application, in one request, for somebody who has no account
+    // yet. See app/api/services/apply/route.ts for why it cannot be done from
+    // here: there is no session to write under until the email is confirmed,
+    // and waiting for that is what lost applications.
+    const lodgeApplication = async () => {
+        const email = contactEmail.trim();
+
+        // The same three gates the old createAccount kept. They belong here
+        // now: this is the press that makes the account.
+        if (!email || email.indexOf('@') === -1) {
+            setAcctError('Add an email address above — that is the one your account will use.');
+            return;
+        }
+        if (acctPassword.length < 8) {
+            setAcctError('Pick a password of at least 8 characters.');
+            return;
+        }
+        if (!acctConsent) {
+            setAcctError('Tick the box and we will make your account.');
+            return;
+        }
+
+        setSaving(true);
+        setAcctError('');
+
+        const rows = applicationRows(new Date());
+
+        try {
+            const res = await fetch('/api/services/apply', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({
+                    email,
+                    password: acctPassword,
+                    name: businessName.trim(),
+                    ...rows,
+                }),
+            });
+
+            const out = await res.json().catch(() => ({}));
+            setSaving(false);
+
+            if (!res.ok || !out.ok) {
+                // An address that already has an account is the one worth
+                // handling rather than reporting: they have one, so offer the
+                // way in instead of an error.
+                if (out.code === 'account_exists') {
+                    setAcctError(out.error);
+                    setShowSignIn(true);
+                    return;
+                }
+                setAcctError(out.error || 'That did not work. Try again.');
+                return;
+            }
+
+            // It is in. Nothing to come back and press.
+            forgetDraft();
+            setRestored(false);
+            setProviderId(out.providerId);
+            setStatus('pending_review');
+            setLodged(true);
+            scrollPanelToTop();
+        } catch (err: any) {
+            setSaving(false);
+            setAcctError('We could not reach the site. Check your connection and try again.');
+        }
+    };
+
     const save = async (submit: boolean) => {
         let active: any = session;
 
@@ -1276,14 +1459,19 @@ function ApplicationForm() {
                 return;
             }
 
-            const made = await createAccount();
-            if (!made) return;
-
-            // Carried in a local rather than read back off state: setSession
-            // does not take effect until the next render, and everything below
-            // needs the id NOW. Reading `session` here would be null and the
-            // save would fall over on the press that was supposed to work.
-            active = made;
+            // ONE PRESS. The account is made and the application is lodged in
+            // the same request, by /api/services/apply.
+            //
+            // It used to make the account here, find no session — because
+            // confirmation is on and signUp returns none — and stop, leaving
+            // the applicant a screen asking them to open a link, come back, and
+            // press send again. Anything that went wrong in between lost the
+            // lot, silently, because no row had been written to lose.
+            //
+            // Verification still happens; it just does not hold the application
+            // up. The row is in the queue before they have opened their inbox.
+            await lodgeApplication();
+            return;
         }
 
         if (submit) {
@@ -3082,7 +3270,7 @@ function ApplicationForm() {
                 address — asking again is asking a question we know the answer
                 to, and two addresses that can disagree is a support problem
                 waiting to happen. */}
-            {onStep('finish') && !session && !checkYourEmail && (
+            {onStep('finish') && !session && !lodged && (
                 <div className="rounded-2xl border border-slate-300 p-5 mb-8">
                     <h2 className="text-sm font-semibold text-slate-900 mb-1.5">
                         Set a password
@@ -3153,18 +3341,27 @@ function ApplicationForm() {
                 session and nothing can be written yet. Saying so matters: a
                 button that silently does nothing looks broken, and the form is
                 safe in local storage whether or not they believe us. */}
-            {onStep('finish') && checkYourEmail && (
+            {/* It is lodged. The email is a separate errand, and it says so:
+                nothing about the application is waiting on it. The old panel
+                here asked them to open a link, come back, and press send — and
+                if anything went wrong in between, the application had never
+                been written at all. */}
+            {onStep('finish') && lodged && (
                 <div className="rounded-2xl border-2 border-emerald-700 bg-emerald-50 p-5 mb-8">
-                    <p className="font-semibold text-emerald-900">Check your email</p>
+                    <p className="font-semibold text-emerald-900">Your application is in.</p>
                     <p className="text-sm text-emerald-900/80 mt-1">
-                        We have sent a link to <strong>{contactEmail.trim()}</strong>. Open it and you will
-                        come straight back here with everything you have filled in still on the page —
-                        then press send.
+                        We have it and will come back to you within {REVIEW_WITHIN_HOURS} hours. There is
+                        nothing else for you to do.
+                    </p>
+                    <p className="text-sm text-emerald-900/80 mt-3">
+                        We have also sent a link to <strong>{contactEmail.trim()}</strong> to confirm the address.
+                        Open it whenever you like — it lets you sign back in and change your details. Your
+                        application does not wait on it.
                     </p>
                 </div>
             )}
 
-            {onStep('finish') && !locked && (
+            {onStep('finish') && !locked && !lodged && (
                 <div className="border-t border-slate-200 pt-6">
                     {/* A live business is not re-applying. One button, and it
                         says what it does — and the consequence is stated

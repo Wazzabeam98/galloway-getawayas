@@ -28,10 +28,15 @@ export default function ProviderReviewRow({
     registrations,
     blockers,
     skills,
+    emailVerified,
 }: {
     provider: any;
     areas: string[];
     photoUrls: string[];
+    // Whether the applicant has opened the confirmation link on their SIGN-IN
+    // address. null means we could not find out, which is said as such rather
+    // than shown as either answer.
+    emailVerified?: boolean | null;
     // Gas Safe, OFTEC or a Part P scheme, where the trade needs one. Empty for
     // the trades that need none, which is most of them.
     registrations?: any[];
@@ -206,9 +211,35 @@ export default function ProviderReviewRow({
                     </p>
                     </div>
                 </div>
-                <span className={`shrink-0 text-xs font-semibold px-2.5 py-1 rounded-full border ${STATUS_STYLE[provider.status] || STATUS_STYLE.draft}`}>
-                    {STATUS_LABEL[provider.status] || provider.status}
-                </span>
+                <div className="shrink-0 flex flex-wrap items-center gap-2 justify-end">
+                    {/* An application is lodged before anybody opens their
+                        inbox — that is the point, it is what stops applications
+                        being lost — so some of these people have not confirmed
+                        their address yet. Worth knowing before approving, since
+                        approving sends them an email.
+
+                        Deliberately NOT a blocker. It says what is true and
+                        leaves the decision alone. */}
+                    {emailVerified === false && (
+                        <span
+                            title="They have not opened the confirmation link on their sign-in address yet. This says nothing about the contact address below, which is never verified."
+                            className="text-xs font-semibold px-2.5 py-1 rounded-full border border-amber-300 bg-amber-50 text-amber-900"
+                        >
+                            Email unconfirmed
+                        </span>
+                    )}
+                    {emailVerified === null && (
+                        <span
+                            title="We could not read the account's confirmation state just now. It is not a claim either way."
+                            className="text-xs font-semibold px-2.5 py-1 rounded-full border border-slate-300 bg-slate-50 text-slate-600"
+                        >
+                            Email state unknown
+                        </span>
+                    )}
+                    <span className={`text-xs font-semibold px-2.5 py-1 rounded-full border ${STATUS_STYLE[provider.status] || STATUS_STYLE.draft}`}>
+                        {STATUS_LABEL[provider.status] || provider.status}
+                    </span>
+                </div>
             </div>
 
             {provider.description && (
@@ -333,6 +364,19 @@ export default function ProviderReviewRow({
                     <dd className="text-slate-900 truncate">{provider.contact_email}{provider.contact_phone ? ' · ' + provider.contact_phone : ''}</dd>
                 </div>
             </dl>
+
+            {/* The caveat, said where the address is rather than only in the
+                badge at the top. Two different addresses are in play and it is
+                easy to read the badge as covering both: the badge is about the
+                account they sign in with, and THIS is the one every decision
+                email goes to. Nothing verifies this one, ever — a typo here
+                bounces the approval into nowhere whatever the badge says. */}
+            {emailVerified === false && (
+                <p className="mt-2 text-xs text-amber-800">
+                    Unconfirmed refers to their sign-in address. The contact address above is a
+                    separate field and is never verified — decisions are emailed to it either way.
+                </p>
+            )}
 
             {tags.length > 0 && (
                 <div className="mt-4">

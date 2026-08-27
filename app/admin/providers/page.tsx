@@ -61,6 +61,29 @@ export default async function AdminProviders() {
         .select('id, business_name, trade, description, photos, logo, audience, kind, status, plan, contact_email, contact_phone, submitted_at, created_at, owner_id, approved_digest, changes_pending_at, does_gas, does_oil, callout_fee, hourly_rate, callout_waived, trial_ends_at, pricing_choice, billable_hourly_rate, covered_bands')
         .order('submitted_at', { ascending: false, nullsFirst: false });
 
+    // WHO HAS PROVED THEY CAN READ THEIR EMAIL.
+    //
+    // An application is lodged the moment it is sent — /api/services/apply
+    // makes the account and writes the row in one request — so an applicant can
+    // be sitting in this queue having never opened their inbox. That is
+    // deliberate: waiting for a confirmation click is what used to lose
+    // applications entirely.
+    //
+    // It is worth knowing before deciding, because approving somebody sends
+    // them an email, and an unverified address is one nobody has proved can
+    // receive one. One admin call for the whole page rather than one per row.
+    const verified = new Map<string, boolean>();
+    try {
+        const { data: userPage } = await admin.auth.admin.listUsers({ page: 1, perPage: 1000 });
+        for (const u of (userPage && userPage.users) || []) {
+            verified.set(u.id, Boolean(u.email_confirmed_at || (u as any).confirmed_at));
+        }
+    } catch (err) {
+        // Not knowing is not a reason to hide the queue. An id missing from the
+        // map reads as "we could not tell", and the row says so rather than
+        // claiming they are verified.
+    }
+
     if (error) {
         return (
             <div className="max-w-4xl mx-auto px-4 sm:px-6 py-10">
@@ -193,6 +216,7 @@ export default async function AdminProviders() {
                                 photoUrls={(p.photos || []).slice(0, 3).map((x: string) => getImageUrl(x))}
                                 registrations={regsFor(p.id)}
                                 blockers={blockersFor(p)}
+                                emailVerified={verified.has(p.owner_id) ? verified.get(p.owner_id) : null}
                                 skills={skillsFor(p.id).map((skill: any) => ({
                                     ...skill,
                                     public: skillIsPublic(skill, regsFor(p.id).map((r: any) => ({
@@ -231,6 +255,7 @@ export default async function AdminProviders() {
                                 photoUrls={(p.photos || []).slice(0, 3).map((x: string) => getImageUrl(x))}
                                 registrations={regsFor(p.id)}
                                 blockers={blockersFor(p)}
+                                emailVerified={verified.has(p.owner_id) ? verified.get(p.owner_id) : null}
                                 skills={skillsFor(p.id).map((skill: any) => ({
                                     ...skill,
                                     public: skillIsPublic(skill, regsFor(p.id).map((r: any) => ({
@@ -264,6 +289,7 @@ export default async function AdminProviders() {
                                 photoUrls={(p.photos || []).slice(0, 3).map((x: string) => getImageUrl(x))}
                                 registrations={regsFor(p.id)}
                                 blockers={blockersFor(p)}
+                                emailVerified={verified.has(p.owner_id) ? verified.get(p.owner_id) : null}
                                 skills={skillsFor(p.id).map((skill: any) => ({
                                     ...skill,
                                     public: skillIsPublic(skill, regsFor(p.id).map((r: any) => ({

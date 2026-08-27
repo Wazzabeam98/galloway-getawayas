@@ -18,6 +18,7 @@ process.env.NEXT_PUBLIC_SUPABASE_URL = 'http://example.invalid';
 process.env.SUPABASE_SERVICE_ROLE_KEY = 'test-service-key';
 
 const ROUTE = '@/app/api/services/submitted/route';
+const ALERT = '@/lib/serviceSubmittedAlert';
 
 const OWNER = 'owner-1';
 const PROVIDER_ID = 'prov-1';
@@ -104,6 +105,12 @@ function load(options: {
         NextResponse: { json: (body: any, init?: any) => ({ body, status: (init && init.status) || 200 }) },
     });
 
+    // The alert itself lives in a lib now, shared with /api/services/apply,
+    // which has no session to authenticate and so cannot come through the
+    // route above. It caches the modules stubbed here at first require, so it
+    // has to be cleared alongside the route or the second load in this file
+    // would quietly keep the first one's stubs.
+    clearModule(ALERT);
     clearModule(ROUTE);
     const route = require(ROUTE.replace('@/', '../'));
     return { route, sent, logged };
