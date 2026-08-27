@@ -77,6 +77,28 @@ test('the trades that bill by the hour, and the trades that quote', () => {
     }
 });
 
+// The completeness guard. The tests above each name a trade for a reason of
+// its own -- gardening is banded on the plot, window cleaning on bedrooms and
+// not on panes -- and those names are the point of them. What was missing was
+// anything that noticed a trade nobody had written a test for at all: a new
+// entry in TRADES would have had no pricing coverage and nothing would have
+// said so.
+test('every trade prices in a shape that matches the bands it is given', () => {
+    for (const trade of TRADES.map((t: any) => t.key)) {
+        const model = pricingModelFor(trade);
+        const bands = bandsFor(trade);
+
+        assert.equal(['bands', 'callout_hourly', 'quoted'].indexOf(model) !== -1, true,
+            trade + ' has a known pricing model');
+
+        // The two have to agree. Bands with no banded model is a set of prices
+        // nothing reads; a banded model with no bands is a form with nothing
+        // on it, and either way the provider cannot say what they charge.
+        assert.equal(bands.length > 0, model === 'bands',
+            trade + ' has bands exactly when it is banded');
+    }
+});
+
 test('waste removal exists as a trade and reads as something', () => {
     assert.equal(tradeLabel('bin'), 'Waste removal');
 });

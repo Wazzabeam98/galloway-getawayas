@@ -25,6 +25,8 @@ process.env.SUPABASE_SERVICE_ROLE_KEY = 'test-service-key';
 
 const ROUTE = '@/app/api/admin/providers/route';
 
+const { TRADES, requiredSchemes } = require('@/lib/serviceProviders');
+
 const ADMIN_ID = 'admin-1';
 const PROVIDER_ID = 'prov-1';
 
@@ -432,13 +434,86 @@ test('a number edited since it was checked is refused again', async () => {
     assert.equal(updates.length, 0);
 });
 
+// This named the joiner alone. The rule covers every trade the law does not
+// restrict -- all four guest trades and every host trade but the electrician --
+// and a single name would have gone on passing if any one of the others had
+// started demanding paperwork it does not need. Derived from requiredSchemes
+// so a new trade is covered the day it is added.
 test('a trade that needs no registration is unaffected', async () => {
-    const { route, updates } = load({ trade: 'joiner', registrations: [] });
+    const unregulated = TRADES
+        .map((t: any) => t.key)
+        .filter((trade: string) => requiredSchemes({ trade, does_gas: false, does_oil: false }).length === 0);
+
+    assert.equal(unregulated.indexOf('electrician'), -1, 'the electrician always needs one');
+    assert.equal(unregulated.length > 1, true, 'this is a rule about many trades, not one');
+
+    for (const trade of unregulated) {
+        const { route, updates } = load({ trade, registrations: [] });
+
+        const res: any = await route.POST(call('approve'));
+
+        assert.equal(res.status, 200, trade + ' is approvable with no paperwork');
+        assert.equal(updates[0].patch.status, 'approved', trade + ' is written as approved');
+    }
+});
+
+// ---------------------------------------------------------------------------
+// The other two regulated concepts, through the route.
+//
+// Only Gas Safe was ever exercised here. OFTEC and Part P were covered in the
+// lib tests and nowhere else, so the route could have refused to enforce
+// either of them and every test would still have passed -- and most of
+// Dumfries & Galloway is off the gas grid, which makes oil the commoner case
+// of the two, not the exotic one.
+// ---------------------------------------------------------------------------
+
+test('an oil plumber whose OFTEC number has not been checked cannot be approved', async () => {
+    const { route, sent, updates } = load({
+        trade: 'plumber',
+        doesOil: true,
+        registrations: [{ provider_id: PROVIDER_ID, scheme: 'oftec', number: 'C12345' }],
+    });
 
     const res: any = await route.POST(call('approve'));
 
-    assert.equal(res.status, 200);
-    assert.equal(updates[0].patch.status, 'approved');
+    assert.equal(res.status, 409);
+    assert.match(res.body.error, /not been checked/);
+    assert.equal(updates.length, 0, 'nothing is written');
+    assert.equal(sent.length, 0, 'and they are not told they are live');
+});
+
+test('an electrician with no competent person scheme cannot be approved', async () => {
+    const { route, updates } = load({ trade: 'electrician', registrations: [] });
+
+    const res: any = await route.POST(call('approve'));
+
+    assert.equal(res.status, 409);
+    assert.match(res.body.error, /competent person scheme/);
+    assert.equal(updates.length, 0);
+});
+
+// One rural plumber, two bodies, both required at once. This is the ordinary
+// case here rather than the awkward one, and it is the case a single pair of
+// columns on the row could never have held.
+test('a plumber who does gas and oil is blocked until both are checked', async () => {
+    const { route, updates } = load({
+        trade: 'plumber',
+        doesGas: true,
+        doesOil: true,
+        registrations: [{
+            provider_id: PROVIDER_ID,
+            scheme: 'gas_safe',
+            number: '123456',
+            verified_at: '2026-08-01T00:00:00.000Z',
+            verified_number: '123456',
+        }],
+    });
+
+    const res: any = await route.POST(call('approve'));
+
+    assert.equal(res.status, 409, 'the checked gas number does not carry the oil work');
+    assert.match(res.body.error, /OFTEC/);
+    assert.equal(updates.length, 0);
 });
 
 test('a decline is never blocked by a missing number', async () => {
