@@ -20,7 +20,7 @@ process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY = 'test-anon-key';
 
 const ROUTE = '@/app/api/services/apply/route';
 
-function load(options: { createError?: string; insertError?: string } = {}) {
+function load(options: { createError?: string; insertError?: string; mailError?: string } = {}) {
     const inserted: Record<string, any[]> = {};
     const created: any[] = [];
     const announced: any[] = [];
@@ -84,7 +84,10 @@ function load(options: { createError?: string; insertError?: string } = {}) {
     stubModule('@supabase/supabase-js', {
         createClient: () => ({
             auth: {
-                resend: async (args: any) => { resent.push(args); return { error: null }; },
+                resend: async (args: any) => {
+                    resent.push(args);
+                    return options.mailError ? { error: { message: options.mailError } } : { error: null };
+                },
             },
         }),
     });
@@ -278,4 +281,37 @@ test('a failed insert says the account survived rather than pretending it worked
     assert.equal(res.status, 500);
     assert.match(res.body.error, /sign in and it will be waiting/i);
     assert.equal(logged.some((l) => l.message === 'service-apply-insert'), true);
+});
+
+/* ------------------------------------ what the applicant is told about email */
+
+test('a sent confirmation is reported as sent', async () => {
+    const { route } = load();
+    const res: any = await route.POST(call(APPLICATION));
+
+    assert.equal(res.body.verificationEmailed, true);
+});
+
+test('a REFUSED confirmation is reported as refused, and the application still stands', async () => {
+    // Two real ways this fails on test alone: the built-in SMTP is rate limited
+    // to a handful an hour for the whole project, and a reserved TLD like
+    // .test is rejected outright as invalid. Both were observed on 27 Aug.
+    //
+    // The panel used to say "we have also sent a link" whatever happened, which
+    // leaves somebody watching an inbox for a message that was never accepted.
+    const { route, inserted, logged } = load({ mailError: 'email rate limit exceeded' });
+    const res: any = await route.POST(call(APPLICATION));
+
+    assert.equal(res.body.ok, true, 'the application is in regardless');
+    assert.equal(inserted.service_providers.length, 1);
+    assert.equal(res.body.verificationEmailed, false, 'and the caller is told the email did not go');
+    assert.equal(logged.some((l) => l.message === 'service-apply-verification-email'), true);
+});
+
+test('the email is asked for AFTER the row, so a mail failure cannot cost the application', async () => {
+    const { route, inserted, resent } = load({ mailError: 'email rate limit exceeded' });
+    await route.POST(call(APPLICATION));
+
+    assert.equal(inserted.service_providers.length, 1);
+    assert.equal(resent.length, 1);
 });

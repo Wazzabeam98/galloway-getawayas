@@ -194,6 +194,10 @@ function ApplicationForm() {
     // error text, because it is not a validation message — it is a fork, and it
     // needs to be as visible as the success panel it was being mistaken for.
     const [accountExists, setAccountExists] = useState(false);
+    // Whether the confirmation email was actually accepted for delivery. The
+    // panel used to say it had been sent regardless, which is a promise the
+    // applicant then waits on for ever.
+    const [verificationEmailed, setVerificationEmailed] = useState(true);
     // For somebody who has been here before. Not the default, because most
     // people arriving at this point have no account.
     const [showSignIn, setShowSignIn] = useState(false);
@@ -1461,6 +1465,7 @@ function ApplicationForm() {
             setProviderId(out.providerId);
             setStatus('pending_review');
             setLodged(true);
+            setVerificationEmailed(out.verificationEmailed !== false);
             setStep('finish');
             scrollPanelToTop();
         } catch (err: any) {
@@ -3437,11 +3442,24 @@ function ApplicationForm() {
                         We have it and will come back to you within {REVIEW_WITHIN_HOURS} hours. There is
                         nothing else for you to do.
                     </p>
-                    <p className="text-sm text-emerald-900/80 mt-3">
-                        We have also sent a link to <strong>{contactEmail.trim()}</strong> to confirm the address.
-                        Open it whenever you like — it lets you sign back in and change your details. Your
-                        application does not wait on it.
-                    </p>
+                    {verificationEmailed ? (
+                        <p className="text-sm text-emerald-900/80 mt-3">
+                            We have also sent a link to <strong>{contactEmail.trim()}</strong> to confirm the
+                            address. Open it whenever you like — it lets you sign back in and change your
+                            details. Your application does not wait on it.
+                        </p>
+                    ) : (
+                        /* The send was refused. Saying "we have sent a link"
+                           here would have them watching an inbox for something
+                           that was never accepted — and the application, which
+                           IS in, is the part that matters. */
+                        <p className="text-sm text-amber-900 mt-3 bg-amber-50 border border-amber-200 rounded-xl px-3.5 py-2.5">
+                            We could not send the confirmation email to{' '}
+                            <strong>{contactEmail.trim()}</strong> just now — so do not wait for one. It
+                            changes nothing about your application, which is with us. We will sort the
+                            confirmation out and be in touch either way.
+                        </p>
+                    )}
                 </div>
             )}
 

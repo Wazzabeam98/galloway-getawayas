@@ -2095,7 +2095,10 @@ export function statusSummary(status: string): { label: string; detail: string }
     }
     if (status === 'pending_review') {
         return {
-            label: 'With us for review',
+            // Says what happened, not where the thing is sitting. "With us for
+            // review" describes our filing; "submitted" is the fact the
+            // applicant needs — they pressed a button and it worked.
+            label: 'Application submitted — pending review',
             detail:
                 'We check every business before it appears, usually within '
                 + REVIEW_WITHIN_HOURS

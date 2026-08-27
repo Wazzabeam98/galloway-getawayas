@@ -713,3 +713,41 @@ row exists. That is exactly the walk that found both faults.
 **Do this before launch.** Until then, a manual walk is the only thing covering
 the client half of the sign-up, and it should be repeated after any change to
 `ProviderSignUp.tsx`.
+
+## Auth email on test is rate limited, and it is not silent
+
+The test project has no SMTP of its own, so auth email — sign-up confirmation,
+password reset — goes through Supabase's built-in service, which allows a
+handful an hour **for the whole project**. A day of testing exhausts it:
+
+```
+429 over_email_send_rate_limit   "email rate limit exceeded"
+```
+
+Two things follow, both observed on 27 Aug 2026:
+
+- **Addresses on reserved TLDs are refused outright.** `@gallowayauto.test` and
+  anything else under `.test` comes back as `Email address "..." is invalid`.
+  The automation accounts therefore never receive mail, by design and not by
+  accident — `scripts/journeys.mjs` does not depend on any arriving.
+- **A failed send no longer costs the applicant anything.** `/api/services/apply`
+  writes the row first and asks for the email afterwards, so the application is
+  lodged whether or not the mail is accepted. The route reports
+  `verificationEmailed` and the sign-up says which happened, rather than
+  claiming a link is on its way regardless.
+
+Every failure is written to `error_log` under
+`service-apply-verification-email`, so "no email arrived" is answerable without
+guessing:
+
+```
+select created_at, detail from error_log
+ where label = 'service-apply-verification-email'
+ order by created_at desc limit 10;
+```
+
+**Still open, and needed before launch:** an applicant whose confirmation email
+was refused has an account they cannot confirm and no way to ask for another.
+That wants a resend control on the sign-up, and it wants real SMTP configured on
+production rather than the shared built-in service.
+

@@ -215,6 +215,14 @@ export async function POST(req: Request) {
         // An anon client, because this is the ordinary signup confirmation and
         // the service role does not send one. resend() takes no code challenge,
         // so the link is a plain token hash and opens on any device.
+        //
+        // WHETHER IT WENT IS REPORTED, NOT ASSUMED. The panel used to say "we
+        // have also sent a link" whatever happened here, and that is a lie the
+        // applicant cannot check: they wait for an email that was never
+        // accepted. Two ways it fails on test alone — the built-in SMTP is rate
+        // limited to a handful an hour for the whole project, and addresses on
+        // reserved TLDs like .test are refused outright as invalid.
+        let verificationEmailed = false;
         try {
             const anon = createClient(supabaseUrl(), process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY || '', {
                 auth: { persistSession: false, autoRefreshToken: false, detectSessionInUrl: false },
@@ -226,6 +234,7 @@ export async function POST(req: Request) {
                 options: { emailRedirectTo: `${origin}/auth/callback?next=/services/join?trade=${encodeURIComponent(trade)}` },
             });
             if (mailError) await logError('service-apply-verification-email', { owner, message: mailError.message });
+            else verificationEmailed = true;
         } catch (err: any) {
             await logError('service-apply-verification-email', { owner, message: String(err && err.message) });
         }
@@ -237,7 +246,7 @@ export async function POST(req: Request) {
             await logError('service-apply-alert', { provider: id, message: String(err && err.message) });
         }
 
-        return NextResponse.json({ ok: true, providerId: id, email });
+        return NextResponse.json({ ok: true, providerId: id, email, verificationEmailed });
     } catch (err: any) {
         await logError('service-apply', { createdUserId, error: String(err && err.message) });
         return NextResponse.json({ ok: false, error: 'Something went wrong. Try again.' }, { status: 500 });
