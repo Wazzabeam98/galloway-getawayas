@@ -166,20 +166,30 @@ export function audienceLabel(audience: string): string {
 // ---------------------------------------------------------------------------
 // WHAT A PROVIDER PAYS
 //
-// Two models, decided by the trade rather than by the provider, and the line
-// between them is about who takes the customer's money:
+// Two models, decided by the trade rather than by the provider:
 //
-//   commission    the platform charges the customer at acceptance, so there
-//                 is a transaction to take a percentage of. 10%, held in
-//                 `commission_rate` on the row and snapshotted onto each
-//                 enquiry, the same way bookings.commission_rate already
-//                 works — so changing the rate later never rewrites what
-//                 somebody already agreed to.
-//   subscription  the work is quoted on site and paid off-platform. There is
-//                 no transaction here to take a percentage of, and a per-job
-//                 commission could not police one if there were. £20 a month
-//                 after 90 free days, and the commission rate resolves to
-//                 zero.
+//   commission    10%, held in `commission_rate` on the row and snapshotted
+//                 onto each enquiry, the same way bookings.commission_rate
+//                 already works — so changing the rate later never rewrites
+//                 what somebody already agreed to. Cleaning and waste, and
+//                 the four guest trades.
+//   subscription  £20 a month after 90 free days, and the commission rate
+//                 resolves to zero. Every other host trade.
+//
+// THE RULE, AND WHAT IT IS NOT
+//
+// Every host trade except cleaning and waste is on the subscription. That is
+// the rule as it stands; it is a decision about these trades rather than
+// something falling out of a property they share.
+//
+// It used to be justified as "the work is quoted on site and paid
+// off-platform", which described the six maintenance trades exactly. It no
+// longer describes anything: gardening and window cleaning joined the
+// subscription on 27 August 2026 and both are banded, priced up front, and
+// perfectly chargeable at acceptance. The old sentence is gone rather than
+// stretched, because a rationale that has stopped being true is worse than
+// none — it invites the next person to derive the map from it and get a
+// different answer.
 //
 // This reverses an earlier decision, and the reasoning that removed the trial
 // is worth keeping rather than pretending it was never made: a dormant
@@ -204,32 +214,46 @@ export function audienceLabel(audience: string): string {
 // changed meaning. How a trade prices is free to be re-shuffled; what it pays
 // is not, so it is written down.
 //
-// The map is checkable rather than arbitrary: every subscription trade is one
-// of the maintenance trades, and every maintenance trade is a subscription
-// trade. There is a test asserting exactly that, so the two cannot drift.
+// It was briefly held to the maintenance group by a test — every subscription
+// trade a maintenance trade and the reverse — which was true when it was
+// written and became wrong the moment gardening and window cleaning moved.
+// That test now asserts the actual rule and loops every host trade, so a new
+// one cannot arrive unplaced.
+//
+// The maintenance group is not a billing concept and must not become one. It
+// is a heading on the trade picker. `canBeRequested` and the rates section on
+// the sign-up both read it, and both are asking about something else.
 // ---------------------------------------------------------------------------
 
 export type ProviderPlan = 'commission' | 'subscription';
 
 const TRADE_PLANS: Record<string, ProviderPlan> = {
-    // Quoted on site, paid off-platform.
+    // Every host trade except cleaning and waste.
     plumber: 'subscription',
     electrician: 'subscription',
     handyman: 'subscription',
     roofer: 'subscription',
     joiner: 'subscription',
     painter: 'subscription',
+    trees: 'subscription',
+    droplet: 'subscription',
 
-    // The platform charges the customer at acceptance.
+    // The two host trades that stay on commission.
     sponge: 'commission',
     bin: 'commission',
-    trees: 'commission',
-    droplet: 'commission',
+
+    // Guest trades, unchanged and out of scope of the rule above.
     chef: 'commission',
     cake: 'commission',
     basket: 'commission',
     paw: 'commission',
 };
+
+// The host trades that pay a percentage instead of a subscription. Named here
+// so the rule is stated once: the map above and the test that guards it both
+// read this, rather than each carrying its own copy of "except cleaning and
+// waste".
+export const COMMISSION_HOST_TRADES = ['sponge', 'bin'] as const;
 
 // Commission is the safe default for a trade nobody has placed: it bills
 // nothing until there is a job, where an unplaced trade defaulting to a

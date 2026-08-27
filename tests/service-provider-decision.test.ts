@@ -564,7 +564,10 @@ test('every subscription trade gets the same treatment, not just the plumber', a
         .map((t: any) => t.key)
         .filter((trade: string) => planForTrade(trade) === 'subscription');
 
-    assert.equal(subscription.length, 6, 'all six maintenance trades');
+    // Eight: every host trade but cleaning and waste. Not a list of names --
+    // service-providers.test.ts owns the rule, and this only needs to know
+    // that it is exercising all of them.
+    assert.equal(subscription.length, 8, 'every subscription trade, not a sample');
 
     for (const trade of subscription) {
         // The electrician needs a checked Part P scheme before anything else
@@ -605,7 +608,7 @@ test('every commission trade is left on commission', async () => {
         .map((t: any) => t.key)
         .filter((trade: string) => planForTrade(trade) === 'commission');
 
-    assert.equal(commission.length, 8, 'four banded host trades and four guest trades');
+    assert.equal(commission.length, 6, 'cleaning, waste and the four guest trades');
 
     for (const trade of commission) {
         const { route, updates } = load({ trade, registrations: [] });

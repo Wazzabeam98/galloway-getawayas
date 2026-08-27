@@ -130,9 +130,9 @@ alter table "public"."service_providers"
 --
 --     alter table "public"."service_providers" drop column if exists "trial_ends_at";
 --
--- The trial came back on 27 August 2026 — 90 free days from approval for the
--- maintenance trades, then £20 a month — and `trial_ends_at` is a real column
--- again, added by 20260827_provider_trial_and_plan.sql.
+-- The trial came back on 27 August 2026 — 90 free days from approval, then £20
+-- a month — and `trial_ends_at` is a real column again, added by
+-- 20260827_provider_trial_and_plan.sql.
 --
 -- `drop column if exists` would have taken it off again without a word,
 -- because "if exists" is precisely the phrase that turns undoing a live

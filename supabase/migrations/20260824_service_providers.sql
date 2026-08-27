@@ -43,8 +43,10 @@
 --
 -- The model, in full: 90 free days from approval and then £20 a month for the
 -- six maintenance trades, whose work is quoted on site and paid off-platform;
--- 10% a job for everything else, where the platform charges the customer at
--- acceptance. Read the newer migration rather than this paragraph.
+-- 10% a job for everything else. That split widened on 28 August 2026 to every
+-- host trade except cleaning and waste — see
+-- 20260828_gardening_and_windows_subscription.sql. Read the newer migrations
+-- rather than this paragraph.
 --
 -- Attribution is deliberately NOT a counter here. Jobs and their value are a
 -- query over the service bookings table when it exists; a stored count is one

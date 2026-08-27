@@ -19,6 +19,9 @@ const {
     tradeLabel,
     TRADES,
     TRADE_GROUPS,
+    HOST_TRADES,
+    COMMISSION_HOST_TRADES,
+    canBeRequested,
     planForTrade,
     pricingModelFor,
     commissionRateFor,
@@ -127,9 +130,9 @@ test('an unknown trade still reads as something', () => {
 // WHAT A PROVIDER PAYS
 //
 // This block used to say there was no trial and nothing to test. There is one
-// again: 90 free days from approval, then £20 a month, for the six trades
-// whose work is quoted on site and paid off-platform. Everything else is 10%
-// of a job the platform charges the customer for.
+// again: 90 free days from approval, then £20 a month, for every host trade
+// except cleaning and waste. Those two, and the four guest trades, are 10% of
+// a job.
 //
 // The old warning still stands and is why these tests exist in this shape: a
 // trial that is measured somewhere nobody looks becomes a promise nobody
@@ -138,25 +141,88 @@ test('an unknown trade still reads as something', () => {
 // number.
 // ---------------------------------------------------------------------------
 
-test('the plan map and the maintenance group are the same six trades', () => {
-    // The checkable rule behind the map: subscription where the work is
-    // quoted on site and paid off-platform, which is exactly the maintenance
-    // group. Written out rather than derived — deriving it would key money
-    // off a value free to be re-shuffled for other reasons — but held to the
-    // group here so the two cannot drift apart unnoticed.
-    const subscription = TRADES
-        .map((t: any) => t.key)
-        .filter((trade: string) => planForTrade(trade) === 'subscription')
-        .sort();
+// This used to assert that the subscription trades and the maintenance group
+// were the same six. That was true when it was written and wrong the moment
+// gardening and window cleaning moved on 27 August 2026 — and it was the wrong
+// shape either way, because the maintenance group is a heading on the trade
+// picker and never was a billing concept. Holding money to it made it one by
+// accident, which is the third time this file has been asked to read one thing
+// as a stand-in for another.
+//
+// The rule is now asserted as the rule: every host trade except cleaning and
+// waste is on the subscription. Looped over HOST_TRADES rather than a list, so
+// a trade added to the picker cannot arrive without a plan.
+test('every host trade except cleaning and waste is on the subscription', () => {
+    const exceptions = COMMISSION_HOST_TRADES as unknown as string[];
 
+    for (const trade of HOST_TRADES as unknown as string[]) {
+        const expected = exceptions.indexOf(trade) === -1 ? 'subscription' : 'commission';
+
+        assert.equal(planForTrade(trade), expected,
+            trade + ' is on the ' + expected + ' plan');
+    }
+});
+
+test('the two exceptions are the ones named, and they are real host trades', () => {
+    // Guards the exception list itself. Without this, emptying it would put
+    // every host trade on the subscription and the loop above would still
+    // pass, because it takes its expectation from the same list.
+    assert.deepEqual((COMMISSION_HOST_TRADES as unknown as string[]).slice().sort(), ['bin', 'sponge']);
+
+    for (const trade of COMMISSION_HOST_TRADES as unknown as string[]) {
+        assert.equal((HOST_TRADES as unknown as string[]).indexOf(trade) !== -1, true,
+            trade + ' is a host trade');
+    }
+});
+
+test('eight host trades pay a subscription and two pay commission', () => {
+    // The count, stated plainly, so a trade quietly changing sides shows up as
+    // a number rather than as nothing.
+    const host = HOST_TRADES as unknown as string[];
+    const subscription = host.filter((t) => planForTrade(t) === 'subscription');
+    const commission = host.filter((t) => planForTrade(t) === 'commission');
+
+    assert.equal(subscription.length, 8);
+    assert.deepEqual(commission.sort(), ['bin', 'sponge']);
+});
+
+test('the maintenance group is not what decides the plan', () => {
+    // The proxy, refused explicitly. Gardening and window cleaning are on the
+    // subscription and are not maintenance trades, so anything reading the
+    // group to answer a billing question now gets the wrong answer — and this
+    // is here to say so out loud rather than leave the next person to find it.
     const maintenance = TRADE_GROUPS
         .filter((g: any) => g.key === 'maintenance')
-        .flatMap((g: any) => g.trades as string[])
-        .slice()
-        .sort();
+        .flatMap((g: any) => g.trades as string[]);
 
-    assert.deepEqual(subscription, maintenance);
-    assert.equal(subscription.length, 6);
+    for (const trade of ['trees', 'droplet']) {
+        assert.equal(planForTrade(trade), 'subscription', trade + ' pays a subscription');
+        assert.equal(maintenance.indexOf(trade), -1, trade + ' is not a maintenance trade');
+    }
+});
+
+// A consequence of the move, pinned because it is new.
+//
+// Until gardening and window cleaning changed sides, every subscription trade
+// happened to be one nobody could request — they are all in the maintenance
+// group, and canBeRequested excludes that whole group. So "subscription means
+// nothing is ever requested" was accidentally true, and is the kind of thing
+// that gets relied on without being written down.
+//
+// It is not true now. A gardening enquiry is requestable and its provider pays
+// no commission, so whatever builds enquiries has to take the rate from
+// commissionRateFor rather than assuming a requestable job is a chargeable one.
+test('a requestable trade can be on the subscription, and pays nothing per job', () => {
+    for (const trade of ['trees', 'droplet']) {
+        assert.equal(canBeRequested(trade), true, trade + ' can be requested');
+        assert.equal(planForTrade(trade), 'subscription');
+        assert.equal(commissionRateFor({ trade, commission_rate: 0.10 }), 0,
+            trade + ' is requestable and still pays nothing per job');
+    }
+
+    // The pair it used to be safe to conflate.
+    assert.equal(canBeRequested('sponge'), true);
+    assert.equal(commissionRateFor({ trade: 'sponge', plan: 'commission', commission_rate: 0.10 }), 0.10);
 });
 
 test('every trade has a plan, and the guest trades are all commission', () => {

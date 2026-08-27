@@ -178,7 +178,7 @@ test('a first application goes into the queue', () => {
     assert.equal(patch.submitted_at, WHEN.toISOString());
     assert.equal(patch.review_note, null);
 
-    // There IS a trial again — 90 free days for the maintenance trades — and
+    // There IS a trial again — 90 free days on the subscription plan — and
     // this assertion matters more than it did when there was not one. The
     // clock starts at approval, in the same write that puts them live and the
     // email that gives them the date. A submission is somebody joining a

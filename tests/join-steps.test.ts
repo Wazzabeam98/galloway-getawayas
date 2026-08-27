@@ -247,9 +247,8 @@ test('a problem on a step this trade skips is not lost silently', () => {
 });
 
 test('a subscription trade is not asked for a price it does not set', () => {
-    // Crossing the two models: the quoted maintenance trades are on the
-    // subscription and set no band prices, so their prices step is extras and
-    // a call-out fee only.
+    // Crossing the two models: these three are on the subscription and set no
+    // band prices, so their prices step is extras and a call-out fee only.
     for (const trade of ['roofer', 'joiner', 'painter']) {
         assert.equal(planForTrade(trade), 'subscription');
         const problems = submitProblems({

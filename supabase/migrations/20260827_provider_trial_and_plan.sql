@@ -9,6 +9,17 @@
 --                 maintenance trades: plumber, electrician, handyman, roofer,
 --                 joiner, painter.
 --
+-- WIDENED THE NEXT DAY. Gardening and window cleaning joined the subscription
+-- on 28 August 2026, making the rule "every host trade except cleaning and
+-- waste" — see 20260828_gardening_and_windows_subscription.sql, which must be
+-- run after this one. This file is left exactly as it ran rather than edited,
+-- because it has already been applied and a migration that no longer matches
+-- what it did is worse than one that is out of date.
+--
+-- The line below is also superseded. It described the six exactly and does not
+-- describe the eight: gardening and window cleaning are banded, priced up
+-- front, and perfectly chargeable at acceptance.
+--
 -- The line between them is who takes the customer's money. The platform
 -- charges the customer at acceptance on the commission trades, so there is a
 -- transaction to take a percentage of. Maintenance work is quoted on site and
