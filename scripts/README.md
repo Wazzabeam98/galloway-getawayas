@@ -153,3 +153,52 @@ Two things worth knowing about the assertions:
   Those four FAIL until `20260829_provider_status_grants.sql` has been run on
   the project being tested. A 404 from the function is treated as a failure
   rather than a refusal, so "not deployed" can never be mistaken for "locked".
+
+## Running a migration on test
+
+```
+node scripts/migrate.mjs supabase/migrations/20260831_thing.sql            # dry run
+node scripts/migrate.mjs supabase/migrations/20260831_thing.sql --apply    # run it
+node scripts/migrate.mjs <file> --apply --read "select ..."                # run, then read back
+node scripts/migrate.mjs --sql "select ..."                                # read-only query
+```
+
+Needs one line in `.env.local`, which is gitignored:
+
+```
+SUPABASE_TEST_DB_URL=postgresql://postgres.yefoqcabuijcowoqewtc:<password>@aws-0-eu-west-2.pooler.supabase.com:5432/postgres
+```
+
+The name says TEST deliberately. A production string in a slot called
+`SUPABASE_TEST_DB_URL` is wrong on its face, and the guards refuse it anyway:
+the URL must carry the test project ref, and is refused outright if it carries
+the production ref or that project's name. Both halves are checked, so a string
+passes only by being the test database. The URL is never printed — only a
+redacted form, including in error messages.
+
+Three things it will not do:
+
+- **Run without being asked.** No `--apply` is a dry run: it prints the plan and
+  stops.
+- **Lose data quietly.** Statements that drop tables or columns, truncate, or
+  delete without a `where` need `--destructive` *as well as* `--apply`.
+  Structural changes that lose no data — dropping a policy, a constraint, an
+  index, or revoking a grant — are named in the plan but need no extra flag,
+  because most of `supabase/migrations` does them.
+- **Reach production.** Ever. Production migrations stay a paste into the
+  dashboard, by hand, by Liam.
+
+### The CLI is no longer linked to production
+
+`supabase/.temp/` used to hold `project-ref`, `linked-project.json` and
+`pooler-url`, all pointing at `hviwjxigqivjfhmhpjiy` (`supabase-pink-elephant`)
+— production. Every other tool in this repo is pinned to test, so the CLI was
+the one thing that was not, and it was the one thing that runs DDL. A stray
+`supabase db push` would have applied every pending migration to the live
+database.
+
+Those three files are removed. `supabase db push` now fails with
+`Cannot find project ref` instead of reaching production. `scripts/migrate.mjs`
+is unaffected: it passes `--db-url` and never uses the link.
+
+To link again deliberately: `supabase link --project-ref <ref>`.
