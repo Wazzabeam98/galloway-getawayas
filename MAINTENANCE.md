@@ -681,6 +681,29 @@ date.
 - `lib/places.ts` — the only place a free-text location is parsed
   (`publicArea` / `townOf` / `townKey`).
 
+## Launch blockers
+
+Not a wish list. These stop the site working properly for real people, and each
+one has been observed rather than imagined.
+
+1. **Production needs its own SMTP for auth email.** Sign-up confirmation and
+   password reset go through Supabase's built-in shared service, whose quota is
+   **project-wide** — verified 27 Aug 2026 by a brand-new address being refused
+   `429 over_email_send_rate_limit` on its first ever send, while the project's
+   allowance was spent. A launch-day burst of sign-ups is precisely when that
+   bites, and when it does, nobody can confirm an address and nobody can reset a
+   password. App email already goes through Resend with its own allowance, which
+   is why decline emails kept arriving on a night when no confirmation would
+   send. Auth email needs the same treatment: custom SMTP on the project, not
+   the shared service.
+
+2. **Nothing automated has ever pressed the button** — see below.
+
+3. **An applicant whose confirmation email was refused cannot ask for another.**
+   They have an account they cannot confirm and no control that offers a resend.
+   Scoped but not built; the abuse surface is the reason it needs designing
+   rather than adding.
+
 ## Before launch: nothing automated has ever pressed the button
 
 A manual walk through the provider sign-up has now caught the same class of
