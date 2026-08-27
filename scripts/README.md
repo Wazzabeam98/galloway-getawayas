@@ -81,3 +81,32 @@ Two things worth knowing if a scenario starts failing oddly:
   Scenario 13 leaves a 5% fee against the same host, and the payout run takes it
   off whichever due booking it reaches first — not necessarily scenario 14's. The
   debt-comes-off-the-next-payout behaviour is scenario 24's job.
+
+## Checking what happened to an email
+
+```
+node scripts/check-email.mjs                    # last 10 accounts
+node scripts/check-email.mjs --email you@x.com  # just that one
+node scripts/check-email.mjs --watch            # re-check every 5s
+```
+
+Read-only: it creates nothing and sends nothing, so it is safe to run in the
+middle of a test.
+
+Auth mail (sign-up confirmation, password reset) is sent by Supabase over its
+own SMTP and has no send log. What it does have is two timestamps on the user
+row, and between them they answer the question:
+
+- `confirmation_sent_at` — Supabase accepted the request and sent a link.
+- `email_confirmed_at` — somebody opened that link and it was redeemed.
+
+**Sent but never confirmed is what a broken link looks like from this side.**
+That is the signal to watch when testing a confirmation link on a second
+device: the row appears on sign-up, and the second timestamp lands the moment
+the link is opened, wherever it is opened.
+
+App mail (bookings, payment reminders, payout breakdowns) goes through Resend,
+which does keep a log, so `last_event` shows delivery and bounces. That half is
+skipped unless `RESEND_API_KEY` is in `.env.local` — it is set in Vercel but
+not locally, and sensitive Vercel values cannot be read back out, so it has to
+be pasted in by hand to enable it.
