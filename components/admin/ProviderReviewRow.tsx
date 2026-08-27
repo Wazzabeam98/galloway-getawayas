@@ -3,7 +3,7 @@
 import { useState } from 'react';
 import { useRouter } from 'next/navigation';
 import { toast } from 'react-toastify';
-import { planForTrade, SUBSCRIPTION_MONTHLY, TRIAL_DAYS } from '@/lib/serviceProviders';
+import { planForTrade, bandLabel, SUBSCRIPTION_MONTHLY, TRIAL_DAYS } from '@/lib/serviceProviders';
 
 const STATUS_STYLE: Record<string, string> = {
     pending_review: 'bg-amber-50 text-amber-900 border-amber-200',
@@ -185,6 +185,28 @@ export default function ProviderReviewRow({
                     from, because approving is what starts the free period —
                     and an owner should be able to see, before they click,
                     which of the two things they are about to agree to. */}
+                {/* An hourly cleaner has no call-out line and no band
+                    prices, so without this the card would say nothing at all
+                    about what she charges — and this is the card the decision
+                    is made from. In-house only, so it is rare by design and
+                    worth spelling out when it appears. */}
+                {provider.pricing_choice === 'hourly' && (
+                    <div className="flex gap-2">
+                        <dt className="text-slate-500 shrink-0">Charges</dt>
+                        <dd className="text-slate-900">
+                            {provider.billable_hourly_rate
+                                ? '£' + provider.billable_hourly_rate + ' an hour'
+                                : <span className="text-rose-700">hourly, no rate set</span>}
+                            <span className="text-slate-500">
+                                {' · '}
+                                {Array.isArray(provider.covered_bands) && provider.covered_bands.length > 0
+                                    ? provider.covered_bands.map(bandLabel).join(', ')
+                                    : 'no sizes ticked, so she appears nowhere'}
+                            </span>
+                        </dd>
+                    </div>
+                )}
+
                 <div className="flex gap-2">
                     <dt className="text-slate-500 shrink-0">Pays</dt>
                     <dd className="text-slate-900">

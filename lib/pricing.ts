@@ -203,6 +203,34 @@ export function serviceCeiling(
 
 // The commission, off the ceiling. Rounded once, at the end, so it can never
 // disagree with what was quoted by a penny.
+// What an hourly cleaning visit comes to.
+//
+// THIS IS THE ONLY PLACE A RATE IS MULTIPLIED BY A DURATION, and it is here
+// rather than in lib/serviceProviders.ts for two reasons that agree. The house
+// rule says this file is the only place a total is calculated. And the
+// structural guard in tests/service-pricing.test.ts scans serviceProviders.ts
+// for any line mentioning hours that also multiplies or divides — putting this
+// there would either trip that guard or tempt somebody to word around it, and
+// the guard is what keeps `typical_hours` out of every total.
+//
+// It takes `billable_hourly_rate`, never `hourly_rate` (display only, the
+// maintenance trades) and never `typical_hours` (a guide shown to the host).
+//
+// Nothing calls this yet: there is no service booking to total up. It is here
+// so that the day there is one, the arithmetic is in the file that owns
+// arithmetic rather than invented at the call site.
+export function hourlyVisitTotal(
+    billableHourlyRate: number | string | null | undefined,
+    hoursWorked: number | string | null | undefined
+): number {
+    const rate = Number(billableHourlyRate);
+    const worked = Number(hoursWorked);
+
+    if (!(rate > 0) || !(worked > 0)) return 0;
+
+    return money(rate * worked);
+}
+
 export function serviceCommission(ceiling: number, rate: number): number {
     const amount = Number(ceiling) * Number(rate);
     return money(amount > 0 ? amount : 0);

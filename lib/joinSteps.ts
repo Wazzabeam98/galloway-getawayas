@@ -184,7 +184,11 @@ const STEP_FIELDS: Record<StepKey, string[]> = {
     trade: ['trade', 'audience'],
     business: ['business_name', 'contact_email', 'description', 'areas'],
     credentials: ['registration_'],
-    prices: ['prices', 'price_', 'hours_', 'hourly_rate', 'callout_fee', 'extra_price_'],
+    prices: [
+        'prices', 'price_', 'hours_', 'hourly_rate', 'callout_fee', 'extra_price_',
+        // The cleaner's per-hour route.
+        'billable_hourly_rate', 'covered_bands',
+    ],
     finish: [],
 };
 

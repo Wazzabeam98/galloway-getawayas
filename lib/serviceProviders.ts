@@ -581,6 +581,84 @@ export function bandsFor(trade: string): Array<{ key: string; label: string }> {
     return [];
 }
 
+// ---------------------------------------------------------------------------
+// PER HOUSE, OR PER HOUR
+//
+// A cleaner may charge a price per size band or a rate per hour. Nobody else
+// may: for every other trade an hourly rate stays display-only and never
+// enters a total.
+//
+// IN-HOUSE ONLY
+//
+// Bands exist so that two cleaners are comparable and so the total is knowable
+// before the job — an hourly figure as the price is what puts the total after
+// the job, which is the fault they were built to prevent. Cleaning is a 10%
+// commission trade, and commission is taken when the customer is charged at
+// acceptance, so an hourly price has nothing to take a percentage of yet.
+//
+// What makes hourly safe is not the trade, it is who sends the bill. On an
+// in-house provider the platform is billing, knows the hours, and takes no
+// commission from itself. On an external cleaning firm none of that holds.
+//
+// `kind` is not writable from the browser — the sign-up never sends it and no
+// route sets it, so every public applicant is external and never sees this
+// choice at all. It appears for an in-house cleaner opening their own listing.
+// The database enforces the same rule in a check constraint, because the form
+// is the browser and the browser is not the authority on what anybody charges.
+// ---------------------------------------------------------------------------
+
+export type PricingChoice = 'bands' | 'hourly';
+
+export function offersHourlyChoice(provider: any): boolean {
+    if (!provider) return false;
+    return String(provider.trade || '') === 'sponge'
+        && String(provider.kind || '') === 'in_house';
+}
+
+// What this provider actually charges by.
+//
+// Bands unless the row says otherwise AND is allowed to say so. Reading the
+// permission here as well as the value is what stops a stale 'hourly' — left
+// on a row that has since been switched back to external — being honoured by
+// anything downstream.
+export function pricingChoiceFor(provider: any): PricingChoice {
+    if (!provider) return 'bands';
+    if (String(provider.pricing_choice || '') !== 'hourly') return 'bands';
+    return offersHourlyChoice(provider) ? 'hourly' : 'bands';
+}
+
+// Whether this provider covers a house of this size.
+//
+// One function for both routes, on purpose. A banded cleaner's prices say what
+// she covers — a blank band means she does not — and an hourly cleaner says so
+// directly in `covered_bands`, because she prices no bands and would otherwise
+// vanish from every band-filtered list at once. A provider who appears nowhere
+// looks exactly like a provider nobody searched for, which is why that failure
+// would never have been noticed.
+//
+// Two separate answers to "does she cover a five-bed?" is how the two come to
+// disagree, so there is one.
+export function coversBand(
+    provider: any,
+    prices: Record<string, { price?: any }> | null | undefined,
+    band: string
+): boolean {
+    if (!provider || !band) return false;
+
+    if (pricingChoiceFor(provider) === 'hourly') {
+        const covered = Array.isArray(provider.covered_bands) ? provider.covered_bands : [];
+        return covered.map((b: any) => String(b)).indexOf(String(band)) !== -1;
+    }
+
+    const entry = (prices || {})[band];
+    if (!entry) return false;
+
+    const raw = entry.price;
+    if (raw === null || raw === undefined || String(raw).trim() === '') return false;
+
+    return Number(raw) > 0;
+}
+
 export function bandLabel(key: string): string {
     const all = [...BEDROOM_BANDS, ...PLOT_BANDS];
     const found = all.filter((b) => b.key === key)[0];
@@ -637,8 +715,19 @@ export interface PricingDraft {
     trade?: string | null;
     prices?: Record<string, { price?: any; typical_hours?: any }> | null;
     callout_fee?: any;
+    // Display only, maintenance trades. Never multiplied by anything.
     hourly_rate?: any;
     extras?: Record<string, { offered?: boolean; price?: any; notes?: any }> | null;
+
+    // The per-hour route, cleaning and in-house only. `kind` is here because
+    // pricingChoiceFor reads the permission as well as the value, and a draft
+    // that could not say who it belongs to would always fall back to bands.
+    kind?: string | null;
+    pricing_choice?: string | null;
+    // The rate that MAY be multiplied — see lib/pricing.ts, which is where the
+    // multiplying happens. Not `hourly_rate` above, and not `typical_hours`.
+    billable_hourly_rate?: any;
+    covered_bands?: string[] | null;
 }
 
 // A price has to be a positive number. Blank is a real answer — it means "I do
@@ -668,6 +757,36 @@ export function pricingProblems(draft: PricingDraft): Problem[] {
     }
 
     if (model !== 'bands') return problems;
+
+    // The hourly cleaner. She sets no band prices, so the "price at least one
+    // size" rule below would refuse her for ever — and she needs two answers
+    // the banded route gets for free: what she charges, and which house sizes
+    // she will take.
+    //
+    // pricingChoiceFor reads the permission as well as the value, so a row
+    // carrying 'hourly' that is no longer in-house falls back to bands and is
+    // validated as a banded cleaner. There is no path where the form accepts a
+    // rate the database would then refuse.
+    if (pricingChoiceFor(draft) === 'hourly') {
+        const rate = Number((draft as any).billable_hourly_rate);
+
+        if (!(rate > 0)) {
+            problems.push({ field: 'billable_hourly_rate', message: 'Add your hourly rate.' });
+        }
+
+        const covered = Array.isArray((draft as any).covered_bands)
+            ? (draft as any).covered_bands
+            : [];
+
+        if (covered.length === 0) {
+            problems.push({
+                field: 'covered_bands',
+                message: 'Tick the house sizes you will take, so owners with those properties can find you.',
+            });
+        }
+
+        return problems;
+    }
 
     const bands = bandsFor(String(draft.trade || ''));
     const prices = draft.prices || {};
@@ -1828,6 +1947,15 @@ export interface ProviderDraft {
     does_gas?: boolean | null;
     does_oil?: boolean | null;
     registrations?: RegistrationRow[] | null;
+
+    // The cleaner's per-hour route. submitProblems hands the whole draft to
+    // pricingProblems, so these have to be declared in both places or the
+    // fields are silently dropped on the way through — which is what the
+    // production build caught and the test config, with strict off, did not.
+    kind?: string | null;
+    pricing_choice?: string | null;
+    billable_hourly_rate?: any;
+    covered_bands?: string[] | null;
 }
 
 export interface Problem {

@@ -53,6 +53,7 @@ import {
     submitStatusPatch,
     planTerms,
     pricingModelFor,
+    offersHourlyChoice,
     pickerEntries,
     unclaimedTrades,
     tradesFor,
@@ -202,6 +203,14 @@ function ApplicationForm() {
     // Which bands have the optional time guide showing. Open where one is
     // already set, so a returning provider sees what they typed.
     const [hoursOpen, setHoursOpen] = useState<Record<string, boolean>>({});
+    // Cleaning, in-house only. `kind` is loaded from the saved record and is
+    // never written from here — a public applicant is always external, so
+    // this stays 'bands' and the choice never renders for them.
+    const [kind, setKind] = useState('external');
+    const [pricingChoice, setPricingChoice] = useState<'bands' | 'hourly'>('bands');
+    const [billableHourlyRate, setBillableHourlyRate] = useState('');
+    const [coveredBands, setCoveredBands] = useState<string[]>([]);
+
     const [calloutFee, setCalloutFee] = useState('');
     const [hourlyRate, setHourlyRate] = useState('');
     const [calloutWaived, setCalloutWaived] = useState(false);
@@ -294,7 +303,7 @@ function ApplicationForm() {
                 // it is inherited from another one they hold.
                 const { data: existing } = await supabase
                     .from('service_providers')
-                    .select('id, business_name, trade, description, contact_email, contact_phone, audience, photos, logo, status, review_note, callout_fee, hourly_rate, callout_waived, does_gas, does_oil')
+                    .select('id, business_name, trade, description, contact_email, contact_phone, audience, photos, logo, status, review_note, callout_fee, hourly_rate, callout_waived, does_gas, does_oil, kind, pricing_choice, billable_hourly_rate, covered_bands')
                     .eq('owner_id', session.user.id)
                     .eq('trade', tradeFromUrl)
                     .maybeSingle();
@@ -315,6 +324,14 @@ function ApplicationForm() {
                     setCalloutFee(existing.callout_fee === null || existing.callout_fee === undefined ? '' : String(existing.callout_fee));
                     setHourlyRate(existing.hourly_rate === null || existing.hourly_rate === undefined ? '' : String(existing.hourly_rate));
                     setCalloutWaived(existing.callout_waived === true);
+                    setKind(existing.kind || 'external');
+                    setPricingChoice(existing.pricing_choice === 'hourly' ? 'hourly' : 'bands');
+                    setBillableHourlyRate(
+                        existing.billable_hourly_rate === null || existing.billable_hourly_rate === undefined
+                            ? ''
+                            : String(existing.billable_hourly_rate)
+                    );
+                    setCoveredBands(Array.isArray(existing.covered_bands) ? existing.covered_bands : []);
 
                     // The numbers only. Whether one has been checked is not
                     // read here and not shown here — it is not theirs to see
@@ -478,6 +495,9 @@ function ApplicationForm() {
             if (d.panes) setPanes(d.panes);
             if (d.prices) setPrices(d.prices);
             if (d.extras) setExtras(d.extras);
+            if (d.pricingChoice === 'hourly') setPricingChoice('hourly');
+            if (d.billableHourlyRate) setBillableHourlyRate(d.billableHourlyRate);
+            if (Array.isArray(d.coveredBands)) setCoveredBands(d.coveredBands);
             if (d.calloutFee) setCalloutFee(d.calloutFee);
             if (d.hourlyRate) setHourlyRate(d.hourlyRate);
             if (d.areas) setAreas(d.areas);
@@ -572,6 +592,7 @@ function ApplicationForm() {
                     step, trade,
                     businessName, description, contactEmail, contactPhone,
                     prices, extras, calloutFee, hourlyRate, areas,
+                    pricingChoice, billableHourlyRate, coveredBands,
                     doesGas, doesOil, registrations, calloutWaived, skills,
                     // Photos and the logo are storage paths, not files — they
                     // are already uploaded by this point, so the path is the
@@ -589,6 +610,7 @@ function ApplicationForm() {
         hydrated, providerId, tradeFromUrl, chosen, step, trade,
         businessName, description, contactEmail, contactPhone,
         prices, extras, calloutFee, hourlyRate, areas,
+        pricingChoice, billableHourlyRate, coveredBands,
         doesGas, doesOil, registrations, calloutWaived, skills,
         photos, logo, buildingType, panes,
     ]);
@@ -618,6 +640,10 @@ function ApplicationForm() {
         does_gas: doesGas,
         does_oil: doesOil,
         registrations: registrationRows,
+        kind,
+        pricing_choice: pricingChoice,
+        billable_hourly_rate: billableHourlyRate,
+        covered_bands: coveredBands,
     });
 
     // One block of £ boxes for a pricing structure. Nothing computes from
@@ -752,6 +778,12 @@ function ApplicationForm() {
     // function when deciding whether this trade has a prices step at all, and
     // the two must never be able to disagree about it.
     const isCallout = showsRates(trade);
+
+    // Whether this provider may be asked the question at all. False for every
+    // public applicant, because `kind` defaults to external and nothing in the
+    // browser can change it.
+    const hourlyAllowed = offersHourlyChoice({ trade, kind });
+    const onHourly = hourlyAllowed && pricingChoice === 'hourly';
 
     const hasSkills = asksAboutSkills(trade);
 
@@ -1278,6 +1310,18 @@ function ApplicationForm() {
             callout_fee: calloutFee.trim() !== '' ? Number(calloutFee) : null,
             hourly_rate: model === 'callout_hourly' && hourlyRate.trim() !== '' ? Number(hourlyRate) : null,
             callout_waived: calloutFee.trim() !== '' ? calloutWaived : false,
+
+            // Cleaning and in-house only, and cleared to the banded shape
+            // otherwise. `kind` is never sent — it is not the applicant's to
+            // set, and the database check would refuse an hourly row that is
+            // not in-house anyway. Sending the cleared values rather than
+            // omitting them is what stops a provider who was switched back to
+            // external keeping a live rate nothing validates any more.
+            pricing_choice: trade === 'sponge' ? (hourlyAllowed && pricingChoice === 'hourly' ? 'hourly' : 'bands') : null,
+            billable_hourly_rate: hourlyAllowed && pricingChoice === 'hourly' && billableHourlyRate.trim() !== ''
+                ? Number(billableHourlyRate)
+                : null,
+            covered_bands: hourlyAllowed && pricingChoice === 'hourly' ? coveredBands : [],
             updated_at: now.toISOString(),
         };
 
@@ -2039,7 +2083,115 @@ function ApplicationForm() {
                 {/* What they charge. Driven by the trade rather than by a
                     choice, so two cleaners are always comparable and a host is
                     never asked to weigh a price against a rate. */}
-                {onStep('prices') && model === 'bands' && (
+                {/* The choice, and only for a cleaner the platform bills
+                    itself. A public applicant never reaches this: `kind`
+                    defaults to external, the sign-up never writes it, and the
+                    database refuses an hourly row that is not in-house — so
+                    the question simply is not asked of them. */}
+                {onStep('prices') && hourlyAllowed && (
+                    <section className="mb-8">
+                        <h2 className="text-sm font-semibold text-slate-900 mb-1.5">How do you charge?</h2>
+                        <p className="text-sm text-slate-500 mb-3">
+                            One or the other. You can change it later.
+                        </p>
+
+                        <div className="flex flex-wrap gap-2">
+                            {[
+                                { key: 'bands', label: 'A price per house size' },
+                                { key: 'hourly', label: 'An hourly rate' },
+                            ].map((option) => (
+                                <button
+                                    key={option.key}
+                                    type="button"
+                                    onClick={() => setPricingChoice(option.key as 'bands' | 'hourly')}
+                                    aria-pressed={pricingChoice === option.key}
+                                    className={`rounded-full border px-5 py-2.5 text-sm font-semibold transition ${
+                                        pricingChoice === option.key
+                                            ? 'border-emerald-700 bg-emerald-700 text-white'
+                                            : 'border-slate-300 text-slate-700 hover:border-slate-500'
+                                    }`}
+                                >
+                                    {option.label}
+                                </button>
+                            ))}
+                        </div>
+                    </section>
+                )}
+
+                {/* The hourly half: what she charges, and which sizes she will
+                    take. The second question is not optional dressing — a
+                    blank band means "I do not cover this", so without an
+                    explicit answer an hourly cleaner would drop out of every
+                    band-filtered list at once and look like nobody had
+                    searched for her. */}
+                {onStep('prices') && onHourly && (
+                    <section className="mb-8">
+                        <h2 className="text-sm font-semibold text-slate-900 mb-1.5">Your hourly rate</h2>
+                        <p className="text-sm text-slate-500 mb-3">
+                            We send the bill, so this is the rate we bill at.
+                        </p>
+
+                        <div className="flex items-center gap-2 md:max-w-xs">
+                            <span className="text-slate-500">&pound;</span>
+                            <input
+                                type="text"
+                                inputMode="decimal"
+                                value={billableHourlyRate}
+                                onChange={(e) => setBillableHourlyRate(e.target.value)}
+                                placeholder="18"
+                                className="w-full min-w-0 rounded-xl border border-slate-300 px-3.5 py-3 focus:outline-none focus:ring-2 focus:ring-emerald-700"
+                            />
+                            <span className="text-sm text-slate-500 whitespace-nowrap">an hour</span>
+                        </div>
+                        {problemFor('billable_hourly_rate') && (
+                            <p data-problem className="text-sm text-rose-700 mt-1.5">
+                                {problemFor('billable_hourly_rate')!.message}
+                            </p>
+                        )}
+
+                        <h3 className="text-sm font-semibold text-slate-900 mt-6 mb-1.5">
+                            Which sizes will you take?
+                        </h3>
+                        <p className="text-sm text-slate-500 mb-3">
+                            Owners search by the size of the property. Leave one off and you will not be
+                            shown for it.
+                        </p>
+
+                        <div className="space-y-2">
+                            {bands.map((band) => {
+                                const on = coveredBands.indexOf(band.key) !== -1;
+
+                                return (
+                                    <label
+                                        key={band.key}
+                                        className={`flex items-center gap-3 rounded-xl border p-3.5 cursor-pointer transition ${
+                                            on ? 'border-emerald-700 bg-emerald-50/40' : 'border-slate-300'
+                                        }`}
+                                    >
+                                        <input
+                                            type="checkbox"
+                                            checked={on}
+                                            onChange={() =>
+                                                setCoveredBands(on
+                                                    ? coveredBands.filter((b) => b !== band.key)
+                                                    : [...coveredBands, band.key])
+                                            }
+                                            className="w-4 h-4 rounded border-slate-300 shrink-0"
+                                        />
+                                        <span className="text-sm font-medium text-slate-900">{band.label}</span>
+                                    </label>
+                                );
+                            })}
+                        </div>
+                        {problemFor('covered_bands') && (
+                            <p data-problem className="text-sm text-rose-700 mt-2">
+                                {problemFor('covered_bands')!.message}
+                            </p>
+                        )}
+                    </section>
+                )}
+
+                {onStep('prices') && model === 'bands' && !onHourly && (
                     <section className="mb-8">
                         <h2 className="text-sm font-semibold text-slate-900 mb-1.5">Your prices</h2>
                         <p className="text-sm text-slate-500 mb-4">
