@@ -1724,14 +1724,14 @@ function ApplicationForm() {
                 {/* ---- the questions ---- */}
                 <div id="signup-panel" className="flex-1 overflow-y-auto px-4 sm:px-6 py-5">
 
-            {/* Read before the questions rather than under them, and it says
-                which step: after a restore they are not on the first one, and
-                a message that ignored that would read as the form having
-                jumped somewhere on its own. */}
+            {/* Read before the questions rather than under them. It used to
+                narrate the step as well — "you are back on step 5 of 5" — which
+                explained something the step counter above already says, in more
+                words than the reassurance is worth. */}
             {restored && !providerId && (
                 <div className="rounded-xl border border-emerald-300 bg-emerald-50 px-4 py-3 mb-5">
                     <p className="text-sm text-emerald-900">
-                        We kept what you filled in last time. You are back on step {position} of {total}.
+                        Your details have been saved.
                     </p>
                 </div>
             )}
