@@ -211,9 +211,19 @@ function ApplicationForm() {
     // that when it reconciles the set.
     const [skills, setSkills] = useState<string[]>([]);
     const [skillTyped, setSkillTyped] = useState('');
-    // Whether the whole tag list is open. Closed shows a first handful, which
-    // is enough to teach that picking is the expected move without turning the
-    // step into a wall of fifty chips.
+    // Whether the list is showing at all. Opened by focusing the box.
+    //
+    // Nobody should ever face a blank box: an empty box is an invitation to
+    // invent wording, which is the fragmentation this whole mechanism exists
+    // to stop. But twelve chips sitting there permanently made the step long.
+    // Focus is the moment somebody is about to type, so it is the moment to
+    // show them they do not have to.
+    //
+    // It does not close on blur. Blur fires before the click on a chip lands,
+    // so closing there would make the chips untappable — the classic version
+    // of this bug, where the thing vanishes as you reach for it.
+    const [skillsListOpen, setSkillsListOpen] = useState(false);
+    // Whether the list is showing everything or the first handful.
     const [allTagsOpen, setAllTagsOpen] = useState(false);
     // Every existing tag, for the type-ahead. That list IS the mechanism:
     // somebody offered "bricklaying" takes it, and somebody offered nothing
@@ -745,7 +755,6 @@ function ApplicationForm() {
 
     const hasSkills = asksAboutSkills(trade);
 
-    const skillSuggestions = suggestSkills(allSkills, skillTyped, skills);
     const skillIsNew = wouldCreateNew(allSkills, skillTyped);
 
     const addSkill = (label: string) => {
@@ -822,7 +831,25 @@ function ApplicationForm() {
         heldCompact.indexOf((skillKey(String(tag.label)) || { compact: '' }).compact) === -1
     );
 
-    const tagsToShow = allTagsOpen ? offerableTags : offerableTags.slice(0, TAGS_SHOWN_CLOSED);
+    // Typing FILTERS this list rather than replacing it with a different one.
+    //
+    // There used to be two lists — chips before typing, a dropdown after — and
+    // they behaved differently and looked different, so typing felt like
+    // leaving the list rather than narrowing it. One list, one set of rules:
+    // regulated tags are never in it, held tags are never in it, and what you
+    // type only decides which of the rest survive.
+    //
+    // suggestSkills does the matching because it ranks exact, then
+    // starts-with, then contains — a handyman half way through "brick" wants
+    // Bricklaying at the top, not an alphabetical list of everything with
+    // those letters in it. The high limit is so "Show all" still governs how
+    // many appear, rather than the matcher quietly capping it at eight.
+    const matchingTags = skillTyped.trim() === ''
+        ? offerableTags
+        : suggestSkills(allSkills, skillTyped, skills, 500)
+            .filter((tag: any) => !tag.regulated_concept);
+
+    const tagsToShow = allTagsOpen ? matchingTags : matchingTags.slice(0, TAGS_SHOWN_CLOSED);
 
     const typedConcept = conceptOf(skillTyped);
     const typedReason = skillTyped.trim() === '' ? null : reasonFor(skillTyped);
@@ -2388,6 +2415,42 @@ function ApplicationForm() {
                     and a host searching one of them misses three tradesmen who
                     do exactly that work — so existing tags are offered first
                     and a new one is only made when nothing matches. */}
+                {/* CAPABILITY — on the "what you do" step, beside the
+                    registration numbers and the skills.
+
+                    This spent a fortnight under "What you charge", because the
+                    code calls these extras and step four was specified as
+                    "prices and extras". They are extras in the storage sense
+                    and a capability list in every sense a person cares about —
+                    a roofer met fifteen tick boxes about roofs under a heading
+                    promising prices, and the handyman's twelve were a step
+                    away from the skills box they belong beside.
+
+                    Split per entry rather than per trade: the electrician's
+                    EICR fee and the roofer's one priced entry stay with the
+                    prices, because those genuinely are prices. */}
+                {onStep('credentials') && capability.length > 0 && (
+                    <section className="mb-8">
+                        <h2 className="text-sm font-semibold text-slate-900 mb-1.5">
+                            {hasFaults ? 'What do you get called out for?' : 'What do you take on?'}
+                        </h2>
+                        <p className="text-sm text-slate-500 mb-4">
+                            {hasFaults
+                                ? 'All optional, but this is how owners find you. Somebody with a problem searches for the problem, not for a trade.'
+                                : 'All optional. Owners compare on these, so it is worth saying yes to what you actually do.'}
+                        </p>
+
+                        {toggleBlock('faults', groupLabel('faults'))}
+                        {toggleBlock('planned', groupLabel('planned'))}
+                        {toggleBlock('availability', groupLabel('availability'))}
+                    </section>
+                )}
+
+                {/* Skills sit UNDER the tick boxes above, not over them.
+                    The standard set is the common case for every handyman;
+                    the tags are the extra, for the jobs that do not fit a
+                    box. Asking the open question first put the unusual
+                    thing before the usual one. */}
                 {onStep('credentials') && hasSkills && (
                     <section className="mb-8">
                         <h2 className="text-sm font-semibold text-slate-900 mb-1.5">
@@ -2435,101 +2498,104 @@ function ApplicationForm() {
                             </div>
                         )}
 
-                        {/* The list itself, before anybody types. Tappable,
-                            because on a phone in somebody's driveway a chip is
-                            one thumb and typing is a spelling decision. */}
-                        {tagsToShow.length > 0 && (
-                            <div className="mb-4">
-                                <p className="text-xs font-semibold uppercase tracking-wider text-slate-500 mb-2">
-                                    Tap any that fit
-                                </p>
-                                <div className="flex flex-wrap gap-2">
-                                    {tagsToShow.map((tag: any) => (
-                                        <button
-                                            key={tag.id || tag.slug || tag.label}
-                                            type="button"
-                                            onClick={() => addSkill(String(tag.label))}
-                                            className="inline-flex items-center gap-1.5 rounded-full border border-slate-300 px-3 py-1.5 text-sm text-slate-800 hover:border-emerald-700 hover:bg-emerald-50/40 transition"
-                                        >
-                                            <Plus className="w-3.5 h-3.5 text-emerald-700" />
-                                            {tag.label}
-                                        </button>
-                                    ))}
-                                </div>
-
-                                {offerableTags.length > TAGS_SHOWN_CLOSED && (
-                                    <button
-                                        type="button"
-                                        onClick={() => setAllTagsOpen(!allTagsOpen)}
-                                        className="text-sm font-semibold text-emerald-700 hover:text-emerald-800 underline mt-3"
-                                    >
-                                        {allTagsOpen
-                                            ? 'Show fewer'
-                                            : 'Show all ' + offerableTags.length}
-                                    </button>
-                                )}
-                            </div>
-                        )}
-
-                        {/* Typing stays, for the job that genuinely is not on
-                            the list. It is the fallback now rather than the
-                            only way in. */}
-                        <p className="text-sm text-slate-500 mb-2">
-                            Not there? Type it.
-                        </p>
-
+                        {/* The box first, the list underneath it once they
+                            focus. Short by default, and never blank when they
+                            are actually about to type into it. */}
                         <input
                             type="text"
                             value={skillTyped}
+                            onFocus={() => setSkillsListOpen(true)}
                             onChange={(e) => setSkillTyped(e.target.value)}
                             onKeyDown={(e) => {
                                 if (e.key !== 'Enter') return;
                                 // Otherwise Enter submits the form, which on a
                                 // half-typed tag is the worst possible moment.
                                 e.preventDefault();
-                                if (skillSuggestions.length > 0) addSkill(String(skillSuggestions[0].label));
+                                if (tagsToShow.length > 0) addSkill(String(tagsToShow[0].label));
                                 else addSkill(skillTyped);
                             }}
-                            placeholder="Start typing"
+                            placeholder="Search, or type your own"
                             className="w-full md:max-w-sm rounded-xl border border-slate-300 px-3.5 py-3 focus:outline-none focus:ring-2 focus:ring-emerald-700"
                         />
 
-                        {skillTyped.trim() !== '' && (
-                            <div className="mt-2 md:max-w-sm">
-                                {skillSuggestions.map((suggestion: any) => (
-                                    <button
-                                        key={suggestion.id || suggestion.slug}
-                                        type="button"
-                                        onClick={() => addSkill(String(suggestion.label))}
-                                        className="block w-full text-left rounded-lg px-3 py-2 text-sm text-slate-900 hover:bg-slate-100"
-                                    >
-                                        {suggestion.label}
-                                        {/* Which registration, not "needs
-                                            proof" — a handyman reading that
-                                            learns nothing about what proof, or
-                                            why, or what to do instead. */}
-                                        {suggestion.regulated_concept && (
-                                            <span className="text-slate-500">
-                                                {' · '}
-                                                {suggestion.regulated_concept === 'gas' ? 'Gas Safe work'
-                                                    : suggestion.regulated_concept === 'oil' ? 'OFTEC work'
-                                                    : 'Part P work'}
-                                            </span>
-                                        )}
-                                    </button>
-                                ))}
+                        {skillsListOpen && (
+                            <div className="mt-3 md:max-w-sm">
+                                {tagsToShow.length > 0 && (
+                                    <>
+                                        <p className="text-xs font-semibold uppercase tracking-wider text-slate-500 mb-2">
+                                            {skillTyped.trim() === '' ? 'Tap any that fit' : 'Matching'}
+                                        </p>
+                                        <div className="flex flex-wrap gap-2">
+                                            {tagsToShow.map((tag: any) => (
+                                                <button
+                                                    key={tag.id || tag.slug || tag.label}
+                                                    type="button"
+                                                    onClick={() => addSkill(String(tag.label))}
+                                                    className="inline-flex items-center gap-1.5 rounded-full border border-slate-300 px-3 py-1.5 text-sm text-slate-800 hover:border-emerald-700 hover:bg-emerald-50/40 transition"
+                                                >
+                                                    <Plus className="w-3.5 h-3.5 text-emerald-700" />
+                                                    {tag.label}
+                                                </button>
+                                            ))}
+                                        </div>
+                                    </>
+                                )}
 
-                                {/* Offered last and looking different, so
-                                    taking the existing tag is the easier of
-                                    the two. */}
-                                {skillIsNew && (
+                                {/* Once open it stays open, deliberately.
+                                    Closing on blur is the obvious thing and it
+                                    is wrong twice: blur fires before a chip's
+                                    click lands, so the chips become untappable,
+                                    and somebody adding four tags would have to
+                                    re-open the list between each one.
+
+                                    So there is a way out instead of a rule. */}
+                                <div className="flex items-center gap-4 mt-3">
+                                    {matchingTags.length > TAGS_SHOWN_CLOSED && (
+                                        <button
+                                            type="button"
+                                            onClick={() => setAllTagsOpen(!allTagsOpen)}
+                                            className="text-sm font-semibold text-emerald-700 hover:text-emerald-800 underline"
+                                        >
+                                            {allTagsOpen ? 'Show fewer' : 'Show all ' + matchingTags.length}
+                                        </button>
+                                    )}
+
+                                    <button
+                                        type="button"
+                                        onClick={() => {
+                                            setSkillsListOpen(false);
+                                            setAllTagsOpen(false);
+                                        }}
+                                        className="text-sm font-semibold text-slate-500 hover:text-slate-800 underline"
+                                    >
+                                        Hide the list
+                                    </button>
+                                </div>
+
+                                {/* The fallback, for the job that genuinely is
+                                    not on the list. Offered last and looking
+                                    different, so taking an existing tag stays
+                                    the easier of the two — that preference is
+                                    the whole anti-fragmentation mechanism. */}
+                                {skillIsNew && skillTyped.trim() !== '' && (
                                     <button
                                         type="button"
                                         onClick={() => addSkill(skillTyped)}
-                                        className="block w-full text-left rounded-lg px-3 py-2 text-sm text-emerald-800 hover:bg-emerald-50"
+                                        className="block w-full text-left rounded-lg px-3 py-2 mt-3 text-sm text-emerald-800 bg-emerald-50 hover:bg-emerald-100"
                                     >
                                         Add &ldquo;{(skillKey(skillTyped) || { label: skillTyped }).label}&rdquo; as a new one
                                     </button>
+                                )}
+
+                                {/* Typed something that matches nothing and is
+                                    not new either — it exists but is regulated
+                                    or already held. The panel below says which,
+                                    so this only has to stop the list looking
+                                    broken. */}
+                                {tagsToShow.length === 0 && !skillIsNew && skillTyped.trim() !== '' && (
+                                    <p className="text-sm text-slate-500">
+                                        Nothing matches that.
+                                    </p>
                                 )}
                             </div>
                         )}
@@ -2570,36 +2636,6 @@ function ApplicationForm() {
                     where it matters: a toggle is comparison, a priced one is
                     part of the ceiling, and a reimbursed one is money that
                     never comes near us. */}
-                {/* CAPABILITY — on the "what you do" step, beside the
-                    registration numbers and the skills.
-
-                    This spent a fortnight under "What you charge", because the
-                    code calls these extras and step four was specified as
-                    "prices and extras". They are extras in the storage sense
-                    and a capability list in every sense a person cares about —
-                    a roofer met fifteen tick boxes about roofs under a heading
-                    promising prices, and the handyman's twelve were a step
-                    away from the skills box they belong beside.
-
-                    Split per entry rather than per trade: the electrician's
-                    EICR fee and the roofer's one priced entry stay with the
-                    prices, because those genuinely are prices. */}
-                {onStep('credentials') && capability.length > 0 && (
-                    <section className="mb-8">
-                        <h2 className="text-sm font-semibold text-slate-900 mb-1.5">
-                            {hasFaults ? 'What do you get called out for?' : 'What do you take on?'}
-                        </h2>
-                        <p className="text-sm text-slate-500 mb-4">
-                            {hasFaults
-                                ? 'All optional, but this is how owners find you. Somebody with a problem searches for the problem, not for a trade.'
-                                : 'All optional. Owners compare on these, so it is worth saying yes to what you actually do.'}
-                        </p>
-
-                        {toggleBlock('faults', groupLabel('faults'))}
-                        {toggleBlock('planned', groupLabel('planned'))}
-                        {toggleBlock('availability', groupLabel('availability'))}
-                    </section>
-                )}
 
                 {/* What genuinely belongs beside a price: the gated groups that
                     ask before they show one, and `about` — two toggles on the
