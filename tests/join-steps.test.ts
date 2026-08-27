@@ -27,6 +27,8 @@ const {
     stepForField,
     problemsOnStep,
     firstStepWithProblem,
+    openingStep,
+    openingVisited,
 } = require('@/lib/joinSteps');
 
 const {
@@ -377,4 +379,69 @@ test('no trade gets a prices step only for entries that never render', () => {
         assert.equal(standsAlone, false,
             trade + ': the prices step is justified by a band or a rate, not by extras alone');
     }
+});
+
+// ---------------------------------------------------------------------------
+// Which step the form opens on
+// ---------------------------------------------------------------------------
+//
+// This rule was a useEffect, and it turned a working application into one that
+// looked broken. A successful send cleared `restored` to take the "your details
+// have been saved" banner down; that released the only condition holding the
+// rule back, it ran again, and it moved the applicant to the business step. The
+// panel confirming the application only renders on the finish step, so nobody
+// ever saw it — and a sent application and a refused one ended on the same
+// screen.
+//
+// Indistinguishable success is the thing this flow exists to prevent, so the
+// rule is tested rather than inferred from a dependency array.
+
+test('a lodged application is never moved off the screen that says so', () => {
+    // The regression, stated directly. Every combination that used to move
+    // them, with `lodged` true.
+    for (const restored of [true, false]) {
+        for (const trade of ['joiner', 'sponge', '']) {
+            assert.equal(
+                openingStep({ hydrated: true, restored, lodged: true, trade }),
+                'finish',
+                `lodged must win: restored=${restored} trade=${trade || 'none'}`
+            );
+        }
+    }
+});
+
+test('clearing the restored banner cannot move a lodged applicant', () => {
+    // The exact transition that caused it: lodged, and `restored` going from
+    // true to false underneath.
+    const before = openingStep({ hydrated: true, restored: true, lodged: true, trade: 'joiner' });
+    const after = openingStep({ hydrated: true, restored: false, lodged: true, trade: 'joiner' });
+
+    assert.equal(before, 'finish');
+    assert.equal(after, 'finish', 'the banner going away is not a reason to move them');
+});
+
+test('nothing moves before the load has finished', () => {
+    assert.equal(openingStep({ hydrated: false, restored: false, lodged: false, trade: 'joiner' }), null);
+    assert.equal(openingStep({ hydrated: false, restored: false, lodged: true, trade: 'joiner' }), null);
+});
+
+test('a restored draft decides for itself', () => {
+    // resolveStep put them somewhere from the draft. This must not overrule it.
+    assert.equal(openingStep({ hydrated: true, restored: true, lodged: false, trade: 'joiner' }), null);
+});
+
+test('a trade in the URL means step one is already answered', () => {
+    assert.equal(openingStep({ hydrated: true, restored: false, lodged: false, trade: 'joiner' }), 'business');
+    assert.equal(openingStep({ hydrated: true, restored: false, lodged: false, trade: '' }), 'trade');
+});
+
+test('what counts as seen matches where they land', () => {
+    // The step they open on shows its own errors; steps ahead stay quiet.
+    assert.deepEqual(openingVisited({ hydrated: true, restored: false, lodged: false, trade: '' }), []);
+    assert.deepEqual(openingVisited({ hydrated: true, restored: false, lodged: false, trade: 'joiner' }), ['trade']);
+    assert.equal(openingVisited({ hydrated: true, restored: true, lodged: false, trade: 'joiner' }), null);
+
+    // A lodged application has been through all of them.
+    const seen = openingVisited({ hydrated: true, restored: false, lodged: true, trade: 'joiner' });
+    assert.equal(Array.isArray(seen) && seen.indexOf('finish') !== -1, true);
 });

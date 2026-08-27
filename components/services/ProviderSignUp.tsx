@@ -70,6 +70,8 @@ import {
     previousStep,
     isLastStep,
     resolveStep,
+    openingStep,
+    openingVisited,
     problemsOnStep,
     firstStepWithProblem,
     stepForField,
@@ -188,6 +190,10 @@ function ApplicationForm() {
     // The application is in. Not "an email is on its way and you must come
     // back" — that shape is gone; see lodgeApplication.
     const [lodged, setLodged] = useState(false);
+    // The address already has an account. Its own state rather than a line of
+    // error text, because it is not a validation message — it is a fork, and it
+    // needs to be as visible as the success panel it was being mistaken for.
+    const [accountExists, setAccountExists] = useState(false);
     // For somebody who has been here before. Not the default, because most
     // people arriving at this point have no account.
     const [showSignIn, setShowSignIn] = useState(false);
@@ -439,10 +445,15 @@ function ApplicationForm() {
     // through a link, or they have a saved record -- so opening on the trade
     // picker would make them answer it twice. No trade means step one.
     useEffect(() => {
-        if (!hydrated || restored || lodged) return;
+        // The rule itself is in lib/joinSteps.ts, where it can be tested. It
+        // lived here as a dependency array, and a dependency array is a bad
+        // place to keep a rule that decides whether somebody can tell their
+        // application was sent. `null` means leave them where they are.
+        const opening = openingStep({ hydrated, restored, lodged, trade: tradeFromUrl });
+        if (opening === null) return;
 
-        setStep(tradeFromUrl ? 'business' : 'trade');
-        setVisited(tradeFromUrl ? ['trade'] : []);
+        setStep(opening);
+        setVisited(openingVisited({ hydrated, restored, lodged, trade: tradeFromUrl }) || []);
         // eslint-disable-next-line react-hooks/exhaustive-deps
     }, [hydrated, restored, lodged, tradeFromUrl]);
 
@@ -1375,6 +1386,7 @@ function ApplicationForm() {
     // and waiting for that is what lost applications.
     const lodgeApplication = async () => {
         const email = contactEmail.trim();
+        setAccountExists(false);
 
         // The same three gates the old createAccount kept. They belong here
         // now: this is the press that makes the account.
@@ -1416,8 +1428,14 @@ function ApplicationForm() {
                 // handling rather than reporting: they have one, so offer the
                 // way in instead of an error.
                 if (out.code === 'account_exists') {
-                    setAcctError(out.error);
+                    // Not an error line. A fork, with both ways out on screen.
+                    // As a small red sentence this was quiet enough to be read
+                    // as nothing having happened — the same failure mode as the
+                    // step-two bug, and on the same screen.
+                    setAccountExists(true);
+                    setAcctError('');
                     setShowSignIn(true);
+                    scrollPanelToTop();
                     return;
                 }
                 setAcctError(out.error || 'That did not work. Try again.');
@@ -3340,7 +3358,7 @@ function ApplicationForm() {
                             I already have an account
                         </button>
                     ) : (
-                        <div className="mt-4 pt-4 border-t border-slate-200">
+                        <div data-signin className="mt-4 pt-4 border-t border-slate-200">
                             <p className="text-sm text-slate-600 mb-3">
                                 Sign in and we will save this straight to your account. Nothing you have
                                 typed is lost.
@@ -3360,6 +3378,58 @@ function ApplicationForm() {
                 here asked them to open a link, come back, and press send — and
                 if anything went wrong in between, the application had never
                 been written at all. */}
+            {/* The address already has an account. Deliberately the same
+                weight as the success panel: the two were being confused, and
+                the one that means "nothing was sent" cannot be the quieter of
+                them. Both ways forward are here — signing in is offered right
+                below, and changing the address is a button rather than an
+                instruction, because the field is two steps back and telling
+                somebody to go and find it is how they give up. */}
+            {onStep('finish') && accountExists && !lodged && (
+                <div className="rounded-2xl border-2 border-amber-500 bg-amber-50 p-5 mb-8">
+                    <p className="font-semibold text-amber-900">
+                        Nothing has been sent — that address already has an account.
+                    </p>
+                    <p className="text-sm text-amber-900/90 mt-1.5">
+                        <strong className="font-semibold">{contactEmail.trim()}</strong> is already
+                        registered here. Your application is still on this page and nothing has been
+                        lost. Two ways on:
+                    </p>
+                    <div className="flex flex-wrap gap-3 mt-4">
+                        <button
+                            type="button"
+                            onClick={() => {
+                                setAccountExists(false);
+                                setShowSignIn(true);
+                                setStep('finish');
+                                // The sign-in block is below; put them at it.
+                                setTimeout(() => {
+                                    const el = document.querySelector('[data-signin]');
+                                    if (el) el.scrollIntoView({ behavior: 'smooth', block: 'center' });
+                                }, 50);
+                            }}
+                            className="rounded-full bg-amber-700 hover:bg-amber-800 text-white px-5 py-2.5 text-sm font-semibold transition"
+                        >
+                            Sign in and send it from that account
+                        </button>
+                        <button
+                            type="button"
+                            onClick={() => {
+                                setAccountExists(false);
+                                setShowSignIn(false);
+                                // The email lives on the business step. Take
+                                // them to it rather than describing where it is.
+                                setStep('business');
+                                scrollPanelToTop();
+                            }}
+                            className="rounded-full border border-amber-600 px-5 py-2.5 text-sm font-semibold text-amber-900 hover:bg-amber-100 transition"
+                        >
+                            Use a different address
+                        </button>
+                    </div>
+                </div>
+            )}
+
             {onStep('finish') && lodged && (
                 <div className="rounded-2xl border-2 border-emerald-700 bg-emerald-50 p-5 mb-8">
                     <p className="font-semibold text-emerald-900">Your application is in.</p>

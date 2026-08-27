@@ -680,3 +680,36 @@ date.
   an opaque auth error.
 - `lib/places.ts` — the only place a free-text location is parsed
   (`publicArea` / `townOf` / `townKey`).
+
+## Before launch: nothing automated has ever pressed the button
+
+A manual walk through the provider sign-up has now caught the same class of
+fault twice, both times while the automated checks were green and correct about
+what they tested:
+
+1. **27 Aug 2026** — the confirmation link carried the wrong trade, so the draft
+   was looked for under a key nothing had written, and the form opened on step
+   two looking empty.
+2. **27 Aug 2026, later** — a *successful* application put the applicant on step
+   two with no confirmation, because clearing the restore banner released the
+   rule that decides which step to open on. A sent application and a refused one
+   ended on the same screen.
+
+Both are the same shape: **the round trip ends somewhere the work is not, and
+success is indistinguishable from failure.** Neither was a server fault, and
+`scripts/journeys.mjs` was green through both — it posts to `/api/services/apply`
+directly and never assembles a payload or presses a button.
+
+The rule from the second one now lives in `lib/joinSteps.ts` as `openingStep`
+and is unit-tested, so that specific fault cannot come back. The gap it came
+from is still open: **no automated check drives the real form.**
+
+Closing it needs a headless browser — Playwright as a devDependency, and the
+browser download that comes with it. The test worth writing is small: plant a
+draft in local storage, load `/services/join?trade=…`, tick the box, type a
+password, press the button, and assert the confirmation panel appears and the
+row exists. That is exactly the walk that found both faults.
+
+**Do this before launch.** Until then, a manual walk is the only thing covering
+the client half of the sign-up, and it should be repeated after any change to
+`ProviderSignUp.tsx`.

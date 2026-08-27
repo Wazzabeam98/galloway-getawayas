@@ -226,3 +226,63 @@ export function firstStepWithProblem(
     }
     return null;
 }
+
+// ---------------------------------------------------------------------------
+// WHICH STEP THE FORM OPENS ON
+// ---------------------------------------------------------------------------
+//
+// This was a `useEffect` in ProviderSignUp, and it cost an evening.
+//
+// A successful application set `restored` back to false to clear the "your
+// details have been saved" banner. That happened to be the one condition
+// holding this rule back, so it ran again and moved the applicant to the
+// business step — of a form that was now locked, with the panel confirming
+// their application only rendering on the finish step. So it was never seen,
+// and a sent application and a refused one ended on exactly the same screen.
+//
+// Indistinguishable success is the fault this whole flow exists to prevent, so
+// the rule is out here where it can be tested rather than inferred from a
+// dependency array.
+//
+// `null` means LEAVE THE STEP ALONE. It is a real answer and the common one:
+// most renders must not move anybody.
+
+export interface OpeningState {
+    // The initial load has finished. Before that nothing is known and nothing
+    // should move.
+    hydrated: boolean;
+    // A draft was found and has already decided where they are.
+    restored: boolean;
+    // The application has been sent. Nothing may move them off the screen that
+    // says so.
+    lodged: boolean;
+    // The trade from the URL. Empty means step one has not been answered.
+    trade: string;
+}
+
+export function openingStep(state: OpeningState): StepKey | null {
+    if (!state.hydrated) return null;
+
+    // First, and before `restored`: sending clears the draft, so a lodged
+    // application is never also a restored one, and the order has to say which
+    // wins if that ever stops being true.
+    if (state.lodged) return 'finish';
+
+    if (state.restored) return null;
+
+    // A trade in the URL means step one is already answered — they came back
+    // through a link, or they have a saved record — so opening on the picker
+    // would make them answer it twice.
+    return state.trade ? 'business' : 'trade';
+}
+
+// What counts as already seen when opening there. Everything up to and
+// including the step itself, so the step they land on shows its own errors
+// rather than looking finished; steps ahead stay quiet.
+export function openingVisited(state: OpeningState): StepKey[] | null {
+    const step = openingStep(state);
+    if (step === null) return null;
+    if (step === 'trade') return [];
+    if (step === 'finish') return stepsFor(state.trade).map((s) => s.key);
+    return ['trade'];
+}
