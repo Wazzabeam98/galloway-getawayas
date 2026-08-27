@@ -21,8 +21,9 @@
 
 import {
     bandsFor,
-    pricingModelFor,
-    extrasFor,
+    capabilityFor,
+    pricedOfferingsFor,
+    showsRates,
     offerableSchemes,
     asksAboutSkills,
     asksAboutFuel,
@@ -41,7 +42,14 @@ export interface Step {
 const ALL_STEPS: Step[] = [
     { key: 'trade', label: 'Trade', title: 'What do you do?' },
     { key: 'business', label: 'Business', title: 'Your business' },
-    { key: 'credentials', label: 'Registration', title: 'Your registration' },
+    // Not "Registration". Registration and skills never co-occur across the
+    // trade list — the electrician and plumber give numbers, the handyman gives
+    // skills, nobody does both — so a step called Registration was wrong for
+    // the handyman every single time. "What you do" is true of all three, and
+    // of the capability lists that now sit here; the registration numbers keep
+    // their own heading inside it, which is honest, because being registered is
+    // a fact about what you are allowed to do.
+    { key: 'credentials', label: 'What you do', title: 'What you do' },
     { key: 'prices', label: 'Prices', title: 'What you charge' },
     { key: 'finish', label: 'Finish', title: 'Photos and your account' },
 ];
@@ -70,17 +78,30 @@ export function stepApplies(step: StepKey, trade: string): boolean {
 
         // The electrician always needs a competent person scheme. Everybody
         // else with schemes on offer is covered by the fuel branch above.
-        return offerableSchemes({ trade: key, does_gas: true, does_oil: true }).length > 0;
+        if (offerableSchemes({ trade: key, does_gas: true, does_oil: true }).length > 0) return true;
+
+        // What has gone wrong, what you can do, how fast you turn out. This is
+        // what brings the joiner, roofer and painter onto this step: they give
+        // no registration and no skills, but they each carry nine to sixteen
+        // capability entries that were filed under "What you charge", where
+        // they set no price at all.
+        return capabilityFor(key).length > 0;
     }
 
     if (step === 'prices') {
         if (bandsFor(key).length > 0) return true;
-        // A call-out fee and an hourly rate are two numbers, and they are the
-        // whole of what a maintenance trade sets.
-        if (pricingModelFor(key) === 'callout_hourly') return true;
-        // A quoted trade sets no price, but it may still have extras to offer
-        // — a roofer has sixteen. A chef has none, and has nothing to see.
-        return extrasFor(key).length > 0;
+
+        // A call-out fee and an hourly rate. Read from serviceProviders rather
+        // than recomputed here, so the step model and the form cannot disagree
+        // about whether there is a rates section to show.
+        if (showsRates(key)) return true;
+
+        // Anything left that belongs beside a price: the pricing structures,
+        // the gated groups, `about`, and the two genuinely priced entries the
+        // electrician and roofer carry. Capability does NOT count towards this
+        // any more — counting it was what put fifteen tick boxes about roofs
+        // under a heading that promised the roofer prices.
+        return pricedOfferingsFor(key).length > 0;
     }
 
     // Photos, the logo and the tick box that creates the account. Deliberately

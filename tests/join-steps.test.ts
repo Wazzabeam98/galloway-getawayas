@@ -29,7 +29,11 @@ const {
     firstStepWithProblem,
 } = require('@/lib/joinSteps');
 
-const { TRADES, submitProblems, planForTrade } = require('@/lib/serviceProviders');
+const {
+    TRADES, submitProblems, planForTrade,
+    capabilityFor, pricedOfferingsFor, showsRates, extrasFor, bandsFor,
+    asksAboutFuel, asksAboutSkills, offerableSchemes,
+} = require('@/lib/serviceProviders');
 
 const keys = (trade: string) => stepsFor(trade).map((s: any) => s.key);
 
@@ -54,15 +58,99 @@ test('a plumber sees all five', () => {
     assert.equal(stepNumber('plumber', 'finish'), 5);
 });
 
-test('the three trades with paperwork or skills are the only ones with that step', () => {
+test('the joiner, roofer and painter went from four steps to five', () => {
+    // Approved as the correction rather than the cost: their capability lists
+    // were on a step headed "What you charge" where they set no price.
+    for (const trade of ['joiner', 'roofer', 'painter']) {
+        assert.deepEqual(keys(trade), ['trade', 'business', 'credentials', 'prices', 'finish'],
+            trade + ' has all five');
+        assert.equal(stepCount(trade), 5);
+    }
+});
+
+test('the "what you do" step is exactly the six maintenance trades', () => {
     const withCredentials = TRADES
         .map((t: any) => t.key)
         .filter((trade: string) => stepApplies('credentials', trade));
 
-    // The electrician for Part P, the plumber for gas and oil, the handyman
-    // for skills. Nobody else is asked anything on that step, so nobody else
-    // should be shown it.
-    assert.deepEqual(withCredentials.sort(), ['electrician', 'handyman', 'plumber']);
+    // It was three: the electrician for Part P, the plumber for gas and oil,
+    // the handyman for skills. It is six now, because the capability lists
+    // moved here off the prices step — the joiner, roofer and painter give no
+    // registration and no skills but carry nine to sixteen capability entries
+    // each, which were filed under "What you charge" where they set no price.
+    assert.deepEqual(withCredentials.sort(),
+        ['electrician', 'handyman', 'joiner', 'painter', 'plumber', 'roofer']);
+});
+
+test('registration and skills are never asked of the same trade', () => {
+    // Why the step is not called "Registration". The electrician and plumber
+    // give numbers, the handyman gives skills, and nobody does both — so a
+    // step titled Registration was wrong for the handyman every single time,
+    // not merely sometimes.
+    for (const trade of TRADES.map((t: any) => t.key)) {
+        const hasRegistration = asksAboutFuel(trade)
+            || offerableSchemes({ trade, does_gas: true, does_oil: true }).length > 0;
+
+        assert.equal(hasRegistration && asksAboutSkills(trade), false,
+            trade + ' is asked for registration or skills, never both');
+    }
+});
+
+test('capability sits on the step somebody can see it on, not with the prices', () => {
+    // The regression this replaces: for all six maintenance trades there is
+    // not one priced extra, so the whole of what a roofer saw under "What you
+    // charge" was a list of roofs he can do.
+    for (const trade of ['electrician', 'plumber', 'handyman', 'joiner', 'roofer', 'painter']) {
+        assert.equal(capabilityFor(trade).length > 0, true, trade + ' has capability entries');
+        assert.equal(stepApplies('credentials', trade), true, trade + ' has a step for them');
+    }
+
+    // Four of the six have no priced extra at all. The electrician and roofer
+    // have exactly one each and it stays with the prices -- the split is per
+    // entry, by what the entry is, not "maintenance goes here".
+    for (const trade of ['plumber', 'handyman', 'joiner', 'painter']) {
+        assert.deepEqual(pricedOfferingsFor(trade), [],
+            trade + ' had nothing on the prices step but capability');
+    }
+
+    for (const trade of ['electrician', 'roofer']) {
+        assert.equal(pricedOfferingsFor(trade).length, 1, trade + ' keeps its one priced entry');
+    }
+});
+
+test('the two lists never overlap, for any trade', () => {
+    // The guard on the split itself. An entry counted by both would render
+    // twice, on two different steps; one counted by neither would vanish.
+    for (const trade of TRADES.map((t: any) => t.key)) {
+        const cap = capabilityFor(trade).map((e: any) => e.key);
+        const priced = pricedOfferingsFor(trade).map((e: any) => e.key);
+
+        for (const key of cap) {
+            assert.equal(priced.indexOf(key), -1, key + ' is on one step, not both');
+        }
+
+        assert.equal(cap.length + priced.length, extrasFor(trade).length,
+            trade + ': every extra lands on exactly one step');
+    }
+});
+
+test('the joiner, roofer and painter still have a prices step for the call-out fee', () => {
+    // They set no band price and now have no extras on that step, but they do
+    // charge to turn out. Losing the step would lose the fee.
+    for (const trade of ['joiner', 'roofer', 'painter']) {
+        assert.equal(stepApplies('prices', trade), true, trade + ' still sets a call-out fee');
+        assert.equal(showsRates(trade), true);
+    }
+});
+
+test('the cleaner keeps her two toggles beside her prices rather than gaining a step', () => {
+    // `about` is not capability. Two tick boxes -- own equipment, reports
+    // damage with photos -- that read correctly next to her laundry and hot
+    // tub prices, and would otherwise be a fifth step carrying nothing else.
+    assert.deepEqual(capabilityFor('sponge'), []);
+    assert.equal(pricedOfferingsFor('sponge').length > 0, true);
+    assert.equal(stepApplies('credentials', 'sponge'), false, 'no step gained');
+    assert.deepEqual(keys('sponge'), ['trade', 'business', 'prices', 'finish']);
 });
 
 test('the guest trades have no prices step either, so they see four', () => {
@@ -74,11 +162,12 @@ test('the guest trades have no prices step either, so they see four', () => {
     }
 });
 
-test('a quoted host trade keeps its prices step for the extras alone', () => {
-    // A roofer sets no price -- a re-slate cannot be sized in advance -- but
-    // has sixteen extras to say yes or no to, so there is a step's work there.
+test('a quoted host trade keeps its prices step for the call-out fee', () => {
+    // A roofer sets no price -- a re-slate cannot be sized in advance -- and
+    // since the capability lists moved off this step there are no extras here
+    // either. What is left is the fee he charges to turn out, which is real.
     for (const trade of ['roofer', 'joiner', 'painter']) {
-        assert.equal(stepApplies('prices', trade), true, trade + ' has extras to offer');
+        assert.equal(stepApplies('prices', trade), true, trade + ' charges to turn out');
     }
 });
 
@@ -261,5 +350,31 @@ test('a subscription trade is not asked for a price it does not set', () => {
 
         assert.deepEqual(problemsOnStep(problems, 'prices'), [],
             trade + ' is not held up over a price it never sets');
+    }
+});
+
+test('no trade gets a prices step only for entries that never render', () => {
+    // The trap this guards. `priced` entries -- the electrician's EICR fee and
+    // the roofer's survey -- are counted by pricedOfferingsFor but nothing on
+    // the form draws them, on the long page either. That is a real gap and a
+    // separate one; what must not happen is a step existing solely because of
+    // them, which would be a whole step with nothing on it.
+    //
+    // Both trades keep their prices step for the call-out fee instead, so the
+    // gap costs a field rather than a page.
+    for (const trade of ['electrician', 'roofer']) {
+        assert.equal(pricedOfferingsFor(trade).length, 1);
+        assert.equal(showsRates(trade), true,
+            trade + ' has a prices step for the call-out fee, not for the invisible entry');
+    }
+
+    for (const trade of TRADES.map((t: any) => t.key)) {
+        if (!stepApplies('prices', trade)) continue;
+
+        const standsAlone = bandsFor(trade).length === 0
+            && !showsRates(trade);
+
+        assert.equal(standsAlone, false,
+            trade + ': the prices step is justified by a band or a rate, not by extras alone');
     }
 });

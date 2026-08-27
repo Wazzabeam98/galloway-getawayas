@@ -1362,6 +1362,59 @@ export function offeringsFor(trade: string): ServiceExtra[] {
     return extrasFor(trade).filter((e) => !isPricingGroup(e.group));
 }
 
+// ---------------------------------------------------------------------------
+// CAPABILITY, AND WHAT IT IS NOT
+//
+// The three axes a maintenance trade answers — what has gone wrong, what you
+// can do, how fast you turn out. None of them is a price.
+//
+// Four of the six maintenance trades have no priced extra at all; the
+// electrician and the roofer have exactly one each, and those stay with the
+// prices where they belong. So the split is not "maintenance goes here" — it
+// is per entry, by what the entry is.
+//
+// This is here because the stepped sign-up put them under "What you charge"
+// for a fortnight, on the reasoning that the code calls them extras and step
+// four was "prices and extras". They are extras in the storage sense and a
+// capability list in every sense a person cares about.
+//
+// `about` is deliberately not one of them. It is two toggles on the cleaner —
+// "I bring my own equipment", "I report damage with photos" — and it renders
+// unlabelled beside her laundry and hot-tub prices, where it reads correctly
+// as part of "what else do you offer". Moving it would hand her a fifth step
+// carrying two tick boxes.
+// ---------------------------------------------------------------------------
+
+export const CAPABILITY_GROUPS = ['faults', 'planned', 'availability'] as const;
+
+export function isCapabilityGroup(group: string): boolean {
+    return (CAPABILITY_GROUPS as readonly string[]).indexOf(String(group || '')) !== -1;
+}
+
+export function capabilityFor(trade: string): ServiceExtra[] {
+    return extrasFor(trade).filter((e) => isCapabilityGroup(e.group));
+}
+
+// Everything that belongs beside the prices: the pricing structures, the gated
+// groups that ask before they show a price, and `about`. Anything, in short,
+// that is not capability.
+export function pricedOfferingsFor(trade: string): ServiceExtra[] {
+    return extrasFor(trade).filter((e) => !isCapabilityGroup(e.group));
+}
+
+// Whether the trade is asked for a call-out fee and an hourly rate.
+//
+// Exported rather than recomputed in the form, because the step model and the
+// form both need the answer and a second copy is how they drift. A quoted
+// maintenance trade still charges to turn out for a leak even though the
+// re-slate itself is quoted; a quoted guest trade — a chef, a cake — has no
+// call-out fee and no rates section at all.
+export function showsRates(trade: string): boolean {
+    const model = pricingModelFor(trade);
+    if (model === 'callout_hourly') return true;
+    return model === 'quoted' && groupForTrade(trade) !== null;
+}
+
 export function extraByKey(key: string): ServiceExtra | null {
     return SERVICE_EXTRAS.filter((e) => e.key === key)[0] || null;
 }

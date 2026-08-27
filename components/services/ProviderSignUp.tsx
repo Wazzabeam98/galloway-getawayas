@@ -30,7 +30,9 @@ import {
     initialsFor,
     showsTimeGuide,
     BUILDING_TYPES,
-    offeringsFor,
+    capabilityFor,
+    pricedOfferingsFor,
+    showsRates,
     isPricingGroup,
     groupIsOffered,
     offerableSchemes,
@@ -643,13 +645,27 @@ function ApplicationForm() {
 
     const model = pricingModelFor(trade);
     const tradeExtras = extrasFor(trade);
-    const offerings = offeringsFor(trade);
+    // Split by what the entries ARE rather than by where they are stored.
+    // capabilityFor and pricedOfferingsFor are in serviceProviders so that
+    // lib/joinSteps decides which steps exist off exactly the same answer this
+    // renders off — two copies of that rule is how a step comes to exist with
+    // nothing in it, or content ends up on a step nobody looks at.
+    const capability = capabilityFor(trade);
+    const pricedOfferings = pricedOfferingsFor(trade);
     const extrasIn = (group: string) => tradeExtras.filter((e) => e.group === group);
     // Every group that asks a question before showing its prices. Laundry and
     // hot tubs both do; the mechanism is the group's, not either of theirs.
     const gatedGroups = EXTRA_GROUPS.filter(
         (g: any) => g.gate && !isPricingGroup(g.key) && extrasIn(g.key).length > 0
     );
+
+    // What the "what else do you offer" section can actually draw: the
+    // unlabelled `about` toggles, the gated groups, and the reimbursed ones.
+    // Deliberately NOT pricedOfferings.length — see the section itself.
+    const offersSomethingVisible =
+        extrasIn('about').length > 0
+        || gatedGroups.length > 0
+        || extrasIn('reimbursed').length > 0;
 
     const extraOf = (key: string) => extras[key] || { offered: false, price: '', notes: '' };
     const setExtra = (key: string, field: 'offered' | 'price' | 'notes', value: any) =>
@@ -722,7 +738,10 @@ function ApplicationForm() {
 
     // The maintenance trades, however they charge. A guest-side quoted trade —
     // a chef, a cake — has no call-out fee and no rates section at all.
-    const isCallout = model === 'callout_hourly' || (model === 'quoted' && groupForTrade(trade) !== null);
+    // From serviceProviders, not recomputed here. lib/joinSteps asks the same
+    // function when deciding whether this trade has a prices step at all, and
+    // the two must never be able to disagree about it.
+    const isCallout = showsRates(trade);
 
     const hasSkills = asksAboutSkills(trade);
 
@@ -2551,10 +2570,24 @@ function ApplicationForm() {
                     where it matters: a toggle is comparison, a priced one is
                     part of the ceiling, and a reimbursed one is money that
                     never comes near us. */}
-                {onStep('prices') && offerings.length > 0 && (
+                {/* CAPABILITY — on the "what you do" step, beside the
+                    registration numbers and the skills.
+
+                    This spent a fortnight under "What you charge", because the
+                    code calls these extras and step four was specified as
+                    "prices and extras". They are extras in the storage sense
+                    and a capability list in every sense a person cares about —
+                    a roofer met fifteen tick boxes about roofs under a heading
+                    promising prices, and the handyman's twelve were a step
+                    away from the skills box they belong beside.
+
+                    Split per entry rather than per trade: the electrician's
+                    EICR fee and the roofer's one priced entry stay with the
+                    prices, because those genuinely are prices. */}
+                {onStep('credentials') && capability.length > 0 && (
                     <section className="mb-8">
                         <h2 className="text-sm font-semibold text-slate-900 mb-1.5">
-                            {hasFaults ? 'What do you get called out for?' : 'What else do you offer?'}
+                            {hasFaults ? 'What do you get called out for?' : 'What do you take on?'}
                         </h2>
                         <p className="text-sm text-slate-500 mb-4">
                             {hasFaults
@@ -2562,10 +2595,34 @@ function ApplicationForm() {
                                 : 'All optional. Owners compare on these, so it is worth saying yes to what you actually do.'}
                         </p>
 
-                        {toggleBlock('about', '')}
                         {toggleBlock('faults', groupLabel('faults'))}
                         {toggleBlock('planned', groupLabel('planned'))}
                         {toggleBlock('availability', groupLabel('availability'))}
+                    </section>
+                )}
+
+                {/* What genuinely belongs beside a price: the gated groups that
+                    ask before they show one, and `about` — two toggles on the
+                    cleaner that read correctly next to her laundry and hot-tub
+                    prices, and would be a fifth step carrying nothing else. */}
+                {/* Gated on what will actually appear, not on what the trade
+                    owns. `priced` entries are counted by pricedOfferingsFor
+                    but nothing renders them — the electrician's EICR fee and
+                    the roofer's survey have never appeared on this form, on
+                    the long page either — so going by the count alone gave the
+                    roofer a heading and an intro with nothing underneath.
+                    Empty sections are the same fault as empty steps. */}
+                {onStep('prices') && offersSomethingVisible && (
+                    <section className="mb-8">
+                        <h2 className="text-sm font-semibold text-slate-900 mb-1.5">
+                            What else do you offer?
+                        </h2>
+                        <p className="text-sm text-slate-500 mb-4">
+                            All optional. Owners compare on these, so it is worth saying yes to what you
+                            actually do.
+                        </p>
+
+                        {toggleBlock('about', '')}
 
                         <div className="md:grid md:grid-cols-2 md:gap-4 md:items-start">
                         {gatedGroups.map((group: any) => {
