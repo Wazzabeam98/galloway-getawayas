@@ -2109,11 +2109,14 @@ function ApplicationForm() {
                 {/* What they charge. Driven by the trade rather than by a
                     choice, so two cleaners are always comparable and a host is
                     never asked to weigh a price against a rate. */}
-                {/* The choice, and only for a cleaner the platform bills
-                    itself. A public applicant never reaches this: `kind`
-                    defaults to external, the sign-up never writes it, and the
-                    database refuses an hourly row that is not in-house — so
-                    the question simply is not asked of them. */}
+                {/* The either/or, and the first thing on the prices step for
+                    a cleaner. Every cleaner sees it, a public applicant
+                    included — the in-house gate came off on 29 Aug 2026. What
+                    it costs is written down in lib/serviceProviders.ts above
+                    offersHourlyChoice: an external cleaner on hourly has no
+                    knowable total at acceptance, so her commission cannot be
+                    computed there. Deferred to enquiries, where the hours are
+                    agreed, and nothing is on a live money path yet. */}
                 {onStep('prices') && hourlyAllowed && (
                     <section className="mb-8">
                         <h2 className="text-sm font-semibold text-slate-900 mb-1.5">How do you charge?</h2>
@@ -2123,8 +2126,8 @@ function ApplicationForm() {
 
                         <div className="flex flex-wrap gap-2">
                             {[
-                                { key: 'bands', label: 'A price per house size' },
-                                { key: 'hourly', label: 'An hourly rate' },
+                                { key: 'bands', label: 'A price per clean' },
+                                { key: 'hourly', label: 'A price per hour' },
                             ].map((option) => (
                                 <button
                                     key={option.key}
@@ -2154,7 +2157,7 @@ function ApplicationForm() {
                     <section className="mb-8">
                         <h2 className="text-sm font-semibold text-slate-900 mb-1.5">Your hourly rate</h2>
                         <p className="text-sm text-slate-500 mb-3">
-                            We send the bill, so this is the rate we bill at.
+                            What you charge for an hour of cleaning.
                         </p>
 
                         <div className="flex items-center gap-2 md:max-w-xs">

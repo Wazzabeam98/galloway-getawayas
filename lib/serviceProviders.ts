@@ -588,39 +588,47 @@ export function bandsFor(trade: string): Array<{ key: string; label: string }> {
 // may: for every other trade an hourly rate stays display-only and never
 // enters a total.
 //
-// IN-HOUSE ONLY
+// EVERY CLEANER, NOT ONLY THE IN-HOUSE ONES
 //
-// Bands exist so that two cleaners are comparable and so the total is knowable
-// before the job — an hourly figure as the price is what puts the total after
-// the job, which is the fault they were built to prevent. Cleaning is a 10%
-// commission trade, and commission is taken when the customer is charged at
-// acceptance, so an hourly price has nothing to take a percentage of yet.
+// This was first built gated on `kind = 'in_house'`, and that gate is gone as
+// of 29 Aug 2026. Every cleaner is offered the choice on the prices step,
+// including a public applicant, because a cleaning round that bills by the
+// hour is an ordinary way to run one and refusing to describe it does not make
+// it go away.
 //
-// What makes hourly safe is not the trade, it is who sends the bill. On an
-// in-house provider the platform is billing, knows the hours, and takes no
-// commission from itself. On an external cleaning firm none of that holds.
+// THE CONSEQUENCE, ACCEPTED RATHER THAN SOLVED
 //
-// `kind` is not writable from the browser — the sign-up never sends it and no
-// route sets it, so every public applicant is external and never sees this
-// choice at all. It appears for an in-house cleaner opening their own listing.
-// The database enforces the same rule in a check constraint, because the form
-// is the browser and the browser is not the authority on what anybody charges.
+// The original reasoning was sound and has not been refuted: bands make the
+// total knowable before the job, cleaning takes 10% at acceptance, and an
+// hourly price has nothing to take a percentage of yet. In-house was safe
+// because the platform bills, knows the hours, and takes no commission from
+// itself. None of that holds for an external cleaner on hourly.
+//
+// So there is a real gap: an external hourly cleaner has no knowable total at
+// acceptance and her commission cannot be computed there. It is DEFERRED, on
+// purpose and with the reason written down — nothing is wired into a live
+// money path yet, and the answer belongs with enquiries, where the hours are
+// actually agreed. Whoever builds that must handle it; this comment is the
+// handover, not an oversight.
+//
+// The trade rule is unchanged and still enforced in the database: hourly is
+// cleaning, and nothing else. For every other trade an hourly rate stays
+// display-only and never enters a total.
 // ---------------------------------------------------------------------------
 
 export type PricingChoice = 'bands' | 'hourly';
 
 export function offersHourlyChoice(provider: any): boolean {
     if (!provider) return false;
-    return String(provider.trade || '') === 'sponge'
-        && String(provider.kind || '') === 'in_house';
+    return String(provider.trade || '') === 'sponge';
 }
 
 // What this provider actually charges by.
 //
-// Bands unless the row says otherwise AND is allowed to say so. Reading the
-// permission here as well as the value is what stops a stale 'hourly' — left
-// on a row that has since been switched back to external — being honoured by
-// anything downstream.
+// Bands unless the row says otherwise AND is allowed to say so. The permission
+// is now only about the trade, but it is still read here as well as the value:
+// a row carrying 'hourly' on a trade that may not have it — written directly,
+// or left behind by a trade change — must not be honoured downstream.
 export function pricingChoiceFor(provider: any): PricingChoice {
     if (!provider) return 'bands';
     if (String(provider.pricing_choice || '') !== 'hourly') return 'bands';

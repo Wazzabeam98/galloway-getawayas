@@ -5,10 +5,15 @@
 // the job. Cleaning is a 10% commission trade, so an hourly price has nothing
 // to take a percentage of at acceptance.
 //
-// What makes hourly safe is not the trade, it is who sends the bill: on an
-// in-house provider the platform bills, knows the hours, and takes no
-// commission from itself. That is the whole of the justification, so it is the
-// whole of what is permitted, and most of this file is about holding it there.
+// That reasoning is still true and is no longer the whole rule. The in-house
+// gate came off on 29 Aug 2026: every cleaner is offered the choice, a public
+// applicant included. The consequence was accepted rather than solved — an
+// external hourly cleaner has no knowable total at acceptance, so her
+// commission cannot be computed there, and that is deferred to enquiries where
+// the hours are agreed. Nothing is on a live money path yet.
+//
+// What this file holds the line on now is the TRADE: hourly is cleaning and
+// nothing else, everywhere, at both layers.
 
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
@@ -28,17 +33,20 @@ const {
 
 const { hourlyVisitTotal, serviceCommission } = require('@/lib/pricing');
 
-const inHouseCleaner = (over: any = {}) => ({
-    trade: 'sponge', kind: 'in_house', pricing_choice: 'hourly',
+// Deliberately external. The point of the fixture is that hourly no longer
+// depends on who sends the bill, so the default case here is the one that used
+// to be forbidden.
+const hourlyCleaner = (over: any = {}) => ({
+    trade: 'sponge', kind: 'external', pricing_choice: 'hourly',
     billable_hourly_rate: 18, covered_bands: ['beds_1_2', 'beds_3_4'], ...over,
 });
 
 // --- who may be asked at all ------------------------------------------------
 
-test('only an in-house cleaner is offered the choice', () => {
+test('every cleaner is offered the choice, whoever sends the bill', () => {
     assert.equal(offersHourlyChoice({ trade: 'sponge', kind: 'in_house' }), true);
-    assert.equal(offersHourlyChoice({ trade: 'sponge', kind: 'external' }), false,
-        'a firm that bills its own customers is not ours to bill by the hour');
+    assert.equal(offersHourlyChoice({ trade: 'sponge', kind: 'external' }), true,
+        'a cleaning round that bills by the hour is an ordinary way to run one');
 });
 
 test('no other trade is offered it, in-house or not', () => {
@@ -54,24 +62,28 @@ test('no other trade is offered it, in-house or not', () => {
     }
 });
 
-test('a public applicant is external, so the question never reaches them', () => {
+test('a public applicant is asked it too', () => {
     // `kind` has no default in the browser and no route writes it, so this is
-    // the shape every self-serve sign-up actually has.
-    assert.equal(offersHourlyChoice({ trade: 'sponge' }), false);
-    assert.equal(offersHourlyChoice({ trade: 'sponge', kind: '' }), false);
-    assert.equal(offersHourlyChoice(null), false);
+    // the shape every self-serve sign-up actually has — and it is now exactly
+    // the shape the question is meant to reach.
+    assert.equal(offersHourlyChoice({ trade: 'sponge' }), true);
+    assert.equal(offersHourlyChoice({ trade: 'sponge', kind: '' }), true);
+    assert.equal(offersHourlyChoice(null), false, 'no provider, no choice');
 });
 
 // --- the value is only honoured where it is permitted -----------------------
 
-test('an hourly row that is no longer in-house falls back to bands', () => {
-    // The stale case: switched to in-house, set to hourly, switched back. The
-    // column still says 'hourly'. Reading the permission as well as the value
-    // is what stops anything downstream honouring it.
-    const stale = inHouseCleaner({ kind: 'external' });
+test('an hourly row on a trade that may not have it falls back to bands', () => {
+    // The stale case, on the axis that still exists. Kind no longer decides
+    // anything, but trade does: a row set to hourly as a cleaner and then
+    // moved to another trade still says 'hourly' in the column. Reading the
+    // permission as well as the value is what stops anything downstream
+    // honouring it.
+    const movedTrade = hourlyCleaner({ trade: 'plumber' });
 
-    assert.equal(pricingChoiceFor(stale), 'bands');
-    assert.equal(pricingChoiceFor(inHouseCleaner()), 'hourly');
+    assert.equal(pricingChoiceFor(movedTrade), 'bands');
+    assert.equal(pricingChoiceFor(hourlyCleaner()), 'hourly',
+        'an external cleaner on hourly is honoured now, not downgraded');
 });
 
 test('bands is the answer for everybody who has not said otherwise', () => {
@@ -97,7 +109,7 @@ test('an hourly cleaner is covered exactly where she said, and does not vanish',
     // banded rule she would drop out of every list at once -- and a provider
     // who appears nowhere looks exactly like a provider nobody searched for,
     // which is why nobody would have noticed.
-    const hourly = inHouseCleaner();
+    const hourly = hourlyCleaner();
 
     assert.equal(coversBand(hourly, {}, 'beds_1_2'), true);
     assert.equal(coversBand(hourly, {}, 'beds_3_4'), true);
@@ -113,7 +125,7 @@ test('an hourly cleaner is covered exactly where she said, and does not vanish',
 test('an hourly cleaner ignores band prices, and a banded one ignores the array', () => {
     // The two routes must not read each other's answer, or a leftover from
     // one shape would decide coverage in the other.
-    const hourlyWithStalePrices = inHouseCleaner({ covered_bands: ['beds_5_plus'] });
+    const hourlyWithStalePrices = hourlyCleaner({ covered_bands: ['beds_5_plus'] });
     assert.equal(coversBand(hourlyWithStalePrices, { beds_1_2: { price: '80' } }, 'beds_1_2'), false);
     assert.equal(coversBand(hourlyWithStalePrices, {}, 'beds_5_plus'), true);
 
@@ -174,17 +186,28 @@ test('an hourly cleaner who names no sizes is refused rather than hidden', () =>
     assert.equal(problems.some((p: any) => p.field === 'covered_bands'), true);
 });
 
-test('an external cleaner sending pricing_choice hourly is validated as banded', () => {
-    // There is no path where the form accepts a rate the database would then
-    // refuse: the check constraint says hourly is cleaning AND in-house, and
-    // this says the same thing one layer up.
+test('an external cleaner on hourly is validated as hourly, not banded', () => {
+    // The inverse of what this asserted before the gate came off. She is not
+    // held to "price at least one size" any more, because she prices none.
     const problems = pricingProblems(draft({
         kind: 'external', pricing_choice: 'hourly', billable_hourly_rate: '18',
         covered_bands: ['beds_1_2'],
     }));
 
+    assert.deepEqual(problems, []);
+});
+
+test('a non-cleaner sending pricing_choice hourly is still validated as banded', () => {
+    // The half of the old rule that stands. There is no path where the form
+    // accepts a rate the database would then refuse: the check constraint says
+    // hourly is cleaning, and this says the same thing one layer up.
+    const problems = pricingProblems(draft({
+        trade: 'droplet', pricing_choice: 'hourly', billable_hourly_rate: '18',
+        covered_bands: ['beds_1_2'],
+    }));
+
     assert.equal(problems.some((p: any) => p.field === 'prices'), true,
-        'she is held to the banded rules, rate or no rate');
+        'held to the banded rules, rate or no rate');
 });
 
 // --- the arithmetic ---------------------------------------------------------
@@ -220,8 +243,15 @@ test('the multiplication is not in serviceProviders, where the hours guard looks
 });
 
 test('an in-house cleaner is billed by us and charged no commission on top', () => {
-    // Why hourly is safe here and nowhere else, stated as a number: in-house
-    // takes no commission, so there is no ceiling for the missing total to
-    // have been a percentage of.
+    // Still true, and no longer the justification for anything. In-house takes
+    // no commission, so there is no ceiling for a missing total to have been a
+    // percentage of.
+    //
+    // For an EXTERNAL hourly cleaner there is no assertion here to make yet:
+    // the total is not known at acceptance, so the 10% cannot be computed
+    // there. That is the deferred consequence recorded in
+    // 20260830_cleaning_hourly_any_cleaner.sql, and it is a gap in the design
+    // rather than in this file. When enquiries settle the hours, it gets a
+    // test.
     assert.equal(serviceCommission(hourlyVisitTotal(18, 3), 0), 0);
 });
