@@ -63,7 +63,7 @@ import EnquiryForm from '@/components/services/EnquiryForm';
 // whether or not anything renders it.
 //
 // BE CLEAR ABOUT WHAT THAT DOES AND DOES NOT ACHIEVE. It stops this page
-// leaking them. It does not make them private — 20260829_provider_status_grants
+// leaking them. It does not make them private — 20260827185827_provider_status_grants
 // grants `select` on the whole of service_providers to anon, so anybody with
 // the public key can read every approved provider's number directly. Not
 // fetching them here is politeness, not a wall, and the wall wants a table of

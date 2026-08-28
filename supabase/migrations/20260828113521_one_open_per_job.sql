@@ -2,7 +2,7 @@
 --
 -- WHAT WENT WRONG
 --
--- 20260831 put one live enquiry per (host, provider, trade) and stopped there.
+-- 20260828104048 put one live enquiry per (host, provider, trade) and stopped there.
 -- The rule was written against duplicate nagging — the same thing sent four
 -- times because nobody answered — and on that it was right. But "the same
 -- thing" was defined as "the same tradesman", which is much broader, and the

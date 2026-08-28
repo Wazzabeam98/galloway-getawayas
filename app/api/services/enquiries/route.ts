@@ -22,7 +22,7 @@ export const dynamic = 'force-dynamic';
 //
 // WHY THE ROW IS WRITTEN HERE AND NOT FROM THE BROWSER
 //
-// The column grants in 20260831_service_enquiries.sql let a signed-in host
+// The column grants in 20260828104048_service_enquiries.sql let a signed-in host
 // insert the fields that describe the job — and nothing else. The reference,
 // the deadline, the status and the reply token are the platform's, because a
 // host who could set their own `expires_at` could set it to next year and a
@@ -251,7 +251,7 @@ export async function POST(req: Request) {
             lastError = error;
 
             // One live enquiry per host, per provider, per trade, PER URGENCY
-            // and per property — see 20260902_one_open_per_job.sql. A pending
+            // and per property — see 20260828113521_one_open_per_job.sql. A pending
             // quote no longer blocks a burst pipe, and two cottages with two
             // different faults are two enquiries.
             //

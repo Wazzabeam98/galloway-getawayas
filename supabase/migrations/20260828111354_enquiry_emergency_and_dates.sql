@@ -6,7 +6,7 @@
 -- 1. THE EMERGENCY REVERSAL
 -- ---------------------------------------------------------------------------
 --
--- 20260831 built an emergency as no enquiry at all: the number went straight to
+-- 20260828104048 built an emergency as no enquiry at all: the number went straight to
 -- the host and the row was written afterwards as a record. That is reversed
 -- here, and the reason is not about the host.
 --
@@ -59,7 +59,7 @@
 --   select status, urgency, count(*) from public.service_enquiries
 --    group by status, urgency;
 --
--- RUN AFTER 20260831. Safe to run twice. Run on test first, then production.
+-- RUN AFTER 20260828104048. Safe to run twice. Run on test first, then production.
 
 -- The rows move before the constraint, or the new check rejects them.
 update "public"."service_enquiries"

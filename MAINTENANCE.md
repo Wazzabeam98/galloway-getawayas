@@ -596,6 +596,38 @@ Please:
   from anything stable across attempts left a four-hour window in which a
   manual re-run recorded a refusal that never happened.
 
+## Two things noticed about the real listings, neither fixed
+
+Found on 28 August 2026 while checking whether the services shop could work
+out where a property is without asking. Both are recorded rather than fixed,
+deliberately — neither is urgent and both want a decision rather than a patch.
+
+**Two listings share one set of coordinates.** Read off the public site:
+
+| Listing | Coordinates |
+|---|---|
+| 4 bedroom Townhouse, Kirkcudbright | 54.83804, −4.04878 |
+| Modern 3 Bedroom, Kirkcudbright | 54.8352482, −4.0543927 |
+| Modern Cottage, with Hot Tub | 54.8352482, −4.0543927 |
+
+The second and third are identical to seven decimal places, which is not two
+buildings a few doors apart — it is one geocode being inherited. Harmless for
+the services shop, which only asks whether a point falls inside a coverage
+circle and gets the same answer either way. It would stop being harmless the
+day anything uses the coordinates to tell the two apart: a distance sort, a
+map with two pins, a "nearest tradesman" that quietly measures from the wrong
+house.
+
+**`location` is hand-typed and already spelled two ways.** "Kirkcudbright,
+Dumfries and Galloway" on two of them, "Kirkcudbright, Dumfries & Galloway"
+on the third. Nothing is broken by it today: `townForLocation` reads the town
+from its own comma-separated part and never looks at the region, and
+`lib/places.ts` normalises to letters only. But a free-text field holding the
+same place two ways will eventually be grouped, counted or matched by
+something that compares it whole, and that is the day it costs an afternoon.
+`buildLocation` in `lib/places.ts` is the one place it is assembled, so the
+fix has somewhere to live when it is wanted.
+
 ## The service tables were briefly split, and are not any more
 
 `service_providers` was split into a business and its trade listings for a few
