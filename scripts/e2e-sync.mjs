@@ -13,8 +13,19 @@
 // e2e/global-setup.ts makes that rot loud instead of silent; this script is the
 // one-command answer to it, so the loud failure has somewhere to go.
 //
-// It never touches your working tree or your current branch: the remote branch
-// is moved by pushing origin/master straight at it.
+// It never touches your working tree or your current branch: a commit object is
+// built from master's tree with plumbing and pushed straight at the remote
+// branch.
+//
+// WHY NOT JUST PUSH master's COMMIT AT THE BRANCH. Because Vercel will not
+// build it. A commit SHA it has already deployed once — and every master commit
+// has been deployed to production — produces no new deployment when it appears
+// on another branch. Verified the hard way: the branch was created at master's
+// SHA and Vercel built nothing at all for ten minutes.
+//
+// So the branch carries its own commit, with master's tree and master as its
+// parent. Different SHA, so it builds; identical tree, so the code deployed is
+// byte-for-byte master. The guard compares TREES for exactly this reason.
 //
 // Usage:
 //   node scripts/e2e-sync.mjs            sync, then wait for the build
@@ -56,21 +67,28 @@ const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 
 git('fetch origin master --quiet', true);
 const master = git('rev-parse origin/master', true);
-console.log(`origin/master is ${master.slice(0, 7)}`);
+const tree = git('rev-parse origin/master^{tree}', true);
+console.log(`origin/master is ${master.slice(0, 7)} (tree ${tree.slice(0, 7)})`);
 
-// Absent the first time, which is not an error: the branch is created by the
-// push below.
-let before = null;
-try { before = git(`rev-parse origin/${E2E_BRANCH}`, true); } catch { before = null; }
+// Absent the first time, which is not an error: the branch is created below.
+let head = null;
+try {
+    git(`fetch origin ${E2E_BRANCH} --quiet`, true);
+    head = git(`rev-parse origin/${E2E_BRANCH}`, true);
+} catch {
+    head = null;
+}
 
-if (before === master) {
-    console.log(`${E2E_BRANCH} is already at master`);
+const currentTree = head ? git(`rev-parse ${head}^{tree}`, true) : null;
+let target = head;
+
+if (currentTree === tree) {
+    console.log(`${E2E_BRANCH} already carries master's tree`);
 } else {
-    // Straight from origin/master to the remote branch. No checkout, no merge,
-    // no chance of dragging local work along: whatever is on the branch is
-    // replaced by exactly what is on master.
-    console.log(`moving ${E2E_BRANCH} to ${master.slice(0, 7)}...`);
-    git(`push origin ${master}:refs/heads/${E2E_BRANCH} --force`);
+    // master's tree, master as parent, its own SHA so that Vercel builds it.
+    target = git(`commit-tree ${tree} -p ${master} -m "e2e-preview: master ${master.slice(0, 7)}"`, true);
+    console.log(`pushing ${target.slice(0, 7)} — master's tree on ${E2E_BRANCH}...`);
+    git(`push origin ${target}:refs/heads/${E2E_BRANCH} --force`);
 }
 
 if (!wait) process.exit(0);
@@ -85,13 +103,13 @@ const deadline = Date.now() + 10 * 60 * 1000;
 while (Date.now() < deadline) {
     const list = (await vercel(`/v6/deployments?projectId=${link.projectId}&limit=40`)).deployments || [];
     const mine = list.filter(
-        (d) => d.meta?.githubCommitRef === E2E_BRANCH && d.meta?.githubCommitSha === master
+        (d) => d.meta?.githubCommitRef === E2E_BRANCH && d.meta?.githubCommitSha === target
     );
 
     if (mine.length) {
         const state = mine[0].readyState || mine[0].state;
         if (state === 'READY') {
-            console.log(`\nREADY — ${E2E_BRANCH} is at ${master.slice(0, 7)}`);
+            console.log(`\nREADY — ${E2E_BRANCH} carries master ${master.slice(0, 7)}`);
             console.log(`  https://${mine[0].url}`);
             console.log('\nThe suite can run:  npm run test:e2e');
             process.exit(0);

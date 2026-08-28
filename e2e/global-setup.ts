@@ -163,25 +163,41 @@ export default async function globalSetup(config: FullConfig) {
         // Best effort: offline, or no remote, falls through to whatever the
         // last fetch left behind, which is still better than nothing.
         git('fetch origin master --quiet');
+        if (health.branch) git(`fetch origin ${health.branch} --quiet`);
 
-        const master = git('rev-parse origin/master');
-        const head = git('rev-parse HEAD');
-        const known = git(`cat-file -e ${deployed}^{commit} && echo ok`) !== null;
+        // TREES, not commit SHAs.
+        //
+        // The e2e preview cannot carry master's own commit: Vercel will not
+        // build a SHA it has already deployed, and every master commit has been
+        // deployed to production. So scripts/e2e-sync.mjs gives the branch its
+        // own commit holding master's tree.
+        //
+        // Comparing trees is also the better question. "Is the deployed code
+        // the same code as master" is what actually matters, and it stays true
+        // however the branch was built — commit-tree, cherry-pick or merge.
+        const masterTree = git("rev-parse 'origin/master^{tree}'");
+        const headTree = git("rev-parse 'HEAD^{tree}'");
+        const known = git(`cat-file -e '${deployed}^{commit}' && echo ok`) !== null;
+        const deployedTree = known ? git(`rev-parse '${deployed}^{tree}'`) : null;
         const allowStale = process.env.PLAYWRIGHT_ALLOW_STALE === '1';
 
-        const current = deployed === master || deployed === head;
+        const current = !!deployedTree
+            && (deployedTree === masterTree || deployedTree === headTree);
 
         if (!current) {
-            const behind = known && master ? git(`rev-list --count ${deployed}..${master}`) : null;
+            const behind = known ? git(`rev-list --count ${deployed}..origin/master`) : null;
             const detail = !known
                 ? [`The deployed commit ${deployed.slice(0, 7)} is not in this checkout.`,
                    'Run `git fetch` and try again.']
                 : behind && behind !== '0'
                   ? [`The deployed build is ${behind} commit(s) BEHIND origin/master.`,
                      `  deployed  ${deployed.slice(0, 7)}  (${health.branch || 'unknown branch'})`,
-                     `  master    ${(master || '').slice(0, 7)}`]
-                  : [`The deployed commit ${deployed.slice(0, 7)} is neither origin/master`,
-                     `nor your HEAD ${(head || '').slice(0, 7)}.`];
+                     `  tree      ${(deployedTree || '?').slice(0, 7)}`,
+                     `  master    ${(masterTree || '?').slice(0, 7)}`]
+                  : ['The deployed build carries a different tree from both',
+                     'origin/master and your working copy.',
+                     `  deployed  ${(deployedTree || '?').slice(0, 7)}`,
+                     `  master    ${(masterTree || '?').slice(0, 7)}`];
 
             if (allowStale) {
                 warn(['RUNNING AGAINST A STALE BUILD — because PLAYWRIGHT_ALLOW_STALE=1.',
