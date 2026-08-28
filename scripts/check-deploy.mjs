@@ -150,9 +150,9 @@ function compareWorkingCopy(deployedSha, latestSha, latestState) {
             INITIALIZING: 'is INITIALIZING — not live yet',
             ERROR: 'FAILED TO BUILD — it will never go live as it stands',
             CANCELED: 'was CANCELLED — it will not go live',
-            READY: 'is BUILT but NOT YET LIVE — it has not replaced the live build',
+            READY: 'is BUILT but NOT YET LIVE — it has not replaced the live build above',
         }[latestState] || `is ${latestState || 'in an unknown state'} — not live`;
-        console.log(`  your commit ${word} — see the newer build above`);
+        console.log(`  your commit ${word}`);
     } else {
         // rev-list needs both commits present locally. After a fetch they will
         // be; on a fresh clone or an unfetched branch they may not, and saying
