@@ -209,7 +209,7 @@ export function audienceLabel(audience: string): string {
 // The obvious shortcut is `pricingModelFor(trade) === 'quoted'`. It is wrong
 // twice over: it would sweep in all four guest trades, and it keys money off
 // a value that describes something else. This file has already been bitten by
-// exactly that — see canBeRequested below, which used the pricing model as a
+// exactly that — see canBeBooked below, which used the pricing model as a
 // proxy until the roofer, joiner and painter moved to `quoted` and it quietly
 // changed meaning. How a trade prices is free to be re-shuffled; what it pays
 // is not, so it is written down.
@@ -221,7 +221,7 @@ export function audienceLabel(audience: string): string {
 // one cannot arrive unplaced.
 //
 // The maintenance group is not a billing concept and must not become one. It
-// is a heading on the trade picker. `canBeRequested` and the rates section on
+// is a heading on the trade picker. `canBeBooked` and the rates section on
 // the sign-up both read it, and both are asking about something else.
 // ---------------------------------------------------------------------------
 
@@ -703,19 +703,27 @@ export function showsTimeGuide(trade: string): boolean {
     return trade !== 'droplet';
 }
 
-// Whether a host can ask for this through the site, rather than being given
-// somebody to ring.
+// Whether a job in this trade can be agreed, priced and completed through the
+// site — the BOOKING path.
 //
 // This used to read `pricingModelFor(trade) !== 'callout_hourly'`, which was a
 // proxy for the real rule and stopped being true the moment the roofer, the
-// joiner and the painter moved to `quoted` — they would have become
-// requestable, with no price, no total and no completion step behind them, and
-// every test would still have passed because they all named the plumber.
+// joiner and the painter moved to `quoted` — they would have become bookable,
+// with no price, no total and no completion step behind them, and every test
+// would still have passed because they all named the plumber.
 //
 // The rule is about maintenance, not about how it is priced. So it asks that
-// instead: nothing in the maintenance group can be requested until quoting and
+// instead: nothing in the maintenance group can be booked until quoting and
 // completion exist, however that trade happens to charge.
-export function canBeRequested(trade: string): boolean {
+//
+// IT WAS CALLED canBeRequested UNTIL PHASE TWO, and the rename is the whole
+// point rather than tidying. "Requested" had one meaning while there was one
+// path; the moment a host could ask a plumber to come and look, the old name
+// asserted the opposite of what the site does — a plumber is very much
+// requestable now. The rule underneath has not moved a millimetre: the reason
+// maintenance cannot be BOOKED is still that there is no quote, no total and
+// nothing that observes a job finishing.
+export function canBeBooked(trade: string): boolean {
     return groupForTrade(trade) === null;
 }
 
@@ -725,7 +733,7 @@ export function canBeRequested(trade: string): boolean {
 // Two different questions that were one function for as long as there was only
 // one answer to give.
 //
-// `canBeRequested` above asks whether a job can be agreed, priced and
+// `canBeBooked` above asks whether a job can be agreed, priced and
 // completed through the site — and the reason it says no to maintenance has
 // not gone away: there is still no quote, no total and no completion step.
 // That is the BOOKING path and it does not exist for anybody yet.
@@ -768,8 +776,8 @@ export const SHOP_TRADES = [
 //
 // Read from the list rather than derived from the plan. Deriving it would say
 // "every subscription trade" and be wrong about gardening for a reason that
-// has nothing to do with money — which is exactly the trap
-// `canBeRequested` fell into when it derived itself from the pricing model.
+// has nothing to do with money — which is exactly the trap `canBeBooked` fell
+// into when it derived itself from the pricing model.
 export function canBeEnquiredAbout(trade: string): boolean {
     return (SHOP_TRADES as readonly string[]).indexOf(String(trade || '')) !== -1;
 }
@@ -1959,7 +1967,7 @@ export function calloutLine(
 // nothing and showed nothing. The row simply never appeared, and the first
 // anybody heard of it was a provider asking why their tag never went live.
 //
-// Same shape as canBeRequested reading "not priced by the hour" instead of
+// Same shape as canBeBooked reading "not priced by the hour" instead of
 // "not maintenance": the page asserted the list of reasons that existed rather
 // than the rule, which is "show me anything waiting on me".
 //

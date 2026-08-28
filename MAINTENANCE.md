@@ -717,11 +717,12 @@ date.
 - `lib/places.ts` — the only place a free-text location is parsed
   (`publicArea` / `townOf` / `townKey`).
 - `lib/serviceProviders.ts` — the trade vocabulary and every rule about a
-  provider. `canBeRequested` — being renamed to `canBeBooked` — and
-  `canBeEnquiredAbout` are two different questions and deliberately disagree
-  about maintenance: a plumber can be asked to come and look, and cannot be
-  booked and charged, because quoting and completion do not exist.
-  `SHOP_TRADES` is the list a host can enquire about.
+  provider. `canBeBooked` and `canBeEnquiredAbout` are two different questions
+  and deliberately disagree about maintenance: a plumber can be asked to come
+  and look, and cannot be booked and charged, because quoting and completion
+  do not exist. `SHOP_TRADES` is the list a host can enquire about.
+  `canBeBooked` was `canBeRequested` until phase two; the rule never moved,
+  the name had simply started asserting the opposite of what the site does.
 - `lib/serviceEnquiries.ts` — what an enquiry is, its states, and the words
   each side reads. No money anywhere in it, on purpose: every trade that
   reaches the flow is on the subscription, so there is no total, no

@@ -21,7 +21,7 @@ const {
     TRADE_GROUPS,
     HOST_TRADES,
     COMMISSION_HOST_TRADES,
-    canBeRequested,
+    canBeBooked,
     planForTrade,
     pricingModelFor,
     commissionRateFor,
@@ -204,24 +204,28 @@ test('the maintenance group is not what decides the plan', () => {
 // A consequence of the move, pinned because it is new.
 //
 // Until gardening and window cleaning changed sides, every subscription trade
-// happened to be one nobody could request — they are all in the maintenance
-// group, and canBeRequested excludes that whole group. So "subscription means
-// nothing is ever requested" was accidentally true, and is the kind of thing
-// that gets relied on without being written down.
+// happened to be one nobody could book — they are all in the maintenance
+// group, and canBeBooked excludes that whole group. So "subscription means
+// nothing is ever booked" was accidentally true, and is the kind of thing that
+// gets relied on without being written down.
 //
-// It is not true now. A gardening enquiry is requestable and its provider pays
-// no commission, so whatever builds enquiries has to take the rate from
-// commissionRateFor rather than assuming a requestable job is a chargeable one.
-test('a requestable trade can be on the subscription, and pays nothing per job', () => {
+// It is not true now. A gardening job is bookable and its provider pays no
+// commission, so whatever builds bookings has to take the rate from
+// commissionRateFor rather than assuming a bookable job is a chargeable one.
+//
+// This test said "requestable" and "a gardening enquiry" when it was written,
+// which now reads as a claim about the enquiry flow — and would be wrong about
+// gardening, which is not in it. Same assertions, accurate words.
+test('a bookable trade can be on the subscription, and pays nothing per job', () => {
     for (const trade of ['trees', 'droplet']) {
-        assert.equal(canBeRequested(trade), true, trade + ' can be requested');
+        assert.equal(canBeBooked(trade), true, trade + ' can be booked');
         assert.equal(planForTrade(trade), 'subscription');
         assert.equal(commissionRateFor({ trade, commission_rate: 0.10 }), 0,
             trade + ' is requestable and still pays nothing per job');
     }
 
     // The pair it used to be safe to conflate.
-    assert.equal(canBeRequested('sponge'), true);
+    assert.equal(canBeBooked('sponge'), true);
     assert.equal(commissionRateFor({ trade: 'sponge', plan: 'commission', commission_rate: 0.10 }), 0.10);
 });
 
