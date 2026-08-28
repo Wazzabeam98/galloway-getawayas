@@ -50,7 +50,6 @@ import {
     hostStatusSummary,
     requestedWhen,
     clockTime,
-    EMERGENCY_MINUTES,
 } from '@/lib/serviceEnquiries';
 
 export interface AlertResult {
@@ -142,10 +141,15 @@ export async function announceEnquiry(
         // is telling him that doing nothing has the same outcome as saying
         // yes, which is the opposite of the pressure that is wanted. What is
         // true and useful is that it is urgent and it came only to him.
+        // Louder, and honest about the cost of ignoring it. Nothing is handed
+        // over if he says nothing — the enquiry simply dies and the owner is
+        // told to ring somebody else, which is a fact about HIS work rather
+        // than a promise to them.
         const opening = emergency
             ? '<p style="margin:0 0 16px;font-size:16px;">A property owner has an <strong>emergency</strong> '
-                + 'and has asked for you. Please answer as quickly as you can — nobody else has been sent '
-                + 'this.</p>'
+                + 'and has asked for you. Nobody else has been sent this. '
+                + '<strong>If we do not hear from you shortly we will tell them to try somebody '
+                + 'else</strong> — a quick no is worth as much to them as a yes.</p>'
             : '<p style="margin:0 0 16px;font-size:16px;">A property owner has asked for you by name. '
                 + 'Nobody else has been sent this — it came to you only.</p>';
 
@@ -219,8 +223,9 @@ export async function announceEnquiry(
             ? '<p style="margin:0 0 16px;font-size:16px;"><strong>' + escapeHtml(String(enquiry.host_name || 'A host'))
                 + '</strong> has an emergency and has asked <strong>'
                 + escapeHtml(String(enquiry.business_name || ''))
-                + '</strong>. Their number is released automatically at '
-                + escapeHtml(clockTime(enquiry.expires_at)) + ' if he has not answered.</p>'
+                + '</strong>. If he has not answered by '
+                + escapeHtml(clockTime(enquiry.expires_at))
+                + ' it expires and they are told to try somebody else — nothing is handed over.</p>'
             : '<p style="margin:0 0 16px;font-size:16px;"><strong>' + escapeHtml(String(enquiry.host_name || 'A host'))
                 + '</strong> has asked <strong>' + escapeHtml(String(enquiry.business_name || ''))
                 + '</strong> to look at something.</p>'
@@ -334,81 +339,34 @@ export async function announceResponse(
 // NOBODY ANSWERED
 // ---------------------------------------------------------------------------
 //
-// The same silence with two opposite endings. Ordinary work: try somebody
-// else. An emergency: here is his number, ring him.
+// One ending, whatever the urgency: the host is told to try somebody else and
+// the platform hands over nothing. An emergency is no different — it simply
+// got here faster.
 //
-// The provider is emailed on a release and NOT on an expiry, which looks
-// inconsistent and is not. A release means a stranger is about to ring him
-// about a job he never answered — he needs to know why, and what it is. An
-// expiry means nothing further happens to him, and a message saying "that
-// thing you ignored has stopped mattering" is somebody else's evening.
+// The tradesman is not emailed. Nothing further happens to him, and a message
+// saying "that thing you ignored has stopped mattering" is somebody else's
+// evening. What he loses is the job, which is the only lever worth having.
 
-export async function announceSilence(
+export async function announceExpiry(
     enquiry: any,
-    provider: any,
-    listing: any,
-    outcome: 'released' | 'expired'
+    listing: any
 ): Promise<AlertResult> {
     const result: AlertResult = { ok: true, provider: false, host: false, admins: [] };
-    const released = outcome === 'released';
     const name = String(enquiry.business_name || 'them');
     const seen = String(enquiry.status || '') === 'viewed' || !!enquiry.viewed_at;
 
-    // ---- the host ---------------------------------------------------------
     if (enquiry.host_email && !isAutomatedTestAddress(enquiry.host_email)) {
-        const body = released
-            ? '<p style="margin:0 0 16px;font-size:16px;">' + escapeHtml(name)
-                + ' has not come back to us, and an emergency does not wait. '
-                + '<strong>Here is their number — ring them.</strong> We have emailed them so they know what '
-                + 'it is about.</p>'
-                + detailRows([
-                    { label: 'Phone', value: escapeHtml(String((provider && provider.contact_phone) || '—')) },
-                    { label: 'Email', value: escapeHtml(String((provider && provider.contact_email) || '—')) },
-                ])
-                + '<p style="margin:16px 0 0;font-size:15px;color:#6b7280;">If you cannot get hold of them, '
-                + 'there are others who cover you.</p>'
-                + button(SITE_URL + '/services/' + String(enquiry.trade || ''), 'See who else covers you')
-            : '<p style="margin:0 0 16px;font-size:16px;">' + escapeHtml(name)
-                + (seen
-                    ? ' opened your enquiry but has not answered.'
-                    : ' has not answered your enquiry.')
-                + ' We would try somebody else rather than wait any longer.</p>'
-                + button(SITE_URL + '/services/' + String(enquiry.trade || ''), 'See who else covers you');
-
         result.host = await sendEmail(
             String(enquiry.host_email),
-            (released
-                ? "Here is " + name + "'s number"
-                : 'No answer from ' + name)
-                + ' (' + String(enquiry.reference) + ')',
+            'No answer from ' + name + ' (' + String(enquiry.reference) + ')',
             emailLayout(
-                body,
+                '<p style="margin:0 0 16px;font-size:16px;">' + escapeHtml(name)
+                    + (seen
+                        ? ' opened your enquiry but has not answered.'
+                        : ' has not answered your enquiry.')
+                    + ' We would try somebody else rather than wait any longer.</p>'
+                    + button(SITE_URL + '/services/' + String(enquiry.trade || ''), 'See who else covers you'),
                 'You are receiving this because you asked a tradesman for help through Galloway Getaways.'
-            )
-        );
-    }
-
-    // ---- the tradesman, on a release only ---------------------------------
-    if (released && provider && provider.contact_email
-        && !isAutomatedTestAddress(provider.contact_email)) {
-        result.provider = await sendEmail(
-            String(provider.contact_email),
-            'They have your number now (' + String(enquiry.reference) + ')',
-            emailLayout(
-                // The ONE place the mechanism is named to a tradesman, and it
-                // is after it has already happened. Before the event it would
-                // read as permission to ignore the email.
-                '<p style="margin:0 0 16px;font-size:16px;">We did not hear back on this one quickly enough '
-                    + 'and it was an emergency, so we have given '
-                    + escapeHtml(String(enquiry.host_name || 'the owner'))
-                    + ' your number rather than leave them with nothing. They may ring shortly.</p>'
-                    + summaryBlock(enquiry)
-                    + detailRows(jobRows(enquiry, listing))
-                    + '<p style="margin:16px 0 0;font-size:15px;color:#6b7280;">Answering inside the window is '
-                    + 'better for both of you — it is how we know the work came from us, and it is what we '
-                    + 'point at when the subscription comes up.</p>',
-                'You are receiving this because you are listed on Galloway Getaways and turn out to '
-                + 'emergencies.'
             )
         );
     }
@@ -416,15 +374,12 @@ export async function announceSilence(
     result.admins = await tellTheAdmins(
         enquiry,
         listing,
-        (released ? 'Released: ' : 'No answer: ') + name + ' (' + String(enquiry.reference) + ')',
-        released
-            ? '<p style="margin:0 0 16px;font-size:16px;"><strong>' + escapeHtml(name)
-                + '</strong> did not answer an emergency inside '
-                + EMERGENCY_MINUTES + ' minutes, so their number went across automatically. '
-                + 'No accept on this one — it does not count as work we can show them.</p>'
-            : '<p style="margin:0 0 16px;font-size:16px;"><strong>' + escapeHtml(name)
-                + '</strong> never answered '
-                + escapeHtml(String(enquiry.host_name || 'a host')) + "'s enquiry.</p>"
+        'No answer: ' + name + ' (' + String(enquiry.reference) + ')',
+        '<p style="margin:0 0 16px;font-size:16px;"><strong>' + escapeHtml(name)
+            + '</strong> never answered ' + escapeHtml(String(enquiry.host_name || 'a host'))
+            + "'s "
+            + (isEmergency(String(enquiry.urgency || '')) ? '<strong>emergency</strong>' : 'enquiry')
+            + '.</p>'
     );
 
     return result;

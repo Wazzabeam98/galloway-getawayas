@@ -5,6 +5,7 @@ import Link from 'next/link';
 import { createClientComponentClient } from '@supabase/auth-helpers-nextjs';
 import { toast } from 'react-toastify';
 import { X } from 'lucide-react';
+import DatePicker from '@/components/services/DatePicker';
 import {
     faultOptions,
     URGENCY_LEVELS,
@@ -425,7 +426,12 @@ export default function EnquiryForm({
                 went back to reword the description. */}
             <div className="space-y-5" style={{ display: step === 2 ? undefined : 'none' }}>
                 {planned && (
-                    <div className="rounded-xl border border-slate-300 p-4 space-y-3">
+                    // No wrapper border. It used to sit in one, which put a
+                    // bordered box inside a bordered box — boxy on a desktop,
+                    // and on a phone its padding ate 32px of the width seven
+                    // calendar columns have to share, dropping each day to
+                    // 35px. The heading carries the group perfectly well.
+                    <div className="space-y-3">
                         {/* A REQUEST, AND IT HAS TO READ AS ONE.
                             Nothing here knows whether he is free that day,
                             nothing holds the window, and nothing stops four
@@ -441,16 +447,13 @@ export default function EnquiryForm({
                             they get back to you — nothing here books a slot.
                         </p>
 
-                        <label className="block">
+                        <div>
                             <span className="text-sm text-slate-700">Day</span>
-                            <input
-                                type="date"
-                                value={preferredDate}
-                                onChange={(e) => setPreferredDate(e.target.value)}
-                                className="mt-1.5 w-full rounded-xl border border-slate-300 px-3 py-2.5"
-                            />
+                            <div className="mt-1.5">
+                                <DatePicker value={preferredDate} onChange={setPreferredDate} />
+                            </div>
                             <Problem problems={problems} field="preferred_date" />
-                        </label>
+                        </div>
 
                         <label className="block">
                             <span className="text-sm text-slate-700">Time</span>
@@ -558,7 +561,7 @@ function Shell({
                 border instead of the end of the screen.
             */}
             <div className="w-full max-w-lg max-h-[calc(100dvh-1.5rem)] sm:max-h-[calc(100dvh-3rem)] rounded-2xl bg-white shadow-xl flex flex-col overflow-hidden">
-                <div className="flex items-start justify-between gap-4 px-6 pt-6 pb-4 border-b border-slate-200">
+                <div className="flex items-start justify-between gap-4 px-4 sm:px-6 pt-6 pb-4 border-b border-slate-200">
                     <div>
                         <h2 className="text-xl font-bold text-slate-900">{title}</h2>
                         {step && <p className="text-xs text-slate-500 mt-0.5">{step}</p>}
@@ -568,12 +571,12 @@ function Shell({
                     </button>
                 </div>
 
-                <div ref={scroller} className="flex-1 overflow-y-auto px-6 py-5">
+                <div ref={scroller} className="flex-1 overflow-y-auto px-4 sm:px-6 py-5">
                     {children}
                 </div>
 
                 {footer && (
-                    <div className="px-6 py-4 border-t border-slate-200 bg-slate-50">
+                    <div className="px-4 sm:px-6 py-4 border-t border-slate-200 bg-slate-50">
                         {footer}
                     </div>
                 )}

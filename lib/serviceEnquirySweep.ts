@@ -9,28 +9,24 @@
 //
 // The second exists because of the twenty-minute emergency window. A sweep
 // running every five minutes means a host can sit looking at "waiting" for up
-// to five minutes after the number was due — which, for the one case where
-// minutes are the entire point, is most of a quarter of the window spent
+// to five minutes after their enquiry had already run out — which, for the one
+// case where minutes are the entire point, is a quarter of the window spent
 // staring at a stale screen. So their own page settles their own rows on load,
 // exactly, and the cron remains the thing that actually tells people.
 //
-// Two callers is also how two answers get written, so neither of them decides
-// anything: `dueOutcome` decides, here, once.
+// SILENCE HAS ONE ENDING
 //
-// SILENCE MEANS TWO OPPOSITE THINGS
-//
-//   ordinary work   'expired'  — try somebody else
-//   an emergency    'released' — here is his number, ring him
-//
-// Getting that backwards would either strand a host mid-emergency or hand out
-// a tradesman's number because a quote went quiet, so the branch is in one
-// function with a test on it rather than repeated at two call sites.
+// Every urgency expires the same way and the host is told to try somebody
+// else. There was briefly a second ending — an unanswered emergency released
+// the tradesman's number — and it is gone: an introduction the platform gives
+// away is not one it can charge for. An accept is the only route to a phone
+// number. See the note above URGENCY_LEVELS in lib/serviceEnquiries.ts before
+// adding anything here.
 
 import { adminClient } from '@/lib/supabaseAdmin';
-import { dueOutcome } from '@/lib/serviceEnquiries';
+import { hasExpired } from '@/lib/serviceEnquiries';
 
 export interface SweepResult {
-    released: any[];
     expired: any[];
 }
 
@@ -54,30 +50,21 @@ export async function settleDue(hostId?: string | null): Promise<SweepResult> {
 
     const { data: due } = await query;
 
-    const result: SweepResult = { released: [], expired: [] };
+    const result: SweepResult = { expired: [] };
 
     for (const enquiry of due || []) {
-        const outcome = dueOutcome(enquiry, now);
-        if (!outcome) continue;
-
-        const patch: any = {
-            status: outcome,
-            updated_at: now.toISOString(),
-            // The link dies with the wait. A tradesman answering an hour late
-            // would otherwise flip a row the host has already acted on — and
-            // in the released case, accept something whose number he has
-            // already been rung on.
-            reply_token_hash: null,
-        };
-
-        // Separate from responded_at, always. One is a person deciding and the
-        // other is a clock running out; counting them together would flatter
-        // the accept rate that the whole emergency design exists to produce.
-        if (outcome === 'released') patch.released_at = now.toISOString();
+        if (!hasExpired(enquiry, now)) continue;
 
         const { data: saved } = await admin
             .from('service_enquiries')
-            .update(patch)
+            .update({
+                status: 'expired',
+                updated_at: now.toISOString(),
+                // The link dies with the wait. A tradesman answering an hour
+                // late would otherwise flip a row the host has already given
+                // up on and acted elsewhere about.
+                reply_token_hash: null,
+            })
             .eq('id', enquiry.id)
             // Guarded on the status it was read with, so a tradesman accepting
             // in the same second as the sweep wins rather than being
@@ -87,9 +74,7 @@ export async function settleDue(hostId?: string | null): Promise<SweepResult> {
             .maybeSingle();
 
         if (!saved) continue;
-
-        if (outcome === 'released') result.released.push(saved);
-        else result.expired.push(saved);
+        result.expired.push(saved);
     }
 
     return result;

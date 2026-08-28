@@ -10,10 +10,11 @@ export const dynamic = 'force-dynamic';
 //
 // WHY IT IS NOT ENOUGH TO WAIT FOR THE CRON
 //
-// An emergency waits twenty minutes and the sweep runs every five. Without
-// this, a host refreshing at minute twenty-one can still be looking at
-// "waiting" — and the one case where the whole design is about minutes is the
-// one where a stale screen is least forgivable.
+// An emergency runs out in twenty minutes and the sweep runs every five.
+// Without this, a host refreshing at minute twenty-one can still be looking at
+// "waiting" on something that has already expired — and the one case where the
+// whole design is about minutes is the one where a stale screen is least
+// forgivable.
 //
 // So their own page settles their own rows on load. Nothing is emailed from
 // here: they are looking at the screen and it has just changed, and an email
@@ -36,7 +37,6 @@ export async function POST() {
 
         return NextResponse.json({
             ok: true,
-            released: settled.released.length,
             expired: settled.expired.length,
         });
     } catch (err: any) {

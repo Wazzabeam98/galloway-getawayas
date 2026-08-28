@@ -26,29 +26,28 @@ import {
 // STATES
 // ---------------------------------------------------------------------------
 //
-//                        ┌─ accepted   contact details released both ways
+//                        ┌─ accepted   contact details go both ways
 //   sent ──▶ viewed ─────┼─ declined   with a reason, if he gave one
 //     │        │         └─ (silence)
 //     │        │              │
-//     │        └──────────────┴──▶ expired    the sweep, ordinary work
-//     │                        └──▶ released  the sweep, an emergency
+//     │        └──────────────┴──▶ expired    the sweep, whatever the urgency
 //     └───────────────────────────▶ withdrawn  host pulled it first
 //
 // `viewed` earns its place because it is the only thing separating "ignored"
 // from "never seen", and those need different words on the host's screen and
 // different conversations at renewal.
 //
-// `released` and `expired` are the same event with opposite endings, and the
-// difference is the whole of the emergency design — see URGENCY below. Silence
-// on ordinary work means "try somebody else". Silence on an emergency means
-// "here is his number, ring him", because a burst pipe cannot be asked to wait
-// for a better process.
+// ONE ENDING FOR SILENCE, AND ONE WAY TO A PHONE NUMBER
+//
+// There was briefly a second: an emergency nobody answered released the
+// tradesman's number automatically. It is gone, and it is not coming back
+// quietly — see the note above URGENCY_LEVELS.
 //
 // There is deliberately no 'completed'. Nothing on the platform can observe a
 // job being done — see `outcome` on the table.
 
 export const ENQUIRY_STATUSES = [
-    'sent', 'viewed', 'accepted', 'declined', 'expired', 'withdrawn', 'released',
+    'sent', 'viewed', 'accepted', 'declined', 'expired', 'withdrawn',
 ] as const;
 
 export type EnquiryStatus = (typeof ENQUIRY_STATUSES)[number];
@@ -66,9 +65,11 @@ export function isOpen(status: string): boolean {
 // One function, because three screens and two emails ask this question and
 // three answers is how they come to disagree about whether a phone number is
 // on the page.
+// AN ACCEPT IS THE ONLY WAY TO A PHONE NUMBER. There is no second route and
+// there must not be one. If this ever returns true for a second status, the
+// thing the platform sells has been given away by whatever added it.
 export function contactReleased(status: string): boolean {
-    const s = String(status || '');
-    return s === 'accepted' || s === 'released';
+    return String(status || '') === 'accepted';
 }
 
 export function canWithdraw(status: string): boolean {
@@ -101,43 +102,47 @@ export function canRespond(status: string): boolean {
 // silence releases the number instead of giving up on it.
 //
 // ---------------------------------------------------------------------------
-// THE RELEASE IS A SAFETY NET AND IT IS NEVER PROMISED. READ THIS BEFORE
-// WRITING ANY COPY ABOUT IT.
+// THERE IS NO SAFETY NET, AND THAT IS THE DECISION. READ THIS BEFORE ADDING
+// ONE BACK.
 // ---------------------------------------------------------------------------
 //
-// It used to be advertised — on the urgency picker, on the send button, on the
-// sent screen and in two emails. Every one of those has been removed on
-// purpose, and putting any of it back undoes the reversal above.
+// An emergency nobody answers ends exactly as an ordinary enquiry nobody
+// answers: it expires, and the host is told to try somebody else. The platform
+// hands over nothing. A host with a flood and no answer gets nothing from us
+// and rings somebody themselves.
 //
-// A host who is TOLD "pick emergency and you get the number in twenty minutes"
-// has been handed a way to skip the tradesman entirely. Everybody picks
-// emergency, everybody waits it out, nobody ever accepts, and the accept is
-// the only thing that survives to be pointed at when a tradesman asks what he
-// is paying twenty pounds a month for. Advertising the net removes the reason
-// the net exists.
+// That is uncomfortable and it is deliberate. It was built the other way twice
+// — first releasing the number immediately, then releasing it after twenty
+// minutes — and both versions manufacture something that cannot be sold. The
+// whole argument at day ninety is "you got five jobs out of us", and the
+// accept is the only event that evidences one. An introduction the platform
+// gave away is not an introduction the platform can charge for, whether it
+// gave it away at once or after a decent interval.
 //
-// Deleting it is not the answer either: somebody with a flood and an
-// unanswered enquiry has to end up with a phone number.
+// It also removes a question nobody had a good answer to: a tradesman's number
+// going to a stranger because he was slow to look at his phone, on the
+// strength of a tick box he filled in weeks earlier. Nothing is released, so
+// nothing needs consenting to.
 //
-// So it happens, quietly, and nothing before it happens mentions it. The words
-// only appear once it HAS happened — see announceSilence, where a release
-// tells the host the number and tells the tradesman why. That is a fact after
-// the event rather than an offer before it.
+// WHAT AN EMERGENCY IS NOW: a shorter clock and a louder email. That is all,
+// and it is enough — what it buys is a fast answer or a fast NO, either of
+// which lets the host move on while it still matters.
+//
+// The thing to watch is the accept rate on emergencies. If tradesmen do not
+// answer them quickly the product does not work, and the fix is making them
+// see it sooner — a text rather than an email — not handing the number over.
 //
 // WHY TWENTY MINUTES
 //
-// Short enough that a host with water coming through a ceiling is not sitting
-// still. Long enough that the accept is a real event — a tradesman glances at
-// his phone between jobs, and five minutes would auto-release nearly every
-// emergency, which is the old behaviour wearing a delay.
+// It is how long a host is asked to wait before being told to try elsewhere.
+// Short enough that somebody with water coming through a ceiling is not
+// sitting still; long enough that a tradesman who glances at his phone between
+// jobs has had a fair chance to answer. Five minutes would expire nearly every
+// emergency before anybody saw it, which wastes the enquiry rather than
+// speeding it up.
 //
 // The number to argue with once there are real ones to count is the ratio of
-// accepted to released.
-//
-// ONE MORE THING THAT IS NOT SETTLED. A tradesman consents to this by ticking
-// that he turns out — that tick is what makes releasing his number reasonable
-// — but the sign-up does not currently say so beside the tick, and his own
-// emails no longer say so either. The consent belongs where he gives it. Open.
+// accepted to expired on emergencies.
 // ---------------------------------------------------------------------------
 
 export const EMERGENCY_MINUTES = 20;
@@ -180,17 +185,6 @@ export function isEmergency(urgency: string): boolean {
     return String(urgency || '') === 'emergency';
 }
 
-// What silence means for this enquiry.
-//
-// One function rather than `urgency === 'emergency'` scattered through the
-// sweep, the emails and two screens. The sweep in particular has to decide
-// between two opposite endings on the same query, and a stray comparison there
-// would either strand a host in an emergency or hand out a number after an
-// ordinary job went quiet.
-export function releasesOnSilence(urgency: string): boolean {
-    return isEmergency(urgency);
-}
-
 // When the tradesman stops being asked.
 //
 // Never null now — an emergency has the shortest deadline rather than none at
@@ -204,20 +198,16 @@ export function expiresAt(urgency: string, sentAt: Date | string): string {
     return new Date(base.getTime() + minutes * 60 * 1000).toISOString();
 }
 
-// What the sweep should do with a row whose time is up.
+// Whether this one has run out of time.
 //
-// Returns null for anything not due, so the caller has one question to ask
-// rather than three, and the emergency/ordinary split lives here rather than
-// being re-derived at every call site.
-export function dueOutcome(
-    row: { status?: string; urgency?: string; expires_at?: string | null },
+// The whole of what silence means, now that there is only one ending. It used
+// to be half of a pair with `dueOutcome`, which chose between expiring an
+// ordinary enquiry and releasing a number on an emergency; there is no second
+// ending to choose, so there is no chooser.
+export function hasExpired(
+    row: { status?: string; expires_at?: string | null },
     now?: Date
-): 'released' | 'expired' | null {
-    if (!hasExpired(row, now)) return null;
-    return releasesOnSilence(String(row.urgency || '')) ? 'released' : 'expired';
-}
-
-export function hasExpired(row: { status?: string; expires_at?: string | null }, now?: Date): boolean {
+): boolean {
     if (!row || !isOpen(String(row.status || ''))) return false;
     if (!row.expires_at) return false;
     return new Date(row.expires_at).getTime() <= (now || new Date()).getTime();
@@ -608,13 +598,6 @@ export function hostStatusSummary(
     }
     if (status === 'withdrawn') {
         return { label: 'Withdrawn', detail: 'You took this back. Nothing was sent on.' };
-    }
-    if (status === 'released') {
-        return {
-            label: 'Number released',
-            detail: who + ' did not answer in time, so here is their number — ring them. '
-                + 'We have told them to expect you.',
-        };
     }
 
     return { label: 'Enquiry', detail: '' };

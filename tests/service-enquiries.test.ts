@@ -28,8 +28,6 @@ import {
     canWithdraw,
     expiresAt,
     hasExpired,
-    dueOutcome,
-    releasesOnSilence,
     needsDate,
     requestedWhen,
     enquiryProblems,
@@ -42,48 +40,44 @@ import {
 
 import { townForLocation, pointForListing } from '@/lib/serviceProviders';
 
-// --- silence, and its two endings ------------------------------------------
+// --- silence has one ending --------------------------------------------------
 
-// The single most expensive thing to get backwards in this flow. One ending
-// tells a host to try somebody else; the other hands out a tradesman's phone
-// number. Reversed, it either strands somebody mid-emergency or gives away a
-// number because a quote went quiet.
-test('silence releases a number on an emergency and gives up on everything else', () => {
+// THIS ASSERTION USED TO SAY THE OPPOSITE, and the behaviour changed rather
+// than the test being wrong. An unanswered emergency released the tradesman's
+// number automatically; now it expires like everything else and the platform
+// hands over nothing.
+//
+// The reason is what can be sold at day ninety. An introduction the platform
+// gave away is not one it can charge for, and the accept is the only event
+// that evidences a job. A host with a flood and no answer gets nothing from us
+// and rings somebody themselves — uncomfortable, and the decision.
+test('silence expires an enquiry, whatever the urgency', () => {
     const past = new Date(Date.now() - 60_000).toISOString();
 
-    assert.equal(
-        dueOutcome({ status: 'sent', urgency: 'emergency', expires_at: past }),
-        'released'
-    );
-    assert.equal(
-        dueOutcome({ status: 'viewed', urgency: 'soon', expires_at: past }),
-        'expired'
-    );
-    assert.equal(
-        dueOutcome({ status: 'sent', urgency: 'planned', expires_at: past }),
-        'expired'
-    );
-
-    // Only emergencies. If a fourth urgency is ever added it defaults to the
-    // safe ending — giving up — rather than to handing out a number.
-    assert.equal(releasesOnSilence('emergency'), true);
-    assert.equal(releasesOnSilence('soon'), false);
-    assert.equal(releasesOnSilence('planned'), false);
-    assert.equal(releasesOnSilence('whatever'), false);
+    for (const urgency of ['emergency', 'soon', 'planned']) {
+        // The urgency is carried only to name the case in the failure
+        // message: hasExpired does not read it, and that is the point — one
+        // ending, no branch on urgency anywhere.
+        assert.equal(
+            hasExpired({ status: 'sent', expires_at: past }),
+            true,
+            urgency + ' expires when its time is up'
+        );
+    }
 });
 
 test('nothing is due before its time, or after it has been answered', () => {
     const future = new Date(Date.now() + 60_000).toISOString();
     const past = new Date(Date.now() - 60_000).toISOString();
 
-    assert.equal(dueOutcome({ status: 'sent', urgency: 'emergency', expires_at: future }), null);
+    assert.equal(hasExpired({ status: 'sent', expires_at: future }), false);
 
     // An answered row is never swept, whatever the clock says. The sweep also
     // guards its update on the status it read, but this is the first line.
-    for (const status of ['accepted', 'declined', 'withdrawn', 'released', 'expired']) {
+    for (const status of ['accepted', 'declined', 'withdrawn', 'expired']) {
         assert.equal(
-            dueOutcome({ status, urgency: 'emergency', expires_at: past }),
-            null,
+            hasExpired({ status, expires_at: past }),
+            false,
             status + ' is not swept again'
         );
     }
@@ -91,14 +85,9 @@ test('nothing is due before its time, or after it has been answered', () => {
 
 // --- the emergency reversal ------------------------------------------------
 
-// This flow shipped handing the number over on the spot, with no accept at
-// all. That was reversed because an introduction nobody accepted is not
-// evidence the platform found anybody work — and that evidence is the entire
-// argument for the subscription these trades are about to start paying.
-//
-// So: an emergency HAS a deadline. A version of this where emergencies do not
-// expire is the old behaviour wearing a new name.
-test('an emergency waits, briefly, rather than not at all', () => {
+// An emergency is a shorter clock and a louder email. Nothing else about it
+// differs — same ending, same single route to a phone number.
+test('an emergency runs on a much shorter clock than anything else', () => {
     const sent = new Date('2026-09-01T21:00:00Z');
 
     const emergency = expiresAt('emergency', sent);
@@ -109,9 +98,9 @@ test('an emergency waits, briefly, rather than not at all', () => {
     );
 
     // Minutes, not days. If somebody "tidies" this into hours the host waits
-    // through the flood.
+    // through the flood before being told to ring elsewhere.
     assert.ok(EMERGENCY_MINUTES <= 30, 'a burst pipe cannot wait half an hour');
-    assert.ok(EMERGENCY_MINUTES >= 10, 'shorter than this and the accept never happens');
+    assert.ok(EMERGENCY_MINUTES >= 10, 'shorter than this and nobody sees it before it dies');
 
     // And it is much shorter than the others, which is the whole point.
     for (const level of URGENCY_LEVELS) {
@@ -123,21 +112,31 @@ test('an emergency waits, briefly, rather than not at all', () => {
     }
 });
 
-test("'direct' is gone — a number is never handed over unasked", () => {
-    // The status that meant "the number went across and nobody was ever
-    // asked". Its absence is the reversal, so it is asserted rather than
-    // assumed.
-    assert.equal((ENQUIRY_STATUSES as readonly string[]).indexOf('direct'), -1);
-    assert.ok((ENQUIRY_STATUSES as readonly string[]).indexOf('released') !== -1);
+test('there is no status that hands a number over without an accept', () => {
+    // Two attempts at one, both abandoned. 'direct' meant the number went
+    // across immediately and nobody was ever asked; 'released' meant it went
+    // across after twenty minutes of silence. Both are asserted absent rather
+    // than assumed, because each was reintroduced once already.
+    for (const gone of ['direct', 'released']) {
+        assert.equal(
+            (ENQUIRY_STATUSES as readonly string[]).indexOf(gone), -1,
+            "'" + gone + "' handed a number over without an accept and must not come back"
+        );
+    }
 });
 
-test('details are out only once somebody accepted, or the clock released them', () => {
+// FLIPPED WITH THE BEHAVIOUR: 'released' used to be true here.
+test('an accept is the only thing that hands over a phone number', () => {
     assert.equal(contactReleased('accepted'), true);
-    assert.equal(contactReleased('released'), true);
 
-    for (const status of ['sent', 'viewed', 'declined', 'expired', 'withdrawn']) {
+    for (const status of ['sent', 'viewed', 'declined', 'expired', 'withdrawn', 'released']) {
         assert.equal(contactReleased(status), false, status + ' shows no phone number');
     }
+
+    // Exactly one, counted rather than listed. A third route to a phone number
+    // added later fails here even if whoever added it never read this file.
+    const opening = ENQUIRY_STATUSES.filter((s) => contactReleased(s));
+    assert.deepEqual(opening, ['accepted']);
 });
 
 test('an open enquiry can be answered and withdrawn, a settled one cannot', () => {
@@ -147,9 +146,7 @@ test('an open enquiry can be answered and withdrawn, a settled one cannot', () =
         assert.equal(canWithdraw(status), true);
     }
 
-    // Including 'released'. A tradesman answering after the number went across
-    // would be accepting something the host has already rung him about.
-    for (const status of ['accepted', 'declined', 'expired', 'withdrawn', 'released']) {
+    for (const status of ['accepted', 'declined', 'expired', 'withdrawn']) {
         assert.equal(canRespond(status), false, status + ' cannot be answered');
     }
 });
@@ -420,14 +417,6 @@ test('no waiting status implies somebody is on the way', () => {
             }
         }
     }
-});
-
-// The release itself still says everything, because by then it is a fact
-// rather than an offer.
-test('a released enquiry hands the number over in plain words', () => {
-    const released = hostStatusSummary('released', 'Baxter Plumbing');
-    assert.ok(/number/i.test(released.detail), released.detail);
-    assert.ok(/ring/i.test(released.detail), released.detail);
 });
 
 test('every status says something', () => {

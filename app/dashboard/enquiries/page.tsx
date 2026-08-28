@@ -249,8 +249,7 @@ export default function EnquiriesPage() {
                                     </button>
                                 )}
 
-                                {(row.status === 'declined' || row.status === 'expired'
-                                    || row.status === 'released') && (
+                                {(row.status === 'declined' || row.status === 'expired') && (
                                     <Link
                                         href={'/services/' + row.trade}
                                         className="text-sm text-emerald-700 font-semibold underline"
