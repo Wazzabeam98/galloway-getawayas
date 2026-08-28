@@ -38,9 +38,19 @@ export function assertTestEnvironment(env) {
 // galloway-getaways-test. Production is hviwjxigqivjfhmhpjiy — never this.
 // Defined in target.cjs, not here. That file has to be CommonJS so Playwright
 // can load it, and on Node 20 CommonJS cannot require an ESM module — so the
-// dependency runs that way round. Re-exported so every existing importer of
-// this module keeps working.
-export { TEST_PROJECT_REF } from './target.cjs';
+// dependency runs that way round.
+//
+// IMPORTED and then re-exported, in two steps, deliberately. Written as the one
+// line `export { TEST_PROJECT_REF } from './target.cjs'` it is a PURE
+// re-export: it forwards the name to importers of this module and creates no
+// local binding at all. Every use of it inside this file — including
+// assertTestEnvironment below, which is the guard that stops the payment suite
+// writing to the wrong database — then referenced an undefined identifier and
+// threw ReferenceError. It failed closed, so nothing was written anywhere it
+// should not have been, but every seed and scenario script stopped running.
+import { TEST_PROJECT_REF } from './target.cjs';
+
+export { TEST_PROJECT_REF };
 
 // Everything the seeder creates carries one of these, so a reset can find it
 // again and nothing else is ever touched.
