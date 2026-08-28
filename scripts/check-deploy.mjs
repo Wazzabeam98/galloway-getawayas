@@ -119,7 +119,7 @@ function describe(d, indent = '  ') {
  * because it was made from an earlier commit — or because what you are testing
  * was never committed at all, which no amount of looking at Vercel will reveal.
  */
-function compareWorkingCopy(deployedSha, latestSha) {
+function compareWorkingCopy(deployedSha, latestSha, latestState) {
     const branch = git('rev-parse --abbrev-ref HEAD');
     const head = git('rev-parse HEAD');
     const dirty = git('status --porcelain');
@@ -136,10 +136,23 @@ function compareWorkingCopy(deployedSha, latestSha) {
     } else if (head === deployedSha) {
         console.log('  MATCHES what is live — the code visitors get is your commit');
     } else if (latestSha && head === latestSha) {
-        // Your push arrived and built; it just is not serving yet. Worth its
-        // own line, because "it is not live" and "it did not go out" are very
-        // different problems and only one of them is yours to fix.
-        console.log('  your commit is BUILT but NOT YET LIVE — see the newer build above');
+        // Your push arrived; it just is not serving yet. Worth its own line,
+        // because "it is not live yet" and "it did not go out" are different
+        // problems and only one of them is yours to fix.
+        //
+        // Which of those it is depends on the build's state, so say the state
+        // rather than a single word that is wrong in two of the three cases: a
+        // commit that is still BUILDING is not built, and one that ERRORed is
+        // never going to be.
+        const word = {
+            BUILDING: 'is STILL BUILDING — not live yet, wait',
+            QUEUED: 'is QUEUED — it has not started building yet',
+            INITIALIZING: 'is INITIALIZING — not live yet',
+            ERROR: 'FAILED TO BUILD — it will never go live as it stands',
+            CANCELED: 'was CANCELLED — it will not go live',
+            READY: 'is BUILT but NOT YET LIVE — it has not replaced the live build',
+        }[latestState] || `is ${latestState || 'in an unknown state'} — not live`;
+        console.log(`  your commit ${word} — see the newer build above`);
     } else {
         // rev-list needs both commits present locally. After a fetch they will
         // be; on a fresh clone or an unfetched branch they may not, and saying
@@ -226,6 +239,7 @@ async function production() {
     return {
         live: live.meta?.githubCommitSha || null,
         latest: latest?.meta?.githubCommitSha || null,
+        latestState: latest?.readyState || latest?.state || null,
     };
 }
 
@@ -291,8 +305,8 @@ async function report() {
     if (url) return byUrl(url);
     if (br) return branch(br);
     if (args.includes('--list')) return list();
-    const { live, latest } = await production();
-    compareWorkingCopy(live, latest);
+    const { live, latest, latestState } = await production();
+    compareWorkingCopy(live, latest, latestState);
 }
 
 await report().catch((e) => { console.error(e.message); process.exit(1); });
