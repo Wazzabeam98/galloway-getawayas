@@ -7,7 +7,7 @@
     "build": "next build",
     "start": "next start",
     "lint": "next lint",
-    "test": "tsc -p tsconfig.test.json && node --test .test-build/tests",
+    "test": "rm -rf .test-build && tsc -p tsconfig.test.json && node --test .test-build/tests",
     "test:e2e": "playwright test",
     "e2e:sync": "node scripts/e2e-sync.mjs"
   },

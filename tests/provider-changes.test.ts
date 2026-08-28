@@ -207,7 +207,7 @@ test('a hidden provider sending it back goes into the queue', () => {
 // The admin page used to be three independent filters written out inline, and
 // a fourth reason could be added to the model without any of them noticing —
 // the row simply never appeared and the first anybody heard of it was a
-// provider asking why their tag never went live. Same shape as canBeRequested
+// provider asking why their tag never went live. Same shape as canBeBooked
 // reading "not priced by the hour" instead of "not maintenance": the page
 // asserted the reasons that existed rather than the rule.
 //

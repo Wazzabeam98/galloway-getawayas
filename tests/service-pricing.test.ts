@@ -26,7 +26,8 @@ const {
     BUILDING_TYPES,
     buildingTypeLabel,
     STOREY_BANDS,
-    canBeRequested,
+    canBeBooked,
+    canBeEnquiredAbout,
     calloutLine,
     showsTimeGuide,
     unclaimedTrades,
@@ -248,24 +249,66 @@ test('a plot band is only a band if it is one of ours', () => {
     assert.equal(bandForPlot(null), null, 'not said is a prompt, not a refusal');
 });
 
-// --- maintenance cannot be requested yet -----------------------------------
+// --- maintenance cannot be booked yet, and can be asked --------------------
 
-test('no maintenance trade can be requested, however it is priced', () => {
+test('no maintenance trade can be booked, however it is priced', () => {
     // This named only the plumber, and the rule underneath it was written as
     // "not priced by the hour" rather than "not maintenance". Moving the
     // roofer, the joiner and the painter to `quoted` flipped all three to
-    // requestable — a job with no price, no total and no completion step —
-    // and the suite stayed green, because none of them were named.
+    // bookable — a job with no price, no total and no completion step — and
+    // the suite stayed green, because none of them were named.
     //
     // So it loops, and the rule it checks is the one that was meant.
+    //
+    // The function was `canBeRequested` until phase two. Nothing it asserts
+    // has changed value: the reason maintenance cannot be booked is still
+    // that there is no quote, no total and nothing that observes a job
+    // finishing. What changed is that "requested" became false as English —
+    // a host CAN now request a plumber — so the old wording would have
+    // asserted the opposite of what the site does while staying green.
     for (const trade of MAINTENANCE_TRADES) {
-        assert.equal(canBeRequested(trade), false,
-            trade + ' cannot be requested until quoting and completion exist');
+        assert.equal(canBeBooked(trade), false,
+            trade + ' cannot be booked until quoting and completion exist');
     }
 
-    assert.equal(canBeRequested('sponge'), true);
-    assert.equal(canBeRequested('trees'), true);
-    assert.equal(canBeRequested('cake'), true);
+    assert.equal(canBeBooked('sponge'), true);
+    assert.equal(canBeBooked('trees'), true);
+    assert.equal(canBeBooked('cake'), true);
+});
+
+// The counterpart, and the reason there are two functions rather than one.
+//
+// If a refactor ever collapses them back together this fails, which is the
+// point: the whole of phase two rests on the two answers being allowed to
+// disagree about the same trade.
+test('a maintenance trade cannot be booked and can be enquired about', () => {
+    for (const trade of MAINTENANCE_TRADES) {
+        assert.equal(canBeBooked(trade), false, trade + ' is not bookable');
+        assert.equal(canBeEnquiredAbout(trade), true, trade + ' can be asked to come and look');
+    }
+});
+
+test('what is not in the shop, and why', () => {
+    // Cleaning and waste take 10% at acceptance. A commission needs a total,
+    // a total needs a completion step, and that is a booking. They are not
+    // late — they are somewhere else.
+    assert.equal(canBeEnquiredAbout('sponge'), false, 'cleaning is booked, not enquired about');
+    assert.equal(canBeEnquiredAbout('bin'), false, 'waste is booked, not enquired about');
+
+    // Gardening is banded on listings.plot_band and NOTHING WRITES THAT
+    // COLUMN — there is no field on the listing form. A gardener in the shop
+    // would show every host a blank where the price goes.
+    //
+    // So this assertion is a note to whoever builds that field: add 'trees'
+    // to SHOP_TRADES and delete this line, in the same change. It is the only
+    // absence here that is waiting on work rather than on a decision.
+    assert.equal(canBeEnquiredAbout('trees'), false, 'gardening waits for listings.plot_band');
+
+    // The guest trades are sold to somebody on holiday and have their own
+    // shop. Nothing about the host flow applies to them.
+    for (const trade of ['chef', 'cake', 'basket', 'paw']) {
+        assert.equal(canBeEnquiredAbout(trade), false, trade + ' is a guest trade');
+    }
 });
 
 // --- what has to be filled in ----------------------------------------------

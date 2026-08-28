@@ -208,3 +208,48 @@ export async function sendEmail(to: string, subject: string, html: string): Prom
         return false;
     }
 }
+
+// ---------------------------------------------------------------------------
+// MORE THAN ONE ADMIN
+// ---------------------------------------------------------------------------
+//
+// The alert addresses are aliases held in the environment, one variable each,
+// so they can change without a deploy. Some of them now need to reach two
+// people — services alerts go to both of us — and the honest way to say that
+// in an environment variable is a comma.
+//
+// Two separate sends rather than two addresses in one `to`. Resend would take
+// the array, but then one bad address fails the whole message and the other
+// person silently never hears about it. The failure worth avoiding here is the
+// quiet one: an enquiry nobody was told about looks exactly like an enquiry
+// nobody sent.
+export function recipients(value: string | null | undefined): string[] {
+    return String(value || '')
+        .split(',')
+        .map((a) => a.trim())
+        .filter((a) => a !== '');
+}
+
+export interface FanOutResult {
+    sent: string[];
+    failed: string[];
+}
+
+// Sends to each address in turn and says which ones worked. Never throws, for
+// the same reason sendEmail never throws.
+export async function sendEmailToAll(
+    to: string[],
+    subject: string,
+    html: string
+): Promise<FanOutResult> {
+    const sent: string[] = [];
+    const failed: string[] = [];
+
+    for (const address of to) {
+        const ok = await sendEmail(address, subject, html);
+        if (ok) sent.push(address);
+        else failed.push(address);
+    }
+
+    return { sent, failed };
+}

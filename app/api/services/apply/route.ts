@@ -63,7 +63,7 @@ interface Body {
 // `commission_rate` and the rest are the platform's, and an application arrives
 // from a stranger by definition.
 const PROVIDER_COLUMNS = [
-    'business_name', 'trade', 'description', 'contact_email', 'contact_phone',
+    'business_name', 'trade', 'description', 'contact_email', 'contact_phone', 'sms_opt_out',
     'audience', 'photos', 'logo', 'does_gas', 'does_oil',
     'callout_fee', 'hourly_rate', 'callout_waived',
     'pricing_choice', 'billable_hourly_rate', 'covered_bands',
