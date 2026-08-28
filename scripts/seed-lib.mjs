@@ -40,7 +40,21 @@ export function assertTestEnvironment(env) {
 // can load it, and on Node 20 CommonJS cannot require an ESM module — so the
 // dependency runs that way round. Re-exported so every existing importer of
 // this module keeps working.
-export { TEST_PROJECT_REF } from './target.cjs';
+// IMPORTED as well as re-exported, deliberately.
+//
+// `export { X } from './y'` forwards the name to importers and creates NO local
+// binding, so every use of TEST_PROJECT_REF inside THIS file was a reference to
+// something undefined — assertTestEnvironment, which is the guard the payment
+// seeders run before touching anything, and signIn, which four scenario
+// runners call. Both threw "TEST_PROJECT_REF is not defined" at the moment
+// they were relied on.
+//
+// It broke when the constant moved to target.cjs so Playwright could require
+// it, and nothing caught it because no unit test imports this file — the
+// scripts that use it need a database.
+import { TEST_PROJECT_REF } from './target.cjs';
+
+export { TEST_PROJECT_REF };
 
 // Everything the seeder creates carries one of these, so a reset can find it
 // again and nothing else is ever touched.

@@ -259,6 +259,37 @@ again at the end, because a bounce eight rows up is a bounce nobody sees.
 `--email` filters both halves, so one address can be followed across auth mail
 and app mail at once.
 
+## Does the database refuse what the browser must not do?
+
+```
+node scripts/enquiry-rls.mjs          run the checks
+node scripts/enquiry-rls.mjs --reset  clear an interrupted run
+```
+
+Eighteen checks, each written as "this must be REFUSED", run with a real
+signed-in access token against PostgREST — the same way the browser talks to
+the database, with row-level security and the column grants in force.
+
+**Why a script and not a test.** Every rule it checks lives in Postgres. The
+unit suite has no database and no session, so it can assert that
+`contactReleased` returns true for one status but not that a host editing the
+request in devtools is refused. Only a real token can, which is why
+`inbox-scenarios.mjs` works the same way.
+
+What it pins: a host cannot set `status`, `expires_at`, `reply_token_hash`,
+`reference`, `responded_at` or `host_phone`; **the accept cannot be forged**;
+one host cannot read another's enquiry; the tradesman it was sent to can read
+it but cannot rewrite the job description; nobody signed out can read anything;
+and `service_wanted` accepts a write from anyone while being readable by
+nobody.
+
+It also pins something stronger than the design assumed: **a host cannot lodge
+an enquiry from the browser at all.** `reference` is NOT NULL and is not
+granted to `authenticated`, so an insert fails on the constraint before any
+policy is consulted. The route, under the service role, is the only writer.
+
+Makes its own accounts on `@gallowayrls.test` and cleans up after itself.
+
 ## Checking what happened to a text
 
 ```
