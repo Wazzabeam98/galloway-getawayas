@@ -9,6 +9,49 @@ book and pay through the site; the platform takes a commission and passes the
 rest to the property owner. Real money moves through it, so mistakes here cost
 somebody something.
 
+## The migration goes to production BEFORE the code that needs it
+
+**A migration reaches production before the code that depends on it merges.
+Never after.** No exceptions, including "it is only a widened constraint" and
+"nothing writes it yet".
+
+This is a standing rule as of 28 August 2026, and it exists because two
+sessions now work on this repo at once. Each can merge a branch the other has
+not read, and a migration that lives on a branch is invisible to whoever
+merges next — the code arrives on production and the schema does not follow,
+because the person who would have run it is not the person who pressed merge.
+
+**Why the ordering and not the reverse.** A schema that is ahead of its code
+costs nothing: an unused column, a widened check nothing writes, a table with
+no rows. A schema that is behind its code fails at the database, which on this
+project has never been loud. The insert is refused, the browser reports
+success, and the row simply is not there. Adding `hidden` to listings and
+`pending_payment` to bookings both hit exactly that.
+
+**In practice:**
+
+- Run it with `node scripts/migrate.mjs --target prod <file> --apply`, after a
+  dry run. Read the pre-flight at the top of the file first; run the read-back
+  after.
+- Do it before the pull request merges, not after — the merge is what makes it
+  urgent, so it should already be done by then.
+- If a migration is destructive, its pre-flight decides whether it runs at all.
+  Read the count *before*.
+- A branch carrying a migration should say so in its description, so whoever
+  merges knows there is a database step they did not write.
+
+**How to check what is outstanding**, in a checkout of the branch:
+
+```
+node scripts/migrate.mjs --target prod --sql "select table_name from information_schema.tables where table_schema='public' order by table_name"
+```
+
+and compare against `supabase/migrations`. There is no ledger table — the
+migrations are applied by hand and nothing records that they ran, which is the
+weakness this rule works around rather than fixes. A `schema_migrations` table
+would make it checkable instead of remembered, and is worth building the next
+time this bites.
+
 ## Which database am I on?
 
 There are two Supabase projects and three ways to end up on the wrong one.
@@ -596,6 +639,38 @@ Please:
   from anything stable across attempts left a four-hour window in which a
   manual re-run recorded a refusal that never happened.
 
+## Two things noticed about the real listings, neither fixed
+
+Found on 28 August 2026 while checking whether the services shop could work
+out where a property is without asking. Both are recorded rather than fixed,
+deliberately — neither is urgent and both want a decision rather than a patch.
+
+**Two listings share one set of coordinates.** Read off the public site:
+
+| Listing | Coordinates |
+|---|---|
+| 4 bedroom Townhouse, Kirkcudbright | 54.83804, −4.04878 |
+| Modern 3 Bedroom, Kirkcudbright | 54.8352482, −4.0543927 |
+| Modern Cottage, with Hot Tub | 54.8352482, −4.0543927 |
+
+The second and third are identical to seven decimal places, which is not two
+buildings a few doors apart — it is one geocode being inherited. Harmless for
+the services shop, which only asks whether a point falls inside a coverage
+circle and gets the same answer either way. It would stop being harmless the
+day anything uses the coordinates to tell the two apart: a distance sort, a
+map with two pins, a "nearest tradesman" that quietly measures from the wrong
+house.
+
+**`location` is hand-typed and already spelled two ways.** "Kirkcudbright,
+Dumfries and Galloway" on two of them, "Kirkcudbright, Dumfries & Galloway"
+on the third. Nothing is broken by it today: `townForLocation` reads the town
+from its own comma-separated part and never looks at the region, and
+`lib/places.ts` normalises to letters only. But a free-text field holding the
+same place two ways will eventually be grouped, counted or matched by
+something that compares it whole, and that is the day it costs an afternoon.
+`buildLocation` in `lib/places.ts` is the one place it is assembled, so the
+fix has somewhere to live when it is wanted.
+
 ## The service tables were briefly split, and are not any more
 
 `service_providers` was split into a business and its trade listings for a few
@@ -621,6 +696,41 @@ survive a bad deploy and it ended up surviving a bad decision.
 days" came off the sign-up in commit `ccbc10c` while the machinery behind them
 lived on for several commits, which is how a promise nobody meant to make gets
 made again.
+
+## SMS — one way, emergencies only
+
+A tradesman gets a text as well as an email when an owner has an **emergency**,
+and only then. Everything else is email. Texting every enquiry is how a channel
+stops being read, and emergencies are where minutes decide it.
+
+**Nothing can ever be accepted by replying to a text.** The sender is an
+alphanumeric ID (`GallowayGG`), which cannot receive a reply at all — that is
+the feature, not a limitation worked around. He accepts through the link in the
+text or through his email, and that accept is the only thing that reveals a
+name, a number or an address. There is no inbound webhook and no long number.
+
+The reason is what a wrong guess costs: matching an inbound "yes" back to an
+enquiry means hoping he has exactly one open, and with two, accepting the wrong
+one sends a tradesman to the wrong house and hands a stranger's address to
+somebody who never asked for it. If replying by text ever looks tempting, it is
+a conversation to have before it is a thing to build.
+
+The message is built to fit **one GSM-7 segment** — 160 characters. Over that
+it splits and costs double; a single character outside GSM-7, such as a curly
+apostrophe, drops the whole message to 70 characters a segment. Neither fails
+loudly. `emergencySms` in `lib/sms.ts` builds it to fit and there are tests on
+both the length and the alphabet.
+
+`/e/<token>` is the short link the text uses. It is a redirect to
+`/services/enquiry/<token>` and nothing else — the path length is worth 44
+characters of message, which is the trade and the town.
+
+A provider can turn texts off and keep email (`service_providers.sms_opt_out`),
+and the sign-up says beside the phone field that emergencies are texted.
+Without an opt-out a tradesman who does not want texts removes his number
+instead, and then nothing can reach him when it is urgent.
+
+`node scripts/check-sms.mjs` answers "did he see it" — see scripts/README.md.
 
 ## Email — two separate systems
 
@@ -691,6 +801,7 @@ All at `/api/cron/*`, all behind `CRON_SECRET`, all listed in `vercel.json`:
 | `ical-sync` | every 3 hours | Refreshes imported calendars |
 | `review-reminders` | 10am | Nudges guests and hosts to review |
 | `error-digest` | 8am | Emails the owners, only when something has broken |
+| `service-enquiries` | every hour, :15 | Expires an enquiry nobody answered and tells the host to try somebody else |
 
 They can be triggered by hand from Vercel → Cron Jobs → Run.
 
@@ -715,11 +826,56 @@ date.
   an opaque auth error.
 - `lib/places.ts` — the only place a free-text location is parsed
   (`publicArea` / `townOf` / `townKey`).
+- `lib/serviceProviders.ts` — the trade vocabulary and every rule about a
+  provider. `canBeBooked` and `canBeEnquiredAbout` are two different questions
+  and deliberately disagree about maintenance: a plumber can be asked to come
+  and look, and cannot be booked and charged, because quoting and completion
+  do not exist. `SHOP_TRADES` is the list a host can enquire about.
+  `canBeBooked` was `canBeRequested` until phase two; the rule never moved,
+  the name had simply started asserting the opposite of what the site does.
+- `lib/serviceEnquiries.ts` — what an enquiry is, its states, and the words
+  each side reads. No money anywhere in it, on purpose: every trade that
+  reaches the flow is on the subscription, so there is no total, no
+  commission and nothing to refund. A commission trade pointed at this file
+  wants a booking instead.
+- `lib/serviceEnquiryAlert.ts` — the four emails an enquiry produces. Accepting
+  sends the host's details to the provider's REGISTERED address, never to
+  whoever pressed the button in the email; that one line is what makes a
+  forwarded reply link a nuisance rather than a way to harvest phone numbers.
 
 ## Launch blockers
 
 Not a wish list. These stop the site working properly for real people, and each
 one has been observed rather than imagined.
+
+0. ~~The phase-two migrations have not been run on production.~~ **Done on
+   28 August 2026.** All five applied to production in order, each dry-run
+   first and read back after:
+
+   | File | What it did |
+   |---|---|
+   | `20260828104048_service_enquiries` | created the table: 7 indexes, 4 policies |
+   | `20260828111354_enquiry_emergency_and_dates` | `expires_at` NOT NULL, added the date and window columns |
+   | `20260828113521_one_open_per_job` | reshaped the one-open index onto urgency and property |
+   | `20260828123016_no_automatic_release` | dropped `released_at`, six statuses in the check |
+   | `20260828124759_provider_sms_opt_out` | added `sms_opt_out` and its two column grants |
+
+   The column list on production now hashes identically to test.
+
+   `20260828145609_service_wanted` followed on the same day, along with the
+   other session's `20260828143000_listing_pending_review`, which had merged
+   without being run. **Nothing phase-two is outstanding on production.** The
+   `service_enquiries` and `service_wanted` column lists both hash identically
+   to test.
+
+   **A correction worth keeping**, because this note had it wrong: this file
+   used to say `scripts/migrate.mjs` refuses production and that these must be
+   pasted by hand. That was true until 27 August 2026 and is not now — the rule
+   was lifted deliberately, and production is reachable with `--target prod`
+   against `SUPABASE_PROD_DB_URL`, which is a separate variable so a production
+   string can never sit in a slot named TEST. A stale safety note is worse than
+   none: it invites somebody to route around a guard that is not there, by hand,
+   in an editor with no dry run and no destructive flag.
 
 1. **Auth email needs its own SMTP. VERIFIED ON TEST; UNVERIFIED ON
    PRODUCTION.**

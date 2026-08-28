@@ -6,6 +6,7 @@
 // database anywhere near it.
 
 import { blockedSkills, SkillRow } from '@/lib/serviceSkills';
+import { townKey } from '@/lib/places';
 
 // Nobody searches for "maintenance". They search for a plumber.
 //
@@ -209,7 +210,7 @@ export function audienceLabel(audience: string): string {
 // The obvious shortcut is `pricingModelFor(trade) === 'quoted'`. It is wrong
 // twice over: it would sweep in all four guest trades, and it keys money off
 // a value that describes something else. This file has already been bitten by
-// exactly that — see canBeRequested below, which used the pricing model as a
+// exactly that — see canBeBooked below, which used the pricing model as a
 // proxy until the roofer, joiner and painter moved to `quoted` and it quietly
 // changed meaning. How a trade prices is free to be re-shuffled; what it pays
 // is not, so it is written down.
@@ -221,7 +222,7 @@ export function audienceLabel(audience: string): string {
 // one cannot arrive unplaced.
 //
 // The maintenance group is not a billing concept and must not become one. It
-// is a heading on the trade picker. `canBeRequested` and the rates section on
+// is a heading on the trade picker. `canBeBooked` and the rates section on
 // the sign-up both read it, and both are asking about something else.
 // ---------------------------------------------------------------------------
 
@@ -703,20 +704,105 @@ export function showsTimeGuide(trade: string): boolean {
     return trade !== 'droplet';
 }
 
-// Whether a host can ask for this through the site, rather than being given
-// somebody to ring.
+// Whether a job in this trade can be agreed, priced and completed through the
+// site — the BOOKING path.
 //
 // This used to read `pricingModelFor(trade) !== 'callout_hourly'`, which was a
 // proxy for the real rule and stopped being true the moment the roofer, the
-// joiner and the painter moved to `quoted` — they would have become
-// requestable, with no price, no total and no completion step behind them, and
-// every test would still have passed because they all named the plumber.
+// joiner and the painter moved to `quoted` — they would have become bookable,
+// with no price, no total and no completion step behind them, and every test
+// would still have passed because they all named the plumber.
 //
 // The rule is about maintenance, not about how it is priced. So it asks that
-// instead: nothing in the maintenance group can be requested until quoting and
+// instead: nothing in the maintenance group can be booked until quoting and
 // completion exist, however that trade happens to charge.
-export function canBeRequested(trade: string): boolean {
+//
+// IT WAS CALLED canBeRequested UNTIL PHASE TWO, and the rename is the whole
+// point rather than tidying. "Requested" had one meaning while there was one
+// path; the moment a host could ask a plumber to come and look, the old name
+// asserted the opposite of what the site does — a plumber is very much
+// requestable now. The rule underneath has not moved a millimetre: the reason
+// maintenance cannot be BOOKED is still that there is no quote, no total and
+// nothing that observes a job finishing.
+export function canBeBooked(trade: string): boolean {
     return groupForTrade(trade) === null;
+}
+
+// ---------------------------------------------------------------------------
+// BOOKED, OR ENQUIRED ABOUT
+//
+// Two different questions that were one function for as long as there was only
+// one answer to give.
+//
+// `canBeBooked` above asks whether a job can be agreed, priced and
+// completed through the site — and the reason it says no to maintenance has
+// not gone away: there is still no quote, no total and no completion step.
+// That is the BOOKING path and it does not exist for anybody yet.
+//
+// Phase two adds the other path. An enquiry agrees nothing and prices nothing.
+// It carries a description of a fault to one tradesman and, if he says yes,
+// hands over two phone numbers. No total is needed because no money moves:
+// every trade below is on the subscription, so the platform takes nothing per
+// job and the work is paid off-platform.
+//
+// So the same six trades are `false` for one and `true` for the other, and
+// that disagreement is the whole reason there are two functions. Anything that
+// collapses them back into one has lost the distinction.
+// ---------------------------------------------------------------------------
+
+// The trades a host can enquire about today.
+//
+// Seven, and each absence has a reason rather than an oversight:
+//
+//   trees       gardening is banded on `listings.plot_band`, and nothing
+//               writes that column — there is no field on the listing form.
+//               A gardener in the shop would show every host a blank where
+//               the price goes. It joins the day the form asks, and that is
+//               a one-line change to this list.
+//   sponge      cleaning and waste take 10% at acceptance. A commission needs
+//   bin         a total, a total needs a completion step, and that is a
+//               booking rather than an enquiry. They are also the two trades
+//               where a host can already see a real price from the bands, so
+//               sending them down the enquiry route would be a downgrade.
+//   chef        the four guest trades are sold to somebody on holiday and
+//   cake        have their own shop. Nothing about this one applies.
+//   basket
+//   paw
+export const SHOP_TRADES = [
+    'electrician', 'joiner', 'plumber', 'roofer', 'painter', 'handyman',
+    'droplet',
+] as const;
+
+// Whether a host can ask this trade to come and look at something.
+//
+// Read from the list rather than derived from the plan. Deriving it would say
+// "every subscription trade" and be wrong about gardening for a reason that
+// has nothing to do with money — which is exactly the trap `canBeBooked` fell
+// into when it derived itself from the pricing model.
+export function canBeEnquiredAbout(trade: string): boolean {
+    return (SHOP_TRADES as readonly string[]).indexOf(String(trade || '')) !== -1;
+}
+
+// The shop's trade list, in the order TRADES declares them.
+export function enquirableTrades(): Array<{ key: string; label: string }> {
+    return TRADES
+        .filter((t) => canBeEnquiredAbout(t.key))
+        .map((t) => ({ key: t.key, label: t.label }));
+}
+
+// A host trade that is not in the shop yet, and what to say about it.
+//
+// This exists so the entry page can list all ten host trades and tell the
+// truth about the three that do nothing, rather than showing a short list and
+// letting a host conclude the site has no cleaners. A host who came for a
+// cleaner and found silence assumes the page is broken.
+export function comingSoonNote(trade: string): string | null {
+    if (canBeEnquiredAbout(trade)) return null;
+    if (trade === 'sponge' || trade === 'bin') {
+        return 'Booked, not enquired about — coming shortly.';
+    }
+    if (trade === 'trees') return 'Coming shortly.';
+    return null;
 }
 
 export interface PricingDraft {
@@ -1882,7 +1968,7 @@ export function calloutLine(
 // nothing and showed nothing. The row simply never appeared, and the first
 // anybody heard of it was a provider asking why their tag never went live.
 //
-// Same shape as canBeRequested reading "not priced by the hour" instead of
+// Same shape as canBeBooked reading "not priced by the hour" instead of
 // "not maintenance": the page asserted the list of reasons that existed rather
 // than the rule, which is "show me anything waiting on me".
 //
@@ -2070,6 +2156,96 @@ export const COVERAGE_TOWNS = [
 
 export function townByKey(key: string) {
     return COVERAGE_TOWNS.filter((t) => t.key === key)[0] || null;
+}
+
+// ---------------------------------------------------------------------------
+// WHERE THE PROPERTY IS, WITHOUT ASKING
+// ---------------------------------------------------------------------------
+//
+// A host has already told us where their cottages are. Asking again is asking
+// somebody to type an answer we are holding, and it is the sort of question
+// that quietly makes a page feel like a form rather than a shop.
+//
+// Two ways of answering, best first:
+//
+//   the listing's own coordinates   exact, and what coverage is actually
+//                                   defined against — a circle around a town
+//                                   centre either contains the house or does
+//                                   not
+//   the town in `location`          for a listing that has no coordinates.
+//                                   Nullable columns, and plenty of older
+//                                   listings predate them
+//
+// If neither answers, the picker comes back. That is a fallback rather than a
+// failure: a host asking about a property that is not theirs, or not on the
+// site, is an ordinary thing to do.
+
+// Matching a free-text location to one of the towns coverage is measured from.
+//
+// EVERY PART, NOT JUST THE ONE townOf PICKS
+//
+// The obvious implementation is `townKey(location)` and a comparison, and it
+// is wrong here in a way that only shows up on real addresses.
+// `lib/places.ts` strips a leading part only when it LOOKS LIKE A STREET —
+// which means it starts with a number. So "18 Dovecroft, Kirkcudbright" gives
+// Kirkcudbright, and "Anchorlee, Gatehouse of Fleet" gives *Anchorlee*, because
+// a house name with no number is not recognisable as one.
+//
+// Houses named rather than numbered are the ordinary case across Dumfries and
+// Galloway, so that is not an edge: it is a large share of the listings on
+// this site quietly failing to match a town and being sent to a picker they
+// should never have seen. Caught by a test rather than by a host, narrowly.
+//
+// So every comma-separated part is checked, and the first that names a
+// coverage town wins. `townKey` is still the normaliser — the one the rest of
+// the site already groups stays by — applied per part and to the LABEL, so
+// "castle douglas", "Castle Douglas," and the hyphenated key all agree without
+// a second normaliser that could drift from the first.
+export function townForLocation(location: string | null | undefined) {
+    const parts = String(location || '').split(',');
+
+    for (const part of parts) {
+        const key = townKey(part);
+        if (!key) continue;
+
+        const found = COVERAGE_TOWNS.filter((t) => townKey(t.label) === key)[0];
+        if (found) return found;
+    }
+
+    return null;
+}
+
+export interface PropertyPoint {
+    lat: number;
+    lng: number;
+    label: string;
+    // How we worked it out, so a screen can say "your cottage in Wigtown"
+    // rather than implying a precision it does not have.
+    from: 'coordinates' | 'town';
+}
+
+// Where to search from, for one listing.
+export function pointForListing(listing: any): PropertyPoint | null {
+    if (!listing) return null;
+
+    const lat = Number(listing.latitude);
+    const lng = Number(listing.longitude);
+
+    if (isFinite(lat) && isFinite(lng) && (lat !== 0 || lng !== 0)) {
+        return {
+            lat,
+            lng,
+            label: townForLocation(listing.location)?.label
+                || String(listing.location || '').split(',')[0].trim()
+                || 'your property',
+            from: 'coordinates',
+        };
+    }
+
+    const town = townForLocation(listing.location);
+    if (town) return { lat: town.lat, lng: town.lng, label: town.label, from: 'town' };
+
+    return null;
 }
 
 export interface Area {
