@@ -11,9 +11,7 @@ import {
     TIME_WINDOWS,
     offersEmergency,
     needsDate,
-    clockTime,
     enquiryProblems,
-    EMERGENCY_MINUTES,
 } from '@/lib/serviceEnquiries';
 
 // Asking one tradesman to look at something.
@@ -273,28 +271,17 @@ export default function EnquiryForm({
     if (sent) {
         return (
             <Shell onClose={onClose} title="Sent">
-                {sent.emergency ? (
-                    <>
-                        <p className="text-slate-600">
-                            Your emergency has gone to {provider.business_name}, and to nobody else.
-                            They have {EMERGENCY_MINUTES} minutes to answer.
-                        </p>
-                        {/* The promise, in the plainest words available. A host
-                            watching water come through a ceiling is entitled to
-                            know exactly how long they are watching for. */}
-                        <p className="mt-4 rounded-xl bg-emerald-50 text-emerald-900 p-4 font-semibold">
-                            If they have not answered by {clockTime(sent.expires_at)} we will send you
-                            their number so you can ring them yourself. You will not be left waiting
-                            past that.
-                        </p>
-                    </>
-                ) : (
-                    <p className="text-slate-600">
-                        Your enquiry has gone to {provider.business_name}, and to nobody else. We will
-                        email you the moment they answer, and tell you if they do not so you can try
-                        somebody else.
-                    </p>
-                )}
+                {/* No countdown, and no promise of a number. The release is a
+                    safety net rather than an offer — see the long note above
+                    URGENCY_LEVELS in lib/serviceEnquiries.ts. A host told to
+                    wait twenty minutes for a phone number learns to pick
+                    emergency and wait, and then nobody ever accepts anything. */}
+                <p className="text-slate-600">
+                    Your {sent.emergency ? 'emergency has' : 'enquiry has'} gone to{' '}
+                    {provider.business_name}, and to nobody else.
+                    {sent.emergency ? ' We have marked it urgent.' : ''} We will email you the moment
+                    they answer, and tell you if they do not so you can try somebody else.
+                </p>
 
                 <p className="text-sm text-slate-500 mt-4">Reference {sent.reference}.</p>
                 <Link
@@ -328,11 +315,7 @@ export default function EnquiryForm({
                 disabled={sending || (emergency && !canDoEmergency)}
                 className="flex-1 rounded-xl bg-emerald-700 px-4 py-3 text-white font-semibold disabled:opacity-50"
             >
-                {sending
-                    ? 'Sending…'
-                    : emergency
-                        ? 'Send now — ' + EMERGENCY_MINUTES + ' minutes'
-                        : 'Send to ' + provider.business_name}
+                {sending ? 'Sending…' : 'Send to ' + provider.business_name}
             </button>
         </div>
     );
@@ -377,13 +360,7 @@ export default function EnquiryForm({
                     </p>
                 )}
 
-                {emergency && canDoEmergency && (
-                    <p className="rounded-xl bg-emerald-50 text-emerald-900 text-sm p-3">
-                        We ask them first and give them {EMERGENCY_MINUTES} minutes. If they have not
-                        answered by then we send you their number to ring. You are not left waiting
-                        either way.
-                    </p>
-                )}
+
 
                 {listings.length > 0 && (
                     <label className="block">
@@ -407,7 +384,7 @@ export default function EnquiryForm({
                             "something keeps tripping" means one thing to both
                             of them and the email needs no translating. */}
                         <legend className="text-sm font-semibold text-slate-700">
-                            Anything that fits? (optional)
+                            What&rsquo;s wrong?
                         </legend>
                         <div className="mt-2 flex flex-wrap gap-2">
                             {options.map((option) => (
@@ -430,7 +407,7 @@ export default function EnquiryForm({
                 )}
 
                 <label className="block">
-                    <span className="text-sm font-semibold text-slate-700">What is wrong?</span>
+                    <span className="text-sm font-semibold text-slate-700">Additional information</span>
                     <textarea
                         value={summary}
                         onChange={(e) => setSummary(e.target.value)}
@@ -536,8 +513,7 @@ export default function EnquiryForm({
                 </div>
 
                 <p className="text-xs text-slate-500">
-                    They see your name and number now. The address goes across only if they say yes
-                    {emergency ? ', or when we release their number to you' : ''}.
+                    They see your name and number now. The address goes across only if they say yes.
                 </p>
 
             </div>

@@ -89,7 +89,7 @@ export default async function EnquiryReplyPage({ params }: { params: { token: st
 
             <dl className="space-y-2 text-sm">
                 <Row label="How urgent" value={urgencyLabel(String(enquiry.urgency))} />
-                {faults.length > 0 && <Row label="What is wrong" value={faults.join(', ')} />}
+                {faults.length > 0 && <Row label="What's wrong" value={faults.join(', ')} />}
                 {enquiry.when_note && <Row label="When suits" value={enquiry.when_note} />}
                 {price && <Row label="Your published prices" value={price} />}
             </dl>

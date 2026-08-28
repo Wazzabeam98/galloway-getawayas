@@ -366,27 +366,68 @@ test('a town is matched however it was typed, and wherever it sits', () => {
 
 // --- what the host is told -------------------------------------------------
 
-test('a waiting emergency says when the number arrives, and never says help is coming', () => {
-    const waiting = hostStatusSummary('sent', 'Baxter Plumbing', {
-        urgency: 'emergency',
-        expires_at: '2026-09-01T21:20:00Z',
-    });
-
-    assert.ok(/give you their number/.test(waiting.detail), waiting.detail);
-
-    // With one tradesman and no fan-out, silence is the likeliest way this
-    // fails. A screen that implies somebody is on the way is how a host finds
-    // that out on the worst possible morning.
+// THE RELEASE IS NEVER ADVERTISED BEFORE IT HAPPENS.
+//
+// It was, briefly — on the urgency picker, the send button, the sent screen,
+// the host's status line and two emails — and that undoes the reason it
+// exists. A host told "pick emergency and you get the number in twenty
+// minutes" has been handed a way to skip the tradesman: everybody picks
+// emergency, everybody waits it out, nobody accepts, and the accept is the
+// only evidence that survives to justify the subscription.
+//
+// The words are allowed once it HAS happened. This pins the before.
+test('nothing offers a host the number while they are still waiting', () => {
     for (const status of ['sent', 'viewed']) {
-        const summary = hostStatusSummary(status, 'Baxter Plumbing', { urgency: 'soon' });
-        for (const phrase of ['on their way', 'coming', 'booked', 'confirmed']) {
+        const waiting = hostStatusSummary(status, 'Baxter Plumbing', {
+            urgency: 'emergency',
+            expires_at: '2026-09-01T21:20:00Z',
+        });
+
+        for (const leak of ['number', 'minute', '21:', 'ring them']) {
             assert.equal(
-                summary.detail.toLowerCase().indexOf(phrase),
+                waiting.detail.toLowerCase().indexOf(leak.toLowerCase()),
                 -1,
-                status + ' must not say "' + phrase + '"'
+                'a waiting emergency must not mention "' + leak + '": ' + waiting.detail
             );
         }
     }
+
+    // The urgency picker is the other place it leaked, and the most tempting
+    // one to write it back into.
+    const emergency = URGENCY_LEVELS.filter((u) => u.key === 'emergency')[0];
+    for (const leak of ['minute', 'their number', 'we give you']) {
+        assert.equal(
+            emergency.hint.toLowerCase().indexOf(leak),
+            -1,
+            'the emergency hint must not mention "' + leak + '": ' + emergency.hint
+        );
+    }
+});
+
+test('no waiting status implies somebody is on the way', () => {
+    // With one tradesman and no fan-out, silence is the likeliest way this
+    // fails. A screen that implies somebody is coming is how a host finds that
+    // out on the worst possible morning.
+    for (const status of ['sent', 'viewed']) {
+        for (const urgency of ['emergency', 'soon', 'planned']) {
+            const summary = hostStatusSummary(status, 'Baxter Plumbing', { urgency });
+            for (const phrase of ['on their way', 'coming', 'booked', 'confirmed']) {
+                assert.equal(
+                    summary.detail.toLowerCase().indexOf(phrase),
+                    -1,
+                    status + '/' + urgency + ' must not say "' + phrase + '"'
+                );
+            }
+        }
+    }
+});
+
+// The release itself still says everything, because by then it is a fact
+// rather than an offer.
+test('a released enquiry hands the number over in plain words', () => {
+    const released = hostStatusSummary('released', 'Baxter Plumbing');
+    assert.ok(/number/i.test(released.detail), released.detail);
+    assert.ok(/ring/i.test(released.detail), released.detail);
 });
 
 test('every status says something', () => {

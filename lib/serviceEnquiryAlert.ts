@@ -80,7 +80,7 @@ function jobRows(enquiry: any, listing: any): Array<{ label: string; value: stri
     ];
 
     if (faults.length) {
-        rows.push({ label: 'What is wrong', value: escapeHtml(faults.join(', ')) });
+        rows.push({ label: "What's wrong", value: escapeHtml(faults.join(', ')) });
     }
     // "Asked for", never "Booked for". Nothing here knows whether he is free
     // that day and nothing holds the window — see requestedWhen.
@@ -137,12 +137,15 @@ export async function announceEnquiry(
 
     // ---- the tradesman ----------------------------------------------------
     if (provider && provider.contact_email) {
+        // NO COUNTDOWN AND NO MECHANISM, for him either. Telling a tradesman
+        // "answer within twenty minutes or we hand over your number anyway"
+        // is telling him that doing nothing has the same outcome as saying
+        // yes, which is the opposite of the pressure that is wanted. What is
+        // true and useful is that it is urgent and it came only to him.
         const opening = emergency
-            ? '<p style="margin:0 0 16px;font-size:16px;">A property owner has an emergency and has asked for '
-                + 'you. <strong>Please answer in the next ' + EMERGENCY_MINUTES + ' minutes if you can.</strong> '
-                + 'If we have not heard from you by ' + escapeHtml(clockTime(enquiry.expires_at))
-                + ' we will give them your number so they can ring you — nobody is left waiting on an '
-                + 'emergency.</p>'
+            ? '<p style="margin:0 0 16px;font-size:16px;">A property owner has an <strong>emergency</strong> '
+                + 'and has asked for you. Please answer as quickly as you can — nobody else has been sent '
+                + 'this.</p>'
             : '<p style="margin:0 0 16px;font-size:16px;">A property owner has asked for you by name. '
                 + 'Nobody else has been sent this — it came to you only.</p>';
 
@@ -150,10 +153,7 @@ export async function announceEnquiry(
         // accept is what says the platform found him the work, and handing the
         // number over without one erases the only evidence of it.
         const afterwards = emergency
-            ? 'We will pass your name, number and email to them when you say yes. If we hear nothing by '
-                + escapeHtml(clockTime(enquiry.expires_at))
-                + ' we will pass your number anyway, because it is an emergency — but an answer from you is '
-                + 'far better for them and for you.'
+            ? 'We will pass your name, number and email to them when you say yes, and not before.'
             : 'We will pass your name, number and email to them when you say yes, and not before. If we hear '
                 + 'nothing in ' + escapeHtml(hoursUntil(enquiry.expires_at))
                 + ' we will tell them to try somebody else.';
@@ -189,9 +189,8 @@ export async function announceEnquiry(
 
         const body = emergency
             ? '<p style="margin:0 0 16px;font-size:16px;">Your emergency has gone to <strong>' + name
-                + '</strong>. If they have not answered by ' + escapeHtml(clockTime(enquiry.expires_at))
-                + ' we will send you their number so you can ring them yourself. You will not be left '
-                + 'waiting past that.</p>'
+                + '</strong>, marked urgent, and to nobody else. We will email you the moment they '
+                + 'answer.</p>'
             : '<p style="margin:0 0 16px;font-size:16px;">Your enquiry has gone to <strong>' + name
                 + '</strong>. We will email you the moment they answer, and if we hear nothing in '
                 + escapeHtml(hoursUntil(enquiry.expires_at)) + ' we will tell you so you can try somebody else.</p>'
@@ -396,8 +395,11 @@ export async function announceSilence(
             String(provider.contact_email),
             'They have your number now (' + String(enquiry.reference) + ')',
             emailLayout(
-                '<p style="margin:0 0 16px;font-size:16px;">We did not hear back on this one within '
-                    + EMERGENCY_MINUTES + ' minutes, and it was an emergency — so we have given '
+                // The ONE place the mechanism is named to a tradesman, and it
+                // is after it has already happened. Before the event it would
+                // read as permission to ignore the email.
+                '<p style="margin:0 0 16px;font-size:16px;">We did not hear back on this one quickly enough '
+                    + 'and it was an emergency, so we have given '
                     + escapeHtml(String(enquiry.host_name || 'the owner'))
                     + ' your number rather than leave them with nothing. They may ring shortly.</p>'
                     + summaryBlock(enquiry)

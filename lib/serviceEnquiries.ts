@@ -98,24 +98,46 @@ export function canRespond(status: string): boolean {
 // record of the work quietly stops existing.
 //
 // So an emergency is sent, and waits — but it waits for MINUTES, not days, and
-// silence releases the number instead of giving up on it. The host is never
-// left holding nothing: worst case they wait EMERGENCY_MINUTES and then get
-// exactly what they would have got immediately.
+// silence releases the number instead of giving up on it.
+//
+// ---------------------------------------------------------------------------
+// THE RELEASE IS A SAFETY NET AND IT IS NEVER PROMISED. READ THIS BEFORE
+// WRITING ANY COPY ABOUT IT.
+// ---------------------------------------------------------------------------
+//
+// It used to be advertised — on the urgency picker, on the send button, on the
+// sent screen and in two emails. Every one of those has been removed on
+// purpose, and putting any of it back undoes the reversal above.
+//
+// A host who is TOLD "pick emergency and you get the number in twenty minutes"
+// has been handed a way to skip the tradesman entirely. Everybody picks
+// emergency, everybody waits it out, nobody ever accepts, and the accept is
+// the only thing that survives to be pointed at when a tradesman asks what he
+// is paying twenty pounds a month for. Advertising the net removes the reason
+// the net exists.
+//
+// Deleting it is not the answer either: somebody with a flood and an
+// unanswered enquiry has to end up with a phone number.
+//
+// So it happens, quietly, and nothing before it happens mentions it. The words
+// only appear once it HAS happened — see announceSilence, where a release
+// tells the host the number and tells the tradesman why. That is a fact after
+// the event rather than an offer before it.
 //
 // WHY TWENTY MINUTES
 //
 // Short enough that a host with water coming through a ceiling is not sitting
-// still — that is the whole constraint on one side.
+// still. Long enough that the accept is a real event — a tradesman glances at
+// his phone between jobs, and five minutes would auto-release nearly every
+// emergency, which is the old behaviour wearing a delay.
 //
-// Long enough, on the other, that the accept is a real event. A tradesman
-// glances at his phone between jobs; five minutes would auto-release nearly
-// every emergency, which destroys the evidence this change exists to create
-// and would be the old behaviour wearing a delay. Twenty is the point where a
-// phone notification has plausibly been seen and answered.
+// The number to argue with once there are real ones to count is the ratio of
+// accepted to released.
 //
-// It is a constant rather than a number in three places because it is going to
-// be argued with once there are real ones to count, and the thing to look at
-// then is the ratio of accepted to released.
+// ONE MORE THING THAT IS NOT SETTLED. A tradesman consents to this by ticking
+// that he turns out — that tick is what makes releasing his number reasonable
+// — but the sign-up does not currently say so beside the tick, and his own
+// emails no longer say so either. The consent belongs where he gives it. Open.
 // ---------------------------------------------------------------------------
 
 export const EMERGENCY_MINUTES = 20;
@@ -124,8 +146,9 @@ export const URGENCY_LEVELS = [
     {
         key: 'emergency',
         label: 'Emergency — something is happening now',
-        hint: 'A leak, no power, no heat, a guest locked out. If nobody answers within '
-            + EMERGENCY_MINUTES + ' minutes we give you their number to ring.',
+        // Says what it is for, and promises nothing about what happens next.
+        // See the note above before adding anything here.
+        hint: 'A leak, no power, no heat, a guest locked out. We put it in front of them straight away.',
         minutes: EMERGENCY_MINUTES,
     },
     {
@@ -468,8 +491,12 @@ export function enquiryProblems(draft: EnquiryDraft): Problem[] {
     const summary = String(draft.summary || '').trim();
     if (summary.length < MIN_SUMMARY) {
         problems.push({
+            // Matches the field's label. The box is "Additional information"
+            // now — the ticked chips above it are "What's wrong?" — so an
+            // error telling somebody to say what is wrong points at the wrong
+            // control.
             field: 'summary',
-            message: 'Say what is wrong, in a sentence or two.',
+            message: 'Add a sentence or two about the problem.',
         });
     }
 
@@ -532,10 +559,10 @@ export function hostStatusSummary(
 ): { label: string; detail: string } {
     const who = String(businessName || 'They').trim() || 'They';
 
-    // An emergency still waiting says WHEN it stops waiting, because that is
-    // the promise being made and a host watching water come through a ceiling
-    // is entitled to know how long they are watching for. "Nobody has opened
-    // it yet" on its own would read as being left to it.
+    // A waiting emergency used to count down to the release. It does not any
+    // more: the release is a safety net, not an offer, and a host who is told
+    // to wait for a number learns to wait for a number. It says the enquiry is
+    // urgent and with them, which is true, and stops there.
     const emergencyWait = row
         && isEmergency(String(row.urgency || ''))
         && isOpen(status);
@@ -544,10 +571,8 @@ export function hostStatusSummary(
         return {
             label: status === 'viewed' ? 'Opened' : 'Sent',
             detail: (status === 'viewed'
-                ? who + ' has opened it. '
-                : who + ' has been emailed. ')
-                + 'If they have not answered by ' + clockTime(row!.expires_at)
-                + ' we will give you their number to ring.',
+                ? who + ' has opened it and not answered yet.'
+                : who + ' has been emailed and marked urgent.'),
         };
     }
 
