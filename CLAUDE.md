@@ -128,10 +128,23 @@ Three things bite every single session on the MacBook:
 
 ## House rules for this codebase
 
-- push straight to master for anything that isn't payments, payouts or
-  refunds. The site is private and pre-launch, so a branch and a merge is
-  friction for no gain. Money-touching code still goes on a branch for a
-  human to merge
+- **every change goes to master through a pull request.** master is protected
+  and the `test-and-build` check has to be green before the merge button
+  works, so a direct push is refused rather than merely reported afterwards.
+  This replaced "push straight to master for anything that isn't payments" on
+  28 August 2026: Vercel already refused to promote a build that would not
+  compile, but nothing stopped a green build with failing *tests* reaching
+  visitors, because Vercel never runs `npm test`. Money-touching code —
+  payments, payouts, refunds — additionally wants a human reading the diff
+  before the merge, not just a green tick
+- from the work laptop, at the Commit changes dialog, choose **"Create a new
+  branch for this commit and start a pull request"** rather than committing
+  to master. Then press *Enable auto-merge* and it lands by itself once the
+  check passes
+- locally, `git config core.hooksPath scripts/hooks` installs a pre-push hook
+  that runs the tests and the build before anything leaves the machine. It
+  refuses the push and names the file and line. `git push --no-verify` skips
+  it for one push, which is for a work-in-progress branch and never for master
 - move money before changing a booking's status, never the other way round
 - never put anything resettable in a Stripe idempotency key
 - `lib/pricing.ts` is the only place a total is calculated

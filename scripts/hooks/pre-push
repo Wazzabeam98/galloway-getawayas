@@ -1,0 +1,91 @@
+#!/bin/sh
+# Run the two gates before anything leaves this machine.
+#
+# WHY IT EXISTS ALONGSIDE CI. GitHub catches everything, but it catches it two
+# minutes after the push and only if somebody looks. This says no while the
+# change is still in front of you. It also means a red run on master is rarer,
+# which matters because a red cross is easy to scroll past.
+#
+# It does NOT cover the work done by pasting whole files into GitHub's web
+# editor — that never touches this machine. That path is covered by the branch
+# protection on master, and this hook is the local half of the same idea.
+#
+# INSTALL:
+#     git config core.hooksPath scripts/hooks
+#
+# One command, and it applies to every worktree of this repo. The hook lives in
+# the repo rather than in .git/hooks so it survives a fresh clone and so this
+# comment is readable by whoever wonders what refused their push.
+#
+# SKIP IT, DELIBERATELY, FOR ONE PUSH:
+#     git push --no-verify
+#
+# Use that when you already know — pushing a work-in-progress branch to look at
+# a Vercel preview, say. Not for master.
+
+set -e
+
+# Nothing to check when deleting a remote branch.
+if [ -t 0 ]; then :; else
+    all_deletes=1
+    any=0
+    while read -r _local_ref local_sha _remote_ref _remote_sha; do
+        any=1
+        [ "$local_sha" = "0000000000000000000000000000000000000000" ] || all_deletes=0
+    done
+    if [ "$any" = "1" ] && [ "$all_deletes" = "1" ]; then
+        exit 0
+    fi
+fi
+
+# node, npm and npx are not on the PATH a hook starts with — a login shell
+# picks them up from .zprofile and this does not. Same trap as every other
+# tool session in this repo; see CLAUDE.md.
+if [ -d "$HOME/.local/node/bin" ]; then
+    PATH="$HOME/.local/node/bin:$PATH"
+    export PATH
+fi
+
+if ! command -v npm > /dev/null 2>&1; then
+    echo "pre-push: npm is not on the PATH, so nothing was checked." >&2
+    echo "          This is a PATH problem, never a missing install — see CLAUDE.md." >&2
+    echo "          Fix the PATH, or push with --no-verify if you know what you are doing." >&2
+    exit 1
+fi
+
+echo "pre-push: running the tests…"
+
+# Compiled tests from another branch survive a branch switch. tsc writes into
+# .test-build and never cleans it, so a test file that exists on one branch and
+# not another stays compiled and keeps running. A suite reporting MORE than it
+# has is invisible in a way a failure never is.
+rm -rf .test-build
+
+if ! npm test > /tmp/gg-pre-push-test.log 2>&1; then
+    echo >&2
+    echo "pre-push: TESTS FAILED — nothing was pushed." >&2
+    echo >&2
+    tail -n 30 /tmp/gg-pre-push-test.log >&2
+    echo >&2
+    echo "  full log: /tmp/gg-pre-push-test.log" >&2
+    exit 1
+fi
+
+echo "pre-push: running the build…"
+
+# npm test and npm run build are not the same check, and the suite is the
+# weaker of the two: tsconfig.test.json sets "strict": false and names route
+# files one at a time, so it compiles code next build refuses and ignores most
+# of app/api entirely.
+if ! npm run build > /tmp/gg-pre-push-build.log 2>&1; then
+    echo >&2
+    echo "pre-push: BUILD FAILED — nothing was pushed." >&2
+    echo >&2
+    grep -iE "type error|error:|Failed to compile" /tmp/gg-pre-push-build.log | head -n 20 >&2
+    echo >&2
+    echo "  full log: /tmp/gg-pre-push-build.log" >&2
+    exit 1
+fi
+
+echo "pre-push: tests and build are green."
+exit 0

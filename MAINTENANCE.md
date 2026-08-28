@@ -928,3 +928,26 @@ one. The real deploy build on Vercel has the variables and does the rest.
 
 **It does not run the payment scripts, the journey checks or Playwright.**
 Those need a database, Stripe and a deployed preview. They stay manual.
+
+## The pre-push hook
+
+`scripts/hooks/pre-push` runs `npm test` and `npm run build` before anything
+leaves this machine, and refuses the push if either fails, naming the file and
+the line. Install it once per clone:
+
+```
+git config core.hooksPath scripts/hooks
+```
+
+It lives in the repo rather than in `.git/hooks` so it survives a fresh clone
+and so the reasoning is readable by whoever wonders what refused their push.
+`git push --no-verify` skips it for a single push — for a work-in-progress
+branch you want a Vercel preview of, never for master.
+
+It deletes `.test-build` first, for the reason given above: compiled tests from
+another branch survive a branch switch and a suite reporting more than it has
+is invisible in a way a failure never is.
+
+**It cannot cover the work done by pasting into GitHub's web editor**, which
+never touches this machine. That path is covered by branch protection on
+master instead. The two are halves of the same idea.
