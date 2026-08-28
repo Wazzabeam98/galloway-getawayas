@@ -7,7 +7,7 @@
 import fs from 'node:fs';
 import path from 'node:path';
 
-const TEST_PROJECT_REF = 'yefoqcabuijcowoqewtc';
+export const TEST_PROJECT_REF = 'yefoqcabuijcowoqewtc';
 
 function env(): Record<string, string> {
     const file = path.resolve(__dirname, '..', '.env.local');

@@ -16,12 +16,31 @@ import { defineConfig } from '@playwright/test';
 // Both were client-side, and both are the same shape: the round trip ends
 // somewhere the work is not.
 //
-// DEFAULTS TO THE PREVIEW, NOT PRODUCTION. This signs somebody up. Pointed at
-// production it would put junk applications in the real queue and real accounts
-// in the real auth table. The preview is backed by the test Supabase project,
-// which is where invented tradesmen belong.
+// WHERE IT POINTS, AND WHY IT IS NOT MASTER.
+//
+// This signs somebody up. Pointed at production it would put junk applications
+// in the real queue and real accounts in the real auth table.
+//
+// The obvious target — master's own preview — does not exist. Vercel lists
+// galloway-getawayas-git-master-… among the PRODUCTION aliases, so master's
+// branch URL and the live site are the same deployment. There is no preview of
+// master to point at.
+//
+// So there is a long-lived branch that exists only to be deployed as a preview:
+// `e2e-preview`, kept at master by `npm run e2e:sync`. It is backed by the test
+// Supabase project, which is where invented tradesmen belong.
+//
+// A branch off master rots, and that rot is exactly how this suite came to be
+// green against an eight-commit-old build. So the URL below is not trusted on
+// its own: e2e/global-setup.ts asks the deployment what it is before any test
+// runs, and refuses to go on if it is production, if it is writing to the
+// production database, or if it is behind master.
 export default defineConfig({
     testDir: './e2e',
+    // Runs before anything else and throws if the target is wrong. A refusal
+    // here fails the whole run rather than skipping tests, which is the point:
+    // a suite that quietly tests nothing is the failure being designed out.
+    globalSetup: './e2e/global-setup.ts',
     timeout: 90_000,
     expect: { timeout: 15_000 },
     fullyParallel: false,
@@ -29,7 +48,7 @@ export default defineConfig({
     reporter: [['list']],
     use: {
         baseURL: process.env.PLAYWRIGHT_BASE_URL
-            || 'https://galloway-getawayas-git-services-phase-one-wazzabeam98s-projects.vercel.app',
+            || 'https://galloway-getawayas-git-e2e-preview-wazzabeam98s-projects.vercel.app',
         headless: true,
         screenshot: 'only-on-failure',
         trace: 'retain-on-failure',

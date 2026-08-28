@@ -28,6 +28,7 @@ function load(options: {
     alertTo?: string | null;
     status?: string;
     ownerId?: string;
+    contactEmail?: string;
     declinedAt?: string | null;
     areas?: any[];
     approvedDigest?: string | null;
@@ -45,7 +46,12 @@ function load(options: {
         owner_id: options.ownerId || OWNER,
         business_name: 'Solway Sparkle',
         logo: null,
-        contact_email: 'hello@solwaysparkle.test',
+        // A real-looking domain on purpose. `.test` is reserved, and
+        // announceSubmission now reads it as an automated run and sends
+        // nothing — so a fixture sitting on one would make every assertion
+        // below pass for the wrong reason, or fail for one. The suppression
+        // has its own tests at the bottom of this file.
+        contact_email: options.contactEmail || 'hello@solwaysparkle.co.uk',
         contact_phone: null,
         trade: 'sponge',
         audience: 'host',
@@ -151,7 +157,7 @@ test('it carries enough to triage without opening the site', async () => {
     assert.match(html, /Sells to: owners/);
     assert.match(html, /Kirkcudbright \+ 10 miles/, 'coverage, with the radius');
     assert.match(html, /Castle Douglas \+ 5 miles/, 'every area, not just the first');
-    assert.match(html, /hello@solwaysparkle\.test/, 'how to reach them');
+    assert.match(html, /hello@solwaysparkle\.co\.uk/, 'how to reach them');
     assert.match(html, /\[Review application\]\(http:\/\/example\.invalid\/admin\/providers\)/,
         'the button says what he is about to do, not the name of a page');
     assert.match(html, /48 hours/, 'what was promised');
@@ -280,4 +286,47 @@ test('a changes alert that did not send is logged as such', async () => {
 
     assert.equal(logged.length, 1);
     assert.equal(logged[0].detail.kind, 'changes');
+});
+
+// ---------------------------------------------------------------------------
+// Automated runs do not ring the bell.
+//
+// scripts/journeys.mjs and the Playwright suite both lodge real applications,
+// and every one of them used to send a real "New business waiting" email to the
+// services inbox. An alert that mostly fires for nobody is an alert that stops
+// being read, which costs exactly the thing this route was built to protect:
+// noticing the one application that is real.
+//
+// The suppression is on the address, not on an environment variable, so it
+// cannot be got wrong per deployment and cannot swallow a genuine application —
+// see lib/testAddresses.ts.
+// ---------------------------------------------------------------------------
+
+test('an application from a reserved test domain sends no alert', async () => {
+    const { route, sent } = load({ contactEmail: 'e2e-joiner@gallowayauto.test' });
+    const res: any = await route.POST(call());
+
+    assert.equal(res.status, 200, 'the submission still succeeds');
+    assert.equal(sent.length, 0, 'but nobody is emailed about a robot');
+});
+
+test('the suppression is reported, not silent', async () => {
+    // The difference that matters: a skipped alert and a broken send must not
+    // look the same from the outside. This is what lets the e2e suite assert
+    // the stub is working rather than assume it.
+    const { route, logged } = load({ contactEmail: 'e2e-joiner@gallowayauto.test' });
+    const res: any = await route.POST(call());
+
+    assert.equal(res.body.emailed, false);
+    assert.equal(res.body.skipped, 'automated test address');
+    assert.equal(logged.length, 0, 'a test account is not an error worth logging');
+});
+
+test('a real address on an ordinary domain is still announced', async () => {
+    // The guard rail on the guard rail. A rule that suppresses too much is a
+    // worse bug than the noise it was written to stop, so the ordinary path is
+    // asserted right beside it.
+    const { route, sent } = load({ contactEmail: 'jobs@solwaysparkle.co.uk' });
+    await route.POST(call());
+    assert.equal(sent.length, 1, 'a person applying is still worth an email');
 });

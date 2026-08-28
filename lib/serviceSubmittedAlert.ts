@@ -14,6 +14,7 @@
 // the browser directly.
 
 import { adminClient } from '@/lib/supabaseAdmin';
+import { isAutomatedTestAddress } from '@/lib/testAddresses';
 import { sendEmail, emailLayout, escapeHtml, detailRows, button, SITE_URL } from '@/lib/email';
 import { logError } from '@/lib/logError';
 import {
@@ -93,6 +94,25 @@ export async function announceSubmission(provider: any): Promise<AnnounceResult>
     const again = waiting && !!provider.declined_at;
 
     const name = escapeHtml(provider.business_name || 'A business');
+
+    // An automated run is not a business waiting. The suites sign up
+    // tradesmen on reserved test domains, and every one of those used to ring
+    // the real bell — see lib/testAddresses.ts for why the address decides
+    // this rather than the environment.
+    //
+    // Only the SEND is skipped. Everything above this line has already
+    // happened exactly as it would for a real applicant: the row was read, the
+    // changes stamp was written, the areas and registrations were fetched. A
+    // stub that also skipped the work would be testing a different route from
+    // the one that runs in production.
+    //
+    // It is reported rather than swallowed. `skipped` comes back to the
+    // caller and the e2e suite asserts on it, so "the alert was suppressed"
+    // stays a checked behaviour instead of becoming a silence nobody can tell
+    // apart from a broken send.
+    if (isAutomatedTestAddress(provider.contact_email)) {
+        return { ok: true, emailed: false, skipped: 'automated test address' };
+    }
 
     const to = process.env.SERVICES_ALERT_EMAIL || '';
 

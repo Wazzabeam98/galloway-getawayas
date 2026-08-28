@@ -32,6 +32,7 @@
     "app/api/cron/error-digest/route.ts",
     "app/auth/callback/route.ts",
     "app/api/services/apply/route.ts",
-    "app/api/services/resend-verification/route.ts"
+    "app/api/services/resend-verification/route.ts",
+    "app/api/health/route.ts"
   ]
 }
