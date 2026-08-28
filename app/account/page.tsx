@@ -184,7 +184,7 @@ export default function AccountSettings() {
                 setLinkedProviders(providers);
 
                 const { data: profileData } = await supabase
-                    .from('profiles')
+                    .from('profile_private')
                     .select('full_name, preferred_name, phone, residential_address, show_full_name, avatar_url')
                     .eq('id', session.user.id)
                     .single();

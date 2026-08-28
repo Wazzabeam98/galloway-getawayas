@@ -120,7 +120,7 @@ export default function EnquiryForm({
 
         const load = async () => {
             const { data } = await supabase
-                .from('profiles')
+                .from('profile_private')
                 .select('full_name, preferred_name, phone')
                 .eq('id', session.user.id)
                 .maybeSingle();

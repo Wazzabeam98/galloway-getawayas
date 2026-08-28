@@ -1,6 +1,7 @@
 export const dynamic = "force-dynamic";
 import React from 'react'
 import type { Metadata } from 'next';
+import { adminClient } from '@/lib/supabaseAdmin';
 import { createServerComponentClient } from '@supabase/auth-helpers-nextjs'
 import { cookies } from 'next/headers';
 import { capitializeFirst, displayName, getImageUrl, formatTime } from '@/lib/utils';
@@ -231,16 +232,36 @@ const FindHome = async ({ params }: { params: { id: string } }) => {
     let hostAvatar: string | null = null;
     // Stripe has been through this host's identity documents. It is a check on
     // the person, not on the property, and the badge below says so.
+    //
+    // TWO READS, BECAUSE THEY ARE TWO DIFFERENT QUESTIONS.
+    //
+    // The name and the avatar are what a stranger is meant to see, and they
+    // come back as the visitor — most people here are signed out.
+    //
+    // `stripe_payouts_enabled` is not. It says only "this host can be paid",
+    // which is mild on its own, but it tells anyone reading which hosts are
+    // NOT set up to take money, and one Stripe column left public is the
+    // exception that gets forgotten and later extended. It is revoked from
+    // both browser roles by 20260828230825_profiles_private_columns.sql, so it
+    // is read here through the service role — this is a server component, so
+    // that costs a query and nothing else, and the flag never leaves the
+    // server except as the boolean below.
     let hostVerified = false;
     if (home?.host_id) {
         const { data: hostProfile } = await supabase
             .from('profiles')
-            .select('full_name, preferred_name, show_full_name, avatar_url, stripe_payouts_enabled')
+            .select('full_name, preferred_name, show_full_name, avatar_url')
             .eq('id', home.host_id)
             .single();
         hostName = displayName(hostProfile, 'Host');
         hostAvatar = hostProfile?.avatar_url || null;
-        hostVerified = hostProfile?.stripe_payouts_enabled === true;
+
+        const { data: payoutFlag } = await adminClient()
+            .from('profiles')
+            .select('stripe_payouts_enabled')
+            .eq('id', home.host_id)
+            .maybeSingle();
+        hostVerified = payoutFlag?.stripe_payouts_enabled === true;
     }
 
     // Guests see a first name only — a surname on a public page is more

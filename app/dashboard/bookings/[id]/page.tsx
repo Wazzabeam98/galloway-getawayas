@@ -99,7 +99,7 @@ export default async function BookingDetail({ params }: { params: { id: string }
         .maybeSingle();
 
     const { data: guest } = await admin
-        .from('profiles')
+        .from('profile_private')
         .select('id, full_name, preferred_name, show_full_name, phone, email')
         .eq('id', booking.guest_id)
         .maybeSingle();

@@ -178,7 +178,7 @@ export default async function EarningsPage({ searchParams }: { searchParams?: { 
     // shortens it as an account builds history, so the only honest figure is
     // whatever the account says today.
     const { data: payoutProfile } = await admin
-        .from('profiles')
+        .from('profile_private')
         .select('stripe_account_id')
         .eq('id', viewerId)
         .maybeSingle();

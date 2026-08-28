@@ -83,7 +83,9 @@ export default async function HomePage({
         // [from, to) exactly when it starts before the stay ends and ends
         // after the stay starts.
         const { data: clashing } = await supabase
-            .from('bookings')
+            // Busy nights, not bookings. See
+            // 20260828231530_bookings_are_not_public.sql.
+            .from('listing_busy_nights')
             .select('listing_id')
             .in('listing_id', ids)
             .in('status', ['pending', 'confirmed'])

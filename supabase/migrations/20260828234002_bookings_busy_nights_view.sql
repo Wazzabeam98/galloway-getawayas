@@ -1,0 +1,89 @@
+-- SPLIT IN TWO, AND THE ORDER IS THE WHOLE POINT.
+--
+-- This pair of changes cannot land as one migration, because a REVOKE is the
+-- case where "schema ahead of code" is not free. The standing rule in
+-- MAINTENANCE.md says a migration goes to production before the code that
+-- depends on it, and the reasoning it gives is that an unused column or a
+-- widened check costs nothing while a missing one fails at the database.
+--
+-- Taking a grant away inverts that. Run the revoke first and the LIVE code —
+-- which still reads those columns directly — breaks until the deploy lands.
+-- Deploy first and the new code reads views that do not exist yet. Either
+-- single order has a window in which the site is broken.
+--
+-- So there are three steps and no window:
+--
+--   1. this file, and its bookings twin — create the views. Additive; nothing
+--      reads them yet and nothing breaks.
+--   2. deploy the code, which starts reading the views.
+--   3. the revoke files — take the grants away, once nothing needs them.
+--
+-- A stranger stops being able to read bookings at all.
+--
+-- WHAT WAS WRONG
+--
+-- The policy `Public can view confirmed booking dates for calendar export`,
+-- USING (status = 'confirmed'), with select granted on the whole table to
+-- anon. Row-level security is per ROW, so "dates for calendar export" handed
+-- over every COLUMN of every confirmed booking to anybody holding the public
+-- key: total_price, amount_paid, amount_refunded, commission_rate,
+-- payout_amount, payout_transfer_id, the Stripe customer, payment method and
+-- intent ids, and both party ids.
+--
+-- Verified with scripts/data-privacy-rls.mjs, which asks with the anon key.
+-- Fourteen columns came back.
+--
+-- THE POLICY WAS NOT EVEN USED BY THE THING IT IS NAMED AFTER
+--
+-- app/api/ical/[id]/route.ts builds its own client with the SERVICE ROLE key.
+-- The calendar export has never read bookings as the public and does not need
+-- this policy. It was carrying two other readers instead — the availability
+-- calendar on a listing page, and the home page — and both want three columns.
+--
+-- SO: THE POLICY GOES, AND THE CALENDAR GETS A VIEW.
+--
+-- No row of `bookings` reaches a stranger again. What reaches them is
+-- listing_busy_nights: which listing, which nights, and whether those nights
+-- are pending or confirmed. Nothing about who, and nothing about money.
+--
+-- A BUG IS FIXED ON THE WAY PAST, AND IT IS WORTH SAYING OUT LOUD
+--
+-- Both readers ask for status in ('pending', 'confirmed'). The policy only
+-- ever permitted 'confirmed'. So a signed-out visitor — which is every new
+-- guest — saw nights that somebody was mid-checkout on as FREE. They picked
+-- them, filled in a card, and checkout refused them at the last step.
+--
+-- Nobody was double-booked: the checkout route re-checks server-side and
+-- returns 409. What was lost was the booking, and the guest's belief that the
+-- site works.
+--
+-- The view carries pending as well as confirmed, so those nights show as busy.
+-- The cost is the other direction and much smaller: if a pending checkout
+-- falls through, its nights look taken for the few minutes before the system
+-- releases them.
+--
+-- WHY authenticated KEEPS ITS GRANT
+--
+-- A guest and a host each need every column of THEIR OWN booking — the total,
+-- what has been paid, when the balance is due. That is a row question, and the
+-- two remaining policies answer it: guest_id = auth.uid() and
+-- host_id = auth.uid(). Dropping the public policy is what stops those same
+-- users reading everybody else's.
+--
+-- WHICH NIGHTS ARE TAKEN, AND NOTHING ELSE.
+--
+-- SECURITY DEFINER, like the other two views added this week: it has to see
+-- rows the caller cannot, which is the entire point. The protection is that it
+-- can only ever return these four columns for these two statuses — there is no
+-- filter for a caller to widen and no column for them to ask for.
+create or replace view "public"."listing_busy_nights" as
+    select "listing_id", "check_in", "check_out", "status"
+      from "public"."bookings"
+     where "status" in ('pending', 'confirmed');
+
+revoke all on "public"."listing_busy_nights" from "anon", "authenticated";
+grant select on "public"."listing_busy_nights" to "anon", "authenticated";
+
+-- Read back:
+--   select count(*) from information_schema.views where table_name = 'listing_busy_nights';
+-- Expected: 1. No policy is dropped by this file.

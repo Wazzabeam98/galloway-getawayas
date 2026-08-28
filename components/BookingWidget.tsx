@@ -220,7 +220,16 @@ export default function BookingWidget({
             setLoadingSession(false);
 
             const { data: existing } = await supabase
-                .from('bookings')
+                // Busy nights, not bookings. A stranger can read no row of `bookings` at
+                // all — see 20260828231530_bookings_are_not_public.sql — and the
+                // view returns which listing, which nights and whether they are
+                // pending or confirmed. Nothing about who, nothing about money.
+                //
+                // This is also where the lost-booking bug was: the old policy only
+                // permitted 'confirmed', so a signed-out guest saw nights somebody
+                // was mid-checkout on as free, picked them, and was refused at the
+                // card. The view carries pending too.
+                .from('listing_busy_nights')
                 .select('check_in, check_out')
                 .eq('listing_id', listingId)
                 .in('status', ['pending', 'confirmed']);
@@ -341,7 +350,7 @@ export default function BookingWidget({
             // stays for when identity checks are actually connected.
             if (instantBook && instantBookRequiresPhone) {
                 const { data: myProfile } = await supabase
-                    .from('profiles')
+                    .from('profile_private')
                     .select('phone')
                     .eq('id', session.user.id)
                     .single();

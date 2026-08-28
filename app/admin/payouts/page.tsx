@@ -46,7 +46,7 @@ export default async function AdminPayouts() {
 
     const { data: listings } = await admin.from('listings').select('id, title, commission_rate');
     const { data: hosts } = await admin
-        .from('profiles')
+        .from('profile_private')
         .select('id, full_name, preferred_name, show_full_name, stripe_account_id, stripe_payouts_enabled, payout_balance_owed');
 
     const listingTitle: Record<string, string> = {};

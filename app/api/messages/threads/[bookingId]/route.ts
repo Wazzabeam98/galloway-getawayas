@@ -82,7 +82,7 @@ export async function GET(
     const otherId = isGuest ? booking.host_id : booking.guest_id;
 
     const { data: otherProfile } = await admin
-        .from('profiles')
+        .from('profile_private')
         .select('id, full_name, preferred_name, show_full_name, phone, avatar_url')
         .eq('id', otherId)
         .maybeSingle();
