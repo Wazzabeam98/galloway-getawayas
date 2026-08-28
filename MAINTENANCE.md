@@ -805,23 +805,28 @@ date.
 Not a wish list. These stop the site working properly for real people, and each
 one has been observed rather than imagined.
 
-0. **The phase-two migrations have not been run on production.** All of them
-   are applied to **test** and none to production, so the services shop cannot
-   work there until they are. In order:
+0. ~~The phase-two migrations have not been run on production.~~ **Done on
+   28 August 2026.** All five applied to production in order, each dry-run
+   first and read back after:
 
-   | File | Notes |
+   | File | What it did |
    |---|---|
-   | `20260828104048_service_enquiries` | creates the table |
-   | `20260828111354_enquiry_emergency_and_dates` | run after the above |
-   | `20260828113521_one_open_per_job` | reshapes the one-open index |
-   | `20260828123016_no_automatic_release` | **needs `--destructive`** — drops `released_at` |
-   | `20260828124759_provider_sms_opt_out` | adds `sms_opt_out` |
+   | `20260828104048_service_enquiries` | created the table: 7 indexes, 4 policies |
+   | `20260828111354_enquiry_emergency_and_dates` | `expires_at` NOT NULL, added the date and window columns |
+   | `20260828113521_one_open_per_job` | reshaped the one-open index onto urgency and property |
+   | `20260828123016_no_automatic_release` | dropped `released_at`, six statuses in the check |
+   | `20260828124759_provider_sms_opt_out` | added `sms_opt_out` and its two column grants |
 
-   `scripts/migrate.mjs` refuses production by design, so these are pasted by
-   hand in the SQL editor, in this order, checking the pre-flight query at the
-   top of each. The destructive one drops a column: its pre-flight counts rows
-   and expects zero, and if production ever holds an enquiry that count is the
-   thing to read *before* running it rather than after.
+   The column list on production now hashes identically to test.
+
+   **A correction worth keeping**, because this note had it wrong: this file
+   used to say `scripts/migrate.mjs` refuses production and that these must be
+   pasted by hand. That was true until 27 August 2026 and is not now — the rule
+   was lifted deliberately, and production is reachable with `--target prod`
+   against `SUPABASE_PROD_DB_URL`, which is a separate variable so a production
+   string can never sit in a slot named TEST. A stale safety note is worse than
+   none: it invites somebody to route around a guard that is not there, by hand,
+   in an editor with no dry run and no destructive flag.
 
 1. **Auth email needs its own SMTP. VERIFIED ON TEST; UNVERIFIED ON
    PRODUCTION.**
