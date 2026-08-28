@@ -6,6 +6,9 @@ import { notFound } from 'next/navigation';
 import { getImageUrl, displayName } from '@/lib/utils';
 import { publicArea } from '@/lib/places';
 import AdminListingRow from '@/components/admin/AdminListingRow';
+import ListingReviewQueue from '@/components/admin/ListingReviewQueue';
+import { publishProblems, fromRow } from '@/lib/listingRules';
+import { waitedFor } from '@/lib/email';
 
 export const dynamic = 'force-dynamic';
 
@@ -45,7 +48,7 @@ export default async function AdminListings() {
     // broken key, and is a lie in the one place that must not tell them.
     const { data: listings, error: listingsError } = await admin
         .from('listings')
-        .select('id, title, location, images, status, host_id, created_at')
+        .select('id, title, location, images, status, host_id, created_at, property_type, street_address, postcode, price_per_night, max_guests, bedrooms, beds, bathrooms, amenities, description, check_in_method, weekend_price')
         .order('created_at', { ascending: false });
 
     if (listingsError) {
@@ -137,6 +140,22 @@ export default async function AdminListings() {
                 <span className="text-slate-500">{hidden.length} hidden</span>
                 <span className="text-slate-500">{drafts.length} draft</span>
             </div>
+
+            {/* The queue first, because it is the only part of this page that
+                is somebody waiting on us. Everything below is reference. */}
+            <ListingReviewQueue
+                items={waiting.map((l) => ({
+                    id: l.id,
+                    title: l.title || 'Untitled listing',
+                    area: publicArea(l.location),
+                    image: l.images && l.images.length ? getImageUrl(l.images[0]) : null,
+                    hostName: hostName[l.host_id] || 'Host',
+                    // The wizard's own rules, so the queue and the form cannot
+                    // disagree about what "finished" means.
+                    problems: publishProblems(fromRow(l)).map((p) => p.message),
+                    waitingSince: waitedFor(l.created_at),
+                }))}
+            />
 
             <div className="space-y-3">
                 {rows.map((l) => (
