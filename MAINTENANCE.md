@@ -9,6 +9,49 @@ book and pay through the site; the platform takes a commission and passes the
 rest to the property owner. Real money moves through it, so mistakes here cost
 somebody something.
 
+## The migration goes to production BEFORE the code that needs it
+
+**A migration reaches production before the code that depends on it merges.
+Never after.** No exceptions, including "it is only a widened constraint" and
+"nothing writes it yet".
+
+This is a standing rule as of 28 August 2026, and it exists because two
+sessions now work on this repo at once. Each can merge a branch the other has
+not read, and a migration that lives on a branch is invisible to whoever
+merges next — the code arrives on production and the schema does not follow,
+because the person who would have run it is not the person who pressed merge.
+
+**Why the ordering and not the reverse.** A schema that is ahead of its code
+costs nothing: an unused column, a widened check nothing writes, a table with
+no rows. A schema that is behind its code fails at the database, which on this
+project has never been loud. The insert is refused, the browser reports
+success, and the row simply is not there. Adding `hidden` to listings and
+`pending_payment` to bookings both hit exactly that.
+
+**In practice:**
+
+- Run it with `node scripts/migrate.mjs --target prod <file> --apply`, after a
+  dry run. Read the pre-flight at the top of the file first; run the read-back
+  after.
+- Do it before the pull request merges, not after — the merge is what makes it
+  urgent, so it should already be done by then.
+- If a migration is destructive, its pre-flight decides whether it runs at all.
+  Read the count *before*.
+- A branch carrying a migration should say so in its description, so whoever
+  merges knows there is a database step they did not write.
+
+**How to check what is outstanding**, in a checkout of the branch:
+
+```
+node scripts/migrate.mjs --target prod --sql "select table_name from information_schema.tables where table_schema='public' order by table_name"
+```
+
+and compare against `supabase/migrations`. There is no ledger table — the
+migrations are applied by hand and nothing records that they ran, which is the
+weakness this rule works around rather than fixes. A `schema_migrations` table
+would make it checkable instead of remembered, and is worth building the next
+time this bites.
+
 ## Which database am I on?
 
 There are two Supabase projects and three ways to end up on the wrong one.
@@ -819,10 +862,11 @@ one has been observed rather than imagined.
 
    The column list on production now hashes identically to test.
 
-   **Still pending on production:** `20260828145609_service_wanted` (the table
-   behind the empty-state prompt). Applied to test only. Run it with
-   `node scripts/migrate.mjs --target prod <file> --apply` before phase two
-   merges, or the empty state's button returns a 500 on the live site.
+   `20260828145609_service_wanted` followed on the same day, along with the
+   other session's `20260828143000_listing_pending_review`, which had merged
+   without being run. **Nothing phase-two is outstanding on production.** The
+   `service_enquiries` and `service_wanted` column lists both hash identically
+   to test.
 
    **A correction worth keeping**, because this note had it wrong: this file
    used to say `scripts/migrate.mjs` refuses production and that these must be
