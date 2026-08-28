@@ -119,7 +119,7 @@ function describe(d, indent = '  ') {
  * because it was made from an earlier commit — or because what you are testing
  * was never committed at all, which no amount of looking at Vercel will reveal.
  */
-function compareWorkingCopy(deployedSha) {
+function compareWorkingCopy(deployedSha, latestSha) {
     const branch = git('rev-parse --abbrev-ref HEAD');
     const head = git('rev-parse HEAD');
     const dirty = git('status --porcelain');
@@ -134,7 +134,12 @@ function compareWorkingCopy(deployedSha) {
     if (!deployedSha) {
         console.log('  the live build carries no commit — cannot compare');
     } else if (head === deployedSha) {
-        console.log('  MATCHES the live build — the deployed code is your commit');
+        console.log('  MATCHES what is live — the code visitors get is your commit');
+    } else if (latestSha && head === latestSha) {
+        // Your push arrived and built; it just is not serving yet. Worth its
+        // own line, because "it is not live" and "it did not go out" are very
+        // different problems and only one of them is yours to fix.
+        console.log('  your commit is BUILT but NOT YET LIVE — see the newer build above');
     } else {
         // rev-list needs both commits present locally. After a fetch they will
         // be; on a fresh clone or an unfetched branch they may not, and saying
@@ -158,33 +163,70 @@ function compareWorkingCopy(deployedSha) {
     }
 }
 
-async function production() {
-    const project = await api(`/v9/projects/${projectId}`);
-    const live = project.targets?.production;
-    const aliases = live?.alias || project.alias || [];
+/**
+ * The production domains, asked for independently of any deployment.
+ *
+ * This matters: project.targets.production is the LATEST production
+ * deployment, which during a build is the one still building. Reading the live
+ * commit off it reports a build as live several minutes before it is — the
+ * exact confusion this script exists to remove.
+ */
+async function productionDomains() {
+    const body = await api(`/v9/projects/${projectId}/domains`);
+    const names = (body.domains || [])
+        .filter((d) => !d.redirect && !d.gitBranch)
+        .map((d) => d.name);
+    // A custom domain first: it is the one somebody actually has open.
+    names.sort((a, b) => Number(a.endsWith('.vercel.app')) - Number(b.endsWith('.vercel.app')));
+    return names;
+}
 
-    console.log('=== PRODUCTION ===');
+async function production() {
+    const [domains, project] = await Promise.all([
+        productionDomains(),
+        api(`/v9/projects/${projectId}`),
+    ]);
+    const latest = project.targets?.production || null;
+
+    // What the alias resolves to IS what visitors get, whatever else is in
+    // flight. Everything below is reported against this and not against
+    // whichever deployment happens to be newest.
+    let live = null;
+    for (const host of domains) {
+        try {
+            live = await api(`/v13/deployments/${encodeURIComponent(host)}`);
+            break;
+        } catch {
+            // A domain that is configured but not yet resolving. Try the next.
+        }
+    }
+
+    console.log('=== LIVE ON PRODUCTION ===');
     if (!live) {
-        console.log('  no production deployment');
-        return null;
+        console.log('  no domain resolved to a deployment');
+        if (!latest) return { live: null, latest: null };
+        console.log('  falling back to the latest production build, which may not be serving yet:');
+        describe(latest, '    ');
+        return { live: null, latest: latest.meta?.githubCommitSha || null };
     }
     describe(live);
-    if (aliases.length) {
+    if (domains.length) {
         console.log('  reached at:');
-        for (const a of aliases) console.log(`      https://${a}`);
+        for (const d of domains) console.log(`      https://${d}`);
     }
 
-    // A build can be READY while an OLDER one is still the one the alias
-    // serves, because promotion is a separate step from building. Worth saying
-    // out loud rather than leaving the reader to assume newest == live.
-    const recent = (await api(`/v6/deployments?projectId=${projectId}&target=production&limit=5`)).deployments || [];
-    const newer = recent.filter((d) => (d.created || 0) > (live.createdAt || live.created || 0));
-    if (newer.length) {
-        console.log(`\n  NOTE: ${newer.length} newer production build(s) exist but are not the live one:`);
-        for (const d of newer) describe(d, '    ');
+    // Promotion is a separate step from building, so a newer build can exist,
+    // be READY, and still not be the one anybody is getting.
+    if (latest && latest.url && latest.url !== live.url) {
+        console.log('\n=== NEWER, NOT LIVE ===');
+        describe(latest, '  ');
+        console.log('  this has not replaced the build above — until it does, the section above is what visitors get');
     }
 
-    return live.meta?.githubCommitSha || null;
+    return {
+        live: live.meta?.githubCommitSha || null,
+        latest: latest?.meta?.githubCommitSha || null,
+    };
 }
 
 async function byUrl(host) {
@@ -249,8 +291,8 @@ async function report() {
     if (url) return byUrl(url);
     if (br) return branch(br);
     if (args.includes('--list')) return list();
-    const sha = await production();
-    compareWorkingCopy(sha);
+    const { live, latest } = await production();
+    compareWorkingCopy(live, latest);
 }
 
 await report().catch((e) => { console.error(e.message); process.exit(1); });

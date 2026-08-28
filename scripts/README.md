@@ -110,14 +110,26 @@ The default run answers the first and compares it to your checkout, which is the
 part Vercel cannot tell you:
 
 ```
-=== PRODUCTION ===
+=== LIVE ON PRODUCTION ===
   READY — this is what visitors get
       30ae1d2 master  "Press the button, in a real browser, at last"
 
 === YOUR WORKING COPY ===
   master @ 30ae1d2
-  MATCHES the live build — the deployed code is your commit
+  MATCHES what is live — the code visitors get is your commit
   1 uncommitted file(s) — on no server anywhere, deployed or not
+```
+
+"Live" here means *what the domain resolves to*, which is not the same as the
+newest build and is the distinction the whole script turns on. Vercel's own
+`targets.production` is the LATEST production deployment — during a build that
+is the one still building, so reading the live commit off it reports a push as
+live minutes before it is. This asks the domain instead. When a newer build
+exists but has not replaced the live one, it gets its own section, and a push of
+your own that has built but is not yet serving is called out as exactly that:
+
+```
+your commit is BUILT but NOT YET LIVE — see the newer build above
 ```
 
 `--url` is for the third question, and it is the one worth reaching for when a
