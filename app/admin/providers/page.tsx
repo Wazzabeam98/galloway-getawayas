@@ -22,6 +22,7 @@ import {
 import { skillIsPublic, blockedSkillReason } from '@/lib/serviceSkills';
 import { asksAboutFuel } from '@/lib/serviceProviders';
 import ProviderReviewRow from '@/components/admin/ProviderReviewRow';
+import BulkApprove from '@/components/admin/BulkApprove';
 
 export const dynamic = 'force-dynamic';
 
@@ -207,6 +208,17 @@ export default async function AdminProviders() {
                     <h2 className="text-xs font-bold uppercase tracking-wider text-slate-500 mb-3">
                         Waiting for review
                     </h2>
+
+                    {/* Only the ones with nothing blocking them. A business
+                        whose registration has not been verified is in the list
+                        below to be looked at, not swept through with the rest. */}
+                    <BulkApprove
+                        endpoint="/api/admin/providers"
+                        ids={waiting.filter((p: any) => blockersFor(p).length === 0).map((p: any) => p.id)}
+                        noun="business"
+                        nounPlural="businesses"
+                    />
+
                     <div className="space-y-4">
                         {waiting.map((p: any) => (
                             <ProviderReviewRow

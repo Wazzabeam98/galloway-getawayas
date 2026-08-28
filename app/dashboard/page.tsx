@@ -22,6 +22,9 @@ function ListingCard({ item, isDraft }: { item: any; isDraft: boolean }) {
     // that a host can never press Submit and watch their property disappear
     // off their own dashboard.
     const isWaiting = item.status === 'pending_review';
+    // A draft with a note on it was returned by an owner with something to fix.
+    // A draft without one was simply never finished.
+    const sentBack = isDraft && !!item.review_note;
 
     const pillTone = isDraft
         ? 'bg-amber-100 text-amber-800'
@@ -36,7 +39,7 @@ function ListingCard({ item, isDraft }: { item: any; isDraft: boolean }) {
         : 'bg-green-500';
 
     const pillLabel = isDraft
-        ? 'In progress'
+        ? (sentBack ? 'Needs changes' : 'In progress')
         : isWaiting ? 'Waiting for approval'
         : isHidden ? 'Hidden'
         : 'Listed';
@@ -66,8 +69,17 @@ function ListingCard({ item, isDraft }: { item: any; isDraft: boolean }) {
                 {!isDraft && (
                     <p className="text-sm font-medium text-slate-700 mt-0.5">£{item.price_per_night} / night</p>
                 )}
-                {isDraft && (
+                {isDraft && !sentBack && (
                     <p className="text-sm font-medium text-amber-700 mt-0.5">Click to finish setting up</p>
+                )}
+                {/* A draft carrying a review note was sent back, not abandoned.
+                    Saying only "click to finish setting up" to somebody whose
+                    listing we returned is how they read it as their own
+                    forgetfulness and never find out what we asked for. */}
+                {sentBack && (
+                    <p className="text-sm font-medium text-amber-800 mt-0.5">
+                        Sent back: {item.review_note}
+                    </p>
                 )}
                 {isWaiting && (
                     <p className="text-sm font-medium text-sky-800 mt-0.5">
@@ -119,7 +131,7 @@ export default async function Dashboard() {
     const { data: homes } = allIds.length
         ? await admin
             .from("listings")
-            .select("id, images, title, location, price_per_night, created_at, status")
+            .select("id, images, title, location, price_per_night, created_at, status, review_note")
             .in("id", allIds)
             .order("created_at", { ascending: false })
         : { data: [] };
