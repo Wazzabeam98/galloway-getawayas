@@ -99,10 +99,15 @@ export default function AdminListingRow({
                             ? 'bg-green-100 text-green-800'
                             : status === 'hidden'
                                 ? 'bg-slate-200 text-slate-700'
-                                : 'bg-amber-100 text-amber-800'
+                                : status === 'pending_review'
+                                    ? 'bg-sky-100 text-sky-900'
+                                    : 'bg-amber-100 text-amber-800'
                     }`}
                 >
-                    {status}
+                    {/* The column value everywhere else, but not here: an
+                        owner triaging a queue should read "waiting", not the
+                        database's word for it. */}
+                    {status === 'pending_review' ? 'waiting' : status}
                 </span>
 
                 {/* A draft is not on the site, so there is nothing to take off it. */}

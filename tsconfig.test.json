@@ -35,6 +35,7 @@
     "app/api/services/resend-verification/route.ts",
     "app/api/health/route.ts",
     "app/api/stripe/refund/route.ts",
-    "app/api/bookings/cancel/route.ts"
+    "app/api/bookings/cancel/route.ts",
+    "app/api/listings/visibility/route.ts"
   ]
 }

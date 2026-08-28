@@ -49,7 +49,25 @@ export async function POST(request: Request) {
             .eq('id', listingId)
             .maybeSingle();
 
-        if (!listing || listing.status === 'draft') {
+        // Only a listing that has already been live may be hidden and unhidden.
+        //
+        // This is a service-role write, so whatever it allows is allowed
+        // absolutely — row-level security is not in the path. It used to refuse
+        // only 'draft' and let everything else through, which was safe while
+        // 'published' and 'hidden' were the only other values.
+        //
+        // 'pending_review' breaks that. A host whose listing was waiting for
+        // approval could call this with hidden:false and set it to 'published'
+        // themselves — approving their own listing in one request. That is the
+        // hole column grants closed for providers in
+        // 20260827185827_provider_status_grants.sql, and it is closed the same
+        // way here: by naming what is allowed rather than what is not.
+        //
+        // Nothing can be 'pending_review' yet. This lands before anything can,
+        // deliberately.
+        const TOGGLEABLE = ['published', 'hidden'];
+
+        if (!listing || TOGGLEABLE.indexOf(listing.status) === -1) {
             return NextResponse.json(
                 { ok: false, error: 'This listing isn\u2019t published yet.' },
                 { status: 400 }

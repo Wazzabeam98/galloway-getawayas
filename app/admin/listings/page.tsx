@@ -105,6 +105,11 @@ export default async function AdminListings() {
     const published = rows.filter((l) => l.status === 'published');
     const hidden = rows.filter((l) => l.status === 'hidden');
     const drafts = rows.filter((l) => l.status === 'draft');
+    // Counted separately and first, because it is the only one of these that
+    // is somebody waiting on us. Nothing writes this status yet — the count
+    // reads zero until publishing moves to the server, at which point this is
+    // the queue, and it is deliberately visible before it can fill up.
+    const waiting = rows.filter((l) => l.status === 'pending_review');
 
     return (
         <div className="max-w-4xl mx-auto px-6 py-10">
@@ -122,7 +127,12 @@ export default async function AdminListings() {
                 their stay, and the host still has to honour it.
             </p>
 
-            <div className="flex gap-4 text-sm mb-8">
+            <div className="flex flex-wrap gap-4 text-sm mb-8">
+                {waiting.length > 0 && (
+                    <span className="text-sky-900 font-semibold">
+                        {waiting.length} waiting for approval
+                    </span>
+                )}
                 <span className="text-slate-800 font-semibold">{published.length} live</span>
                 <span className="text-slate-500">{hidden.length} hidden</span>
                 <span className="text-slate-500">{drafts.length} draft</span>
