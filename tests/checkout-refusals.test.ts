@@ -9,11 +9,29 @@
 // thing that can be wrong and every price guard in the route is built on it;
 // then the refusals, each one driven into the state where it must fire.
 //
-// Every test in the second half was watched failing before it was trusted:
-// the guard was commented out of a scratch copy of the route, the test was run
-// and seen to go green on a charge that should never have happened, and only
-// then was the guard put back. A refusal test that has only ever been seen
-// passing is a test of nothing.
+// EVERY GUARD HERE WAS WATCHED FAILING BEFORE IT WAS TRUSTED, with
+// scripts/mutate.sh. A refusal test that has only ever been seen passing is a
+// test of nothing. Each of these was broken on purpose and the suite was run:
+//
+//   price mismatch guard removed                caught by 2
+//   over-capacity guard removed                 caught by 2
+//   blocked-dates guard removed                 caught by 2
+//   overlap guard removed                       caught by 1
+//   hold guard removed                          caught by 1
+//   ownership guard removed                     caught by 1
+//   already-paid guard removed                  caught by 1
+//   signed-in guard removed                     caught by 1
+//   valid-stay guard removed                    caught by 1
+//
+// And three that weaken rather than remove, because a guard that is still
+// there and no longer means anything is the harder failure to notice:
+//
+//   totalsMatch tolerance widened to a fiver    caught by 3
+//   totalsMatch always agrees                   caught by 5
+//   children no longer counted towards capacity caught by 2
+//
+// Nothing survived. Re-run any of them with:
+//   ./scripts/mutate.sh app/api/stripe/checkout/route.ts <from> <to> <label>
 
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
