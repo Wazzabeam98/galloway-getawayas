@@ -1,8 +1,8 @@
 import { createRouteHandlerClient } from '@supabase/auth-helpers-nextjs';
 import { cookies } from 'next/headers';
 import { NextResponse } from 'next/server';
-import { randomBytes, createHash } from 'crypto';
 import { adminClient } from '@/lib/supabaseAdmin';
+import { newReplyToken, hashReplyToken } from '@/lib/enquiryToken';
 import { logError } from '@/lib/logError';
 import { announceEnquiry } from '@/lib/serviceEnquiryAlert';
 import { canBeEnquiredAbout, registrationBlockers } from '@/lib/serviceProviders';
@@ -59,10 +59,6 @@ interface Body {
     preferred_date?: string | null;
     window_from?: string | null;
     window_to?: string | null;
-}
-
-function hashToken(token: string): string {
-    return createHash('sha256').update(token).digest('hex');
 }
 
 export async function POST(req: Request) {
@@ -202,7 +198,7 @@ export async function POST(req: Request) {
 
         // ---- write it -------------------------------------------------------
         const sentAt = new Date();
-        const token = randomBytes(24).toString('base64url');
+        const token = newReplyToken();
 
         const row: any = {
             host_id: auth.user.id,
@@ -223,7 +219,7 @@ export async function POST(req: Request) {
             status: 'sent',
             sent_at: sentAt.toISOString(),
             expires_at: expiresAt(draft.urgency, sentAt),
-            reply_token_hash: hashToken(token),
+            reply_token_hash: hashReplyToken(token),
 
             // Only where the urgency asks for them. A date arriving on an
             // emergency is a stale form field rather than an intention, and it

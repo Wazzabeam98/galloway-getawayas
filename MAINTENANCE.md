@@ -819,6 +819,11 @@ one has been observed rather than imagined.
 
    The column list on production now hashes identically to test.
 
+   **Still pending on production:** `20260828145609_service_wanted` (the table
+   behind the empty-state prompt). Applied to test only. Run it with
+   `node scripts/migrate.mjs --target prod <file> --apply` before phase two
+   merges, or the empty state's button returns a 500 on the live site.
+
    **A correction worth keeping**, because this note had it wrong: this file
    used to say `scripts/migrate.mjs` refuses production and that these must be
    pasted by hand. That was true until 27 August 2026 and is not now — the rule

@@ -1,6 +1,6 @@
 import { NextResponse } from 'next/server';
-import { createHash } from 'crypto';
 import { adminClient } from '@/lib/supabaseAdmin';
+import { hashReplyToken } from '@/lib/enquiryToken';
 import { logError } from '@/lib/logError';
 import { announceResponse } from '@/lib/serviceEnquiryAlert';
 import { canRespond } from '@/lib/serviceEnquiries';
@@ -49,7 +49,7 @@ export async function POST(req: Request) {
         }
 
         const admin = adminClient();
-        const hash = createHash('sha256').update(token).digest('hex');
+        const hash = hashReplyToken(token);
 
         const { data: enquiry } = await admin
             .from('service_enquiries')

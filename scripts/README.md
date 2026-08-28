@@ -159,9 +159,14 @@ node scripts/check-deploy.mjs --list           # recent deployments
 node scripts/check-deploy.mjs --watch          # re-check every 10s
 ```
 
-Read-only: it issues GETs and nothing else, so it cannot deploy, promote, roll
-back or delete. Safe to run mid-deploy. `VERCEL_TOKEN` is in `.env.local`; the
-project and team are read from `.vercel/project.json`.
+Read-only: **this script** issues GETs and nothing else, so it cannot deploy,
+promote, roll back or delete. Safe to run mid-deploy.
+
+The restraint is in the script, not in the credential. `VERCEL_TOKEN` itself is
+a full-access project token — it created production environment variables and
+triggered a production deployment on 28 August 2026 — so anything else written
+against it can reach the live site. `.vercel/project.json` supplies the project
+and team.
 
 "Am I looking at the newest build?" is three questions that get run together,
 and the guessing comes from answering one and assuming the others:

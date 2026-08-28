@@ -1,5 +1,5 @@
-import { createHash } from 'crypto';
 import { adminClient } from '@/lib/supabaseAdmin';
+import { hashReplyToken } from '@/lib/enquiryToken';
 import { markViewed } from '@/lib/serviceEnquiryAlert';
 import { tradeLabel } from '@/lib/serviceProviders';
 import {
@@ -33,7 +33,7 @@ export const dynamic = 'force-dynamic';
 // quoted back at him.
 export default async function EnquiryReplyPage({ params }: { params: { token: string } }) {
     const admin = adminClient();
-    const hash = createHash('sha256').update(String(params.token || '')).digest('hex');
+    const hash = hashReplyToken(String(params.token || ''));
 
     const { data: enquiry } = await admin
         .from('service_enquiries')

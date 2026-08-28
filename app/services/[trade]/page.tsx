@@ -22,6 +22,7 @@ import {
     pointForListing,
 } from '@/lib/serviceProviders';
 import EnquiryForm from '@/components/services/EnquiryForm';
+import WantedPrompt from '@/components/services/WantedPrompt';
 
 // Who covers you, for one trade.
 //
@@ -301,16 +302,22 @@ export default function TradeShopPage({ params }: { params: { trade: string } })
 
             {loading && <p className="text-slate-500 mt-8">Loading…</p>}
 
+            {/* THE EMPTY STATE IS THE COMMON CASE ON DAY ONE.
+                The directory starts empty and tradesmen are signed up by hand,
+                so most first visits find nobody. "Nobody covers Wigtown yet"
+                read like a broken site rather than a young one, and left the
+                host with nothing to do.
+                What they can do is tell us, and that answer is the most useful
+                thing this page produces — three hosts wanting a roofer in
+                Wigtown is a recruiting list. It promises them nothing, which is
+                why the wording says we will let them know rather than that
+                somebody will call. */}
             {!loading && shown.length === 0 && (
-                <div className="mt-8 rounded-2xl border border-slate-200 bg-slate-50 p-6">
-                    <p className="font-semibold text-slate-900">
-                        Nobody covers {point ? point.label : 'there'} yet.
-                    </p>
-                    <p className="text-sm text-slate-600 mt-2">
-                        We are still signing businesses up. Try a nearby town — plenty of them cover
-                        more ground than the name suggests.
-                    </p>
-                </div>
+                <WantedPrompt
+                    trade={trade}
+                    area={point ? point.label : ''}
+                    listingId={listing ? listing.id : ''}
+                />
             )}
 
             <div className="mt-8 space-y-4">

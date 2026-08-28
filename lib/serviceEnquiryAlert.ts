@@ -472,6 +472,49 @@ async function tellTheAdmins(
     return sent;
 }
 
+// Somebody wanted a trade we could not offer.
+//
+// Straight to the admins and nowhere else. There is no tradesman to tell — the
+// whole point is that there was not one — and the host has already been
+// thanked on the page. What this email is for is the recruiting decision, so
+// it says the trade and the place and gets out of the way.
+export async function announceWanted(row: any, tradeName: string): Promise<string[]> {
+    const to = recipients(process.env.SERVICES_ALERT_EMAIL);
+    if (!to.length) return [];
+
+    const where = String(row.area_key || '').trim() || 'somewhere in Dumfries & Galloway';
+
+    const { sent, failed } = await sendEmailToAll(
+        to,
+        'Wanted: ' + tradeName + ' in ' + where,
+        emailLayout(
+            '<p style="margin:0 0 16px;font-size:16px;">Somebody looked for a <strong>'
+                + escapeHtml(tradeName.toLowerCase()) + '</strong> covering <strong>'
+                + escapeHtml(where) + '</strong> and we had nobody to show them.</p>'
+                + (row.note
+                    ? '<div style="margin:20px 0;padding:16px 18px;background-color:#f9fafb;'
+                        + 'border-left:3px solid #047857;border-radius:6px;font-size:15px;line-height:1.6;">'
+                        + escapeHtml(String(row.note)) + '</div>'
+                    : '')
+                + detailRows([
+                    { label: 'Trade', value: escapeHtml(tradeName) },
+                    { label: 'Where', value: escapeHtml(where) },
+                    { label: 'Who', value: escapeHtml(String(row.contact || 'not signed in, left no address')) },
+                ])
+                + '<p style="margin:16px 0 0;font-size:14px;color:#6b7280;">'
+                + 'The full list is one query: select trade, area_key, count(*) from service_wanted '
+                + 'group by 1, 2 order by count(*) desc.</p>',
+            'You are receiving this because you look after services on Galloway Getaways.'
+        )
+    );
+
+    if (failed.length) {
+        await logError('service-wanted-email', { id: String(row.id), failed: failed.join(', ') });
+    }
+
+    return sent;
+}
+
 // Marking an enquiry as opened, from the reply page.
 //
 // Its own function because it is the one write that happens without anybody
