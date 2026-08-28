@@ -1,5 +1,5 @@
 import Link from 'next/link';
-import { ArrowRight } from 'lucide-react';
+import { TradeTile, TradeTileGrid } from '@/components/services/TradeTiles';
 import {
     TRADES,
     HOST_TRADES,
@@ -8,7 +8,9 @@ import {
 } from '@/lib/serviceProviders';
 
 export const metadata = {
-    title: 'Find a tradesman | Galloway Getaways',
+    // The layout appends ' | Galloway Getaways' to every page title, so
+    // naming it here again produced it twice in the tab.
+    title: 'Find a tradesman',
     description:
         'Electricians, joiners, plumbers, roofers, painters, handymen and window cleaners '
         + 'covering Dumfries & Galloway. Browse who covers your property and ask one of them.',
@@ -28,6 +30,19 @@ export const metadata = {
 // A host picks a trade, sees who covers them, reads the prices where a
 // provider has published them, and asks ONE person. Nothing scores anybody and
 // nothing fans out. What the platform sells is the introduction.
+//
+// THE SAME TILE AS THE SIGN-UP
+//
+// This was plain text cards while the business sign-up had icons in a
+// three-across grid, and side by side the shop looked inert — the same idea
+// from the two ends, built weeks apart, drifted. Both now render
+// components/services/TradeTiles, so the next change to one is a change to
+// both rather than a thing somebody has to remember.
+//
+// The "Not yet" section deliberately does NOT use it. Those three are not
+// choices — there is nowhere to go — and giving them the same hover, the same
+// icon and the same affordance as a live tile would be an invitation to press
+// something inert.
 //
 // ALL TEN TRADES ARE ON THIS PAGE, INCLUDING THE THREE THAT DO NOTHING
 //
@@ -58,21 +73,16 @@ export default function ServicesPage() {
                 We take nothing from the job. Whatever you agree is between you and them.
             </p>
 
-            <div className="grid sm:grid-cols-2 gap-3">
+            <TradeTileGrid>
                 {live.map((trade) => (
-                    <Link
+                    <TradeTile
                         key={trade.key}
+                        tradeKey={trade.key}
+                        label={trade.label}
                         href={'/services/' + trade.key}
-                        className="group rounded-2xl border border-slate-300 p-5 hover:border-emerald-700 hover:bg-emerald-50/40 transition"
-                    >
-                        <h2 className="font-bold text-slate-900">{trade.label}</h2>
-                        <span className="inline-flex items-center gap-1.5 text-sm font-semibold text-emerald-700 mt-3">
-                            See who covers you
-                            <ArrowRight className="w-4 h-4 group-hover:translate-x-0.5 transition" />
-                        </span>
-                    </Link>
+                    />
                 ))}
-            </div>
+            </TradeTileGrid>
 
             {soon.length > 0 && (
                 <div className="mt-10">

@@ -10,6 +10,7 @@ import {
     Sparkles, Wrench, Trees, Droplet, ChefHat, Cake, ShoppingBasket, PawPrint, Trash2,
     Plus, X, ChevronLeft, ChevronRight, Check, Zap, Hammer, Paintbrush, Home,
 } from 'lucide-react';
+import { TradeTile, TradeTileGrid, TRADE_ICONS, GROUP_ICONS } from '@/components/services/TradeTiles';
 import { compressImage } from '@/lib/compressImage';
 import { getImageUrl, generateRandomNumber } from '@/lib/utils';
 import Env from '@/config/Env';
@@ -77,28 +78,6 @@ import {
     stepForField,
     StepKey,
 } from '@/lib/joinSteps';
-
-const TRADE_ICONS: Record<string, any> = {
-    sponge: Sparkles,
-    spanner: Wrench,
-    trees: Trees,
-    droplet: Droplet,
-    chef: ChefHat,
-    cake: Cake,
-    basket: ShoppingBasket,
-    paw: PawPrint,
-    bin: Trash2,
-    electrician: Zap,
-    joiner: Hammer,
-    plumber: Droplet,
-    roofer: Home,
-    painter: Paintbrush,
-    handyman: Wrench,
-};
-
-const GROUP_ICONS: Record<string, any> = {
-    maintenance: Wrench,
-};
 
 const PICKER_STATUS_STYLE: Record<string, string> = {
     pending_review: 'bg-amber-100 text-amber-900',
@@ -2054,27 +2033,17 @@ function ApplicationForm() {
                                 afterwards if you do more than one.
                             </p>
 
-                            <div className="grid grid-cols-2 sm:grid-cols-3 gap-3">
-                                {inGroup.map((t) => {
-                                    const Icon = TRADE_ICONS[t.key] || Wrench;
-                                    const already = taken.indexOf(t.key) !== -1;
-
-                                    return (
-                                        <button
-                                            key={t.key}
-                                            type="button"
-                                            onClick={() => chooseTrade(t.key)}
-                                            className="rounded-2xl border border-slate-300 p-4 text-left hover:border-emerald-700 hover:bg-emerald-50/40 transition"
-                                        >
-                                            <Icon className="w-7 h-7 text-emerald-700 mb-3" strokeWidth={1.5} />
-                                            <span className="block font-semibold text-slate-900">{t.label}</span>
-                                            {already && (
-                                                <span className="block text-xs text-slate-500 mt-1">You have this one</span>
-                                            )}
-                                        </button>
-                                    );
-                                })}
-                            </div>
+                            <TradeTileGrid>
+                                {inGroup.map((t) => (
+                                    <TradeTile
+                                        key={t.key}
+                                        tradeKey={t.key}
+                                        label={t.label}
+                                        hint={taken.indexOf(t.key) !== -1 ? 'You have this one' : undefined}
+                                        onClick={() => chooseTrade(t.key)}
+                                    />
+                                ))}
+                            </TradeTileGrid>
 
                             {/* Said once, here, rather than on every trade that
                                 needs it. Somebody who reads it now is not
@@ -2140,30 +2109,20 @@ function ApplicationForm() {
                                         Add another trade
                                     </h2>
                                 )}
-                                <div className="grid grid-cols-2 sm:grid-cols-3 gap-3">
-                                    {entries.map((entry) => {
-                                        const Icon = entry.kind === 'group'
-                                            ? (GROUP_ICONS[entry.key] || Wrench)
-                                            : (TRADE_ICONS[entry.key] || Sparkles);
-
-                                        return (
-                                            <button
-                                                key={entry.kind + ':' + entry.key}
-                                                type="button"
-                                                onClick={() =>
-                                                    entry.kind === 'group' ? setOpenGroup(entry.key) : chooseTrade(entry.key)
-                                                }
-                                                className="rounded-2xl border border-slate-300 p-4 text-left hover:border-emerald-700 hover:bg-emerald-50/40 transition"
-                                            >
-                                                <Icon className="w-7 h-7 text-emerald-700 mb-3" strokeWidth={1.5} />
-                                                <span className="block font-semibold text-slate-900">{entry.label}</span>
-                                                {entry.kind === 'group' && (
-                                                    <span className="block text-xs text-slate-500 mt-1">{entry.hint}</span>
-                                                )}
-                                            </button>
-                                        );
-                                    })}
-                                </div>
+                                <TradeTileGrid>
+                                    {entries.map((entry) => (
+                                        <TradeTile
+                                            key={entry.kind + ':' + entry.key}
+                                            tradeKey={entry.kind === 'trade' ? entry.key : undefined}
+                                            groupKey={entry.kind === 'group' ? entry.key : undefined}
+                                            label={entry.label}
+                                            hint={entry.kind === 'group' ? entry.hint : undefined}
+                                            onClick={() =>
+                                                entry.kind === 'group' ? setOpenGroup(entry.key) : chooseTrade(entry.key)
+                                            }
+                                        />
+                                    ))}
+                                </TradeTileGrid>
                             </>
                         )}
 

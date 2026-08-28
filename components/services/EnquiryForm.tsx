@@ -1,6 +1,6 @@
 'use client';
 
-import { useEffect, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import Link from 'next/link';
 import { createClientComponentClient } from '@supabase/auth-helpers-nextjs';
 import { toast } from 'react-toastify';
@@ -12,6 +12,7 @@ import {
     offersEmergency,
     needsDate,
     clockTime,
+    enquiryProblems,
     EMERGENCY_MINUTES,
 } from '@/lib/serviceEnquiries';
 
@@ -33,6 +34,18 @@ import {
 // A provider who has not ticked that he turns out is never offered the
 // emergency at all. The tick is the consent, and it is his, not ours to
 // assume.
+//
+// TWO STEPS, BECAUSE ONE DID NOT FIT ON A SCREEN
+//
+// The problem on the first, the timing and the contact details on the second.
+// That is the split a host would draw themselves: what is wrong is one train
+// of thought and when-and-who is another.
+//
+// The step boundary is also where the validation lands. Step one is checked
+// before it will advance — so a problem always appears on the step its field
+// is on, rather than being reported from a screen the host cannot see. Sending
+// runs the full check again regardless, because the route is the authority and
+// a client-side gate is a convenience.
 //
 // NOTHING HERE ASKS FOR ANYTHING WE ALREADY HOLD
 //
@@ -65,6 +78,15 @@ export default function EnquiryForm({
     const [windowKey, setWindowKey] = useState('any');
     const [name, setName] = useState('');
     const [phone, setPhone] = useState('');
+    const [step, setStep] = useState<1 | 2>(1);
+
+    // The scrolling middle of the card. Reset to the top on every step change:
+    // without it, a host who scrolled to the bottom of step one arrives at
+    // step two already scrolled past its opening line — which is the sentence
+    // saying the date is what they are ASKING for rather than a slot he has
+    // agreed to. Losing that line is losing the thing that keeps this from
+    // reading like a booking.
+    const scroller = useRef<HTMLDivElement | null>(null);
     const [sending, setSending] = useState(false);
     const [sent, setSent] = useState<any>(null);
 
@@ -122,6 +144,10 @@ export default function EnquiryForm({
         load();
     }, [session, supabase]);
 
+    useEffect(() => {
+        if (scroller.current) scroller.current.scrollTop = 0;
+    }, [step]);
+
     const emergency = urgency === 'emergency';
     const planned = needsDate(urgency);
     const chosenWindow = TIME_WINDOWS.filter((w) => w.key === windowKey)[0] || TIME_WINDOWS[0];
@@ -142,6 +168,35 @@ export default function EnquiryForm({
                 : current.filter((k) => k !== key)
         );
     };
+
+    // The fields that live on step one. Checked here so that pressing Next
+    // with an empty description says so under the description, instead of the
+    // send button on the next screen reporting a field nobody can see.
+    const STEP_ONE_FIELDS = ['trade', 'provider_id', 'urgency', 'summary'];
+
+    const next = () => {
+        const found = enquiryProblems(currentDraft()).filter(
+            (p) => STEP_ONE_FIELDS.indexOf(p.field) !== -1
+        );
+
+        setProblems(found);
+        if (found.length) return;
+
+        setStep(2);
+    };
+
+    const currentDraft = () => ({
+        trade,
+        provider_id: provider.id,
+        urgency,
+        summary,
+        fault_keys: faults,
+        host_name: name,
+        host_phone: phone,
+        preferred_date: planned ? preferredDate : null,
+        window_from: planned ? chosenWindow.from : null,
+        window_to: planned ? chosenWindow.to : null,
+    });
 
     const send = async () => {
         setSending(true);
@@ -173,6 +228,15 @@ export default function EnquiryForm({
         if (!json.ok) {
             if (json.problems && json.problems.length) {
                 setProblems(json.problems);
+
+                // If the server objects to something on step one — a stale
+                // provider, a summary that passed the local check and not the
+                // server's — go back to it. Reporting a field on the step it
+                // is not on is the fault this split was supposed to remove.
+                if (json.problems.some((p: any) => STEP_ONE_FIELDS.indexOf(p.field) !== -1)) {
+                    setStep(1);
+                }
+
                 toast.error(
                     json.problems.length === 1
                         ? json.problems[0].message
@@ -243,9 +307,45 @@ export default function EnquiryForm({
         );
     }
 
+    const footer = step === 1 ? (
+        <button
+            onClick={next}
+            disabled={emergency && !canDoEmergency}
+            className="w-full rounded-xl bg-emerald-700 px-4 py-3 text-white font-semibold disabled:opacity-50"
+        >
+            Next
+        </button>
+    ) : (
+        <div className="flex items-center gap-3">
+            <button
+                onClick={() => setStep(1)}
+                className="rounded-xl border border-slate-300 px-4 py-3 text-slate-700 font-semibold"
+            >
+                Back
+            </button>
+            <button
+                onClick={send}
+                disabled={sending || (emergency && !canDoEmergency)}
+                className="flex-1 rounded-xl bg-emerald-700 px-4 py-3 text-white font-semibold disabled:opacity-50"
+            >
+                {sending
+                    ? 'Sending…'
+                    : emergency
+                        ? 'Send now — ' + EMERGENCY_MINUTES + ' minutes'
+                        : 'Send to ' + provider.business_name}
+            </button>
+        </div>
+    );
+
     return (
-        <Shell onClose={onClose} title={'Ask ' + provider.business_name}>
-            <div className="space-y-5">
+        <Shell
+            onClose={onClose}
+            title={step === 1 ? 'Ask ' + provider.business_name : 'When and who'}
+            step={'Step ' + step + ' of 2'}
+            footer={footer}
+            scroller={scroller}
+        >
+            <div className="space-y-5" style={{ display: step === 1 ? undefined : 'none' }}>
                 <fieldset>
                     <legend className="text-sm font-semibold text-slate-700">How urgent is it?</legend>
                     <div className="mt-2 space-y-2">
@@ -340,7 +440,13 @@ export default function EnquiryForm({
                     />
                     <Problem problems={problems} field="summary" />
                 </label>
+            </div>
 
+            {/* Step two. Kept mounted rather than unmounted so that a value
+                typed here survives a trip back to step one — remounting would
+                quietly empty the date and the phone number every time somebody
+                went back to reword the description. */}
+            <div className="space-y-5" style={{ display: step === 2 ? undefined : 'none' }}>
                 {planned && (
                     <div className="rounded-xl border border-slate-300 p-4 space-y-3">
                         {/* A REQUEST, AND IT HAS TO READ AS ONE.
@@ -434,17 +540,6 @@ export default function EnquiryForm({
                     {emergency ? ', or when we release their number to you' : ''}.
                 </p>
 
-                <button
-                    onClick={send}
-                    disabled={sending || (emergency && !canDoEmergency)}
-                    className="w-full rounded-xl bg-emerald-700 px-4 py-3 text-white font-semibold disabled:opacity-50"
-                >
-                    {sending
-                        ? 'Sending…'
-                        : emergency
-                            ? 'Send now — ' + EMERGENCY_MINUTES + ' minutes'
-                            : 'Send to ' + provider.business_name}
-                </button>
             </div>
         </Shell>
     );
@@ -458,17 +553,54 @@ function Problem({ problems, field }: { problems: Array<{ field: string; message
     return <p className="text-sm text-red-700 mt-1">{found.message}</p>;
 }
 
-function Shell({ children, onClose, title }: { children: any; onClose: () => void; title: string }) {
+function Shell({
+    children, onClose, title, step, footer, scroller,
+}: {
+    children: any;
+    onClose: () => void;
+    title: string;
+    step?: string;
+    footer?: any;
+    scroller?: any;
+}) {
     return (
-        <div className="fixed inset-0 z-50 bg-slate-900/40 overflow-y-auto p-4 sm:p-8">
-            <div className="mx-auto max-w-lg rounded-2xl bg-white p-6 shadow-xl">
-                <div className="flex items-start justify-between gap-4 mb-5">
-                    <h2 className="text-xl font-bold text-slate-900">{title}</h2>
+        <div className="fixed inset-0 z-50 bg-slate-900/40 flex items-start sm:items-center justify-center p-3 sm:p-6">
+            {/*
+                CAPPED, WITH THE FOOTER OUTSIDE THE SCROLL.
+
+                The card was 1189px tall in a 760px window — and taller again
+                on planned work, which adds the date block. The overlay could
+                scroll, technically, but macOS hides overlay scrollbars until
+                something moves, so it read as a form cut off at the bottom
+                with the send button somewhere past the edge of the world.
+
+                Splitting it in two shortens each step and does not fix that:
+                two forms can both still run off a short window, or a phone in
+                landscape. So the card is capped at the viewport, its middle
+                scrolls, and the button lives in a footer that is always on
+                screen. The scroll now has a visible edge — content meets a
+                border instead of the end of the screen.
+            */}
+            <div className="w-full max-w-lg max-h-[calc(100dvh-1.5rem)] sm:max-h-[calc(100dvh-3rem)] rounded-2xl bg-white shadow-xl flex flex-col overflow-hidden">
+                <div className="flex items-start justify-between gap-4 px-6 pt-6 pb-4 border-b border-slate-200">
+                    <div>
+                        <h2 className="text-xl font-bold text-slate-900">{title}</h2>
+                        {step && <p className="text-xs text-slate-500 mt-0.5">{step}</p>}
+                    </div>
                     <button onClick={onClose} aria-label="Close" className="text-slate-400 hover:text-slate-600">
                         <X className="w-5 h-5" />
                     </button>
                 </div>
-                {children}
+
+                <div ref={scroller} className="flex-1 overflow-y-auto px-6 py-5">
+                    {children}
+                </div>
+
+                {footer && (
+                    <div className="px-6 py-4 border-t border-slate-200 bg-slate-50">
+                        {footer}
+                    </div>
+                )}
             </div>
         </div>
     );
