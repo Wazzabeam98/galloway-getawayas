@@ -11,6 +11,7 @@ import {
     loadEnv, assertTestEnvironment, stripeClient, supabaseClient,
     readManifest, round2,
 } from './seed-lib.mjs';
+import { resolveTarget, LOCAL_URL } from './target.mjs';
 
 const env = loadEnv();
 assertTestEnvironment(env);
@@ -18,7 +19,13 @@ assertTestEnvironment(env);
 const stripe = stripeClient(env);
 const db = supabaseClient(env);
 const manifest = readManifest();
-const SITE = process.env.SITE_URL || 'http://localhost:3000';
+// Checked before anything is written: never production, never the production
+// database, never a build behind master. See scripts/target.mjs.
+const SITE = await resolveTarget({
+    runner: 'scripts/balance-scenarios.mjs',
+    envNames: ['SITE_URL'],
+    fallback: LOCAL_URL,
+});
 
 const results = [];
 let current = null;

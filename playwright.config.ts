@@ -1,4 +1,6 @@
 import { defineConfig } from '@playwright/test';
+// @ts-ignore — plain ESM, deliberately shared with the .mjs runners.
+import { PREVIEW_URL } from './scripts/target.mjs';
 
 // Driving the real form in a real browser.
 //
@@ -47,8 +49,12 @@ export default defineConfig({
     workers: 1,
     reporter: [['list']],
     use: {
-        baseURL: process.env.PLAYWRIGHT_BASE_URL
-            || 'https://galloway-getawayas-git-e2e-preview-wazzabeam98s-projects.vercel.app',
+        // PREVIEW_URL is imported, not written here. scripts/target.mjs is the
+        // only file in the repo allowed to contain a site URL, so that a new
+        // runner cannot quietly acquire a target of its own — which is how
+        // journeys.mjs came to be pointed at a merged branch for fifteen
+        // commits. Enforced by tests/runner-targets.test.ts.
+        baseURL: process.env.PLAYWRIGHT_BASE_URL || PREVIEW_URL,
         headless: true,
         screenshot: 'only-on-failure',
         trace: 'retain-on-failure',

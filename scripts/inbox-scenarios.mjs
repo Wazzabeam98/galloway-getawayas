@@ -19,10 +19,17 @@ import {
     dayOffset,
     TEST_PROJECT_REF,
 } from './seed-lib.mjs';
+import { resolveTarget, LOCAL_URL } from './target.mjs';
 
 const env = loadEnv();
 const db = supabaseClient(env);
-const BASE = process.env.BASE_URL || 'http://localhost:3000';
+// Checked before anything is written: never production, never the production
+// database, never a build behind master. See scripts/target.mjs.
+const BASE = await resolveTarget({
+    runner: 'scripts/inbox-scenarios.mjs',
+    envNames: ['BASE_URL', 'SITE_URL'],
+    fallback: LOCAL_URL,
+});
 
 const DOMAIN = 'gallowayinbox.test';
 const PASSWORD = 'inbox-password-';

@@ -14,23 +14,38 @@
 // RLS probe below writes one column to a row it made itself. `--reset` removes
 // everything it has ever made.
 //
+// WHERE IT POINTS — not a URL in this file any more, and not unchecked.
+//
+// This used to name a feature-branch preview. The branch was merged, the alias
+// went on serving its last build for ever, and these checks stayed green
+// against a deployment FIFTEEN commits behind master — one so old it had no
+// /api/health at all. The Playwright suite was hardened against exactly this
+// on 28 August; this file, in the same folder doing the same dangerous thing,
+// was not.
+//
+// The target now comes from scripts/target.mjs, which refuses production, the
+// production database, and any build behind master before a single request is
+// made. It is resolved only on a real run — `--reset` talks to Supabase alone
+// and needs no site.
+//
 // Usage:
-//   node scripts/journeys.mjs                 against the preview
-//   node scripts/journeys.mjs --host http://localhost:3000
+//   node scripts/journeys.mjs                 against the e2e preview
+//   node scripts/journeys.mjs --host <url>    a local dev server, say
 //   node scripts/journeys.mjs --reset         delete the accounts and stop
+//
+// (No example URL here on purpose: tests/runner-targets.test.ts bans a target
+// literal anywhere but target.mjs, comments included, because a URL in a
+// comment is how a stale default gets copied back into code.)
 
 import { loadEnv, TEST_PROJECT_REF } from './seed-lib.mjs';
+import { resolveTarget, PREVIEW_URL } from './target.mjs';
 
 const env = loadEnv();
 const args = process.argv.slice(2);
-const hostArg = (() => {
-    const i = args.indexOf('--host');
-    return i >= 0 ? args[i + 1] : null;
-})();
 
-const HOST =
-    hostArg ||
-    'https://galloway-getawayas-git-services-phase-one-wazzabeam98s-projects.vercel.app';
+/** Set by resolveTarget() below, after the guard has passed. Never a literal. */
+let HOST = null;
+
 const SUPABASE_URL = env.NEXT_PUBLIC_SUPABASE_URL;
 const SERVICE_KEY = env.SUPABASE_SERVICE_ROLE_KEY;
 const ANON_KEY = env.NEXT_PUBLIC_SUPABASE_ANON_KEY;
@@ -531,7 +546,13 @@ async function reset() {
 }
 
 if (args.includes('--reset')) {
+    // Supabase only — no site is touched, so no target is needed or resolved.
     await reset();
 } else {
+    HOST = await resolveTarget({
+        runner: 'scripts/journeys.mjs',
+        envNames: ['JOURNEYS_HOST', 'SITE_URL'],
+        fallback: PREVIEW_URL,
+    });
     await run();
 }
