@@ -17,6 +17,29 @@ import { Eye, Home, Plus } from "lucide-react";
 function ListingCard({ item, isDraft }: { item: any; isDraft: boolean }) {
     const editHref = isDraft ? `/addhome?draft=${item.id}` : `/edit-listing/${item.id}`;
     const isHidden = item.status === 'hidden';
+    // Finished, sent, and waiting for an owner to look at it. Nothing writes
+    // this status yet — the screens learn it before the data can hold it, so
+    // that a host can never press Submit and watch their property disappear
+    // off their own dashboard.
+    const isWaiting = item.status === 'pending_review';
+
+    const pillTone = isDraft
+        ? 'bg-amber-100 text-amber-800'
+        : isWaiting ? 'bg-sky-100 text-sky-900'
+        : isHidden ? 'bg-slate-200 text-slate-700'
+        : 'bg-white/95';
+
+    const dotTone = isDraft
+        ? 'bg-amber-500'
+        : isWaiting ? 'bg-sky-600'
+        : isHidden ? 'bg-slate-500'
+        : 'bg-green-500';
+
+    const pillLabel = isDraft
+        ? 'In progress'
+        : isWaiting ? 'Waiting for approval'
+        : isHidden ? 'Hidden'
+        : 'Listed';
 
     return (
         <div className="relative group">
@@ -33,9 +56,9 @@ function ListingCard({ item, isDraft }: { item: any; isDraft: boolean }) {
                             <Home className="w-10 h-10" />
                         </div>
                     )}
-                    <span className={`absolute top-3 left-3 text-xs font-semibold px-2.5 py-1 rounded-full flex items-center gap-1.5 shadow-sm ${isDraft ? 'bg-amber-100 text-amber-800' : isHidden ? 'bg-slate-200 text-slate-700' : 'bg-white/95'}`}>
-                        <span className={`w-1.5 h-1.5 rounded-full ${isDraft ? 'bg-amber-500' : isHidden ? 'bg-slate-500' : 'bg-green-500'}`} />
-                        {isDraft ? 'In progress' : isHidden ? 'Hidden' : 'Listed'}
+                    <span className={`absolute top-3 left-3 text-xs font-semibold px-2.5 py-1 rounded-full flex items-center gap-1.5 shadow-sm ${pillTone}`}>
+                        <span className={`w-1.5 h-1.5 rounded-full ${dotTone}`} />
+                        {pillLabel}
                     </span>
                 </div>
                 <h3 className="font-semibold text-slate-900 mt-3 truncate">{item.title || 'Untitled listing'}</h3>
@@ -46,6 +69,11 @@ function ListingCard({ item, isDraft }: { item: any; isDraft: boolean }) {
                 {isDraft && (
                     <p className="text-sm font-medium text-amber-700 mt-0.5">Click to finish setting up</p>
                 )}
+                {isWaiting && (
+                    <p className="text-sm font-medium text-sky-800 mt-0.5">
+                        We&apos;re checking it over — nothing more for you to do
+                    </p>
+                )}
                 {isHidden && (
                     <p className="text-sm font-medium text-slate-600 mt-0.5">
                         Not taking new bookings
@@ -54,7 +82,7 @@ function ListingCard({ item, isDraft }: { item: any; isDraft: boolean }) {
             </Link>
 
             <div className="absolute top-3 right-3 z-10 flex gap-2 opacity-0 group-hover:opacity-100 transition">
-                {!isDraft && !isHidden && (
+                {!isDraft && !isHidden && !isWaiting && (
                     <Link
                         href={`/homes/${item.id}`}
                         title="See how guests see it"
@@ -102,7 +130,14 @@ export default async function Dashboard() {
     const accessIdOf = (listingId: string) =>
         access.find((a) => a.listingId === listingId && !a.isOwner)?.accessId || null;
 
-    const published = owned.filter((h) => h.status === 'published' || h.status === 'hidden');
+    // Every status a host owns has to land in one of these, or the listing
+    // simply is not on their dashboard. 'pending_review' belongs with the live
+    // ones rather than with drafts: the host has finished it and there is
+    // nothing left for them to do, which is the opposite of what "In progress"
+    // says.
+    const published = owned.filter(
+        (h) => h.status === 'published' || h.status === 'hidden' || h.status === 'pending_review'
+    );
     const drafts = owned.filter((h) => h.status === 'draft');
 
     return (

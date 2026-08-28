@@ -266,7 +266,24 @@ const FindHome = async ({ params }: { params: { id: string } }) => {
         );
     }
 
-    if (home.status === 'draft') {
+    // Which statuses a stranger may see, named rather than excluded.
+    //
+    // This used to hide 'draft' and show everything else, which meant any
+    // status added later was public the moment it existed. 'pending_review'
+    // is about to exist, and a listing waiting for approval showing up on its
+    // own URL — bookable — is exactly the failure that shape produces.
+    //
+    // An allow-list cannot fail that way: a new status is invisible until
+    // somebody decides otherwise, which is the safe direction.
+    //
+    // 'hidden' is on the list because it was on it before — a hidden listing
+    // is off the home page and out of the sitemap but has always still opened
+    // at its own URL, which is what a guest holding a booking or an old link
+    // needs. That is behaviour worth keeping, not a hole; changing it is a
+    // separate decision from this one.
+    const PUBLICLY_VISIBLE = ['published', 'hidden'];
+
+    if (PUBLICLY_VISIBLE.indexOf(home.status) === -1) {
         const { data: { user } } = await supabase.auth.getUser();
         if (user?.id !== home.host_id) {
             return (
