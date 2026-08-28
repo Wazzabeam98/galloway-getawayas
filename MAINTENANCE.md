@@ -900,3 +900,31 @@ unless `.env.local` names the test project.
   would help anybody using a screen reader more than it helps the test. Worth
   doing.
 
+
+## CI: the two checks run on every push
+
+`.github/workflows/checks.yml` runs `npm test` and `npm run build` on every
+push and every pull request. Both were already the rule; neither ran unless
+somebody remembered, and half the commits here arrive by pasting whole files
+into GitHub's web editor, where there is no local build at all.
+
+**Where to look.** On github.com, the **Actions** tab lists every run. Each
+commit in the file list and on the commits page carries a tick, a cross or an
+amber dot beside it — click that for the log. A failure also emails the
+address on the GitHub account.
+
+**What a red cross means.** The tests failed, or the build did. Open the run,
+open the failed step, and read the last twenty lines; both tools name the file
+and the line. A failing build does not break the live site — Vercel refuses to
+promote a build that does not compile, so production simply stays on the
+previous version. That is also why a red cross is easy to miss and worth
+watching for.
+
+**It holds no secrets on purpose.** The build needs the Supabase variables only
+to prerender a handful of pages; without them those pages log an error and the
+build still exits 0 — verified, 28 August 2026 — which is enough to catch the
+type and syntax faults this is for. A job that never holds a key cannot leak
+one. The real deploy build on Vercel has the variables and does the rest.
+
+**It does not run the payment scripts, the journey checks or Playwright.**
+Those need a database, Stripe and a deployed preview. They stay manual.

@@ -1,0 +1,60 @@
+# The two checks that already exist, run by a machine instead of from memory.
+#
+# WHY. Both gates are fast and both work — 641 tests in under a second, and a
+# build that has caught real type errors the suite cannot see. Neither ran
+# unless somebody remembered. In eighteen days this repo took 782 commits with
+# nothing automated between a push and the production branch.
+#
+# It matters most for the half of the work done from a locked-down laptop by
+# pasting whole files into GitHub's web editor. There is no local build on that
+# path at all; today a bad paste is caught by Vercel failing to deploy, which is
+# a real gate but a late and confusing one — the site quietly stays on the
+# previous version and nothing says why.
+#
+# WHY THE TEST STEP DELETES .test-build FIRST. `npm test` is
+# `tsc -p tsconfig.test.json && node --test .test-build/tests`, and tsc writes
+# into that directory without ever cleaning it. A test file that exists on one
+# branch and not another stays compiled and keeps running after a switch. A
+# branch with 20 test files once reported 214 passing, the figure from the
+# branch it was cut from. Nothing failed, so nothing drew attention to it.
+# A fresh checkout cannot hit that, but the line is here so this file and the
+# instruction in MAINTENANCE.md say the same thing.
+#
+# WHY BOTH, AND NOT JUST THE SUITE. tsconfig.test.json sets "strict": false and
+# names route files one at a time, so it compiles code `next build` refuses and
+# ignores most of app/api entirely. On 28 August an interface gained four fields
+# in one place and not another: 546 tests passed and the build failed with a
+# type error naming the exact argument. A green suite does not mean it compiles.
+
+name: checks
+
+on:
+  push:
+  pull_request:
+
+jobs:
+  test-and-build:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+          cache: npm
+
+      - name: Install
+        run: npm ci
+
+      - name: Tests
+        run: rm -rf .test-build && npm test
+
+      # No secrets are given to this job on purpose. The build needs Supabase
+      # variables only to prerender a few pages; without them those pages log
+      # an error and the build still exits 0, which is enough to catch the type
+      # and syntax faults this is here for. A CI job that never holds a key
+      # cannot leak one, and the real deploy build on Vercel has them anyway.
+      - name: Build
+        run: npm run build
