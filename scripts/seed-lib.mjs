@@ -38,20 +38,22 @@ export function assertTestEnvironment(env) {
 // galloway-getaways-test. Production is hviwjxigqivjfhmhpjiy — never this.
 // Defined in target.cjs, not here. That file has to be CommonJS so Playwright
 // can load it, and on Node 20 CommonJS cannot require an ESM module — so the
-// dependency runs that way round. Re-exported so every existing importer of
-// this module keeps working.
-// IMPORTED as well as re-exported, deliberately.
+// dependency runs that way round.
+//
+// IMPORTED as well as re-exported, in two steps, deliberately.
 //
 // `export { X } from './y'` forwards the name to importers and creates NO local
 // binding, so every use of TEST_PROJECT_REF inside THIS file was a reference to
-// something undefined — assertTestEnvironment, which is the guard the payment
-// seeders run before touching anything, and signIn, which four scenario
-// runners call. Both threw "TEST_PROJECT_REF is not defined" at the moment
-// they were relied on.
+// something undefined: assertTestEnvironment, the guard the payment seeders run
+// before touching anything, and signIn, which four scenario runners call. Both
+// threw "TEST_PROJECT_REF is not defined" at the moment they were relied on.
+// It failed closed — nothing was written anywhere it should not have been — but
+// every seeder and scenario runner stopped working.
 //
 // It broke when the constant moved to target.cjs so Playwright could require
-// it, and nothing caught it because no unit test imports this file — the
-// scripts that use it need a database.
+// it, and nothing caught it because no unit test imports this file: the scripts
+// that use it need a database. Two sessions found it separately within minutes,
+// which is the argument for tests/seed-guard.test.ts existing.
 import { TEST_PROJECT_REF } from './target.cjs';
 
 export { TEST_PROJECT_REF };

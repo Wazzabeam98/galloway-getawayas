@@ -390,8 +390,24 @@ Three things it will not do:
   Structural changes that lose no data — dropping a policy, a constraint, an
   index, or revoking a grant — are named in the plan but need no extra flag,
   because most of `supabase/migrations` does them.
-- **Reach production.** Ever. Production migrations stay a paste into the
-  dashboard, by hand, by Liam.
+- **Reach production without being told to.** This used to say "Ever", and that
+  stopped being true on 27 August 2026 when the refusal was lifted
+  deliberately. Production is reachable, and only by naming it:
+
+  ```
+  node scripts/migrate.mjs <file> --target prod            # dry run
+  node scripts/migrate.mjs <file> --target prod --apply    # run it
+  ```
+
+  It has its own variable, `SUPABASE_PROD_DB_URL`, so a production string never
+  sits in a slot called TEST. Each target checks its URL really is the project
+  it claims to be, both ways round, so the two cannot be crossed over.
+
+  **This note was stale for a day and cost something.** On 28 August it was read
+  as still true, so a migration that live code depended on was left as "a paste
+  for later" — and `bookings.cleaning_fee` was missing from production while
+  `/api/stripe/refund`, `/api/bookings/cancel` and the balance-charges cron were
+  all selecting it. Check the script, not this file, if the two ever disagree.
 
 ### The CLI is no longer linked to production
 
