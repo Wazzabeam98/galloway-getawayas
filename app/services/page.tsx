@@ -14,6 +14,7 @@ export const metadata = {
     description:
         'Electricians, joiners, plumbers, roofers, painters, handymen and window cleaners '
         + 'covering Dumfries & Galloway. Browse who covers your property and ask one of them.',
+    alternates: { canonical: '/services' },
 };
 
 // The host-facing shop.

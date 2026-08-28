@@ -1,11 +1,22 @@
 /** @type {import('tailwindcss').Config} */
 module.exports = {
   darkMode: ["class"],
+  // Tailwind only generates a class it can SEE here. A class name written in a
+  // folder that is not on this list produces no CSS and no error — the element
+  // simply renders unstyled, which is the quietest possible failure and one
+  // this project has already hit once (see the dead hero scrim in
+  // components/base/Hero.tsx).
+  //
+  // lib/ and config/ are on the list not because they hold classes today —
+  // they do not — but because nothing stops the next shared helper from
+  // returning one, and the day that happens should not cost an afternoon.
   content: [
     './pages/**/*.{ts,tsx}',
     './components/**/*.{ts,tsx}',
     './app/**/*.{ts,tsx}',
     './src/**/*.{ts,tsx}',
+    './lib/**/*.{ts,tsx}',
+    './config/**/*.{ts,tsx}',
   ],
   theme: {
     container: {

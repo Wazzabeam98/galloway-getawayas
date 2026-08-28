@@ -4,6 +4,7 @@ import type { Metadata } from 'next';
 import { adminClient } from '@/lib/supabaseAdmin';
 import { createServerComponentClient } from '@supabase/auth-helpers-nextjs'
 import { cookies } from 'next/headers';
+import { notFound } from 'next/navigation';
 import { capitializeFirst, displayName, getImageUrl, formatTime } from '@/lib/utils';
 import BookingWidget from '@/components/BookingWidget';
 import ReviewStars from '@/components/ReviewStars';
@@ -161,7 +162,7 @@ export async function generateMetadata({ params }: { params: { id: string } }): 
 
     const { data: home } = await supabase
         .from('listings')
-        .select('title, description, location, images, price_per_night, max_guests, bedrooms, property_type, privacy_type, amenities')
+        .select('title, description, location, images, price_per_night, max_guests, bedrooms, property_type, privacy_type, amenities, status')
         .eq('id', params.id)
         .single();
 
@@ -169,6 +170,9 @@ export async function generateMetadata({ params }: { params: { id: string } }): 
         return {
             title: 'Property not found',
             description: 'This listing is no longer available.',
+            // The page itself now 404s. This stops the "not found" wording
+            // being indexed in the window before Google re-crawls.
+            robots: { index: false, follow: false },
         };
     }
 
@@ -197,10 +201,18 @@ export async function generateMetadata({ params }: { params: { id: string } }): 
         ? getImageUrl(home.images[0])
         : `${SITE_URL}/images/hero-1.jpg`;
 
+    // Only a published listing belongs in the index. A hidden one is
+    // deliberately off the home page and out of the sitemap, but it still
+    // opens at its own URL for a guest holding a booking or an old link —
+    // which is exactly the shape Google finds and indexes anyway unless it is
+    // told not to. A draft or one waiting for review is not public at all.
+    const indexable = home.status === 'published';
+
     return {
         title,
         description,
         alternates: { canonical: `/homes/${params.id}` },
+        ...(indexable ? {} : { robots: { index: false, follow: false } }),
         openGraph: {
             type: 'website',
             locale: 'en_GB',
@@ -289,14 +301,12 @@ const FindHome = async ({ params }: { params: { id: string } }) => {
         coords = await lookupCoordinates(home.location);
     }
 
+    // notFound(), not a 200 with an apology on it. A page that says "couldn't
+    // be found" while answering 200 is a soft 404: Google keeps crawling it,
+    // and can index the apology under the property's old URL. This renders
+    // app/not-found.tsx with a real 404 status instead.
     if (!home) {
-        return (
-            <div className='max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 mb-10'>
-                <div className='mt-10 text-center text-slate-500'>
-                    This listing couldn't be found.
-                </div>
-            </div>
-        );
+        notFound();
     }
 
     // Which statuses a stranger may see, named rather than excluded.
@@ -549,9 +559,12 @@ const FindHome = async ({ params }: { params: { id: string } }) => {
                             </div>
                         )}
 
-                        <h1 className='mt-8 pt-8 lg:mt-5 lg:pt-0 border-t lg:border-t-0 font-semibold text-2xl'>
+                        {/* h2, not h1. There is already an h1 at the top of the page
+                            carrying the property's name; a second one tells Google the
+                            page is about two things and it picks whichever it likes. */}
+                        <h2 className='mt-8 pt-8 lg:mt-5 lg:pt-0 border-t lg:border-t-0 font-semibold text-2xl'>
                             About this place
-                        </h1>
+                        </h2>
                         <ShowMoreText text={home.description || ''} />
 
                         {Array.isArray(home.nearby) && home.nearby.length > 0 && (
