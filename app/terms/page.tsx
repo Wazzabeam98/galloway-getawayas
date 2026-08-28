@@ -41,10 +41,21 @@ export default function TermsPage() {
 
                 <h2 className="text-xl font-bold text-slate-900 pt-4">4. Bookings and payment</h2>
                 <p>
-                    Prices are shown in pounds sterling and include our service fee, which is set out
-                    before you pay. Payment is taken in full at the time of booking. A booking is only
-                    confirmed once the host has accepted it, or immediately where the listing offers
-                    Instant Book.
+                    Prices are shown in pounds sterling. The price you see is the price you pay — we
+                    do not add a booking fee or a service fee to your total. It covers the nightly
+                    rate for your dates plus any cleaning, pet or extra-guest charges the host has
+                    set, itemised in full before you confirm.
+                </p>
+                <p>
+                    You can pay the whole amount when you book, or pay a 25% deposit and the rest
+                    later. Where you pay a deposit, the balance is charged automatically to the card
+                    you used, 30 days before check-in. We email you when it is taken, and if it does
+                    not go through we will contact you before anything is cancelled. Booking within
+                    30 days of check-in means the full amount is taken at the time of booking.
+                </p>
+                <p>
+                    A booking is only confirmed once the host has accepted it, or immediately where
+                    the listing offers Instant Book.
                 </p>
                 <p>
                     Payments are processed by Stripe. We do not store your card details.

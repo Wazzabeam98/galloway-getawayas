@@ -611,7 +611,7 @@ export default function Hero() {
           Galloway Getaways
         </h1>
         <p className="text-lg md:text-xl font-medium mb-8 drop-shadow-md text-white">
-          Book direct for our best rate guarantee & lower booking fees
+          Book direct for our best rate guarantee & no booking fees
         </p>
 
         {/* Compact search — small screens only. Two by two: Where and When

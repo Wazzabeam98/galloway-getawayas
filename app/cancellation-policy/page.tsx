@@ -64,9 +64,9 @@ export default function CancellationPolicyPage() {
                         because the clean does not take place.
                     </li>
                     <li>
-                        <strong>Our service fee</strong> is not refunded. Where a refund is due, it is
-                        calculated on the accommodation cost and any refundable extras, and our fee is
-                        deducted.
+                        <strong>We don&apos;t keep anything out of your refund.</strong> There is no guest
+                        service fee — you never paid one. Whatever the policy above gives back is what
+                        reaches your card.
                     </li>
                     <li>
                         <strong>Refunds are returned to the card you paid with.</strong> Depending on your
