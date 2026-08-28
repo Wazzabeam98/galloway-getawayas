@@ -155,6 +155,33 @@ export default function BookingWidget({
                     day.removeAttribute('aria-disabled');
                 }
             });
+
+            // The month list always offers all twelve, whatever the window
+            // allows, and picking one outside it does nothing visible: the
+            // library clamps the shown date back to the edge and the guest is
+            // returned to the month they started on with no explanation.
+            //
+            // Observed on the live site: on a listing taking bookings to
+            // 28 August 2027, choosing October 2027 silently went back to
+            // August. Success and refusal looked identical, which is the shape
+            // this project keeps meeting.
+            //
+            // A month is offered only if any part of it is actually bookable.
+            // Both ends matter — the months earlier in this year are past and
+            // snap back exactly the same way.
+            if (month instanceof HTMLSelectElement && year instanceof HTMLSelectElement) {
+                const shownYear = Number(year.value);
+                const lower = new Date();
+                lower.setHours(0, 0, 0, 0);
+
+                Array.prototype.forEach.call(month.options, (option: HTMLOptionElement, index: number) => {
+                    const firstOfMonth = new Date(shownYear, index, 1);
+                    const lastOfMonth = new Date(shownYear, index + 1, 0);
+                    const tooEarly = lastOfMonth.getTime() < lower.getTime();
+                    const tooLate = !!maxBookableDate && firstOfMonth.getTime() > maxBookableDate.getTime();
+                    option.disabled = tooEarly || tooLate;
+                });
+            }
         };
 
         label();
@@ -162,7 +189,10 @@ export default function BookingWidget({
         const observer = new MutationObserver(label);
         observer.observe(root, { childList: true, subtree: true });
         return () => observer.disconnect();
-    }, [disabledDates]);
+        // availabilityWindow, not maxBookableDate: the latter is a fresh Date
+        // on every render, so depending on it would tear down and rebuild the
+        // observer constantly. The window prop is what actually decides it.
+    }, [disabledDates, availabilityWindow]);
 
     const [priceOverrides, setPriceOverrides] = useState<Record<string, number>>({});
     const [adults, setAdults] = useState(1);
@@ -431,6 +461,19 @@ export default function BookingWidget({
                     dayContentRenderer={renderDay}
                 />
             </div>
+
+            {/*
+              Said before it is hit, not after. The greyed-out months stop a
+              guest choosing one they cannot have, but a control that simply
+              refuses still leaves them wondering whether the place is booked
+              solid or the site is broken. This is the sentence that answers it,
+              and it is why the fix is both halves rather than either.
+            */}
+            {maxBookableDate && (
+                <p className="text-xs text-slate-500 -mt-2 mb-4">
+                    This place takes bookings up to {formatUk(maxBookableDate)}.
+                </p>
+            )}
 
             <div className="mb-4 border rounded-xl px-3 divide-y">
                 <Counter label="Adults" sub="Ages 13+" value={adults} onChange={setAdults} min={1} />
