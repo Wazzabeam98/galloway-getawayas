@@ -35,10 +35,26 @@
 // there are honest reasons to test an older build — but it is never the
 // default and it says so loudly on the way past.
 
-import { execSync } from 'node:child_process';
-import { TEST_PROJECT_REF } from './seed-lib.mjs';
+const { execSync } = require('node:child_process');
 
-export { TEST_PROJECT_REF };
+// WHY THIS FILE IS .cjs AND NOT .mjs
+//
+// It has two kinds of caller and they load modules differently. The runners in
+// this folder are ESM. Playwright compiles playwright.config.ts and
+// e2e/global-setup.ts to CommonJS and `require`s whatever they import — and
+// requiring an ESM file dies with "exports is not defined in ES module scope",
+// which is exactly what happened: the guard was added, the config imported it,
+// and the whole e2e suite stopped being able to start.
+//
+// CommonJS is the format both can load. Node's ESM can import a .cjs and pick
+// up its named exports; Playwright's CJS can require it directly. So the one
+// implementation stays one implementation.
+//
+// It also means TEST_PROJECT_REF has to live HERE rather than in seed-lib.mjs:
+// on Node 20 a CommonJS file cannot require an ESM one, so the dependency runs
+// the other way now. seed-lib.mjs and e2e/helpers.ts both re-export this value
+// rather than each keeping their own copy, which they used to.
+const TEST_PROJECT_REF = 'yefoqcabuijcowoqewtc';
 
 // ---------------------------------------------------------------------------
 // The only site URLs in the repo. Everything else asks for them by name.
@@ -54,18 +70,18 @@ export { TEST_PROJECT_REF };
  * branch URL and the live site are one deployment. There is no preview of
  * master to point at.
  */
-export const PREVIEW_URL =
+const PREVIEW_URL =
     'https://galloway-getawayas-git-e2e-preview-wazzabeam98s-projects.vercel.app';
 
 /** A local `npm run dev`. Still health-checked — a dev server can be pointed at production. */
-export const LOCAL_URL = 'http://localhost:3000';
+const LOCAL_URL = 'http://localhost:3000';
 
 const RULE = '='.repeat(74);
 
 function git(cmd) {
     try {
         return execSync(`git ${cmd}`, {
-            cwd: new URL('..', import.meta.url).pathname,
+            cwd: __dirname + '/..',
             stdio: ['ignore', 'pipe', 'ignore'],
         }).toString().trim();
     } catch {
@@ -74,7 +90,7 @@ function git(cmd) {
 }
 
 /** Thrown rather than exited, so Playwright's globalSetup reports it properly. */
-export class RefusedError extends Error {}
+class RefusedError extends Error {}
 
 function refuse(title, lines) {
     throw new RefusedError(
@@ -99,7 +115,7 @@ function warn(lines) {
  * Runners must not read SITE_URL / BASE_URL / HOST themselves — the
  * enforcement test fails them for it. Name the variable here instead.
  */
-export function chooseTarget({ argv = process.argv, env = process.env, envNames = [], fallback = LOCAL_URL } = {}) {
+function chooseTarget({ argv = process.argv, env = process.env, envNames = [], fallback = LOCAL_URL } = {}) {
     const args = argv.slice(2);
     const i = args.indexOf('--host');
     if (i >= 0 && args[i + 1]) return args[i + 1].replace(/\/+$/, '');
@@ -122,7 +138,7 @@ export function chooseTarget({ argv = process.argv, env = process.env, envNames 
  * RefusedError otherwise — nothing here exits the process, because a runner
  * and Playwright want to report a refusal differently.
  */
-export async function assertSafeTarget(baseURL, { runner = 'this runner', env = process.env, quiet = false } = {}) {
+async function assertSafeTarget(baseURL, { runner = 'this runner', env = process.env, quiet = false } = {}) {
     if (!baseURL) {
         refuse('no target', [`${runner} was given nothing to point at.`]);
     }
@@ -286,7 +302,7 @@ export async function assertSafeTarget(baseURL, { runner = 'this runner', env = 
  * command-line runner wants; Playwright calls chooseTarget/assertSafeTarget
  * directly so it can throw instead.
  */
-export async function resolveTarget(options = {}) {
+async function resolveTarget(options = {}) {
     const baseURL = chooseTarget(options);
     try {
         await assertSafeTarget(baseURL, options);
@@ -299,3 +315,13 @@ export async function resolveTarget(options = {}) {
     }
     return baseURL;
 }
+
+module.exports = {
+    TEST_PROJECT_REF,
+    PREVIEW_URL,
+    LOCAL_URL,
+    RefusedError,
+    chooseTarget,
+    assertSafeTarget,
+    resolveTarget,
+};

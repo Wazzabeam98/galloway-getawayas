@@ -19,7 +19,7 @@ import {
     dayOffset,
     TEST_PROJECT_REF,
 } from './seed-lib.mjs';
-import { resolveTarget, LOCAL_URL } from './target.mjs';
+import { resolveTarget, LOCAL_URL } from './target.cjs';
 
 const env = loadEnv();
 const db = supabaseClient(env);

@@ -6,8 +6,10 @@
 
 import fs from 'node:fs';
 import path from 'node:path';
+// @ts-ignore — CommonJS, shared with the runners and with the guard.
+import { TEST_PROJECT_REF } from '../scripts/target.cjs';
 
-export const TEST_PROJECT_REF = 'yefoqcabuijcowoqewtc';
+export { TEST_PROJECT_REF };
 
 function env(): Record<string, string> {
     const file = path.resolve(__dirname, '..', '.env.local');
@@ -21,21 +23,45 @@ function env(): Record<string, string> {
     return out;
 }
 
-const E = env();
-export const SUPABASE_URL = E.NEXT_PUBLIC_SUPABASE_URL;
-const SERVICE_KEY = E.SUPABASE_SERVICE_ROLE_KEY;
+// Read on first use, not on import.
+//
+// This used to run at module scope and throw when .env.local was missing or
+// pointed anywhere but the test project. The guard is right; doing it on import
+// was not. It made the whole spec file unloadable without a local env file, so
+// `playwright test --list` — the cheapest possible check that the suite can
+// still start — could not run anywhere the file was absent, CI included.
+//
+// Deferring changes nothing about safety: every call goes through api(), and
+// api() reads this first. The refusal still happens before any request.
+let cached: { url: string; key: string } | null = null;
 
-if (!SUPABASE_URL || !SUPABASE_URL.includes(TEST_PROJECT_REF)) {
-    throw new Error('refusing to run: .env.local is not pointed at the test project');
+function credentials(): { url: string; key: string } {
+    if (cached) return cached;
+
+    const E = env();
+    const url = E.NEXT_PUBLIC_SUPABASE_URL;
+    const key = E.SUPABASE_SERVICE_ROLE_KEY;
+
+    if (!url || !url.includes(TEST_PROJECT_REF)) {
+        throw new Error('refusing to run: .env.local is not pointed at the test project');
+    }
+
+    cached = { url, key };
+    return cached;
 }
 
-const headers = {
-    apikey: SERVICE_KEY,
-    Authorization: `Bearer ${SERVICE_KEY}`,
-    'Content-Type': 'application/json',
-};
+/** Kept as a getter so importing this file still does not touch the disk. */
+export function supabaseUrl(): string {
+    return credentials().url;
+}
 
 async function api(path: string, init: any = {}) {
+    const { url: SUPABASE_URL, key: SERVICE_KEY } = credentials();
+    const headers = {
+        apikey: SERVICE_KEY,
+        Authorization: `Bearer ${SERVICE_KEY}`,
+        'Content-Type': 'application/json',
+    };
     const res = await fetch(SUPABASE_URL + path, { ...init, headers: { ...headers, ...(init.headers || {}) } });
     const text = await res.text();
     try { return { status: res.status, body: JSON.parse(text) }; }

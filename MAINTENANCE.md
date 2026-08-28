@@ -951,3 +951,43 @@ is invisible in a way a failure never is.
 **It cannot cover the work done by pasting into GitHub's web editor**, which
 never touches this machine. That path is covered by branch protection on
 master instead. The two are halves of the same idea.
+
+## The target guard is CommonJS, and has to be
+
+`scripts/target.cjs` has two kinds of caller and they load modules differently.
+The runners in that folder are ESM. **Playwright compiles
+`playwright.config.ts` and `e2e/global-setup.ts` to CommonJS and `require`s
+whatever they import**, and requiring an ESM file dies with:
+
+```
+ReferenceError: exports is not defined in ES module scope
+```
+
+That is not hypothetical. The guard was added on 28 August 2026 as
+`target.mjs`, the config imported it, and **the entire e2e suite stopped being
+able to start** — on master, on a clean checkout, for everybody. `npm test` and
+`npm run build` were green throughout, because neither touches Playwright.
+
+CommonJS is the one format both can load: Node's ESM imports a `.cjs` and picks
+up its named exports, and Playwright's CJS requires it directly.
+
+Two consequences worth knowing:
+
+- **`TEST_PROJECT_REF` lives in `target.cjs`**, not in `seed-lib.mjs`. On Node 20
+  a CommonJS file cannot require an ESM one, so the dependency runs that way
+  round now. `seed-lib.mjs` and `e2e/helpers.ts` both re-export it rather than
+  keeping their own copies, which they used to.
+- **`e2e/helpers.ts` reads `.env.local` on first use, not on import.** It used
+  to throw at module scope, which made the spec file unloadable without a local
+  env file. The refusal still happens before any request.
+
+`tests/e2e-suite-loads.test.ts` runs `playwright test --list` on every `npm
+test`. It needs no browsers, network, database or `.env.local`, and it is the
+only check in the repo that notices the suite cannot start.
+
+**A trivial ESM import from the config will not reproduce this.** Playwright
+only transpiles a file it thinks needs it, and the failure comes from that
+transpile emitting `exports.foo = ...` into a file Node then loads as ESM. A
+one-line `.mjs` imports perfectly well and the same import breaks once the file
+grows — which is exactly how a false-negative mutation test was written while
+proving the above.

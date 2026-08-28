@@ -36,7 +36,11 @@ export function assertTestEnvironment(env) {
 }
 
 // galloway-getaways-test. Production is hviwjxigqivjfhmhpjiy — never this.
-export const TEST_PROJECT_REF = 'yefoqcabuijcowoqewtc';
+// Defined in target.cjs, not here. That file has to be CommonJS so Playwright
+// can load it, and on Node 20 CommonJS cannot require an ESM module — so the
+// dependency runs that way round. Re-exported so every existing importer of
+// this module keeps working.
+export { TEST_PROJECT_REF } from './target.cjs';
 
 // Everything the seeder creates carries one of these, so a reset can find it
 // again and nothing else is ever touched.
