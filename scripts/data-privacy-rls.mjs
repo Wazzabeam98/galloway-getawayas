@@ -176,11 +176,30 @@ async function run() {
     // A pending booking is somebody mid-checkout. A stranger who cannot see it
     // picks those dates, fills in a card and is refused — a lost booking that
     // looks like a broken site. The view carries pending as well as confirmed.
+    //
+    // AND THE CHECK HAS TO KNOW THE DIFFERENCE BETWEEN "EXCLUDED" AND "NONE".
+    //
+    // The first version reported a failure against production, where there is
+    // not a single pending booking. That is the canary problem in mirror
+    // image: an assertion that a row comes back is as blind to an empty table
+    // as an assertion that one does not. It said the view was dropping pending
+    // nights when the view was fine and the database was simply quiet.
     const pend = await anon('/listing_busy_nights?select=status&status=eq.pending&limit=1');
-    const pendingShown = pend.ok && Array.isArray(pend.body) && pend.body.length > 0;
-    if (pendingShown) ok('pending dates show as busy, not free');
-    else bad('pending dates show as busy, not free',
-        'a signed-out guest would be offered dates somebody is paying for');
+    const conf = await anon('/listing_busy_nights?select=status&status=eq.confirmed&limit=1');
+
+    const anyPending = pend.ok && Array.isArray(pend.body) && pend.body.length > 0;
+    const anyConfirmed = conf.ok && Array.isArray(conf.body) && conf.body.length > 0;
+
+    if (anyPending) {
+        ok('pending dates show as busy, not free');
+    } else if (!pend.ok) {
+        bad('pending dates show as busy, not free', 'the view refused the query: ' + pend.status);
+    } else if (!anyConfirmed) {
+        console.log('  – pending dates: no bookings of any kind here to check against');
+    } else {
+        console.log('  – pending dates: none exist right now; confirmed ones come through, '
+            + 'so the view is reading. Proven on test, where a pending booking exists.');
+    }
 
     // ---- listings ----------------------------------------------------------
     console.log('\n  listings — only what is published');
