@@ -805,6 +805,24 @@ date.
 Not a wish list. These stop the site working properly for real people, and each
 one has been observed rather than imagined.
 
+0. **The phase-two migrations have not been run on production.** All of them
+   are applied to **test** and none to production, so the services shop cannot
+   work there until they are. In order:
+
+   | File | Notes |
+   |---|---|
+   | `20260828104048_service_enquiries` | creates the table |
+   | `20260828111354_enquiry_emergency_and_dates` | run after the above |
+   | `20260828113521_one_open_per_job` | reshapes the one-open index |
+   | `20260828123016_no_automatic_release` | **needs `--destructive`** — drops `released_at` |
+   | `20260828124759_provider_sms_opt_out` | adds `sms_opt_out` |
+
+   `scripts/migrate.mjs` refuses production by design, so these are pasted by
+   hand in the SQL editor, in this order, checking the pre-flight query at the
+   top of each. The destructive one drops a column: its pre-flight counts rows
+   and expects zero, and if production ever holds an enquiry that count is the
+   thing to read *before* running it rather than after.
+
 1. **Auth email needs its own SMTP. VERIFIED ON TEST; UNVERIFIED ON
    PRODUCTION.**
 

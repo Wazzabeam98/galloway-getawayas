@@ -27,12 +27,17 @@ import { ChevronLeft, ChevronRight } from 'lucide-react';
 // content taller. Taller is free now that the card scrolls with a pinned
 // footer. There is nothing to clip because there is nothing floating.
 //
-// TAP TARGETS
+// SIZE
 //
-// Cells are at least 44px tall, which is the thumb guideline, and as wide as
-// seven columns leave — about 42px at 375, since nothing can beat 375/7. That
-// is a thumb rather than a word, which is the whole point of not using the
-// browser's own control.
+// Capped at 300px and centred, rather than filling whatever it is given. Left
+// to stretch it took the full width of the modal, which on a desktop made
+// 60px-wide cells and a calendar that dominated the step it was only one field
+// of. Roughly half the area now, and the same size on a phone as on a laptop.
+//
+// Cells stay a thumb rather than a word — the whole point of not using the
+// browser's own control — but 36px tall rather than 44. A month grid is seven
+// columns of adjacent targets, so a mis-tap lands on a neighbouring day and is
+// visible and instantly correctable, which is not the case for a lone button.
 
 const WEEKDAYS = ['Mo', 'Tu', 'We', 'Th', 'Fr', 'Sa', 'Su'];
 
@@ -87,19 +92,19 @@ export default function DatePicker({
     const move = (by: number) => setShown(new Date(shown.getFullYear(), shown.getMonth() + by, 1));
 
     return (
-        <div className="rounded-xl border border-slate-300 overflow-hidden">
-            <div className="flex items-center justify-between px-2 py-2 border-b border-slate-200 bg-slate-50">
+        <div className="rounded-xl border border-slate-300 overflow-hidden max-w-[300px] mx-auto">
+            <div className="flex items-center justify-between px-1.5 py-1.5 border-b border-slate-200 bg-slate-50">
                 <button
                     type="button"
                     onClick={() => move(-1)}
                     disabled={!canGoBack}
                     aria-label="Previous month"
-                    className="p-2 rounded-lg text-slate-600 hover:bg-slate-200 disabled:opacity-30 disabled:hover:bg-transparent"
+                    className="p-1.5 rounded-lg text-slate-600 hover:bg-slate-200 disabled:opacity-30 disabled:hover:bg-transparent"
                 >
-                    <ChevronLeft className="w-5 h-5" />
+                    <ChevronLeft className="w-4 h-4" />
                 </button>
 
-                <span className="text-sm font-semibold text-slate-900">
+                <span className="text-[13px] font-semibold text-slate-900">
                     {MONTHS[shown.getMonth()]} {shown.getFullYear()}
                 </span>
 
@@ -107,22 +112,22 @@ export default function DatePicker({
                     type="button"
                     onClick={() => move(1)}
                     aria-label="Next month"
-                    className="p-2 rounded-lg text-slate-600 hover:bg-slate-200"
+                    className="p-1.5 rounded-lg text-slate-600 hover:bg-slate-200"
                 >
-                    <ChevronRight className="w-5 h-5" />
+                    <ChevronRight className="w-4 h-4" />
                 </button>
             </div>
 
-            <div className="p-1.5 sm:p-2">
-                <div className="grid grid-cols-7 gap-1 mb-1">
+            <div className="p-1.5">
+                <div className="grid grid-cols-7 gap-0.5 mb-0.5">
                     {WEEKDAYS.map((d) => (
-                        <div key={d} className="text-center text-[11px] font-semibold text-slate-500 py-1">
+                        <div key={d} className="text-center text-[10px] font-semibold text-slate-500 py-0.5">
                             {d}
                         </div>
                     ))}
                 </div>
 
-                <div className="grid grid-cols-7 gap-1">
+                <div className="grid grid-cols-7 gap-0.5">
                     {cells.map((date, i) => {
                         if (!date) return <div key={'blank-' + i} />;
 
@@ -138,12 +143,7 @@ export default function DatePicker({
                                 onClick={() => onChange(key)}
                                 aria-pressed={isSelected}
                                 className={
-                                    // 44px tall, which is the thumb guideline.
-                                    // The width is whatever seven columns
-                                    // leave — about 42px at 375 — because no
-                                    // layout beats 375/7 and the height is the
-                                    // dimension a thumb actually misses on.
-                                    'w-full min-h-[44px] rounded-lg text-sm transition '
+                                    'w-full h-9 rounded-lg text-[13px] transition '
                                     + (isSelected
                                         ? 'bg-emerald-700 text-white font-semibold'
                                         : past

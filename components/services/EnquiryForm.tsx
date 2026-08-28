@@ -408,7 +408,12 @@ export default function EnquiryForm({
                 )}
 
                 <label className="block">
-                    <span className="text-sm font-semibold text-slate-700">Additional information</span>
+                    <span className="text-sm font-semibold text-slate-700">
+                        Additional information{' '}
+                        <span className="font-normal text-slate-500">
+                            {faults.length ? '(optional)' : ''}
+                        </span>
+                    </span>
                     <textarea
                         value={summary}
                         onChange={(e) => setSummary(e.target.value)}

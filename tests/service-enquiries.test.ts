@@ -238,6 +238,39 @@ test('a summary of two words is not a call-out worth making', () => {
     );
 });
 
+// A ticked chip is an answer. "Blocked toilet or shower" already says what is
+// wrong, in the same words the tradesman ticked at sign-up, and making
+// somebody write that out again produces filler rather than detail.
+test('a ticked chip makes the description optional, and nothing ticked does not', () => {
+    assert.deepEqual(
+        enquiryProblems(draft({ summary: '', fault_keys: ['plumb_blocked_toilet'] })),
+        [],
+        'a tag is a description'
+    );
+
+    assert.deepEqual(
+        enquiryProblems(draft({ summary: 'tap', fault_keys: ['plumb_leak'] })),
+        [],
+        'a tag plus a short note is fine too'
+    );
+
+    // Something has to describe the work. With nothing ticked the box is the
+    // only thing carrying it.
+    assert.equal(
+        enquiryProblems(draft({ summary: '', fault_keys: [] }))
+            .filter((p) => p.field === 'summary').length,
+        1,
+        'nothing ticked and nothing written is not an enquiry'
+    );
+
+    // A chip that is an empty string is not a tick.
+    assert.equal(
+        enquiryProblems(draft({ summary: '', fault_keys: ['', '  '] }))
+            .filter((p) => p.field === 'summary').length,
+        1
+    );
+});
+
 // --- every problem, not the first one --------------------------------------
 
 // Reported from a walk-through as "I submitted with both blank and it only

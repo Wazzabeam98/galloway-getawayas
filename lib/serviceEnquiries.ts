@@ -478,15 +478,23 @@ export function enquiryProblems(draft: EnquiryDraft): Problem[] {
         problems.push({ field: 'urgency', message: 'Say how urgent it is.' });
     }
 
+    // A TICKED CHIP IS AN ANSWER, SO THE BOX IS OPTIONAL ONCE THERE IS ONE.
+    //
+    // "Blocked toilet or shower" already says what is wrong, in the tradesman's
+    // own vocabulary — it is the same list he ticked at sign-up. Demanding a
+    // sentence on top of it asks somebody to write out what they have just
+    // told us, and what they write to get past the form is worth less than the
+    // chip.
+    //
+    // With nothing ticked the box is the only thing carrying the job, so it is
+    // required. That is the rule: SOMETHING has to describe the work.
     const summary = String(draft.summary || '').trim();
-    if (summary.length < MIN_SUMMARY) {
+    const ticked = (draft.fault_keys || []).filter((k) => String(k || '').trim() !== '');
+
+    if (!ticked.length && summary.length < MIN_SUMMARY) {
         problems.push({
-            // Matches the field's label. The box is "Additional information"
-            // now — the ticked chips above it are "What's wrong?" — so an
-            // error telling somebody to say what is wrong points at the wrong
-            // control.
             field: 'summary',
-            message: 'Add a sentence or two about the problem.',
+            message: 'Tick what is wrong, or describe it in a sentence or two.',
         });
     }
 
