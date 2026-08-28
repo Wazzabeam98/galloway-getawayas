@@ -119,6 +119,7 @@ function ApplicationForm() {
     const [description, setDescription] = useState('');
     const [contactEmail, setContactEmail] = useState('');
     const [contactPhone, setContactPhone] = useState('');
+    const [smsOptOut, setSmsOptOut] = useState(false);
     const [photos, setPhotos] = useState<string[]>([]);
     const [logo, setLogo] = useState<string | null>(null);
     const [uploadingLogo, setUploadingLogo] = useState(false);
@@ -298,7 +299,7 @@ function ApplicationForm() {
                 // it is inherited from another one they hold.
                 const { data: existing } = await supabase
                     .from('service_providers')
-                    .select('id, business_name, trade, description, contact_email, contact_phone, audience, photos, logo, status, review_note, callout_fee, hourly_rate, callout_waived, does_gas, does_oil, kind, pricing_choice, billable_hourly_rate, covered_bands')
+                    .select('id, business_name, trade, description, contact_email, contact_phone, sms_opt_out, audience, photos, logo, status, review_note, callout_fee, hourly_rate, callout_waived, does_gas, does_oil, kind, pricing_choice, billable_hourly_rate, covered_bands')
                     .eq('owner_id', session.user.id)
                     .eq('trade', tradeFromUrl)
                     .maybeSingle();
@@ -310,6 +311,7 @@ function ApplicationForm() {
                     setDescription(existing.description || '');
                     setContactEmail(existing.contact_email || session.user.email || '');
                     setContactPhone(existing.contact_phone || '');
+                    setSmsOptOut(!!existing.sms_opt_out);
                     setPhotos(existing.photos || []);
                     setLogo(existing.logo || null);
                     setStatus(existing.status || 'draft');
@@ -500,6 +502,7 @@ function ApplicationForm() {
             if (d.description) setDescription(d.description);
             if (d.contactEmail) setContactEmail(d.contactEmail);
             if (d.contactPhone) setContactPhone(d.contactPhone);
+            if (d.smsOptOut) setSmsOptOut(!!d.smsOptOut);
             if (d.doesGas !== undefined) setDoesGas(d.doesGas === true);
             if (d.doesOil !== undefined) setDoesOil(d.doesOil === true);
             if (d.registrations) setRegistrations(d.registrations);
@@ -606,7 +609,7 @@ function ApplicationForm() {
                     // The step and the trade, so coming back lands where they
                     // left rather than at the beginning.
                     step, trade,
-                    businessName, description, contactEmail, contactPhone,
+                    businessName, description, contactEmail, contactPhone, smsOptOut,
                     prices, extras, calloutFee, hourlyRate, areas,
                     pricingChoice, billableHourlyRate, coveredBands,
                     doesGas, doesOil, registrations, calloutWaived, skills,
@@ -624,7 +627,7 @@ function ApplicationForm() {
         }
     }, [
         hydrated, providerId, tradeFromUrl, chosen, step, trade,
-        businessName, description, contactEmail, contactPhone,
+        businessName, description, contactEmail, contactPhone, smsOptOut,
         prices, extras, calloutFee, hourlyRate, areas,
         pricingChoice, billableHourlyRate, coveredBands,
         doesGas, doesOil, registrations, calloutWaived, skills,
@@ -1287,6 +1290,7 @@ function ApplicationForm() {
             description: description.trim(),
             contact_email: contactEmail.trim(),
             contact_phone: contactPhone.trim() || null,
+            sms_opt_out: smsOptOut,
             audience: audienceForTrade(trade),
             photos,
             logo,
@@ -1536,6 +1540,7 @@ function ApplicationForm() {
             description: description.trim(),
             contact_email: contactEmail.trim(),
             contact_phone: contactPhone.trim() || null,
+            sms_opt_out: smsOptOut,
             audience: audienceForTrade(trade),
             photos,
             logo,
@@ -3267,6 +3272,34 @@ function ApplicationForm() {
                             onChange={(e) => setContactPhone(e.target.value)}
                             className="w-full rounded-xl border border-slate-300 px-4 py-3 focus:outline-none focus:ring-2 focus:ring-emerald-700"
                         />
+
+                        {/* SAID BESIDE THE FIELD, NOT IN A POLICY.
+                            A text that arrives unannounced is the thing this
+                            sentence exists to prevent. It is also the reason
+                            the opt-out below is here rather than buried in a
+                            settings page nobody opens: without one, a
+                            tradesman who does not want texts removes his
+                            number instead, and then nobody can reach him at
+                            all when it is urgent. */}
+                        <p className="text-sm text-slate-600 mt-2">
+                            If it is a mobile, we will text you when an owner has an emergency —
+                            those are the ones where minutes matter. Everything else comes by email.
+                        </p>
+
+                        <label className="flex items-start gap-2.5 mt-3 cursor-pointer">
+                            <input
+                                type="checkbox"
+                                checked={smsOptOut}
+                                onChange={(e) => setSmsOptOut(e.target.checked)}
+                                className="mt-1"
+                            />
+                            <span className="text-sm text-slate-700">
+                                Don&rsquo;t text me — email only
+                                <span className="block text-xs text-slate-500">
+                                    You will still get every enquiry, just not as quickly.
+                                </span>
+                            </span>
+                        </label>
                     </div>
 
                     {/* Said once, plainly, and true today: nothing renders

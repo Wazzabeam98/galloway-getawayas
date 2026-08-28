@@ -254,6 +254,32 @@ again at the end, because a bounce eight rows up is a bounce nobody sees.
 `--email` filters both halves, so one address can be followed across auth mail
 and app mail at once.
 
+## Checking what happened to a text
+
+```
+node scripts/check-sms.mjs                   last 20 messages
+node scripts/check-sms.mjs --to 07700900123  just that number
+node scripts/check-sms.mjs --sid SMxxxx      one message
+node scripts/check-sms.mjs --watch           re-check every 5s
+```
+
+Read-only, like `check-email.mjs`, and it matters more than that one does. An
+emergency enquiry has **no fallback**: nothing is released and nothing is
+escalated, so if the tradesman does not see the text and does not open the
+email, the enquiry expires and the owner is told to ring somebody else. "Did
+he see it" is the product.
+
+`delivered` is the only status that means it reached a handset. **`sent` does
+not** — it means Twilio handed the message to the carrier and nothing more,
+exactly like Resend's `sent`, and rounding it up to success is how an unseen
+emergency looks fine in a report. Anything not delivered is listed again at
+the end.
+
+It also flags a message that split into two segments. The text is built to fit
+in one — see `emergencySms` in `lib/sms.ts` — so a split is a design fault
+rather than a billing surprise, and usually means a character outside GSM-7
+crept into the wording.
+
 ## Signed-in journey checks
 
 ```

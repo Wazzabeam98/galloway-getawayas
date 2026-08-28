@@ -82,7 +82,7 @@ export async function POST(req: Request) {
         // ---- who is being asked -------------------------------------------
         const { data: provider } = await admin
             .from('service_providers')
-            .select('id, owner_id, business_name, trade, status, kind, contact_email, contact_phone, callout_fee, hourly_rate, callout_waived, does_gas, does_oil, notify_user_ids')
+            .select('id, owner_id, business_name, trade, status, kind, contact_email, contact_phone, sms_opt_out, callout_fee, hourly_rate, callout_waived, does_gas, does_oil, notify_user_ids')
             .eq('id', String(body.provider_id || ''))
             .maybeSingle();
 

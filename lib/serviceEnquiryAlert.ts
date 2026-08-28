@@ -41,6 +41,7 @@ import {
     SITE_URL,
 } from '@/lib/email';
 import { logError } from '@/lib/logError';
+import { sendSms, emergencySms, toE164 } from '@/lib/sms';
 import { tradeLabel } from '@/lib/serviceProviders';
 import {
     faultLabels,
@@ -57,6 +58,9 @@ export interface AlertResult {
     provider: boolean;
     host: boolean;
     admins: string[];
+    // Emergencies only, and only when he has a mobile and has not opted out.
+    // Null means it was never attempted, which is different from false.
+    texted?: boolean | null;
     skipped?: string;
 }
 
@@ -184,6 +188,44 @@ export async function announceEnquiry(
                 enquiry: String(enquiry.id),
                 to: String(provider.contact_email),
             });
+        }
+    }
+
+    // ---- and a text, for an emergency only --------------------------------
+    //
+    // ONE WAY. He accepts through the link in it or through the email above,
+    // and nothing can be accepted by replying — the sender is alphanumeric and
+    // cannot receive a reply at all. See lib/sms.ts.
+    //
+    // Emergencies only, because that is where minutes decide it and because
+    // texting every enquiry is how a channel stops being read. Skipped for a
+    // provider who has opted out, and for a number that is not a UK mobile —
+    // toE164 refuses rather than guessing.
+    if (emergency) {
+        const mobile = provider && provider.sms_opt_out ? null : toE164(provider && provider.contact_phone);
+
+        if (mobile) {
+            const body = emergencySms(
+                SITE_URL + '/e/' + replyToken,
+                trade,
+                String((listing && listing.location) || enquiry.area_key || '')
+                    .split(',')[0].trim() || 'Dumfries & Galloway'
+            );
+
+            const text = await sendSms(mobile, body);
+            result.texted = text.ok;
+
+            // With no automatic release behind this, an unseen emergency is
+            // simply a job that does not happen. A text that failed to send is
+            // worth hearing about rather than inferring from silence.
+            if (!text.ok) {
+                await logError('service-enquiry-sms', {
+                    enquiry: String(enquiry.id),
+                    problem: text.error || text.skipped || 'unknown',
+                });
+            }
+        } else {
+            result.texted = null;
         }
     }
 

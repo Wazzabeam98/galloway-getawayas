@@ -654,6 +654,41 @@ days" came off the sign-up in commit `ccbc10c` while the machinery behind them
 lived on for several commits, which is how a promise nobody meant to make gets
 made again.
 
+## SMS — one way, emergencies only
+
+A tradesman gets a text as well as an email when an owner has an **emergency**,
+and only then. Everything else is email. Texting every enquiry is how a channel
+stops being read, and emergencies are where minutes decide it.
+
+**Nothing can ever be accepted by replying to a text.** The sender is an
+alphanumeric ID (`GallowayGG`), which cannot receive a reply at all — that is
+the feature, not a limitation worked around. He accepts through the link in the
+text or through his email, and that accept is the only thing that reveals a
+name, a number or an address. There is no inbound webhook and no long number.
+
+The reason is what a wrong guess costs: matching an inbound "yes" back to an
+enquiry means hoping he has exactly one open, and with two, accepting the wrong
+one sends a tradesman to the wrong house and hands a stranger's address to
+somebody who never asked for it. If replying by text ever looks tempting, it is
+a conversation to have before it is a thing to build.
+
+The message is built to fit **one GSM-7 segment** — 160 characters. Over that
+it splits and costs double; a single character outside GSM-7, such as a curly
+apostrophe, drops the whole message to 70 characters a segment. Neither fails
+loudly. `emergencySms` in `lib/sms.ts` builds it to fit and there are tests on
+both the length and the alphabet.
+
+`/e/<token>` is the short link the text uses. It is a redirect to
+`/services/enquiry/<token>` and nothing else — the path length is worth 44
+characters of message, which is the trade and the town.
+
+A provider can turn texts off and keep email (`service_providers.sms_opt_out`),
+and the sign-up says beside the phone field that emergencies are texted.
+Without an opt-out a tradesman who does not want texts removes his number
+instead, and then nothing can reach him when it is urgent.
+
+`node scripts/check-sms.mjs` answers "did he see it" — see scripts/README.md.
+
 ## Email — two separate systems
 
 - **Auth email** (confirm signup, password reset, magic links) is sent by
