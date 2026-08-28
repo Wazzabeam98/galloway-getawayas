@@ -1,7 +1,7 @@
 import { adminClient } from '@/lib/supabaseAdmin';
 import { NextResponse } from 'next/server';
 import { stripeRequest } from '@/lib/stripe';
-import { refundFraction } from '@/lib/cancellation';
+import { refundDue } from '@/lib/cancellation';
 import { logError } from '@/lib/logError';
 import {
     sendEmail,
@@ -63,7 +63,7 @@ export async function GET(request: Request) {
 
     const { data: due } = await admin
         .from('bookings')
-        .select('id, listing_id, guest_id, host_id, check_in, check_out, balance_amount, balance_due_date, balance_attempts, balance_last_attempt_at, amount_paid, amount_refunded, stripe_customer_id, stripe_payment_method_id, stripe_payment_intent_id, payment_status, status')
+        .select('id, listing_id, guest_id, host_id, check_in, check_out, balance_amount, balance_due_date, balance_attempts, balance_last_attempt_at, amount_paid, amount_refunded, cleaning_fee, stripe_customer_id, stripe_payment_method_id, stripe_payment_intent_id, payment_status, status')
         .eq('payment_status', 'deposit_paid')
         .in('status', ['confirmed', 'pending'])
         .lte('balance_due_date', today)
@@ -124,8 +124,17 @@ export async function GET(request: Request) {
                 const paid = Number(booking.amount_paid || 0);
                 const alreadyRefunded = Number(booking.amount_refunded || 0);
                 const refundable = round2(paid - alreadyRefunded);
-                const fraction = refundFraction(booking.check_in, listing.cancellation_policy);
-                const refundAmount = round2(refundable * fraction);
+
+                // The same rule as a guest cancelling by hand. The clean does
+                // not happen either way, so the cleaning fee comes back whole
+                // here too — two rules would only drift apart.
+                const refundAmount = refundDue({
+                    amountPaid: paid,
+                    alreadyRefunded: alreadyRefunded,
+                    cleaningFee: booking.cleaning_fee,
+                    checkIn: booking.check_in,
+                    policy: listing.cancellation_policy,
+                });
 
                 if (refundAmount > 0 && booking.stripe_payment_intent_id) {
                     await stripeRequest('POST', '/refunds', {

@@ -17,15 +17,21 @@
 // missing from `tsconfig.test.json`, so a test against either failed with
 // MODULE_NOT_FOUND rather than an assertion. They are on the list now.
 //
-// WHAT IT PINS, AND WHAT IS ABOUT TO CHANGE.
+// WHAT CHANGED, AND WHAT DELIBERATELY DID NOT.
 //
-// These are today's figures, written down before the cleaning-fee rule lands.
-// The published cancellation policy promises the cleaning fee back in full
-// whenever a guest cancels, and the code does not do that — it takes a flat
-// fraction of everything. When that is fixed, the expected amounts in the
-// policy cases below change, deliberately and visibly, and the cases that must
-// NOT move (a host cancelling, never exceeding what was paid) stay where they
-// are. Having the numbers here first is what makes that diff readable.
+// These figures were first written down against the old behaviour, one commit
+// before the rule changed, so the diff shows the money moving:
+//
+//   50% band, £400 paid, £60 clean      £200 -> £230
+//   Firm, 3 days out, £60 clean         £0   -> £60, and Stripe is now called
+//   £100 deposit, 50% band              £50  -> £80
+//   the same, via /api/bookings/cancel  £200 -> £230
+//
+// And the cases that must not move, which is half the point of having them:
+// a host cancellation still returns everything, a refund still cannot exceed
+// what was paid, a second refund is still worked out on what remains, and a
+// booking with no cleaning fee — or one older than the column — behaves
+// exactly as it always did.
 
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
@@ -60,6 +66,7 @@ function checkInDaysAway(days: number): string {
 
 interface Options {
     policy?: string;
+    cleaningFee?: number | null;
     daysAway?: number;
     amountPaid?: number;
     alreadyRefunded?: number;
@@ -89,6 +96,9 @@ function load(routePath: string, options: Options = {}) {
         total_price: options.totalPrice ?? 400,
         amount_paid: options.amountPaid ?? 400,
         amount_refunded: options.alreadyRefunded ?? 0,
+        // Stamped at checkout from the server-side quote. £60 of the £400
+        // unless a test says otherwise.
+        cleaning_fee: options.cleaningFee === undefined ? 60 : options.cleaningFee,
         stripe_payment_intent_id: 'pi_1',
         payout_transfer_id: null,
         payout_amount: 0,
@@ -190,36 +200,63 @@ test('outside the window, a guest gets everything back', async () => {
     assert.equal(res.body.refunded, 400);
 });
 
-test('inside the window, a guest gets half of what they paid', async () => {
-    // Four days out on Moderate is the 50% band.
+test('inside the window, the clean comes back whole and the rest is halved', async () => {
+    // Four days out on Moderate is the 50% band. £60 clean returned in full,
+    // then half of the remaining £340. This was a flat £200 until the code was
+    // brought into line with the published policy.
     const { route, refunds } = load(REFUND_ROUTE, { policy: 'Moderate', daysAway: 4 });
     const res = await route.POST(post('http://x/api/stripe/refund', { bookingId: 'b-1' }));
 
-    assert.equal(poundsRefunded(refunds), 200, '£400 paid, 50% band');
-    assert.equal(res.body.refunded, 200);
+    assert.equal(poundsRefunded(refunds), 230, '£60 clean + half of £340');
+    assert.equal(res.body.refunded, 230);
 });
 
-test('inside the non-refundable part of a Firm policy, nothing is sent back', async () => {
-    // Firm gives nothing within 7 days, and the route makes no Stripe call at
-    // all rather than asking for a refund of zero.
+test('inside a non-refundable window the clean STILL comes back', async () => {
+    // The sharpest edge of the change. Firm gives nothing on the stay within
+    // 7 days, and this route used to make no Stripe call at all. "Whenever you
+    // cancel" is what the policy page promises, so the £60 clean goes back and
+    // a refund now happens where none did before.
     const { route, refunds } = load(REFUND_ROUTE, { policy: 'Firm', daysAway: 3 });
     const res = await route.POST(post('http://x/api/stripe/refund', { bookingId: 'b-1' }));
 
+    assert.equal(refunds.length, 1, 'Stripe is now called where it was not');
+    assert.equal(poundsRefunded(refunds), 60, 'the cleaning fee, and nothing else');
+    assert.equal(res.body.refunded, 60);
+});
+
+test('with no cleaning fee, a non-refundable window still refunds nothing', async () => {
+    // The case that must not move. A host who charges no cleaning fee sees
+    // exactly the behaviour they saw before: no refund, and no Stripe call.
+    const { route, refunds } = load(REFUND_ROUTE, { policy: 'Firm', daysAway: 3, cleaningFee: 0 });
+    const res = await route.POST(post('http://x/api/stripe/refund', { bookingId: 'b-1' }));
+
     assert.equal(refunds.length, 0, 'Stripe should not be called for nothing');
-    assert.equal(res.body.refunded, 0);
     assert.equal(res.body.nonRefundable, true);
 });
 
-test('a guest who paid only the deposit gets the policy share of the deposit', async () => {
-    // £100 deposit on a £400 booking, cancelled in the 50% band. The fraction
-    // is taken on what was actually paid, never on the headline total — the
-    // difference is £50 against £200.
+test('a booking older than the cleaning_fee column behaves exactly as before', async () => {
+    // Null is "we do not know what was charged". Half of £400, as today.
+    const { route, refunds } = load(REFUND_ROUTE, {
+        policy: 'Moderate', daysAway: 4, cleaningFee: null,
+    });
+    await route.POST(post('http://x/api/stripe/refund', { bookingId: 'b-1' }));
+
+    assert.equal(poundsRefunded(refunds), 200);
+});
+
+test('a deposit-only guest gets the clean whole, then the share of the rest', async () => {
+    // £100 deposit on a £400 booking with a £60 clean, cancelled in the 50%
+    // band: £60 + half of the remaining £40 = £80 of the £100 they paid.
+    //
+    // Accepted knowingly — a deposit-payer can get most of their deposit back
+    // under a policy that promises half. Note the fraction is still taken on
+    // what was PAID and never on the headline total.
     const { route, refunds } = load(REFUND_ROUTE, {
         policy: 'Moderate', daysAway: 4, amountPaid: 100, totalPrice: 400,
     });
     await route.POST(post('http://x/api/stripe/refund', { bookingId: 'b-1' }));
 
-    assert.equal(poundsRefunded(refunds), 50, 'half of the £100 deposit, not half of £400');
+    assert.equal(poundsRefunded(refunds), 80, '£60 clean + half of the remaining £40');
 });
 
 test('a host cancelling returns everything, whatever the policy says', async () => {
@@ -261,13 +298,13 @@ test('a refund can never exceed what the guest actually paid', async () => {
 /* ----------------------------------------------- /api/bookings/cancel */
 
 test('cancelling from Your trips refunds the same figure as the refund route', async () => {
-    // Two routes, one rule. They are separate code paths today, which is
-    // exactly why both are asserted at the same numbers.
+    // Two routes, one rule — they call the same refundDue(). Separate code
+    // paths, which is exactly why both are asserted at the same number.
     const { route, refunds } = load(CANCEL_ROUTE, { policy: 'Moderate', daysAway: 4 });
     const res = await route.POST(post('http://x/api/bookings/cancel', { bookingId: 'b-1' }));
 
     assert.equal(res.body.ok, true);
-    assert.equal(poundsRefunded(refunds), 200, '£400 paid, 50% band — same as /api/stripe/refund');
+    assert.equal(poundsRefunded(refunds), 230, 'the same £230 as /api/stripe/refund, not a second sum');
 });
 
 test('cancelling from Your trips outside the window returns everything', async () => {

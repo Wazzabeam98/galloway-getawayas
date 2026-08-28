@@ -338,6 +338,13 @@ export async function POST(request: Request) {
                 // altered later, this booking's history stays true to what
                 // was actually agreed at the time.
                 commission_rate: rateFor(listing),
+                // Same reasoning, same moment. A cancellation gives the
+                // cleaning fee back in full, so a refund has to know what was
+                // charged for it — not what the host has set since. Taken from
+                // the server-side quote and never from the browser: the
+                // booking row is created client-side, so a value arriving with
+                // it would be the guest's claim rather than ours.
+                cleaning_fee: quote.cleaningFeeTotal,
                 status: 'pending_payment',
             })
             .eq('id', booking.id);

@@ -8,7 +8,7 @@ import Logo from '@/components/base/Logo';
 import LoginModel from '@/components/auth/LoginModel';
 import { getImageUrl, capitializeFirst, displayName, formatTime } from '@/lib/utils';
 import Link from 'next/link';
-import { refundFraction } from '@/lib/cancellation';
+import { refundDue } from '@/lib/cancellation';
 
 interface Booking {
     id: string;
@@ -343,8 +343,17 @@ export default function TripsPage() {
                     && b.status !== 'declined'
                     && new Date(b.check_in) > today && (() => {
                     const paidSoFar = Number(b.amount_paid || 0) - Number(b.amount_refunded || 0);
-                    const fraction = refundFraction(b.check_in, listing?.cancellation_policy);
-                    const refund = Math.round(paidSoFar * fraction * 100) / 100;
+                    // The very function /api/bookings/cancel runs when this
+                    // button is pressed. It used to be the sum written out
+                    // again here, which is how a guest gets shown one figure
+                    // and refunded a different one.
+                    const refund = refundDue({
+                        amountPaid: Number(b.amount_paid || 0),
+                        alreadyRefunded: Number(b.amount_refunded || 0),
+                        cleaningFee: (b as any).cleaning_fee,
+                        checkIn: b.check_in,
+                        policy: listing?.cancellation_policy,
+                    });
 
                     if (confirmingId !== b.id) {
                         return (

@@ -8,7 +8,7 @@ import { adminClient } from "@/lib/supabaseAdmin";
 import { checkListing } from "@/lib/access";
 import { displayName, getImageUrl, formatTime } from "@/lib/utils";
 import { rateFor, netOfFee } from "@/lib/fees";
-import { formatUk, refundFraction, policyOf, freeCancelDateOrNull } from "@/lib/cancellation";
+import { formatUk, refundDue, policyOf, freeCancelDateOrNull } from "@/lib/cancellation";
 import { contactNumberVisible, stayHasEnded, stayHasStarted } from "@/lib/stayWindow";
 import { outstandingDebts, outstandingOf, debtAgainstStays, debtReason, round2 } from "@/lib/hostDebt";
 import { dateFromKey } from "@/lib/pricing";
@@ -190,9 +190,15 @@ export default async function BookingDetail({ params }: { params: { id: string }
     // Against what they are actually still holding, not what they once paid.
     // A booking already part-refunded cannot give back the whole amount again.
     const stillHeld = round2(paid - refunded);
-    const guestWouldGet = round2(
-        refundFraction(booking.check_in, listing?.cancellation_policy) * (stillHeld > 0 ? stillHeld : 0)
-    );
+    // The very function the refund routes run, so the figure a host is quoted
+    // is the figure the guest actually receives.
+    const guestWouldGet = refundDue({
+        amountPaid: paid,
+        alreadyRefunded: refunded,
+        cleaningFee: booking.cleaning_fee,
+        checkIn: booking.check_in,
+        policy: listing?.cancellation_policy,
+    });
 
     const nights = Math.round(
         (dateFromKey(booking.check_out).getTime() - dateFromKey(booking.check_in).getTime()) / 86400000

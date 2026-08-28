@@ -3,7 +3,7 @@ import { adminClient } from '@/lib/supabaseAdmin';
 import { cookies } from 'next/headers';
 import { NextResponse } from 'next/server';
 import { stripeRequest } from '@/lib/stripe';
-import { refundFraction } from '@/lib/cancellation';
+import { refundDue } from '@/lib/cancellation';
 import { clawBackPayout } from '@/lib/clawback';
 import { logError } from '@/lib/logError';
 
@@ -34,7 +34,7 @@ export async function POST(request: Request) {
 
         const { data: booking } = await admin
             .from('bookings')
-            .select('id, listing_id, guest_id, host_id, check_in, status, payment_status, total_price, amount_paid, amount_refunded, stripe_payment_intent_id, payout_transfer_id, payout_amount')
+            .select('id, listing_id, guest_id, host_id, check_in, status, payment_status, total_price, amount_paid, amount_refunded, cleaning_fee, stripe_payment_intent_id, payout_transfer_id, payout_amount')
             .eq('id', bookingId)
             .maybeSingle();
 
@@ -62,18 +62,32 @@ export async function POST(request: Request) {
         // A host who declines or cancels never keeps the guest's money, whatever
         // the listing's cancellation tier says. A guest cancelling is the case
         // the tier exists for, so the policy decides how much comes back.
-        let fraction = 1;
-        if (isGuest && !isHost) {
+        const hostCancelling = !(isGuest && !isHost);
+
+        let policy: string | null = null;
+        if (!hostCancelling) {
             const { data: listing } = await admin
                 .from('listings')
                 .select('cancellation_policy')
                 .eq('id', booking.listing_id)
                 .maybeSingle();
 
-            fraction = refundFraction(booking.check_in, listing && listing.cancellation_policy);
+            policy = (listing && listing.cancellation_policy) || null;
         }
 
-        const amount = round2(refundable * fraction);
+        // One rule, in lib/cancellation.ts, shared with /api/bookings/cancel,
+        // the balance job and the two screens that show a guest or a host what
+        // a cancellation would return. It was written out separately in each
+        // of those, which is how a predicted figure and a refunded one drift
+        // apart.
+        const amount = refundDue({
+            amountPaid: paid,
+            alreadyRefunded: alreadyRefunded,
+            cleaningFee: booking.cleaning_fee,
+            checkIn: booking.check_in,
+            policy: policy,
+            hostCancelling: hostCancelling,
+        });
 
         // Inside the non-refundable part of the policy there is nothing to
         // send back, so no call is made to Stripe at all.

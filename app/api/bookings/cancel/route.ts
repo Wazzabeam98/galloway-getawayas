@@ -3,7 +3,7 @@ import { adminClient } from '@/lib/supabaseAdmin';
 import { cookies } from 'next/headers';
 import { NextResponse } from 'next/server';
 import { stripeRequest } from '@/lib/stripe';
-import { refundFraction } from '@/lib/cancellation';
+import { refundDue } from '@/lib/cancellation';
 import { logError } from '@/lib/logError';
 
 export const dynamic = 'force-dynamic';
@@ -32,7 +32,7 @@ export async function POST(request: Request) {
 
         const { data: booking } = await admin
             .from('bookings')
-            .select('id, listing_id, guest_id, check_in, status, payment_status, amount_paid, amount_refunded, stripe_payment_intent_id, balance_amount')
+            .select('id, listing_id, guest_id, check_in, status, payment_status, amount_paid, amount_refunded, cleaning_fee, stripe_payment_intent_id, balance_amount')
             .eq('id', bookingId)
             .maybeSingle();
 
@@ -77,8 +77,16 @@ export async function POST(request: Request) {
         const paid = Number(booking.amount_paid || 0);
         const alreadyRefunded = Number(booking.amount_refunded || 0);
         const refundable = round2(paid - alreadyRefunded);
-        const fraction = refundFraction(booking.check_in, listing && listing.cancellation_policy);
-        const amount = round2(refundable * fraction);
+
+        // One rule, in lib/cancellation.ts, shared with /api/stripe/refund,
+        // the balance job and the two screens that predict this figure.
+        const amount = refundDue({
+            amountPaid: paid,
+            alreadyRefunded: alreadyRefunded,
+            cleaningFee: booking.cleaning_fee,
+            checkIn: booking.check_in,
+            policy: listing && listing.cancellation_policy,
+        });
 
         // The money goes back before the booking changes. If Stripe refuses,
         // the guest still has their stay rather than neither.
