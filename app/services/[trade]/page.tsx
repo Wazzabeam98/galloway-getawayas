@@ -19,10 +19,28 @@ import {
     schemeLabel,
     initialsFor,
     pricingModelFor,
+    pointForListing,
 } from '@/lib/serviceProviders';
 import EnquiryForm from '@/components/services/EnquiryForm';
 
 // Who covers you, for one trade.
+//
+// IT DOES NOT ASK WHERE THE PROPERTY IS
+//
+// A host has already told us, on the listing. Asking again is asking somebody
+// to type an answer we are holding, and it turns a shop into a form. So the
+// search point comes from their listing — its own coordinates where it has
+// them, the town in `location` where it does not — and the page simply shows
+// who covers there.
+//
+// The override is not an afterthought. Somebody with four cottages is asking
+// about ONE of them, and somebody may be asking about a place that is not on
+// the site at all. So the property is switchable and there is a way out to a
+// plain town picker, both one press away and neither in the way of the common
+// case, which is a host with one cottage who wants a plumber for it.
+//
+// The picker is also the fallback rather than an error: a listing with no
+// coordinates and an unrecognised town is an ordinary old row, not a fault.
 //
 // ORDERED BY DISTANCE, AND NOTHING ELSE
 //
@@ -69,7 +87,11 @@ export default function TradeShopPage({ params }: { params: { trade: string } })
     const trade = String(params.trade || '');
 
     const [loading, setLoading] = useState(true);
-    const [townKey, setTownKey] = useState('kirkcudbright');
+    // Null until the host overrides. Not defaulted to a town, because a
+    // default here would silently win over their own property.
+    const [manualTown, setManualTown] = useState<string | null>(null);
+    const [listingId, setListingId] = useState('');
+    const [choosing, setChoosing] = useState(false);
     const [providers, setProviders] = useState<Provider[]>([]);
     const [areas, setAreas] = useState<any[]>([]);
     const [prices, setPrices] = useState<any[]>([]);
@@ -92,19 +114,17 @@ export default function TradeShopPage({ params }: { params: { trade: string } })
                 const { data: mine } = await supabase
                     .from('listings')
                     .select('id, title, location, bedrooms, latitude, longitude')
-                    .eq('host_id', session.user.id);
+                    .eq('host_id', session.user.id)
+                    .order('created_at', { ascending: true });
+
                 setListings(mine || []);
 
-                // The town is a guess from their own property rather than a
-                // question, and it is only a default — a host with a cottage
-                // in Wigtown and a flat in Moffat changes it.
-                const first = (mine || [])[0];
-                if (first) {
-                    const match = COVERAGE_TOWNS.filter(
-                        (t) => String(first.location || '').toLowerCase().indexOf(t.label.toLowerCase()) !== -1
-                    )[0];
-                    if (match) setTownKey(match.key);
-                }
+                // The first one that can actually be located. A host whose
+                // oldest listing predates the coordinate columns should not
+                // land on the picker while their other three would have
+                // answered the question.
+                const usable = (mine || []).filter((l: any) => !!pointForListing(l))[0];
+                if (usable) setListingId(usable.id);
             }
 
             const { data: rows } = await supabase
@@ -136,10 +156,16 @@ export default function TradeShopPage({ params }: { params: { trade: string } })
         load();
     }, [trade, known, supabase]);
 
-    const town = townByKey(townKey);
+    // Where we are searching from, and how we know.
+    const listing = listings.filter((l) => l.id === listingId)[0] || null;
+    const manual = manualTown ? townByKey(manualTown) : null;
+
+    const point = manual
+        ? { lat: manual.lat, lng: manual.lng, label: manual.label, from: 'town' as const }
+        : pointForListing(listing);
 
     const shown = useMemo(() => {
-        if (!town) return [];
+        if (!point) return [];
 
         return providers
             .map((provider) => {
@@ -151,12 +177,12 @@ export default function TradeShopPage({ params }: { params: { trade: string } })
 
                 const distance = mine.length
                     ? Math.min(...mine.map((a) =>
-                        milesBetween(a.centre_lat, a.centre_lng, town.lat, town.lng)))
+                        milesBetween(a.centre_lat, a.centre_lng, point.lat, point.lng)))
                     : Infinity;
 
                 return { provider, areas: mine, regs, offered, distance };
             })
-            .filter((row) => coversPoint(row.areas as any, town.lat, town.lng))
+            .filter((row) => coversPoint(row.areas as any, point.lat, point.lng))
             // A registration that has run out is not a detail to show in small
             // print — it is the difference between a Gas Safe engineer and
             // somebody who was one last year. They come off the list entirely,
@@ -170,7 +196,7 @@ export default function TradeShopPage({ params }: { params: { trade: string } })
                 row.regs
             ).length === 0)
             .sort((a, b) => a.distance - b.distance);
-    }, [providers, areas, registrations, extras, town, trade]);
+    }, [providers, areas, registrations, extras, point, trade]);
 
     if (!known) {
         return (
@@ -196,25 +222,89 @@ export default function TradeShopPage({ params }: { params: { trade: string } })
                 {tradeLabel(trade)}
             </h1>
 
-            <label className="block mt-6">
-                <span className="text-sm font-semibold text-slate-700">Where is the property?</span>
-                <select
-                    value={townKey}
-                    onChange={(e) => setTownKey(e.target.value)}
-                    className="mt-1.5 w-full sm:w-72 rounded-xl border border-slate-300 px-3 py-2.5 text-slate-900"
-                >
-                    {COVERAGE_TOWNS.map((t) => (
-                        <option key={t.key} value={t.key}>{t.label}</option>
-                    ))}
-                </select>
-            </label>
+            {/* Told, not asked. The question only appears if we could not
+                work it out, or if the host presses Change. */}
+            {point && !choosing && (
+                <p className="text-slate-600 mt-3">
+                    Covering <strong className="text-slate-900">{point.label}</strong>
+                    {listing && !manual && (
+                        <span className="text-slate-500"> — {listing.title}</span>
+                    )}
+                    {' '}
+                    <button
+                        onClick={() => setChoosing(true)}
+                        className="text-emerald-700 font-semibold underline hover:text-emerald-800"
+                    >
+                        Change
+                    </button>
+                </p>
+            )}
+
+            {(choosing || !point) && (
+                <div className="mt-5 rounded-2xl border border-slate-300 p-4 space-y-3">
+                    {!point && (
+                        <p className="text-sm text-slate-600">
+                            We could not tell where to search from, so pick a town.
+                        </p>
+                    )}
+
+                    {listings.length > 0 && (
+                        <label className="block">
+                            <span className="text-sm font-semibold text-slate-700">
+                                Which property?
+                            </span>
+                            <select
+                                value={manualTown ? '' : listingId}
+                                onChange={(e) => { setManualTown(null); setListingId(e.target.value); }}
+                                className="mt-1.5 w-full sm:w-80 rounded-xl border border-slate-300 px-3 py-2.5"
+                            >
+                                <option value="">Somewhere else</option>
+                                {listings.map((l) => (
+                                    <option key={l.id} value={l.id} disabled={!pointForListing(l)}>
+                                        {l.title}
+                                        {pointForListing(l) ? '' : ' — no address on file'}
+                                    </option>
+                                ))}
+                            </select>
+                        </label>
+                    )}
+
+                    <label className="block">
+                        <span className="text-sm font-semibold text-slate-700">
+                            {listings.length > 0 ? 'Or a town' : 'Where is the property?'}
+                        </span>
+                        <select
+                            value={manualTown || ''}
+                            onChange={(e) => {
+                                setManualTown(e.target.value || null);
+                                if (e.target.value) setListingId('');
+                            }}
+                            className="mt-1.5 w-full sm:w-80 rounded-xl border border-slate-300 px-3 py-2.5"
+                        >
+                            <option value="">—</option>
+                            {COVERAGE_TOWNS.map((t) => (
+                                <option key={t.key} value={t.key}>{t.label}</option>
+                            ))}
+                        </select>
+                    </label>
+
+                    {point && (
+                        <button
+                            onClick={() => setChoosing(false)}
+                            className="text-sm font-semibold text-emerald-700 underline"
+                        >
+                            Done
+                        </button>
+                    )}
+                </div>
+            )}
 
             {loading && <p className="text-slate-500 mt-8">Loading…</p>}
 
             {!loading && shown.length === 0 && (
                 <div className="mt-8 rounded-2xl border border-slate-200 bg-slate-50 p-6">
                     <p className="font-semibold text-slate-900">
-                        Nobody covers {town ? town.label : 'there'} yet.
+                        Nobody covers {point ? point.label : 'there'} yet.
                     </p>
                     <p className="text-sm text-slate-600 mt-2">
                         We are still signing businesses up. Try a nearby town — plenty of them cover
@@ -307,6 +397,7 @@ export default function TradeShopPage({ params }: { params: { trade: string } })
                     provider={asking}
                     trade={trade}
                     listings={listings}
+                    listingId={listingId}
                     session={session}
                     offered={extras
                         .filter((e) => e.provider_id === asking.id && e.offered)

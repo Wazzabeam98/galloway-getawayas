@@ -12,6 +12,7 @@ import {
     canWithdraw,
     faultLabels,
     snapshotLine,
+    requestedWhen,
     OUTCOMES,
     outcomeLabel,
 } from '@/lib/serviceEnquiries';
@@ -29,6 +30,17 @@ import {
 //
 // The words themselves live in hostStatusSummary, next to the values they come
 // from, so this page and the emails cannot drift apart.
+//
+// IT SETTLES ITS OWN ROWS BEFORE IT READS THEM
+//
+// An emergency waits twenty minutes and the cron sweeps every five, so a host
+// refreshing at minute twenty-one could otherwise be looking at "waiting" when
+// the number was already due. On the one case whose entire design is about
+// minutes, that is the least forgivable place for a stale screen. So the page
+// asks the server to settle this host's own rows first, then reads them.
+//
+// Nothing is emailed by that call — they are looking at the screen and it has
+// just changed. The cron still sends, for the host who is not looking.
 
 interface Enquiry {
     id: string;
@@ -37,11 +49,16 @@ interface Enquiry {
     business_name: string;
     provider_id: string;
     status: string;
+    urgency: string;
     summary: string;
     fault_keys: string[];
     price_snapshot: any;
+    preferred_date: string | null;
+    window_from: string | null;
+    window_to: string | null;
     outcome: string | null;
     sent_at: string;
+    expires_at: string | null;
 }
 
 export default function EnquiriesPage() {
@@ -58,9 +75,19 @@ export default function EnquiriesPage() {
 
         if (!session?.user) { setLoading(false); return; }
 
+        // Settle first, read second. A row whose twenty minutes ran out while
+        // the host was on another tab has to be released before this query
+        // runs, or the number they were promised is one refresh away.
+        try {
+            await fetch('/api/services/enquiries/refresh', { method: 'POST' });
+        } catch {
+            // A failed settle shows a slightly stale list, which the cron
+            // fixes within five minutes. It must never stop the page loading.
+        }
+
         const { data } = await supabase
             .from('service_enquiries')
-            .select('id, reference, trade, business_name, provider_id, status, summary, fault_keys, price_snapshot, outcome, sent_at')
+            .select('id, reference, trade, business_name, provider_id, status, urgency, summary, fault_keys, price_snapshot, preferred_date, window_from, window_to, outcome, sent_at, expires_at')
             .eq('host_id', session.user.id)
             .order('sent_at', { ascending: false });
 
@@ -153,7 +180,8 @@ export default function EnquiriesPage() {
 
             <div className="mt-8 space-y-4">
                 {rows.map((row) => {
-                    const summary = hostStatusSummary(row.status, row.business_name);
+                    const summary = hostStatusSummary(row.status, row.business_name, row);
+                    const asked = requestedWhen(row);
                     const contact = contacts[row.provider_id];
                     const faults = faultLabels(row.fault_keys);
                     const price = snapshotLine(row.price_snapshot);
@@ -175,6 +203,13 @@ export default function EnquiriesPage() {
                             <p className="text-sm text-slate-600 mt-3">{summary.detail}</p>
 
                             <p className="text-sm text-slate-500 mt-3 italic">{row.summary}</p>
+
+                            {/* "Asked for", never a bare date under a heading
+                                that could be read as a confirmed appointment.
+                                See requestedWhen. */}
+                            {asked && (
+                                <p className="text-xs text-slate-500 mt-1">{asked}</p>
+                            )}
 
                             {faults.length > 0 && (
                                 <p className="text-xs text-slate-500 mt-1">{faults.join(' · ')}</p>
@@ -214,7 +249,8 @@ export default function EnquiriesPage() {
                                     </button>
                                 )}
 
-                                {(row.status === 'declined' || row.status === 'expired') && (
+                                {(row.status === 'declined' || row.status === 'expired'
+                                    || row.status === 'released') && (
                                     <Link
                                         href={'/services/' + row.trade}
                                         className="text-sm text-emerald-700 font-semibold underline"

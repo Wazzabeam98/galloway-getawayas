@@ -1,47 +1,101 @@
 'use client';
 
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import Link from 'next/link';
+import { createClientComponentClient } from '@supabase/auth-helpers-nextjs';
 import { toast } from 'react-toastify';
-import { X, Phone } from 'lucide-react';
-import { faultOptions, URGENCY_LEVELS, offersEmergency } from '@/lib/serviceEnquiries';
+import { X } from 'lucide-react';
+import {
+    faultOptions,
+    URGENCY_LEVELS,
+    TIME_WINDOWS,
+    offersEmergency,
+    needsDate,
+    clockTime,
+    EMERGENCY_MINUTES,
+} from '@/lib/serviceEnquiries';
 
 // Asking one tradesman to look at something.
 //
-// TWO ROUTES OUT OF ONE FORM
+// ONE ROUTE, AND AN EMERGENCY IS A SHORTER WAIT RATHER THAN A DIFFERENT THING
 //
-// Everything except an emergency writes an enquiry, emails him, and waits.
+// This form used to hand over the phone number on the spot for an emergency.
+// It does not any more, and the reason is what the platform can prove: an
+// introduction nobody accepted is not evidence the platform found anybody
+// work, and that evidence is the whole argument for the subscription. So an
+// emergency is sent like everything else, with a twenty-minute deadline, and
+// the number is released automatically if nobody answers by then.
 //
-// An emergency does not wait. A burst pipe at nine at night is not solved by a
-// web form and a countdown, so the host is given the number, and the row is
-// written afterwards as the record of it. The screen changes shape when they
-// pick it — there is no "send" for an emergency, there is a phone number.
+// What the host is promised, on the screen and in the email, is that they will
+// not be left waiting past that. Say it plainly here: a host with water coming
+// through a ceiling needs to know how long they are watching for.
 //
-// A provider who has not ticked that he turns out is never offered that route.
-// The tick is the consent, and it is his, not ours to assume.
+// A provider who has not ticked that he turns out is never offered the
+// emergency at all. The tick is the consent, and it is his, not ours to
+// assume.
+//
+// NOTHING HERE ASKS FOR ANYTHING WE ALREADY HOLD
+//
+// The name and the phone come off the profile, and the property comes from the
+// page behind. They stay editable — the number to ring about a cottage is not
+// always the one on the account — but they arrive filled in.
 
 interface Props {
     provider: any;
     trade: string;
     listings: any[];
+    listingId?: string;
     session: any;
     offered: string[];
     onClose: () => void;
 }
 
-export default function EnquiryForm({ provider, trade, listings, session, offered, onClose }: Props) {
+export default function EnquiryForm({
+    provider, trade, listings, listingId: forProperty, session, offered, onClose,
+}: Props) {
+    const supabase = createClientComponentClient();
+
     const [urgency, setUrgency] = useState('soon');
-    const [listingId, setListingId] = useState(listings[0]?.id || '');
+    const [listingId, setListingId] = useState(forProperty || listings[0]?.id || '');
     const [faults, setFaults] = useState<string[]>([]);
     const [summary, setSummary] = useState('');
     const [whenNote, setWhenNote] = useState('');
     const [accessNote, setAccessNote] = useState('');
-    const [name, setName] = useState(session?.user?.user_metadata?.full_name || '');
+    const [preferredDate, setPreferredDate] = useState('');
+    const [windowKey, setWindowKey] = useState('any');
+    const [name, setName] = useState('');
     const [phone, setPhone] = useState('');
     const [sending, setSending] = useState(false);
     const [sent, setSent] = useState<any>(null);
 
+    // Off the profile, not out of the host's head. `full_name` and `phone` are
+    // already there; asking for them again is asking somebody to type an
+    // answer we are holding.
+    //
+    // Editable afterwards on purpose: the number to ring about a cottage is
+    // not always the number on the account, and a caretaker's mobile is a
+    // perfectly ordinary answer.
+    useEffect(() => {
+        if (!session?.user) return;
+
+        const load = async () => {
+            const { data } = await supabase
+                .from('profiles')
+                .select('full_name, preferred_name, phone')
+                .eq('id', session.user.id)
+                .maybeSingle();
+
+            if (!data) return;
+            setName((current) => current || String(data.full_name || data.preferred_name || ''));
+            setPhone((current) => current || String(data.phone || ''));
+        };
+
+        load();
+    }, [session, supabase]);
+
     const emergency = urgency === 'emergency';
+    const planned = needsDate(urgency);
+    const chosenWindow = TIME_WINDOWS.filter((w) => w.key === windowKey)[0] || TIME_WINDOWS[0];
 
     // The page deliberately does not fetch `contact_phone`, so the browser
     // cannot know whether he has one — it asks only whether he ticked that he
@@ -74,6 +128,9 @@ export default function EnquiryForm({ provider, trade, listings, session, offere
                 fault_keys: faults,
                 when_note: whenNote,
                 access_note: accessNote,
+                preferred_date: planned ? preferredDate : null,
+                window_from: planned ? chosenWindow.from : null,
+                window_to: planned ? chosenWindow.to : null,
                 host_name: name,
                 host_phone: phone,
                 host_email: session?.user?.email || '',
@@ -111,41 +168,37 @@ export default function EnquiryForm({ provider, trade, listings, session, offere
     // ---- it has gone ------------------------------------------------------
     if (sent) {
         return (
-            <Shell onClose={onClose} title={sent.phone ? 'Ring them now' : 'Sent'}>
-                {sent.phone ? (
+            <Shell onClose={onClose} title="Sent">
+                {sent.emergency ? (
                     <>
                         <p className="text-slate-600">
-                            {provider.business_name} turns out to emergencies. We have emailed them so
-                            they know what it is about before the phone goes.
+                            Your emergency has gone to {provider.business_name}, and to nobody else.
+                            They have {EMERGENCY_MINUTES} minutes to answer.
                         </p>
-                        <a
-                            href={'tel:' + String(sent.phone).replace(/\s/g, '')}
-                            className="mt-5 flex items-center justify-center gap-2 rounded-xl bg-emerald-700 px-4 py-4 text-white text-lg font-bold"
-                        >
-                            <Phone className="w-5 h-5" strokeWidth={2} />
-                            {sent.phone}
-                        </a>
-                        <p className="text-sm text-slate-500 mt-4">
-                            Reference {sent.reference}. Nothing else happens automatically — the job and
-                            the price are between the two of you.
+                        {/* The promise, in the plainest words available. A host
+                            watching water come through a ceiling is entitled to
+                            know exactly how long they are watching for. */}
+                        <p className="mt-4 rounded-xl bg-emerald-50 text-emerald-900 p-4 font-semibold">
+                            If they have not answered by {clockTime(sent.expires_at)} we will send you
+                            their number so you can ring them yourself. You will not be left waiting
+                            past that.
                         </p>
                     </>
                 ) : (
-                    <>
-                        <p className="text-slate-600">
-                            Your enquiry has gone to {provider.business_name}, and to nobody else. We will
-                            email you the moment they answer, and tell you if they do not so you can try
-                            somebody else.
-                        </p>
-                        <p className="text-sm text-slate-500 mt-4">Reference {sent.reference}.</p>
-                        <Link
-                            href="/dashboard/enquiries"
-                            className="mt-5 inline-block rounded-xl bg-emerald-700 px-4 py-2.5 text-white text-sm font-semibold"
-                        >
-                            See your enquiries
-                        </Link>
-                    </>
+                    <p className="text-slate-600">
+                        Your enquiry has gone to {provider.business_name}, and to nobody else. We will
+                        email you the moment they answer, and tell you if they do not so you can try
+                        somebody else.
+                    </p>
                 )}
+
+                <p className="text-sm text-slate-500 mt-4">Reference {sent.reference}.</p>
+                <Link
+                    href="/dashboard/enquiries"
+                    className="mt-5 inline-block rounded-xl bg-emerald-700 px-4 py-2.5 text-white text-sm font-semibold"
+                >
+                    See your enquiries
+                </Link>
             </Shell>
         );
     }
@@ -179,16 +232,16 @@ export default function EnquiryForm({ provider, trade, listings, session, offere
 
                 {emergency && !canDoEmergency && (
                     <p className="rounded-xl bg-amber-50 text-amber-900 text-sm p-3">
-                        {provider.business_name} has not said they turn out to emergencies, so we cannot
-                        hand you their number. Pick somebody who does, or send this as an ordinary
-                        enquiry.
+                        {provider.business_name} has not said they turn out to emergencies. Pick somebody
+                        who does, or send this as an ordinary enquiry.
                     </p>
                 )}
 
                 {emergency && canDoEmergency && (
                     <p className="rounded-xl bg-emerald-50 text-emerald-900 text-sm p-3">
-                        You will get their number on the next screen and ring it yourself. Tell us what is
-                        happening first — we email it to them so they are not starting cold.
+                        We ask them first and give them {EMERGENCY_MINUTES} minutes. If they have not
+                        answered by then we send you their number to ring. You are not left waiting
+                        either way.
                     </p>
                 )}
 
@@ -247,9 +300,53 @@ export default function EnquiryForm({ provider, trade, listings, session, offere
                     />
                 </label>
 
+                {planned && (
+                    <div className="rounded-xl border border-slate-300 p-4 space-y-3">
+                        {/* A REQUEST, AND IT HAS TO READ AS ONE.
+                            Nothing here knows whether he is free that day,
+                            nothing holds the window, and nothing stops four
+                            hosts asking for the same one. Hence a date input
+                            and a list of windows rather than a calendar: a
+                            calendar with days on it is a promise about
+                            availability, and there is nothing behind it. */}
+                        <p className="text-sm font-semibold text-slate-700">
+                            When would you like them?
+                        </p>
+                        <p className="text-xs text-slate-500 -mt-2">
+                            This is what you are asking for. They will confirm what actually suits when
+                            they get back to you — nothing here books a slot.
+                        </p>
+
+                        <label className="block">
+                            <span className="text-sm text-slate-700">Day</span>
+                            <input
+                                type="date"
+                                value={preferredDate}
+                                onChange={(e) => setPreferredDate(e.target.value)}
+                                className="mt-1.5 w-full rounded-xl border border-slate-300 px-3 py-2.5"
+                            />
+                        </label>
+
+                        <label className="block">
+                            <span className="text-sm text-slate-700">Time</span>
+                            <select
+                                value={windowKey}
+                                onChange={(e) => setWindowKey(e.target.value)}
+                                className="mt-1.5 w-full rounded-xl border border-slate-300 px-3 py-2.5"
+                            >
+                                {TIME_WINDOWS.map((w) => (
+                                    <option key={w.key} value={w.key}>{w.label}</option>
+                                ))}
+                            </select>
+                        </label>
+                    </div>
+                )}
+
                 {!emergency && (
                     <label className="block">
-                        <span className="text-sm font-semibold text-slate-700">When suits? (optional)</span>
+                        <span className="text-sm font-semibold text-slate-700">
+                            Anything else about timing? (optional)
+                        </span>
                         <input
                             value={whenNote}
                             onChange={(e) => setWhenNote(e.target.value)}
@@ -289,9 +386,8 @@ export default function EnquiryForm({ provider, trade, listings, session, offere
                 </div>
 
                 <p className="text-xs text-slate-500">
-                    {emergency
-                        ? 'Your name, number and the property address go to them with this.'
-                        : 'They see your name and number now. The address goes across only if they say yes.'}
+                    They see your name and number now. The address goes across only if they say yes
+                    {emergency ? ', or when we release their number to you' : ''}.
                 </p>
 
                 <button
@@ -299,7 +395,11 @@ export default function EnquiryForm({ provider, trade, listings, session, offere
                     disabled={sending || (emergency && !canDoEmergency)}
                     className="w-full rounded-xl bg-emerald-700 px-4 py-3 text-white font-semibold disabled:opacity-50"
                 >
-                    {sending ? 'Sending…' : emergency ? 'Get their number' : 'Send to ' + provider.business_name}
+                    {sending
+                        ? 'Sending…'
+                        : emergency
+                            ? 'Send now — ' + EMERGENCY_MINUTES + ' minutes'
+                            : 'Send to ' + provider.business_name}
                 </button>
             </div>
         </Shell>

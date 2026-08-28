@@ -30,7 +30,7 @@
     },
     {
       "path": "/api/cron/service-enquiries",
-      "schedule": "15 * * * *"
+      "schedule": "*/5 * * * *"
     }
   ]
 }

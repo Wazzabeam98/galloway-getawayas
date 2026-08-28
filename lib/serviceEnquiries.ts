@@ -30,21 +30,25 @@ import {
 //   sent ──▶ viewed ─────┼─ declined   with a reason, if he gave one
 //     │        │         └─ (silence)
 //     │        │              │
-//     │        └──────────────┴──▶ expired    the sweep, at expires_at
+//     │        └──────────────┴──▶ expired    the sweep, ordinary work
+//     │                        └──▶ released  the sweep, an emergency
 //     └───────────────────────────▶ withdrawn  host pulled it first
-//
-//   direct                        emergency: the number was shown, the row is
-//                                 the record of it. Never waits for anything.
 //
 // `viewed` earns its place because it is the only thing separating "ignored"
 // from "never seen", and those need different words on the host's screen and
 // different conversations at renewal.
 //
+// `released` and `expired` are the same event with opposite endings, and the
+// difference is the whole of the emergency design — see URGENCY below. Silence
+// on ordinary work means "try somebody else". Silence on an emergency means
+// "here is his number, ring him", because a burst pipe cannot be asked to wait
+// for a better process.
+//
 // There is deliberately no 'completed'. Nothing on the platform can observe a
 // job being done — see `outcome` on the table.
 
 export const ENQUIRY_STATUSES = [
-    'sent', 'viewed', 'accepted', 'declined', 'expired', 'withdrawn', 'direct',
+    'sent', 'viewed', 'accepted', 'declined', 'expired', 'withdrawn', 'released',
 ] as const;
 
 export type EnquiryStatus = (typeof ENQUIRY_STATUSES)[number];
@@ -64,7 +68,7 @@ export function isOpen(status: string): boolean {
 // on the page.
 export function contactReleased(status: string): boolean {
     const s = String(status || '');
-    return s === 'accepted' || s === 'direct';
+    return s === 'accepted' || s === 'released';
 }
 
 export function canWithdraw(status: string): boolean {
@@ -83,37 +87,58 @@ export function canRespond(status: string): boolean {
 // URGENCY
 // ---------------------------------------------------------------------------
 //
-// EMERGENCY IS NOT AN ENQUIRY
+// AN EMERGENCY IS STILL AN ENQUIRY, AND THAT IS A REVERSAL
 //
-// A burst pipe at nine at night is not solved by a web form and a countdown.
-// So emergency does not send anything and does not wait for anybody: the host
-// is shown the tradesman's number and rings it, and the row is written
-// afterwards as the record that it happened. The introduction is the product,
-// and for an emergency it should simply happen.
+// It was built handing the host the number on the spot. That was wrong, and
+// the reason is not about the host at all — it is about what the platform can
+// prove. Every trade in this flow is free for ninety days and then twenty
+// pounds a month, and the only argument for the twenty pounds is "you got five
+// jobs out of us". An introduction nobody accepted is not evidence of
+// anything. Hand the number over unasked and the accept never happens, and the
+// record of the work quietly stops existing.
 //
-// The consequence, stated rather than hidden: an emergency releases a
-// tradesman's phone number without him agreeing to that particular job. He
-// agreed to it by ticking that he turns out — see `offersEmergency` below,
-// which is why a provider who has not ticked it is never offered.
+// So an emergency is sent, and waits — but it waits for MINUTES, not days, and
+// silence releases the number instead of giving up on it. The host is never
+// left holding nothing: worst case they wait EMERGENCY_MINUTES and then get
+// exactly what they would have got immediately.
+//
+// WHY TWENTY MINUTES
+//
+// Short enough that a host with water coming through a ceiling is not sitting
+// still — that is the whole constraint on one side.
+//
+// Long enough, on the other, that the accept is a real event. A tradesman
+// glances at his phone between jobs; five minutes would auto-release nearly
+// every emergency, which destroys the evidence this change exists to create
+// and would be the old behaviour wearing a delay. Twenty is the point where a
+// phone notification has plausibly been seen and answered.
+//
+// It is a constant rather than a number in three places because it is going to
+// be argued with once there are real ones to count, and the thing to look at
+// then is the ratio of accepted to released.
+// ---------------------------------------------------------------------------
+
+export const EMERGENCY_MINUTES = 20;
 
 export const URGENCY_LEVELS = [
     {
         key: 'emergency',
         label: 'Emergency — something is happening now',
-        hint: 'A leak, no power, no heat, a guest locked out. You get the number and ring it.',
-        hours: 0,
+        hint: 'A leak, no power, no heat, a guest locked out. If nobody answers within '
+            + EMERGENCY_MINUTES + ' minutes we give you their number to ring.',
+        minutes: EMERGENCY_MINUTES,
     },
     {
         key: 'soon',
         label: 'Soon — in the next few days',
         hint: 'Broken, but nothing is being damaged while it waits.',
-        hours: 48,
+        minutes: 48 * 60,
     },
     {
         key: 'planned',
         label: 'Planned work',
         hint: 'A job to book in. Quotes, improvements, seasonal work.',
-        hours: 120,
+        minutes: 120 * 60,
     },
 ] as const;
 
@@ -132,28 +157,140 @@ export function isEmergency(urgency: string): boolean {
     return String(urgency || '') === 'emergency';
 }
 
+// What silence means for this enquiry.
+//
+// One function rather than `urgency === 'emergency'` scattered through the
+// sweep, the emails and two screens. The sweep in particular has to decide
+// between two opposite endings on the same query, and a stray comparison there
+// would either strand a host in an emergency or hand out a number after an
+// ordinary job went quiet.
+export function releasesOnSilence(urgency: string): boolean {
+    return isEmergency(urgency);
+}
+
 // When the tradesman stops being asked.
 //
-// Null for an emergency, and that is enforced by a check constraint on the
-// table as well: a row that waits for ever is the failure this whole idea is
-// most likely to produce, so it is stated twice.
-//
-// 48 hours for 'soon' is the number the site already promises elsewhere —
-// REVIEW_WITHIN_HOURS — so it is the familiar one rather than a new invention.
-export function expiresAt(urgency: string, sentAt: Date | string): string | null {
-    if (isEmergency(urgency)) return null;
-
+// Never null now — an emergency has the shortest deadline rather than none at
+// all, which is the reversal in one line. The database says the same thing:
+// see the expiry check constraint.
+export function expiresAt(urgency: string, sentAt: Date | string): string {
     const found = URGENCY_LEVELS.filter((u) => u.key === String(urgency || ''))[0];
-    const hours = found ? found.hours : 48;
+    const minutes = found ? found.minutes : 48 * 60;
 
     const base = typeof sentAt === 'string' ? new Date(sentAt) : sentAt;
-    return new Date(base.getTime() + hours * 60 * 60 * 1000).toISOString();
+    return new Date(base.getTime() + minutes * 60 * 1000).toISOString();
+}
+
+// What the sweep should do with a row whose time is up.
+//
+// Returns null for anything not due, so the caller has one question to ask
+// rather than three, and the emergency/ordinary split lives here rather than
+// being re-derived at every call site.
+export function dueOutcome(
+    row: { status?: string; urgency?: string; expires_at?: string | null },
+    now?: Date
+): 'released' | 'expired' | null {
+    if (!hasExpired(row, now)) return null;
+    return releasesOnSilence(String(row.urgency || '')) ? 'released' : 'expired';
 }
 
 export function hasExpired(row: { status?: string; expires_at?: string | null }, now?: Date): boolean {
     if (!row || !isOpen(String(row.status || ''))) return false;
     if (!row.expires_at) return false;
     return new Date(row.expires_at).getTime() <= (now || new Date()).getTime();
+}
+
+// ---------------------------------------------------------------------------
+// WHEN THE HOST WANTS SOMEBODY
+// ---------------------------------------------------------------------------
+//
+// Planned work has a date and a window on it, because that is how a host
+// actually thinks: somebody on the 3rd, between eleven and three, in the gap
+// between one guest leaving and the next arriving. Asking for that as free
+// text produces "sometime the week after next if that's ok?" and a phone call
+// to pin down what a date field would have said.
+//
+// IT IS A REQUEST, AND EVERY WORD HAS TO SAY SO
+//
+// There is NO capacity model here. Nothing knows whether he is free on the
+// 3rd, nothing holds the slot, and nothing stops the same window being asked
+// for by four hosts. So this must never render as a booking:
+//
+//   * `requestedWhen` always begins "Asked for". Not "Booked for", not
+//     "Confirmed", not a bare date sitting under a heading that could be read
+//     as either.
+//   * No calendar with days marked free or busy. A date input and two times.
+//     A calendar is a promise about availability and there is nothing behind
+//     it.
+//   * The tradesman's email says what they ASKED for, and his accept means "I
+//     will take a look", not "I am there at eleven on the 3rd". The two of
+//     them settle the actual time between themselves, which is what happens
+//     anyway.
+//
+// If a capacity model is ever built, this comment is the list of things that
+// were deliberately not done, rather than things nobody thought of.
+
+export const TIME_WINDOWS = [
+    { key: 'any', label: 'Any time that day', from: null, to: null },
+    { key: 'morning', label: 'Morning — 8am to 12', from: '08:00', to: '12:00' },
+    { key: 'changeover', label: 'Changeover — 11am to 3pm', from: '11:00', to: '15:00' },
+    { key: 'afternoon', label: 'Afternoon — 12 to 5pm', from: '12:00', to: '17:00' },
+] as const;
+
+export function windowByKey(key: string) {
+    return TIME_WINDOWS.filter((w) => w.key === String(key || ''))[0] || null;
+}
+
+// Which urgencies carry a date. Only planned work: an emergency is happening
+// now by definition, and "soon" is the answer of somebody who does not have a
+// date in mind and should not be made to invent one.
+export function needsDate(urgency: string): boolean {
+    return String(urgency || '') === 'planned';
+}
+
+function prettyTime(value: string | null | undefined): string {
+    const raw = String(value || '').slice(0, 5);
+    if (!/^\d{2}:\d{2}$/.test(raw)) return '';
+
+    const hour = Number(raw.slice(0, 2));
+    const minute = raw.slice(3, 5);
+    const suffix = hour < 12 ? 'am' : 'pm';
+    const twelve = hour % 12 === 0 ? 12 : hour % 12;
+
+    return minute === '00' ? twelve + suffix : twelve + '.' + minute + suffix;
+}
+
+// What the host asked for, in words, ALWAYS as a request.
+//
+// Returns null when there is nothing to say, so a caller renders no line
+// rather than an empty one — "Asked for" with nothing after it reads like
+// something failed to load.
+export function requestedWhen(row: {
+    preferred_date?: string | null;
+    window_from?: string | null;
+    window_to?: string | null;
+}): string | null {
+    if (!row || !row.preferred_date) return null;
+
+    const date = new Date(String(row.preferred_date) + 'T12:00:00Z');
+    if (isNaN(date.getTime())) return null;
+
+    const when = date.toLocaleDateString('en-GB', {
+        weekday: 'long',
+        day: 'numeric',
+        month: 'long',
+        timeZone: 'Europe/London',
+    });
+
+    const from = prettyTime(row.window_from);
+    const to = prettyTime(row.window_to);
+
+    // "Asked for", every time. See the note above: this string ends up in an
+    // email, on the host's list and on the tradesman's reply page, and it is
+    // the only thing standing between a request and something that reads like
+    // an appointment he agreed to.
+    if (from && to) return 'Asked for ' + when + ', between ' + from + ' and ' + to;
+    return 'Asked for ' + when + ', any time that day';
 }
 
 // ---------------------------------------------------------------------------
@@ -300,6 +437,9 @@ export interface EnquiryDraft {
     fault_keys?: string[] | null;
     host_phone?: string | null;
     host_name?: string | null;
+    preferred_date?: string | null;
+    window_from?: string | null;
+    window_to?: string | null;
 }
 
 // Short enough that a tradesman can read it on a phone, long enough to be
@@ -342,6 +482,30 @@ export function enquiryProblems(draft: EnquiryDraft): Problem[] {
         problems.push({ field: 'host_name', message: 'Your name.' });
     }
 
+    // Planned work carries a date. Not the other two: an emergency is
+    // happening now, and somebody who picked "soon" is telling us they have no
+    // date in mind — making them invent one produces a date nobody meant.
+    if (needsDate(String(draft.urgency || ''))) {
+        const date = String(draft.preferred_date || '').trim();
+
+        if (!/^\d{4}-\d{2}-\d{2}$/.test(date) || isNaN(new Date(date + 'T12:00:00Z').getTime())) {
+            problems.push({ field: 'preferred_date', message: 'Which day would you like them?' });
+        }
+    }
+
+    // A window is optional — "any time that day" is a real answer and the
+    // default. What is not allowed is a backwards one, which is a typo rather
+    // than a preference and would be quoted back at the tradesman as nonsense.
+    const from = String(draft.window_from || '').trim();
+    const to = String(draft.window_to || '').trim();
+
+    if (from && to && to <= from) {
+        problems.push({ field: 'window_to', message: 'The window has to end after it starts.' });
+    }
+    if ((from && !to) || (to && !from)) {
+        problems.push({ field: 'window_to', message: 'Give both ends of the window, or neither.' });
+    }
+
     return problems;
 }
 
@@ -363,9 +527,29 @@ export function canSend(draft: EnquiryDraft): boolean {
 
 export function hostStatusSummary(
     status: string,
-    businessName?: string | null
+    businessName?: string | null,
+    row?: { urgency?: string | null; expires_at?: string | null } | null
 ): { label: string; detail: string } {
     const who = String(businessName || 'They').trim() || 'They';
+
+    // An emergency still waiting says WHEN it stops waiting, because that is
+    // the promise being made and a host watching water come through a ceiling
+    // is entitled to know how long they are watching for. "Nobody has opened
+    // it yet" on its own would read as being left to it.
+    const emergencyWait = row
+        && isEmergency(String(row.urgency || ''))
+        && isOpen(status);
+
+    if (emergencyWait) {
+        return {
+            label: status === 'viewed' ? 'Opened' : 'Sent',
+            detail: (status === 'viewed'
+                ? who + ' has opened it. '
+                : who + ' has been emailed. ')
+                + 'If they have not answered by ' + clockTime(row!.expires_at)
+                + ' we will give you their number to ring.',
+        };
+    }
 
     if (status === 'sent') {
         return {
@@ -400,14 +584,31 @@ export function hostStatusSummary(
     if (status === 'withdrawn') {
         return { label: 'Withdrawn', detail: 'You took this back. Nothing was sent on.' };
     }
-    if (status === 'direct') {
+    if (status === 'released') {
         return {
-            label: 'Number given',
-            detail: 'You were given ' + who + "'s number for an emergency. We told them to expect you.",
+            label: 'Number released',
+            detail: who + ' did not answer in time, so here is their number — ring them. '
+                + 'We have told them to expect you.',
         };
     }
 
     return { label: 'Enquiry', detail: '' };
+}
+
+// A wall-clock time in the one time zone this site cares about. Vercel runs in
+// UTC, which in summer is an hour behind Dumfries — enough to promise a host a
+// number at half past two when it is half past three outside.
+export function clockTime(value: string | null | undefined): string {
+    if (!value) return 'shortly';
+
+    const when = new Date(String(value));
+    if (isNaN(when.getTime())) return 'shortly';
+
+    return when.toLocaleTimeString('en-GB', {
+        hour: 'numeric',
+        minute: '2-digit',
+        timeZone: 'Europe/London',
+    });
 }
 
 // How it went, asked afterwards and believed only as far as it deserves.

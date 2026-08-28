@@ -11,6 +11,7 @@ import {
     enquiryReference,
     expiresAt,
     isEmergency,
+    needsDate,
     offersEmergency,
     priceSnapshot,
 } from '@/lib/serviceEnquiries';
@@ -27,16 +28,21 @@ export const dynamic = 'force-dynamic';
 // host who could set their own `expires_at` could set it to next year and a
 // host who could set their own status could mark themselves accepted.
 //
-// EMERGENCY DOES NOT SEND ANYTHING
+// AN EMERGENCY IS SENT LIKE EVERYTHING ELSE, AND WAITS TWENTY MINUTES
 //
-// A burst pipe at nine at night is not solved by a web form and a countdown.
-// So an emergency returns the tradesman's number in the response and writes
-// the row as the record that it happened — status 'direct', no deadline, no
-// token, nothing to wait for. He is emailed too, but as a warning that his
-// phone is about to ring rather than as a question.
+// It used to return the number in this response. That was reversed because of
+// what it cost the platform rather than what it gave the host: an
+// introduction nobody accepted is not evidence that the platform did anything,
+// and evidence is the entire argument for the subscription these trades are
+// about to start paying.
 //
-// The number is only ever released for a provider who ticked that he turns
-// out. That tick is the consent; see `offersEmergency`.
+// So nothing here returns a phone number, ever. An emergency gets the same
+// token and the same email as ordinary work with a much shorter deadline on
+// it, and the sweep hands the number over automatically if he has not answered
+// by then. See EMERGENCY_MINUTES and dueOutcome in lib/serviceEnquiries.ts.
+//
+// It is still only offered for a provider who ticked that he turns out — that
+// tick is the consent, and it is his. See `offersEmergency`.
 
 interface Body {
     provider_id?: string;
@@ -50,6 +56,9 @@ interface Body {
     host_phone?: string;
     host_email?: string;
     band_key?: string | null;
+    preferred_date?: string | null;
+    window_from?: string | null;
+    window_to?: string | null;
 }
 
 function hashToken(token: string): string {
@@ -132,6 +141,9 @@ export async function POST(req: Request) {
             fault_keys: body.fault_keys || [],
             host_name: String(body.host_name || ''),
             host_phone: String(body.host_phone || ''),
+            preferred_date: body.preferred_date || null,
+            window_from: body.window_from || null,
+            window_to: body.window_to || null,
         };
 
         const problems = enquiryProblems(draft);
@@ -190,7 +202,7 @@ export async function POST(req: Request) {
 
         // ---- write it -------------------------------------------------------
         const sentAt = new Date();
-        const token = emergency ? null : randomBytes(24).toString('base64url');
+        const token = randomBytes(24).toString('base64url');
 
         const row: any = {
             host_id: auth.user.id,
@@ -208,10 +220,18 @@ export async function POST(req: Request) {
             host_name: draft.host_name.trim(),
             host_phone: draft.host_phone.trim(),
             host_email: String(body.host_email || auth.user.email || '').trim(),
-            status: emergency ? 'direct' : 'sent',
+            status: 'sent',
             sent_at: sentAt.toISOString(),
             expires_at: expiresAt(draft.urgency, sentAt),
-            reply_token_hash: token ? hashToken(token) : null,
+            reply_token_hash: hashToken(token),
+
+            // Only where the urgency asks for them. A date arriving on an
+            // emergency is a stale form field rather than an intention, and it
+            // would be quoted back at the tradesman as if the host had asked
+            // for next Tuesday while their ceiling came down.
+            preferred_date: needsDate(draft.urgency) ? draft.preferred_date : null,
+            window_from: needsDate(draft.urgency) ? draft.window_from : null,
+            window_to: needsDate(draft.urgency) ? draft.window_to : null,
         };
 
         // The reference is four characters of a 32-letter alphabet, so a
@@ -257,14 +277,18 @@ export async function POST(req: Request) {
         // The emails are the product, but a send that fails must not lose the
         // enquiry — the row is already written and visible on the host's
         // screen either way.
-        const alert = await announceEnquiry(saved, provider, listing, token || '');
+        const alert = await announceEnquiry(saved, provider, listing, token);
 
         return NextResponse.json({
             ok: true,
             reference: saved.reference,
             status: saved.status,
-            // The whole of the emergency route: the number, now, in the reply.
-            phone: emergency ? String(provider.contact_phone || '') : null,
+            urgency: saved.urgency,
+            // When the number is handed over if nobody answers. Only an
+            // emergency ends that way; for everything else this is the moment
+            // the host is told to try somebody else.
+            expires_at: saved.expires_at,
+            emergency,
             business_name: saved.business_name,
             emailed: alert,
         });

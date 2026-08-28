@@ -6,6 +6,7 @@
 // database anywhere near it.
 
 import { blockedSkills, SkillRow } from '@/lib/serviceSkills';
+import { townKey } from '@/lib/places';
 
 // Nobody searches for "maintenance". They search for a plumber.
 //
@@ -2155,6 +2156,96 @@ export const COVERAGE_TOWNS = [
 
 export function townByKey(key: string) {
     return COVERAGE_TOWNS.filter((t) => t.key === key)[0] || null;
+}
+
+// ---------------------------------------------------------------------------
+// WHERE THE PROPERTY IS, WITHOUT ASKING
+// ---------------------------------------------------------------------------
+//
+// A host has already told us where their cottages are. Asking again is asking
+// somebody to type an answer we are holding, and it is the sort of question
+// that quietly makes a page feel like a form rather than a shop.
+//
+// Two ways of answering, best first:
+//
+//   the listing's own coordinates   exact, and what coverage is actually
+//                                   defined against — a circle around a town
+//                                   centre either contains the house or does
+//                                   not
+//   the town in `location`          for a listing that has no coordinates.
+//                                   Nullable columns, and plenty of older
+//                                   listings predate them
+//
+// If neither answers, the picker comes back. That is a fallback rather than a
+// failure: a host asking about a property that is not theirs, or not on the
+// site, is an ordinary thing to do.
+
+// Matching a free-text location to one of the towns coverage is measured from.
+//
+// EVERY PART, NOT JUST THE ONE townOf PICKS
+//
+// The obvious implementation is `townKey(location)` and a comparison, and it
+// is wrong here in a way that only shows up on real addresses.
+// `lib/places.ts` strips a leading part only when it LOOKS LIKE A STREET —
+// which means it starts with a number. So "18 Dovecroft, Kirkcudbright" gives
+// Kirkcudbright, and "Anchorlee, Gatehouse of Fleet" gives *Anchorlee*, because
+// a house name with no number is not recognisable as one.
+//
+// Houses named rather than numbered are the ordinary case across Dumfries and
+// Galloway, so that is not an edge: it is a large share of the listings on
+// this site quietly failing to match a town and being sent to a picker they
+// should never have seen. Caught by a test rather than by a host, narrowly.
+//
+// So every comma-separated part is checked, and the first that names a
+// coverage town wins. `townKey` is still the normaliser — the one the rest of
+// the site already groups stays by — applied per part and to the LABEL, so
+// "castle douglas", "Castle Douglas," and the hyphenated key all agree without
+// a second normaliser that could drift from the first.
+export function townForLocation(location: string | null | undefined) {
+    const parts = String(location || '').split(',');
+
+    for (const part of parts) {
+        const key = townKey(part);
+        if (!key) continue;
+
+        const found = COVERAGE_TOWNS.filter((t) => townKey(t.label) === key)[0];
+        if (found) return found;
+    }
+
+    return null;
+}
+
+export interface PropertyPoint {
+    lat: number;
+    lng: number;
+    label: string;
+    // How we worked it out, so a screen can say "your cottage in Wigtown"
+    // rather than implying a precision it does not have.
+    from: 'coordinates' | 'town';
+}
+
+// Where to search from, for one listing.
+export function pointForListing(listing: any): PropertyPoint | null {
+    if (!listing) return null;
+
+    const lat = Number(listing.latitude);
+    const lng = Number(listing.longitude);
+
+    if (isFinite(lat) && isFinite(lng) && (lat !== 0 || lng !== 0)) {
+        return {
+            lat,
+            lng,
+            label: townForLocation(listing.location)?.label
+                || String(listing.location || '').split(',')[0].trim()
+                || 'your property',
+            from: 'coordinates',
+        };
+    }
+
+    const town = townForLocation(listing.location);
+    if (town) return { lat: town.lat, lng: town.lng, label: town.label, from: 'town' };
+
+    return null;
 }
 
 export interface Area {
