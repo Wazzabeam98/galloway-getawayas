@@ -82,6 +82,57 @@ Two things worth knowing if a scenario starts failing oddly:
   off whichever due booking it reaches first — not necessarily scenario 14's. The
   debt-comes-off-the-next-payout behaviour is scenario 24's job.
 
+## Checking what is actually live
+
+```
+node scripts/check-deploy.mjs                  # production vs your working copy
+node scripts/check-deploy.mjs --url <host>     # what is THAT tab serving
+node scripts/check-deploy.mjs --branch <name>  # latest build of a branch
+node scripts/check-deploy.mjs --list           # recent deployments
+node scripts/check-deploy.mjs --watch          # re-check every 10s
+```
+
+Read-only: it issues GETs and nothing else, so it cannot deploy, promote, roll
+back or delete. Safe to run mid-deploy. `VERCEL_TOKEN` is in `.env.local`; the
+project and team are read from `.vercel/project.json`.
+
+"Am I looking at the newest build?" is three questions that get run together,
+and the guessing comes from answering one and assuming the others:
+
+- **What is live** — which commit the production alias is serving right now.
+- **What is built** — whether the commit you pushed finished, failed, or is
+  still going. A green dashboard answers this one and is routinely mistaken for
+  the first, because promotion is a separate step from building.
+- **What you are seeing** — the tab that is open may be a preview, a branch
+  alias, or a build that has since been superseded.
+
+The default run answers the first and compares it to your checkout, which is the
+part Vercel cannot tell you:
+
+```
+=== PRODUCTION ===
+  READY — this is what visitors get
+      30ae1d2 master  "Press the button, in a real browser, at last"
+
+=== YOUR WORKING COPY ===
+  master @ 30ae1d2
+  MATCHES the live build — the deployed code is your commit
+  1 uncommitted file(s) — on no server anywhere, deployed or not
+```
+
+`--url` is for the third question, and it is the one worth reaching for when a
+page looks wrong. **A branch alias keeps serving the last build of that branch
+forever, including after the branch is merged and deleted** — so it stays green,
+stays correct for what it is, and drifts further behind master every day:
+
+```
+STALE: 8 commit(s) behind master. What you are looking at is not the newest code.
+```
+
+`BUILDING` and `QUEUED` are called out rather than left as jargon, because they
+are the states where the alias is still serving the *previous* build — much the
+commonest reason a change "did not go out" when in fact it had not gone out yet.
+
 ## Checking what happened to an email
 
 ```
