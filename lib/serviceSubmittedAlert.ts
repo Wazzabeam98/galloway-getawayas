@@ -15,7 +15,7 @@
 
 import { adminClient } from '@/lib/supabaseAdmin';
 import { isAutomatedTestAddress } from '@/lib/testAddresses';
-import { sendEmail, emailLayout, escapeHtml, detailRows, button, SITE_URL } from '@/lib/email';
+import { sendEmailToAll, recipients, emailLayout, escapeHtml, detailRows, button, SITE_URL } from '@/lib/email';
 import { logError } from '@/lib/logError';
 import {
     tradeLabel,
@@ -118,11 +118,20 @@ export async function announceSubmission(provider: any): Promise<AnnounceResult>
         return { ok: true, emailed: false, skipped: 'automated test address' };
     }
 
-    const to = process.env.SERVICES_ALERT_EMAIL || '';
+    // BOTH OF US, IF THE VARIABLE NAMES BOTH.
+    //
+    // This sent to `process.env.SERVICES_ALERT_EMAIL` as a single string while
+    // the enquiry alerts had already moved to a comma-split. That asymmetry was
+    // a trap rather than a shortfall: adding a second address to the variable
+    // would have fixed enquiries and silently broken THIS one, because Resend
+    // would have received "a@x.com, b@y.com" as one malformed recipient and
+    // rejected the message outright. Nobody would have been told about a new
+    // application at all.
+    const to = recipients(process.env.SERVICES_ALERT_EMAIL);
 
     // A missing address is the failure this whole route exists to avoid,
     // so it is recorded before anything else can swallow it.
-    if (!to) {
+    if (!to.length) {
         await logError('service-provider-submitted-email', {
             provider: id,
             problem: 'SERVICES_ALERT_EMAIL is not set — nobody was told.',
@@ -150,7 +159,7 @@ export async function announceSubmission(provider: any): Promise<AnnounceResult>
                 : 'has applied to be listed.')
             + ' You said you would decide within ' + REVIEW_WITHIN_HOURS + ' hours.</p>';
 
-    const emailed = await sendEmail(
+    const { sent, failed } = await sendEmailToAll(
         to,
         subject,
         emailLayout(
@@ -173,13 +182,15 @@ export async function announceSubmission(provider: any): Promise<AnnounceResult>
         )
     );
 
-    if (!emailed) {
+    // Per address, not per message. One admin's copy bouncing must not look
+    // like the alert working.
+    if (failed.length) {
         await logError('service-provider-submitted-email', {
             provider: id,
-            to: to,
+            failed: failed.join(', '),
             kind: changed ? 'changes' : (again ? 'resubmission' : 'new'),
         });
     }
 
-    return { ok: true, emailed: emailed };
+    return { ok: true, emailed: sent.length > 0 };
 }

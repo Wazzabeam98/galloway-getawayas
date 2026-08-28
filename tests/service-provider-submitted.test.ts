@@ -97,6 +97,21 @@ function load(options: {
         logError: async (message: string, detail?: any) => { logged.push({ message, detail }); },
     });
     stubModule('@/lib/email', {
+        // Additive: the callers moved to the comma-splitting pair so that a
+        // second admin address reaches a second person. It pushes into the same
+        // array as sendEmail, so every existing assertion about `to` still
+        // holds and a two-address run simply produces two entries.
+        recipients: (value: string) =>
+            String(value || '').split(',').map((a: string) => a.trim()).filter(Boolean),
+        sendEmailToAll: async (list: string[], subject: string, html: string) => {
+            const ok: string[] = [];
+            const bad: string[] = [];
+            for (const address of list) {
+                sent.push({ to: address, subject, html });
+                if (delivered) ok.push(address); else bad.push(address);
+            }
+            return { sent: ok, failed: bad };
+        },
         sendEmail: async (to: string, subject: string, html: string) => {
             sent.push({ to, subject, html });
             return delivered;

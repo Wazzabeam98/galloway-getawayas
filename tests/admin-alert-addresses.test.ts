@@ -73,6 +73,21 @@ function loadWebhook(options: { alertTo?: string | null; delivered?: boolean } =
         logError: async (message: string, detail?: any) => { logged.push({ message, detail }); },
     });
     stubModule('@/lib/email', {
+        // Additive: the callers moved to the comma-splitting pair so that a
+        // second admin address reaches a second person. It pushes into the same
+        // array as sendEmail, so every existing assertion about `to` still
+        // holds and a two-address run simply produces two entries.
+        recipients: (value: string) =>
+            String(value || '').split(',').map((a: string) => a.trim()).filter(Boolean),
+        sendEmailToAll: async (list: string[], subject: string, html: string) => {
+            const ok: string[] = [];
+            const bad: string[] = [];
+            for (const address of list) {
+                emails.push({ to: address, subject, html });
+                if (options.delivered !== false) ok.push(address); else bad.push(address);
+            }
+            return { sent: ok, failed: bad };
+        },
         sendEmail: async (to: string, subject: string, html: string) => {
             emails.push({ to, subject, html });
             return options.delivered !== false;
@@ -205,6 +220,21 @@ function loadDigest(options: { alertTo?: string | null; delivered?: boolean; err
         logError: async (message: string, detail?: any) => { logged.push({ message, detail }); },
     });
     stubModule('@/lib/email', {
+        // Additive: the callers moved to the comma-splitting pair so that a
+        // second admin address reaches a second person. It pushes into the same
+        // array as sendEmail, so every existing assertion about `to` still
+        // holds and a two-address run simply produces two entries.
+        recipients: (value: string) =>
+            String(value || '').split(',').map((a: string) => a.trim()).filter(Boolean),
+        sendEmailToAll: async (list: string[], subject: string, html: string) => {
+            const ok: string[] = [];
+            const bad: string[] = [];
+            for (const address of list) {
+                emails.push({ to: address, subject, html });
+                if (options.delivered !== false) ok.push(address); else bad.push(address);
+            }
+            return { sent: ok, failed: bad };
+        },
         sendEmail: async (to: string, subject: string, html: string) => {
             emails.push({ to, subject, html });
             return options.delivered !== false;
@@ -263,4 +293,54 @@ test('an unset ACCOUNTS_ALERT_EMAIL is logged rather than passing quietly', asyn
     assert.equal(res.body.sent, 0);
     const hit = logged.filter((l) => /ACCOUNTS_ALERT_EMAIL is not set/.test(l.message));
     assert.equal(hit.length, 1);
+});
+
+// ---------------------------------------------------------------------------
+// TWO ADMINS, NOT ONE
+// ---------------------------------------------------------------------------
+//
+// Every alert variable held a single address, and three of the four callers
+// passed it to sendEmail as one string while the enquiry alerts had already
+// moved to a comma-split. That asymmetry was a trap rather than a shortfall:
+// putting a second address in the variable would have fixed enquiries and
+// silently broken the other three, because Resend would have been handed
+// "a@x.com, b@y.com" as ONE malformed recipient and rejected the message.
+// Nobody would have been told about a new application, a chargeback, or a
+// morning's errors.
+//
+// So the split is asserted rather than assumed, on the code path rather than
+// on the helper.
+
+test('a comma-separated alert address reaches both people, separately', () => {
+    const split = (value: string) =>
+        String(value || '').split(',').map((a) => a.trim()).filter(Boolean);
+
+    assert.deepEqual(split('one@x.com, two@y.com'), ['one@x.com', 'two@y.com']);
+    assert.deepEqual(split('one@x.com'), ['one@x.com']);
+
+    // Whitespace and a trailing comma are what a person actually types.
+    assert.deepEqual(split(' one@x.com ,two@y.com, '), ['one@x.com', 'two@y.com']);
+
+    // An unset variable is no recipients, which every caller treats as the
+    // loud failure rather than sending to an empty string.
+    assert.deepEqual(split(''), []);
+    assert.deepEqual(split(undefined as any), []);
+});
+
+test('the dispute alert emails each director separately', async () => {
+    const { route, emails, logged } = loadWebhook({
+        alertTo: 'one@example.invalid, two@example.invalid',
+    });
+
+    await route.POST(disputeOpened());
+
+    const to = emails.map((e: any) => e.to).sort();
+    assert.deepEqual(
+        to, ['one@example.invalid', 'two@example.invalid'],
+        'both directors get their own copy, not one message addressed to a comma'
+    );
+
+    // One message per address, so a bounce belongs to a person.
+    assert.equal(emails.length, 2);
+    assert.deepEqual(logged.filter((l: any) => /did not send/.test(l.message)), []);
 });

@@ -1,6 +1,6 @@
 import { logError } from '@/lib/logError';
 import { guidanceFor } from '@/lib/disputes';
-import { sendEmail, emailLayout, escapeHtml, formatDate, button, SITE_URL } from '@/lib/email';
+import { sendEmail, sendEmailToAll, recipients, emailLayout, escapeHtml, formatDate, button, SITE_URL } from '@/lib/email';
 import { adminClient } from '@/lib/supabaseAdmin';
 import { NextResponse } from 'next/server';
 import { verifyStripeSignature, stripeRequest } from '@/lib/stripe';
@@ -22,9 +22,11 @@ async function alertDirectors(
     bookingId: string | null
 ): Promise<void> {
     try {
-        const to = process.env.DISPUTES_ALERT_EMAIL || '';
+        // Comma-split, so a second address reaches a second person rather than
+        // being handed to Resend as one malformed recipient.
+        const to = recipients(process.env.DISPUTES_ALERT_EMAIL);
 
-        if (!to) {
+        if (!to.length) {
             await logError('[webhook] DISPUTES_ALERT_EMAIL is not set — nobody was told about a dispute', {
                 event: eventType,
                 dispute: dispute && dispute.id,
@@ -75,7 +77,7 @@ async function alertDirectors(
                 + '<strong>' + escapeHtml(String(dispute.status || 'unknown')) + '</strong>.'
                 + (won ? ' The money has been returned.' : ' The money is gone.') + '</p>';
 
-        const delivered = await sendEmail(
+        const { sent, failed } = await sendEmailToAll(
             to,
             heading,
             emailLayout(
@@ -90,15 +92,20 @@ async function alertDirectors(
             )
         );
 
-        // sendEmail returns false rather than throwing, so the catch below
+        // sendEmailToAll returns rather than throwing, so the catch below
         // never sees an ordinary failure. On this email of all of them, a
         // silent one costs the evidence window and the money with it.
-        if (!delivered) {
+        //
+        // Logged per address. If the variable names two directors and one copy
+        // bounces, the other arriving must not make this look fine — the one
+        // who did not get it is the one who might have been handling it.
+        if (failed.length) {
             await logError('[webhook] a dispute alert did not send', {
                 event: eventType,
                 dispute: dispute && dispute.id,
                 booking: bookingId,
-                to: to,
+                failed: failed.join(', '),
+                reached: sent.join(', '),
             }, { path: 'stripe/webhook' });
         }
     } catch (err) {
