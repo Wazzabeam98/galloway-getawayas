@@ -691,6 +691,7 @@ All at `/api/cron/*`, all behind `CRON_SECRET`, all listed in `vercel.json`:
 | `ical-sync` | every 3 hours | Refreshes imported calendars |
 | `review-reminders` | 10am | Nudges guests and hosts to review |
 | `error-digest` | 8am | Emails the owners, only when something has broken |
+| `service-enquiries` | every hour, :15 | Expires an enquiry nobody answered and tells the host to try somebody else |
 
 They can be triggered by hand from Vercel → Cron Jobs → Run.
 
@@ -715,6 +716,21 @@ date.
   an opaque auth error.
 - `lib/places.ts` — the only place a free-text location is parsed
   (`publicArea` / `townOf` / `townKey`).
+- `lib/serviceProviders.ts` — the trade vocabulary and every rule about a
+  provider. `canBeRequested` — being renamed to `canBeBooked` — and
+  `canBeEnquiredAbout` are two different questions and deliberately disagree
+  about maintenance: a plumber can be asked to come and look, and cannot be
+  booked and charged, because quoting and completion do not exist.
+  `SHOP_TRADES` is the list a host can enquire about.
+- `lib/serviceEnquiries.ts` — what an enquiry is, its states, and the words
+  each side reads. No money anywhere in it, on purpose: every trade that
+  reaches the flow is on the subscription, so there is no total, no
+  commission and nothing to refund. A commission trade pointed at this file
+  wants a booking instead.
+- `lib/serviceEnquiryAlert.ts` — the four emails an enquiry produces. Accepting
+  sends the host's details to the provider's REGISTERED address, never to
+  whoever pressed the button in the email; that one line is what makes a
+  forwarded reply link a nuisance rather than a way to harvest phone numbers.
 
 ## Launch blockers
 

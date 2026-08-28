@@ -36,6 +36,10 @@
     "app/api/health/route.ts",
     "app/api/stripe/refund/route.ts",
     "app/api/bookings/cancel/route.ts",
-    "app/api/listings/visibility/route.ts"
+    "app/api/listings/visibility/route.ts",
+    "app/api/services/enquiries/route.ts",
+    "app/api/services/enquiries/respond/route.ts",
+    "app/api/services/enquiries/withdraw/route.ts",
+    "app/api/cron/service-enquiries/route.ts"
   ]
 }

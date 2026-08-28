@@ -1,349 +1,110 @@
-'use client';
-
-import { useEffect, useState } from 'react';
-import { createClientComponentClient } from '@supabase/auth-helpers-nextjs';
-import { toast } from 'react-toastify';
+import Link from 'next/link';
+import { ArrowRight } from 'lucide-react';
 import {
-    Wrench,
-    Droplet,
-    Sparkles,
-    Trees,
-    AlertTriangle,
-} from 'lucide-react';
+    TRADES,
+    HOST_TRADES,
+    canBeEnquiredAbout,
+    comingSoonNote,
+} from '@/lib/serviceProviders';
 
-interface Service {
-    id: string;
-    name: string;
-    description: string;
-    price_note: string;
-    icon: string;
-}
-
-interface RequestRow {
-    id: string;
-    service_id: string | null;
-    listing_id: string | null;
-    preferred_date: string | null;
-    notes: string;
-    status: string;
-    created_at: string;
-}
-
-const ICONS: Record<string, any> = {
-    wrench: Wrench,
-    droplet: Droplet,
-    sparkles: Sparkles,
-    trees: Trees,
-    alert: AlertTriangle,
+export const metadata = {
+    title: 'Find a tradesman | Galloway Getaways',
+    description:
+        'Electricians, joiners, plumbers, roofers, painters, handymen and window cleaners '
+        + 'covering Dumfries & Galloway. Browse who covers your property and ask one of them.',
 };
 
-const STATUS_LABELS: Record<string, { label: string; className: string }> = {
-    new: { label: 'Requested', className: 'bg-amber-50 text-amber-800' },
-    scheduled: { label: 'Scheduled', className: 'bg-emerald-50 text-emerald-800' },
-    completed: { label: 'Completed', className: 'bg-slate-100 text-slate-700' },
-    cancelled: { label: 'Cancelled', className: 'bg-slate-100 text-slate-500' },
-};
-
+// The host-facing shop.
+//
+// THIS URL USED TO BE SOMETHING ELSE
+//
+// A hand-built page over the flat `services` catalogue and `service_requests`,
+// with three rows on production behind it. It was Liam's own manual flow and
+// this replaces it. The table and its rows are untouched — retiring a page is
+// not a reason to delete somebody's data — but the URL is now this.
+//
+// BROWSE, NOT MATCH
+//
+// A host picks a trade, sees who covers them, reads the prices where a
+// provider has published them, and asks ONE person. Nothing scores anybody and
+// nothing fans out. What the platform sells is the introduction.
+//
+// ALL TEN TRADES ARE ON THIS PAGE, INCLUDING THE THREE THAT DO NOTHING
+//
+// Cleaning and waste are not enquired about — they take a commission at
+// acceptance, which needs a total, which needs a booking. Gardening is waiting
+// on a plot field that no form writes yet. All three could simply have been
+// left off, and that is the version to avoid: a host who came here for a
+// cleaner and found no mention of cleaning concludes the site is broken rather
+// than that the feature is late. So they are listed, and they say so.
 export default function ServicesPage() {
-    const supabase = createClientComponentClient();
+    const trades = TRADES.filter(
+        (t) => (HOST_TRADES as readonly string[]).indexOf(t.key) !== -1
+    );
 
-    const [loading, setLoading] = useState(true);
-    const [session, setSession] = useState<any>(null);
-    const [services, setServices] = useState<Service[]>([]);
-    const [listings, setListings] = useState<{ id: string; title: string }[]>([]);
-    const [requests, setRequests] = useState<RequestRow[]>([]);
-
-    const [openFor, setOpenFor] = useState<Service | null>(null);
-    const [listingId, setListingId] = useState('');
-    const [preferredDate, setPreferredDate] = useState('');
-    const [notes, setNotes] = useState('');
-    const [submitting, setSubmitting] = useState(false);
-
-    useEffect(() => {
-        const load = async () => {
-            const { data: { session } } = await supabase.auth.getSession();
-            setSession(session);
-
-            if (!session?.user) {
-                setLoading(false);
-                return;
-            }
-
-            const { data: svc } = await supabase
-                .from('services')
-                .select('id, name, description, price_note, icon')
-                .eq('active', true)
-                .order('sort_order', { ascending: true });
-            setServices(svc || []);
-
-            const { data: mine } = await supabase
-                .from('listings')
-                .select('id, title')
-                .eq('host_id', session.user.id)
-                .order('created_at', { ascending: true });
-            setListings(mine || []);
-
-            const { data: reqs } = await supabase
-                .from('service_requests')
-                .select('id, service_id, listing_id, preferred_date, notes, status, created_at')
-                .eq('host_id', session.user.id)
-                .order('created_at', { ascending: false });
-            setRequests(reqs || []);
-
-            setLoading(false);
-        };
-
-        load();
-    }, [supabase]);
-
-    const openRequest = (service: Service) => {
-        setOpenFor(service);
-        setListingId(listings.length === 1 ? listings[0].id : '');
-        setPreferredDate('');
-        setNotes('');
-    };
-
-    const submitRequest = async () => {
-        if (!session?.user || !openFor) return;
-        setSubmitting(true);
-
-        const { data, error } = await supabase
-            .from('service_requests')
-            .insert({
-                host_id: session.user.id,
-                service_id: openFor.id,
-                listing_id: listingId || null,
-                preferred_date: preferredDate || null,
-                notes: notes.trim(),
-            })
-            .select('id, service_id, listing_id, preferred_date, notes, status, created_at')
-            .single();
-
-        setSubmitting(false);
-
-        if (error) {
-            toast.error(error.message, { theme: 'colored' });
-            return;
-        }
-
-        if (data) setRequests((prev) => [data].concat(prev));
-        setOpenFor(null);
-        toast.success("Request sent — we'll be in touch to confirm a time.", { theme: 'colored' });
-    };
-
-    const cancelRequest = async (id: string) => {
-        const { error } = await supabase
-            .from('service_requests')
-            .update({ status: 'cancelled' })
-            .eq('id', id);
-
-        if (error) {
-            toast.error(error.message, { theme: 'colored' });
-            return;
-        }
-
-        setRequests((prev) =>
-            prev.map((r) => (r.id === id ? Object.assign({}, r, { status: 'cancelled' }) : r))
-        );
-    };
-
-    const serviceName = (id: string | null) => {
-        const s = services.filter((x) => x.id === id)[0];
-        return s ? s.name : 'Service';
-    };
-
-    const listingTitle = (id: string | null) => {
-        const l = listings.filter((x) => x.id === id)[0];
-        return l ? l.title : null;
-    };
-
-    if (loading) {
-        return (
-            <div className="max-w-5xl mx-auto px-6 py-16">
-                <div className="h-8 w-56 bg-slate-100 rounded animate-pulse mb-4" />
-                <div className="h-4 w-80 bg-slate-100 rounded animate-pulse" />
-            </div>
-        );
-    }
-
-    if (!session?.user) {
-        return (
-            <div className="max-w-5xl mx-auto px-6 py-16 text-center">
-                <h1 className="text-2xl font-bold text-slate-900 mb-2">Services</h1>
-                <p className="text-slate-600">Please log in to request a service.</p>
-            </div>
-        );
-    }
+    const live = trades.filter((t) => canBeEnquiredAbout(t.key));
+    const soon = trades.filter((t) => !canBeEnquiredAbout(t.key));
 
     return (
-        <div className="max-w-5xl mx-auto px-6 py-10">
-            <h1 className="text-3xl font-bold text-slate-900 mb-1">Services</h1>
-            <p className="text-slate-600 mb-8">
-                Looking after a holiday let is the hard part. We can take some of it off your hands.
+        <div className="max-w-3xl mx-auto px-4 sm:px-6 py-12 pb-24">
+            <h1 className="text-3xl sm:text-4xl font-extrabold tracking-tight text-slate-900">
+                Find a tradesman
+            </h1>
+            <p className="text-slate-600 mt-3">
+                Local businesses covering your property. You see who they are and what they charge
+                before you ask, and you ask one of them — not five.
+            </p>
+            <p className="text-sm text-slate-500 mt-3 mb-10">
+                We take nothing from the job. Whatever you agree is between you and them.
             </p>
 
-            <div className="grid grid-cols-1 md:grid-cols-2 gap-4 mb-12">
-                {services.map((service) => {
-                    const Icon = ICONS[service.icon] || Wrench;
-                    return (
-                        <div key={service.id} className="border rounded-2xl p-5 flex flex-col">
-                            <Icon className="w-6 h-6 text-emerald-700 mb-3" strokeWidth={1.5} />
-                            <h2 className="font-semibold text-slate-900 mb-1">{service.name}</h2>
-                            <p className="text-sm text-slate-600 flex-1">{service.description}</p>
-                            <div className="flex items-center justify-between mt-4 pt-4 border-t">
-                                <span className="text-sm font-semibold text-slate-900">
-                                    {service.price_note}
-                                </span>
-                                <button
-                                    type="button"
-                                    onClick={() => openRequest(service)}
-                                    className="px-4 py-2 bg-emerald-700 hover:bg-emerald-800 text-white text-sm font-semibold rounded-lg"
-                                >
-                                    Request
-                                </button>
-                            </div>
-                        </div>
-                    );
-                })}
+            <div className="grid sm:grid-cols-2 gap-3">
+                {live.map((trade) => (
+                    <Link
+                        key={trade.key}
+                        href={'/services/' + trade.key}
+                        className="group rounded-2xl border border-slate-300 p-5 hover:border-emerald-700 hover:bg-emerald-50/40 transition"
+                    >
+                        <h2 className="font-bold text-slate-900">{trade.label}</h2>
+                        <span className="inline-flex items-center gap-1.5 text-sm font-semibold text-emerald-700 mt-3">
+                            See who covers you
+                            <ArrowRight className="w-4 h-4 group-hover:translate-x-0.5 transition" />
+                        </span>
+                    </Link>
+                ))}
             </div>
 
-            {services.length === 0 && (
-                <div className="border rounded-2xl p-10 text-center mb-12">
-                    <p className="text-slate-500 text-sm">No services listed yet.</p>
-                </div>
-            )}
-
-            <h2 className="text-xl font-bold text-slate-900 mb-4">Your requests</h2>
-
-            {requests.length === 0 ? (
-                <div className="border rounded-2xl p-10 text-center">
-                    <p className="text-slate-500 text-sm">
-                        Nothing requested yet. Pick a service above and we&apos;ll get back to you.
-                    </p>
-                </div>
-            ) : (
-                <div className="border rounded-2xl divide-y">
-                    {requests.map((req) => {
-                        const status = STATUS_LABELS[req.status] || STATUS_LABELS.new;
-                        const place = listingTitle(req.listing_id);
-                        return (
-                            <div key={req.id} className="p-5 flex items-start justify-between gap-4">
-                                <div className="min-w-0">
-                                    <div className="font-semibold text-slate-900 text-sm">
-                                        {serviceName(req.service_id)}
-                                    </div>
-                                    <div className="text-xs text-slate-500 mt-1">
-                                        {place ? `${place} · ` : ''}
-                                        {req.preferred_date
-                                            ? `Preferred: ${new Date(req.preferred_date).toLocaleDateString('en-GB', {
-                                                  day: 'numeric',
-                                                  month: 'long',
-                                              })}`
-                                            : 'No date given'}
-                                    </div>
-                                    {req.notes && (
-                                        <p className="text-xs text-slate-500 mt-2 whitespace-pre-line">{req.notes}</p>
-                                    )}
-                                </div>
-                                <div className="flex flex-col items-end gap-2 flex-shrink-0">
-                                    <span className={`text-xs font-medium px-2.5 py-1 rounded-full ${status.className}`}>
-                                        {status.label}
-                                    </span>
-                                    {req.status === 'new' && (
-                                        <button
-                                            type="button"
-                                            onClick={() => cancelRequest(req.id)}
-                                            className="text-xs text-slate-500 hover:text-red-600"
-                                        >
-                                            Cancel
-                                        </button>
-                                    )}
-                                </div>
-                            </div>
-                        );
-                    })}
-                </div>
-            )}
-
-            {openFor && (
-                <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 px-4">
-                    <div className="bg-white rounded-2xl shadow-xl w-full max-w-md p-6 max-h-[85vh] overflow-y-auto">
-                        <div className="flex items-start justify-between mb-1">
-                            <h3 className="text-xl font-bold text-slate-900">{openFor.name}</h3>
-                            <button
-                                type="button"
-                                onClick={() => setOpenFor(null)}
-                                aria-label="Close"
-                                className="text-slate-400 hover:text-slate-800 text-xl leading-none"
+            {soon.length > 0 && (
+                <div className="mt-10">
+                    <h2 className="text-sm font-semibold text-slate-500 uppercase tracking-wide">
+                        Not yet
+                    </h2>
+                    <div className="grid sm:grid-cols-2 gap-3 mt-3">
+                        {soon.map((trade) => (
+                            <div
+                                key={trade.key}
+                                className="rounded-2xl border border-slate-200 bg-slate-50 p-5"
                             >
-                                &times;
-                            </button>
-                        </div>
-                        <p className="text-sm text-slate-500 mb-5">{openFor.price_note}</p>
-
-                        <div className="space-y-4">
-                            <div>
-                                <label className="text-xs text-slate-500">Which property?</label>
-                                <select
-                                    value={listingId}
-                                    onChange={(e) => setListingId(e.target.value)}
-                                    className="w-full p-2.5 border rounded-lg text-sm mt-1"
-                                >
-                                    <option value="">Choose a property</option>
-                                    {listings.map((l) => (
-                                        <option key={l.id} value={l.id}>
-                                            {l.title || 'Untitled listing'}
-                                        </option>
-                                    ))}
-                                </select>
-                            </div>
-
-                            <div>
-                                <label className="text-xs text-slate-500">Preferred date</label>
-                                <input
-                                    type="date"
-                                    value={preferredDate}
-                                    onChange={(e) => setPreferredDate(e.target.value)}
-                                    className="w-full p-2.5 border rounded-lg text-sm mt-1"
-                                />
-                                <p className="text-xs text-slate-400 mt-1">
-                                    We&apos;ll confirm the actual time with you — check your calendar for a gap
-                                    between bookings.
+                                <h3 className="font-bold text-slate-500">{trade.label}</h3>
+                                <p className="text-sm text-slate-500 mt-2">
+                                    {comingSoonNote(trade.key)}
                                 </p>
                             </div>
-
-                            <div>
-                                <label className="text-xs text-slate-500">Anything we should know?</label>
-                                <textarea
-                                    value={notes}
-                                    onChange={(e) => setNotes(e.target.value)}
-                                    rows={4}
-                                    placeholder="Key safe code, where the stopcock is, what's gone wrong..."
-                                    className="w-full p-2.5 border rounded-lg text-sm mt-1"
-                                />
-                            </div>
-                        </div>
-
-                        <div className="flex items-center justify-between mt-6">
-                            <button
-                                type="button"
-                                onClick={() => setOpenFor(null)}
-                                className="text-sm font-semibold underline text-slate-700 hover:text-black"
-                            >
-                                Cancel
-                            </button>
-                            <button
-                                type="button"
-                                onClick={submitRequest}
-                                disabled={submitting || !listingId}
-                                className="px-6 py-2.5 bg-emerald-700 hover:bg-emerald-800 text-white text-sm font-semibold rounded-lg disabled:opacity-40 disabled:cursor-not-allowed"
-                            >
-                                {submitting ? 'Sending...' : 'Send request'}
-                            </button>
-                        </div>
+                        ))}
                     </div>
                 </div>
             )}
+
+            <p className="text-sm text-slate-500 mt-12">
+                Already asked somebody?{' '}
+                <Link
+                    href="/dashboard/enquiries"
+                    className="text-emerald-700 font-semibold underline hover:text-emerald-800"
+                >
+                    See your enquiries
+                </Link>
+                .
+            </p>
         </div>
     );
 }
