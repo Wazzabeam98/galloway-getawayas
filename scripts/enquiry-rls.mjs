@@ -241,6 +241,43 @@ async function run() {
     if (refused(anonWrite)) ok('cannot lodge one for somebody');
     else bad('cannot lodge one for somebody', JSON.stringify(anonWrite.body).slice(0, 160));
 
+    // ---- the thing the whole flow is built on ------------------------------
+    //
+    // Withholding contact details until somebody accepts IS the product. It
+    // was enforced by what each page chose to select, which is not enforcement
+    // at all: one REST call with the public key returned every approved
+    // tradesman's phone number regardless of what any page rendered.
+    //
+    // This is the check that would have caught it, so it runs first and it
+    // runs for both roles — signing up is free, so "signed in" is not a
+    // meaningfully smaller population than "anyone".
+
+    console.log('\n  A tradesman\u2019s number');
+
+    for (const [who, call] of [
+        ['signed out', () => asAnon('GET', '/service_providers?select=business_name,contact_phone,contact_email')],
+        ['any signed-in user', () => asUser(otherToken, 'GET', '/service_providers?select=business_name,contact_phone,contact_email')],
+    ]) {
+        const r = await call();
+        const leaked = Array.isArray(r.body)
+            && r.body.some((p) => p && (p.contact_phone || p.contact_email));
+
+        if (!leaked) ok(who + ' cannot read contact details');
+        else bad(who + ' cannot read contact details',
+            'SCRAPEABLE: ' + JSON.stringify(r.body).slice(0, 160));
+    }
+
+    // The shop still has to work, so what it does select must still be there.
+    const shop = await asAnon('GET', '/service_providers?select=business_name,description,callout_fee&status=eq.approved');
+    if (shop.ok && Array.isArray(shop.body)) ok('the shop can still read everything it renders');
+    else bad('the shop can still read everything it renders', JSON.stringify(shop.body).slice(0, 160));
+
+    // And a tradesman must still be able to read his own, or he cannot edit it.
+    const own = await asUser(ownerToken, 'GET', '/service_provider_own_contacts?select=contact_phone,contact_email');
+    const gotOwn = own.ok && Array.isArray(own.body) && own.body[0] && own.body[0].contact_phone;
+    if (gotOwn) ok('a tradesman can still read his own');
+    else bad('a tradesman can still read his own', JSON.stringify(own.body).slice(0, 160));
+
     // ---- what a host wanted -----------------------------------------------
     //
     // Write-only from the browser on purpose: readable, it is a list of every

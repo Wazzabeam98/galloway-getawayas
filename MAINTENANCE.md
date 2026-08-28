@@ -9,6 +9,52 @@ book and pay through the site; the platform takes a commission and passes the
 rest to the property owner. Real money moves through it, so mistakes here cost
 somebody something.
 
+## A guard that throws is worse than no guard, and this shape recurs
+
+On 28 August 2026 `scripts/seed-lib.mjs` contained:
+
+```js
+export { TEST_PROJECT_REF } from './target.cjs';
+```
+
+That forwards the name to importers and creates **no local binding**. Every use
+of `TEST_PROJECT_REF` *inside that file* was a reference to something
+undefined, so two functions threw `ReferenceError` at the moment they were
+relied on:
+
+- `assertTestEnvironment` — the guard the payment seeders run **before**
+  touching anything, to prove they are not pointed at production.
+- `signIn` — called by four scenario runners.
+
+It arrived when the constant moved to `target.cjs` so Playwright could
+`require` it. Nothing was wrong with that move; the re-export was.
+
+**Why nothing caught it.** No unit test imports `seed-lib.mjs`, and none can
+usefully — everything in it needs a database or a session, which is why the
+scripts exist in the first place. So the file sits in a gap: too
+infrastructural for the suite, too rarely run to notice. It was found by a new
+script happening to call `signIn`, not by anything watching.
+
+**Why the shape recurs.** The dangerous property is not the typo, it is that
+the broken thing is a *guard*. A guard that throws looks identical to a guard
+that is absent right up to the moment it matters, and then it fails in the
+direction of the thing it was there to prevent — `assertTestEnvironment`
+throwing means the seeder stops, which is safe by luck rather than by design.
+The same shape has now appeared three times in two days:
+
+- `migrate.mjs` refuses production — it had not since 27 August, and
+  MAINTENANCE.md still said it did.
+- `VERCEL_TOKEN` is read-only — it never was; the restraint is in
+  `check-deploy.mjs`.
+- `assertTestEnvironment` protects the seeders — it threw instead.
+
+**What to do about it.** When you touch anything that exists to say *no*, run
+the thing it guards and watch it say no. A guard is the one kind of code whose
+success path proves nothing, so exercising the failure path is the only test
+that means anything. `scripts/enquiry-rls.mjs` is written that way on purpose:
+every check asserts a refusal, and it was run against the unfixed database
+first to watch it fail.
+
 ## The migration goes to production BEFORE the code that needs it
 
 **A migration reaches production before the code that depends on it merges.
