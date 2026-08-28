@@ -82,6 +82,73 @@ Two things worth knowing if a scenario starts failing oddly:
   off whichever due booking it reaches first — not necessarily scenario 14's. The
   debt-comes-off-the-next-payout behaviour is scenario 24's job.
 
+## Running the browser suite
+
+```
+npm run e2e:sync    # bring the preview up to master and wait for the build
+npm run test:e2e    # drive the sign-up in a real browser
+```
+
+The suite signs people up — it creates auth accounts and lodges applications —
+so where it points is a safety question, not a convenience.
+
+**It does not point at master, because master has no preview.** Vercel lists
+`galloway-getawayas-git-master-…` among the *production* aliases, so master's
+branch URL and the live site are the same deployment. There is no preview of
+master to use. Instead there is a long-lived branch, `e2e-preview`, that exists
+only to be deployed as a preview. `npm run e2e:sync` moves it to master's tree
+and waits for the build.
+
+It never touches your working tree or your current branch: the commit is built
+with `git commit-tree` and pushed straight at the remote branch. It carries
+master's tree with its own commit id, because **Vercel will not build a SHA it
+has already deployed** — the branch was first created at master's own commit and
+Vercel built nothing at all.
+
+### The suite refuses to run against the wrong thing
+
+A URL in a config file is a poor guard, and it failed silently once already: it
+named a feature branch, the branch merged, and the alias went on serving that
+branch's last build. The suite was green for days against code eight commits
+behind master. **A test that passes against the wrong build is worse than one
+that fails**, because it is evidence of something nobody checked.
+
+So `e2e/global-setup.ts` asks the deployment what it is, via `/api/health`,
+before the browser opens. Three refusals, each stopping the whole run:
+
+| | |
+|---|---|
+| **production** | invented tradesmen in the real queue. No override, ever. |
+| **wrong database** | a preview whose environment points at the production Supabase project. |
+| **stale** | the deployed tree is behind `origin/master`. |
+
+The database check is the one a URL could never make. A preview is only safe
+because its *environment* points somewhere safe, and this project has already
+shipped an env var scoped to Production but not Preview — so "it is a preview"
+and "it writes somewhere safe" are separate questions, and only the running
+process can answer the second.
+
+Staleness is compared by **tree**, not commit id, since the preview deliberately
+carries a different commit. It can be overridden for one run:
+
+```
+PLAYWRIGHT_ALLOW_STALE=1 npm run test:e2e
+```
+
+which says loudly that a pass is evidence about that build and not about master.
+There is no equivalent for the first two.
+
+### Automated runs do not send alerts
+
+An application from a reserved test domain (`.test`, `.invalid`, `.example`,
+`.localhost`) writes its row exactly as a real one does but sends no "New
+business waiting" email. The suites use `@gallowayauto.test`, and every run used
+to ring the real bell — an alert that mostly fires for nobody is an alert that
+stops being read. The decision is on the address rather than an environment
+variable so it cannot be misconfigured per deployment and cannot swallow a real
+application: those TLDs are reserved and can never be a real domain. See
+`lib/testAddresses.ts`.
+
 ## Checking what is actually live
 
 ```

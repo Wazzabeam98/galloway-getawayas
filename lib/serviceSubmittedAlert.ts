@@ -107,9 +107,13 @@ export async function announceSubmission(provider: any): Promise<AnnounceResult>
     // the one that runs in production.
     //
     // It is reported rather than swallowed. `skipped` comes back to the
-    // caller and the e2e suite asserts on it, so "the alert was suppressed"
-    // stays a checked behaviour instead of becoming a silence nobody can tell
-    // apart from a broken send.
+    // caller, and tests/service-provider-submitted.test.ts asserts on it, so
+    // "the alert was suppressed" stays a checked behaviour instead of becoming
+    // a silence nobody can tell apart from a broken send.
+    //
+    // /api/services/apply discards this result, so a first application cannot
+    // see it. That is the older of the two callers and not worth changing for
+    // a test; the behaviour is identical either way.
     if (isAutomatedTestAddress(provider.contact_email)) {
         return { ok: true, emailed: false, skipped: 'automated test address' };
     }
