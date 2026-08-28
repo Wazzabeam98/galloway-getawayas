@@ -241,6 +241,32 @@ test('a summary of two words is not a call-out worth making', () => {
     );
 });
 
+// --- every problem, not the first one --------------------------------------
+
+// Reported from a walk-through as "I submitted with both blank and it only
+// asked for the number". The validation was right — the REPORTING showed
+// problems[0], and the phone happens to be checked before the name. So the
+// host filled in a number, pressed send, and was then asked for something
+// else. Two round trips for one mistake, and it reads as the form not knowing
+// its own mind.
+//
+// The fix is in the form, which now renders all of them. This pins the half
+// that lives here: both problems must actually be in the list.
+test('a blank name and a blank phone are two problems, not one', () => {
+    const problems = enquiryProblems(draft({ host_name: '', host_phone: '' }));
+
+    assert.equal(problems.filter((p) => p.field === 'host_name').length, 1, 'the name is asked for');
+    assert.equal(problems.filter((p) => p.field === 'host_phone').length, 1, 'the number is asked for');
+    assert.ok(problems.length >= 2, 'both are reported at once');
+});
+
+test('an emergency asks for a name like everything else', () => {
+    // Nothing about urgency relaxes who you are. He is being sent to a
+    // property to meet somebody.
+    const problems = enquiryProblems(draft({ urgency: 'emergency', host_name: '' }));
+    assert.equal(problems.filter((p) => p.field === 'host_name').length, 1);
+});
+
 // --- who can be asked in an emergency --------------------------------------
 
 test('a provider with no number cannot be the answer to an emergency', () => {

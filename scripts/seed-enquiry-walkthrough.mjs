@@ -28,8 +28,25 @@
 // enquiry route will show them — which is the correct behaviour and would look
 // like a broken seeder.
 //
+// TWO PROPERTIES, OPTIONALLY
+//
+// `--host you@example.com` gives that account a pair of DRAFT listings, which
+// is what the shop needs to work out where to search without asking. Test held
+// none for a real account, so the second walk-through landed on the town
+// picker and looked like the derivation was broken when it was simply reading
+// an empty table.
+//
+// Draft rather than published on purpose: the shop reads a host's own listings
+// whatever their status, and a published one would turn up in search results
+// and in other suites' counts.
+//
+// One of them is deliberately a NAMED house with no street number — the shape
+// that broke town matching until townForLocation started reading every part of
+// the address.
+//
 // USAGE
 //   node scripts/seed-enquiry-walkthrough.mjs --email you@example.com
+//   node scripts/seed-enquiry-walkthrough.mjs --email you@ex.com --host you@ex.com
 //   node scripts/seed-enquiry-walkthrough.mjs --reset
 //
 // Everything it makes hangs off owner accounts on @gallowaywalk.test, which is
@@ -59,6 +76,11 @@ const reset = process.argv.includes('--reset');
 
 const emailIndex = process.argv.indexOf('--email');
 const contactEmail = emailIndex !== -1 ? String(process.argv[emailIndex + 1] || '') : '';
+
+const hostIndex = process.argv.indexOf('--host');
+const hostEmail = hostIndex !== -1 ? String(process.argv[hostIndex + 1] || '') : '';
+
+const LISTING_TAG = 'WALKTHROUGH — ';
 
 if (!reset && !/^[^\s@]+@[^\s@]+\.[a-z]{2,}$/i.test(contactEmail)) {
     console.error('usage: node scripts/seed-enquiry-walkthrough.mjs --email you@example.com');
@@ -90,7 +112,54 @@ async function clear() {
         console.log('  removed ' + owner.email);
     }
 
-    if (!owners.length) console.log('  nothing to remove');
+    // Listings are tagged by title rather than by owner: they hang off a REAL
+    // account, and deleting by owner would take that host's own work with
+    // them.
+    const listings = await db.select(
+        'listings',
+        '?title=like.' + encodeURIComponent(LISTING_TAG + '*') + '&select=id,title'
+    );
+
+    for (const l of listings) {
+        await db.remove('listings', '?id=eq.' + l.id);
+        console.log('  removed listing ' + l.title);
+    }
+
+    if (!owners.length && !listings.length) console.log('  nothing to remove');
+}
+
+async function seedListings() {
+    const { users } = await db.auth('GET', '/admin/users?per_page=200');
+    const host = (users || []).filter((u) => String(u.email || '').toLowerCase() === hostEmail.toLowerCase())[0];
+
+    if (!host) {
+        console.log('  no account for ' + hostEmail + ' on test — skipping the listings');
+        return;
+    }
+
+    await db.insert('listings', [
+        {
+            host_id: host.id,
+            // A named house with no street number. lib/places only strips a
+            // leading part that starts with a digit, so this is the shape that
+            // used to resolve to the town "Anchorlee" and match nothing.
+            title: LISTING_TAG + 'Anchorlee',
+            location: 'Anchorlee, Gatehouse of Fleet, Dumfries and Galloway',
+            price_per_night: 120,
+            bedrooms: 3,
+            status: 'draft',
+        },
+        {
+            host_id: host.id,
+            title: LISTING_TAG + 'Dovecroft',
+            location: '18 Dovecroft, Kirkcudbright, Dumfries and Galloway',
+            price_per_night: 95,
+            bedrooms: 2,
+            status: 'draft',
+        },
+    ]);
+
+    console.log('  two draft listings on ' + hostEmail + ' — Gatehouse of Fleet and Kirkcudbright');
 }
 
 async function makeOwner(email) {
@@ -210,5 +279,8 @@ async function seed() {
 
 console.log(reset ? 'clearing walkthrough data...' : 'seeding walkthrough plumbers...');
 await clear();
-if (!reset) await seed();
+if (!reset) {
+    await seed();
+    if (hostEmail) await seedListings();
+}
 console.log('done.');

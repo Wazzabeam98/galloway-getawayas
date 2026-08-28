@@ -68,13 +68,32 @@ export default function EnquiryForm({
     const [sending, setSending] = useState(false);
     const [sent, setSent] = useState<any>(null);
 
-    // Off the profile, not out of the host's head. `full_name` and `phone` are
-    // already there; asking for them again is asking somebody to type an
-    // answer we are holding.
+    // EVERY problem, not the first one.
     //
-    // Editable afterwards on purpose: the number to ring about a cottage is
-    // not always the number on the account, and a caretaker's mobile is a
-    // perfectly ordinary answer.
+    // This showed problems[0] in a toast, and enquiryProblems happens to check
+    // the phone before the name — so somebody who left both blank was asked
+    // for a number, filled it in, pressed send again and was then asked for
+    // their name. The validation was right and the reporting made it look
+    // broken. Found on the second walk-through, reported as "it only asked for
+    // the number", which is exactly what it did.
+    const [problems, setProblems] = useState<Array<{ field: string; message: string }>>([]);
+
+    // Off the profile, not out of the host's head. Asking for something we are
+    // already holding is what makes a shop feel like a form.
+    //
+    // THREE PLACES, BECAUSE ONE OF THEM IS OFTEN EMPTY. `profiles.full_name`
+    // is an empty string rather than null on accounts that never filled it in,
+    // and `phone` is frequently null — but a name given at sign-up lives in
+    // the auth user's metadata, which is a perfectly good answer and was being
+    // ignored. Falsy-checked rather than null-checked for exactly that reason:
+    // '' must fall through, not win.
+    //
+    // A blank result is not a fault. It means we hold nothing, the fields stay
+    // empty, and the host types them — which is the honest outcome and the one
+    // to expect on a fresh test account.
+    //
+    // Editable either way: the number to ring about a cottage is not always
+    // the number on the account, and a caretaker's mobile is ordinary.
     useEffect(() => {
         if (!session?.user) return;
 
@@ -85,9 +104,19 @@ export default function EnquiryForm({
                 .eq('id', session.user.id)
                 .maybeSingle();
 
-            if (!data) return;
-            setName((current) => current || String(data.full_name || data.preferred_name || ''));
-            setPhone((current) => current || String(data.phone || ''));
+            const metadata = session.user.user_metadata || {};
+
+            const knownName = String(
+                (data && (data.full_name || data.preferred_name))
+                || metadata.full_name
+                || metadata.name
+                || ''
+            ).trim();
+
+            const knownPhone = String((data && data.phone) || metadata.phone || '').trim();
+
+            if (knownName) setName((current) => current || knownName);
+            if (knownPhone) setPhone((current) => current || knownPhone);
         };
 
         load();
@@ -116,6 +145,7 @@ export default function EnquiryForm({
 
     const send = async () => {
         setSending(true);
+        setProblems([]);
 
         const res = await fetch('/api/services/enquiries', {
             method: 'POST',
@@ -141,8 +171,18 @@ export default function EnquiryForm({
         setSending(false);
 
         if (!json.ok) {
-            const first = json.problems && json.problems[0];
-            toast.error(first ? first.message : (json.error || 'Could not send that.'), { theme: 'colored' });
+            if (json.problems && json.problems.length) {
+                setProblems(json.problems);
+                toast.error(
+                    json.problems.length === 1
+                        ? json.problems[0].message
+                        : 'There are ' + json.problems.length + ' things to fill in.',
+                    { theme: 'colored' }
+                );
+                return;
+            }
+
+            toast.error(json.error || 'Could not send that.', { theme: 'colored' });
             return;
         }
 
@@ -298,6 +338,7 @@ export default function EnquiryForm({
                         placeholder="No hot water since Sunday. Combi boiler, about eight years old, pressure looks fine."
                         className="mt-1.5 w-full rounded-xl border border-slate-300 px-3 py-2.5"
                     />
+                    <Problem problems={problems} field="summary" />
                 </label>
 
                 {planned && (
@@ -325,6 +366,7 @@ export default function EnquiryForm({
                                 onChange={(e) => setPreferredDate(e.target.value)}
                                 className="mt-1.5 w-full rounded-xl border border-slate-300 px-3 py-2.5"
                             />
+                            <Problem problems={problems} field="preferred_date" />
                         </label>
 
                         <label className="block">
@@ -374,6 +416,7 @@ export default function EnquiryForm({
                             onChange={(e) => setName(e.target.value)}
                             className="mt-1.5 w-full rounded-xl border border-slate-300 px-3 py-2.5"
                         />
+                        <Problem problems={problems} field="host_name" />
                     </label>
                     <label className="block">
                         <span className="text-sm font-semibold text-slate-700">Phone</span>
@@ -382,6 +425,7 @@ export default function EnquiryForm({
                             onChange={(e) => setPhone(e.target.value)}
                             className="mt-1.5 w-full rounded-xl border border-slate-300 px-3 py-2.5"
                         />
+                        <Problem problems={problems} field="host_phone" />
                     </label>
                 </div>
 
@@ -404,6 +448,14 @@ export default function EnquiryForm({
             </div>
         </Shell>
     );
+}
+
+// The message for one field, under that field, where the person is looking.
+// A toast says how many; this says which.
+function Problem({ problems, field }: { problems: Array<{ field: string; message: string }>; field: string }) {
+    const found = problems.filter((p) => p.field === field)[0];
+    if (!found) return null;
+    return <p className="text-sm text-red-700 mt-1">{found.message}</p>;
 }
 
 function Shell({ children, onClose, title }: { children: any; onClose: () => void; title: string }) {

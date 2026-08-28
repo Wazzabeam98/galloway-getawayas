@@ -250,14 +250,19 @@ export async function POST(req: Request) {
             if (!error) { saved = data; break; }
             lastError = error;
 
-            // One live enquiry per host, per provider, per trade. Not a retry:
-            // a host who has already asked this person and is waiting has not
-            // made a mistake worth silently duplicating.
+            // One live enquiry per host, per provider, per trade, PER URGENCY
+            // and per property — see 20260902_one_open_per_job.sql. A pending
+            // quote no longer blocks a burst pipe, and two cottages with two
+            // different faults are two enquiries.
+            //
+            // What is left is the resend-because-nobody-answered case, which
+            // is not a retry worth making silently.
             if (String(error.message || '').indexOf('one_open') !== -1) {
                 return NextResponse.json(
                     {
                         ok: false,
-                        error: 'You have already asked them about this and are waiting to hear back.',
+                        error: 'You have already asked them about this, and are waiting to hear back. '
+                            + 'Withdraw that one first, or ask somebody else.',
                     },
                     { status: 409 }
                 );
