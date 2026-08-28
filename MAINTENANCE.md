@@ -259,8 +259,8 @@ Please:
   in the insert branch.
 
   **Both migrations are live on both projects as of 22 August 2026 — nothing
-  needs running.** `20260822_conversation_prefs.sql` and
-  `20260822_conversation_prefs_server_clock.sql`. Both are new objects with no
+  needs running.** `20260822014817_conversation_prefs.sql` and
+  `20260822014818_conversation_prefs_server_clock.sql`. Both are new objects with no
   constraint on existing data, so both are safe to run again.
 
   `node scripts/inbox-scenarios.mjs` covers all of it against test — 28 checks,
@@ -351,7 +351,7 @@ Please:
   and paid £111 is how you lose a host. Owner tools warns in red if the rows
   and the totals ever disagree.
 
-  `20260822_cancellation_record_and_debt_settlement.sql` — **live on both
+  `20260822203006_cancellation_record_and_debt_settlement.sql` — **live on both
   projects as of 22 August 2026, nothing needs running.** It also adds
   `cancelled_at`, `cancelled_by_user` and `cancelled_by_role` to `bookings`:
   until then the only trace of who cancelled was `initiated_by` in the
@@ -503,7 +503,7 @@ Please:
   templates gives each a turn and sends whichever the query returned first,
   which is what it used to do.
 
-  `20260823_templates_per_listing.sql` — **live on both projects as of 23
+  `20260823012922_templates_per_listing.sql` — **live on both projects as of 23
   August 2026, nothing needs running.** `message_templates.listing_ids` is
   vestigial but deliberately still written by the editor, because the migration
   ran before the deploy. Drop it in its own migration once the new code has
@@ -519,7 +519,7 @@ Please:
   or `authenticated`**, reachable only through the service role and
   `/api/listings/access-code`, which checks `can_listing`.
 
-  `20260823_listing_access_codes.sql` — **live on both projects as of 23 August
+  `20260823002843_listing_access_codes.sql` — **live on both projects as of 23 August
   2026, nothing needs running.** Anonymous read and write are refused with
   `42501` on both.
 
@@ -567,7 +567,7 @@ Please:
   revised, so a half-assembled one is worse than a late one. It is a person's
   job, in Stripe.
 
-  `20260822_disputes.sql` — **live on both projects as of 22 August 2026,
+  `20260822231427_disputes.sql` — **live on both projects as of 22 August 2026,
   nothing needs running.** RLS is on with no policy for `authenticated`: a
   dispute names a guest who has accused somebody of taking their money, and the
   host it concerns must not read it out of the browser.

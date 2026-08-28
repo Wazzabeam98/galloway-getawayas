@@ -3,7 +3,7 @@
 -- IN-HOUSE ONLY, AND WHY THAT IS NOT A HEDGE
 --
 -- Bands exist so two cleaners are comparable and so the total is knowable
--- before the job. 20260825_service_pricing.sql puts it plainly: an hourly
+-- before the job. 20260825022434_service_pricing.sql puts it plainly: an hourly
 -- figure as the price is what puts the total after the job. Cleaning is a 10%
 -- commission trade, and commission is taken when the customer is charged at
 -- acceptance — so an hourly price has nothing to take a percentage of yet.

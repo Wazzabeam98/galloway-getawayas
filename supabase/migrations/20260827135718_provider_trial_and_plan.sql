@@ -11,7 +11,7 @@
 --
 -- WIDENED THE NEXT DAY. Gardening and window cleaning joined the subscription
 -- on 28 August 2026, making the rule "every host trade except cleaning and
--- waste" — see 20260828_gardening_and_windows_subscription.sql, which must be
+-- waste" — see 20260827154137_gardening_and_windows_subscription.sql, which must be
 -- run after this one. This file is left exactly as it ran rather than edited,
 -- because it has already been applied and a migration that no longer matches
 -- what it did is worse than one that is out of date.
@@ -37,7 +37,7 @@
 -- were stamped when the promise was made rather than dates invented
 -- afterwards.
 --
--- THIS REVERSES 20260824_service_providers.sql, WHICH SAID THERE WAS NO TRIAL
+-- THIS REVERSES 20260824050425_service_providers.sql, WHICH SAID THERE WAS NO TRIAL
 --
 -- That file argued a dormant `trial_ends_at` is one query away from becoming a
 -- promise on a page again, and it was right about the failure it had seen:

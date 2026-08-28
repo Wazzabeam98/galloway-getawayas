@@ -250,7 +250,7 @@ test('an in-house cleaner is billed by us and charged no commission on top', () 
     // For an EXTERNAL hourly cleaner there is no assertion here to make yet:
     // the total is not known at acceptance, so the 10% cannot be computed
     // there. That is the deferred consequence recorded in
-    // 20260830_cleaning_hourly_any_cleaner.sql, and it is a gap in the design
+    // 20260827192211_cleaning_hourly_any_cleaner.sql, and it is a gap in the design
     // rather than in this file. When enquiries settle the hours, it gets a
     // test.
     assert.equal(serviceCommission(hourlyVisitTotal(18, 3), 0), 0);

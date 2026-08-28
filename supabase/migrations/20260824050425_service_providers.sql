@@ -21,14 +21,14 @@
 --   `plan`        kept as a value rather than a boolean because the day the
 --                 model changed it would be a value to set rather than a
 --                 column to replace. That day came: see
---                 20260827_provider_trial_and_plan.sql. Both values are live
+--                 20260827135718_provider_trial_and_plan.sql. Both values are live
 --                 now, decided by the trade, though nothing bills anybody
 --                 yet.
 --   `settlement`  only 'cash_on_arrival' is implemented. Netting an in-house
 --                 cleaning bill off a host's payout touches the payout engine
 --                 and wants its own work, but not its own migration.
 --
--- SUPERSEDED ON 27 AUGUST 2026 by 20260827_provider_trial_and_plan.sql. This
+-- SUPERSEDED ON 27 AUGUST 2026 by 20260827135718_provider_trial_and_plan.sql. This
 -- paragraph used to say there was no free trial and no trial column, and that
 -- a dormant `trial_ends_at` was one query away from becoming a promise on a
 -- page again. The warning was right about the failure it had seen; the
@@ -45,7 +45,7 @@
 -- six maintenance trades, whose work is quoted on site and paid off-platform;
 -- 10% a job for everything else. That split widened on 28 August 2026 to every
 -- host trade except cleaning and waste — see
--- 20260828_gardening_and_windows_subscription.sql. Read the newer migrations
+-- 20260827154137_gardening_and_windows_subscription.sql. Read the newer migrations
 -- rather than this paragraph.
 --
 -- Attribution is deliberately NOT a counter here. Jobs and their value are a

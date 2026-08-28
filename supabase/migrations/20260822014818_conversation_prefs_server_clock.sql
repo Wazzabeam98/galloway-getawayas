@@ -1,6 +1,6 @@
 -- The database stamps archived_at and starred_at, not whoever is writing.
 --
--- Run this on both projects. It goes with 20260822_conversation_prefs.sql and
+-- Run this on both projects. It goes with 20260822014817_conversation_prefs.sql and
 -- is safe to run twice.
 --
 -- WHY THIS EXISTS

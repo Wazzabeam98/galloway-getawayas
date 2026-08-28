@@ -293,15 +293,15 @@ Two things worth knowing about the assertions:
   `approved_digest` or `commission_rate`, **can** still submit through
   `submit_service_provider`, and cannot submit somebody else's listing.
 
-  Those four FAIL until `20260829_provider_status_grants.sql` has been run on
+  Those four FAIL until `20260827185827_provider_status_grants.sql` has been run on
   the project being tested. A 404 from the function is treated as a failure
   rather than a refusal, so "not deployed" can never be mistaken for "locked".
 
 ## Running a migration on test
 
 ```
-node scripts/migrate.mjs supabase/migrations/20260831_thing.sql            # dry run
-node scripts/migrate.mjs supabase/migrations/20260831_thing.sql --apply    # run it
+node scripts/migrate.mjs supabase/migrations/20260831093000_thing.sql            # dry run
+node scripts/migrate.mjs supabase/migrations/20260831093000_thing.sql --apply    # run it
 node scripts/migrate.mjs <file> --apply --read "select ..."                # run, then read back
 node scripts/migrate.mjs --sql "select ..."                                # read-only query
 ```

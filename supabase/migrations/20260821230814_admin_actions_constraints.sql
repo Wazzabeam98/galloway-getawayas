@@ -2,7 +2,7 @@
 -- actually created.
 --
 -- The table was built from a description of the plan rather than from
--- 20260821_admin_actions.sql, and came out right in every respect except
+-- 20260821225211_admin_actions.sql, and came out right in every respect except
 -- these: columns, types, nullability, both foreign keys, the ON DELETE SET
 -- NULL on listing_id and the revoked grants all match. Only the two CHECK
 -- constraints did not make it.

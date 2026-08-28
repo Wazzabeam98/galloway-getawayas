@@ -1749,7 +1749,7 @@ export interface RegistrationRow {
 // number on the row, so a provider who was checked in March and edits their
 // number in June is not verified in June — no cron job, no trigger, nothing to
 // remember to clear. The columns behind it cannot be written from a browser at
-// all; see the grants in 20260826_trade_registration.sql.
+// all; see the grants in 20260825205043_trade_registration.sql.
 export function registrationVerified(row: RegistrationRow | null | undefined): boolean {
     if (!row || !row.verified_at) return false;
 

@@ -2,7 +2,7 @@
 --
 -- THE RULE, WIDENED
 --
--- 20260827_provider_trial_and_plan.sql put the six maintenance trades on £20 a
+-- 20260827135718_provider_trial_and_plan.sql put the six maintenance trades on £20 a
 -- month after 90 free days. The rule is now every host trade EXCEPT cleaning
 -- and waste, which adds two:
 --

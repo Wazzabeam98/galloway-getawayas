@@ -30,8 +30,8 @@
 -- moved, not the save moved server-side; the rest of the form still writes its
 -- own columns straight from the browser exactly as before.
 --
--- ORDER. This must run AFTER 20260828_cleaning_hourly_option.sql and
--- 20260828_gardening_and_windows_subscription.sql, because it grants the
+-- ORDER. This must run AFTER 20260827171104_cleaning_hourly_option.sql and
+-- 20260827154137_gardening_and_windows_subscription.sql, because it grants the
 -- columns those add. Run on test first, then production.
 --
 -- Safe to run twice.

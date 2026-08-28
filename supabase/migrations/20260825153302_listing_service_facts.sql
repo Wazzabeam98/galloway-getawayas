@@ -7,7 +7,7 @@
 --
 --   plot_band    gardening prices by plot, because bedrooms tell you nothing
 --                about a garden — a two-bed cottage can sit in an acre. Added
---                in 20260825_service_pricing.sql, where nothing wrote it.
+--                in 20260825022434_service_pricing.sql, where nothing wrote it.
 --   storey_band  window cleaning prices by how high the windows go, because
 --                ladder work is the cost driver.
 --

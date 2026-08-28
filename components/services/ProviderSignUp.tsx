@@ -1592,7 +1592,7 @@ function ApplicationForm() {
         //
         // The patch is no longer merged into the payload. `status`,
         // `submitted_at` and `review_note` are revoked from `authenticated` in
-        // 20260829_provider_status_grants.sql — a provider who could write
+        // 20260827185827_provider_status_grants.sql — a provider who could write
         // `status` could approve themselves — so the one legitimate status
         // write goes through `submit_service_provider`, which re-checks
         // ownership and the approved case in the database. Sending any of
@@ -1660,7 +1660,7 @@ function ApplicationForm() {
         // exactly when the check should be thrown away.
         //
         // The verified columns are not sent at all. They cannot be: they are
-        // revoked from `authenticated` in 20260826_trade_registration.sql, so
+        // revoked from `authenticated` in 20260825205043_trade_registration.sql, so
         // a payload mentioning one would be refused rather than trusted.
         {
             const { data: haveRegs } = await supabase

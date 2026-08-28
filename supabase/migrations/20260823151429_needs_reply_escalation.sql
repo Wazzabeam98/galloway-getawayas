@@ -35,7 +35,7 @@ create index if not exists "conversation_prefs_no_reply_idx"
     where "no_reply_needed_at" is not null;
 
 -- The server clock stamps this one too, for exactly the reason the other two
--- are stamped here — see 20260822_conversation_prefs_server_clock.sql. It is
+-- are stamped here — see 20260822014818_conversation_prefs_server_clock.sql. It is
 -- compared against created_at on the messages, which the database wrote, and
 -- a browser a few seconds slow would mark a thread answered-for and watch it
 -- come straight back looking as though the link had not worked.

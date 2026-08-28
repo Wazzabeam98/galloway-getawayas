@@ -36,10 +36,10 @@
 // USAGE
 // ---------------------------------------------------------------------------
 //
-//   node scripts/migrate.mjs supabase/migrations/20260831_thing.sql
+//   node scripts/migrate.mjs supabase/migrations/20260831093000_thing.sql
 //       Dry run. Guards, then the plan, then stop.
 //
-//   node scripts/migrate.mjs supabase/migrations/20260831_thing.sql --apply
+//   node scripts/migrate.mjs supabase/migrations/20260831093000_thing.sql --apply
 //       Run it.
 //
 //   node scripts/migrate.mjs <file> --apply --read "select ..."

@@ -2,7 +2,7 @@
 --
 -- WHAT CHANGES
 --
--- 20260828_cleaning_hourly_option.sql added:
+-- 20260827171104_cleaning_hourly_option.sql added:
 --
 --     check (pricing_choice is distinct from 'hourly'
 --            or (trade = 'sponge' and kind = 'in_house'))

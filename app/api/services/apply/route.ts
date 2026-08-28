@@ -40,7 +40,7 @@ export const dynamic = 'force-dynamic';
 // WHAT THIS DOES NOT TOUCH
 //
 // No RLS changed for this. The service role is not subject to the column grants
-// in 20260829_provider_status_grants.sql, which bind `authenticated`. A
+// in 20260827185827_provider_status_grants.sql, which bind `authenticated`. A
 // provider still cannot write their own `status` from the browser, and the
 // `submit_service_provider` function is still how a signed-in provider
 // re-submits. This route sets the status directly because it IS the platform,
@@ -177,7 +177,7 @@ export async function POST(req: Request) {
         if (prices.length) await admin.from('service_provider_prices').insert(prices);
 
         // Registrations carry no verified columns from here. They cannot: the
-        // whole point of 20260826_trade_registration.sql is that only an admin
+        // whole point of 20260825205043_trade_registration.sql is that only an admin
         // decision writes those, and a fresh application has had none.
         const regs = (body.registrations || [])
             .map((r: any) => ({
