@@ -105,6 +105,33 @@ export async function POST(req: Request) {
             .eq('id', saved.provider_id)
             .maybeSingle();
 
+        // THE ACCEPT IS WHAT RELEASES THE DETAILS, so this is where they are
+        // released — copied onto the enquiry, which the host already owns.
+        //
+        // A snapshot rather than a join, for the same reason the price is a
+        // snapshot: it is the number he accepted on. It also means the host's
+        // screen needs no read of service_providers at all, which is what lets
+        // the contact columns be revoked from every browser role outright.
+        //
+        // Written under the service role. There is no grant for these columns
+        // and there must not be one: a host who could write their own copy of
+        // a phone number would have handed themselves the thing the accept
+        // exists to trade.
+        if (saved.status === 'accepted' && provider) {
+            const { data: withContact } = await admin
+                .from('service_enquiries')
+                .update({
+                    provider_phone: provider.contact_phone || null,
+                    provider_email: provider.contact_email || null,
+                    updated_at: now,
+                })
+                .eq('id', saved.id)
+                .select('*')
+                .maybeSingle();
+
+            if (withContact) Object.assign(saved, withContact);
+        }
+
         let listing: any = null;
         if (saved.listing_id) {
             const { data } = await admin

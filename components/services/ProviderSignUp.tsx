@@ -299,7 +299,7 @@ function ApplicationForm() {
                 // it is inherited from another one they hold.
                 const { data: existing } = await supabase
                     .from('service_providers')
-                    .select('id, business_name, trade, description, contact_email, contact_phone, sms_opt_out, audience, photos, logo, status, review_note, callout_fee, hourly_rate, callout_waived, does_gas, does_oil, kind, pricing_choice, billable_hourly_rate, covered_bands')
+                    .select('id, business_name, trade, description, sms_opt_out, audience, photos, logo, status, review_note, callout_fee, hourly_rate, callout_waived, does_gas, does_oil, kind, pricing_choice, billable_hourly_rate, covered_bands')
                     .eq('owner_id', session.user.id)
                     .eq('trade', tradeFromUrl)
                     .maybeSingle();
@@ -309,8 +309,20 @@ function ApplicationForm() {
                     setBusinessName(existing.business_name || '');
                     setTrade(existing.trade || tradeFromUrl);
                     setDescription(existing.description || '');
-                    setContactEmail(existing.contact_email || session.user.email || '');
-                    setContactPhone(existing.contact_phone || '');
+                    // His own, through the view. The columns are revoked from
+                    // every browser role — a column grant cannot say "his own
+                    // row" — so service_provider_own_contacts is the one way
+                    // in, and it can only ever return rows where
+                    // owner_id = auth.uid(). See
+                    // 20260828202340_contact_details_are_not_public.sql.
+                    const { data: own } = await supabase
+                        .from('service_provider_own_contacts')
+                        .select('contact_email, contact_phone')
+                        .eq('id', existing.id)
+                        .maybeSingle();
+
+                    setContactEmail((own && own.contact_email) || session.user.email || '');
+                    setContactPhone((own && own.contact_phone) || '');
                     setSmsOptOut(!!existing.sms_opt_out);
                     setPhotos(existing.photos || []);
                     setLogo(existing.logo || null);

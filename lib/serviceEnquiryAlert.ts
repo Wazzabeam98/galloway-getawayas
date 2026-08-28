@@ -306,9 +306,21 @@ export async function announceResponse(
             ])
             : '';
 
-        const reply = enquiry.provider_reply
-            ? '<p style="margin:16px 0 0;font-size:15px;"><em>' + escapeHtml(String(enquiry.provider_reply))
-                + '</em></p>'
+        // WHICHEVER OF THE TWO HE ACTUALLY WROTE.
+        //
+        // The respond route stores his message in `provider_reply` on a yes and
+        // in `decline_reason` on a no, and this read only the first — so a
+        // tradesman who typed "booked up until March" had it shown to the
+        // admins and never to the host, who got a bare "cannot take it on".
+        //
+        // That is the difference between "try somebody else" and "try somebody
+        // else, and do not bother asking me again until spring". He took the
+        // trouble to say it; passing it on is the least the introduction owes
+        // him. Found by a test rather than by a host, narrowly.
+        const message = String(enquiry.provider_reply || enquiry.decline_reason || '').trim();
+
+        const reply = message
+            ? '<p style="margin:16px 0 0;font-size:15px;"><em>' + escapeHtml(message) + '</em></p>'
             : '';
 
         const next = accepted

@@ -59,6 +59,14 @@ interface Enquiry {
     outcome: string | null;
     sent_at: string;
     expires_at: string | null;
+
+    // Copied onto the row by the respond route at the moment of acceptance,
+    // and null until then. The host's screen therefore never reads
+    // service_providers for a contact detail — which is what allows those
+    // columns to be revoked from every browser role. See
+    // 20260828202340_contact_details_are_not_public.sql.
+    provider_phone: string | null;
+    provider_email: string | null;
 }
 
 export default function EnquiriesPage() {
@@ -67,7 +75,6 @@ export default function EnquiriesPage() {
     const [loading, setLoading] = useState(true);
     const [session, setSession] = useState<any>(null);
     const [rows, setRows] = useState<Enquiry[]>([]);
-    const [contacts, setContacts] = useState<Record<string, any>>({});
 
     const load = async () => {
         const { data: { session } } = await supabase.auth.getSession();
@@ -87,28 +94,12 @@ export default function EnquiriesPage() {
 
         const { data } = await supabase
             .from('service_enquiries')
-            .select('id, reference, trade, business_name, provider_id, status, urgency, summary, fault_keys, price_snapshot, preferred_date, window_from, window_to, outcome, sent_at, expires_at')
+            .select('id, reference, trade, business_name, provider_id, status, urgency, summary, fault_keys, price_snapshot, preferred_date, window_from, window_to, outcome, sent_at, expires_at, provider_phone, provider_email')
             .eq('host_id', session.user.id)
             .order('sent_at', { ascending: false });
 
         const list = (data || []) as Enquiry[];
         setRows(list);
-
-        // Only for the ones where an introduction has actually been made. The
-        // details are readable on any approved provider — the point of not
-        // fetching them otherwise is that this screen should not be able to
-        // show a number it has no business showing.
-        const ids = list.filter((r) => contactReleased(r.status)).map((r) => r.provider_id);
-        if (ids.length) {
-            const { data: providers } = await supabase
-                .from('service_providers')
-                .select('id, contact_phone, contact_email')
-                .in('id', ids);
-
-            const map: Record<string, any> = {};
-            for (const p of providers || []) map[p.id] = p;
-            setContacts(map);
-        }
 
         setLoading(false);
     };
@@ -182,7 +173,9 @@ export default function EnquiriesPage() {
                 {rows.map((row) => {
                     const summary = hostStatusSummary(row.status, row.business_name, row);
                     const asked = requestedWhen(row);
-                    const contact = contacts[row.provider_id];
+                    // Off the row, not off the provider. There is nothing to
+                    // fetch and nothing this screen could fetch if it tried.
+                    const contact = { contact_phone: row.provider_phone, contact_email: row.provider_email };
                     const faults = faultLabels(row.fault_keys);
                     const price = snapshotLine(row.price_snapshot);
 
