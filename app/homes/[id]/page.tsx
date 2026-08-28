@@ -222,9 +222,18 @@ export async function generateMetadata({ params }: { params: { id: string } }): 
 const FindHome = async ({ params }: { params: { id: string } }) => {
     const supabase = createServerComponentClient({ cookies });
 
+    // Named, not '*'. This page is read by strangers, so it runs as `anon`,
+    // and `anon` no longer holds a table-level grant on listings — a `select *`
+    // is refused outright now. That is the point: a sensitive column added
+    // later cannot arrive in the page source by being swept up by a star.
+    //
+    // approx_latitude/approx_longitude, never the exact pair. The exact
+    // coordinates are not readable here at all.
     const { data: home } = await supabase
         .from('listings')
-        .select('*')
+        .select(
+            'id, host_id, title, description, location, approx_latitude, approx_longitude, price_per_night, max_guests, images, property_type, privacy_type, bedrooms, beds, bathrooms, amenities, status, ical_import_url, cancellation_policy, weekend_price, cleaning_fee, pet_fee, extra_guest_fee, extra_guest_after, extra_guest_period, availability_window, instant_book, instant_book_requires_phone, instant_book_requires_verified_id, check_in_time, check_in_end_time, check_out_time, check_in_method, damage_deposit, nearby, rating_avg, rating_count, rating_cleanliness, rating_accuracy, rating_checkin, rating_communication, rating_location, rating_value'
+        )
         .eq('id', params.id)
         .single();
 
@@ -269,9 +278,12 @@ const FindHome = async ({ params }: { params: { id: string } }) => {
     const hostFirstName = capitializeFirst((hostName || 'Host').split(' ')[0]);
     const highlights = propertyHighlights(home);
 
+    // Rounded to about 110m before it ever left the database. PropertyMap
+    // still jitters the pin on top of this; that was only ever decoration when
+    // the exact figure was being handed over with it.
     let coords: { latitude: number; longitude: number } | null =
-        home?.latitude && home?.longitude
-            ? { latitude: home.latitude, longitude: home.longitude }
+        home?.approx_latitude && home?.approx_longitude
+            ? { latitude: Number(home.approx_latitude), longitude: Number(home.approx_longitude) }
             : null;
     if (!coords && home?.location) {
         coords = await lookupCoordinates(home.location);
@@ -395,12 +407,15 @@ const FindHome = async ({ params }: { params: { id: string } }) => {
                                 addressRegion: 'Dumfries & Galloway',
                                 addressCountry: 'GB',
                             },
-                            ...(home.latitude && home.longitude
+                            // Search engines get the approximate point too.
+                            // Publishing the exact one in structured data would
+                            // undo the whole change in a way nobody would look at.
+                            ...(home.approx_latitude && home.approx_longitude
                                 ? {
                                       geo: {
                                           '@type': 'GeoCoordinates',
-                                          latitude: home.latitude,
-                                          longitude: home.longitude,
+                                          latitude: Number(home.approx_latitude),
+                                          longitude: Number(home.approx_longitude),
                                       },
                                   }
                                 : {}),
