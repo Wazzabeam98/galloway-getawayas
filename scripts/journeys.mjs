@@ -38,7 +38,7 @@
 // comment is how a stale default gets copied back into code.)
 
 import { loadEnv, TEST_PROJECT_REF } from './seed-lib.mjs';
-import { resolveTarget, PREVIEW_URL } from './target.mjs';
+import { resolveTarget, PREVIEW_URL } from './target.cjs';
 
 const env = loadEnv();
 const args = process.argv.slice(2);

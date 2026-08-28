@@ -1,6 +1,10 @@
 import { defineConfig } from '@playwright/test';
-// @ts-ignore — plain ESM, deliberately shared with the .mjs runners.
-import { PREVIEW_URL } from './scripts/target.mjs';
+// @ts-ignore — CommonJS, deliberately shared with the .mjs runners.
+//
+// .cjs, not .mjs. Playwright compiles this config to CommonJS and `require`s
+// whatever it imports; requiring an ESM file dies with "exports is not defined
+// in ES module scope" and the whole suite cannot start. That happened.
+import { PREVIEW_URL } from './scripts/target.cjs';
 
 // Driving the real form in a real browser.
 //

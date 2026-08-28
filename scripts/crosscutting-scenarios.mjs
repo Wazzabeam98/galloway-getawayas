@@ -10,7 +10,7 @@ import {
     loadEnv, assertTestEnvironment, stripeClient, supabaseClient,
     readManifest, round2, signIn, SEED_DOMAIN, dayOffset,
 } from './seed-lib.mjs';
-import { resolveTarget, LOCAL_URL } from './target.mjs';
+import { resolveTarget, LOCAL_URL } from './target.cjs';
 
 const env = loadEnv();
 assertTestEnvironment(env);

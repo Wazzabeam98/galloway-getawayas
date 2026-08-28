@@ -14,8 +14,10 @@
 // quietly tests nothing is the failure being designed out.
 
 import type { FullConfig } from '@playwright/test';
-// @ts-ignore — plain ESM, deliberately shared with the .mjs runners.
-import { assertSafeTarget } from '../scripts/target.mjs';
+// @ts-ignore — CommonJS, deliberately shared with the .mjs runners. See the
+// note at the top of that file: Playwright compiles this to CommonJS and
+// requires it, and requiring ESM is what broke the suite.
+import { assertSafeTarget } from '../scripts/target.cjs';
 
 export default async function globalSetup(config: FullConfig) {
     const baseURL =

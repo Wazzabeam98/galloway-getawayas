@@ -41,7 +41,7 @@ const path = require('path');
 const ROOT = path.resolve(__dirname, '..', '..');
 
 /** The one file allowed to know where anything lives. */
-const GUARD = 'scripts/target.mjs';
+const GUARD = 'scripts/target.cjs';
 
 /** Hand a URL straight to the guard and do nothing else with it. */
 const PASSES_THROUGH = ['playwright.config.ts', 'e2e/global-setup.ts'];
@@ -55,7 +55,7 @@ function harnessFiles(): string[] {
     const out: string[] = [];
     for (const dir of ['scripts', 'e2e']) {
         for (const name of fs.readdirSync(path.join(ROOT, dir))) {
-            if (/\.(mjs|ts)$/.test(name)) out.push(`${dir}/${name}`);
+            if (/\.(mjs|cjs|ts)$/.test(name)) out.push(`${dir}/${name}`);
         }
     }
     out.push('playwright.config.ts');
@@ -101,7 +101,7 @@ test('every runner that talks to the site imports the guard', () => {
         + `the "/api/" tell has stopped identifying them, so this rule is now checking nothing`
     );
 
-    const unguarded = talkers.filter((rel) => !read(rel).includes("from './target.mjs'"));
+    const unguarded = talkers.filter((rel) => !read(rel).includes("from './target.cjs'"));
 
     assert.deepEqual(
         unguarded, [],
