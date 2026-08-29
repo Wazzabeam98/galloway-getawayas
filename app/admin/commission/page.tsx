@@ -18,6 +18,7 @@
 
 import { createServerComponentClient } from '@supabase/auth-helpers-nextjs';
 import { cookies } from 'next/headers';
+import { requireAdmin } from '@/lib/access';
 import { notFound } from 'next/navigation';
 import { adminClient } from '@/lib/supabaseAdmin';
 import { displayName } from '@/lib/utils';
@@ -28,22 +29,9 @@ export const dynamic = 'force-dynamic';
 export default async function CommissionAdmin() {
     const supabase = createServerComponentClient({ cookies });
 
-    // getUser(), not getSession(). getSession() only decodes the cookie — it
-    // never checks the signature — so the id everything below hangs off would
-    // be whatever the caller wrote in it. getUser() asks the auth server,
-    // which verifies the token and that the session has not been revoked.
-    const { data: auth } = await supabase.auth.getUser();
-
-    if (!auth || !auth.user) notFound();
-
-    const { data: me } = await supabase
-        .from('profiles')
-        .select('is_admin')
-        .eq('id', auth.user.id)
-        .maybeSingle();
-
-    if (!me || me.is_admin !== true) notFound();
-
+    // One rule, in lib/access. It was written out nine times, byte for
+    // byte, and every copy was correct — but nothing made the tenth so.
+    const authUser = await requireAdmin();
     // Service role, like the other owner pages. commission_rate is one of the
     // money columns revoked from `authenticated`, so reading it as the
     // signed-in user is the wrong tool even for someone allowed to see it.
