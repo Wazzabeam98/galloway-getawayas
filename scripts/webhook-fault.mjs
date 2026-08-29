@@ -1,23 +1,28 @@
-// Shows what happens when the Stripe webhook throws while confirming a
-// booking the guest has genuinely paid for.
+// Shows what the Stripe webhook does when a handler throws, and what a retry
+// of that event is worth.
 //
-//   npm run dev                              # in another terminal, first
-//   node scripts/webhook-fault.mjs           # both fault stages
-//   node scripts/webhook-fault.mjs --stage before-write
-//   node scripts/webhook-fault.mjs --stage after-booking-update
-//   node scripts/webhook-fault.mjs --stage none      # the healthy path
+//   npm run dev                     # in another terminal, first
+//   node scripts/webhook-fault.mjs
 //
-// The payment is real: a test-mode PaymentIntent, confirmed with a test card,
-// so Stripe has actually taken the money before the webhook is called. The
-// throw is injected by a metadata.fault_stage field on the event, which the
-// route ignores unless the Stripe key is a test key — see injectedFault().
+// NO TEST-ONLY CODE IN THE ROUTE. This used to work by calling an
+// injectedFault() hook that lived in app/api/stripe/webhook/route.ts and did
+// nothing unless the Stripe key was a test key. That hook is gone, on the
+// grounds that code sitting in the payment path purely for testing is exactly
+// what gets forgotten and then trusted. Correct call.
+//
+// So the throw is now a real one, caused the way real ones are caused: an
+// event whose shape the handler did not expect. `data.object` is absent, the
+// handler reads `cs.metadata` off undefined, and TypeError comes out of the
+// same catch that a dropped Supabase connection would.
+//
+// The one thing that costs: a malformed event carries no booking id, so the
+// report says booking_id: null. A throw further in — the ordinary case —
+// names the booking. tests/webhook-reporting.test.ts covers that, by stubbing
+// the database to throw on a well-formed event.
 //
 // Nothing here asserts. It prints what happened and leaves the judgement to
-// the person reading it, because the point is to SEE the failure rather than
-// to be told a test passed. The transcript belongs in WEBHOOK-FAILURE.md.
-//
-// It cleans up after itself: the booking is put back the way it was found and
-// the rows it created are removed, so it can be run repeatedly.
+// the person reading it, because the point is to SEE it rather than to be
+// told a test passed. The transcript belongs in WEBHOOK-FAILURE.md.
 
 import crypto from 'node:crypto';
 import {
@@ -47,10 +52,6 @@ const SITE = await resolveTarget({
     envNames: ['WEBHOOK_FAULT_SITE'],
     fallback: LOCAL_URL,
 });
-
-const args = process.argv.slice(2);
-const stageArg = args.includes('--stage') ? args[args.indexOf('--stage') + 1] : null;
-const STAGES = stageArg ? [stageArg] : ['before-write', 'after-booking-update'];
 
 const log = (...a) => console.log(...a);
 const money = (v) => '£' + Number(v || 0).toFixed(2);
@@ -120,10 +121,10 @@ async function pickBooking() {
     return rows[0];
 }
 
-async function runStage(stage) {
+async function run() {
     log('');
     log('='.repeat(74));
-    log('STAGE: ' + stage);
+    log('A HANDLER THAT THROWS, ON A BOOKING THAT HAS GENUINELY BEEN PAID FOR');
     log('='.repeat(74));
 
     const target = await pickBooking();
@@ -147,7 +148,7 @@ async function runStage(stage) {
         payment_method: 'pm_card_visa',
         payment_method_types: ['card'],
         confirm: 'true',
-        description: 'webhook fault demo — ' + stage,
+        description: 'webhook fault demo',
         metadata: { booking_id: target.id, demo: 'webhook-fault' },
     });
 
@@ -160,23 +161,18 @@ async function runStage(stage) {
 
     /* --- the webhook arrives --- */
 
-    const eventId = 'evt_fault_' + stage.replace(/[^a-z]/g, '') + '_' + Date.now();
+    // A REAL malformed event, not an injected fault. `data` with no `object`
+    // on it: the handler does `const cs = event.data.object` and then reads
+    // `cs.metadata`, which throws TypeError — out of the same catch that a
+    // dropped connection or an unexpected Stripe field would come out of.
+    const eventId = 'evt_fault_' + Date.now();
     const event = {
         id: eventId,
         type: 'checkout.session.completed',
-        data: {
-            object: {
-                payment_status: 'paid',
-                amount_total: amountPence,
-                payment_intent: intent.id,
-                customer: null,
-                client_reference_id: target.id,
-                metadata: Object.assign(
-                    { booking_id: target.id, kind: 'full' },
-                    stage === 'no-fault' ? {} : { fault_stage: stage }
-                ),
-            },
-        },
+        data: {},
+        // Kept here so the transcript can say which payment this was about,
+        // even though the handler never gets far enough to read it.
+        _demo: { booking_id: target.id, payment_intent: intent.id },
     };
 
     const res = await fetch(SITE + '/api/stripe/webhook', await signedWebhook(event));
@@ -267,17 +263,9 @@ async function main() {
     log('Galloway Getaways — Stripe webhook fault demonstration');
     log('site: ' + SITE + '  (checked by scripts/target.cjs)');
     log('stripe: test mode (' + env.STRIPE_SECRET_KEY.slice(0, 12) + '…)');
-    log('note: the route only honours metadata.fault_stage when the key is sk_test_');
+    log('the throw is a real one: a malformed event, no test code in the route');
 
-    for (const stage of STAGES) {
-        if (stage === 'none') {
-            log('');
-            log('='.repeat(74));
-            log('STAGE: none — the healthy path, for comparison');
-            log('='.repeat(74));
-        }
-        await runStage(stage === 'none' ? 'no-fault' : stage);
-    }
+    await run();
 
     log('');
     log('done.');

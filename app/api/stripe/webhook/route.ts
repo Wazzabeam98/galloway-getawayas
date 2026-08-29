@@ -117,40 +117,6 @@ async function alertDirectors(
     }
 }
 
-// -------------------------------------------------------------------------
-// FAULT INJECTION — for the demonstration in WEBHOOK-FAILURE.md.
-//
-// This exists because "the handler throws and nobody finds out" is a claim
-// that should be shown rather than argued, and because the fix for it should
-// be shown working the same way. A real handler throws for reasons you cannot
-// summon on demand — a network blip to Supabase, an unexpected event shape, a
-// null where an object was assumed — so the throw is injected instead.
-//
-// IT CANNOT FIRE IN PRODUCTION. Three independent things all have to be true,
-// and two of them are not things a mistake can arrange:
-//
-//   1. The event has to carry metadata.fault_stage. Nothing we create at
-//      checkout ever sets it, so no real session has it.
-//   2. The event has to pass Stripe's signature check, which happens before
-//      any of this — so it has to come from something holding the signing
-//      secret, not from anyone who can reach the URL.
-//   3. The Stripe key has to be a TEST key. Production runs on sk_live_.
-//      This is the same guard scripts/seed-lib.mjs uses before it is allowed
-//      to touch anything, and no environment variable can turn it off.
-//
-// Delete it if you would rather not have it. scripts/webhook-fault.mjs is the
-// only thing that sets the field, and it is a demonstration, not a test — the
-// unit tests in tests/webhook-reporting.test.ts cover the same ground without
-// it.
-function injectedFault(stage: string, session: any): void {
-    const wanted = session && session.metadata && session.metadata.fault_stage;
-    if (!wanted) return;
-    if (!(process.env.STRIPE_SECRET_KEY || '').startsWith('sk_test_')) return;
-    if (wanted !== stage) return;
-
-    throw new Error('injected fault at ' + stage + ' (metadata.fault_stage)');
-}
-
 // Whatever the event was, this is the thing a person needs first: which
 // booking is now wrong. Every event shape we handle carries it somewhere
 // different, and this is called from a catch block, so it must not be able to
@@ -283,9 +249,6 @@ export async function POST(request: Request) {
 
             if (bookingId && cs.payment_status === 'paid') {
                 const amount = Number(cs.amount_total || 0) / 100;
-
-                // The guest's money is at Stripe and nothing here has run yet.
-                injectedFault('before-write', cs);
 
                 // The card is saved on the PaymentIntent, so fetch it to
                 // record what to charge for the balance later.
@@ -515,11 +478,6 @@ export async function POST(request: Request) {
 
                     return NextResponse.json({ ok: true, oversold: true, refunded: amount });
                 }
-
-                // The booking has been confirmed. The payments ledger has
-                // not been written. This is the "half its work" state that
-                // decides whether a retry is safe.
-                injectedFault('after-booking-update', cs);
 
                 const { error: ledgerError } = await admin.from('payments').insert({
                     booking_id: bookingId,

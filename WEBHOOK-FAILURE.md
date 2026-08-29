@@ -24,13 +24,12 @@ node scripts/webhook-fault.mjs --host http://localhost:3000
 ```
 
 It creates a real test-mode PaymentIntent with a test card, so Stripe has
-genuinely taken the money before the webhook is called. Then it forces a throw
-inside the handler and prints what happened to the booking, the payments
+genuinely taken the money before the webhook is called. Then it sends an event
+the handler cannot parse, and prints what happened to the booking, the payments
 ledger, `/admin/errors` and Stripe. It puts the booking back afterwards, so it
 can be run as often as you like.
 
-`--stage before-write` and `--stage after-booking-update` run one each.
-`--stage none` runs the healthy path for comparison.
+There is no test-only code in the route to make this work — see section 6.
 
 ---
 
@@ -73,6 +72,10 @@ payment". It will say that for ever. You find out when they email you.
 ## 1b. It throws after the booking is confirmed, before the ledger row
 
 The more insidious one, because it looks fine.
+
+*(Recorded when this branch still had a fault-injection hook, which has since
+been removed — see section 6. The script no longer reproduces this one. The
+same half-done state is reached a different way in `MONEY-IDEMPOTENCY.md`.)*
 
 ```
   BOOKING AFTER:
@@ -372,24 +375,28 @@ That is right: a stale URL in a comment is how the last one hid.
 
 ---
 
-# 6. The fault injection, and why it is in the route
+# 6. There is no test-only code in the route
 
-`injectedFault()` in `app/api/stripe/webhook/route.ts` is the thing that makes
-this document reproducible rather than a story. It exists because a real
-handler throws for reasons you cannot summon on demand.
+An earlier version of this branch had an `injectedFault()` hook in
+`app/api/stripe/webhook/route.ts` — inert unless the event carried a magic
+field AND the Stripe key was `sk_test_`. It was well guarded. It is gone
+anyway, at your call, and the reasoning is right: code sitting in the payment
+path purely for testing is exactly what gets forgotten and then trusted.
 
-**It cannot fire in production.** Three independent things must all be true, and
-two are not things a mistake can arrange:
+`scripts/webhook-fault.mjs` now causes a **real** throw instead, the way real
+ones are caused — an event whose shape the handler did not expect. `data` with
+no `object` on it, so the handler reads `cs.metadata` off `undefined` and a
+TypeError comes out of the same catch a dropped Supabase connection would.
 
-1. The event carries `metadata.fault_stage`. Nothing we create at checkout ever
-   sets it, so no real session has it.
-2. The event passed Stripe's signature check, which happens first — so it came
-   from something holding the signing secret.
-3. **The Stripe key is a test key.** Production runs on `sk_live_`. This is the
-   same guard `scripts/seed-lib.mjs` uses before it is allowed to touch
-   anything, and no environment variable turns it off.
+One thing that costs, and it is worth knowing: a malformed event carries no
+booking id, so its report says `booking_id: null`. A throw further in — the
+ordinary case — names the booking. That is covered in
+`tests/webhook-reporting.test.ts`, which stubs the database to throw on a
+well-formed event and asserts the booking id is in the report.
 
-If you would rather it were not there, delete the function and its two call
-sites. `tests/webhook-reporting.test.ts` covers the same behaviour without it —
-the tests force a real throw by stubbing the database, which is what the fault
-hook is standing in for on a live server.
+The transcript in section 1b, where the booking is confirmed but the ledger
+row is missing, was produced with the hook and is kept here as the record of
+what was found. It cannot be reproduced by this script any more. The state it
+shows — a handler that has done half its work — is the subject of the
+follow-up job in `MONEY-IDEMPOTENCY.md`, which reproduces it a different way
+and fixes the two bugs that make it dangerous.
