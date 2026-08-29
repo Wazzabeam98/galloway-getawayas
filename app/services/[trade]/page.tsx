@@ -1,6 +1,7 @@
 'use client';
 
 import { useEffect, useMemo, useState } from 'react';
+import { useRouter } from 'next/navigation';
 import Link from 'next/link';
 import { createClientComponentClient } from '@supabase/auth-helpers-nextjs';
 import { ShieldCheck, MapPin, Clock } from 'lucide-react';
@@ -11,6 +12,7 @@ import {
     milesBetween,
     tradeLabel,
     canBeEnquiredAbout,
+    audienceForTrade,
     calloutLine,
     capabilityFor,
     registrationVerified,
@@ -103,6 +105,36 @@ export default function TradeShopPage({ params }: { params: { trade: string } })
     const [asking, setAsking] = useState<Provider | null>(null);
 
     const known = canBeEnquiredAbout(trade);
+
+    // Guest trades are not part of the host shop, and asking canBeEnquiredAbout
+    // about a chef is the wrong question — a chef is bookable, not enquired
+    // about. A guest experience only means something with a stay behind it (a
+    // cottage, dates, who covers it), which a bare /services/chef URL does not
+    // have. So send them where they can act: their trips if they are signed in
+    // with a stay coming up, otherwise the cottages.
+    const router = useRouter();
+    const isGuestTrade = audienceForTrade(trade) === 'guest';
+
+    useEffect(() => {
+        if (!isGuestTrade) return;
+        let cancelled = false;
+        (async () => {
+            const { data: { session } } = await supabase.auth.getSession();
+            let target = '/homes';
+            if (session?.user) {
+                const today = new Date().toISOString().split('T')[0];
+                const { data: upcoming } = await supabase
+                    .from('bookings')
+                    .select('id')
+                    .eq('guest_id', session.user.id)
+                    .gte('check_out', today)
+                    .limit(1);
+                if (upcoming && upcoming.length) target = '/trips';
+            }
+            if (!cancelled) router.replace(target);
+        })();
+        return () => { cancelled = true; };
+    }, [isGuestTrade, supabase, router]);
 
     useEffect(() => {
         if (!known) { setLoading(false); return; }
@@ -198,6 +230,17 @@ export default function TradeShopPage({ params }: { params: { trade: string } })
             ).length === 0)
             .sort((a, b) => a.distance - b.distance);
     }, [providers, areas, registrations, extras, point, trade]);
+
+    if (isGuestTrade) {
+        // Redirecting (effect above). A quiet holding line rather than the host
+        // shop's "not this one yet", which would be wrong about something that
+        // is bookable.
+        return (
+            <div className="max-w-3xl mx-auto px-4 sm:px-6 py-16">
+                <p className="text-slate-500">Taking you there…</p>
+            </div>
+        );
+    }
 
     if (!known) {
         return (
