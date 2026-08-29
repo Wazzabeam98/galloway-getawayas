@@ -182,3 +182,71 @@ test('services/apply is gated before it creates anything', () => {
     assert.match(code, /GLOBAL_KEY/, 'the site-wide cap is the half that protects the mail allowance');
     assert.match(code, /429/);
 });
+
+
+/* ------------------------------ the other two public routes it now guards */
+
+function code(rel: string): string {
+    const fs = require('fs');
+    const path = require('path');
+    return fs.readFileSync(path.resolve(__dirname, '..', '..', rel), 'utf8')
+        .replace(/\/\/[^\n]*/g, '')
+        .replace(/\/\*[\s\S]*?\*\//g, '');
+}
+
+test('errors/report is limited, and stays open to signed-out callers', () => {
+    // It has to stay open: an error can happen to somebody who is not signed
+    // in, and those are the ones most worth knowing about. The limit is not
+    // about who is calling, it is about how many.
+    const body = code('app/api/errors/report/route.ts');
+    assert.match(body, /withinLimits/);
+    assert.match(body, /GLOBAL_KEY/, 'the site-wide cap is the half that bounds a flood');
+    assert.ok(!/status:\s*401/.test(body), 'it must not start requiring a session');
+});
+
+test('a throttled error report answers 200, not 429', () => {
+    // It is called from an error page, by code that has already failed once.
+    // Handing that an error status is how a broken page becomes a broken page
+    // that also retries.
+    const body = code('app/api/errors/report/route.ts');
+    assert.match(body, /throttled: true/);
+    assert.ok(!/status:\s*429/.test(body));
+});
+
+test('a refused error report does NOT write to the error log', () => {
+    // Everywhere else a refusal is reported. Here that would write a row to
+    // the very table being protected, on every refused request — the flood,
+    // with extra steps.
+    const body = code('app/api/errors/report/route.ts');
+    const refusal = body.slice(body.indexOf('if (!verdict.ok)'), body.indexOf('if (!verdict.ok)') + 260);
+    assert.ok(!/logError/.test(refusal),
+        'reporting a refusal here feeds the thing it is defending');
+});
+
+test('services/wanted is limited and still reachable signed out', () => {
+    const body = code('app/api/services/wanted/route.ts');
+    assert.match(body, /withinLimits/);
+    assert.match(body, /GLOBAL_KEY/);
+    assert.ok(!/status:\s*401/.test(body), 'a host should not have to sign in to say what they need');
+});
+
+test('a signed-in host is counted by their id, not their address', () => {
+    // Otherwise a household or an office behind one connection throttles
+    // itself, and the people most likely to be sharing an address are the
+    // ones most likely to be genuine.
+    const body = code('app/api/services/wanted/route.ts');
+    assert.match(body, /hostId \? 'services-wanted:user' : 'services-wanted:ip'/);
+});
+
+test('both routes check the limit before doing the expensive thing', () => {
+    for (const [rel, after] of [
+        ['app/api/errors/report/route.ts', 'error_log'],
+        ['app/api/services/wanted/route.ts', 'announceWanted'],
+    ]) {
+        const body = code(rel);
+        assert.ok(
+            body.indexOf('withinLimits') < body.indexOf(after),
+            rel + ' does the work before checking whether it is allowed to'
+        );
+    }
+});
