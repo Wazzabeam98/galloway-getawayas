@@ -6,7 +6,6 @@ import { createServerComponentClient } from "@supabase/auth-helpers-nextjs";
 import { cookies } from "next/headers";
 import { getImageUrl } from "@/lib/utils";
 import { publicArea } from "@/lib/places";
-import DeleteHomebtn from "@/components/DeleteHomebtn";
 import { createClient } from "@supabase/supabase-js";
 import { accessibleListings } from "@/lib/access";
 import LeaveListingBtn from "@/components/LeaveListingBtn";
@@ -104,10 +103,31 @@ function ListingCard({ item, isDraft }: { item: any; isDraft: boolean }) {
                         View
                     </Link>
                 )}
+                {/* Hide, and no Delete.
+                    
+                    There was a delete button here. It had never worked: it ran
+                    `from('listings').delete()` as the browser user, `listings`
+                    has no DELETE policy, so RLS matched nothing and PostgREST
+                    answered 204. The row stayed and the dialog closed as though
+                    it had gone — while saying "this will permanently delete
+                    your added home and remove your data from our servers".
+                    
+                    It could not simply be granted. bookings.listing_id is ON
+                    DELETE CASCADE, and from bookings the messages, reviews and
+                    booking guests cascade too, while payments and payouts are
+                    SET NULL — leaving money in the ledger that can no longer be
+                    tied to a stay. A single dispute would block the whole thing
+                    with a foreign key error. And the privacy policy promises
+                    booking and payment records are kept for six years.
+                    
+                    Hiding is what a host actually wants: off the home page, out
+                    of the sitemap, noindexed, and still open for a guest holding
+                    a booking. Removing a listing for real is rare enough to be
+                    an email — see OUTSTANDING.md, where the alternatives are
+                    costed if that stops being true. */}
                 {!isDraft && (
                     <HideListingBtn id={item.id} hidden={isHidden} title={item.title} />
                 )}
-                <DeleteHomebtn id={item.id} />
             </div>
         </div>
     );
