@@ -4,6 +4,7 @@ import { sendEmail, sendEmailToAll, recipients, emailLayout, escapeHtml, formatD
 import { adminClient } from '@/lib/supabaseAdmin';
 import { NextResponse } from 'next/server';
 import { verifyStripeSignature, stripeRequest } from '@/lib/stripe';
+import { expiryFrom } from '@/lib/serviceOrders';
 
 export const dynamic = 'force-dynamic';
 
@@ -199,6 +200,81 @@ export async function POST(request: Request) {
             const cs = event.data.object;
             const bookingId = (cs.metadata && cs.metadata.booking_id) || cs.client_reference_id;
             const kind = (cs.metadata && cs.metadata.kind) || 'full';
+
+            // A guest experience. The card is HELD, not charged — the session
+            // completing means the hold is placed, and the order now waits for
+            // the provider to confirm before a penny moves. Created here, once,
+            // because the stripe_events unique insert above dedupes redelivery.
+            if (kind === 'service_order') {
+                const md = cs.metadata || {};
+                const piId = (cs.payment_intent as string) || null;
+
+                const { data: prov } = await admin
+                    .from('service_providers')
+                    .select('id, business_name, trade, contact_email')
+                    .eq('id', md.provider_id)
+                    .maybeSingle();
+
+                const { data: guest } = await admin
+                    .from('profiles')
+                    .select('id, full_name, preferred_name, phone, email')
+                    .eq('id', md.guest_id)
+                    .maybeSingle();
+
+                const guestsNum = md.guests ? parseInt(md.guests, 10) : null;
+                const nowIso = new Date().toISOString();
+
+                const { data: order } = await admin
+                    .from('service_orders')
+                    .insert({
+                        provider_id: md.provider_id,
+                        guest_id: md.guest_id,
+                        listing_id: md.listing_id || null,
+                        booking_id: md.booking_id || null,
+                        trade: (prov && prov.trade) || null,
+                        service_date: md.service_date,
+                        guests: Number.isFinite(guestsNum as number) ? guestsNum : null,
+                        price: Number(cs.amount_total || 0) / 100,
+                        commission_rate: Number(md.commission_rate) || 0.10,
+                        status: 'authorised',
+                        guest_name: guest ? (guest.preferred_name || guest.full_name) : null,
+                        guest_phone: guest ? guest.phone : null,
+                        guest_email: (guest && guest.email) || cs.customer_details?.email || null,
+                        note: md.note || null,
+                        provider_business_name: prov ? prov.business_name : null,
+                        stripe_payment_intent_id: piId,
+                        expires_at: expiryFrom(nowIso),
+                        created_at: nowIso,
+                    })
+                    .select('id')
+                    .single();
+
+                // Tell the provider there is something to answer. Best-effort:
+                // the hold is placed whether or not the mail sends, and the
+                // provider dashboard shows it regardless.
+                try {
+                    if (prov && prov.contact_email && order) {
+                        await sendEmail(
+                            prov.contact_email,
+                            'A guest would like to book you',
+                            emailLayout(
+                                '<p>A guest staying nearby has asked to book '
+                                + escapeHtml(prov.business_name || 'your experience')
+                                + ' for ' + escapeHtml(String(md.service_date)) + '.</p>'
+                                + '<p>Their card is held, not charged. Confirm within 48 hours to '
+                                + 'take the booking; if you can’t make it, decline and the hold is '
+                                + 'released.</p>'
+                                + button(SITE_URL + '/services/join?section=orders', 'View the request'),
+                                'You’re receiving this because you offer experiences on Galloway Getaways.'
+                            )
+                        );
+                    }
+                } catch (mailErr) {
+                    console.error('[stripe/webhook] service order notify failed', mailErr);
+                }
+
+                return NextResponse.json({ ok: true });
+            }
 
             if (bookingId && cs.payment_status === 'paid') {
                 const amount = Number(cs.amount_total || 0) / 100;

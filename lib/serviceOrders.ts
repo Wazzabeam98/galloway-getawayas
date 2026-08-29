@@ -28,14 +28,23 @@ import { commissionRateFor } from '@/lib/serviceProviders';
 //
 //   chef    5811  Caterers
 //   cake    5462  Bakeries
-//   basket  5947  Gift, card, novelty & souvenir shops (hampers are gifts)
-//   paw     7299  Miscellaneous personal services (pet sitting / walking)
+//   basket  5411  Grocery stores. For a holiday let the common service is
+//                 filling the fridge before arrival, not a gift hamper — and a
+//                 hamper billed under a grocery code is unremarkable, where a
+//                 weekly shop billed under a gift-shop code is not.
+//   paw     7299  Miscellaneous personal services. A DELIBERATE catch-all —
+//                 pet sitting and dog walking have no code of their own. Do NOT
+//                 "improve" this to 0742 (that is VETERINARY services, which
+//                 these providers are not) or 5995 (that is pet RETAIL — shops,
+//                 food and supplies, also not this). 7299 is the least-wrong
+//                 and it is chosen, not overlooked.
 //
-// Best-fit starting values; the table is owned here and changed here.
+// The table is owned here and changed here, and reviewed with the owner before
+// it reaches production.
 export const TRADE_MCC: Record<string, string> = {
     chef: '5811',
     cake: '5462',
-    basket: '5947',
+    basket: '5411',
     paw: '7299',
 };
 

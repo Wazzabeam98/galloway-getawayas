@@ -27,6 +27,15 @@ alter table public.service_providers
     add column if not exists stripe_requirements_due text,
     add column if not exists stripe_updated_at timestamptz;
 
+-- The one fixed price a guest-trade provider charges for their experience.
+-- v1 is one price per provider, not a matrix — the provider says in their own
+-- words what it covers ("three-course dinner for up to six, £180") and the
+-- variability lives in that description rather than in a pricing table we would
+-- have to maintain. Nullable until they set it; a provider with no price is not
+-- live to guests regardless of Connect.
+alter table public.service_providers
+    add column if not exists experience_price numeric;
+
 comment on column public.service_providers.stripe_payouts_enabled is
     'Set from Stripe by the provider connect route. Live-to-guests needs this '
     'AND status = approved. See lib/serviceOrders.ts isLiveToGuests.';
