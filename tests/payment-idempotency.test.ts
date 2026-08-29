@@ -253,6 +253,51 @@ test('a genuine ledger failure still records the money on the booking', async ()
         'a failed ledger write must not also stop the money being recorded on the booking');
 });
 
+/* ------------------------- the case the index cannot cover */
+
+test('a balance payment with no payment intent is reported as unprotected', async () => {
+    // The index only covers rows that carry an intent id — it has to, because
+    // the balance job claims an `attempting` row before a payment intent
+    // exists. So a balance row without one is not protected, and the honest
+    // thing is to say so rather than let it look covered.
+    //
+    // Every `balance` row on production today has a null intent. They are
+    // historical and none of them are duplicates, but that is what this looks
+    // like when it happens.
+    const { route, reported } = load();
+    await route.POST(new Request('http://example.invalid/api/stripe/webhook', {
+        method: 'POST',
+        headers: { 'stripe-signature': 't=1,v1=x' },
+        body: JSON.stringify({
+            id: 'evt_no_intent',
+            type: 'checkout.session.completed',
+            data: {
+                object: {
+                    payment_status: 'paid',
+                    amount_total: 15000,
+                    payment_intent: null,
+                    customer: 'cus_1',
+                    client_reference_id: 'b-1',
+                    metadata: { booking_id: 'b-1', kind: 'balance' },
+                },
+            },
+        }),
+    }));
+
+    assert.ok(
+        reported.some((r) => /cannot be protected against being counted twice/.test(r.message)),
+        'silence here would look exactly like protection: '
+        + reported.map((r) => r.message).join(' | ')
+    );
+});
+
+test('an ordinary balance payment does not raise that warning', async () => {
+    const { route, reported } = load();
+    await route.POST(balancePaid(15000));
+
+    assert.deepEqual(reported, [], reported.map((r) => r.message).join(' | '));
+});
+
 /* ------------------------------- the full-payment path, which also redelivers */
 
 function fullyPaid(id = 'evt_full_1') {

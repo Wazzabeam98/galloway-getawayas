@@ -319,6 +319,30 @@ export async function POST(request: Request) {
                     // THIS NEEDS THAT MIGRATION APPLIED FIRST. Without the
                     // index nothing ever conflicts, alreadyCounted is never
                     // true, and this quietly goes back to double-counting.
+                    // AND IT NEEDS AN INTENT ID ON THE ROW. The index only
+                    // covers rows where stripe_payment_intent_id is not null —
+                    // it has to, because the balance job claims an `attempting`
+                    // row before a payment intent exists. So a balance row
+                    // written without one is not protected: nothing conflicts,
+                    // alreadyCounted is never true, and the double-count is
+                    // back, silently.
+                    //
+                    // Not hypothetical. Every `balance` row on production today
+                    // — three succeeded, three failed, all from mid-August —
+                    // has a null intent. They are historical and no two of them
+                    // are duplicates, but they are what this looks like when it
+                    // happens. A checkout session for a balance always carries
+                    // a payment intent, so if this ever fires something has
+                    // changed at Stripe's end and the protection is off.
+                    if (!cs.payment_intent) {
+                        await logError(
+                            '[webhook] a balance payment arrived with no payment intent, so it '
+                                + 'cannot be protected against being counted twice',
+                            { booking_id: bookingId, amount: amount, event_id: event.id },
+                            { path: 'stripe/webhook' }
+                        );
+                    }
+
                     const { error: balanceLedgerError } = await admin.from('payments').insert({
                         booking_id: bookingId,
                         kind: 'balance',
