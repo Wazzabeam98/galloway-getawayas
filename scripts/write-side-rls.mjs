@@ -469,6 +469,44 @@ async function probeDeleteRefused({ name, who, key, table, filter }) {
 
 const NIL_UUID = '00000000-0000-0000-0000-000000000000';
 
+
+// Whether the public bucket will take something that is not an image, or is
+// absurdly large.
+//
+// The overnight audit uploaded an arbitrary file to the publicly readable
+// `listings` bucket from an ordinary free account: no size limit, no MIME
+// allowlist, and an INSERT policy of `bucket_id = 'listings'`. Overwrite and
+// delete were already refused, so the loss was cost and abuse rather than a
+// host's photos — which is exactly the kind of finding that gets deprioritised
+// and then quietly reverted by somebody clearing a bucket setting.
+//
+// Uploads what it can and deletes anything that lands, with the service role,
+// before saying anything.
+async function probeUploadRefused({ name, key, filename, contentType, bytes }) {
+    const path = 'probe-' + filename;
+    const res = await fetch(URL_BASE + '/storage/v1/object/listings/' + path, {
+        method: 'POST',
+        headers: { apikey: ANON, Authorization: 'Bearer ' + key, 'Content-Type': contentType },
+        body: Buffer.alloc(bytes, 1),
+    });
+
+    if (res.ok) {
+        await fetch(URL_BASE + '/storage/v1/object/listings/' + path, {
+            method: 'DELETE',
+            headers: { apikey: SERVICE, Authorization: 'Bearer ' + SERVICE },
+        });
+        bad(name, 'it was accepted (HTTP ' + res.status + ') and has been deleted again');
+        return;
+    }
+
+    let why = String(res.status);
+    try {
+        const body = await res.json();
+        why = (body && (body.error || body.message)) || why;
+    } catch { /* not JSON */ }
+    ok(name, 'refused — ' + String(why).slice(0, 60));
+}
+
 /* ---------------------------------------------------------------- the run */
 
 async function run() {
@@ -818,6 +856,29 @@ async function run() {
             ...U, table: view, filter,
         });
     }
+
+    // ------------------------------------------------------------------
+    // Storage. The bucket is public and anybody signed in may add to it, which
+    // is correct — a host uploads their own photos. What it must not take is
+    // anything that is not an image, or anything enormous.
+    // ------------------------------------------------------------------
+    console.log('\n  putting things in the public bucket that do not belong there');
+
+    await probeUploadRefused({
+        name: 'the public bucket refuses an HTML file',
+        key: state.attackerToken,
+        filename: Date.now() + '.html',
+        contentType: 'text/html',
+        bytes: 4096,
+    });
+
+    await probeUploadRefused({
+        name: 'the public bucket refuses something enormous',
+        key: state.attackerToken,
+        filename: Date.now() + '.jpg',
+        contentType: 'image/jpeg',
+        bytes: 20 * 1024 * 1024,
+    });
 
     console.log('\n  ' + passed + ' refused, ' + failed + ' WRITABLE\n');
 
