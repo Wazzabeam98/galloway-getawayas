@@ -227,11 +227,11 @@ function load(opts: {
     stubModule('@supabase/auth-helpers-nextjs', {
         createRouteHandlerClient: () => ({
             auth: {
-                getSession: async () => ({
+                getUser: async () => ({
                     data: {
-                        session: opts.user === null
+                        user: opts.user === null
                             ? null
-                            : { user: { id: opts.user || GUEST, email: 'guest@example.invalid' } },
+                            : { id: opts.user || GUEST, email: 'guest@example.invalid' },
                     },
                 }),
             },
