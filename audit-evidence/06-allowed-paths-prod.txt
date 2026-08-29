@@ -1,0 +1,31 @@
+
+  THE ALLOWED PATHS — against PRODUCTION
+
+  every write below is copied from the deployed browser code.
+  a failure here means the site is broken for real users.
+
+  app/account/page.tsx — the six editable fields
+  ✓ a user can set their own full_name
+  ✓ a user can set their own preferred_name
+  ✓ a user can set their own phone
+  ✓ a user can set their own residential_address
+  ✓ a user can set their own avatar_url
+  ✓ a user can set their own show_full_name
+  ✓ the signup modal can still write a profile
+
+  components/BookingWidget.tsx — a guest creates a booking
+  ✓ a guest can still create a booking  (all twelve columns accepted)
+
+  components/BookingActions.tsx — the host accepts
+  ✓ a host can accept a booking on their own listing
+
+  components/LeaveReviewForm.tsx — a guest reviews their own stay
+  ✓ the actual guest can still review their own stay  (all thirteen columns accepted)
+
+  components/HostReplyBox.tsx — the host replies
+  ✓ a host can reply to a review about them
+
+  11 still work, 0 BROKEN
+
+  canary removed
+
