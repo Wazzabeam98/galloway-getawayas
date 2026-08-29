@@ -603,6 +603,16 @@ export default function AddHome() {
             }
             if (data.description) { setDescription(data.description); grabbed.push('description'); }
 
+            // The photo is fetched through our own server because the browser
+            // cannot turn a cross-origin image into a File.
+            //
+            // A failure here does not block the title and description we did
+            // get — but it is SAID now. This used to be `if (imgRes.ok)` with
+            // nothing on the else, and the route it calls did not exist, so
+            // every import 404'd here and simply arrived without a cover
+            // photo. An empty photo slot looks exactly like an empty photo
+            // slot, so nobody ever reported it.
+            let photoProblem = '';
             if (data.image) {
                 try {
                     const imgRes = await fetch(`/api/import-listing/image?url=${encodeURIComponent(data.image)}`);
@@ -612,9 +622,12 @@ export default function AddHome() {
                         setPhotos((prev) => [file, ...prev]);
                         setCoverIndex(0);
                         grabbed.push('cover photo');
+                    } else {
+                        const problem = await imgRes.json().catch(() => ({}));
+                        photoProblem = problem.error || 'the cover photo could not be fetched';
                     }
-                } catch {
-                    // Photo import failing shouldn't block the title/description we did get.
+                } catch (err) {
+                    photoProblem = 'the cover photo could not be fetched';
                 }
             }
 
@@ -623,7 +636,11 @@ export default function AddHome() {
                 return;
             }
 
-            setImportNote(`Imported ${grabbed.join(', ')} from ${data.source}. Everything else still needs filling in — review each step as you go.`);
+            setImportNote(
+                `Imported ${grabbed.join(', ')} from ${data.source}.`
+                + (photoProblem ? ` We could not bring the photo across — ${photoProblem}. Add photos yourself at the photos step.` : '')
+                + ' Everything else still needs filling in — review each step as you go.'
+            );
             setShowListingForm(true);
         } catch {
             setImportError('Something went wrong reaching that link.');
