@@ -36,6 +36,15 @@ alter table public.service_providers
 alter table public.service_providers
     add column if not exists experience_price numeric;
 
+-- The provider sets and edits their own price from the browser, so this one
+-- column is granted to authenticated — the same way the other editable
+-- provider columns are (20260827185827_provider_status_grants). The Stripe
+-- columns above are NOT: those are written only by the connect route under the
+-- service role, and a browser that could set its own stripe_payouts_enabled
+-- would hand itself the second gate.
+grant insert (experience_price), update (experience_price)
+    on table public.service_providers to authenticated;
+
 comment on column public.service_providers.stripe_payouts_enabled is
     'Set from Stripe by the provider connect route. Live-to-guests needs this '
     'AND status = approved. See lib/serviceOrders.ts isLiveToGuests.';
