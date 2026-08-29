@@ -1,0 +1,62 @@
+-- A stranger does not get to know who the admins are.
+--
+-- `profiles` has SELECT USING (true) for `public`, and `anon` was granted
+-- `is_admin` among its columns. So anyone with the site key — which is in every
+-- page's JavaScript, by design — could list which accounts run the site, by
+-- name. That is a target list: it says exactly whose password is worth
+-- guessing and whose inbox is worth phishing.
+--
+-- Nothing needs it. Every read of is_admin in the app is on an /admin page,
+-- and those run as the SIGNED-IN user (createServerComponentClient →
+-- `authenticated`), not as `anon`. Checked column by column before writing
+-- this, not assumed.
+--
+-- This is the cheap half of finding E in SECURITY-AUDIT-2026-08-29.md. The
+-- other half — `full_name` being readable even for rows with
+-- show_full_name=false — is a product decision about public bylines and is
+-- deliberately NOT in here. This one had no decision attached.
+--
+-- Pre-flight:
+--   select string_agg(column_name, ', ' order by column_name)
+--     from information_schema.column_privileges
+--    where table_name = 'profiles' and grantee = 'anon' and privilege_type = 'SELECT';
+--
+-- Safe to run twice.
+
+revoke select (is_admin) on table public.profiles from anon;
+
+-- ---------------------------------------------------------------------------
+-- AND THE LANDMINE FOUND WHILE READING THE GRANT TABLE
+-- ---------------------------------------------------------------------------
+--
+-- `anon` and `authenticated` both hold table-level DELETE, TRUNCATE, TRIGGER
+-- and REFERENCES on profiles. Left over from the default grants; nothing asks
+-- for them.
+--
+-- DELETE is inert TODAY and only by luck. RLS is on and there is no DELETE
+-- policy, so a delete matches zero rows — proven from outside with the site
+-- key: PostgREST answers **204 No Content** and removes nothing. That is the
+-- dangerous shape. The grant is already there, so the day anybody adds a
+-- permissive `FOR ALL` policy to profiles — the most natural thing in the
+-- world to write — anon can empty the table, and the 204 means they would not
+-- even see an error.
+--
+-- TRUNCATE is worse in kind and better in reach: it is NOT subject to row
+-- level security at all, so no policy would save us. It is not reachable
+-- through PostgREST, which is the only thing the site key can talk to. It
+-- should still not be granted.
+--
+-- Safe to revoke, checked rather than assumed: nothing in the application
+-- deletes a profile. Account deletion goes through the `delete_own_account`
+-- RPC, which is SECURITY DEFINER and owned by postgres, so it runs with its
+-- own privileges and does not care what the caller was granted.
+revoke delete, truncate, trigger, references on table public.profiles from anon;
+revoke delete, truncate, trigger, references on table public.profiles from authenticated;
+
+-- Read back — expect no row for is_admin:
+--   select column_name, privilege_type
+--     from information_schema.column_privileges
+--    where table_name = 'profiles' and grantee = 'anon' and column_name = 'is_admin';
+--
+-- And prove it from outside, with the anon key:
+--   select is_admin from profiles limit 1;   -- expect 42501
