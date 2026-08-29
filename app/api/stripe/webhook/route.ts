@@ -117,6 +117,19 @@ async function alertDirectors(
     }
 }
 
+// Whatever the event was, this is the thing a person needs first: which
+// booking is now wrong. Every event shape we handle carries it somewhere
+// different, and this is called from a catch block, so it must not be able to
+// throw on the way to reporting a throw.
+function bookingIdFrom(event: any): string | null {
+    try {
+        const o = (event && event.data && event.data.object) || {};
+        return (o.metadata && o.metadata.booking_id) || o.client_reference_id || null;
+    } catch (err) {
+        return null;
+    }
+}
+
 export async function POST(request: Request) {
     // The signature covers the exact bytes Stripe sent, so read the body as
     // text before anything parses it.
@@ -169,6 +182,21 @@ export async function POST(request: Request) {
         return NextResponse.json({ ok: true, duplicate: true });
     }
 
+    // Any OTHER failure to record the event was discarded. Carrying on is the
+    // right call — refusing to handle a payment because the audit row would
+    // not write is worse than handling it — but it must not be silent. With
+    // no row here the duplicate check above cannot fire, so a Stripe retry
+    // WILL run this handler a second time, and the balance branch below is
+    // not safe to run twice.
+    if (eventInsertError) {
+        await logError(
+            '[webhook] could not record the event, so a redelivery of it will be handled again '
+                + 'rather than recognised as a duplicate',
+            eventInsertError,
+            { path: 'stripe/webhook' }
+        );
+    }
+
     try {
         // -------------------------------------------------------------
         // A host finished (or changed) their Connect onboarding.
@@ -178,7 +206,17 @@ export async function POST(request: Request) {
             const due: string[] = (account.requirements && account.requirements.currently_due) || [];
             const payoutsOn = account.payouts_enabled === true;
 
-            await admin
+            // The error was discarded here. supabase-js does not throw on a
+            // failed write — it hands the error back in the result — so a
+            // failure did not reach the catch at the bottom of this function
+            // either. It reached nothing at all.
+            //
+            // What that costs: this row is how the site knows a host can be
+            // paid. If the write fails, the host finishes their Stripe
+            // onboarding, Stripe is satisfied, and the payout job goes on
+            // skipping them because our copy still says they are not set up.
+            // They chase you about a payout that was never attempted.
+            const { error: accountError } = await admin
                 .from('profiles')
                 .update({
                     stripe_charges_enabled: account.charges_enabled === true,
@@ -190,6 +228,15 @@ export async function POST(request: Request) {
                     stripe_updated_at: new Date().toISOString(),
                 })
                 .eq('stripe_account_id', account.id);
+
+            if (accountError) {
+                await logError(
+                    '[webhook] could not record a host’s Stripe account state — payouts to '
+                        + 'them will be skipped until this is put right',
+                    accountError,
+                    { path: 'stripe/webhook' }
+                );
+            }
         }
 
         // -------------------------------------------------------------
@@ -218,7 +265,21 @@ export async function POST(request: Request) {
                     // Not fatal — the guest has paid. Only the automatic
                     // balance charge needs these, and there's a pay link
                     // as a fallback.
+                    //
+                    // Reported all the same, because "not fatal" is doing a
+                    // lot of work in that sentence: without a saved card the
+                    // balance cannot be taken automatically 30 days out, so
+                    // the whole failure ladder is off for this booking and
+                    // the first anyone would know is a guest who never paid.
+                    // Whoever reads /admin/errors can go and fix the card on
+                    // file while there is still a month to do it in.
                     console.error('[stripe/webhook] could not read payment intent', err);
+                    await logError(
+                        '[webhook] could not read the payment intent, so no card was saved — '
+                            + 'the balance for this booking cannot be charged automatically',
+                        err,
+                        { path: 'stripe/webhook' }
+                    );
                 }
 
                 const { data: booking } = await admin
@@ -231,7 +292,12 @@ export async function POST(request: Request) {
                 // is already live, so only the money changes — the status and
                 // the deposit already recorded are left alone.
                 if (kind === 'balance') {
-                    await admin
+                    // NOTE FOR ANYONE CHANGING THE RETRY BEHAVIOUR. This line
+                    // ADDS to amount_paid rather than setting it, which is
+                    // correct for one delivery and wrong for two. It is the
+                    // single reason this handler cannot simply be retried —
+                    // see the catch at the bottom and WEBHOOK-FAILURE.md.
+                    const { error: balanceError } = await admin
                         .from('bookings')
                         .update({
                             payment_status: 'paid',
@@ -241,13 +307,29 @@ export async function POST(request: Request) {
                         })
                         .eq('id', bookingId);
 
-                    await admin.from('payments').insert({
+                    if (balanceError) {
+                        await logError(
+                            '[webhook] a guest paid their balance and the booking could not be updated',
+                            balanceError,
+                            { path: 'stripe/webhook', userId: (booking && booking.guest_id) || undefined }
+                        );
+                    }
+
+                    const { error: balanceLedgerError } = await admin.from('payments').insert({
                         booking_id: bookingId,
                         kind: 'balance',
                         amount: amount,
                         status: 'succeeded',
                         stripe_payment_intent_id: cs.payment_intent || null,
                     });
+
+                    if (balanceLedgerError) {
+                        await logError(
+                            '[webhook] a balance payment is missing from the payments ledger',
+                            balanceLedgerError,
+                            { path: 'stripe/webhook' }
+                        );
+                    }
 
                     return NextResponse.json({ ok: true });
                 }
@@ -330,13 +412,22 @@ export async function POST(request: Request) {
                         'oversold-' + cs.payment_intent
                     );
 
-                    await admin.from('payments').insert({
+                    const { error: refundLedgerError } = await admin.from('payments').insert({
                         booking_id: bookingId,
                         kind: 'refund',
                         amount: amount,
                         status: 'succeeded',
                         stripe_payment_intent_id: cs.payment_intent,
                     });
+
+                    if (refundLedgerError) {
+                        await logError(
+                            '[webhook] an oversold booking was refunded at Stripe but the refund is '
+                                + 'missing from the payments ledger',
+                            refundLedgerError,
+                            { path: 'stripe/webhook' }
+                        );
+                    }
 
                     // Only now, with the money on its way back.
                     await admin
@@ -388,13 +479,26 @@ export async function POST(request: Request) {
                     return NextResponse.json({ ok: true, oversold: true, refunded: amount });
                 }
 
-                await admin.from('payments').insert({
+                const { error: ledgerError } = await admin.from('payments').insert({
                     booking_id: bookingId,
                     kind: kind,
                     amount: amount,
                     status: 'succeeded',
                     stripe_payment_intent_id: cs.payment_intent || null,
                 });
+
+                // The booking says the guest paid and the ledger does not.
+                // Nothing visible breaks — the guest has their stay — so this
+                // would be found at the year end, in the accounts, by which
+                // time nobody can say what happened.
+                if (ledgerError) {
+                    await logError(
+                        '[webhook] a booking was confirmed but the payment is missing from the '
+                            + 'payments ledger',
+                        ledgerError,
+                        { path: 'stripe/webhook' }
+                    );
+                }
             }
         }
 
@@ -497,7 +601,7 @@ export async function POST(request: Request) {
                     .maybeSingle();
 
                 if (!already) {
-                    await admin.from('payments').insert({
+                    const { error: failedRowError } = await admin.from('payments').insert({
                         booking_id: bookingId,
                         kind: (pi.metadata && pi.metadata.kind) || 'balance',
                         amount: Number(pi.amount || 0) / 100,
@@ -505,13 +609,60 @@ export async function POST(request: Request) {
                         stripe_payment_intent_id: pi.id,
                         failure_reason: reason,
                     });
+
+                    // The balance job reads the most recent failed row back to
+                    // decide how long the guest gets before the booking is
+                    // called off. A failure to write it does not stop the
+                    // ladder — it makes the ladder count from the wrong place.
+                    if (failedRowError) {
+                        await logError(
+                            '[webhook] could not record a failed payment — the balance failure '
+                                + 'ladder for this booking may count from the wrong point',
+                            failedRowError,
+                            { path: 'stripe/webhook' }
+                        );
+                    }
                 }
             }
         }
     } catch (err: any) {
         console.error('[stripe/webhook] handler failed:', event.type, err && err.message);
-        // Still return 200 — the event is logged, and reporting a failure
-        // just makes Stripe retry a broken handler forever.
+
+        // STILL 200, AND THAT IS DELIBERATE. See WEBHOOK-FAILURE.md for the
+        // run that settles it, but briefly:
+        //
+        //   Returning 500 would not fix anything. The stripe_events row above
+        //   is written BEFORE this try block, so Stripe's retry arrives, hits
+        //   the duplicate check, and is answered 200 without the handler
+        //   running at all. Measured: the booking was still pending_payment
+        //   after the retry.
+        //
+        //   And if that were changed so a retry did re-run, the retry would
+        //   not be safe. The balance branch ADDS to amount_paid rather than
+        //   setting it, and `payments` has no unique key on the payment
+        //   intent — checked by inserting the same row twice, which the
+        //   database accepted. A retry over a partial write double-counts
+        //   money. That is worse than the failure it is trying to repair.
+        //
+        // So the answer is not a retry. It is that somebody finds out within
+        // minutes instead of when the guest emails. console.error is a Vercel
+        // log nobody reads; this reaches /admin/errors and the 8am digest.
+        //
+        // The event id is in here on purpose: it is what you need to find the
+        // event in Stripe, and to clear the stripe_events row by hand if you
+        // decide to replay it after fixing the cause.
+        await logError(
+            '[webhook] handler threw on ' + event.type + ' — the event is recorded as delivered '
+                + 'and nothing was retried',
+            {
+                event_id: event.id,
+                event_type: event.type,
+                message: (err && err.message) || String(err),
+                stack: err && err.stack,
+                booking_id: bookingIdFrom(event),
+            },
+            { path: 'stripe/webhook' }
+        );
     }
 
     return NextResponse.json({ ok: true });
