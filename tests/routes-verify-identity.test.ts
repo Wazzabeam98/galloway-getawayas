@@ -96,13 +96,11 @@ test('the routes that were fixed stayed fixed', () => {
         'app/api/address/autocomplete/route.ts',
         'app/api/address/get/route.ts',
         'app/api/booking-guests/accept/route.ts',
-        'app/api/bookings/pending-count/route.ts',
         'app/api/errors/report/route.ts',
         'app/api/listing-access/accept/route.ts',
         'app/api/message-templates/coverage/route.ts',
         'app/api/messages/mark-read/route.ts',
         'app/api/messages/mark-unread/route.ts',
-        'app/api/messages/unread-count/route.ts',
         'app/api/my-listings/route.ts',
     ];
 
@@ -121,9 +119,8 @@ test('a signed-out caller is refused rather than treated as nobody in particular
     // that is now always defined — turns the guard off without changing what
     // it looks like.
     for (const r of [
-        'app/api/messages/unread-count/route.ts',
         'app/api/my-listings/route.ts',
-        'app/api/bookings/pending-count/route.ts',
+        'app/api/badges/route.ts',
     ]) {
         const body = code(path.join(ROOT, r));
         assert.match(body, /if \(!user\)/, r + ' does not refuse a signed-out caller');

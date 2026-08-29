@@ -55,7 +55,7 @@ test('no component fetches a count endpoint directly', () => {
             if (!/\.tsx?$/.test(name)) continue;
             if (rel === 'components/base/useBadgeCounts.ts') continue;
             const body = code(rel);
-            if (/fetch\(['"`]\/api\/(badges|messages\/unread-count|bookings\/pending-count)/.test(body)) {
+            if (/fetch\(['"`]\/api\/badges/.test(body)) {
                 offenders.push(rel);
             }
         }
@@ -109,24 +109,21 @@ test('BookingActions can still announce a change', () => {
 
 /* ------------------------------------------- the rule that had no test */
 
-test('the archived-conversation rule lives in one place now', () => {
-    // It was the body of the unread-count route, which is why it had no test:
-    // it was in a route handler. Both callers use the same copy.
+test('the archived-conversation rule lives in one place', () => {
+    // It was the body of the unread-count route, which is why it had no test —
+    // a rule in a route handler is a rule nothing can reach. That route is
+    // gone now; the rule is in lib/badgeCounts and /api/badges calls it.
     assert.match(code('app/api/badges/route.ts'), /unreadFor/);
-    assert.match(code('app/api/messages/unread-count/route.ts'), /unreadFor/);
-    assert.ok(!/isArchived/.test(code('app/api/messages/unread-count/route.ts')),
-        'the route has its own copy of the rule again');
+    assert.match(code('lib/badgeCounts.ts'), /isArchived/,
+        'the rule has left lib/badgeCounts — where did it go?');
+    assert.ok(!/isArchived/.test(code('app/api/badges/route.ts')),
+        'the route has grown its own copy of the rule');
 });
 
-test('the superseded routes still answer, for one deploy', () => {
-    // A browser holding the previous bundle keeps polling the old addresses
-    // until it reloads. 404ing at it would freeze that tab's badge for no
-    // reason. These are deletable once no old client can still be open.
-    for (const rel of [
-        'app/api/messages/unread-count/route.ts',
-        'app/api/bookings/pending-count/route.ts',
-    ]) {
-        assert.ok(fs.existsSync(path.join(ROOT, rel)), rel + ' has gone too early');
-        assert.match(code(rel), /getUser\(\)/, rel + ' stopped verifying the caller');
-    }
-});
+// The test that used to sit here pinned /api/messages/unread-count and
+// /api/bookings/pending-count alive "for one deploy", so a browser holding the
+// pre-/api/badges bundle kept its badge working until it reloaded. That deploy
+// has been out since 29 August; the routes are deleted and this went with them,
+// deliberately, in the same commit — rather than being left to fail later and
+// get patched by somebody who did not know why it was there.
+
