@@ -51,6 +51,11 @@
 import fs from 'node:fs';
 import pg from 'pg';
 import { loadEnv, TEST_PROJECT_REF } from './seed-lib.mjs';
+import { createRequire } from 'node:module';
+
+// .cjs for the same reason scripts/target.cjs is: the test suite is CommonJS
+// and on Node 20 CommonJS cannot require an ESM file.
+const { classify } = createRequire(import.meta.url)('./sqlRisk.cjs');
 
 // galloway-getaways-test. Production is hviwjxigqivjfhmhpjiy, named
 // supabase-pink-elephant, and is not this script's business.
@@ -190,39 +195,11 @@ if (!file && !inlineSql) {
 
 const sql = inlineSql ?? fs.readFileSync(file, 'utf8');
 
-// Comments and quoted strings are stripped before scanning, so a statement
-// described in a comment is not mistaken for one being run — this folder's
-// migrations quote their own old constraints in the header.
-const bare = sql
-    .replace(/--[^\n]*/g, ' ')
-    .replace(/\/\*[\s\S]*?\*\//g, ' ')
-    .replace(/'[^']*'/g, "''")
-    .replace(/\$\$[\s\S]*?\$\$/g, ' $$body$$ ')
-    .toLowerCase();
-
-const LOSES_DATA = [
-    [/\bdrop\s+table\b/, 'drop table'],
-    [/\bdrop\s+schema\b/, 'drop schema'],
-    [/\bdrop\s+database\b/, 'drop database'],
-    [/\bdrop\s+owned\b/, 'drop owned'],
-    [/\btruncate\b/, 'truncate'],
-    [/\balter\s+table[\s\S]{0,120}?\bdrop\s+column\b/, 'drop column'],
-    [/\bdelete\s+from\b(?![\s\S]{0,200}?\bwhere\b)/, 'delete without a where'],
-];
-
-const STRUCTURAL = [
-    [/\bdrop\s+policy\b/, 'drop policy'],
-    [/\bdrop\s+constraint\b/, 'drop constraint'],
-    [/\bdrop\s+function\b/, 'drop function'],
-    [/\bdrop\s+trigger\b/, 'drop trigger'],
-    [/\bdrop\s+index\b/, 'drop index'],
-    [/\brevoke\b/, 'revoke'],
-];
-
-const destructive = LOSES_DATA.filter(([re]) => re.test(bare)).map(([, name]) => name);
-const structural = STRUCTURAL.filter(([re]) => re.test(bare)).map(([, name]) => name);
-
-const writes = /\b(insert|update|delete|alter|create|drop|grant|revoke|truncate)\b/.test(bare);
+// What this SQL would do — see scripts/sqlRisk.cjs. It lives there rather than
+// here because the only way to test it in this file was to run this script,
+// which needs .env.local; the tests passed locally and failed in CI, which is
+// no test at all for a rule that decides whether a migration may drop a table.
+const { destructive, structural, writes, bare } = classify(sql);
 
 if (inlineSql && writes && !flag('apply')) {
     die('--sql is for reading. That query writes; put it in a migration file and use --apply.');
