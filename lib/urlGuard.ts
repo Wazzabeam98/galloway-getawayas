@@ -40,15 +40,38 @@ export const ALLOWED_IMPORT_DOMAINS = [
     'booking.com',
 ] as const;
 
-export function isAllowedImportHost(hostname: string): boolean {
+// Where the cover photo actually lives. An og:image on an Airbnb page points
+// at their CDN, not at airbnb.com, so the page allowlist would refuse every
+// image — which is not a security decision, it is a broken feature.
+//
+// Kept as its own list rather than folded into the one above: these hosts
+// serve images to anyone and are not where a listing page lives, so widening
+// one must not silently widen the other.
+export const ALLOWED_IMPORT_IMAGE_DOMAINS = [
+    'muscache.com',     // Airbnb's image CDN
+    'bstatic.com',      // Booking.com's image CDN
+    'airbnb.com',
+    'airbnb.co.uk',
+    'booking.com',
+] as const;
+
+export function isAllowedHost(hostname: string, domains: readonly string[]): boolean {
     const host = String(hostname || '').toLowerCase().replace(/\.$/, '');
     if (!host) return false;
 
-    for (const domain of ALLOWED_IMPORT_DOMAINS) {
+    for (const domain of domains) {
         if (host === domain) return true;
         if (host.endsWith('.' + domain)) return true;
     }
     return false;
+}
+
+export function isAllowedImportHost(hostname: string): boolean {
+    return isAllowedHost(hostname, ALLOWED_IMPORT_DOMAINS);
+}
+
+export function isAllowedImportImageHost(hostname: string): boolean {
+    return isAllowedHost(hostname, ALLOWED_IMPORT_IMAGE_DOMAINS);
 }
 
 // Address ranges the server must never be talked into fetching. Written out
@@ -127,8 +150,9 @@ export interface UrlVerdict {
  * need to control DNS for a real Airbnb or Booking.com name, and anyone who
  * has that has better targets than this route.
  */
-export async function checkImportUrl(
+export async function checkUrlAgainst(
     raw: string,
+    domains: readonly string[],
     resolve?: (host: string) => Promise<{ address: string; family: number }[]>
 ): Promise<UrlVerdict> {
     const lookup = resolve || function (host: string) {
@@ -146,7 +170,7 @@ export async function checkImportUrl(
         return { ok: false, reason: 'That link needs to start with https.' };
     }
 
-    if (!isAllowedImportHost(target.hostname)) {
+    if (!isAllowedHost(target.hostname, domains)) {
         return { ok: false, reason: 'Please use an Airbnb or Booking.com listing link.' };
     }
 
@@ -170,4 +194,24 @@ export async function checkImportUrl(
     }
 
     return { ok: true };
+}
+
+/** A listing page the host pasted. */
+export async function checkImportUrl(
+    raw: string,
+    resolve?: (host: string) => Promise<{ address: string; family: number }[]>
+): Promise<UrlVerdict> {
+    return checkUrlAgainst(raw, ALLOWED_IMPORT_DOMAINS, resolve);
+}
+
+/** The cover photo named by that page's og:image. */
+export async function checkImportImageUrl(
+    raw: string,
+    resolve?: (host: string) => Promise<{ address: string; family: number }[]>
+): Promise<UrlVerdict> {
+    const verdict = await checkUrlAgainst(raw, ALLOWED_IMPORT_IMAGE_DOMAINS, resolve);
+    if (!verdict.ok && verdict.reason && /listing link/.test(verdict.reason)) {
+        return { ok: false, reason: 'That photo is hosted somewhere we do not fetch from.' };
+    }
+    return verdict;
 }

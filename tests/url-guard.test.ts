@@ -19,9 +19,12 @@ installAliases();
 /* eslint-disable @typescript-eslint/no-var-requires */
 const {
     isAllowedImportHost,
+    isAllowedImportImageHost,
     isPrivateAddress,
     checkImportUrl,
+    checkImportImageUrl,
     ALLOWED_IMPORT_DOMAINS,
+    ALLOWED_IMPORT_IMAGE_DOMAINS,
 } = require('@/lib/urlGuard');
 
 // A stand-in for DNS, so these tests never touch the network.
@@ -224,4 +227,95 @@ test('the allowed list is short and deliberate', () => {
     // server's reach and should have to say so in a diff.
     assert.ok(ALLOWED_IMPORT_DOMAINS.length <= 6,
         'adding a domain here widens what the server can be made to fetch');
+});
+
+/* ------------------------------------------------------- the cover photo */
+
+// The image lives on a CDN, not on airbnb.com, so it needs its own list —
+// and its own list is a second thing that can be got wrong the same way.
+
+test('the image CDNs are allowed', () => {
+    assert.equal(isAllowedImportImageHost('a0.muscache.com'), true);
+    assert.equal(isAllowedImportImageHost('cf.bstatic.com'), true);
+    assert.equal(isAllowedImportImageHost('q-xx.bstatic.com'), true);
+});
+
+test('the same substring bypasses are refused on images', () => {
+    assert.equal(isAllowedImportImageHost('muscache.com.evil.net'), false);
+    assert.equal(isAllowedImportImageHost('notmuscache.com'), false);
+    assert.equal(isAllowedImportImageHost('bstatic.com.attacker.example'), false);
+    assert.equal(isAllowedImportImageHost('169.254.169.254'), false);
+});
+
+test('the two allowlists stay separate', () => {
+    // A page is not an image host and an image host is not a page. Widening
+    // one must not silently widen the other.
+    assert.equal(isAllowedImportHost('a0.muscache.com'), false,
+        'the page fetcher must not accept a CDN');
+    assert.equal(ALLOWED_IMPORT_DOMAINS.includes('muscache.com' as any), false);
+    assert.ok(ALLOWED_IMPORT_IMAGE_DOMAINS.length <= 8,
+        'adding a host here widens what the server can be made to fetch');
+});
+
+test('an image on a private address is refused', async () => {
+    const v = await checkImportImageUrl(
+        'https://a0.muscache.com/im/pictures/x.jpg',
+        resolves({ address: '169.254.169.254', family: 4 })
+    );
+    assert.equal(v.ok, false);
+});
+
+test('a normal cover photo passes', async () => {
+    const v = await checkImportImageUrl('https://a0.muscache.com/im/pictures/x.jpg', publicV4);
+    assert.equal(v.ok, true);
+});
+
+test('the refusal for an image says it is about a photo', async () => {
+    // The page route's wording ("use an Airbnb or Booking.com listing link")
+    // is nonsense when what was refused is an image host, and a host reading
+    // it would go and re-paste a link that was fine.
+    const v = await checkImportImageUrl('https://evil.example/x.jpg', publicV4);
+    assert.equal(v.ok, false);
+    assert.match(v.reason, /photo/);
+});
+
+/* ------------------------------------------- the route that did not exist */
+
+test('the image route exists', () => {
+    // The client has been calling it all along; there was no such file, so
+    // every import 404'd here and arrived with no cover photo.
+    const fs = require('fs');
+    const path = require('path');
+    assert.ok(
+        fs.existsSync(path.resolve(__dirname, '..', '..', 'app/api/import-listing/image/route.ts')),
+        'app/addhome/page.tsx fetches /api/import-listing/image — it has to be there'
+    );
+});
+
+test('the image route guards, verifies and bounds what it fetches', () => {
+    const fs = require('fs');
+    const path = require('path');
+    const raw = fs.readFileSync(
+        path.resolve(__dirname, '..', '..', 'app/api/import-listing/image/route.ts'),
+        'utf8'
+    );
+    const code = raw.replace(/\/\/[^\n]*/g, '').replace(/\/\*[\s\S]*?\*\//g, '');
+
+    assert.match(code, /checkImportImageUrl/, 'it proxies a caller-supplied URL — it must be guarded');
+    assert.match(code, /getUser\(\)/, 'and must not trust getSession');
+    assert.ok(!/getSession\(\)/.test(code));
+    assert.match(code, /redirect:\s*'manual'/, 'a redirect would walk past the allowlist');
+    assert.match(code, /image\//, 'it must refuse a non-image content type');
+    assert.match(code, /MAX_BYTES/, 'it must bound the size it will proxy');
+});
+
+test('the client no longer swallows a failed cover photo', () => {
+    const fs = require('fs');
+    const path = require('path');
+    const body = fs.readFileSync(
+        path.resolve(__dirname, '..', '..', 'app/addhome/page.tsx'),
+        'utf8'
+    );
+    assert.match(body, /photoProblem/,
+        'a photo that did not arrive has to be said out loud — an empty slot looks like an empty slot');
 });

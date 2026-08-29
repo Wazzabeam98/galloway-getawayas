@@ -1,85 +1,30 @@
-import { isArchived } from '@/lib/conversations';
 import { createRouteHandlerClient } from '@supabase/auth-helpers-nextjs';
 import { cookies } from 'next/headers';
 import { NextResponse } from 'next/server';
+import { unreadFor } from '@/lib/badgeCounts';
 
 export const dynamic = 'force-dynamic';
 
 // Just the number, for the badge in the menu.
 //
-// Kept separate from the threads route on purpose: that one builds the whole
-// inbox, and the menu is on every page.
+// SUPERSEDED BY /api/badges, WHICH ANSWERS THIS AND THE PENDING COUNT IN ONE
+// REQUEST. Nothing in this repo calls it any more. It is kept, thin, for the
+// length of one deploy: a browser with the previous bundle open goes on
+// polling this address until it reloads, and 404ing at it would freeze that
+// tab's badge for no reason. Delete it once no old client can still be open.
 //
-// Archived conversations are left out, so this agrees with the list. The
-// common case costs exactly what it used to — one counting query — because
-// almost nobody has anything archived, and the extra work only happens when
-// they do.
+// The counting itself is lib/badgeCounts — one copy, so this and /api/badges
+// cannot drift on the archived-conversation rule.
 export async function GET() {
     const supabase = createRouteHandlerClient({ cookies });
-    // getUser(), not getSession(). getSession() only decodes the auth
-    // cookie — it never checks the signature — so the id below would be
-    // whatever the caller wrote in it. getUser() asks the auth server,
-    // which verifies the token and that the session has not been revoked.
+    // getUser(), not getSession(). getSession() only decodes the auth cookie —
+    // it never checks the signature — so the id below would be whatever the
+    // caller wrote in it.
     const { data: { user } } = await supabase.auth.getUser();
 
     if (!user) {
         return NextResponse.json({ unread: 0 });
     }
 
-    const uid = user.id;
-
-    const { count } = await supabase
-        .from('messages')
-        .select('id', { count: 'exact', head: true })
-        .eq('recipient_id', uid)
-        .is('read_at', null);
-
-    const total = count || 0;
-
-    if (total === 0) {
-        return NextResponse.json({ unread: 0 });
-    }
-
-    const { data: archivedPrefs } = await supabase
-        .from('conversation_prefs')
-        .select('booking_id, archived_at')
-        .eq('user_id', uid)
-        .not('archived_at', 'is', null);
-
-    if (!archivedPrefs || archivedPrefs.length === 0) {
-        return NextResponse.json({ unread: total });
-    }
-
-    const archivedIds = archivedPrefs.map((p: any) => p.booking_id);
-
-    // Every message addressed to this person in those conversations, read ones
-    // included. A read message that arrived after they archived it has already
-    // brought the conversation back, and once it is back its older unread
-    // messages have to be counted again too.
-    const { data: inbound } = await supabase
-        .from('messages')
-        .select('booking_id, created_at, read_at')
-        .eq('recipient_id', uid)
-        .in('booking_id', archivedIds);
-
-    const lastInbound: Record<string, string> = {};
-    const unreadPer: Record<string, number> = {};
-
-    (inbound || []).forEach((m: any) => {
-        if (!lastInbound[m.booking_id] || m.created_at > lastInbound[m.booking_id]) {
-            lastInbound[m.booking_id] = m.created_at;
-        }
-        if (!m.read_at) {
-            unreadPer[m.booking_id] = (unreadPer[m.booking_id] || 0) + 1;
-        }
-    });
-
-    let hidden = 0;
-    archivedPrefs.forEach((p: any) => {
-        if (isArchived(p.archived_at, lastInbound[p.booking_id])) {
-            hidden += unreadPer[p.booking_id] || 0;
-        }
-    });
-
-    return NextResponse.json({ unread: Math.max(0, total - hidden) });
+    return NextResponse.json({ unread: await unreadFor(supabase, user.id) });
 }
