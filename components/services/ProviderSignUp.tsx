@@ -1261,19 +1261,16 @@ function ApplicationForm() {
             // Only reachable with email confirmation switched OFF. The
             // email-flow client keeps no session of its own, so hand it to the
             // auth-helpers client, which owns the cookies the rest of the site
-            // reads — including the upsert immediately below, which needs to be
+            // reads — including the update immediately below, which needs to be
             // authenticated as this user for the row policy to allow it.
             await supabase.auth.setSession(data.session);
 
-            await supabase.from('profiles').upsert(
-                {
-                    id: data.session.user.id,
-                    email: email,
-                    full_name: businessName.trim(),
-                    is_host: false,
-                },
-                { onConflict: 'id' }
-            );
+            // UPDATE, NOT UPSERT — see components/auth/SignupModel.tsx for
+            // why. The row already exists; the upsert needed SELECT on email
+            // and had been failing since 20260828234003.
+            await supabase.from('profiles')
+                .update({ full_name: businessName.trim() })
+                .eq('id', data.session.user.id);
 
             setSession(data.session);
             return data.session;

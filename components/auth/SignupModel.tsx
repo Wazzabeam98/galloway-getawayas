@@ -125,17 +125,18 @@ const SignupModel = () => {
                 // worked and leave them signed out.
                 await supabase.auth.setSession(data.session);
 
+                // UPDATE, NOT UPSERT. add_profile_for_new_user has already
+                // created this row from the auth record — id, email, full_name
+                // and is_host — so there is nothing to insert. The upsert also
+                // needed SELECT on email, which 20260828234003 revoked, so it
+                // had been failing silently since that migration landed.
+                //
+                // Only the name is written: email belongs to the trigger, and
+                // is_host already defaults to false there.
                 const { error: profileError } = await supabase
                     .from('profiles')
-                    .upsert(
-                        {
-                            id: data.session.user.id,
-                            email: payload.email,
-                            full_name: payload.name,
-                            is_host: false,
-                        },
-                        { onConflict: 'id' }
-                    );
+                    .update({ full_name: payload.name })
+                    .eq('id', data.session.user.id);
 
                 if (profileError) {
                     console.error('Profile insertion error:', profileError.message);

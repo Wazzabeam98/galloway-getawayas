@@ -231,19 +231,29 @@ export default function AccountSettings() {
         if (!session?.user) return;
         setSaving(true);
 
-        // Upsert instead of update: if this account's profiles row was never
-        // created (e.g. signup's insert got blocked before email confirmation),
-        // this creates it instead of silently updating a row that doesn't exist.
+        // UPDATE, NOT UPSERT, AND NOT WRITING email.
+        //
+        // This was an upsert on the reasoning that the profiles row might not
+        // exist. It always does: add_profile_for_new_user is an AFTER INSERT
+        // trigger on auth.users and creates it with id, email, full_name and
+        // is_host before anybody can reach this page.
+        //
+        // The upsert was not merely redundant, it was broken. PostgREST
+        // compiles it to INSERT ... ON CONFLICT DO UPDATE, which needs SELECT
+        // on every column it writes — and 20260828234003 revoked table-level
+        // SELECT on profiles, leaving email, phone and residential_address
+        // unreadable on purpose. So every save here failed with
+        // "permission denied for table profiles" from the moment that
+        // migration reached production.
+        //
+        // An update needs only UPDATE on the column, which
+        // 20260829010000 grants for exactly the six fields this page edits.
+        // email is dropped from the payload because it is the trigger's to
+        // write and was only ever here to satisfy the upsert.
         const { error } = await supabase
             .from('profiles')
-            .upsert(
-                {
-                    id: session.user.id,
-                    email: session.user.email,
-                    [field.key]: draftValue,
-                },
-                { onConflict: 'id' }
-            );
+            .update({ [field.key]: draftValue })
+            .eq('id', session.user.id);
 
         setSaving(false);
 
@@ -267,10 +277,8 @@ export default function AccountSettings() {
 
         const { error } = await supabase
             .from('profiles')
-            .upsert(
-                { id: session.user.id, email: session.user.email, residential_address: combined },
-                { onConflict: 'id' }
-            );
+            .update({ residential_address: combined })
+            .eq('id', session.user.id);
 
         setSaving(false);
 
@@ -407,10 +415,8 @@ export default function AccountSettings() {
 
         const { error } = await supabase
             .from('profiles')
-            .upsert(
-                { id: session.user.id, email: session.user.email, avatar_url: path },
-                { onConflict: 'id' }
-            );
+            .update({ avatar_url: path })
+            .eq('id', session.user.id);
 
         setUploadingAvatar(false);
 
@@ -430,10 +436,8 @@ export default function AccountSettings() {
 
         const { error } = await supabase
             .from('profiles')
-            .upsert(
-                { id: session.user.id, email: session.user.email, avatar_url: null },
-                { onConflict: 'id' }
-            );
+            .update({ avatar_url: null })
+            .eq('id', session.user.id);
 
         setUploadingAvatar(false);
         if (error) {
@@ -453,10 +457,8 @@ export default function AccountSettings() {
 
         const { error } = await supabase
             .from('profiles')
-            .upsert(
-                { id: session.user.id, email: session.user.email, show_full_name: next },
-                { onConflict: 'id' }
-            );
+            .update({ show_full_name: next })
+            .eq('id', session.user.id);
 
         setSavingPrivacy(false);
 
