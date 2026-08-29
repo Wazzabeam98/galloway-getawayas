@@ -74,6 +74,20 @@ export default function ServicesPage() {
                 We take nothing from the job. Whatever you agree is between you and them.
             </p>
 
+            {/* The signpost. This shop is one half of the idea; the other half
+                — what a guest books during a stay — lives somewhere else
+                entirely, and people (including the person who asked for this
+                line) come here looking for it. Said once, plainly, with a way
+                across. */}
+            <div className="rounded-xl border border-slate-200 bg-slate-50 p-4 mb-10 text-sm text-slate-600">
+                This is for hiring tradespeople for your own property. Looking for what your{' '}
+                <span className="font-medium text-slate-800">guests</span> can book during a stay —
+                a private chef, a welcome hamper, pet care?{' '}
+                <Link href="/trips" className="text-emerald-700 font-semibold underline hover:text-emerald-800">
+                    Those are offered to guests on their trip page.
+                </Link>
+            </div>
+
             <TradeTileGrid>
                 {live.map((trade) => (
                     <TradeTile
