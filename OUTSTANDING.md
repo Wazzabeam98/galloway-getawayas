@@ -1,6 +1,6 @@
 # What's left
 
-29 August 2026, second pass. One list — everything still open from the
+29 August 2026, third pass. One list — everything still open from the
 overnight security audit, everything flagged during the site audit, and
 everything that surfaced while fixing the first six.
 
@@ -8,7 +8,7 @@ everything that surfaced while fixing the first six.
 copied forward: a stale list is worse than no list, which is why this one has
 been rewritten rather than ticked.
 
-Live on production: `34129ae`. Tests **891** pass.
+Live on production: `8a3815a`. Tests **894** pass.
 
 ---
 
@@ -25,6 +25,9 @@ rather than assumed from a green build.
 | `is_admin` readable by anyone with the site key | `4a82273` |
 | `select('*')` on `reviews`, on the public listing page | `8604998` |
 | Every page without a canonical claimed to be the home page | `34129ae` |
+| DELETE and TRUNCATE granted to both browser roles on every table, and on three auto-updatable views | `03d1c4f` |
+| `rate_limit_hits` grew for ever; a bare `.select()` on a profiles write returned 403 | `7bbbcb9` |
+| The two superseded count endpoints, deleted with the test that held them | `8a3815a` |
 
 Two of those came out differently from how this list described them, and the
 difference is the useful part:
@@ -38,88 +41,96 @@ difference is the useful part:
 
 ---
 
-# 1. New, found while doing those six
+# 1. Needs a decision from you
 
-### A. Every table grants DELETE and TRUNCATE to `anon` and `authenticated` — MEDIUM
+### "Delete my home" has never worked, and cannot simply be made to
 
-Found while revoking `is_admin`. It is not just `profiles`: **every table in
-`public`**, including `payments`, `payouts`, `bookings`, `messages` and
-`error_log`.
+`components/DeleteHomebtn.tsx` deletes from `listings` as the browser user,
+discards the result, and calls `router.refresh()`. `listings` has no DELETE
+policy, so RLS matches nothing: PostgREST answers **204**, the row stays, and
+the dialog closes as though it worked.
 
-This is the Supabase default (`grant all on all tables … to anon, authenticated`),
-so it is unsurprising — and it means the only thing standing between a stranger
-and a delete is each table happening to have no DELETE policy.
+The dialog says:
 
-**Not exploitable today, and I checked rather than assumed.** Every
-DELETE-capable policy that exists requires `auth.uid()`, so `anon` matches zero
-rows, and `authenticated` matches only its own. On the money tables —
-`payments`, `payouts`, `bookings` — there is no DELETE policy at all, so a
-delete matches nothing. PostgREST answers **204 No Content** and removes
-nothing.
+> This action cannot be undone. This will permanently delete your added home
+> and remove your data from our servers.
 
-**That 204 is the problem.** The grant is already in place, so the day anybody
-adds a permissive `FOR ALL` policy to one of those tables — the most natural
-thing in the world to write — the delete starts working, silently, with no
-error to notice.
+None of that happens. Proven on the test project — created a listing, deleted
+it as its owner, got 204, listing still there.
 
-The fix is a grant sweep, not a policy change:
+**Why it cannot just be granted.** `bookings.listing_id` is `ON DELETE
+CASCADE`, and from `bookings` the chain runs:
 
-- revoke DELETE and TRUNCATE from **`anon`** on every table. Every delete policy
-  already requires `auth.uid()`, so anon can never legitimately delete anything.
-- revoke TRUNCATE from **`authenticated`** on every table. Nothing should ever
-  truncate from a browser, and TRUNCATE is not subject to row-level security at
-  all.
-- leave `authenticated` DELETE where a deliberate policy exists — `quick_replies`,
-  `conversation_prefs`, `reviews`, `message_templates`, `listing_access`,
-  `listing_ical_feeds`, `calendar_overrides` and the `service_*` tables.
+| | |
+|---|---|
+| `messages`, `reviews`, `booking_guests`, `conversation_prefs` | **CASCADE** — the whole conversation and every review, gone |
+| `payments`, `payouts` | **SET NULL** — the rows survive as orphans: money in the ledger that can no longer be tied to a stay |
+| `disputes` | **NO ACTION** — a single chargeback anywhere on the listing blocks the delete entirely, with a foreign-key error the button would swallow |
 
-`profiles` is already done. Half a day, one migration, applied test-then-prod.
+On production today: **5 listings, 3 of them have bookings**, 15 payments, 1
+payout. So for three of five, a working delete destroys booking history and
+orphans money rows.
 
-### B. `services/apply` still lets a stranger squat somebody's email — MEDIUM
+And it would breach your own privacy policy, which says: *"Booking and payment
+records are kept for six years, as UK tax law requires."*
+
+### The four options, and what each costs
+
+**1. Remove the button.** `HideListingBtn` already sits next to it on the same
+dashboard row and does the useful thing — off the home page, out of the
+sitemap, noindexed, still opens for a guest holding a booking.
+*Costs:* a host who makes a genuine mistake — a duplicate draft, the wrong
+address — has no way to clear it themselves and has to ask you. At ten
+properties that is an email. *Effort:* ten minutes. Nothing is lost, because
+nothing currently works.
+
+**2. Delete only when nothing is attached.** Allow it when the listing has no
+bookings — which means no payments, messages or reviews either — and refuse
+otherwise with "this has bookings against it; hide it instead". This covers the
+case the button is almost certainly for: drafts and mistakes.
+*Costs:* a server route, because the browser cannot be trusted to check and
+`listings` should not get a DELETE policy. Half a day. The honest failure
+message is most of the work.
+
+**3. A `deleted` status.** Widen the check constraint, hide it from the host
+too. *Costs:* a new status value, and the house rule is that every place
+listing statuses has to learn it first — the publish gate, the sitemap, the
+listing page's `PUBLICLY_VISIBLE`, the admin queue. A day, and it is `hidden`
+with a different label and one more state for everything to get wrong.
+
+**4. Hard delete with cascade.** *Costs:* booking history, conversations and
+reviews destroyed; payments and payouts orphaned; blocked at random by
+disputes; and in breach of both your privacy policy and UK tax record-keeping.
+**Listed only so it is on the record as considered and refused.**
+
+**What I would do:** option 1 today, because it takes ten minutes and stops the
+site promising something it does not do; then option 2 when the mistake
+actually happens to somebody. Option 2 alone is also fine if you would rather
+do it once. But the dialog should stop lying either way, and that part is not a
+decision.
+
+---
+
+# 1b. New, still open
+
+Everything else that surfaced during the fixes was closed in the same pass —
+the grant sweep, the view bypass, the `rate_limit_hits` retention, the
+`.select()` 403 and the two `migrate.mjs` guard holes are all in the closed
+table above. One thing was found and deliberately not fixed:
+
+### `services/apply` still lets a stranger squat somebody's email — MEDIUM
 
 The rate limit closed the outage risk, which was the urgent half: nobody can
-empty the mail allowance now. It did **not** close the other half. Inside the
-limit — twenty an hour across the site — a stranger can still create a real
-Supabase auth user on an address that is not theirs, so the real owner cannot
-sign up later, and gets a "confirm your signup" email they did not ask for.
+empty the mail allowance now. Inside the limit — twenty an hour across the site
+— a stranger can still create a real Supabase auth user on an address that is
+not theirs, so the real owner cannot sign up later and gets a "confirm your
+signup" email they did not ask for.
 
-Properly fixing it means not creating the account until the address is proved,
-which is a change to the join flow rather than a guard in front of it. Worth
-doing before the services phase launches; not urgent while it has not.
-
-### C. `rate_limit_hits` grows for ever — LOW
-
-I added the table and no way to empty it. One row per limit per application, so
-at this scale it is a handful a week — but there is no retention and nothing
-prunes it. A `delete from rate_limit_hits where created_at < now() - interval
-'7 days'` on one of the existing crons is the whole job.
-
-### D. Any `.select()` on a profile update returns 403 — LOW, but it bites
-
-Found while proving the `is_admin` revoke had not broken anything. A plain
-`update()` on `profiles` works. Add `.select()` — or `Prefer:
-return=representation` — and PostgREST does a `SELECT *`, which needs every
-column, and `authenticated` has grants on twelve of about twenty-two. Result:
-**403, 42501**.
-
-This is the same root cause as the account-page upsert breakage from the
-overnight audit, and it is still armed. The next person who writes
-`.update({...}).select().single()` on `profiles` — a completely ordinary thing
-to write — gets a 403 they will not understand. Nothing does it today. Worth a
-comment on the table's migration at minimum.
-
-### E. `migrate.mjs` was letting a truncate through — **CLOSED**, recorded because of how
-
-Its data-loss guard stripped `$$…$$` bodies along with comments and string
-literals, so `do $$ begin truncate … end $$;` was invisible to it. Found by
-running one, which the guard waved past and which truncated `rate_limit_hits`
-on the test project. It also refused `revoke truncate` as data loss, which is
-how a guard teaches people to type `--destructive` by reflex.
-
-Both fixed in `4a82273`, and the classifier moved to `scripts/sqlRisk.cjs` so
-it can be tested without credentials — the first version of those tests passed
-here and failed in CI, which is no test at all for the rule that decides
-whether a migration may drop a table.
+Fixing it properly means not creating the account until the address is proved,
+which is a change to the join flow rather than a guard in front of it. **You
+asked to decide that yourself rather than have it decided by a security fix**,
+which is why it is here and not done. Worth settling before the services phase
+launches; harmless while it has not.
 
 ---
 
@@ -175,11 +186,14 @@ to run is in `SECURITY-WRITE-AUDIT.md`.
 
 # 3. Failures that stay quiet
 
-### `sendEmail` — **CLOSED**
+### `sendEmail` — **done**
 
 Fixed in `691e67a`, inside `sendEmail` itself. Fifteen call sites still discard
-the boolean and that no longer matters: the failure is reported from one place,
-by subject and recipient, with the body deliberately excluded.
+the boolean and that no longer matters — the failure is reported from one
+place, by subject and recipient, with the body deliberately excluded. The
+earlier "15 of 20" in this file was wrong on the denominator; it is 25 call
+sites, and the count stopped being the thing that mattered once the reporting
+moved inside.
 
 ### 32 of 59 API routes never reach `/admin/errors`
 
@@ -238,17 +252,11 @@ The canonical is done. The rest is unchanged.
 
 # 6. Housekeeping
 
-### Delete the two superseded count endpoints — **now due**
+### The count endpoints — **done**
 
-`app/api/messages/unread-count/route.ts` and
-`app/api/bookings/pending-count/route.ts` are thin wrappers over
-`lib/badgeCounts`; nothing in the repo calls them. They exist so a browser
-holding the pre-`2fec366` bundle kept its badge working.
-
-**Trigger: 30 August 2026** — one full day after that deploy. Delete the test
-that pins them alive (`tests/badge-counts.test.ts`, "the superseded routes still
-answer, for one deploy") in the same commit, deliberately, rather than letting
-it fail and get patched.
+Deleted in `8a3815a`, with the test that pinned them alive removed in the same
+commit rather than left to fail later and be patched by somebody who did not
+know why it was there.
 
 ### The stale audit branch
 
@@ -274,15 +282,17 @@ branch-only parts. Deletable once that session is finished.
 
 # What I would do next, in order
 
-1. **The grant sweep (1A).** One migration, closes a landmine on `payments`,
-   `payouts` and `bookings`, and it is the same shape as work already done.
-2. **`errors/report` and `services/wanted` rate limits (2G).** `lib/rateLimit.ts`
-   exists now; this is three lines each.
+1. **Decide about "Delete my home"** (section 1). Ten minutes for option 1, and
+   until then the dialog promises something that does not happen.
+2. **`errors/report` and `services/wanted` rate limits** (2G). `lib/rateLimit.ts`
+   exists now; this is three lines each, and `errors/report` guards the page you
+   rely on to notice everything else here.
 3. **`requireAdmin` in `lib/access.ts`**, with the test. The ninth copy is
    correct; the tenth is a coin flip.
-4. **`adminAudit` reporting**, and the worst of the 32 silent routes —
-   `notify` first, since everything funnels through it.
-5. **`rate_limit_hits` retention (1C)**, on an existing cron.
+4. **`adminAudit` reporting**, then the worst of the 32 silent routes — `notify`
+   first, since every notification funnels through it and its catch returns
+   `{ok:false}` with status 200.
+5. **Storage limits** (2F) before anyone else can upload to the public bucket.
 
 Then the SEO list, which is mostly an afternoon each and none of it urgent, and
 the content, which is yours.
