@@ -2,6 +2,7 @@ import { createRouteHandlerClient } from '@supabase/auth-helpers-nextjs';
 import { adminClient } from '@/lib/supabaseAdmin';
 import { cookies } from 'next/headers';
 import { NextRequest, NextResponse } from 'next/server';
+import { withinLimits, callerAddress, GLOBAL_KEY } from '@/lib/rateLimit';
 
 export const dynamic = 'force-dynamic';
 
@@ -13,6 +14,37 @@ export const dynamic = 'force-dynamic';
 // fill the database.
 export async function POST(req: NextRequest) {
     try {
+        // HOW OFTEN A STRANGER MAY FILL THE ERROR LOG.
+        //
+        // This is open on purpose and should stay open: an error can happen to
+        // somebody who is not signed in, and those are the ones most worth
+        // knowing about. But it writes a row on every call, and the table it
+        // writes to is /admin/errors — the page relied on to notice everything
+        // else on this site. Flooding it does not just add junk; it buries the
+        // one real failure among ten thousand invented ones, which is a better
+        // attack than deleting the table would be.
+        //
+        // The site-wide cap is the half that matters, for the same reason as
+        // services/apply: the caller picks their own address. 300 an hour is
+        // far more than a genuinely broken deploy produces, and a small
+        // fraction of what a script does in a minute.
+        //
+        // NOT REPORTED WHEN IT TRIPS. Everywhere else a refusal goes to
+        // logError. Doing that here would write a row to the very table being
+        // protected, on every refused request — the flood, with extra steps.
+        const verdict = await withinLimits([
+            { bucket: 'errors-report:all', key: GLOBAL_KEY, max: 300, windowMinutes: 60 },
+            { bucket: 'errors-report:ip', key: callerAddress(req.headers), max: 30, windowMinutes: 60 },
+        ]);
+
+        if (!verdict.ok) {
+            // 200, not 429. This is called from an error page by code that has
+            // already failed once; the browser does nothing with the answer,
+            // and an error handler that itself errors is how a broken page
+            // becomes a broken page that also spins.
+            return NextResponse.json({ ok: false, throttled: true });
+        }
+
         const body = await req.json();
 
         const message = String((body && body.message) || 'Unknown error').slice(0, 500);
