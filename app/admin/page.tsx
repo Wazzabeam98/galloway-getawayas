@@ -1,33 +1,7 @@
-import { createServerComponentClient } from '@supabase/auth-helpers-nextjs';
-import { cookies } from 'next/headers';
+import { requireAdmin } from '@/lib/access';
 import Link from 'next/link';
-import { notFound } from 'next/navigation';
 
 export const dynamic = 'force-dynamic';
-
-// Every owner page checks for itself. Hiding the link is tidiness, not
-// security — this is what actually keeps people out.
-async function requireOwner() {
-    const supabase = createServerComponentClient({ cookies });
-
-    // getUser(), not getSession(). getSession() only decodes the cookie — it
-    // never checks the signature — so the id everything below hangs off would
-    // be whatever the caller wrote in it. getUser() asks the auth server,
-    // which verifies the token and that the session has not been revoked.
-    const { data } = await supabase.auth.getUser();
-
-    if (!data || !data.user) notFound();
-
-    const { data: profile } = await supabase
-        .from('profiles')
-        .select('is_admin')
-        .eq('id', data.user.id)
-        .maybeSingle();
-
-    if (!profile || profile.is_admin !== true) notFound();
-
-    return data.user;
-}
 
 const tools = [
     {
@@ -68,7 +42,9 @@ const tools = [
 ];
 
 export default async function AdminHome() {
-    await requireOwner();
+    // Every owner page checks for itself. Hiding the link is tidiness, not
+    // security — this is what actually keeps people out.
+    await requireAdmin();
 
     return (
         <div className="max-w-3xl mx-auto px-6 py-10">
