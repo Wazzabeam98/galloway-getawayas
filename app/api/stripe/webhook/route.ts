@@ -292,26 +292,54 @@ export async function POST(request: Request) {
                 // is already live, so only the money changes — the status and
                 // the deposit already recorded are left alone.
                 if (kind === 'balance') {
-                    // NOTE FOR ANYONE CHANGING THE RETRY BEHAVIOUR. This line
-                    // ADDS to amount_paid rather than setting it, which is
-                    // correct for one delivery and wrong for two. It is the
-                    // single reason this handler cannot simply be retried —
-                    // see the catch at the bottom and WEBHOOK-FAILURE.md.
-                    const { error: balanceError } = await admin
-                        .from('bookings')
-                        .update({
-                            payment_status: 'paid',
-                            amount_paid: Math.round((Number((booking && booking.amount_paid) || 0) + amount) * 100) / 100,
-                            balance_amount: 0,
-                            stripe_payment_intent_id: cs.payment_intent || null,
-                        })
-                        .eq('id', bookingId);
-
-                    if (balanceError) {
+                    // THE LEDGER ROW GOES FIRST, AND IT IS WHAT DECIDES.
+                    //
+                    // This used to update the booking first and then write the
+                    // ledger row, with amount_paid = amount_paid + amount.
+                    // Adding is the right sum — the deposit is already in that
+                    // column and the balance is on top of it — but it is right
+                    // exactly once, and nothing made it once. One £150 balance
+                    // handled twice left a £300 booking claiming £450 had been
+                    // paid. Refunds and host payouts are both worked out from
+                    // that figure. MONEY-IDEMPOTENCY.md has the run.
+                    //
+                    // The fix is not to set instead of add — setting it to
+                    // `amount` would forget the deposit and understate what
+                    // the guest paid, which is the same bug pointing the other
+                    // way. It is to know whether this payment has already been
+                    // counted, and the database is the only thing that can say
+                    // so for certain.
+                    //
+                    // So: insert the ledger row first, and let the unique index
+                    // from 20260829090000_payments_one_row_per_intent.sql
+                    // answer the question. A 23505 here is not a failure, it is
+                    // the answer "this payment intent is already in the ledger"
+                    // — so leave amount_paid alone.
+                    //
+                    // THIS NEEDS THAT MIGRATION APPLIED FIRST. Without the
+                    // index nothing ever conflicts, alreadyCounted is never
+                    // true, and this quietly goes back to double-counting.
+                    // AND IT NEEDS AN INTENT ID ON THE ROW. The index only
+                    // covers rows where stripe_payment_intent_id is not null —
+                    // it has to, because the balance job claims an `attempting`
+                    // row before a payment intent exists. So a balance row
+                    // written without one is not protected: nothing conflicts,
+                    // alreadyCounted is never true, and the double-count is
+                    // back, silently.
+                    //
+                    // Not hypothetical. Every `balance` row on production today
+                    // — three succeeded, three failed, all from mid-August —
+                    // has a null intent. They are historical and no two of them
+                    // are duplicates, but they are what this looks like when it
+                    // happens. A checkout session for a balance always carries
+                    // a payment intent, so if this ever fires something has
+                    // changed at Stripe's end and the protection is off.
+                    if (!cs.payment_intent) {
                         await logError(
-                            '[webhook] a guest paid their balance and the booking could not be updated',
-                            balanceError,
-                            { path: 'stripe/webhook', userId: (booking && booking.guest_id) || undefined }
+                            '[webhook] a balance payment arrived with no payment intent, so it '
+                                + 'cannot be protected against being counted twice',
+                            { booking_id: bookingId, amount: amount, event_id: event.id },
+                            { path: 'stripe/webhook' }
                         );
                     }
 
@@ -323,7 +351,10 @@ export async function POST(request: Request) {
                         stripe_payment_intent_id: cs.payment_intent || null,
                     });
 
-                    if (balanceLedgerError) {
+                    const alreadyCounted =
+                        !!balanceLedgerError && balanceLedgerError.code === '23505';
+
+                    if (balanceLedgerError && !alreadyCounted) {
                         await logError(
                             '[webhook] a balance payment is missing from the payments ledger',
                             balanceLedgerError,
@@ -331,7 +362,33 @@ export async function POST(request: Request) {
                         );
                     }
 
-                    return NextResponse.json({ ok: true });
+                    // Everything except the money is safe to write again:
+                    // 'paid' is 'paid', and a zero balance is a zero balance.
+                    const balancePatch: Record<string, any> = {
+                        payment_status: 'paid',
+                        balance_amount: 0,
+                        stripe_payment_intent_id: cs.payment_intent || null,
+                    };
+
+                    if (!alreadyCounted) {
+                        balancePatch.amount_paid =
+                            Math.round((Number((booking && booking.amount_paid) || 0) + amount) * 100) / 100;
+                    }
+
+                    const { error: balanceError } = await admin
+                        .from('bookings')
+                        .update(balancePatch)
+                        .eq('id', bookingId);
+
+                    if (balanceError) {
+                        await logError(
+                            '[webhook] a guest paid their balance and the booking could not be updated',
+                            balanceError,
+                            { path: 'stripe/webhook', userId: (booking && booking.guest_id) || undefined }
+                        );
+                    }
+
+                    return NextResponse.json({ ok: true, counted: !alreadyCounted });
                 }
 
                 // Instant Book listings confirm on payment; request
@@ -491,7 +548,21 @@ export async function POST(request: Request) {
                 // Nothing visible breaks — the guest has their stay — so this
                 // would be found at the year end, in the accounts, by which
                 // time nobody can say what happened.
-                if (ledgerError) {
+                //
+                // 23505 is NOT that. It is the unique index from
+                // 20260829090000_payments_one_row_per_intent.sql saying this
+                // payment is already recorded, which is a redelivery working
+                // exactly as intended. Caught by delivering a paid event twice
+                // against the running site: the ledger correctly held one row
+                // and /admin/errors got a "the payment is missing" alarm about
+                // a payment that was right there. A page of false alarms is a
+                // page nobody reads.
+                //
+                // Unlike the balance branch, nothing else here needs to know:
+                // this update SETS amount_paid to the amount of this payment
+                // rather than adding to it, so running it again writes the
+                // same number.
+                if (ledgerError && ledgerError.code !== '23505') {
                     await logError(
                         '[webhook] a booking was confirmed but the payment is missing from the '
                             + 'payments ledger',
@@ -614,7 +685,13 @@ export async function POST(request: Request) {
                     // decide how long the guest gets before the booking is
                     // called off. A failure to write it does not stop the
                     // ladder — it makes the ladder count from the wrong place.
-                    if (failedRowError) {
+                    //
+                    // 23505 excepted. The `already` check just above is not
+                    // atomic, so the balance job and this event can race to
+                    // write the same failure. The unique index settles it, and
+                    // one of them losing is the mechanism working rather than
+                    // something worth waking anybody for.
+                    if (failedRowError && failedRowError.code !== '23505') {
                         await logError(
                             '[webhook] could not record a failed payment — the balance failure '
                                 + 'ladder for this booking may count from the wrong point',
