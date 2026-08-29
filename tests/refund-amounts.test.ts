@@ -138,8 +138,11 @@ function load(routePath: string, options: Options = {}) {
     stubModule('@supabase/auth-helpers-nextjs', {
         createRouteHandlerClient: () => ({
             auth: {
-                getSession: async () => ({
-                    data: { session: { user: { id: options.actor ?? GUEST } } },
+                // The route verifies identity with getUser() now, not
+                // getSession() — see the route header. The stub mirrors that so
+                // the test exercises the same call the code makes.
+                getUser: async () => ({
+                    data: { user: { id: options.actor ?? GUEST } },
                 }),
             },
         }),

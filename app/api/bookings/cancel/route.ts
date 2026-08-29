@@ -15,9 +15,14 @@ function round2(value: number): number {
 export async function POST(request: Request) {
     try {
         const supabase = createRouteHandlerClient({ cookies });
-        const { data: { session } } = await supabase.auth.getSession();
+        // getUser(), not getSession(). getSession() only decodes the auth
+        // cookie and never checks its signature, so the id it returns is
+        // whatever the caller wrote there — a forged cookie carrying anyone's
+        // id is accepted. This route moves money, so the identity it acts on
+        // has to be verified against the auth server, which getUser() does.
+        const { data: { user } } = await supabase.auth.getUser();
 
-        if (!session || !session.user) {
+        if (!user) {
             return NextResponse.json({ ok: false, error: 'Not signed in' }, { status: 401 });
         }
 
@@ -40,7 +45,7 @@ export async function POST(request: Request) {
             return NextResponse.json({ ok: false, error: 'Booking not found' }, { status: 404 });
         }
 
-        if (booking.guest_id !== session.user.id) {
+        if (booking.guest_id !== user.id) {
             return NextResponse.json({ ok: false, error: 'Not your booking' }, { status: 403 });
         }
 
@@ -146,7 +151,7 @@ export async function POST(request: Request) {
                 // booking that records nothing is indistinguishable from one
                 // the host called off.
                 cancelled_at: new Date().toISOString(),
-                cancelled_by_user: session.user.id,
+                cancelled_by_user: user.id,
                 cancelled_by_role: 'guest',
             })
             .eq('id', booking.id);

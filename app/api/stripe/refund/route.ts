@@ -16,9 +16,14 @@ function round2(value: number): number {
 export async function POST(request: Request) {
     try {
         const supabase = createRouteHandlerClient({ cookies });
-        const { data: { session } } = await supabase.auth.getSession();
+        // getUser(), not getSession(). getSession() only decodes the auth
+        // cookie and never checks its signature, so the id it returns is
+        // whatever the caller wrote there — a forged cookie carrying anyone's
+        // id is accepted. This route moves money, so the identity it acts on
+        // has to be verified against the auth server, which getUser() does.
+        const { data: { user } } = await supabase.auth.getUser();
 
-        if (!session || !session.user) {
+        if (!user) {
             return NextResponse.json({ ok: false, error: 'Not signed in' }, { status: 401 });
         }
 
@@ -42,8 +47,8 @@ export async function POST(request: Request) {
             return NextResponse.json({ ok: false, error: 'Booking not found' }, { status: 404 });
         }
 
-        const isHost = booking.host_id === session.user.id;
-        const isGuest = booking.guest_id === session.user.id;
+        const isHost = booking.host_id === user.id;
+        const isGuest = booking.guest_id === user.id;
 
         if (!isHost && !isGuest) {
             return NextResponse.json({ ok: false, error: 'Not your booking' }, { status: 403 });
@@ -166,7 +171,7 @@ export async function POST(request: Request) {
             // exactly this distinction, so the first time a host disputes one
             // the answer has to be somewhere we can read it.
             patch.cancelled_at = new Date().toISOString();
-            patch.cancelled_by_user = session.user.id;
+            patch.cancelled_by_user = user.id;
             patch.cancelled_by_role = isHost ? 'host' : 'guest';
         }
 
@@ -180,7 +185,7 @@ export async function POST(request: Request) {
         if (updateError) {
             await logError('[stripe/refund] refunded but could not update the booking', updateError, {
                 path: 'stripe/refund',
-                userId: session.user.id,
+                userId: user.id,
             });
             return NextResponse.json(
                 {

@@ -10,13 +10,18 @@ export const dynamic = 'force-dynamic';
 export async function POST(request: Request) {
     try {
         const supabase = createRouteHandlerClient({ cookies });
-        const { data: { session } } = await supabase.auth.getSession();
+        // getUser(), not getSession(). getSession() only decodes the auth
+        // cookie and never checks its signature, so the id it returns is
+        // whatever the caller wrote there — a forged cookie carrying anyone's
+        // id is accepted. This route moves money, so the identity it acts on
+        // has to be verified against the auth server, which getUser() does.
+        const { data: { user } } = await supabase.auth.getUser();
 
-        if (!session || !session.user) {
+        if (!user) {
             return NextResponse.json({ ok: false, error: 'Not signed in' }, { status: 401 });
         }
 
-        const uid = session.user.id;
+        const uid = user.id;
         const body = await request.json().catch(function () { return {}; });
         const action = (body && body.action) || 'onboard';
 
@@ -48,7 +53,7 @@ export async function POST(request: Request) {
             const account = await stripeRequest('POST', '/accounts', {
                 type: 'express',
                 country: 'GB',
-                email: session.user.email,
+                email: user.email,
                 default_currency: 'gbp',
                 business_type: 'individual',
                 capabilities: {
@@ -123,9 +128,14 @@ export async function POST(request: Request) {
 export async function GET() {
     try {
         const supabase = createRouteHandlerClient({ cookies });
-        const { data: { session } } = await supabase.auth.getSession();
+        // getUser(), not getSession(). getSession() only decodes the auth
+        // cookie and never checks its signature, so the id it returns is
+        // whatever the caller wrote there — a forged cookie carrying anyone's
+        // id is accepted. This route moves money, so the identity it acts on
+        // has to be verified against the auth server, which getUser() does.
+        const { data: { user } } = await supabase.auth.getUser();
 
-        if (!session || !session.user) {
+        if (!user) {
             return NextResponse.json({ ok: false, error: 'Not signed in' }, { status: 401 });
         }
 
@@ -133,7 +143,7 @@ export async function GET() {
         const { data: profile } = await admin
             .from('profiles')
             .select('stripe_account_id')
-            .eq('id', session.user.id)
+            .eq('id', user.id)
             .maybeSingle();
 
         if (!profile || !profile.stripe_account_id) {
@@ -155,7 +165,7 @@ export async function GET() {
                 identity_verified_at: account.payouts_enabled === true ? new Date().toISOString() : null,
                 stripe_updated_at: new Date().toISOString(),
             })
-            .eq('id', session.user.id);
+            .eq('id', user.id);
 
         return NextResponse.json({
             ok: true,
