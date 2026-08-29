@@ -487,66 +487,64 @@ export default function AddHome() {
             // disagree about what this listing's location is.
             const location = buildLocation(city, state);
 
-            const { error: listingErr } = draftId
-                ? await supabase.from('listings').update({
-                    title: title.trim(),
-                    description,
-                    location,
-                    street_address: buildStreetAddress(flat, propertyName, street) || null,
-                    postcode: postcode.trim() ? tidyPostcode(postcode) : null,
-                    price_per_night: Number(price),
-                    max_guests: guests,
-                    images: uploadedPaths,
-                    property_type: propertyType,
-                    privacy_type: privacyType,
-                    bedrooms,
-                    beds,
-                    bathrooms,
-                    amenities,
-                    check_in_method: checkInMethod || null,
-                    check_in_time: checkInTime || '15:00',
-                    check_in_end_time: checkInEndTime || null,
-                    check_out_time: checkOutTime || '11:00',
-                    latitude,
-                    longitude,
-                    new_listing_promo: newListingPromo,
-                    last_minute_discount: lastMinuteDiscount,
-                    weekly_discount: weeklyDiscount,
-                    monthly_discount: monthlyDiscount,
-                    status: 'published',
-                }).eq('id', draftId)
-                : await supabase.from('listings').insert({
-                    host_id: user.data.user.id,
-                    title: title.trim(),
-                    description,
-                    location,
-                    street_address: buildStreetAddress(flat, propertyName, street) || null,
-                    postcode: postcode.trim() ? tidyPostcode(postcode) : null,
-                    price_per_night: Number(price),
-                    max_guests: guests,
-                    images: uploadedPaths,
-                    property_type: propertyType,
-                    privacy_type: privacyType,
-                    bedrooms,
-                    beds,
-                    bathrooms,
-                    amenities,
-                    check_in_method: checkInMethod || null,
-                    check_in_time: checkInTime || '15:00',
-                    check_in_end_time: checkInEndTime || null,
-                    check_out_time: checkOutTime || '11:00',
-                    latitude,
-                    longitude,
-                    new_listing_promo: newListingPromo,
-                    last_minute_discount: lastMinuteDiscount,
-                    weekly_discount: weeklyDiscount,
-                    monthly_discount: monthlyDiscount,
-                    status: 'published',
-                });
+            // The content is written WITHOUT a status. Publishing is no longer
+            // something the browser may do — 20260829020000 lets a browser role
+            // create a draft and change no status at all — so the row is saved
+            // as a draft and then handed to /api/listings/publish, which is the
+            // one place allowed to make it live (and where the review gate will
+            // one day sit). A draft that fails to publish is still saved, so
+            // nothing the host typed is lost.
+            const fields = {
+                title: title.trim(),
+                description,
+                location,
+                street_address: buildStreetAddress(flat, propertyName, street) || null,
+                postcode: postcode.trim() ? tidyPostcode(postcode) : null,
+                price_per_night: Number(price),
+                max_guests: guests,
+                images: uploadedPaths,
+                property_type: propertyType,
+                privacy_type: privacyType,
+                bedrooms,
+                beds,
+                bathrooms,
+                amenities,
+                check_in_method: checkInMethod || null,
+                check_in_time: checkInTime || '15:00',
+                check_in_end_time: checkInEndTime || null,
+                check_out_time: checkOutTime || '11:00',
+                latitude,
+                longitude,
+                new_listing_promo: newListingPromo,
+                last_minute_discount: lastMinuteDiscount,
+                weekly_discount: weeklyDiscount,
+                monthly_discount: monthlyDiscount,
+            };
+
+            const { data: saved, error: listingErr } = draftId
+                ? await supabase.from('listings').update(fields).eq('id', draftId).select('id').single()
+                : await supabase.from('listings').insert({ host_id: user.data.user.id, ...fields }).select('id').single();
 
             if (listingErr) {
                 toast.error(listingErr.message, { theme: 'colored' });
                 setFormError(`Could not save listing: ${listingErr.message}`);
+                return;
+            }
+
+            const listingId = saved?.id || draftId;
+
+            const publishRes = await fetch('/api/listings/publish', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ listingId }),
+            });
+            const publishBody = await publishRes.json().catch(() => ({}));
+
+            if (!publishRes.ok || !publishBody.ok) {
+                const msg = (publishBody && publishBody.error)
+                    || 'Your listing was saved as a draft but could not be published. Please try again.';
+                toast.error(msg, { theme: 'colored' });
+                setFormError(msg);
                 return;
             }
 
