@@ -67,6 +67,12 @@ create table if not exists public.service_orders (
     -- the application, not here — the DB does not know the stay.
     service_date date not null,
 
+    -- How many the experience is for, copied from the booking the guest already
+    -- made. A chef needs to know two from eight, and the site already holds it —
+    -- so the order carries it rather than asking the guest to retype a number
+    -- we have. Nullable only because a stray old booking might lack it.
+    guests integer,
+
     -- Snapshotted at request, never read live off the provider again, exactly
     -- as bookings.total_price and bookings.commission_rate are. What the guest
     -- agreed to is what the guest agreed to.
@@ -99,6 +105,11 @@ create table if not exists public.service_orders (
 
     created_at timestamptz not null default now()
 );
+
+-- The table already exists on test from the first apply, and `create table if
+-- not exists` will not add a new column to it. This carries the guest count in
+-- on a second run. Idempotent.
+alter table public.service_orders add column if not exists guests integer;
 
 create index if not exists service_orders_provider_idx on public.service_orders(provider_id);
 create index if not exists service_orders_guest_idx on public.service_orders(guest_id);

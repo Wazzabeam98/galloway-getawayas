@@ -43,6 +43,32 @@ export function mccForTrade(trade: string): string | null {
     return TRADE_MCC[String(trade || '')] || null;
 }
 
+// What Stripe is told the account sells, alongside the MCC. Plain, and framed
+// as the guest-facing thing it is. One per trade so the account a provider
+// onboards describes their business, not lodging.
+export const TRADE_STRIPE_DESCRIPTION: Record<string, string> = {
+    chef: 'Private chef and in-home dining for holiday guests.',
+    cake: 'Cakes and baking for holiday guests.',
+    basket: 'Welcome hampers and shopping for holiday guests.',
+    paw: 'Pet care for holiday guests.',
+};
+
+// The business_profile for a provider's connected account: the category and a
+// description, both keyed off the trade we already know. Returns null for a
+// trade with no MCC, which is what stops an un-categorised trade being
+// onboarded at all.
+export function stripeProfileForTrade(
+    trade: string
+): { mcc: string; product_description: string } | null {
+    const mcc = mccForTrade(trade);
+    if (!mcc) return null;
+    return {
+        mcc,
+        product_description: TRADE_STRIPE_DESCRIPTION[String(trade || '')]
+            || 'A local experience for holiday guests.',
+    };
+}
+
 // ---------------------------------------------------------------------------
 // WHO A GUEST MAY SEE
 // ---------------------------------------------------------------------------

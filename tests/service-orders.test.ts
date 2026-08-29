@@ -9,7 +9,7 @@ import { installAliases } from './helpers/stub';
 installAliases();
 
 import {
-    TRADE_MCC, mccForTrade,
+    TRADE_MCC, mccForTrade, stripeProfileForTrade,
     isLiveToGuests, isAwaitingConnect,
     priceOrder,
     canTransition, releasesHold,
@@ -42,6 +42,17 @@ test('the MCC table is not a host category', () => {
     for (const code of Object.values(TRADE_MCC)) {
         assert.notEqual(code, '7011', 'a guest trade must not be filed as lodging');
     }
+});
+
+test('the Stripe profile carries the trade’s own category and a description', () => {
+    const chef = stripeProfileForTrade('chef');
+    assert.equal(chef && chef.mcc, '5811');
+    assert.ok(chef && chef.product_description.length > 0, 'a description Stripe can read');
+
+    // A trade with no code yields no profile — which is what stops the connect
+    // route creating an account for an un-categorised trade.
+    assert.equal(stripeProfileForTrade('sponge'), null);
+    assert.equal(stripeProfileForTrade(''), null);
 });
 
 // --- who a guest may see -----------------------------------------------------
