@@ -1,0 +1,14 @@
+REMAINING TEN getSession routes — BEFORE (live be01baf, still getSession):
+forged cookie (fake sub, invalid sig) vs no cookie.
+
+  trips                    no-cookie 200 | forged 200 (returns victim DATA - see file 15)
+  messages/threads         no-cookie 200 | forged 200 (returns victim DATA)
+  messages/threads/[id]    no-cookie 401 | forged 404 (past auth)
+  listings/access-code     no-cookie 401 | forged 403 (past auth)
+  stripe/payout-schedule   no-cookie 401 | forged 200 (past auth)
+  listings/visibility      no-cookie 401 | forged 403 (past auth)
+  listing-access           no-cookie 401 | forged 403 (past auth)
+  booking-guests           no-cookie 401 | forged 403 (past auth)
+  notify                   no-cookie 401 | forged 400 (past auth)
+  stripe/checkout          no-cookie 401 | forged 404 (past auth)
+  stripe/balance-checkout  no-cookie 401 | forged 404 (past auth)

@@ -1,0 +1,60 @@
+
+  WRITE-SIDE REFUSALS — against PRODUCTION, hviwjxigqivjfhmhpjiy
+
+  canary planted — a host, a draft listing, a finished booking,
+  £4242.42 owed on the victim profile, and an
+  ordinary account that owns nothing
+
+  first, proof that both keys work at all
+  ✓ the anon key reads published listings  (so its refusals are refusals)
+  ✓ the signed-in token writes its own full_name  (so its refusals are refusals)
+
+  a stranger, with the key from the front end
+  ✓ stranger cannot insert a booking  (refused — 42501 new row violates row-level security policy for table "bookings")
+  ✓ stranger cannot insert a listing  (refused — 42501 new row violates row-level security policy for table "listings")
+  ✓ stranger cannot insert a profile  (refused — 42501 permission denied for table profiles)
+  ✓ stranger cannot change a listing's price  (refused by RLS — no row matched)
+  ✓ stranger cannot mark a booking paid  (refused by the grant — 42501)
+  ✓ stranger cannot alter commission_rate  (refused by RLS — no row matched)
+  ✓ stranger cannot set payout_balance_owed  (refused by the grant — 42501)
+  ✓ stranger cannot flip is_admin  (refused by the grant — 42501)
+  ✓ stranger cannot set payout_amount  (refused by the grant — 42501)
+  ✓ stranger cannot change a booking's status  (refused by the grant — 42501)
+
+  an ordinary signed-in user, against somebody else's rows
+  ✓ user cannot change another host's listing price  (refused by RLS — no row matched)
+  ✓ user cannot alter another host's commission_rate  (refused by RLS — no row matched)
+  ✓ user cannot mark someone else's booking paid  (refused by RLS — no row matched)
+  ✓ user cannot change status on someone else's booking  (refused by RLS — no row matched)
+  ✓ user cannot set payout_amount on someone else's booking  (refused by RLS — no row matched)
+  ✓ user cannot set another profile's payout_balance_owed  (refused by the grant — 42501)
+  ✓ user cannot flip another profile's is_admin  (refused by the grant — 42501)
+
+  an ordinary signed-in user, against their own row
+  ✓ user cannot make themselves an admin  (refused by the grant — 42501)
+  ✓ user cannot set what they are owed  (refused by the grant — 42501)
+  ✗ user cannot insert a booking already marked paid
+      an ordinary signed-in user inserted a row into bookings — a confirmed, paid, £0 stay in somebody else’s cottage (HTTP 201). Deleted again.
+
+  a review for a stay that did not happen
+  ✗ user cannot review a stay that was not theirs
+      the review was accepted for a booking the reviewer has no part in (HTTP 201). Deleted again.
+
+  the SECURITY DEFINER routines a stranger may call
+  – expire_unpaid_bookings — a stranger CAN call it (HTTP 204). It carries its own time guard, so it does only what the cron does.
+  – publish_expired_reviews — a stranger CAN call it (HTTP 204). It carries its own time guard, so it does only what the cron does.
+
+  the whole chain, starting from nothing
+  – LINK 1 — signed up with the front-end key alone. No invitation, no approval.
+  – LINK 2 — a confirmation mail is required. Standing in for the attacker's own inbox by confirming the address.
+  – LINK 3 — signed in. Now asking for the admin bit.
+  ✓ a stranger cannot become an admin from a standing start  (the profile stayed is_admin = false)
+
+  22 refused, 2 WRITABLE
+
+  writable:
+    · user cannot insert a booking already marked paid
+    · user cannot review a stay that was not theirs
+
+  canary removed
+

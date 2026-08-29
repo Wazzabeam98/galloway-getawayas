@@ -1,0 +1,21 @@
+
+  against PRODUCTION (hviwjxigqivjfhmhpjiy), with the ANON key, from .env.production.local
+
+  profiles — what a stranger must not read
+  ✓ profiles.email — refused (401)
+  ✓ profiles.phone — refused (401)
+  ✓ profiles.residential_address — refused (401)
+  ✓ profiles.stripe_account_id — refused (401)
+  ✓ profiles.stripe_charges_enabled — refused (401)
+  ✓ profiles.stripe_requirements_due — refused (401)
+  ✓ profiles.stripe_details_submitted — refused (401)
+  ✓ profiles.stripe_updated_at — refused (401)
+  ✓ profiles.payout_balance_owed — refused (401)
+
+  profiles — what a stranger still needs
+  ✓ a display name and avatar are still readable
+
+  bookings — a stranger must not read the row at all
+  ✓ bookings.total_price — refused (401)
+  ✓ bookings.deposit_amount — refused (401)
+  ✓ bookings.balance_amount — refused (401)

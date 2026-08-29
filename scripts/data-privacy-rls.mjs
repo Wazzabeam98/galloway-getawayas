@@ -26,17 +26,52 @@
 
 import { loadEnv, supabaseClient, TEST_PROJECT_REF } from './seed-lib.mjs';
 
-const env = loadEnv();
+const PROD_REF = 'hviwjxigqivjfhmhpjiy';
+
 const args = process.argv.slice(2);
 const wantProd = args.includes('--target') && args[args.indexOf('--target') + 1] === 'prod';
 
-// Reading production is legitimate here — it is exactly what any visitor can
-// do — but it must be a deliberate word, and it is read-only either way.
+// ---------------------------------------------------------------------------
+// --target prod HAS TO LOAD PRODUCTION'S ENVIRONMENT, WHICH IT DID NOT
+// ---------------------------------------------------------------------------
+//
+// This file used to call loadEnv() with no argument, which reads .env.local —
+// and .env.local points at the TEST project. The flag's only effect was to
+// skip the guard below; the URL and key it then used were the test project's.
+//
+// So every run of `node scripts/data-privacy-rls.mjs --target prod` queried
+// test while printing "against PRODUCTION" at the top. NOTHING IT EVER
+// REPORTED ABOUT PRODUCTION WAS TRUE. The findings it produced were findings
+// about test, on a project that has since diverged from production on grants —
+// which is the whole reason the write-side audit exists.
+//
+// The header said "swap them back to run against production", meaning swap the
+// env FILES by hand. A flag that silently does nothing is worse than no flag:
+// somebody types it, reads PRODUCTION on the screen, and believes the answer.
+//
+// Now the target picks its own file, and then proves the file really is that
+// project — both ways round, so a production string in .env.local or a test
+// string in .env.production.local is refused rather than used.
+const ENV_FILE = wantProd ? '.env.production.local' : '.env.local';
+const env = loadEnv(ENV_FILE);
+
 const URL = env.NEXT_PUBLIC_SUPABASE_URL;
 const KEY = env.NEXT_PUBLIC_SUPABASE_ANON_KEY;
 
-if (!wantProd && (!URL || !URL.includes(TEST_PROJECT_REF))) {
-    console.error('refusing to run: NEXT_PUBLIC_SUPABASE_URL is not the test project');
+const wantRef = wantProd ? PROD_REF : TEST_PROJECT_REF;
+const otherRef = wantProd ? TEST_PROJECT_REF : PROD_REF;
+
+if (!URL || !KEY) {
+    console.error('refusing to run: ' + ENV_FILE + ' has no Supabase URL or anon key');
+    process.exit(1);
+}
+if (URL.includes(otherRef)) {
+    console.error('refusing to run: ' + ENV_FILE + ' holds the OTHER project\'s URL');
+    process.exit(1);
+}
+if (!URL.includes(wantRef)) {
+    console.error('refusing to run: ' + ENV_FILE + ' is not the '
+        + (wantProd ? 'production' : 'test') + ' project (' + wantRef + ')');
     process.exit(1);
 }
 
@@ -128,7 +163,10 @@ async function fieldIsPrivate(table, column, label) {
 }
 
 async function run() {
-    console.log('\n  against ' + (wantProd ? 'PRODUCTION' : 'test') + ', with the ANON key\n');
+    // The project ref is printed, not just the word. A label can be wrong; the
+    // ref comes out of the URL that the requests are actually going to.
+    console.log('\n  against ' + (wantProd ? 'PRODUCTION' : 'test')
+        + ' (' + wantRef + '), with the ANON key, from ' + ENV_FILE + '\n');
 
     if (!wantProd) {
         const id = await plantCanary();

@@ -1,0 +1,19 @@
+GETSESSION FORGERY — PROVEN LIVE AGAINST PRODUCTION (29 Aug 2026)
+
+The deployed session cookie is named sb-auth-auth-token (custom storageKey
+'sb-auth'), value = URL-encoded array [access_token, refresh_token, ...].
+Earlier probes failed only because they guessed sb-<ref>-auth-token.
+
+Test: forged cookie carrying a JWT with a victim's `sub` and the literal
+signature "this_is_not_a_valid_signature" (no key, no secret), sent to
+GET https://gallowaygetaways.co.uk/api/trips.
+
+Result: HTTP 200, body contained the victim's real confirmed booking rows.
+=> getSession() decodes the cookie and trusts the id with NO signature check.
+   Any signed-in attacker forges any user's identity by editing their cookie.
+
+Cookie format cracked via the auth-callback route: admin generate_link ->
+GET /auth/callback?token_hash=...&type=magiclink captured the real Set-Cookie.
+
+The publish route (hole 5) was verified with a REAL such cookie:
+  owner publish -> 200; no-auth -> 401; other host -> 403 (stays draft).

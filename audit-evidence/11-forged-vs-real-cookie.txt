@@ -1,0 +1,7 @@
+victim id = 13b8d78e-cce4-43ab-b739-08487181a28f
+
+REAL   login token : 200 {"trips":[]}
+FORGED bad-sig token: 200 {"trips":[]}
+NONE   no cookie    : 200 {"trips":[]}
+
+cleaned up
