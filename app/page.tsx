@@ -1,16 +1,14 @@
 import HostReservations from '@/components/HostReservations';
-import { publicArea, townKey } from '@/lib/places';
+import { townKey } from '@/lib/places';
 import { icalBlockedListingIds } from '@/lib/availability';
 import Hero from '@/components/base/Hero';
 import UpcomingTrip from '@/components/UpcomingTrip';
 import { createServerComponentClient } from '@supabase/auth-helpers-nextjs';
 import { cookies } from 'next/headers';
-import { getImageUrl } from '@/lib/utils';
 import { format, parseISO } from 'date-fns';
 import Link from 'next/link';
-import Image from 'next/image';
-import { Home, Star } from 'lucide-react';
-import { hasPublicScore } from '@/lib/reviews';
+import ListingCard from '@/components/ListingCard';
+import { AREAS, hasCopy } from '@/config/areas';
 
 export const dynamic = 'force-dynamic';
 
@@ -119,6 +117,24 @@ export default async function HomePage({
         listings = listings.filter((l) => !unavailable.has(l.id));
     }
 
+    // Which area pages to offer. Same two conditions the sitemap uses: the
+    // page has been written, and there is at least one property in it. An
+    // unwritten area page is noindex, so linking to it from the busiest page
+    // on the site would be pointing Google at a dead end.
+    //
+    // Counted from `data` — every published listing — rather than from
+    // `listings`, which has the current search applied to it. The area links
+    // are navigation, not results, and must not vanish because somebody
+    // searched for two guests in March.
+    const townCounts: Record<string, number> = {};
+    for (const listing of data || []) {
+        const key = townKey(listing.location);
+        townCounts[key] = (townCounts[key] || 0) + 1;
+    }
+    const areaLinks = AREAS.filter(
+        (area) => hasCopy(area) && area.townKeys.some((key) => (townCounts[key] || 0) > 0)
+    );
+
     // What the guest asked for, said back to them, so a short list reads as a
     // result rather than as an empty site.
     const criteria: string[] = [];
@@ -165,63 +181,9 @@ export default async function HomePage({
                 {/* Property Grid */}
                 {listings && listings.length > 0 ? (
                     <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-x-6 gap-y-10">
-                        {listings.map((property) => {
-                            const rating = property.rating_avg ? Number(property.rating_avg) : null;
-                            const count = property.rating_count || 0;
-
-                            return (
-                                <Link
-                                    key={property.id}
-                                    href={`/homes/${property.id}`}
-                                    className="group flex flex-col space-y-2"
-                                >
-                                    <div className="w-full h-64 rounded-2xl overflow-hidden bg-stone-200 relative">
-                                        {property.images && property.images.length > 0 ? (
-                                            <Image
-                                                src={getImageUrl(property.images[0])}
-                                                alt={property.title}
-                                                fill
-                                                // One card per row on a phone, two on a
-                                                // tablet, four on a laptop — so the browser
-                                                // asks for a photo the size of the card
-                                                // rather than whatever was uploaded.
-                                                sizes="(max-width: 640px) 100vw, (max-width: 768px) 50vw, (max-width: 1024px) 33vw, 25vw"
-                                                className="object-cover group-hover:scale-105 transition duration-300"
-                                            />
-                                        ) : (
-                                            <div className="flex items-center justify-center h-full text-stone-400">
-                                                <Home className="w-10 h-10" />
-                                            </div>
-                                        )}
-                                    </div>
-
-                                    <div className="flex items-start justify-between gap-2">
-                                        <h3 className="font-bold text-stone-900 text-base truncate">
-                                            {property.title}
-                                        </h3>
-
-                                        {rating && hasPublicScore(count) ? (
-                                            <span className="flex items-center gap-1 text-sm text-stone-900 shrink-0">
-                                                <Star className="w-3.5 h-3.5 fill-amber-400 text-amber-400" />
-                                                <span className="font-semibold">{rating.toFixed(2)}</span>
-                                                <span className="text-stone-400 font-normal">({count})</span>
-                                            </span>
-                                        ) : (
-                                            <span className="text-xs text-emerald-700 font-semibold shrink-0 mt-0.5">
-                                                New
-                                            </span>
-                                        )}
-                                    </div>
-
-                                    <p className="text-sm text-stone-500 truncate">
-                                        {publicArea(property.location)}
-                                    </p>
-                                    <p className="text-sm font-semibold text-stone-900">
-                                        £{property.price_per_night} <span className="font-normal text-stone-500">night</span>
-                                    </p>
-                                </Link>
-                            );
-                        })}
+                        {listings.map((property) => (
+                            <ListingCard key={property.id} listing={property} />
+                        ))}
                     </div>
                 ) : searching ? (
                     /* A search that found nothing is not an empty site, and must not
@@ -250,6 +212,39 @@ export default async function HomePage({
                             Ready to list your Kirkcudbright holiday stay? Click <strong>Add homes</strong> in the top menu to publish your first property!
                         </p>
                     </div>
+                )}
+
+                {/* Browse by town.
+                    
+                    This is the only thing on the site that links to an area
+                    page, so without it they are unreachable — for a guest and
+                    for a crawler. It is below the grid on purpose: somebody who
+                    already knows where they want to be scrolls to it, and
+                    everybody else sees the properties first.
+                    
+                    Empty until an area page has been written AND has a property
+                    in it, so it does not appear at all before then. */}
+                {areaLinks.length > 0 && !searching && (
+                    <section className="mt-16 pt-10 border-t border-stone-200">
+                        <h2 className="text-2xl md:text-3xl font-bold text-stone-900">
+                            Where to stay in Dumfries &amp; Galloway
+                        </h2>
+                        <p className="text-stone-600 text-sm md:text-base mt-1 mb-6">
+                            Pick a town and see what we have there.
+                        </p>
+                        <ul className="flex flex-wrap gap-3">
+                            {areaLinks.map((area) => (
+                                <li key={area.slug}>
+                                    <Link
+                                        href={`/holiday-cottages/${area.slug}`}
+                                        className="inline-block rounded-full border border-stone-300 hover:border-stone-900 px-4 py-2 text-sm font-semibold text-stone-800 transition"
+                                    >
+                                        Holiday cottages in {area.name}
+                                    </Link>
+                                </li>
+                            ))}
+                        </ul>
+                    </section>
                 )}
             </div>
         </main>

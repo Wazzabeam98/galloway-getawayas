@@ -333,7 +333,7 @@ export default function TradeShopPage({ params }: { params: { trade: string } })
                                     // eslint-disable-next-line @next/next/no-img-element
                                     <img
                                         src={provider.logo}
-                                        alt=""
+                                        alt={`${provider.business_name} logo`}
                                         className="w-14 h-14 rounded-xl object-cover border border-slate-200"
                                     />
                                 ) : (

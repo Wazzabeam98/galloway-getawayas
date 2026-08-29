@@ -2,10 +2,13 @@ import Link from 'next/link';
 import { Sparkles, ChefHat, ArrowRight } from 'lucide-react';
 
 export const metadata = {
-    title: 'Set up a business | Galloway Getaways',
+    // The root layout appends ' | Galloway Getaways' to every page title, so
+    // naming it here again put it in the tab twice. Same fix as app/services.
+    title: 'Set up a business',
     description:
         'For local tradespeople and businesses in Dumfries & Galloway — cleaning, gardening, '
         + 'maintenance, and experiences sold to guests staying nearby.',
+    alternates: { canonical: '/business' },
 };
 
 // The way in for tradespeople and local businesses.
