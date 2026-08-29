@@ -214,3 +214,101 @@ not a markup, and the guest is told plainly whose cake they're buying. Smallest
 first version: an offer on the trip page they've already paid for, providers with
 their own prices, paid `on_behalf_of` the provider, settled minus 10% on the
 rails hosts already use.
+
+---
+
+# Addendum: the Connect step on a guest-trade application
+
+The sign-up half exists — pre-built experiences, provider applies, you approve —
+and it never needed Stripe, because a subscription trade never receives money
+through us. A guest trade does, and `on_behalf_of` can't charge to an account
+that doesn't exist. So the guest-trade application needs a Connect step, and
+**"approved" must stop meaning "live."**
+
+Today there is no gap between them: the shop and the enquiry flow gate purely on
+`status === 'approved'` (`canBeEnquiredAbout`, and `enquiries/route.ts:92`).
+There is no payout concept in the provider model at all. That's the thing to
+add.
+
+## Two gates, in order — not one
+
+Split what "approved" currently does into two:
+
+1. **Approved** — the human decision you already make: the business is real, the
+   photos and price are right. Unchanged. This is your judgement.
+2. **Payout-ready** — Stripe has what it needs to pay them: `payouts_enabled` on
+   their profile (the connect route already reads and stores it). This is the
+   provider's own KYC with Stripe, not your call.
+
+**Live to guests = approved AND payout-ready.** Approval first (no point asking
+someone to hand Stripe their passport before you've said yes), then Connect.
+
+## What the Connect step adds to their sign-up
+
+Mechanically it reuses the hosted flow hosts already use (`POST /api/stripe/connect`
+→ Stripe Express onboarding → return). After you approve, their provider
+dashboard grows one step: **"Set up payouts"** — a button to Stripe's hosted
+onboarding (legal name, DOB, address, a bank account or debit card, ID for KYC),
+then back to a payout-status screen. Same machinery as Account → Payments for
+hosts.
+
+Two things are genuinely new, not reuse:
+
+- **The account's trade has to fit.** The host account is created with MCC 7011
+  and "self-catering holiday accommodation" (`connect/route.ts`). A chef, a
+  baker, a hamper-maker and a dog-walker are not lodging — the
+  `business_profile` (MCC + product description) has to match the guest trade,
+  or Stripe is being told the wrong thing about what's being sold. So the
+  account-creation call needs to be parameterised by trade rather than
+  hard-coded to hosting.
+- **The return lands in the wrong place.** `return_url` / `refresh_url` point at
+  `/account?section=payments`. A provider finishing onboarding should come back
+  to their provider dashboard, not the host account page — so those URLs need to
+  branch, or a shared payout screen serves both.
+
+One flag, not a v1 blocker: `payouts_enabled` lives on the profile (the person),
+so a user who is both a host and a guest-provider has **one** connected account.
+Fine — but then whose MCC? Unlikely in v1 (guest providers won't usually be
+hosts), worth a note before someone hits it.
+
+## What they see if they abandon it half-way
+
+The connected account is created on the first click, so abandoning leaves a real
+account that is `details_submitted: false`, `payouts_enabled: false`, with
+Stripe listing what's still `currently_due` — all of which the GET route already
+reads and stores. Nothing is lost.
+
+Their dashboard shows: **"Approved — one step left before guests can book you:
+finish setting up payouts,"** and a *Continue setup* button. That button mints a
+**fresh** onboarding link every time (the route already regenerates rather than
+storing — Stripe's links are single-use and expire fast), so a stale link is
+never a dead end; the `refresh_url` already catches an expired link mid-flow and
+bounces them to a new one. They can walk away and come back any number of times;
+the application stays approved, no re-approval.
+
+If Stripe asks for more later (verification that only triggers after some
+volume), it's the same surface driven by `stripe_requirements_due`: **"Action
+needed on your payouts,"** with what's outstanding.
+
+The one hard rule: half-connected is **not live**. They don't appear to guests.
+
+## What a guest sees if a provider is approved but not yet connected
+
+**Nothing — the provider isn't shown.** The guest surface filters on approved
+**and** payout-ready, so an approved-but-unconnected provider is simply absent.
+
+That's the whole reason for the second gate: we can't take money `on_behalf_of`
+an account that can't receive it, so listing such a provider would be an offer
+that fails at checkout. Better an empty category than a broken payment. There is
+no "coming soon" card for them — a guest is never shown someone they can't
+actually pay.
+
+Same gate covers the account that *was* live and later falls out of good
+standing (Stripe re-raises requirements, payouts pause): because the gate reads
+the stored `payouts_enabled`, they drop out of the guest surface on their own and
+get the "action needed" nudge — rather than a guest paying for a chef whose
+payouts are frozen.
+
+So, end to end: **you approve the business → they finish Connect → they go live.
+Guests only ever see providers who can be paid; providers always know exactly why
+they're not live yet and how to fix it in one button.**
