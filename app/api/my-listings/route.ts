@@ -18,16 +18,20 @@ const ALLOWED: Permission[] = [
 // browser ask here rather than working it out themselves.
 export async function GET(req: NextRequest) {
     const supabase = createRouteHandlerClient({ cookies });
-    const { data: { session } } = await supabase.auth.getSession();
+    // getUser(), not getSession(). getSession() only decodes the auth
+    // cookie — it never checks the signature — so the id below would be
+    // whatever the caller wrote in it. getUser() asks the auth server,
+    // which verifies the token and that the session has not been revoked.
+    const { data: { user } } = await supabase.auth.getUser();
 
-    if (!session || !session.user) {
+    if (!user) {
         return NextResponse.json({ listings: [] });
     }
 
     const asked = req.nextUrl.searchParams.get('permission') as Permission;
     const permission: Permission = ALLOWED.indexOf(asked) !== -1 ? asked : 'can_calendar';
 
-    const all = await accessibleListings(session.user.id);
+    const all = await accessibleListings(user.id);
 
     return NextResponse.json({
         listings: all

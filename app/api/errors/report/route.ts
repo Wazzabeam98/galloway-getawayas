@@ -25,8 +25,12 @@ export async function POST(req: NextRequest) {
         let userId: string | null = null;
         try {
             const supabase = createRouteHandlerClient({ cookies });
-            const { data: { session } } = await supabase.auth.getSession();
-            userId = (session && session.user && session.user.id) || null;
+            // getUser(), not getSession(). getSession() only decodes the auth
+            // cookie — it never checks the signature — so the id below would be
+            // whatever the caller wrote in it. getUser() asks the auth server,
+            // which verifies the token and that the session has not been revoked.
+            const { data: { user } } = await supabase.auth.getUser();
+            userId = (user && user.id) || null;
         } catch {
             // Not signed in, or no session. Still worth recording.
         }

@@ -9,9 +9,13 @@ export const dynamic = 'force-dynamic';
 export async function POST(request: Request) {
     try {
         const supabase = createRouteHandlerClient({ cookies });
-        const { data: { session } } = await supabase.auth.getSession();
+        // getUser(), not getSession(). getSession() only decodes the auth
+        // cookie — it never checks the signature — so the id below would be
+        // whatever the caller wrote in it. getUser() asks the auth server,
+        // which verifies the token and that the session has not been revoked.
+        const { data: { user } } = await supabase.auth.getUser();
 
-        if (!session || !session.user) {
+        if (!user) {
             return NextResponse.json({ ok: false, error: 'Not signed in' }, { status: 401 });
         }
 
@@ -39,7 +43,7 @@ export async function POST(request: Request) {
 
         // The invitation is to a person, not to whoever happens to open the
         // link. Otherwise a forwarded email would hand over access.
-        const signedInEmail = (session.user.email || '').toLowerCase();
+        const signedInEmail = (user.email || '').toLowerCase();
 
         if (signedInEmail !== (invite.email || '').toLowerCase()) {
             return NextResponse.json(
@@ -58,7 +62,7 @@ export async function POST(request: Request) {
         await admin
             .from('listing_access')
             .update({
-                user_id: session.user.id,
+                user_id: user.id,
                 status: 'active',
                 accepted_at: new Date().toISOString(),
             })
