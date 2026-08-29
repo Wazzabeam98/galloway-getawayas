@@ -1,0 +1,5 @@
+attacker wrote cookie for victim id: aaaaaaaa-bbbb-4ccc-8ddd-eeeeeeeeeeee
+library parsed session.user.id     : aaaaaaaa-bbbb-4ccc-8ddd-eeeeeeeeeeee
+shape valid (has access/refresh/exp): true
+expires_at in future                : true
+\n=> getSession() would return user.id = aaaaaaaa-bbbb-4ccc-8ddd-eeeeeeeeeeee \n   with NO check that the signature is valid. That id is whatever the attacker typed.

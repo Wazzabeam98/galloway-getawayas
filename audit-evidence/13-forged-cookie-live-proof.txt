@@ -1,0 +1,7 @@
+victim id   = 94bbf254-87f1-40f8-bbf9-91b4dc70e1cd
+victim trip = a confirmed stay at "Private Cottage, Gatehouse of Fleet", check-in 2026-09-28
+
+NONE   (no cookie)          : 200  {"trips":[]}
+FORGED (self-written cookie): 200  {"trips":[]}
+
+cleaned up
