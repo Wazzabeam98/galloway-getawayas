@@ -346,9 +346,24 @@ const FindHome = async ({ params }: { params: { id: string } }) => {
 
     // Only published reviews are public. An unpublished one is still
     // waiting on the other side, or on the 14 day window closing.
+    // Named, not '*'. This page is read by strangers, so the same reasoning as
+    // the listings select above applies — and tests/no-star-select-on-listings
+    // now covers this table too.
+    //
+    // What a star was putting into the page source: booking_id and
+    // reviewee_id. Those tie a named guest to a specific stay, which is more
+    // than a review needs to say. Also review_type, is_published, published_at
+    // and edited_at, none of which anything here renders.
+    //
+    // The six category ratings are for ReviewsSummary; the rest is what the
+    // list itself draws. created_at is ordered by and not selected, which
+    // Postgres is perfectly happy with.
     const { data: reviews } = await supabase
         .from('reviews')
-        .select('*')
+        // One string literal, deliberately: supabase-js infers the row type
+        // from it, and a concatenation defeats that — every field then comes
+        // back as GenericStringError and the page stops compiling.
+        .select('id, reviewer_id, rating, comment, host_reply, cleanliness_rating, accuracy_rating, checkin_rating, communication_rating, location_rating, value_rating')
         .eq('listing_id', home.id)
         .eq('review_type', 'guest_to_host')
         .eq('is_published', true)
