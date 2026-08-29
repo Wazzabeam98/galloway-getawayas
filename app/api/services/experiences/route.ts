@@ -25,33 +25,56 @@ export async function GET(request: Request) {
             return NextResponse.json({ ok: false, error: 'Not signed in' }, { status: 401 });
         }
 
-        const bookingId = new URL(request.url).searchParams.get('booking') || '';
-        if (!bookingId) {
-            return NextResponse.json({ ok: false, error: 'Missing booking' }, { status: 400 });
+        // Two ways in, and both are owner-checked. A GUEST asks by their own
+        // booking (the trip page); a HOST asks by their own listing (the
+        // dashboard, to see what guests can book at their cottage). Same gate,
+        // same coversPoint, so the two can never show different answers.
+        const params = new URL(request.url).searchParams;
+        const bookingId = params.get('booking') || '';
+        const listingParam = params.get('listing') || '';
+
+        if (!bookingId && !listingParam) {
+            return NextResponse.json({ ok: false, error: 'Missing booking or listing' }, { status: 400 });
         }
 
         const admin = adminClient();
 
-        const { data: booking } = await admin
-            .from('bookings')
-            .select('id, guest_id, listing_id, check_in, check_out')
-            .eq('id', bookingId)
-            .maybeSingle();
+        let listingId = listingParam;
+        let stay: { check_in: string; check_out: string } | null = null;
 
-        if (!booking || booking.guest_id !== user.id) {
-            return NextResponse.json({ ok: false, error: 'Not your booking' }, { status: 403 });
+        if (bookingId) {
+            const { data: booking } = await admin
+                .from('bookings')
+                .select('id, guest_id, listing_id, check_in, check_out')
+                .eq('id', bookingId)
+                .maybeSingle();
+            if (!booking || booking.guest_id !== user.id) {
+                return NextResponse.json({ ok: false, error: 'Not your booking' }, { status: 403 });
+            }
+            listingId = booking.listing_id;
+            stay = staySpan(booking);
         }
 
         const { data: listing } = await admin
             .from('listings')
-            .select('id, location, latitude, longitude')
-            .eq('id', booking.listing_id)
+            .select('id, host_id, location, latitude, longitude')
+            .eq('id', listingId)
             .maybeSingle();
+
+        if (!listing) {
+            return NextResponse.json({ ok: false, error: 'No such listing' }, { status: 404 });
+        }
+
+        // The host route has to prove ownership — a host may only see the
+        // experiences around their OWN cottage, not any listing id they type.
+        if (listingParam && !bookingId && listing.host_id !== user.id) {
+            return NextResponse.json({ ok: false, error: 'Not your listing' }, { status: 403 });
+        }
 
         const point = pointForListing(listing);
         if (!point) {
             // No location to match against — better nothing than a wrong list.
-            return NextResponse.json({ ok: true, stay: staySpan(booking), providers: [] });
+            return NextResponse.json({ ok: true, stay, providers: [] });
         }
 
         // Live guest providers with a price. The gate is enforced in the query
@@ -90,7 +113,7 @@ export async function GET(request: Request) {
                 price: Number(p.experience_price),
             }));
 
-        return NextResponse.json({ ok: true, stay: staySpan(booking), providers });
+        return NextResponse.json({ ok: true, stay, providers });
     } catch (err: any) {
         console.error('[services/experiences]', err && err.message);
         return NextResponse.json({ ok: false, error: 'Could not load experiences' }, { status: 500 });

@@ -14,6 +14,7 @@ import { rateFor } from '@/lib/fees';
 import { buildLocation, splitLocation, DEFAULT_REGION } from '@/lib/places';
 import { buildStreetAddress, tidyPostcode } from '@/lib/address';
 import { fromRow, newProblems, publishProblems } from '@/lib/listingRules';
+import GuestBookableHere from '@/components/GuestBookableHere';
 import { PLOT_BANDS, STOREY_BANDS } from '@/lib/serviceProviders';
 import { compressImage } from '@/lib/compressImage';
 import IcalFeeds from '@/components/IcalFeeds';
@@ -638,6 +639,15 @@ export default function EditListing() {
                             Saving is blocked until you write one.
                         </p>
                     )}
+                </div>
+            )}
+
+            {/* Read-only: what a guest staying here can book. Owner only — a
+                moderator editing someone else's listing is not the host the
+                endpoint answers to. Same gate as the guest's trip page. */}
+            {!moderating && listingId && (
+                <div className="mb-8">
+                    <GuestBookableHere listingId={listingId} />
                 </div>
             )}
 
