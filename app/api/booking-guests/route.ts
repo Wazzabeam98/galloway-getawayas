@@ -23,9 +23,12 @@ async function bookedBy(admin: any, bookingId: string, userId: string) {
 export async function POST(request: Request) {
     try {
         const supabase = createRouteHandlerClient({ cookies });
-        const { data: { session } } = await supabase.auth.getSession();
+        // getUser(), not getSession() — getSession() trusts an unsigned
+        // cookie, so a forged one impersonates any user. getUser() verifies
+        // the token against the auth server. Matches the admin/services routes.
+        const { data: { user } } = await supabase.auth.getUser();
 
-        if (!session || !session.user) {
+        if (!user) {
             return NextResponse.json({ ok: false, error: 'Not signed in' }, { status: 401 });
         }
 
@@ -53,7 +56,7 @@ export async function POST(request: Request) {
                 );
             }
 
-            const booking = await bookedBy(admin, bookingId, session.user.id);
+            const booking = await bookedBy(admin, bookingId, user.id);
             if (!booking) {
                 return NextResponse.json({ ok: false, error: 'Not your booking' }, { status: 403 });
             }
@@ -65,7 +68,7 @@ export async function POST(request: Request) {
                 );
             }
 
-            if (email === (session.user.email || '').toLowerCase()) {
+            if (email === (user.email || '').toLowerCase()) {
                 return NextResponse.json(
                     { ok: false, error: 'You booked it, so you\u2019re already on it.' },
                     { status: 400 }
@@ -85,7 +88,7 @@ export async function POST(request: Request) {
                     email: email,
                     name: name || null,
                     user_id: (existingProfile && existingProfile.id) || null,
-                    invited_by: session.user.id,
+                    invited_by: user.id,
                 })
                 .select('id, invite_token')
                 .single();
@@ -110,7 +113,7 @@ export async function POST(request: Request) {
             const { data: bookerProfile } = await admin
                 .from('profiles')
                 .select('full_name, preferred_name')
-                .eq('id', session.user.id)
+                .eq('id', user.id)
                 .maybeSingle();
 
             const bookerName =
@@ -156,10 +159,10 @@ export async function POST(request: Request) {
                 return NextResponse.json({ ok: false, error: 'Not found' }, { status: 404 });
             }
 
-            const booking = await bookedBy(admin, row.booking_id, session.user.id);
+            const booking = await bookedBy(admin, row.booking_id, user.id);
 
             // The booker can remove anyone; anyone can remove themselves.
-            const isSelf = row.user_id === session.user.id;
+            const isSelf = row.user_id === user.id;
 
             if (!booking && !isSelf) {
                 return NextResponse.json({ ok: false, error: 'Not permitted' }, { status: 403 });
