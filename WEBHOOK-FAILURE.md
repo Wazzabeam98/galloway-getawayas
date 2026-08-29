@@ -328,6 +328,50 @@ succeeded. Adding `handled_at` and `failed_at` would turn `/admin/errors` from
 
 ---
 
+# 6. What this does to the tests
+
+**Before:** 729 passing.
+**After:** 739 passing, 0 failing. Ten added, **none changed, none removed.**
+
+Nothing existing had to be edited, and that is worth saying plainly: no test
+was asserting anything about what happens when the handler fails, because the
+handler failing had no observable effect to assert on. That was the bug.
+
+The new file is `tests/webhook-reporting.test.ts`. It forces a real throw by
+stubbing the database, so it covers the same ground as the live demonstration
+without needing the fault hook, a server or Stripe. What it pins:
+
+- **A handler that throws while confirming a paid booking is reported** —
+  exactly one report, not none and not a storm.
+- **The report carries the booking id and the Stripe event id.** The booking
+  because it is the thing now wrong; the event id because it is what you need
+  to find it in Stripe and to clear the `stripe_events` row if you replay it.
+- **Stripe is still answered 200.** This one exists so that changing it to a
+  500 means arguing with a failing test rather than with a comment. The test's
+  name says why: a retry cannot help and would not be safe.
+- **A redelivery is refused before the handler runs.** The mechanism that makes
+  a 500 pointless, pinned so it cannot be quietly removed and leave the comment
+  above it lying.
+- **Each of the quiet write failures** — the missing ledger row, the balance
+  that could not be recorded, the host stuck as "cannot be paid", the event
+  that could not be recorded.
+- **A booking that confirms normally reports nothing at all.** A quiet success
+  has to stay quiet, or the error page fills with noise and stops being read.
+
+There was one existing test I broke and fixed properly rather than exempting:
+`tests/runner-targets.test.ts` failed because `scripts/webhook-fault.mjs`
+named a localhost URL of its own and did not import the target guard. That
+guard exists because `journeys.mjs` once ran green for fifteen commits against
+a merged branch, and my script writes rows *and* takes real payments, so it is
+squarely the kind of runner it was written for. It now goes through
+`resolveTarget()` like the others — which is why the run above prints
+`checking what … actually is before writing to it` and refuses production, the
+production database, and a stale build. The guard also scans comments, so the
+usage example at the top of the file names `--host` rather than an address.
+That is right: a stale URL in a comment is how the last one hid.
+
+---
+
 # 6. The fault injection, and why it is in the route
 
 `injectedFault()` in `app/api/stripe/webhook/route.ts` is the thing that makes
