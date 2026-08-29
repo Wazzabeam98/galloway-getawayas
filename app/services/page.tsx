@@ -1,135 +1,87 @@
 import Link from 'next/link';
-import { TradeTile, TradeTileGrid } from '@/components/services/TradeTiles';
-import {
-    TRADES,
-    HOST_TRADES,
-    canBeEnquiredAbout,
-    comingSoonNote,
-} from '@/lib/serviceProviders';
+import { Home, Sparkles, Store, ArrowRight } from 'lucide-react';
 
 export const metadata = {
-    // The layout appends ' | Galloway Getaways' to every page title, so
-    // naming it here again produced it twice in the tab.
-    title: 'Find a tradesman',
+    title: 'Services',
     description:
-        'Electricians, joiners, plumbers, roofers, painters, handymen and window cleaners '
-        + 'covering Dumfries & Galloway. Browse who covers your property and ask one of them.',
+        'Local services and experiences around a Galloway Getaways stay — tradespeople for owners, '
+        + 'experiences for guests, and a way in for local businesses.',
     alternates: { canonical: '/services' },
 };
 
-// The host-facing shop.
+// The shared parent the two halves lacked.
 //
-// THIS URL USED TO BE SOMETHING ELSE
-//
-// A hand-built page over the flat `services` catalogue and `service_requests`,
-// with three rows on production behind it. It was Liam's own manual flow and
-// this replaces it. The table and its rows are untouched — retiring a page is
-// not a reason to delete somebody's data — but the URL is now this.
-//
-// BROWSE, NOT MATCH
-//
-// A host picks a trade, sees who covers them, reads the prices where a
-// provider has published them, and asks ONE person. Nothing scores anybody and
-// nothing fans out. What the platform sells is the introduction.
-//
-// THE SAME TILE AS THE SIGN-UP
-//
-// This was plain text cards while the business sign-up had icons in a
-// three-across grid, and side by side the shop looked inert — the same idea
-// from the two ends, built weeks apart, drifted. Both now render
-// components/services/TradeTiles, so the next change to one is a change to
-// both rather than a thing somebody has to remember.
-//
-// The "Not yet" section deliberately does NOT use it. Those three are not
-// choices — there is nowhere to go — and giving them the same hover, the same
-// icon and the same affordance as a live tile would be an invitation to press
-// something inert.
-//
-// ALL TEN TRADES ARE ON THIS PAGE, INCLUDING THE THREE THAT DO NOTHING
-//
-// Cleaning and waste are not enquired about — they take a commission at
-// acceptance, which needs a total, which needs a booking. Gardening is waiting
-// on a plot field that no form writes yet. All three could simply have been
-// left off, and that is the version to avoid: a host who came here for a
-// cleaner and found no mention of cleaning concludes the site is broken rather
-// than that the feature is late. So they are listed, and they say so.
-export default function ServicesPage() {
-    const trades = TRADES.filter(
-        (t) => (HOST_TRADES as readonly string[]).indexOf(t.key) !== -1
-    );
-
-    const live = trades.filter((t) => canBeEnquiredAbout(t.key));
-    const soon = trades.filter((t) => !canBeEnquiredAbout(t.key));
-
+// "Services" used to mean only the owner's tradesman shop, which is why guest
+// experiences — the same idea from the other end — had no relationship to it
+// on the site, and people came here looking for them and left confused. This
+// page names the whole thing and branches by who you are: an owner hiring for
+// their property, a guest booking during a stay, or a business selling to
+// either. The tradesman shop is now one branch of it, at /services/property;
+// its trade pages keep their /services/<trade> URLs.
+export default function ServicesHub() {
     return (
         <div className="max-w-3xl mx-auto px-4 sm:px-6 py-12 pb-24">
             <h1 className="text-3xl sm:text-4xl font-extrabold tracking-tight text-slate-900">
-                Find a tradesman
+                Services
             </h1>
-            <p className="text-slate-600 mt-3">
-                Local businesses covering your property. You see who they are and what they charge
-                before you ask, and you ask one of them — not five.
-            </p>
-            <p className="text-sm text-slate-500 mt-3 mb-10">
-                We take nothing from the job. Whatever you agree is between you and them.
+            <p className="text-slate-600 mt-3 mb-10">
+                Local businesses around a Galloway stay — the people an owner hires for their
+                cottage, and the experiences a guest books while they’re here. Whichever you are:
             </p>
 
-            {/* The signpost. This shop is one half of the idea; the other half
-                — what a guest books during a stay — lives somewhere else
-                entirely, and people (including the person who asked for this
-                line) come here looking for it. Said once, plainly, with a way
-                across. */}
-            <div className="rounded-xl border border-slate-200 bg-slate-50 p-4 mb-10 text-sm text-slate-600">
-                This is for hiring tradespeople for your own property. Looking for what your{' '}
-                <span className="font-medium text-slate-800">guests</span> can book during a stay —
-                a private chef, a welcome hamper, pet care?{' '}
-                <Link href="/trips" className="text-emerald-700 font-semibold underline hover:text-emerald-800">
-                    Those are offered to guests on their trip page.
+            <div className="space-y-4">
+                {/* Owners */}
+                <Link
+                    href="/services/property"
+                    className="group block rounded-2xl border border-slate-300 p-6 hover:border-emerald-700 hover:bg-emerald-50/40 transition"
+                >
+                    <Home className="w-8 h-8 text-emerald-700 mb-4" strokeWidth={1.5} />
+                    <h2 className="font-bold text-slate-900 text-lg">For your property</h2>
+                    <p className="text-sm text-slate-600 mt-2">
+                        Own a cottage? Hire local tradespeople for it — cleaning, gardening, window
+                        cleaning, maintenance and repairs. See who covers you and ask one of them.
+                    </p>
+                    <span className="inline-flex items-center gap-1.5 text-sm font-semibold text-emerald-700 mt-4">
+                        Browse tradespeople
+                        <ArrowRight className="w-4 h-4 group-hover:translate-x-0.5 transition" />
+                    </span>
+                </Link>
+
+                {/* Guests */}
+                <Link
+                    href="/trips"
+                    className="group block rounded-2xl border border-slate-300 p-6 hover:border-emerald-700 hover:bg-emerald-50/40 transition"
+                >
+                    <Sparkles className="w-8 h-8 text-emerald-700 mb-4" strokeWidth={1.5} />
+                    <h2 className="font-bold text-slate-900 text-lg">For your stay</h2>
+                    <p className="text-sm text-slate-600 mt-2">
+                        Staying with us? Local experiences you can book while you’re here — a private
+                        chef, a welcome hamper, pet care. They appear on your trip page once you’ve
+                        booked a cottage, matched to where you’re staying and your dates.
+                    </p>
+                    <span className="inline-flex items-center gap-1.5 text-sm font-semibold text-emerald-700 mt-4">
+                        Go to your trips
+                        <ArrowRight className="w-4 h-4 group-hover:translate-x-0.5 transition" />
+                    </span>
+                </Link>
+
+                {/* Businesses */}
+                <Link
+                    href="/business"
+                    className="group block rounded-2xl border border-slate-300 p-6 hover:border-emerald-700 hover:bg-emerald-50/40 transition"
+                >
+                    <Store className="w-8 h-8 text-emerald-700 mb-4" strokeWidth={1.5} />
+                    <h2 className="font-bold text-slate-900 text-lg">Run a local business</h2>
+                    <p className="text-sm text-slate-600 mt-2">
+                        Sell to owners as a tradesperson, or to guests as an experience. You keep your
+                        own prices; we put you in front of the right people.
+                    </p>
+                    <span className="inline-flex items-center gap-1.5 text-sm font-semibold text-emerald-700 mt-4">
+                        Set up a business
+                        <ArrowRight className="w-4 h-4 group-hover:translate-x-0.5 transition" />
+                    </span>
                 </Link>
             </div>
-
-            <TradeTileGrid>
-                {live.map((trade) => (
-                    <TradeTile
-                        key={trade.key}
-                        tradeKey={trade.key}
-                        label={trade.label}
-                        href={'/services/' + trade.key}
-                    />
-                ))}
-            </TradeTileGrid>
-
-            {soon.length > 0 && (
-                <div className="mt-10">
-                    <h2 className="text-sm font-semibold text-slate-500 uppercase tracking-wide">
-                        Not yet
-                    </h2>
-                    <div className="grid sm:grid-cols-2 gap-3 mt-3">
-                        {soon.map((trade) => (
-                            <div
-                                key={trade.key}
-                                className="rounded-2xl border border-slate-200 bg-slate-50 p-5"
-                            >
-                                <h3 className="font-bold text-slate-500">{trade.label}</h3>
-                                <p className="text-sm text-slate-500 mt-2">
-                                    {comingSoonNote(trade.key)}
-                                </p>
-                            </div>
-                        ))}
-                    </div>
-                </div>
-            )}
-
-            <p className="text-sm text-slate-500 mt-12">
-                Already asked somebody?{' '}
-                <Link
-                    href="/dashboard/enquiries"
-                    className="text-emerald-700 font-semibold underline hover:text-emerald-800"
-                >
-                    See your enquiries
-                </Link>
-                .
-            </p>
         </div>
     );
 }

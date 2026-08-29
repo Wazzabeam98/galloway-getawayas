@@ -161,7 +161,7 @@ export default function EnquiriesPage() {
                 <div className="mt-8 rounded-2xl border border-slate-200 bg-slate-50 p-6">
                     <p className="font-semibold text-slate-900">Nothing yet.</p>
                     <p className="text-sm text-slate-600 mt-2">
-                        <Link href="/services" className="text-emerald-700 font-semibold underline">
+                        <Link href="/services/property" className="text-emerald-700 font-semibold underline">
                             Find a tradesman
                         </Link>{' '}
                         who covers your property.

@@ -249,7 +249,7 @@ export default function TradeShopPage({ params }: { params: { trade: string } })
                 <p className="text-slate-600 mt-3">
                     That trade cannot be enquired about through the site yet.
                 </p>
-                <Link href="/services" className="text-emerald-700 font-semibold underline mt-6 inline-block">
+                <Link href="/services/property" className="text-emerald-700 font-semibold underline mt-6 inline-block">
                     Back to the list
                 </Link>
             </div>
@@ -258,7 +258,7 @@ export default function TradeShopPage({ params }: { params: { trade: string } })
 
     return (
         <div className="max-w-3xl mx-auto px-4 sm:px-6 py-12 pb-24">
-            <Link href="/services" className="text-sm text-slate-500 hover:text-slate-700">
+            <Link href="/services/property" className="text-sm text-slate-500 hover:text-slate-700">
                 ← All trades
             </Link>
 
