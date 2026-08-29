@@ -2,6 +2,8 @@ import { createClient } from '@supabase/supabase-js';
 import { NextResponse } from 'next/server';
 import Env from '@/config/Env';
 import { logError } from '@/lib/logError';
+import { AREAS, hasCopy } from '@/config/areas';
+import { townKey } from '@/lib/places';
 
 const SITE_URL = 'https://gallowaygetaways.co.uk';
 
@@ -94,7 +96,10 @@ export async function GET() {
         // that is not published, so the two agree about what is public.
         const { data: listings, error } = await supabase
             .from('listings')
-            .select('id, created_at, approved_at, status')
+            // `location` is here for the area pages below: which of them are
+            // offered to Google is decided from the properties that exist
+            // right now, not from a list baked in at build time.
+            .select('id, created_at, approved_at, status, location')
             .eq('status', 'published');
 
         // supabase-js does NOT throw on a failed query — it hands the error
@@ -122,11 +127,51 @@ export async function GET() {
             priority: '0.8',
         }));
 
+        // ---------------------------------------------------------------
+        // The area landing pages, and the reason this route had to become
+        // dynamic in the first place.
+        //
+        // An area is offered to Google only when BOTH are true:
+        //
+        //   it has been written  — config/areas.ts holds the copy, and an
+        //                          area with none is the thin generated page
+        //                          these exist to beat. That gate needs a
+        //                          deploy, because copy is code.
+        //
+        //   it has somewhere to stay — counted here, from the listings that
+        //                          exist at this moment. That gate needs NO
+        //                          deploy: publish a cottage in Moffat and
+        //                          the Moffat page is in the next fetch of
+        //                          this file, minutes later.
+        //
+        // A page promising cottages in a town with none is worse than no page:
+        // the visitor bounces and a cluster of near-identical thin pages is
+        // read as a quality signal about the whole domain.
+        // ---------------------------------------------------------------
+        const counts: Record<string, number> = {};
+        for (const listing of listings || []) {
+            const key = townKey((listing as any).location);
+            counts[key] = (counts[key] || 0) + 1;
+        }
+
+        const areaPages: Entry[] = AREAS.filter((area) => {
+            if (!hasCopy(area)) return false;
+            return area.townKeys.some((key) => (counts[key] || 0) > 0);
+        }).map((area) => ({
+            loc: `${SITE_URL}/holiday-cottages/${area.slug}`,
+            lastmod: now,
+            changefreq: 'weekly',
+            priority: '0.9',
+        }));
+
         // Deliberately NOT reporting an empty list. "No listings yet" is a
         // true state before launch, and this route runs once per crawler hit,
         // so reporting it would fill /admin/errors with the same row. A query
         // that FAILED is a different thing and is caught above.
-        return new NextResponse(render(staticPages.concat(listingPages)), { headers });
+        return new NextResponse(
+            render(staticPages.concat(areaPages).concat(listingPages)),
+            { headers }
+        );
     } catch (err) {
         // A sitemap that fails shouldn't take the site down. But it must not
         // fail quietly either: this now shows up on /admin/errors rather than

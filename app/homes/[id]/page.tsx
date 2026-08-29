@@ -5,6 +5,7 @@ import { adminClient } from '@/lib/supabaseAdmin';
 import { createServerComponentClient } from '@supabase/auth-helpers-nextjs'
 import { cookies } from 'next/headers';
 import { notFound } from 'next/navigation';
+import Link from 'next/link';
 import { capitializeFirst, displayName, getImageUrl, formatTime } from '@/lib/utils';
 import BookingWidget from '@/components/BookingWidget';
 import ReviewStars from '@/components/ReviewStars';
@@ -12,6 +13,8 @@ import PhotoGallery from '@/components/PhotoGallery';
 import HostReplyBox from '@/components/HostReplyBox';
 import ReviewsSummary from '@/components/ReviewsSummary';
 import { hasPublicScore, MIN_PUBLIC_REVIEWS } from '@/lib/reviews';
+import { townKey } from '@/lib/places';
+import { areaForTownKey, hasCopy } from '@/config/areas';
 import PropertyMap from '@/components/PropertyMap';
 import ShowMoreText from '@/components/ShowMoreText';
 import AmenityList from '@/components/AmenityList';
@@ -376,9 +379,57 @@ const FindHome = async ({ params }: { params: { id: string } }) => {
     const reviewCount = reviews?.length || 0;
     const showScore = hasPublicScore(reviewCount);
 
+    // The way back up. Until the area pages existed a listing linked to
+    // nothing at all — every property on the site was a dead end, for a guest
+    // and for a crawler. Only shown for an area that has actually been
+    // written: linking to a page that is noindex would hand Google a link to
+    // follow to nothing.
+    const area = areaForTownKey(townKey(home.location));
+    const showArea = area !== null && hasCopy(area);
+
+    const breadcrumbSchema = {
+        '@context': 'https://schema.org',
+        '@type': 'BreadcrumbList',
+        itemListElement: [
+            { '@type': 'ListItem', position: 1, name: 'Home', item: SITE_URL },
+            ...(showArea && area
+                ? [{
+                      '@type': 'ListItem',
+                      position: 2,
+                      name: `Holiday cottages in ${area.name}`,
+                      item: `${SITE_URL}/holiday-cottages/${area.slug}`,
+                  }]
+                : []),
+            {
+                '@type': 'ListItem',
+                position: showArea ? 3 : 2,
+                name: home.title,
+                item: `${SITE_URL}/homes/${home.id}`,
+            },
+        ],
+    };
+
     return (
         <div className='max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 mb-10 pb-24 lg:pb-0'>
+            <script
+                type="application/ld+json"
+                dangerouslySetInnerHTML={{ __html: JSON.stringify(breadcrumbSchema) }}
+            />
             <div className='mt-4'>
+                {showArea && area && (
+                    <nav aria-label="Breadcrumb" className='mb-3 text-sm text-slate-500'>
+                        <Link href="/" className='hover:text-slate-900 underline underline-offset-4'>
+                            Home
+                        </Link>
+                        <span className='mx-2' aria-hidden="true">/</span>
+                        <Link
+                            href={`/holiday-cottages/${area.slug}`}
+                            className='hover:text-slate-900 underline underline-offset-4'
+                        >
+                            Holiday cottages in {area.name}
+                        </Link>
+                    </nav>
+                )}
                 <h1 className='text-2xl md:text-3xl font-bold text-slate-900'>{home.title}</h1>
                 <div className='flex items-center gap-1.5 mt-1.5 text-sm text-slate-600'>
                     {showScore ? (
