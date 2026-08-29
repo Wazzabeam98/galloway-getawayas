@@ -403,6 +403,72 @@ async function probeInsert({ name, who, key, table, row, find, tellTale }) {
     }
 }
 
+
+// Whether a browser role is REFUSED a delete outright, rather than being
+// answered 204 and quietly matching nothing.
+//
+// The distinction is the whole point of this probe. Before the grant sweep on
+// 29 August, `anon` and `authenticated` held DELETE on every table in the
+// schema, including payments, payouts and bookings. Nothing could actually be
+// deleted, because row level security had no DELETE policy on those tables —
+// so PostgREST answered 204 No Content and removed nothing, and every probe
+// that only asked "did a row disappear" scored it as safe.
+//
+// It was not safe. It was one permissive `for all` policy away from working,
+// silently, on the money tables. So this asserts on the REFUSAL, not on the
+// survival of the row: a 204 here is a failure even though nothing was lost.
+async function probeDeleteRefused({ name, who, key, table, filter }) {
+    // A token, not a label. Passing the string 'anon' here sends
+    // `Authorization: Bearer anon`, PostgREST answers PGRST301 for a malformed
+    // JWT, and every probe below scores a ✓ for a request that never reached
+    // the table. That is exactly what the first version of this section did,
+    // and the negative control caught it — re-granting DELETE on payments
+    // changed nothing, because nothing was being tested.
+    if (!key || key.length < 40) {
+        bad(name, 'the probe was handed "' + key + '" instead of a token — it tested nothing');
+        return;
+    }
+
+    const before = await svc.select('/' + table + '?select=id&limit=200');
+    const countBefore = before.ok && Array.isArray(before.body) ? before.body.length : null;
+
+    const attempt = await rest(key, 'DELETE', '/' + table + (filter || '?id=neq.' + NIL_UUID));
+
+    const after = await svc.select('/' + table + '?select=id&limit=200');
+    const countAfter = after.ok && Array.isArray(after.body) ? after.body.length : null;
+
+    if (countBefore !== null && countAfter !== null && countAfter < countBefore) {
+        bad(name, who + ' DELETED ' + (countBefore - countAfter) + ' row(s) from ' + table
+            + ' (HTTP ' + attempt.status + '). They are gone — this probe cannot put them back.');
+        return;
+    }
+
+    if (attempt.status === 401 || attempt.status === 403) {
+        const code = attempt.body && attempt.body.code ? attempt.body.code : attempt.status;
+        ok(name, 'refused by the grant — ' + code);
+        return;
+    }
+
+    // A 400 is PostgREST rejecting the SHAPE of the request — usually a filter
+    // naming a column the target does not have. That is the probe being wrong,
+    // not the database being safe, and it must not be scored either way.
+    // Caught by pointing this at listing_busy_nights, which has no `id`.
+    if (attempt.status === 400) {
+        bad(name, 'the probe sent a request ' + table + ' could not parse ('
+            + ((attempt.body && attempt.body.message) || '400').slice(0, 80)
+            + '). It tested nothing — fix the filter.');
+        return;
+    }
+
+    // Nothing was lost, and that is not the same as being refused.
+    bad(name, who + ' was ANSWERED ' + attempt.status + ' on ' + table
+        + ' rather than refused. Nothing was deleted, because no DELETE policy '
+        + 'matched — but the grant is there, so the next permissive policy on '
+        + 'this table makes it work, silently.');
+}
+
+const NIL_UUID = '00000000-0000-0000-0000-000000000000';
+
 /* ---------------------------------------------------------------- the run */
 
 async function run() {
@@ -715,6 +781,43 @@ async function run() {
     }
 
     /* ------------------------------------------------------------- summary */
+
+    // ------------------------------------------------------------------
+    // Deletes. Added after the grant sweep of 29 August 2026, which found
+    // DELETE and TRUNCATE granted to both browser roles on every table in the
+    // schema — the Supabase default, never asked for, and load-bearing on
+    // nothing.
+    // ------------------------------------------------------------------
+    console.log('\n  deleting things nobody should be able to delete');
+
+    for (const table of ['payments', 'payouts', 'bookings', 'listings', 'profiles', 'error_log']) {
+        await probeDeleteRefused({
+            name: 'a signed-out stranger cannot delete from ' + table,
+            ...A, table,
+        });
+        await probeDeleteRefused({
+            name: 'an ordinary signed-in user cannot delete from ' + table,
+            ...U, table,
+        });
+    }
+
+    // The views were missed by the first pass of that sweep, because the table
+    // list came from pg_tables and views are not in it. All three are
+    // auto-updatable, so a delete against one propagates to the table beneath.
+    // A signed-in user deleted their own profiles row through profile_private
+    // AFTER every table-level revoke was in place.
+    // Each with a filter naming a column that view actually has — a 400 for a
+    // missing `id` would look like a refusal to a careless reading.
+    for (const [view, filter] of [
+        ['profile_private', '?id=neq.' + NIL_UUID],
+        ['service_provider_own_contacts', '?id=neq.' + NIL_UUID],
+        ['listing_busy_nights', '?listing_id=neq.' + NIL_UUID],
+    ]) {
+        await probeDeleteRefused({
+            name: 'nobody can delete through the ' + view + ' view',
+            ...U, table: view, filter,
+        });
+    }
 
     console.log('\n  ' + passed + ' refused, ' + failed + ' WRITABLE\n');
 
