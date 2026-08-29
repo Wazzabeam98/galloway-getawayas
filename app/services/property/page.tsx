@@ -18,8 +18,9 @@ export const metadata = {
 // The owner's half of the services idea — hiring local tradespeople for their
 // own property. It used to live at /services; that URL is now the hub that
 // names both halves (owners hire, guests book), and this is one branch of it.
-// The guest half is explained on the hub and shown on a guest's trip page, so
-// this page no longer needs its own signpost across.
+// The guest half is explained on the hub; a lighter signpost is kept here too,
+// because the footer links straight to this page and a direct arrival would
+// otherwise miss it.
 //
 // BROWSE, NOT MATCH. A host picks a trade, sees who covers them, reads prices
 // where published, and asks ONE person. Nothing scores anybody. What the
