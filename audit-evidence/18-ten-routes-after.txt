@@ -1,0 +1,18 @@
+REMAINING TEN — AFTER (live 2fe3e6b, getUser): forged refused, real works.
+
+  messages/threads/[id]    forged 401 | real 404 (works)
+  listings/access-code     forged 401 | real 403 (works)
+  stripe/payout-schedule   forged 401 | real 200 (works)
+  listings/visibility      forged 401 | real 403 (works)
+  listing-access           forged 401 | real 403 (works)
+  booking-guests           forged 401 | real 403 (works)
+  notify                   forged 401 | real 400 (works)
+  stripe/checkout          forged 401 | real 404 (works)
+  stripe/balance-checkout  forged 401 | real 404 (works)
+
+  trips & messages/threads return 200-empty for a signed-out caller, so the
+  proof is by DATA, not status: a forged cookie carrying the victim's sub now
+  returns {"trips":[]} / {"conversations":[]} — NO victim data. Before the fix
+  (audit-evidence/15) the same cookie returned the victim's real booking.
+
+ALL FOURTEEN exploitable getSession routes now verify identity with getUser().
