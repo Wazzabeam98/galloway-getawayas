@@ -17,13 +17,17 @@ export const dynamic = 'force-dynamic';
 // them returns nothing and the badge would quietly never appear.
 export async function GET() {
     const supabase = createRouteHandlerClient({ cookies });
-    const { data: { session } } = await supabase.auth.getSession();
+    // getUser(), not getSession(). getSession() only decodes the auth
+    // cookie — it never checks the signature — so the id below would be
+    // whatever the caller wrote in it. getUser() asks the auth server,
+    // which verifies the token and that the session has not been revoked.
+    const { data: { user } } = await supabase.auth.getUser();
 
-    if (!session || !session.user) {
+    if (!user) {
         return NextResponse.json({ pending: 0 });
     }
 
-    const allowed = await listingIdsFor(session.user.id, 'can_bookings');
+    const allowed = await listingIdsFor(user.id, 'can_bookings');
 
     if (allowed.length === 0) {
         return NextResponse.json({ pending: 0 });

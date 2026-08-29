@@ -24,13 +24,17 @@ export const dynamic = 'force-dynamic';
 export async function GET() {
     try {
         const supabase = createRouteHandlerClient({ cookies });
-        const { data: { session } } = await supabase.auth.getSession();
+        // getUser(), not getSession(). getSession() only decodes the auth
+        // cookie — it never checks the signature — so the id below would be
+        // whatever the caller wrote in it. getUser() asks the auth server,
+        // which verifies the token and that the session has not been revoked.
+        const { data: { user } } = await supabase.auth.getUser();
 
-        if (!session || !session.user) {
+        if (!user) {
             return NextResponse.json({ ok: false, error: 'Not signed in' }, { status: 401 });
         }
 
-        const uid = session.user.id;
+        const uid = user.id;
         const admin = adminClient();
 
         // Their own properties only. A co-host does not own the templates, so
