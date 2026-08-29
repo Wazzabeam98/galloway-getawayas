@@ -9,6 +9,7 @@ import LoginModel from '@/components/auth/LoginModel';
 import { getImageUrl, capitializeFirst, displayName, formatTime } from '@/lib/utils';
 import Link from 'next/link';
 import { refundDue } from '@/lib/cancellation';
+import GuestExperiences from '@/components/GuestExperiences';
 
 interface Booking {
     id: string;
@@ -442,6 +443,13 @@ export default function TripsPage() {
                 })()}
                 {isCompleted && alreadyReviewed && (
                     <p className="text-xs text-slate-400 mt-3">You've reviewed this stay.</p>
+                )}
+                {b.status === 'confirmed' && new Date(b.check_out) >= today && (
+                    <GuestExperiences
+                        bookingId={b.id}
+                        checkIn={b.check_in}
+                        checkOut={b.check_out}
+                    />
                 )}
             </div>
         );
