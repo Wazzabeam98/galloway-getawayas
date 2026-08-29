@@ -10,9 +10,12 @@ export const dynamic = 'force-dynamic';
 export async function POST(request: Request) {
     try {
         const supabase = createRouteHandlerClient({ cookies });
-        const { data: { session } } = await supabase.auth.getSession();
+        // getUser(), not getSession() — getSession() trusts an unsigned
+        // cookie, so a forged one impersonates any user. getUser() verifies
+        // the token against the auth server. Matches the admin/services routes.
+        const { data: { user } } = await supabase.auth.getUser();
 
-        if (!session || !session.user) {
+        if (!user) {
             return NextResponse.json({ ok: false, error: 'Not signed in' }, { status: 401 });
         }
 
@@ -34,7 +37,7 @@ export async function POST(request: Request) {
         if (!booking) {
             return NextResponse.json({ ok: false, error: 'Booking not found' }, { status: 404 });
         }
-        if (booking.guest_id !== session.user.id) {
+        if (booking.guest_id !== user.id) {
             return NextResponse.json({ ok: false, error: 'Not your booking' }, { status: 403 });
         }
         if (booking.payment_status !== 'deposit_paid') {
@@ -68,7 +71,7 @@ export async function POST(request: Request) {
         // Nothing is charged again after this, so nothing needs saving.
         const checkout = await stripeRequest('POST', '/checkout/sessions', {
             mode: 'payment',
-            customer_email: session.user.email,
+            customer_email: user.email,
             client_reference_id: booking.id,
             payment_method_types: ['card', 'klarna', 'link'],
             // GBP only, at the price on the listing.

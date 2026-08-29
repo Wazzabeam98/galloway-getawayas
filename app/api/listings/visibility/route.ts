@@ -12,9 +12,12 @@ export const dynamic = 'force-dynamic';
 export async function POST(request: Request) {
     try {
         const supabase = createRouteHandlerClient({ cookies });
-        const { data: { session } } = await supabase.auth.getSession();
+        // getUser(), not getSession() — getSession() trusts an unsigned
+        // cookie, so a forged one impersonates any user. getUser() verifies
+        // the token against the auth server. Matches the admin/services routes.
+        const { data: { user } } = await supabase.auth.getUser();
 
-        if (!session || !session.user) {
+        if (!user) {
             return NextResponse.json({ ok: false, error: 'Not signed in' }, { status: 401 });
         }
 
@@ -26,7 +29,7 @@ export async function POST(request: Request) {
             return NextResponse.json({ ok: false, error: 'Missing listing' }, { status: 400 });
         }
 
-        const access = await checkListing(session.user.id, listingId, 'can_listing');
+        const access = await checkListing(user.id, listingId, 'can_listing');
 
         if (!access) {
             return NextResponse.json(

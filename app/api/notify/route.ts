@@ -60,9 +60,12 @@ async function wants(admin: any, userId: string, column: string): Promise<boolea
 export async function POST(request: Request) {
     try {
         const supabase = createRouteHandlerClient({ cookies });
-        const { data: { session } } = await supabase.auth.getSession();
+        // getUser(), not getSession() — getSession() trusts an unsigned
+        // cookie, so a forged one impersonates any user. getUser() verifies
+        // the token against the auth server. Matches the admin/services routes.
+        const { data: { user } } = await supabase.auth.getUser();
 
-        if (!session || !session.user) {
+        if (!user) {
             return NextResponse.json({ ok: false, error: 'Not signed in' }, { status: 401 });
         }
 
@@ -75,7 +78,7 @@ export async function POST(request: Request) {
         }
 
         const admin = adminClient();
-        const uid = session.user.id;
+        const uid = user.id;
 
         const { data: booking } = await admin
             .from('bookings')

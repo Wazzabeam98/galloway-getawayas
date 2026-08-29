@@ -19,13 +19,16 @@ export async function GET(
     { params }: { params: { bookingId: string } }
 ) {
     const supabase = createRouteHandlerClient({ cookies });
-    const { data: { session } } = await supabase.auth.getSession();
+    // getUser(), not getSession() — getSession() trusts an unsigned
+    // cookie, so a forged one impersonates any user. getUser() verifies
+    // the token against the auth server. Matches the admin/services routes.
+    const { data: { user } } = await supabase.auth.getUser();
 
-    if (!session || !session.user) {
+    if (!user) {
         return NextResponse.json({ ok: false, error: 'Not signed in' }, { status: 401 });
     }
 
-    const uid = session.user.id;
+    const uid = user.id;
     const bookingId = params.bookingId;
 
     const admin = createClient(

@@ -22,9 +22,12 @@ async function ownsListing(admin: any, listingId: string, userId: string) {
 export async function POST(request: Request) {
     try {
         const supabase = createRouteHandlerClient({ cookies });
-        const { data: { session } } = await supabase.auth.getSession();
+        // getUser(), not getSession() — getSession() trusts an unsigned
+        // cookie, so a forged one impersonates any user. getUser() verifies
+        // the token against the auth server. Matches the admin/services routes.
+        const { data: { user } } = await supabase.auth.getUser();
 
-        if (!session || !session.user) {
+        if (!user) {
             return NextResponse.json({ ok: false, error: 'Not signed in' }, { status: 401 });
         }
 
@@ -52,7 +55,7 @@ export async function POST(request: Request) {
                 );
             }
 
-            const listing = await ownsListing(admin, listingId, session.user.id);
+            const listing = await ownsListing(admin, listingId, user.id);
             if (!listing) {
                 return NextResponse.json({ ok: false, error: 'Not your listing' }, { status: 403 });
             }
@@ -101,7 +104,7 @@ export async function POST(request: Request) {
                     email: email,
                     user_id: (existingProfile && existingProfile.id) || null,
                     role: role,
-                    invited_by: session.user.id,
+                    invited_by: user.id,
                     ...permissions,
                 })
                 .select('id, invite_token')
@@ -153,7 +156,7 @@ export async function POST(request: Request) {
                 return NextResponse.json({ ok: false, error: 'Not found' }, { status: 404 });
             }
 
-            const listing = await ownsListing(admin, row.listing_id, session.user.id);
+            const listing = await ownsListing(admin, row.listing_id, user.id);
             if (!listing) {
                 return NextResponse.json({ ok: false, error: 'Not your listing' }, { status: 403 });
             }
@@ -186,7 +189,7 @@ export async function POST(request: Request) {
                 return NextResponse.json({ ok: false, error: 'Not found' }, { status: 404 });
             }
 
-            const listing = await ownsListing(admin, row.listing_id, session.user.id);
+            const listing = await ownsListing(admin, row.listing_id, user.id);
             if (!listing) {
                 return NextResponse.json({ ok: false, error: 'Not your listing' }, { status: 403 });
             }
@@ -209,7 +212,7 @@ export async function POST(request: Request) {
                 .eq('id', accessId)
                 .maybeSingle();
 
-            if (!row || row.user_id !== session.user.id) {
+            if (!row || row.user_id !== user.id) {
                 return NextResponse.json({ ok: false, error: 'Not yours to leave' }, { status: 403 });
             }
 

@@ -16,13 +16,16 @@ export const dynamic = 'force-dynamic';
 // those rows, so row-level security would hide them.
 export async function GET() {
     const supabase = createRouteHandlerClient({ cookies });
-    const { data: { session } } = await supabase.auth.getSession();
+    // getUser(), not getSession() — getSession() trusts an unsigned
+    // cookie, so a forged one impersonates any user. getUser() verifies
+    // the token against the auth server. Matches the admin/services routes.
+    const { data: { user } } = await supabase.auth.getUser();
 
-    if (!session || !session.user) {
+    if (!user) {
         return NextResponse.json({ conversations: [] });
     }
 
-    const uid = session.user.id;
+    const uid = user.id;
 
     const admin = createClient(
         process.env.NEXT_PUBLIC_SUPABASE_URL || '',

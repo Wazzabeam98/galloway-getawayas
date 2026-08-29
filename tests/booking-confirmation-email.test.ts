@@ -54,7 +54,7 @@ function load(booking: any) {
     stubModule('@/lib/supabaseAdmin', { adminClient: () => admin });
     stubModule('@supabase/auth-helpers-nextjs', {
         createRouteHandlerClient: () => ({
-            auth: { getSession: async () => ({ data: { session: { user: { id: HOST } } } }) },
+            auth: { getUser: async () => ({ data: { user: { id: HOST } } }) },
         }),
     });
     stubModule('next/headers', { cookies: () => ({}) });

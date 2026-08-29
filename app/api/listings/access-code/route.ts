@@ -20,15 +20,18 @@ export const dynamic = 'force-dynamic';
 
 async function permitted(listingId: string) {
     const supabase = createRouteHandlerClient({ cookies });
-    const { data: { session } } = await supabase.auth.getSession();
+    // getUser(), not getSession() — getSession() trusts an unsigned
+    // cookie, so a forged one impersonates any user. getUser() verifies
+    // the token against the auth server. Matches the admin/services routes.
+    const { data: { user } } = await supabase.auth.getUser();
 
-    if (!session || !session.user) return { error: 'Not signed in', status: 401, uid: '' };
+    if (!user) return { error: 'Not signed in', status: 401, uid: '' };
     if (!listingId) return { error: 'Which listing?', status: 400, uid: '' };
 
-    const access = await checkListing(session.user.id, listingId, 'can_listing');
+    const access = await checkListing(user.id, listingId, 'can_listing');
     if (!access) return { error: 'Not your listing', status: 403, uid: '' };
 
-    return { error: null, status: 200, uid: session.user.id };
+    return { error: null, status: 200, uid: user.id };
 }
 
 export async function GET(request: Request) {

@@ -62,7 +62,7 @@ function loadVisibility(status: string) {
     stubModule('@supabase/supabase-js', { createClient: () => admin });
     stubModule('@supabase/auth-helpers-nextjs', {
         createRouteHandlerClient: () => ({
-            auth: { getSession: async () => ({ data: { session: { user: { id: HOST } } } }) },
+            auth: { getUser: async () => ({ data: { user: { id: HOST } } }) },
         }),
     });
     stubModule('next/headers', { cookies: () => ({}) });
