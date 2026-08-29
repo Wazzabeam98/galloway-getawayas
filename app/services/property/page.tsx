@@ -54,6 +54,18 @@ export default function PropertyServicesPage() {
                 We take nothing from the job. Whatever you agree is between you and them.
             </p>
 
+            {/* Kept here as well as on the hub: the footer links straight to
+                this page, so a host who arrives directly still needs the pointer
+                across to the guest half. */}
+            <div className="rounded-xl border border-slate-200 bg-slate-50 p-4 mb-10 text-sm text-slate-600">
+                Looking for what your{' '}
+                <span className="font-medium text-slate-800">guests</span> can book during a stay —
+                a private chef, a welcome hamper, pet care?{' '}
+                <Link href="/trips" className="text-emerald-700 font-semibold underline hover:text-emerald-800">
+                    Those are offered to guests on their trip page.
+                </Link>
+            </div>
+
             <TradeTileGrid>
                 {live.map((trade) => (
                     <TradeTile
