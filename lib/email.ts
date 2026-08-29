@@ -6,6 +6,8 @@
 // holds the Resend API key.
 // =====================================================================
 
+import { logError } from '@/lib/logError';
+
 export const SITE_URL = 'https://gallowaygetaways.co.uk';
 
 // Booking-related mail comes from bookings@. Account and auth mail is
@@ -169,15 +171,45 @@ export function emailLayout(bodyHtml: string, footnote: string, unsubscribeUrl?:
 // Hands the email to Resend over HTTPS. Returns true/false rather than
 // throwing: a notification that fails to send must never break the
 // booking or message that triggered it.
+//
+// AND IT REPORTS, WHICH IS THE PART THAT WAS MISSING.
+//
+// Twenty call sites take the boolean this returns. Fifteen of them throw it
+// away — including every one that matters: the 72/48/24 balance-failure ladder,
+// the host payout notice, the booking confirmation, and the guest refund email.
+// A guest who is never told their card failed loses their booking to a deadline
+// they never saw, and nothing anywhere said so.
+//
+// The fix is here rather than at fifteen call sites, because that is fifteen
+// chances to do it differently and one chance to do it once. Nothing about the
+// contract changes: it still returns false, it still never throws, no caller
+// needs touching. It simply stops being silent.
+//
+// console.error is kept alongside. On Vercel that is a log line nobody reads,
+// which is the whole reason for the addition, but it costs nothing and it is
+// what you have locally.
+async function report(message: string, detail: any): Promise<void> {
+    // The logger has its own try/catch and never throws. This one is here so
+    // that a change to it can never turn "an email did not send" into "the
+    // booking did not save".
+    try {
+        await logError(message, detail, { path: 'lib/email' });
+    } catch (err) {
+        console.error('[email] could not even report the failure');
+    }
+}
+
 export async function sendEmail(to: string, subject: string, html: string): Promise<boolean> {
     const key = process.env.RESEND_API_KEY;
 
     if (!key) {
         console.error('[email] RESEND_API_KEY is not set — nothing sent.');
+        await report('[email] RESEND_API_KEY is not set — NOTHING is being emailed', { to, subject });
         return false;
     }
     if (!to) {
         console.error('[email] No recipient address — nothing sent.');
+        await report('[email] an email had no recipient address', { subject });
         return false;
     }
 
@@ -200,11 +232,26 @@ export async function sendEmail(to: string, subject: string, html: string): Prom
         if (!res.ok) {
             const detail = await res.text();
             console.error('[email] Resend rejected the message:', res.status, detail);
+            // The subject is the useful half: it says WHICH email did not
+            // arrive, which is the difference between "chase this" and "a
+            // notification failed". The body is deliberately not included —
+            // these carry names, dates and amounts.
+            await report('[email] Resend rejected a message to ' + to, {
+                to,
+                subject,
+                status: res.status,
+                detail: String(detail).slice(0, 500),
+            });
             return false;
         }
         return true;
     } catch (err) {
         console.error('[email] Could not reach Resend:', err);
+        await report('[email] could not reach Resend to send a message to ' + to, {
+            to,
+            subject,
+            error: String((err as any) && (err as any).message),
+        });
         return false;
     }
 }
