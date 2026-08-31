@@ -5,7 +5,12 @@ import { adminClient } from '@/lib/supabaseAdmin';
 import { newReplyToken, hashReplyToken } from '@/lib/enquiryToken';
 import { logError } from '@/lib/logError';
 import { announceEnquiry } from '@/lib/serviceEnquiryAlert';
-import { canBeEnquiredAbout, registrationBlockers } from '@/lib/serviceProviders';
+import {
+    canBeEnquiredAbout,
+    registrationBlockers,
+    shouldStartTrial,
+    trialEndsAt,
+} from '@/lib/serviceProviders';
 import {
     enquiryProblems,
     enquiryReference,
@@ -78,7 +83,7 @@ export async function POST(req: Request) {
         // ---- who is being asked -------------------------------------------
         const { data: provider } = await admin
             .from('service_providers')
-            .select('id, owner_id, business_name, trade, status, kind, contact_email, contact_phone, sms_opt_out, callout_fee, hourly_rate, callout_waived, does_gas, does_oil, notify_user_ids')
+            .select('id, owner_id, business_name, trade, status, kind, contact_email, contact_phone, sms_opt_out, callout_fee, hourly_rate, callout_waived, does_gas, does_oil, notify_user_ids, plan, trial_ends_at')
             .eq('id', String(body.provider_id || ''))
             .maybeSingle();
 
@@ -279,6 +284,64 @@ export async function POST(req: Request) {
         // enquiry — the row is already written and visible on the host's
         // screen either way.
         const alert = await announceEnquiry(saved, provider, listing, token);
+
+        // HIS FREE NINETY DAYS START HERE.
+        //
+        // This is the only place a subscription clock is ever started. It used
+        // to be the admin approve route, and it moved because approval is not
+        // when the value arrives: a plumber approved in September who hears
+        // nothing until January was spending his free period waiting for us to
+        // find him work. The lead is the product, so the lead starts the clock.
+        //
+        // ON THE SEND, NOT ON THE ANSWER. Accepting, declining and expiring are
+        // all endings an enquiry has, so all three would start it, which means
+        // every enquiry starts it and only the date is in question. The most
+        // an answer can be behind the send is the expiry window — twenty
+        // minutes on an emergency, five days at the outside — and five days
+        // against ninety is not worth three code paths that have to agree.
+        // Stamping here also cannot be gamed by ignoring the email.
+        //
+        // ONLY IF IT ACTUALLY WENT. `alert.provider` is false when sendEmail
+        // refused, when there is no API key, and when the address is a test
+        // one — and a lead he never received is not a lead to charge him for.
+        //
+        // GUARDED IN THE STATEMENT, not just in JavaScript. Two enquiries
+        // landing in the same second would both read a null date; `is null` in
+        // the update means only one of them writes, and the loser is a no-op
+        // rather than a second clock overwriting the first.
+        //
+        // Nothing here may fail the enquiry. The row is written, the emails
+        // have gone, and the host is looking at the screen. A clock that fails
+        // to start costs a provider nothing and us a month — worth an error in
+        // the log, never worth an error on the page.
+        if (alert.provider && shouldStartTrial(provider)) {
+            try {
+                const started = new Date();
+
+                const { error: trialError } = await admin
+                    .from('service_providers')
+                    .update({
+                        trial_ends_at: trialEndsAt(started),
+                        updated_at: started.toISOString(),
+                    })
+                    .eq('id', provider.id)
+                    .is('trial_ends_at', null);
+
+                if (trialError) {
+                    await logError('service-trial-start', {
+                        provider: String(provider.id),
+                        enquiry: String(saved.id),
+                        error: String(trialError.message),
+                    });
+                }
+            } catch (err: any) {
+                await logError('service-trial-start', {
+                    provider: String(provider.id),
+                    enquiry: String(saved.id),
+                    error: String(err && err.message),
+                });
+            }
+        }
 
         return NextResponse.json({
             ok: true,
