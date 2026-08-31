@@ -214,6 +214,88 @@ export default async function HomePage({
                     </div>
                 )}
 
+                {/* The homepage's editorial, below the grid on purpose: the
+                    properties come first, and someone who already knows they
+                    want to book does not have to read past them. Four sections,
+                    real h2s so the page has a structure and not just big text. */}
+                <section className="mt-16 pt-10 border-t border-stone-200">
+                    <div className="max-w-3xl space-y-12">
+                        <div>
+                            <h2 className="text-2xl md:text-3xl font-bold text-stone-900">
+                                Book direct, and the money stays here
+                            </h2>
+                            <p className="text-stone-600 leading-relaxed mt-3">
+                                Every cottage on Galloway Getaways is let by the person who owns it.
+                                When you book, you are dealing with them — not an agency, and not a
+                                call centre in another country. If you want to know whether the wood
+                                burner is easy to light or where to park a van, you are asking
+                                someone who knows.
+                            </p>
+                            <p className="text-stone-600 leading-relaxed mt-4">
+                                We do not add a booking fee. The price you see is the price you pay,
+                                and it goes to the owner minus a small commission that keeps the site
+                                running. On a week away that is often the difference between one
+                                platform and another, and it is the reason booking direct is nearly
+                                always cheaper.
+                            </p>
+                        </div>
+
+                        <div>
+                            <h2 className="text-2xl md:text-3xl font-bold text-stone-900">
+                                A small corner of Scotland worth knowing
+                            </h2>
+                            <p className="text-stone-600 leading-relaxed mt-3">
+                                Dumfries &amp; Galloway is the part of Scotland people drive past on
+                                the way north, which is exactly why it is still quiet. Seventy miles
+                                of coastline, forest, dark skies you can actually see stars in, and
+                                towns like Kirkcudbright that have been artists’ colonies for a
+                                century. It is two hours from Glasgow, two and a half from Carlisle,
+                                and it does not feel like either.
+                            </p>
+                            <p className="text-stone-600 leading-relaxed mt-4">
+                                Our cottages sit in and around Kirkcudbright, the harbour town on the
+                                Dee. Some take dogs. One has a hot tub. All of them are places we
+                                would stay ourselves.
+                            </p>
+                        </div>
+
+                        <div>
+                            <h2 className="text-2xl md:text-3xl font-bold text-stone-900">
+                                More than a bed for the week
+                            </h2>
+                            <p className="text-stone-600 leading-relaxed mt-3">
+                                Once you have booked, you can arrange the rest through us. A local
+                                chef to cook dinner in the cottage on your first night. A cake for
+                                the birthday you are down for. The fridge filled before you arrive.
+                                Someone to walk the dog while you are out for the day.
+                            </p>
+                            <p className="text-stone-600 leading-relaxed mt-4">
+                                They are all local businesses we have checked, and you book them from
+                                your trip page once your stay is confirmed. You pay them, not us — we
+                                just make the introduction.
+                            </p>
+                        </div>
+
+                        <div>
+                            <h2 className="text-2xl md:text-3xl font-bold text-stone-900">
+                                Own a cottage in the region?
+                            </h2>
+                            <p className="text-stone-600 leading-relaxed mt-3">
+                                If you let a property in Dumfries &amp; Galloway, you can list it
+                                here. You set your own prices and your own rules, we handle the
+                                booking and the payment, and you keep the relationship with your
+                                guests. There is no monthly fee.
+                            </p>
+                            <p className="text-stone-600 leading-relaxed mt-4">
+                                You also get a directory of local tradespeople who cover your
+                                property — plumbers, joiners, electricians, cleaners — so when
+                                something breaks on a changeover day you are not starting from a
+                                search engine.
+                            </p>
+                        </div>
+                    </div>
+                </section>
+
                 {/* Browse by town.
                     
                     This is the only thing on the site that links to an area
