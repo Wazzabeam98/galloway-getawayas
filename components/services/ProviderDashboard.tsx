@@ -9,6 +9,7 @@ import {
     Inbox,
     Home,
     ChevronRight,
+    MessageSquare,
 } from 'lucide-react';
 import EnquiryActions from '@/components/services/EnquiryActions';
 import UpcomingJobActions from '@/components/services/UpcomingJobActions';
@@ -57,6 +58,7 @@ export type DashboardUpcoming = {
     window: string;
     preferredDate?: string | null;
     proposedDate?: string | null;
+    unread?: number;
     hostName?: string | null;
     hostPhone?: string | null;
     listing?: { id: string; title: string; location: string; image: string | null } | null;
@@ -305,6 +307,12 @@ export default function ProviderDashboard(props: ProviderDashboardProps) {
                                                                 <Phone className="w-3.5 h-3.5" strokeWidth={2} /> Call
                                                             </a>
                                                         )}
+                                                        <Link href={`/messages/enquiry/${u.id}`} className="inline-flex items-center gap-1 text-[12.5px] font-bold text-slate-700 bg-white border border-slate-300 rounded-lg px-2.5 py-1 hover:bg-slate-50">
+                                                            <MessageSquare className="w-3.5 h-3.5" strokeWidth={2} /> Message
+                                                            {(u.unread || 0) > 0 && (
+                                                                <span className="ml-0.5 inline-flex items-center justify-center min-w-4 h-4 px-1 rounded-full bg-emerald-600 text-white text-[10px] font-bold">{u.unread}</span>
+                                                            )}
+                                                        </Link>
                                                     </div>
                                                 )}
 

@@ -4,7 +4,7 @@ import { useEffect, useState } from 'react';
 import Link from 'next/link';
 import { createClientComponentClient } from '@supabase/auth-helpers-nextjs';
 import { toast } from 'react-toastify';
-import { Phone, Mail } from 'lucide-react';
+import { Phone, Mail, MessageSquare } from 'lucide-react';
 import { tradeLabel } from '@/lib/serviceProviders';
 import {
     hostStatusSummary,
@@ -85,6 +85,7 @@ export default function EnquiriesPage() {
     const [loading, setLoading] = useState(true);
     const [session, setSession] = useState<any>(null);
     const [rows, setRows] = useState<Enquiry[]>([]);
+    const [unread, setUnread] = useState<Record<string, number>>({});
 
     const load = async () => {
         const { data: { session } } = await supabase.auth.getSession();
@@ -110,6 +111,23 @@ export default function EnquiriesPage() {
 
         const list = (data || []) as Enquiry[];
         setRows(list);
+
+        // Unread messages on these jobs' threads (RLS lets the host read their
+        // own). Keyed by enquiry for a badge on the Message button.
+        const ids = list.map((r) => r.id);
+        if (ids.length) {
+            const { data: msgs } = await supabase
+                .from('messages')
+                .select('enquiry_id')
+                .in('enquiry_id', ids)
+                .eq('recipient_id', session.user.id)
+                .is('read_at', null);
+            const map: Record<string, number> = {};
+            (msgs || []).forEach((m: any) => { map[m.enquiry_id] = (map[m.enquiry_id] || 0) + 1; });
+            setUnread(map);
+        } else {
+            setUnread({});
+        }
 
         setLoading(false);
     };
@@ -254,6 +272,18 @@ export default function EnquiriesPage() {
                             )}
 
                             <div className="mt-4 flex flex-wrap items-center gap-3">
+                                {/* A thread on the job — open once accepted, and
+                                    still open after a cancel, which is exactly
+                                    when there's something to sort out. */}
+                                {(row.status === 'accepted' || row.status === 'cancelled') && (
+                                    <Link href={'/messages/enquiry/' + row.id} className="inline-flex items-center gap-1.5 text-sm font-semibold text-slate-700 hover:text-slate-900">
+                                        <MessageSquare className="w-4 h-4" /> Message
+                                        {(unread[row.id] || 0) > 0 && (
+                                            <span className="inline-flex items-center justify-center min-w-4 h-4 px-1 rounded-full bg-emerald-600 text-white text-[10px] font-bold">{unread[row.id]}</span>
+                                        )}
+                                    </Link>
+                                )}
+
                                 {canWithdraw(row.status) && (
                                     <button
                                         onClick={() => withdraw(row.id)}

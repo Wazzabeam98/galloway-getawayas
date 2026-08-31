@@ -167,6 +167,19 @@ export default async function ProviderDashboardPage() {
     const listingById: Record<string, any> = {};
     for (const l of upcomingListings || []) listingById[l.id] = l;
 
+    // Unread messages on those jobs' threads, for the provider (recipient).
+    const acceptedIds = acceptedRows.map((e: any) => e.id);
+    const unreadByEnquiry: Record<string, number> = {};
+    if (acceptedIds.length) {
+        const { data: unreadRows } = await admin
+            .from('messages')
+            .select('enquiry_id')
+            .in('enquiry_id', acceptedIds)
+            .eq('recipient_id', user.id)
+            .is('read_at', null);
+        for (const m of unreadRows || []) unreadByEnquiry[m.enquiry_id] = (unreadByEnquiry[m.enquiry_id] || 0) + 1;
+    }
+
     const upcoming: DashboardUpcoming[] = acceptedRows.map((e: any) => {
         const d = e.preferred_date ? new Date(String(e.preferred_date) + 'T12:00:00Z') : null;
         const window = (requestedWhen(e) || 'a date still to agree').replace(/^Asked for [^,]+,\s*/, '');
@@ -179,6 +192,7 @@ export default async function ProviderDashboardPage() {
             window,
             preferredDate: e.preferred_date || null,
             proposedDate: e.proposed_date || null,
+            unread: unreadByEnquiry[e.id] || 0,
             hostName: e.host_name || null,
             hostPhone: e.host_phone || null,
             listing: l ? {
