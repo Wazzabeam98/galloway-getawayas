@@ -10,8 +10,10 @@ import {
     startOfMonth, endOfMonth, eachDayOfInterval, format, addMonths, subMonths,
     isSameDay, isBefore, startOfDay, getDay,
 } from 'date-fns';
-import { ChevronLeft, ChevronRight, X } from 'lucide-react';
+import { ChevronLeft, ChevronRight, Wrench, X } from 'lucide-react';
 import { displayName } from "@/lib/utils";
+import { requestedWhen } from '@/lib/serviceEnquiries';
+import { tradeLabel } from '@/lib/serviceProviders';
 
 interface Listing {
     id: string;
@@ -44,6 +46,19 @@ interface Booking {
     guest_id: string;
 }
 
+// Accepted, planned service work the host asked a tradesman for. It carries a
+// requested date and an optional window — NOT a confirmed slot. Nothing here
+// holds the day; it is shown so a host can see, and be warned about, a guest
+// and a trade landing on the same date. See lib/serviceEnquiries.ts, which
+// guards the "asked for, never booked" wording this reuses.
+interface Work {
+    preferred_date: string;
+    trade: string;
+    business_name: string;
+    window_from: string | null;
+    window_to: string | null;
+}
+
 const ADVANCE_NOTICE_OPTIONS = ['Same day', '1 day', '2 days', '3 days', '7 days'];
 const PREP_TIME_OPTIONS = ['None', '1 day', '2 days', '3 days'];
 const AVAILABILITY_WINDOW_OPTIONS = ['3 months', '6 months', '9 months', '12 months', 'All future dates'];
@@ -58,6 +73,9 @@ export default function CalendarPage() {
     const [month, setMonth] = useState(startOfMonth(new Date()));
     const [overrides, setOverrides] = useState<Record<string, Override>>({});
     const [bookings, setBookings] = useState<Booking[]>([]);
+    // preferred_date -> the accepted, planned work asked for that day. Keyed by
+    // the day, because more than one job can be asked for on the same date.
+    const [workByDate, setWorkByDate] = useState<Record<string, Work[]>>({});
     // date -> which platform has it, from the imported calendars
     const [external, setExternal] = useState<Record<string, { platform: string; name: string }>>({});
     const [guestNames, setGuestNames] = useState<Record<string, string>>({});
@@ -176,6 +194,28 @@ export default function CalendarPage() {
                 .eq('status', 'confirmed');
             setBookings(bookingRows || []);
 
+            // Accepted, planned work the host asked a tradesman for on this
+            // cottage. Only 'planned' carries a date; 'accepted' is the point a
+            // tradesman said he would take a look. Neither holds the day — this
+            // is shown so the host can SEE the work, and be warned where a guest
+            // and a trade fall on one date. The wording stays "asked for"
+            // everywhere it renders. A co-host without a select policy simply
+            // gets nothing back, which shows an empty layer rather than failing.
+            const { data: workRows } = await supabase
+                .from('service_enquiries')
+                .select('preferred_date, trade, business_name, window_from, window_to')
+                .eq('listing_id', selectedListingId)
+                .eq('status', 'accepted')
+                .eq('urgency', 'planned')
+                .not('preferred_date', 'is', null);
+
+            const wmap: Record<string, Work[]> = {};
+            (workRows || []).forEach((w: any) => {
+                const k = String(w.preferred_date).slice(0, 10);
+                (wmap[k] = wmap[k] || []).push(w as Work);
+            });
+            setWorkByDate(wmap);
+
             // Dates taken on Airbnb, Booking.com and anywhere else this
             // listing syncs with. Without this a host sees their Galloway
             // bookings only and assumes the rest of the month is free.
@@ -287,6 +327,18 @@ export default function CalendarPage() {
             const end = new Date(b.check_out);
             return date >= start && date < end;
         });
+    };
+
+    // The hover text for a day that has work asked for. requestedWhen carries
+    // the "Asked for …" wording from lib/serviceEnquiries, so a tooltip can
+    // never read as a confirmed appointment. When a guest is also in on the
+    // day, that is said first — it is the collision the host needs to see.
+    const workTitle = (work: Work[], collision: boolean) => {
+        const lines = work.map((w) => {
+            const when = requestedWhen(w);
+            return tradeLabel(w.trade) + (when ? ' — ' + when.charAt(0).toLowerCase() + when.slice(1) : ' — asked for this day');
+        });
+        return (collision ? 'A guest is in on this day — check before it clashes.\n' : '') + lines.join('\n');
     };
 
     const isInSelection = (date: Date) => {
@@ -523,26 +575,49 @@ export default function CalendarPage() {
                             const selected = isInSelection(day);
                             const price = dayPrice(day, key, override);
 
+                            const work = workByDate[key];
+                            const hasWork = !isPast && !!(work && work.length);
+                            // A guest is "in" whether the stay is ours or came
+                            // off another channel — either way the cottage is
+                            // occupied, so either counts as a clash with work.
+                            const collision = hasWork && (!!booking || !!away);
+
                             return (
                                 <button
                                     key={key}
                                     type="button"
                                     disabled={isPast}
                                     onClick={() => handleDayClick(day)}
-                                    className={`aspect-square rounded-xl border-2 p-1.5 flex flex-col items-start justify-between text-left transition ${
+                                    className={`relative aspect-square rounded-xl border-2 p-1.5 flex flex-col items-start justify-between text-left transition ${
                                         isPast ? 'opacity-30 cursor-not-allowed border-slate-100' :
                                         booking ? 'border-slate-900 bg-slate-900 text-white' :
                                         awayColour ? 'text-white' :
                                         override?.is_blocked ? 'border-slate-300 bg-slate-100 text-slate-400' :
                                         selected ? 'border-slate-900 bg-slate-50' :
                                         'border-slate-200 hover:border-slate-400'
-                                    }`}
+                                    } ${collision ? 'ring-2 ring-amber-400 ring-offset-1' : ''}`}
                                     style={
                                         awayColour
                                             ? { backgroundColor: awayColour, borderColor: awayColour }
                                             : undefined
                                     }
                                 >
+                                    {/* Work asked for that day. Amber when a
+                                        guest is also in — the one case a host
+                                        needs to catch. A request, never a slot:
+                                        the hover text says "asked for". */}
+                                    {hasWork && (
+                                        <span
+                                            title={workTitle(work, collision)}
+                                            className={`absolute top-1 right-1 z-10 flex items-center justify-center w-4 h-4 rounded-full shadow-sm ${
+                                                collision ? 'bg-amber-400 text-amber-950'
+                                                    : (booking || awayColour) ? 'bg-white text-slate-900'
+                                                    : 'bg-emerald-600 text-white'
+                                            }`}
+                                        >
+                                            <Wrench className="w-2.5 h-2.5" />
+                                        </span>
+                                    )}
                                     <span className={`text-xs font-semibold ${booking || awayColour ? 'text-white' : override?.is_blocked ? 'line-through' : 'text-slate-800'}`}>
                                         {format(day, 'd')}
                                     </span>
@@ -600,6 +675,18 @@ export default function CalendarPage() {
                             </div>
                             <div className="flex items-center gap-1.5">
                                 <span className="w-3 h-3 rounded border-2 border-slate-200" /> Available
+                            </div>
+                            <div className="flex items-center gap-1.5">
+                                <span className="w-4 h-4 rounded-full bg-emerald-600 flex items-center justify-center">
+                                    <Wrench className="w-2.5 h-2.5 text-white" />
+                                </span>
+                                Work asked for
+                            </div>
+                            <div className="flex items-center gap-1.5">
+                                <span className="w-4 h-4 rounded-full bg-amber-400 flex items-center justify-center">
+                                    <Wrench className="w-2.5 h-2.5 text-amber-950" />
+                                </span>
+                                Guest in + work asked — check
                             </div>
                         </div>
                     </div>
