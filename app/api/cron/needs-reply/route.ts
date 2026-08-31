@@ -85,6 +85,11 @@ export async function GET(request: Request) {
     // Job threads get their own nudge when they get one; they are not this
     // route's business. Excluded in the query rather than filtered afterwards,
     // so the null can never reach the grouping in the first place.
+    //
+    // This is one of two placeholders that come off together when the unified
+    // inbox learns about job threads, and removing it without handling the
+    // null puts the silence back for everybody. See "The unified inbox has two
+    // placeholders waiting for it" in OUTSTANDING.md.
     const { data: recent, error: recentError } = await admin
         .from('messages')
         .select('id, booking_id, sender_id, recipient_id, body, created_at')

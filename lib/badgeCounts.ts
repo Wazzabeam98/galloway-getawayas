@@ -35,7 +35,9 @@ export async function unreadFor(supabase: any, uid: string): Promise<number> {
     // unread count where it lives — on the host's enquiries list and on the
     // tradesman's Upcoming work — and the other side is emailed when a message
     // arrives. When the unified inbox learns about enquiry threads, this filter
-    // comes off in the same change, and the test above will say so.
+    // comes off in the same change, and the test above will say so. It is one
+    // of two placeholders that must be removed together — see "The unified
+    // inbox has two placeholders waiting for it" in OUTSTANDING.md.
     const { count } = await supabase
         .from('messages')
         .select('id', { count: 'exact', head: true })
