@@ -23,6 +23,7 @@ const NavMenu = ({
     isAdmin = false,
     mode = 'travel',
     hasCompletedStay = false,
+    isProvider = false,
     avatarUrl = null,
     initial = '',
 }: {
@@ -31,6 +32,7 @@ const NavMenu = ({
     isAdmin?: boolean;
     mode?: 'host' | 'travel';
     hasCompletedStay?: boolean;
+    isProvider?: boolean;
     avatarUrl?: string | null;
     initial?: string;
 }) => {
@@ -115,6 +117,18 @@ const NavMenu = ({
                                         </li>
                                     )}
                                 </>
+                            )}
+
+                            {/* A provider's way into their own business. It sits
+                                above Account settings and shows in either mode,
+                                because running a trade is orthogonal to hosting
+                                — a plumber who is not a host still needs it. */}
+                            {isProvider && (
+                                <li className={itemClass}>
+                                    <Link href='/services/dashboard' className='font-semibold text-emerald-800'>
+                                        Your business
+                                    </Link>
+                                </li>
                             )}
 
                             <li className={itemClass}>
