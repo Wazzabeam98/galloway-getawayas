@@ -43,9 +43,11 @@ function numOrNull(v: string): number | null {
     return isNaN(n) ? null : n;
 }
 
+type ServiceGroup = { label: string; items: Array<{ key: string; label: string; offered: boolean }> };
+
 export default function ProviderBusinessEditor({
-    provider, skills: initialSkills, areas: initialAreas, registrations: initialRegs,
-}: { provider: Provider; skills: string[]; areas: Area[]; registrations: Registration[] }) {
+    provider, skills: initialSkills, serviceGroups, areas: initialAreas, registrations: initialRegs,
+}: { provider: Provider; skills: string[]; serviceGroups: ServiceGroup[]; areas: Area[]; registrations: Registration[] }) {
     const supabase = createClientComponentClient();
     const router = useRouter();
 
@@ -53,6 +55,11 @@ export default function ProviderBusinessEditor({
     const [description, setDescription] = useState(provider.description);
     const [hourly, setHourly] = useState(provider.hourly_rate == null ? '' : String(provider.hourly_rate));
     const [callout, setCallout] = useState(provider.callout_fee == null ? '' : String(provider.callout_fee));
+    const [offered, setOffered] = useState<Record<string, boolean>>(() => {
+        const o: Record<string, boolean> = {};
+        serviceGroups.forEach((g) => g.items.forEach((it) => { o[it.key] = it.offered; }));
+        return o;
+    });
     const [skills, setSkills] = useState<string[]>(initialSkills);
     const [newSkill, setNewSkill] = useState('');
     const [areas, setAreas] = useState<Area[]>(initialAreas);
@@ -96,6 +103,20 @@ export default function ProviderBusinessEditor({
                     .update({ label: a.label.trim(), radius_miles: a.radius_miles })
                     .eq('id', a.id);
                 if (aErr) throw aErr;
+            }
+
+            // The ticked services (service_provider_extras). Upserted one row
+            // per toggle so it never disturbs the priced extras, which live in
+            // the same table under different keys and are not edited here.
+            const allKeys = serviceGroups.flatMap((g) => g.items.map((it) => it.key));
+            if (allKeys.length) {
+                const { error: xErr } = await supabase
+                    .from('service_provider_extras')
+                    .upsert(
+                        allKeys.map((key) => ({ provider_id: provider.id, extra_key: key, offered: !!offered[key] })),
+                        { onConflict: 'provider_id,extra_key' }
+                    );
+                if (xErr) throw xErr;
             }
 
             // Skills go through the reconcile route, not a direct write: the
@@ -220,16 +241,53 @@ export default function ProviderBusinessEditor({
                         </div>
                         <div>
                             <label className={labelCls}>Radius (mi)</label>
-                            <input inputMode="numeric" className={`${inputCls} w-24`} value={String(a.radius_miles)} onChange={(e) => setAreas(areas.map((x, j) => j === i ? { ...x, radius_miles: Number(e.target.value) || 0 } : x))} />
+                            {/* Clamped to what the column accepts (1–200) so the
+                                form never lets him type a number the database
+                                will only reject on save. */}
+                            <input
+                                inputMode="numeric" min={1} max={200}
+                                className={`${inputCls} w-24`}
+                                value={String(a.radius_miles)}
+                                onChange={(e) => {
+                                    const n = Math.max(1, Math.min(200, Number(e.target.value) || 1));
+                                    setAreas(areas.map((x, j) => j === i ? { ...x, radius_miles: n } : x));
+                                }}
+                            />
                         </div>
                     </div>
                 ))}
             </section>
 
-            {/* Services & skills */}
+            {/* Services you offer — the ticked list from sign-up */}
+            {serviceGroups.length > 0 && (
+                <section className={card}>
+                    <h2 className={heading}>Services you offer</h2>
+                    <p className="text-[13px] text-slate-500 mt-0.5">Tick the work you take on — this is what a host filters by.</p>
+                    {serviceGroups.map((g) => (
+                        <div key={g.label} className="mt-3">
+                            <div className="text-[12px] font-bold uppercase tracking-wide text-slate-400 mb-1">{g.label}</div>
+                            <div className="grid sm:grid-cols-2 gap-x-4">
+                                {g.items.map((it) => (
+                                    <label key={it.key} className="flex items-center gap-2.5 text-sm text-slate-700 cursor-pointer py-1.5">
+                                        <input
+                                            type="checkbox"
+                                            checked={!!offered[it.key]}
+                                            onChange={(e) => setOffered({ ...offered, [it.key]: e.target.checked })}
+                                            className="w-4 h-4 rounded border-slate-300 text-emerald-700 focus:ring-2 focus:ring-emerald-600/30"
+                                        />
+                                        {it.label}
+                                    </label>
+                                ))}
+                            </div>
+                        </div>
+                    ))}
+                </section>
+            )}
+
+            {/* Other skills — free text, for anything the ticklist doesn't name */}
             <section className={card}>
-                <h2 className={heading}>Services &amp; skills</h2>
-                <p className="text-[13px] text-slate-500 mt-0.5">The work you take on. Hosts search on these, so name them the way a host would.</p>
+                <h2 className={heading}>Other skills</h2>
+                <p className="text-[13px] text-slate-500 mt-0.5">Anything the list above doesn&rsquo;t name — a specialism worth spelling out. Hosts search on these too.</p>
                 <div className="mt-3 flex flex-wrap gap-1.5">
                     {skills.length === 0 && <span className="text-sm text-slate-400">None added yet.</span>}
                     {skills.map((sk) => (

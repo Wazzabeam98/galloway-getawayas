@@ -7,6 +7,7 @@ import { cookies } from 'next/headers';
 import { adminClient } from '@/lib/supabaseAdmin';
 import { requestedWhen } from '@/lib/serviceEnquiries';
 import { tradeLabel, schemeLabel, registrationVerified } from '@/lib/serviceProviders';
+import { getImageUrl } from '@/lib/utils';
 import ProviderDashboard, {
     DashboardEnquiry,
     DashboardUpcoming,
@@ -124,54 +125,68 @@ export default async function ProviderDashboardPage() {
     // Everything that has arrived for this provider.
     const { data: enquiryRows } = await admin
         .from('service_enquiries')
-        .select('id, status, summary, area_key, urgency, preferred_date, window_from, window_to, host_name, host_phone, sent_at, expires_at')
+        .select('id, status, summary, area_key, urgency, preferred_date, window_from, window_to, host_name, host_phone, listing_id, sent_at, expires_at')
         .eq('provider_id', provider.id)
         .order('sent_at', { ascending: false });
 
     const today = todayKey();
 
-    const enquiries: DashboardEnquiry[] = (enquiryRows || [])
-        // Withdrawn requests are gone from the host's side; don't surface them.
-        .filter((e: any) => e.status !== 'withdrawn')
-        .map((e: any) => {
-            const { chip, label } = chipFor(e.status);
-            const asked = requestedWhen(e);
-            return {
-                id: e.id,
-                chip,
-                chipLabel: label,
-                title: e.summary,
-                // "Asked for …", never "booked for" — the wording the emails
-                // and the host's list already hold. requestedWhen owns it.
-                askedFor: asked,
-                sub: prettyArea(e.area_key),
-                contactName: e.host_name || null,
-                contactPhone: e.host_phone || null,
-                when: chip === 'new' ? null : shortDay(e.sent_at),
-                replyBy: chip === 'new' ? replyByLabel(e.expires_at) : null,
-                answerHref: null,
-            };
-        });
+    // Requests is only what still needs answering. The moment a job is
+    // accepted it leaves here and moves to Upcoming work — an accepted job is
+    // not a request any more. Declined/expired are done and drop off too.
+    const requests: DashboardEnquiry[] = (enquiryRows || [])
+        .filter((e: any) => e.status === 'sent' || e.status === 'viewed')
+        .map((e: any) => ({
+            id: e.id,
+            chip: 'new' as const,
+            chipLabel: 'New',
+            title: e.summary,
+            // "Asked for …", never "booked for".
+            askedFor: requestedWhen(e),
+            sub: prettyArea(e.area_key),
+            contactName: null,
+            contactPhone: null,
+            when: null,
+            replyBy: replyByLabel(e.expires_at),
+            answerHref: null,
+        }));
 
-    const toAnswer = enquiries.filter((e) => e.chip === 'new').length;
+    const toAnswer = requests.length;
 
-    // Upcoming work (host trades): accepted requests whose day is still ahead.
-    // Each one reads "Asked for", not a committed slot.
-    const upcoming: DashboardUpcoming[] = (enquiryRows || [])
-        .filter((e: any) => e.status === 'accepted' && e.preferred_date && e.preferred_date >= today)
-        .sort((a: any, b: any) => String(a.preferred_date).localeCompare(String(b.preferred_date)))
-        .map((e: any) => {
-            const d = new Date(String(e.preferred_date) + 'T12:00:00Z');
-            const window = (requestedWhen(e) || 'any time that day').replace(/^Asked for [^,]+,\s*/, '');
-            return {
-                id: e.id,
-                day: d.toLocaleDateString('en-GB', { day: 'numeric', timeZone: LONDON }),
-                month: d.toLocaleDateString('en-GB', { month: 'short', timeZone: LONDON }),
-                title: `${e.summary}${e.area_key ? ' · ' + prettyArea(e.area_key) : ''}`,
-                window,
-                contactName: e.host_name || null,
-            };
-        });
+    // Upcoming work: accepted jobs still ahead (or without a fixed day yet).
+    // Each carries the cottage it is at and the host to ring — a tradesman can
+    // look at the bathroom before he turns up. Still "asked for", never a slot.
+    const acceptedRows = (enquiryRows || [])
+        .filter((e: any) => e.status === 'accepted' && (!e.preferred_date || e.preferred_date >= today))
+        .sort((a: any, b: any) => String(a.preferred_date || '9999').localeCompare(String(b.preferred_date || '9999')));
+
+    const upcomingListingIds = Array.from(new Set(acceptedRows.map((e: any) => e.listing_id).filter(Boolean)));
+    const { data: upcomingListings } = upcomingListingIds.length
+        ? await admin.from('listings').select('id, title, location, images').in('id', upcomingListingIds)
+        : { data: [] as any[] };
+    const listingById: Record<string, any> = {};
+    for (const l of upcomingListings || []) listingById[l.id] = l;
+
+    const upcoming: DashboardUpcoming[] = acceptedRows.map((e: any) => {
+        const d = e.preferred_date ? new Date(String(e.preferred_date) + 'T12:00:00Z') : null;
+        const window = (requestedWhen(e) || 'a date still to agree').replace(/^Asked for [^,]+,\s*/, '');
+        const l = e.listing_id ? listingById[e.listing_id] : null;
+        return {
+            id: e.id,
+            day: d ? d.toLocaleDateString('en-GB', { day: 'numeric', timeZone: LONDON }) : '–',
+            month: d ? d.toLocaleDateString('en-GB', { month: 'short', timeZone: LONDON }) : 'TBC',
+            title: e.summary,
+            window,
+            hostName: e.host_name || null,
+            hostPhone: e.host_phone || null,
+            listing: l ? {
+                id: l.id,
+                title: l.title,
+                location: l.location || '',
+                image: (Array.isArray(l.images) && l.images[0]) ? getImageUrl(l.images[0]) : null,
+            } : null,
+        };
+    });
 
     return (
         <ProviderDashboard
@@ -182,7 +197,7 @@ export default async function ProviderDashboardPage() {
             offPlatform={offPlatform}
             live={live}
             editHref={`/services/join?trade=${provider.trade}`}
-            enquiries={enquiries}
+            enquiries={requests}
             upcoming={upcoming}
             toAnswer={toAnswer}
             nextPayoutLabel={null}

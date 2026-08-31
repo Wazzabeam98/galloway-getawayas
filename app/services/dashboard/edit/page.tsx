@@ -5,7 +5,10 @@ import { redirect } from 'next/navigation';
 import { createServerComponentClient } from '@supabase/auth-helpers-nextjs';
 import { cookies } from 'next/headers';
 import { adminClient } from '@/lib/supabaseAdmin';
-import { tradeLabel } from '@/lib/serviceProviders';
+import { tradeLabel, offeringsFor, EXTRA_GROUPS } from '@/lib/serviceProviders';
+
+const groupLabel = (key: string): string =>
+    (EXTRA_GROUPS.find((g) => g.key === key) as any)?.label || key;
 import { ArrowLeft } from 'lucide-react';
 import ProviderBusinessEditor from '@/components/services/ProviderBusinessEditor';
 
@@ -55,6 +58,23 @@ export default async function EditBusinessPage() {
         : { data: [] as any[] };
     const skills = (skillRows || []).map((r: any) => r.label);
 
+    // The specific services he ticked at sign-up — "full bathroom installations"
+    // and the like — live in service_provider_extras as toggles. Build the same
+    // grouped checklist the wizard showed, marked with what he currently offers.
+    const { data: extraRows } = await admin
+        .from('service_provider_extras')
+        .select('extra_key, offered')
+        .eq('provider_id', provider.id);
+    const offeredKeys = new Set((extraRows || []).filter((r: any) => r.offered).map((r: any) => r.extra_key));
+
+    const toggleOfferings = offeringsFor(provider.trade).filter((e) => e.type === 'toggle');
+    const serviceGroups: Array<{ label: string; items: Array<{ key: string; label: string; offered: boolean }> }> = [];
+    for (const e of toggleOfferings) {
+        let g = serviceGroups.find((x) => x.label === groupLabel(e.group));
+        if (!g) { g = { label: groupLabel(e.group), items: [] }; serviceGroups.push(g); }
+        g.items.push({ key: e.key, label: e.label, offered: offeredKeys.has(e.key) });
+    }
+
     return (
         <div className="max-w-2xl mx-auto px-4 sm:px-6 py-8 pb-24">
             <Link href="/services/dashboard" className="inline-flex items-center gap-1.5 text-sm font-semibold text-slate-500 hover:text-slate-800">
@@ -77,6 +97,7 @@ export default async function EditBusinessPage() {
                     photos: provider.photos || [],
                 }}
                 skills={skills}
+                serviceGroups={serviceGroups}
                 areas={(areas || []).map((a) => ({ id: a.id, label: a.label || '', radius_miles: Number(a.radius_miles) }))}
                 registrations={(registrations || []).map((r: any) => ({
                     scheme: r.scheme,

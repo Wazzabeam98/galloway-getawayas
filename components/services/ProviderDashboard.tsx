@@ -7,6 +7,8 @@ import {
     AlertTriangle,
     Pencil,
     Inbox,
+    Home,
+    ChevronRight,
 } from 'lucide-react';
 import EnquiryActions from '@/components/services/EnquiryActions';
 
@@ -52,7 +54,9 @@ export type DashboardUpcoming = {
     month: string;
     title: string;
     window: string;
-    contactName?: string | null;
+    hostName?: string | null;
+    hostPhone?: string | null;
+    listing?: { id: string; title: string; location: string; image: string | null } | null;
 };
 
 export type ProviderDashboardProps = {
@@ -257,16 +261,49 @@ export default function ProviderDashboard(props: ProviderDashboardProps) {
                             </header>
                             <ul>
                                 {upcoming.map((u, i) => (
-                                    <li key={u.id} className={`flex items-center gap-3.5 py-3.5 ${i === 0 ? '' : 'border-t border-slate-100'}`}>
-                                        <div className="flex-none w-13 text-center border border-slate-200 rounded-xl px-2 py-1.5 bg-slate-50">
-                                            <div className="font-extrabold text-lg leading-none text-slate-900">{u.day}</div>
-                                            <div className="text-[10px] font-bold uppercase tracking-wide text-slate-500 mt-0.5">{u.month}</div>
-                                        </div>
-                                        <div className="min-w-0">
-                                            <div className="font-semibold text-sm text-slate-900">{u.title}</div>
-                                            <div className="text-[13px] text-slate-500 mt-0.5">
-                                                <b className="text-slate-700 font-semibold">Asked for</b> {u.window}
-                                                {u.contactName ? ` · ${u.contactName}` : ''}
+                                    <li key={u.id} className={`py-4 ${i === 0 ? '' : 'border-t border-slate-100'}`}>
+                                        <div className="flex items-start gap-3.5">
+                                            <div className="flex-none w-13 text-center border border-slate-200 rounded-xl px-2 py-1.5 bg-slate-50">
+                                                <div className="font-extrabold text-lg leading-none text-slate-900">{u.day}</div>
+                                                <div className="text-[10px] font-bold uppercase tracking-wide text-slate-500 mt-0.5">{u.month}</div>
+                                            </div>
+                                            <div className="min-w-0 flex-1">
+                                                <div className="font-semibold text-sm text-slate-900">{u.title}</div>
+                                                <div className="text-[13px] text-slate-500 mt-0.5">
+                                                    <b className="text-slate-700 font-semibold">Asked for</b> {u.window}
+                                                </div>
+
+                                                {/* The cottage: a look at the job before turning up. */}
+                                                {u.listing && (
+                                                    <Link href={`/homes/${u.listing.id}`} className="group mt-2.5 flex items-center gap-3 rounded-xl border border-slate-200 p-2 hover:border-emerald-300 hover:bg-emerald-50/40 transition">
+                                                        {u.listing.image ? (
+                                                            <img src={u.listing.image} alt="" className="w-14 h-14 rounded-lg object-cover flex-none" />
+                                                        ) : (
+                                                            <div className="w-14 h-14 rounded-lg bg-slate-100 flex-none flex items-center justify-center">
+                                                                <Home className="w-5 h-5 text-slate-400" strokeWidth={1.7} />
+                                                            </div>
+                                                        )}
+                                                        <div className="min-w-0 flex-1">
+                                                            <div className="text-[13px] font-semibold text-slate-900 truncate">{u.listing.title}</div>
+                                                            {u.listing.location && <div className="text-[12px] text-slate-500 truncate">{u.listing.location}</div>}
+                                                        </div>
+                                                        <span className="flex-none inline-flex items-center gap-0.5 text-[12px] font-semibold text-emerald-800">
+                                                            View <ChevronRight className="w-3.5 h-3.5 group-hover:translate-x-0.5 transition" />
+                                                        </span>
+                                                    </Link>
+                                                )}
+
+                                                {/* The host, and a way to reach them. */}
+                                                {u.hostName && (
+                                                    <div className="mt-2.5 flex items-center gap-2 flex-wrap">
+                                                        <span className="text-[13px] text-slate-600">Host: <b className="text-slate-800 font-semibold">{u.hostName}</b></span>
+                                                        {u.hostPhone && (
+                                                            <a href={`tel:${u.hostPhone.replace(/\s+/g, '')}`} className="inline-flex items-center gap-1 text-[12.5px] font-bold text-emerald-800 bg-emerald-50 border border-emerald-200 rounded-lg px-2.5 py-1 hover:bg-emerald-100">
+                                                                <Phone className="w-3.5 h-3.5" strokeWidth={2} /> Call
+                                                            </a>
+                                                        )}
+                                                    </div>
+                                                )}
                                             </div>
                                         </div>
                                     </li>
