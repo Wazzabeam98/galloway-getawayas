@@ -1087,6 +1087,14 @@ export default function AccountSettings() {
                                                     Personal information.
                                                 </p>
                                             )}
+                                            {/* Said here as well as in the privacy policy, because this
+                                                is where the promise is read. Without it the sentence
+                                                above reads as "nobody sees my legal name", which is not
+                                                what the switch does. */}
+                                            <p className="text-xs text-slate-400 mt-2">
+                                                Galloway Getaways staff can still see your legal name when
+                                                approving a listing or sorting out a problem with a booking.
+                                            </p>
                                         </div>
                                         <button
                                             type="button"

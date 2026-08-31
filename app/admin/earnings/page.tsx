@@ -5,7 +5,7 @@ import { requireAdmin } from '@/lib/access';
 import Link from 'next/link';
 import { notFound } from 'next/navigation';
 import { DEFAULT_COMMISSION_PERCENT, feeAmount } from '@/lib/fees';
-import { displayName } from '@/lib/utils';
+import { adminName } from '@/lib/utils';
 
 export const dynamic = 'force-dynamic';
 
@@ -52,7 +52,7 @@ export default async function AdminEarnings({
 
     const hostNames: Record<string, string> = {};
     (hosts || []).forEach((h: any) => {
-        hostNames[h.id] = displayName(h, 'Host');
+        hostNames[h.id] = adminName(h, 'Host');
     });
 
     const listingRate: Record<string, number> = {};
