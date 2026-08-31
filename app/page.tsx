@@ -10,8 +10,23 @@ import Link from 'next/link';
 import ListingCard from '@/components/ListingCard';
 import TownsCarousel from '@/components/TownsCarousel';
 import { AREAS, hasCopy } from '@/config/areas';
+import fs from 'fs';
+import path from 'path';
 
 export const dynamic = 'force-dynamic';
+
+// A town's carousel photo, or null if none has been dropped in yet. Checks the
+// filesystem at request time rather than trusting a list, so adding a photo is
+// the only step needed to put a town on the home page. The extensions are tried
+// in order and the first hit wins; the returned path is what the browser loads.
+const TOWN_PHOTO_EXTS = ['jpg', 'jpeg', 'png', 'webp', 'avif'];
+function townPhoto(slug: string): string | null {
+    for (const ext of TOWN_PHOTO_EXTS) {
+        const rel = '/images/towns/' + slug + '.' + ext;
+        if (fs.existsSync(path.join(process.cwd(), 'public', rel))) return rel;
+    }
+    return null;
+}
 
 // The title and description come from the root layout's defaults, which are
 // written for this page. Only the canonical is here — it used to be on the
@@ -144,13 +159,22 @@ export default async function HomePage({
         (area) => hasCopy(area) && area.townKeys.some((key) => (townCounts[key] || 0) > 0)
     );
 
-    // The carousel shows every town that has been written (its short blurb),
-    // whether or not it has stock yet — the panel leads to the area page, which
-    // renders for a human even while it is held out of search. Wigtown, with no
-    // copy, is simply not on it.
+    // The carousel shows a town only once it has a photo. A written blurb is
+    // still required — the panel leads to the area page and needs something to
+    // say — but the gate is the image on disk, not a list kept here: drop
+    // public/images/towns/<slug>.jpg (or .jpeg/.png/.webp/.avif) in and the
+    // town appears on the next request, with no code change. Resolving the file
+    // server-side also settles the exact path, so the panel renders a photo we
+    // know exists rather than guessing an extension and falling back to grey.
     const carouselTowns = AREAS
         .filter((area) => (area.metaDescription || '').trim().length > 0)
-        .map((area) => ({ slug: area.slug, name: area.name, blurb: area.metaDescription }));
+        .map((area) => ({
+            slug: area.slug,
+            name: area.name,
+            blurb: area.metaDescription,
+            photo: townPhoto(area.slug),
+        }))
+        .filter((t): t is typeof t & { photo: string } => t.photo !== null);
 
     // What the guest asked for, said back to them, so a short list reads as a
     // result rather than as an empty site.
