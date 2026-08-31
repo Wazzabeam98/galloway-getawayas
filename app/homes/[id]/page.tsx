@@ -446,6 +446,11 @@ const FindHome = async ({ params }: { params: { id: string } }) => {
                     </nav>
                 )}
                 <h1 className='text-2xl md:text-3xl font-bold text-slate-900'>{home.title}</h1>
+                {Array.isArray(home.amenities) && home.amenities.indexOf('Pets allowed') !== -1 && (
+                    <span className='mt-2 inline-flex items-center gap-1 rounded-full bg-emerald-50 px-2.5 py-1 text-xs font-semibold text-emerald-800'>
+                        <PawPrint className='w-3.5 h-3.5' /> Pet friendly
+                    </span>
+                )}
                 <div className='flex items-center gap-1.5 mt-1.5 text-sm text-slate-600'>
                     {showScore ? (
                         <>

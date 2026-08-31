@@ -1,6 +1,6 @@
 import Link from 'next/link';
 import Image from 'next/image';
-import { Home, Star } from 'lucide-react';
+import { Home, Star, PawPrint } from 'lucide-react';
 import { getImageUrl } from '@/lib/utils';
 import { publicArea } from '@/lib/places';
 import { hasPublicScore } from '@/lib/reviews';
@@ -25,11 +25,15 @@ export interface CardListing {
     images: string[] | null;
     rating_avg: number | string | null;
     rating_count: number | null;
+    /** Drives the pet-friendly paw. 'Pets allowed' is the amenity hosts tick. */
+    amenities?: string[] | null;
 }
 
 export default function ListingCard({ listing }: { listing: CardListing }) {
     const rating = listing.rating_avg ? Number(listing.rating_avg) : null;
     const count = listing.rating_count || 0;
+    // The pet-friendly flag hosts already tick, as an amenity.
+    const petFriendly = Array.isArray(listing.amenities) && listing.amenities.indexOf('Pets allowed') !== -1;
 
     return (
         <Link href={`/homes/${listing.id}`} className="group flex flex-col space-y-2">
@@ -49,6 +53,16 @@ export default function ListingCard({ listing }: { listing: CardListing }) {
                     <div className="flex items-center justify-center h-full text-stone-400">
                         <Home className="w-10 h-10" />
                     </div>
+                )}
+
+                {petFriendly && (
+                    <span
+                        className="absolute top-2 left-2 inline-flex items-center gap-1 rounded-full bg-white/90 px-2 py-1 text-xs font-semibold text-stone-800 shadow-sm backdrop-blur"
+                        title="Dogs welcome"
+                    >
+                        <PawPrint className="w-3.5 h-3.5 text-emerald-700" />
+                        Pet friendly
+                    </span>
                 )}
             </div>
 
