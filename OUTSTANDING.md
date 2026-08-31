@@ -1,136 +1,93 @@
 # What's left
 
-29 August 2026, third pass. One list — everything still open from the
+31 August 2026, fourth pass. One list — everything still open from the
 overnight security audit, everything flagged during the site audit, and
-everything that surfaced while fixing the first six.
+everything that has surfaced since.
 
 **Every entry was re-checked against master and against production today.** Not
-copied forward: a stale list is worse than no list, which is why this one has
-been rewritten rather than ticked.
+copied forward and not ticked off: a stale list is worse than no list. Where
+the check changed my mind, the entry says so.
 
-Live on production: `8a3815a`. Tests **894** pass.
+Live on production: `43c5158`. Tests **933** pass.
+
+Two things moved while this pass was being written, both from the other
+session: the home page copy, and area-page copy for ten towns. Both close
+entries that had been sitting in "blocked on you" — see below.
 
 ---
 
-## Closed since the first pass
+## Closed since the third pass
 
-Six, in the order they were done, each deployed and verified against production
-rather than assumed from a green build.
+Nine, each verified where it actually runs rather than assumed from a green
+build. The database ones were read back off production today; the code ones
+were read on master at `43c5158`.
 
-| Fix | Live at |
-|---|---|
-| `services/apply` had no gate — a stranger could exhaust the site's email allowance | `efc713f` |
-| `sendEmail` discarded 15 of 25 results, including every money email | `691e67a` |
-| `ical-import` handed out occupancy for unpublished listings, and named the platform | `f1e2058` |
-| `is_admin` readable by anyone with the site key | `4a82273` |
-| `select('*')` on `reviews`, on the public listing page | `8604998` |
-| Every page without a canonical claimed to be the home page | `34129ae` |
-| DELETE and TRUNCATE granted to both browser roles on every table, and on three auto-updatable views | `03d1c4f` |
-| `rate_limit_hits` grew for ever; a bare `.select()` on a profiles write returned 403 | `7bbbcb9` |
-| The two superseded count endpoints, deleted with the test that held them | `8a3815a` |
+| Fix | Live at | How it was checked |
+|---|---|---|
+| "Delete my home" removed — the button, the dialog and the dead call | `a7e0553` | file gone, no references left; production still has no DELETE policy on `listings`, so nothing was quietly granted to make it work |
+| `errors/report` and `services/wanted` rate-limited | `c8a4a09` | both import `withinLimits` from `lib/rateLimit` |
+| The admin check, nine copies down to one | `faf4ac6` | `requireAdmin` at `lib/access.ts:197`; all **9** admin pages call it; `tests/admin-pages-guarded.test.ts` holds it there |
+| `adminAudit` no longer swallows a failed audit write | `0d0780b` | reports through `logError` |
+| `notify` reports its failures | `0d0780b` | reports through `logError` |
+| Storage size limit and MIME allowlist on the public bucket | `7a22fa8` | **production**: `listings` bucket is capped at 10MB and accepts six image types only |
+| The home page has real body text and an `h1` that describes the product | `92e041f`, `26b1ada` | **live page**: 680 words; `h1` is now "Self-catering cottages across Dumfries & Galloway", and the title and meta description agree with it |
+| Area-page copy written for ten towns, held | `1de9819`, `ab66c59` | all ten carry `hold: true`, are `noindex, nofollow`, and appear **0** times in the live sitemap |
+| The earnings chart fits on a phone, with the numbers reachable | `4197a93` | measured at 375px and 1280px: twelve months, nothing hidden |
 
-Two of those came out differently from how this list described them, and the
-difference is the useful part:
+### Three where the check changed the answer
 
-- **`ical-import` did not get a token.** That route feeds the booking widget on
-  every public listing page; a guest has to see the 12th is taken before they
-  try to book it. A token would have stopped people booking, and the first
-  symptom would have been a double booking. The dates were never the leak — the
-  unpublished listings, the platform name and the feed id were.
-- **`sendEmail` was fixed in one place, not fifteen.** No call site was touched.
+- **The storage fix is two-thirds done, not done.** The size limit and the MIME
+  allowlist are live. The third part — owner-scoped path prefixes — is not: the
+  bucket's INSERT policy on production is still bare `bucket_id = 'listings'`.
+  What that leaves is smaller than it was, and it is written up under 2F rather
+  than left inside a closed row.
+
+- **I nearly reported eleven security holes that are not there.** Checking the
+  grant sweep, production shows DELETE still granted to `authenticated` on
+  eleven tables with — by my query — no DELETE policy. The query was wrong.
+  Those tables are governed by `FOR ALL` policies, which cover DELETE and do
+  not appear when you filter `pg_policies` on `cmd = 'DELETE'`. All eleven are
+  owner-scoped and RLS is on for every one of them. **Anything checking this
+  in future has to match `cmd IN ('DELETE','ALL')`**, or it invents holes.
+
+- **The `rate_limit_hits` pruning is real, and not where I looked for it.** It
+  is not a `pg_cron` job — it runs inside the daily `error-digest` Vercel cron,
+  seven days' retention against a longest window of 24 hours. Production has
+  0 rows. Looking only in `cron.job` says it was never done.
 
 ---
 
 # 1. Needs a decision from you
 
-### "Delete my home" has never worked, and cannot simply be made to
+Two, and you asked to take them together.
 
-`components/DeleteHomebtn.tsx` deletes from `listings` as the browser user,
-discards the result, and calls `router.refresh()`. `listings` has no DELETE
-policy, so RLS matches nothing: PostgREST answers **204**, the row stays, and
-the dialog closes as though it worked.
+### `full_name` is readable even when the owner asked for it not to be
 
-The dialog says:
+**Unchanged, and re-checked on production today.** `anon` has SELECT on
+`profiles.full_name`, and `show_full_name` is not part of the grant — so the
+column is readable for rows that set it to false. One person on production has
+set it to false today, which is one person the site is not honouring.
 
-> This action cannot be undone. This will permanently delete your added home
-> and remove your data from our servers.
+Why it is still yours and not mine: names appear on listings and reviews by
+design, so the fix is a view that respects the preference and a sweep of every
+public byline through it. Get it wrong and every host name on the site
+disappears at once.
 
-None of that happens. Proven on the test project — created a listing, deleted
-it as its owner, got 204, listing still there.
+### `services/apply` still lets a stranger squat somebody's email
 
-**Why it cannot just be granted.** `bookings.listing_id` is `ON DELETE
-CASCADE`, and from `bookings` the chain runs:
-
-| | |
-|---|---|
-| `messages`, `reviews`, `booking_guests`, `conversation_prefs` | **CASCADE** — the whole conversation and every review, gone |
-| `payments`, `payouts` | **SET NULL** — the rows survive as orphans: money in the ledger that can no longer be tied to a stay |
-| `disputes` | **NO ACTION** — a single chargeback anywhere on the listing blocks the delete entirely, with a foreign-key error the button would swallow |
-
-On production today: **5 listings, 3 of them have bookings**, 15 payments, 1
-payout. So for three of five, a working delete destroys booking history and
-orphans money rows.
-
-And it would breach your own privacy policy, which says: *"Booking and payment
-records are kept for six years, as UK tax law requires."*
-
-### The four options, and what each costs
-
-**1. Remove the button.** `HideListingBtn` already sits next to it on the same
-dashboard row and does the useful thing — off the home page, out of the
-sitemap, noindexed, still opens for a guest holding a booking.
-*Costs:* a host who makes a genuine mistake — a duplicate draft, the wrong
-address — has no way to clear it themselves and has to ask you. At ten
-properties that is an email. *Effort:* ten minutes. Nothing is lost, because
-nothing currently works.
-
-**2. Delete only when nothing is attached.** Allow it when the listing has no
-bookings — which means no payments, messages or reviews either — and refuse
-otherwise with "this has bookings against it; hide it instead". This covers the
-case the button is almost certainly for: drafts and mistakes.
-*Costs:* a server route, because the browser cannot be trusted to check and
-`listings` should not get a DELETE policy. Half a day. The honest failure
-message is most of the work.
-
-**3. A `deleted` status.** Widen the check constraint, hide it from the host
-too. *Costs:* a new status value, and the house rule is that every place
-listing statuses has to learn it first — the publish gate, the sitemap, the
-listing page's `PUBLICLY_VISIBLE`, the admin queue. A day, and it is `hidden`
-with a different label and one more state for everything to get wrong.
-
-**4. Hard delete with cascade.** *Costs:* booking history, conversations and
-reviews destroyed; payments and payouts orphaned; blocked at random by
-disputes; and in breach of both your privacy policy and UK tax record-keeping.
-**Listed only so it is on the record as considered and refused.**
-
-**What I would do:** option 1 today, because it takes ten minutes and stops the
-site promising something it does not do; then option 2 when the mistake
-actually happens to somebody. Option 2 alone is also fine if you would rather
-do it once. But the dialog should stop lying either way, and that part is not a
-decision.
-
----
-
-# 1b. New, still open
-
-Everything else that surfaced during the fixes was closed in the same pass —
-the grant sweep, the view bypass, the `rate_limit_hits` retention, the
-`.select()` 403 and the two `migrate.mjs` guard holes are all in the closed
-table above. One thing was found and deliberately not fixed:
-
-### `services/apply` still lets a stranger squat somebody's email — MEDIUM
-
-The rate limit closed the outage risk, which was the urgent half: nobody can
-empty the mail allowance now. Inside the limit — twenty an hour across the site
-— a stranger can still create a real Supabase auth user on an address that is
-not theirs, so the real owner cannot sign up later and gets a "confirm your
-signup" email they did not ask for.
+**Unchanged.** The rate limit closed the outage risk — nobody can empty the
+mail allowance now. Inside the limit, a stranger can still create a real
+Supabase auth user on an address that is not theirs, so the real owner cannot
+sign up later and gets a "confirm your signup" email they never asked for.
 
 Fixing it properly means not creating the account until the address is proved,
-which is a change to the join flow rather than a guard in front of it. **You
-asked to decide that yourself rather than have it decided by a security fix**,
-which is why it is here and not done. Worth settling before the services phase
-launches; harmless while it has not.
+which changes the join flow rather than putting a guard in front of it. You
+said you would rather decide that than have a security fix decide it for you.
+
+**This got more urgent this week, and not because of anything in it.** The
+guest-experiences work shipped behind `GUEST_EXPERIENCES_OPEN` (#38) and eight
+new `services/*` routes came with it. The join flow this touches is the one
+that phase opens with.
 
 ---
 
@@ -138,108 +95,93 @@ launches; harmless while it has not.
 
 Lettered as in `SECURITY-AUDIT-2026-08-29.md`.
 
-### E. Every real name is readable by a stranger — MEDIUM, needs your decision
+### F. Uploads are capped and image-only, but not scoped to their owner — LOW
 
-The cheap half is done: `is_admin` is revoked. The remaining half is that
-`full_name` is readable **even for rows with `show_full_name = false`**, so the
-grant ignores the preference the app means to honour.
+Down from MEDIUM. The bill risk is now bounded: 10MB a file, images only, no
+overwrite and no delete. What remains is that any signed-in account can write
+to **any path** in the `listings` bucket, because the INSERT policy never looks
+at who is uploading. Nobody can replace another host's photo — only add
+alongside it.
 
-Still needs you, not me: names appear on listings and reviews by design, so the
-fix is a view that respects `show_full_name`, and getting it wrong breaks every
-public byline.
+Fix: an owner-scoped path prefix in the INSERT policy. Half a day, because the
+upload paths in the app have to move with it.
 
-### F. Any free account can upload unbounded files to public storage — MEDIUM
+### `service_providers` exposes `commission_rate`, `settlement` and `owner_id`
 
-Unchanged. The `listings` bucket's INSERT policy is `bucket_id='listings'` — no
-path scoping, no size limit, no MIME allowlist. Overwrite and delete are
-refused, and content comes back as `text/plain` so it will not render as a
-phishing page. The residual risk is your storage bill.
+**Zero approved rows on production today, so nothing is leaking yet.** The
+reason it moves up this list rather than down: the experiences phase is now
+built and sitting behind a flag. The first approved provider is what arms this,
+and that is a business decision away rather than a development one.
 
-Fix: `file_size_limit`, an image MIME allowlist, owner-scoped path prefixes.
+### `payout_balance_owed` — nobody has traced how the payout run reads it
 
-### G. Two unbounded public routes — LOW
+Unchanged. It can no longer be self-set. Whether the payout run treats it as an
+instruction or recomputes it is still untraced, and the payout engine is the
+largest untested thing in the project. Worth an hour **before** the first live
+payout, not after.
 
-`ical-import` is done. The other two are unchanged:
+### The write-side audit's unfinished pair
 
-- **`errors/report`** — a stranger can flood the error log, which is the page
-  you rely on to notice everything else here. `lib/rateLimit.ts` now exists;
-  this is three lines with it.
-- **`services/wanted`** — floods a table and fires an admin email per call with
-  attacker-controlled text. Same three lines.
-
-### Two smaller ones the audit recorded
-
-- **`service_providers` exposes `commission_rate`, `settlement` and `owner_id`
-  to anon** for `status='approved'` rows. Zero such rows today. Narrow before
-  the services phase ships.
-- **`payout_balance_owed`** can no longer be self-set, but nobody traced whether
-  the payout run reads it as an instruction or recomputes it. Worth an hour
-  before the next payout run.
-
-### And one the write-side audit could not finish
-
-The two database constraints were never dropped and re-added on test, so we
-know the detector works but not that the constraint is what refuses. The pair
-to run is in `SECURITY-WRITE-AUDIT.md`.
+Unchanged. The two database constraints were never dropped and re-added on
+test, so we know the detector works but not that the constraint is what
+refuses. The pair to run is in `SECURITY-WRITE-AUDIT.md`.
 
 ---
 
 # 3. Failures that stay quiet
 
-### `sendEmail` — **done**
+### 34 of 63 API routes never reach `/admin/errors`
 
-Fixed in `691e67a`, inside `sendEmail` itself. Fifteen call sites still discard
-the boolean and that no longer matters — the failure is reported from one
-place, by subject and recipient, with the body deliberately excluded. The
-earlier "15 of 20" in this file was wrong on the denominator; it is 25 call
-sites, and the count stopped being the thing that mattered once the reporting
-moved inside.
+Recounted today. The number went **up** and the situation did not get worse:
+`notify` and `adminAudit` came off the list, and eight new `services/*` routes
+arrived with the experiences work, none of them reporting. It was 32 of 59.
 
-### 32 of 59 API routes never reach `/admin/errors`
+Worst of what is left, all money- or listing-path:
 
-Unchanged — re-counted today. Worst: `notify` (every notification funnels
-through it, and its catch returns `{ok:false}` with **status 200**, so the
-caller cannot tell either), `listings/save`, `stripe/balance-checkout`,
-`stripe/connect`, `listing-access/*`.
+`stripe/balance-checkout`, `stripe/connect`, `listings/save`,
+`listings/publish`, `listings/visibility`, `listing-access/*`,
+`booking-guests/*`, `my-listings`.
 
-`lib/adminAudit.ts` still swallows a failed audit write to `console.error`. For
-actions that move money, an audit record that silently does not exist is worse
-than one that loudly fails.
-
-### The admin check is copied nine times
-
-Re-verified: nine `/admin` pages each re-implement it inline, and there is still
-no `requireAdmin` in `lib/`. Every copy is correct today; nothing makes the
-tenth correct. Put it in `lib/access.ts` and add a test that every
-`app/admin/**/page.tsx` calls it — the pattern is now well established, and
-`tests/routes-verify-identity.test.ts` is the model.
+`notify` still answers **200** with `{ok:false}` when it fails. That is now
+deliberate and commented: the caller cannot tell, but the error reaches
+`/admin/errors`, and returning a failure code here would make callers retry a
+notification that may already have been sent.
 
 ---
 
 # 4. SEO and performance
 
-The canonical is done. The rest is unchanged.
+The home page came off this list this week — it had ~20 words of body text and
+an `h1` spent on the brand; it now has 680 words and an `h1` that says what the
+site is. That was the biggest single item here.
 
 | Item | Why it matters | Effort |
 |---|---|---|
-| **The home page has ~20 words of body text** | It cannot rank for its own title. Nothing else here comes close. Brief in `AREA-BRIEF.md`. | you |
-| **Home page `h1` is "Galloway Getaways"** | The most valuable heading on the site, spent on a brand nobody searches. The title tag and the h1 disagree about what the page is. | 10 min + your say-so |
-| **No `updated_at` on `listings`** | Re-verified absent. The sitemap's `lastmod` uses `approved_at`, so an edited listing tells Google it has not changed since approval. | 1 hr |
+| **No `updated_at` on `listings`** | Re-checked on production: still absent. The sitemap's `lastmod` uses `approved_at`, so an edited listing tells Google nothing changed since approval. | 1 hr |
 | **Three different review counts** | `rating_avg` (trigger, all reviews), `rating_count`, and `reviews.length` (published only). The listing page's JSON-LD mixes two. | 1 hr |
 | **Hero image is 544KB on a retina desktop** | It is the LCP element. Capping `deviceSizes` at 2048 takes it to 325KB, invisibly. | 15 min |
-| **`react-date-range` ships to every visitor** | ~25–30KB gzipped for a picker most never open. | 1 hr |
+| **`react-date-range` ships to every visitor** | Still in `package.json`. ~25–30KB gzipped for a picker most never open. | 1 hr |
 | **Listing page: 5 sequential queries + a live OpenStreetMap call** | 225ms TTFB before a byte moves, and a cache miss makes a guest wait on a third party. | 2 hrs |
 | **Nothing is cacheable** | Not `force-dynamic` — `Navbar` calls `cookies()` in the root layout, which is what actually forces it. Proved by stubbing it: five pages went static. Path in `SITE-AUDIT.md`. | half a day for step 1 |
-| **Four pages have no `h1`** | `/services/join`, `/services/join/apply`, `/auth/reset`, `/unsubscribe`. All noindexed, so accessibility rather than SEO. | 30 min |
-| **The four hero photos have `alt=""`** | Google Images is a real channel for "Kirkcudbright harbour". I will not invent what the photos show — tell me and it is five minutes. | you + 5 min |
+| **Two pages still have no `h1`** | `/services/join` and `/services/join/apply`. `/auth/reset` and `/unsubscribe` have picked one up since the last pass. All noindexed, so accessibility rather than SEO. | 15 min |
+| **The hero photo has `alt=""`** | One place now, `components/base/Hero.tsx:551`. Google Images is a real channel for "Kirkcudbright harbour". I will not invent what the photo shows — tell me and it is five minutes. | you + 5 min |
 
 ---
 
 # 5. Blocked on you — content
 
-- **Area page copy.** Nine pages built and gated; none reaches Google until
-  `intro` is written. `AREA-BRIEF.md` has the brief. You said after the about
-  page.
+**The first entry has changed shape.** It was "nine pages built and gated, none
+reaches Google until you write the copy". The copy is now written for ten
+towns, by the other session, and every one is deliberately held.
+
+- **Release the area pages.** Ten towns, copy written, all `hold: true` and
+  `noindex, nofollow`, none in the sitemap. They need you to read them and drop
+  the hold — that is a review, not a writing job. They also need a published
+  listing in the town before they publish themselves, which is the second
+  condition in `isPublishable`.
+- **A note on the towns carousel.** The home page now links to all ten. Guests
+  can reach them and they read fine; Google is told not to index them. Nothing
+  to fix — worth knowing the links are live before you decide the hold.
 - **A real "list your property" landing page.** `/addhome` is a wizard and is
   noindexed, so your actual pitch appears on no indexable page. Less
   competition than the guest terms.
@@ -252,47 +194,49 @@ The canonical is done. The rest is unchanged.
 
 # 6. Housekeeping
 
-### The count endpoints — **done**
-
-Deleted in `8a3815a`, with the test that pinned them alive removed in the same
-commit rather than left to fail later and be patched by somebody who did not
-know why it was there.
-
-### The stale audit branch
-
-`audit/write-side-grants`, checked out in the other worktree, shows commits "not
-on master". They are not missing — the same content arrived via PRs #12, #13 and
-#15 as differently-authored commits. **Do not re-merge it.** PR #16 took its
-branch-only parts. Deletable once that session is finished.
-
-### Small stuff
-
 - `config/countries.ts` refers to a global `CountriesType` from the root
   `types.ts`. Harmless to the Next build; it breaks the *test* build if anyone
   adds `config/**` to `tsconfig.test.json`.
-- Demonstration runs left `stripe/webhook` and `import-listing` rows in the
-  **test** project's `error_log`. Deliberate — they are the evidence in
-  `WEBHOOK-FAILURE.md`. Clear them whenever.
-- `.claude/launch.json` has two extra local server configs I added. Delete if
-  unwanted.
-- The 404 emits two robots tags. They now **agree** (`noindex` and `noindex,
-  nofollow`) rather than contradicting, so this is tidiness, not a defect.
+- The **test** project's `error_log` holds 55 demonstration rows — 19 from
+  `stripe/webhook`, 12 from `lib/clawback`, 21 with no path. Deliberate: they
+  are the evidence in `WEBHOOK-FAILURE.md`. Clear them whenever.
+- `.claude/launch.json` has three local server configs; two are mine
+  (`galloway-audit`, `galloway-prod`). Delete if unwanted.
+- `origin/audit/write-side-grants-onto-master` is still on the remote. Its
+  content arrived via PRs #12, #13 and #15 as differently-authored commits.
+  **Do not re-merge it.** Deletable.
+- The 404 emits two robots tags. They **agree** (`noindex` and `noindex,
+  nofollow`), so this is tidiness, not a defect.
+
+---
+
+# Two traps worth knowing, both of which cost time this week
+
+Neither is a defect. Both made working things look broken.
+
+- **`cmd = 'DELETE'` is not how you find a missing delete policy.** A `FOR ALL`
+  policy covers DELETE and does not match that filter. It produced eleven
+  imaginary holes on production this morning.
+- **A stale `.next` makes hydrated code look dead.** Rebuilding underneath a
+  running dev server left the earnings chart un-hydrated, so no click handler
+  existed and a working component tested as broken. Clear `.next`, restart,
+  re-test before believing a UI bug. This is the sibling of the RSC-payload
+  trap now written up in `MAINTENANCE.md`.
 
 ---
 
 # What I would do next, in order
 
-1. **Decide about "Delete my home"** (section 1). Ten minutes for option 1, and
-   until then the dialog promises something that does not happen.
-2. **`errors/report` and `services/wanted` rate limits** (2G). `lib/rateLimit.ts`
-   exists now; this is three lines each, and `errors/report` guards the page you
-   rely on to notice everything else here.
-3. **`requireAdmin` in `lib/access.ts`**, with the test. The ninth copy is
-   correct; the tenth is a coin flip.
-4. **`adminAudit` reporting**, then the worst of the 32 silent routes — `notify`
-   first, since every notification funnels through it and its catch returns
-   `{ok:false}` with status 200.
-5. **Storage limits** (2F) before anyone else can upload to the public bucket.
+1. **Read the ten area pages and drop the hold** (section 5). The work is done
+   and earning nothing while it sits.
+2. **Take the two decisions together** (section 1) — `full_name` and
+   `services/apply`. The second one gates the phase that is now built.
+3. **Trace `payout_balance_owed`** (section 2). One hour, before the first live
+   payout rather than after it.
+4. **The eight silent money-path routes** (section 3). Same ten lines each as
+   `notify` got.
+5. **Owner-scoped upload paths** (2F), whenever the upload paths are being
+   touched anyway.
 
-Then the SEO list, which is mostly an afternoon each and none of it urgent, and
-the content, which is yours.
+Then the SEO list, which is an afternoon each and none of it urgent, and the
+content, which is yours.
