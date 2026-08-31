@@ -16,6 +16,7 @@ const Navbar = async () => {
     let avatarUrl: string | null = null;
     let isAdmin = false;
     let hasCompletedStay = false;
+    let isProvider = false;
 
     if (data?.session?.user) {
         const { data: profile } = await supabase
@@ -57,6 +58,18 @@ const Navbar = async () => {
             .lt('check_out', today);
 
         hasCompletedStay = (stays || 0) > 0;
+
+        // You run a service business if you own an approved provider. RLS lets
+        // an owner read their own row whatever its state; we only light the
+        // menu link once it is live, so it never leads to a page that would
+        // just bounce a draft back to the wizard.
+        const { count: providerCount } = await supabase
+            .from('service_providers')
+            .select('id', { count: 'exact', head: true })
+            .eq('owner_id', data.session.user.id)
+            .eq('status', 'approved');
+
+        isProvider = (providerCount || 0) > 0;
     }
 
     // Default a host to travel mode until they choose otherwise.
@@ -92,6 +105,7 @@ const Navbar = async () => {
                         isAdmin={isAdmin}
                         mode={mode}
                         hasCompletedStay={hasCompletedStay}
+                        isProvider={isProvider}
                         avatarUrl={avatarUrl}
                         initial={firstName ? firstName.charAt(0).toUpperCase() : ''}
                     />
