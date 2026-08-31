@@ -31,7 +31,13 @@ export async function GET(request: Request) {
             return NextResponse.json(
                 {
                     ok: false,
-                    error: 'Address lookup is not configured — GETADDRESS_API_KEY is empty in this environment.',
+                    // A host reads this, not a developer. Naming the missing
+                    // environment variable told the one person who could not
+                    // act on it, and told them the site was broken rather than
+                    // that there is a way round. The variable name still
+                    // reaches /admin/errors, where somebody can do something
+                    // about it.
+                    error: 'We can\u2019t look up addresses just now. Enter yours by hand instead \u2014 nothing else changes.',
                 },
                 { status: 503 }
             );

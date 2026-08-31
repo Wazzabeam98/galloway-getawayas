@@ -190,11 +190,23 @@ const SignupModel = () => {
 
     return (
         <AlertDialog open={open}>
-            <AlertDialogTrigger asChild>
-                <li className='hover:bg-slate-200 rounded-md p-2 cursor-pointer' onClick={() => setOpen(true)}>
-                    Sign Up
-                </li>
-            </AlertDialogTrigger>
+            {/* A button, for the same reason as Log In: a clickable <li> is
+                not in the tab order, and these two were the only items in the
+                account menu that were not links — so a keyboard could reach
+                neither, and nobody using one could get an account. asChild
+                needs a single focusable child, so the button is the trigger
+                and the <li> sits outside it. */}
+            <li className='list-none'>
+                <AlertDialogTrigger asChild>
+                    <button
+                        type='button'
+                        onClick={() => setOpen(true)}
+                        className='w-full text-left hover:bg-slate-200 rounded-md p-2 cursor-pointer'
+                    >
+                        Sign Up
+                    </button>
+                </AlertDialogTrigger>
+            </li>
             <AlertDialogContent>
                 <AlertDialogHeader>
                     <AlertDialogTitle>
