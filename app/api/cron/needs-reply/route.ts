@@ -1,4 +1,5 @@
 import { isArchived, needsReply } from '@/lib/conversations';
+import { logError } from '@/lib/logError';
 import { adminClient } from '@/lib/supabaseAdmin';
 import { NextResponse } from 'next/server';
 import {
@@ -63,11 +64,45 @@ export async function GET(request: Request) {
     // Reading the window rather than each conversation in turn keeps this to
     // one query. Anything whose newest message predates the window is older
     // than OLDEST_DAYS and is deliberately left alone.
-    const { data: recent } = await admin
+    // BOOKING CONVERSATIONS ONLY.
+    //
+    // Since 20260831180000 a message hangs off EITHER a booking or an enquiry,
+    // and this whole route is keyed on the booking: it groups by booking_id,
+    // looks the bookings up, and reads conversation_prefs and
+    // sent_reply_nudges by booking_id. A job-thread message has booking_id
+    // null and breaks every one of those steps.
+    //
+    // It broke them silently, which is the part worth remembering. Every
+    // enquiry message collapsed into a single bucket keyed "null"; the newest
+    // of them became its representative; and once that one was older than
+    // WAITING_HOURS, `bookingIds` contained a null. PostgREST renders that as
+    // the literal string, and Postgres answers `invalid input syntax for type
+    // uuid: "null"` — so the bookings, prefs and nudges queries all failed,
+    // every message fell through `if (!booking)`, and the route returned
+    // ok:true with emailed:0. Hosts simply stopped being chased, and nothing
+    // anywhere said so.
+    //
+    // Job threads get their own nudge when they get one; they are not this
+    // route's business. Excluded in the query rather than filtered afterwards,
+    // so the null can never reach the grouping in the first place.
+    const { data: recent, error: recentError } = await admin
         .from('messages')
         .select('id, booking_id, sender_id, recipient_id, body, created_at')
+        .not('booking_id', 'is', null)
         .gte('created_at', oldest)
         .order('created_at', { ascending: false });
+
+    // Read rather than ignored. An unread error here is a day on which nobody
+    // is chased, reported as a quiet day — see above for what that cost.
+    if (recentError) {
+        await logError('needs-reply: could not load the recent messages', recentError, {
+            path: '/api/cron/needs-reply',
+        });
+        return NextResponse.json(
+            { ok: false, error: 'Could not load the recent messages' },
+            { status: 500 }
+        );
+    }
 
     const newestByBooking: Record<string, any> = {};
     (recent || []).forEach((m: any) => {
@@ -86,10 +121,23 @@ export async function GET(request: Request) {
 
     const bookingIds = waiting.map((m: any) => m.booking_id);
 
-    const { data: bookings } = await admin
+    const { data: bookings, error: bookingsError } = await admin
         .from('bookings')
         .select('id, listing_id, guest_id, host_id, check_in, check_out, status')
         .in('id', bookingIds);
+
+    // The same reasoning as above: without this, a failed lookup empties
+    // bookingMap, every message is skipped as "no booking", and the run
+    // reports success having chased nobody.
+    if (bookingsError) {
+        await logError('needs-reply: could not load the bookings behind the messages', bookingsError, {
+            path: '/api/cron/needs-reply',
+        });
+        return NextResponse.json(
+            { ok: false, error: 'Could not load the bookings' },
+            { status: 500 }
+        );
+    }
 
     const bookingMap: Record<string, any> = {};
     (bookings || []).forEach((b: any) => { bookingMap[b.id] = b; });

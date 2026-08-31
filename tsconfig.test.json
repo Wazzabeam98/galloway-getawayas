@@ -45,6 +45,7 @@
     "app/api/services/enquiries/respond/route.ts",
     "app/api/services/enquiries/withdraw/route.ts",
     "app/api/cron/service-enquiries/route.ts",
+    "app/api/cron/needs-reply/route.ts",
     "app/api/services/enquiries/refresh/route.ts"
   ]
 }
