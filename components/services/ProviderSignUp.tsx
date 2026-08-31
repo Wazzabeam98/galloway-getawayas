@@ -23,6 +23,7 @@ import {
     blockedSkillReason,
 } from '@/lib/serviceSkills';
 import LoginModel from '@/components/auth/LoginModel';
+import ProviderExperienceDashboard from '@/components/services/ProviderExperienceDashboard';
 import {
     tradeLabel,
     audienceForTrade,
@@ -192,6 +193,10 @@ function ApplicationForm() {
     // Keyed by band. Kept as strings so a half-typed price is not coerced to a
     // number mid-keystroke, and blank stays genuinely blank rather than 0.
     const [prices, setPrices] = useState<Record<string, { price: string; typical_hours: string }>>({});
+
+    // The one fixed price a guest-trade provider charges for their experience.
+    // Their own words carry what it covers; this is the number.
+    const [experiencePrice, setExperiencePrice] = useState('');
     // Keyed by extra. Price stays a string for the same reason band prices
     // do — a half-typed number should not be coerced mid-keystroke.
     const [extras, setExtras] = useState<Record<string, { offered: boolean; price: string; notes: string }>>({});
@@ -1301,6 +1306,9 @@ function ApplicationForm() {
             contact_phone: contactPhone.trim() || null,
             sms_opt_out: smsOptOut,
             audience: audienceForTrade(trade),
+            experience_price: audienceForTrade(trade) === 'guest' && experiencePrice.trim() !== ''
+                ? Number(experiencePrice)
+                : null,
             photos,
             logo,
             does_gas: asksAboutFuel(trade) ? doesGas : false,
@@ -1551,6 +1559,9 @@ function ApplicationForm() {
             contact_phone: contactPhone.trim() || null,
             sms_opt_out: smsOptOut,
             audience: audienceForTrade(trade),
+            experience_price: audienceForTrade(trade) === 'guest' && experiencePrice.trim() !== ''
+                ? Number(experiencePrice)
+                : null,
             photos,
             logo,
             does_gas: asksAboutFuel(trade) ? doesGas : false,
@@ -2020,6 +2031,14 @@ function ApplicationForm() {
                 <div className="mb-8 rounded-2xl border border-emerald-300 bg-emerald-50 p-5">
                     <p className="font-semibold text-emerald-900">{summary.label}</p>
                     <p className="text-sm text-emerald-900/80 mt-1">{summary.detail}</p>
+
+                    {/* A guest-trade provider does two more things here after
+                        approval: set up payouts (the second gate) and answer the
+                        requests that come in. Kept in its own component so this
+                        already-large file does not grow a dashboard inside it. */}
+                    {providerId && audienceForTrade(trade) === 'guest' && (
+                        <ProviderExperienceDashboard providerId={providerId} />
+                    )}
                 </div>
             )}
 
@@ -2257,6 +2276,35 @@ function ApplicationForm() {
                     {problemFor('description') && (
                         <p data-problem className="text-sm text-rose-700 mt-1.5">{problemFor('description')!.message}</p>
                     )}
+                </section>
+                )}
+
+                {/* A guest-trade provider sets one fixed price here. The
+                    variability lives in their own words above — "three-course
+                    dinner for up to six, £180" — rather than in a pricing matrix
+                    we would have to maintain. A provider with no price is simply
+                    not live to guests (the order route refuses it), the same way
+                    an un-connected one is not. */}
+                {onStep('business') && audienceForTrade(trade) === 'guest' && (
+                <section className="mb-8">
+                    <label className="block text-sm font-semibold text-slate-900 mb-1.5">Your price</label>
+                    <p className="text-sm text-slate-500 mb-2">
+                        One price for your experience. Say above what it covers — a three-course
+                        dinner for six, a welcome hamper, a morning’s dog walking.
+                    </p>
+                    <div className="flex items-center gap-2">
+                        <span className="text-slate-500">£</span>
+                        <input
+                            type="number"
+                            min="0"
+                            step="0.01"
+                            inputMode="decimal"
+                            value={experiencePrice}
+                            onChange={(e) => setExperiencePrice(e.target.value)}
+                            placeholder="180"
+                            className="w-40 rounded-xl border border-slate-300 px-4 py-3 focus:outline-none focus:ring-2 focus:ring-emerald-700"
+                        />
+                    </div>
                 </section>
                 )}
 

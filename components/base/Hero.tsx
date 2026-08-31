@@ -608,10 +608,10 @@ export default function Hero() {
       {/* Hero Content */}
       <div className="relative z-30 text-center max-w-5xl px-4 flex flex-col items-center w-full">
         <h1 className="text-4xl md:text-6xl font-extrabold tracking-tight mb-3 drop-shadow-lg">
-          Galloway Getaways
+          Self-catering cottages across Dumfries &amp; Galloway
         </h1>
         <p className="text-lg md:text-xl font-medium mb-8 drop-shadow-md text-white">
-          Book direct for our best rate guarantee & no booking fees
+          Booked direct with the people who own them. No booking fee, ever.
         </p>
 
         {/* Compact search — small screens only. Two by two: Where and When

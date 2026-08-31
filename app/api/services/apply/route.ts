@@ -68,6 +68,9 @@ const PROVIDER_COLUMNS = [
     'audience', 'photos', 'logo', 'does_gas', 'does_oil',
     'callout_fee', 'hourly_rate', 'callout_waived',
     'pricing_choice', 'billable_hourly_rate', 'covered_bands',
+    // The one fixed price a guest-trade provider charges. Whitelisted like the
+    // rest; commission_rate stays the platform's and is not here.
+    'experience_price',
 ];
 
 const AREA_COLUMNS = ['label', 'centre_lat', 'centre_lng', 'radius_miles'];

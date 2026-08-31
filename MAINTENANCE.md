@@ -1230,3 +1230,39 @@ transpile emitting `exports.foo = ...` into a file Node then loads as ESM. A
 one-line `.mjs` imports perfectly well and the same import breaks once the file
 grows — which is exactly how a false-negative mutation test was written while
 proving the above.
+
+---
+
+## Opening guest experiences to guests — `GUEST_EXPERIENCES_OPEN`
+
+Guest experiences ship closed. A guest cannot book one — no matter that a chef
+is approved, connected and covering the cottage — until this is on. It is a
+deliberate launch gate, held so the first bookable state arrives when the owner
+says, not when a provider happens to finish onboarding.
+
+**It is one environment variable and NOT a code deploy.**
+
+```
+GUEST_EXPERIENCES_OPEN = true      # open. Any other value, or absent, = closed.
+```
+
+Set it in Vercel (Production) and **redeploy** — an env var only binds to a new
+deployment, so changing it in the dashboard does nothing until the next deploy
+is promoted. That is the one catch: flip the variable, then trigger a redeploy.
+(The Vercel dashboard does both from a phone.)
+
+The value must be exactly the string `true`. `TRUE`, `1`, `yes` all read as
+closed — see `tests/service-orders.test.ts`. This is on purpose: a fuzzy truthy
+check is how a half-typed value opens a shop nobody meant to open.
+
+What it gates, and what it does not:
+
+- **Gated (the lock):** `app/api/services/order` refuses to create a booking,
+  and `app/api/services/experiences` returns nothing bookable, while it is
+  closed — so a direct API call is refused the same as a hidden button.
+  `lib/serviceOrders.ts guestExperiencesOpen()` is the single reader.
+- **Visible, but not usable:** the trip page shows a "coming soon" panel in
+  place of the bookable cards, and the host's per-property panel says the same.
+- **NOT gated (on purpose):** the provider side. A chef can sign up, be
+  approved and connect Stripe while this is closed — that is how you get one
+  ready before you open. The moment you flip it, any connected chef appears.

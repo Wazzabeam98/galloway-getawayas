@@ -1,5 +1,6 @@
 import Link from 'next/link';
 import { Sparkles, ChefHat, ArrowRight } from 'lucide-react';
+import { tradesFor } from '@/lib/serviceProviders';
 
 export const metadata = {
     // The root layout appends ' | Galloway Getaways' to every page title, so
@@ -56,23 +57,36 @@ export default function BusinessPage() {
                     </span>
                 </Link>
 
-                <div className="rounded-2xl border border-slate-200 bg-slate-50 p-6">
-                    <ChefHat className="w-8 h-8 text-slate-400 mb-4" strokeWidth={1.5} />
+                <div className="rounded-2xl border border-slate-300 p-6">
+                    <ChefHat className="w-8 h-8 text-emerald-700 mb-4" strokeWidth={1.5} />
                     <h2 className="font-bold text-slate-900 text-lg">Sell to guests</h2>
                     <p className="text-sm text-slate-600 mt-2">
-                        Private chefs, cakes, hampers, boat trips, pet care — bought by people staying
-                        in the cottages rather than by the people who own them.
+                        Private chefs, cakes, hampers, pet care — bought by people staying in the
+                        cottages rather than by the people who own them.
                     </p>
-                    <span className="inline-block text-xs font-semibold text-slate-500 bg-slate-200 rounded-full px-2.5 py-1 mt-4">
-                        Opening soon
-                    </span>
-                    <p className="text-xs text-slate-500 mt-3">
-                        Email{' '}
-                        <a href="mailto:services@gallowaygetaways.co.uk" className="underline hover:text-slate-700">
-                            services@gallowaygetaways.co.uk
-                        </a>{' '}
-                        and we will tell you when it opens.
+
+                    {/* Said plainly, not buried: signing up is not going live.
+                        A guest cannot see you until you have been approved and
+                        have connected Stripe for payouts — the same two steps a
+                        cleaner or a host goes through. */}
+                    <p className="text-sm text-slate-500 mt-3">
+                        You apply, we check your business, and you connect Stripe so we can pay you.
+                        A guest can book you once you are approved and connected — not the moment you
+                        sign up.
                     </p>
+
+                    <div className="mt-4 grid grid-cols-2 gap-2">
+                        {tradesFor('guest').map((t) => (
+                            <Link
+                                key={t.key}
+                                href={'/services/join?trade=' + t.key}
+                                className="group flex items-center justify-between rounded-xl border border-slate-300 px-3 py-2 text-sm font-medium text-slate-800 hover:border-emerald-700 hover:bg-emerald-50/40 transition"
+                            >
+                                {t.label}
+                                <ArrowRight className="w-4 h-4 text-emerald-700 group-hover:translate-x-0.5 transition" />
+                            </Link>
+                        ))}
+                    </div>
                 </div>
             </div>
         </div>

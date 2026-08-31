@@ -17,19 +17,11 @@ export const metadata: Metadata = {
   // Every page title gets " | Galloway Getaways" appended automatically,
   // so individual pages only need to say what they are.
   title: {
-    default: 'Self Catering Holiday Cottages in Dumfries & Galloway | Galloway Getaways',
+    default: 'Self Catering Cottages in Dumfries & Galloway',
     template: '%s | Galloway Getaways',
   },
   description:
-    'Book self catering holiday cottages and apartments across Dumfries & Galloway. Book direct with local hosts for our best rate guarantee and no booking fees.',
-  keywords: [
-    'self catering Dumfries and Galloway',
-    'holiday cottages Dumfries and Galloway',
-    'accommodation Dumfries and Galloway',
-    'holiday cottages Kirkcudbright',
-    'dog friendly cottages Dumfries and Galloway',
-    'cottages with hot tub Dumfries and Galloway',
-  ],
+    'Book self catering holiday cottages and apartments across Dumfries & Galloway. Booked direct with the people who own them — no booking fee, ever.',
 
   // Tells search engines which address is the real one, so the www and
   // vercel.app versions don't compete with this one.
