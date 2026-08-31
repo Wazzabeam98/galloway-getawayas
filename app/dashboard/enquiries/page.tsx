@@ -19,6 +19,7 @@ import {
 } from '@/lib/serviceEnquiries';
 import HostCancelButton from '@/components/services/HostCancelButton';
 import ReaskButton from '@/components/services/ReaskButton';
+import DateChangeRequest from '@/components/services/DateChangeRequest';
 
 // What a host has asked, and what came back.
 //
@@ -67,6 +68,7 @@ interface Enquiry {
     expires_at: string | null;
     cancelled_by: string | null;
     cancel_reason: string | null;
+    proposed_date: string | null;
 
     // Copied onto the row by the respond route at the moment of acceptance,
     // and null until then. The host's screen therefore never reads
@@ -102,7 +104,7 @@ export default function EnquiriesPage() {
 
         const { data } = await supabase
             .from('service_enquiries')
-            .select('id, reference, trade, business_name, provider_id, listing_id, status, urgency, summary, fault_keys, price_snapshot, preferred_date, window_from, window_to, host_name, host_phone, outcome, sent_at, expires_at, provider_phone, provider_email, cancelled_by, cancel_reason')
+            .select('id, reference, trade, business_name, provider_id, listing_id, status, urgency, summary, fault_keys, price_snapshot, preferred_date, window_from, window_to, host_name, host_phone, outcome, sent_at, expires_at, provider_phone, provider_email, cancelled_by, cancel_reason, proposed_date')
             .eq('host_id', session.user.id)
             .order('sent_at', { ascending: false });
 
@@ -238,6 +240,17 @@ export default function EnquiriesPage() {
                                         </a>
                                     )}
                                 </div>
+                            )}
+
+                            {/* The tradesman has asked to move the day — the
+                                host's call, the same as accepting was. */}
+                            {row.status === 'accepted' && row.proposed_date && (
+                                <DateChangeRequest
+                                    enquiryId={row.id}
+                                    proposedDate={row.proposed_date}
+                                    currentDate={row.preferred_date}
+                                    onDone={load}
+                                />
                             )}
 
                             <div className="mt-4 flex flex-wrap items-center gap-3">

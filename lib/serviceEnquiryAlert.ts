@@ -543,34 +543,66 @@ export async function markViewed(id: string): Promise<void> {
         .eq('status', 'sent');
 }
 
-// The tradesman has moved an accepted job to a different day. The host is told
-// the new day and the old one — it is still "asked for", not a slot, but a
-// changed date is a different conversation and they need to know.
-export async function announceAmendment(
+// The tradesman would like to move an accepted job to a different day. This
+// asks the host — it does not change anything. The old day stands until they
+// accept, in their enquiries, the same way they accepted the job in the first
+// place.
+export async function announceProposedChange(
     enquiry: any,
     provider: any,
-    listing: any,
-    previousDate: string | null
+    listing: any
 ): Promise<AlertResult> {
     const result: AlertResult = { ok: true, provider: false, host: false, admins: [] };
     const ref = escapeHtml(String(enquiry.reference || ''));
     const name = String(enquiry.business_name || 'the tradesman');
     const trade = (tradeLabel(String(enquiry.trade || '')) || 'tradesman').toLowerCase();
     const place = String((listing && (listing.location || listing.title)) || enquiry.area_key || 'the cottage');
-    const newText = enquiry.preferred_date ? formatDate(enquiry.preferred_date) : 'a new day';
-    const oldText = previousDate ? formatDate(previousDate) : '';
+    const newText = enquiry.proposed_date ? formatDate(enquiry.proposed_date) : 'a different day';
+    const oldText = enquiry.preferred_date ? formatDate(enquiry.preferred_date) : '';
 
     if (enquiry.host_email && !isAutomatedTestAddress(enquiry.host_email)) {
         result.host = await sendEmail(
             String(enquiry.host_email),
-            name + ' has changed the date (' + String(enquiry.reference) + ')',
+            name + ' asks to move the day (' + String(enquiry.reference) + ')',
             emailLayout(
-                '<p style="margin:0 0 16px;font-size:16px;"><strong>' + escapeHtml(name) + '</strong> has moved the '
+                '<p style="margin:0 0 16px;font-size:16px;"><strong>' + escapeHtml(name) + '</strong> would like to move the '
                     + escapeHtml(trade) + ' work at <strong>' + escapeHtml(place) + '</strong> to <strong>'
-                    + escapeHtml(newText) + '</strong>' + (oldText ? ' (was ' + escapeHtml(oldText) + ')' : '') + '.</p>'
-                    + '<p style="margin:0 0 16px;font-size:15px;color:#64748b;">It is still a day they’ve asked to come, not a booking — confirm the time between you.</p>'
-                    + button(SITE_URL + '/dashboard/enquiries', 'See your enquiries'),
-                'You are receiving this because a tradesman changed the date of work you asked for through Galloway Getaways. Reference ' + ref + '.'
+                    + escapeHtml(newText) + '</strong>' + (oldText ? ' (you asked for ' + escapeHtml(oldText) + ')' : '') + '.</p>'
+                    + '<p style="margin:0 0 16px;font-size:15px;color:#64748b;">Nothing changes until you say so — you know if a guest is in that day. Accept it or keep the original in your enquiries.</p>'
+                    + button(SITE_URL + '/dashboard/enquiries', 'Accept or decline'),
+                'You are receiving this because a tradesman asked to change the date of work you arranged through Galloway Getaways. Reference ' + ref + '.'
+            )
+        );
+    }
+    return result;
+}
+
+// The host has answered a proposed date change. The tradesman is told which
+// way it went — the new day if they agreed, the day that still stands if not.
+export async function announceChangeDecision(
+    enquiry: any,
+    provider: any,
+    listing: any,
+    accepted: boolean
+): Promise<AlertResult> {
+    const result: AlertResult = { ok: true, provider: false, host: false, admins: [] };
+    const ref = escapeHtml(String(enquiry.reference || ''));
+    const trade = (tradeLabel(String(enquiry.trade || '')) || 'tradesman').toLowerCase();
+    const place = String((listing && (listing.location || listing.title)) || enquiry.area_key || 'the cottage');
+    const dayText = enquiry.preferred_date ? formatDate(enquiry.preferred_date) : 'the day agreed';
+
+    if (provider && provider.contact_email && !isAutomatedTestAddress(provider.contact_email)) {
+        result.provider = await sendEmail(
+            String(provider.contact_email),
+            (accepted ? 'New day agreed' : 'Original day kept') + ' (' + String(enquiry.reference) + ')',
+            emailLayout(
+                accepted
+                    ? '<p style="margin:0 0 16px;font-size:16px;">The host agreed — the ' + escapeHtml(trade)
+                        + ' work at <strong>' + escapeHtml(place) + '</strong> is now for <strong>' + escapeHtml(dayText) + '</strong>.</p>'
+                    : '<p style="margin:0 0 16px;font-size:16px;">The host kept the original day. The ' + escapeHtml(trade)
+                        + ' work at <strong>' + escapeHtml(place) + '</strong> still stands for <strong>' + escapeHtml(dayText)
+                        + '</strong> — give them a call if that no longer works for you.</p>',
+                'You are receiving this because a host answered your request to change a date on Galloway Getaways. Reference ' + ref + '.'
             )
         );
     }
