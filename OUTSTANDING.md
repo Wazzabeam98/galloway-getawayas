@@ -113,12 +113,21 @@ reason it moves up this list rather than down: the experiences phase is now
 built and sitting behind a flag. The first approved provider is what arms this,
 and that is a business decision away rather than a development one.
 
-### `payout_balance_owed` — nobody has traced how the payout run reads it
+### `payout_balance_owed` — traced, and it is an instruction — **HIGH**
 
-Unchanged. It can no longer be self-set. Whether the payout run treats it as an
-instruction or recomputes it is still untraced, and the payout engine is the
-largest untested thing in the project. Worth an hour **before** the first live
-payout, not after.
+**Traced on 31 August. Full write-up in `PAYOUT-BALANCE-TRACE.md`.** The payout
+run obeys the number on the host's profile and never checks it against the
+itemised debts behind it. Proven on test: a total saying £100 against rows
+justifying £30 deducted £100 — and then marked the books consistent, so the
+admin drift warning could never fire on it again.
+
+All three writers of that number do an unsafe read-modify-write, and the payout
+run's read and write straddle a network call to Stripe. A single refund landing
+during the daily run is enough to lose one. Demonstrated: two £40 and £25 debts
+arriving together left £40.
+
+Not fixed — it is money-path and wants your eyes on the diff. Three changes
+proposed in the write-up, smallest and most important first.
 
 ### The write-side audit's unfinished pair
 
@@ -231,8 +240,10 @@ Neither is a defect. Both made working things look broken.
    and earning nothing while it sits.
 2. **Take the two decisions together** (section 1) — `full_name` and
    `services/apply`. The second one gates the phase that is now built.
-3. **Trace `payout_balance_owed`** (section 2). One hour, before the first live
-   payout rather than after it.
+3. **Fix `payout_balance_owed`** (section 2, and `PAYOUT-BALANCE-TRACE.md`).
+   The trace is done and the answer is the bad one: the run obeys a number
+   that three unsafe writers can get wrong. This is now the thing standing
+   between here and paying a real host.
 4. **The eight silent money-path routes** (section 3). Same ten lines each as
    `notify` got.
 5. **Owner-scoped upload paths** (2F), whenever the upload paths are being
