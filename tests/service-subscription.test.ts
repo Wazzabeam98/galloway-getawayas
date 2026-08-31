@@ -97,22 +97,41 @@ test('everything that asks for a card stops once there is one', () => {
 // ---------------------------------------------------------------------------
 
 test('nothing is due before its day', () => {
-    // The day before the thirty-day note, only the two earlier ones have
-    // landed.
+    // The day before the thirty-day note, the cron owes nothing at all — the
+    // only earlier email is the one the enquiry route already sent.
     const due = remindersDue(provider(), on(-31)).map((r: any) => r.key);
-    assert.equal(due.indexOf('thirty_days'), -1);
-    assert.deepEqual(due, ['trial_started']);
+    assert.deepEqual(due, []);
 });
 
 test('each reminder becomes due on its own day', () => {
-    for (const r of REMINDERS) {
+    for (const r of REMINDERS.filter((x: any) => !x.atFirstEnquiry)) {
         const due = remindersDue(provider(), on(r.offset)).map((x: any) => x.key);
         assert.equal(due.indexOf(r.key) !== -1, true, r.key + ' is due on its day');
     }
 });
 
+// THE ONE THE CRON MUST NEVER SEND.
+//
+// 'trial_started' says the free period began "today" and goes out from the
+// enquiry route at the moment the clock is stamped. The cron runs at seven in
+// the morning, so if it could send this, a tradesman whose first enquiry
+// arrived at three in the afternoon would read "today" the next morning about
+// a day that had passed. There is no offset at which the cron may claim it.
+test('the cron never sends the first email, at any point in the trial', () => {
+    const first = REMINDERS.filter((r: any) => r.atFirstEnquiry);
+    assert.equal(first.length, 1, 'exactly one email is sent from the enquiry route');
+    assert.equal(first[0].key, 'trial_started');
+
+    for (let day = -TRIAL_DAYS - 5; day <= 30; day++) {
+        const due = remindersDue(provider(), on(day)).map((r: any) => r.key);
+        assert.equal(due.indexOf('trial_started'), -1,
+            'the cron claimed the first email on day ' + day);
+    }
+});
+
 test('a reminder already sent is never sent again', () => {
     const sent = provider({ reminders_sent: ['trial_started', 'thirty_days', 'fourteen_days'] });
+    // 'trial_started' is in there because the enquiry route records it.
     const due = remindersDue(sent, on(-14)).map((r: any) => r.key);
 
     assert.deepEqual(due, [], 'nothing outstanding');
@@ -123,7 +142,7 @@ test('a reminder already sent is never sent again', () => {
 test('a missed day is caught up, not skipped', () => {
     const due = remindersDue(provider(), on(-6)).map((r: any) => r.key);
 
-    assert.deepEqual(due, ['trial_started', 'thirty_days', 'fourteen_days', 'seven_days'],
+    assert.deepEqual(due, ['thirty_days', 'fourteen_days', 'seven_days'],
         'everything whose day has passed, not just today s');
 });
 
@@ -132,8 +151,8 @@ test('a provider with a card is asked for nothing more', () => {
     const paid = provider({ stripe_subscription_id: 'sub_123' });
     const due = remindersDue(paid, on(1)).map((r: any) => r.key);
 
-    assert.deepEqual(due, ['trial_started', 'thirty_days'],
-        'only the two that never ask for anything');
+    assert.deepEqual(due, ['thirty_days'],
+        'only the one the cron owes that never asks for anything');
     assert.equal(hasCard(paid), true);
 });
 

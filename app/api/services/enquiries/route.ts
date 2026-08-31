@@ -12,6 +12,7 @@ import {
     trialEndsAt,
 } from '@/lib/serviceProviders';
 import { visibleInDirectory } from '@/lib/serviceSubscription';
+import { sendTrialStarted } from '@/lib/serviceSubscriptionAlert';
 import {
     enquiryProblems,
     enquiryReference,
@@ -338,14 +339,20 @@ export async function POST(req: Request) {
             try {
                 const started = new Date();
 
-                const { error: trialError } = await admin
+                const { data: stamped, error: trialError } = await admin
                     .from('service_providers')
                     .update({
                         trial_ends_at: trialEndsAt(started),
                         updated_at: started.toISOString(),
                     })
                     .eq('id', provider.id)
-                    .is('trial_ends_at', null);
+                    .is('trial_ends_at', null)
+                    // Returned so we know whether THIS request started the
+                    // clock. Two enquiries in the same second both reach here;
+                    // only one writes, and only the one that wrote may tell him
+                    // his free period has begun.
+                    .select('id, business_name, contact_email, trial_ends_at')
+                    .maybeSingle();
 
                 if (trialError) {
                     await logError('service-trial-start', {
@@ -353,6 +360,47 @@ export async function POST(req: Request) {
                         enquiry: String(saved.id),
                         error: String(trialError.message),
                     });
+                }
+
+                // TELLING HIM, NOW RATHER THAN IN THE MORNING.
+                //
+                // This email says his free period started "today", so it has to
+                // go out on the day it did. The cron runs at seven; a first
+                // enquiry at three in the afternoon would otherwise be reported
+                // to him the next morning as having happened today, which is
+                // the one email whose entire job is to be believed about a
+                // date. So it goes from here, beside the write that made it
+                // true. See the REMINDERS entry in lib/serviceSubscription.
+                //
+                // After the stamp, never before: if the write lost the race or
+                // failed, `stamped` is null and he is told nothing, because
+                // nothing happened.
+                if (stamped) {
+                    const told = await sendTrialStarted(stamped);
+
+                    if (told) {
+                        // Recorded so the ladder knows, and guarded in the
+                        // statement so a concurrent write cannot append it
+                        // twice.
+                        await admin
+                            .from('service_providers')
+                            .update({
+                                reminders_sent: ['trial_started'],
+                                updated_at: new Date().toISOString(),
+                            })
+                            .eq('id', provider.id)
+                            .not('reminders_sent', 'cs', '{trial_started}');
+                    } else {
+                        // He has a free period and does not know it. Nothing
+                        // retries this on purpose — a late send would have to
+                        // say something other than "today" — so it is reported
+                        // instead. His thirty-day note still arrives.
+                        await logError('service-trial-start-email', {
+                            provider: String(provider.id),
+                            enquiry: String(saved.id),
+                            error: 'the clock started but the tradesman was not told',
+                        });
+                    }
                 }
             } catch (err: any) {
                 await logError('service-trial-start', {

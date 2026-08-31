@@ -27,7 +27,7 @@ import {
 import { isAutomatedTestAddress } from '@/lib/testAddresses';
 import { logError } from '@/lib/logError';
 import { SUBSCRIPTION_MONTHLY, TRIAL_DAYS } from '@/lib/serviceProviders';
-import { GRACE_DAYS, Reminder } from '@/lib/serviceSubscription';
+import { GRACE_DAYS, Reminder, graceEndsAt, reminderByKey } from '@/lib/serviceSubscription';
 
 const FOOT = 'You are receiving this because you list a business on Galloway Getaways.';
 
@@ -116,12 +116,19 @@ export function reminderBody(reminder: Reminder, provider: any, link: string | n
     }
 
     // grace
+    //
+    // THE DATE, NOT THE ARITHMETIC. This used to say "it comes down 7 days
+    // after 28 August", which makes a man who is already being chased for
+    // money go and work out what day that is. It is the one email where the
+    // deadline is the entire content, so it gives the deadline.
+    const down = longDate(graceEndsAt(provider.trial_ends_at));
+
     return emailLayout(
         p('Your free period for <strong>' + name + '</strong> ended on <strong>'
             + escapeHtml(ends) + '</strong> and we have not been able to take a payment because '
             + 'there is no card on file.')
-        + p('Your listing is still up. It comes down <strong>' + GRACE_DAYS + ' days after '
-            + escapeHtml(ends) + '</strong> unless a card is added — and if it does come down, '
+        + p('Your listing is still up. It comes down on <strong>' + escapeHtml(down)
+            + '</strong> unless a card is added — and if it does come down, '
             + 'nothing is lost: adding a card afterwards puts it straight back, with the same '
             + 'details and no second review.')
         + terms()
@@ -164,4 +171,22 @@ export async function sendReminder(
 
 export function billingLink(token: string | null): string | null {
     return token ? SITE_URL + '/services/billing/' + token : null;
+}
+
+// The first email, sent from the enquiry route at the moment the clock is
+// stamped rather than by the cron the next morning.
+//
+// It exists as its own function because its caller is not the cron and should
+// not have to know which entry of REMINDERS it wants. The wording still comes
+// from reminderBody with everything else, so the six cannot drift apart.
+//
+// Returns whether it went. The caller records 'trial_started' only on a true,
+// so a failure leaves the key absent — which is honest, and which nothing
+// retries on purpose: see the note on the REMINDERS entry.
+export async function sendTrialStarted(provider: any): Promise<boolean> {
+    const reminder = reminderByKey('trial_started');
+    if (!reminder) return false;
+
+    // No card link in this one — there is nothing to pay for ninety days.
+    return sendReminder(reminder, provider, null);
 }
