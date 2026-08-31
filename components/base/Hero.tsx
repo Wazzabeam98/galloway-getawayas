@@ -35,7 +35,42 @@ import hero4 from '@/public/images/hero-4.jpg';
 const durations = ['weekend', 'week', 'month'];
 const futureMonths = [...Array(12)].map((_, i) => addMonths(new Date(), i));
 
-const HERO_IMAGES = [hero1, hero2, hero3, hero4];
+// Each hero photo with a description of what is in it. The photos are a
+// rotating backdrop, so the wrapper stays aria-hidden and a screen reader is
+// not read four landscapes it does not need — but the alt attribute is still in
+// the HTML, and that is what Google Images reads. Describing the scene rather
+// than writing "Dumfries and Galloway" is the point: nobody searches for the
+// region and gets shown a photo, they search for the thing in the photo.
+const HERO_IMAGES = [
+    {
+        src: hero1,
+        alt:
+            'Yachts and small boats moored on a tidal estuary at low tide, the wet sand and '
+            + 'shallow channels turned pink and gold by a sunset, with farmland and a wooded '
+            + 'ridge on the far shore',
+    },
+    {
+        src: hero2,
+        alt:
+            'Devorgilla Bridge in Dumfries, a red sandstone bridge of six arches carrying its '
+            + 'reflection across the calm River Nith, with the town rooftops and a church spire '
+            + 'behind it under a summer sky',
+    },
+    {
+        src: hero3,
+        alt:
+            'Caerlaverock Castle, a triangular red sandstone ruin with round corner towers, '
+            + 'standing inside its water-filled moat and mirrored in it, surrounded by rough '
+            + 'grass and open parkland',
+    },
+    {
+        src: hero4,
+        alt:
+            'A freshwater loch held in a bowl of dark conifer forest, sunlit green pasture and '
+            + 'rust-coloured bracken running down to the water, bare winter branches in the '
+            + 'foreground and cumulus building over the hills',
+    },
+];
 
 // One list, used for the dropdown on both layouts and for naming the chosen
 // place back to the guest in the collapsed mobile pill. The values are what
@@ -536,7 +571,7 @@ export default function Hero() {
     >
       {/* Rotating background images */}
       <div className="absolute inset-0 overflow-hidden pointer-events-none">
-        {HERO_IMAGES.map((src, i) => (
+        {HERO_IMAGES.map(({ src, alt }, i) => (
           <div
             key={src.src}
             aria-hidden="true"
@@ -549,7 +584,7 @@ export default function Hero() {
             {(i === 0 || firstLoaded) && (
               <Image
                 src={src}
-                alt=""
+                alt={alt}
                 fill
                 sizes="100vw"
                 quality={80}
@@ -592,7 +627,7 @@ export default function Hero() {
       {/* Which image you're on — also lets people skip ahead */}
       {HERO_IMAGES.length > 1 && (
         <div className="absolute bottom-5 left-1/2 -translate-x-1/2 z-0 flex items-center gap-2">
-          {HERO_IMAGES.map((src, i) => (
+          {HERO_IMAGES.map(({ src }, i) => (
             <button
               key={src.src}
               type="button"

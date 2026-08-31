@@ -6,13 +6,29 @@ import { getImageUrl } from '@/lib/utils';
 
 // Airbnb-style photo mosaic: one large image on the left, four smaller
 // ones filling a 2x2 block on the right, and a button to open the rest.
+//
+// `area` is only used for the alt text, and it is there because the title on
+// its own is a name rather than a description — "Rowan Cottage — photo 3" says
+// nothing a search engine or a screen reader can use. The photos are uploaded
+// by hosts, so nothing here knows which room any one of them shows; naming the
+// property, what it is and the town it is in is the most that can be said
+// truthfully, and it is what guests search for.
 export default function PhotoGallery({
     images,
     title,
+    area,
 }: {
     images: string[];
     title: string;
+    area?: string;
 }) {
+    const place = (area || '').trim() || 'Dumfries & Galloway';
+    // Photo 1 carries the plain description; the rest are numbered off it so a
+    // page of ten photos does not repeat one sentence ten times.
+    const describe = (n: number) =>
+        n === 1
+            ? `${title}, a self-catering holiday cottage in ${place}`
+            : `${title} in ${place} — photo ${n}`;
     const [open, setOpen] = useState(false);
 
     // Stop the page behind scrolling while the overlay is up, and let
@@ -53,7 +69,7 @@ export default function PhotoGallery({
                     <div className="relative w-full h-[300px] md:h-[460px]">
                         <Image
                             src={getImageUrl(hero)}
-                            alt={title}
+                            alt={describe(1)}
                             fill
                             priority
                             sizes="(max-width: 1024px) 100vw, 1216px"
@@ -69,7 +85,7 @@ export default function PhotoGallery({
                         >
                             <Image
                                 src={getImageUrl(hero)}
-                                alt={title}
+                                alt={describe(1)}
                                 fill
                                 priority
                                 sizes="(max-width: 768px) 100vw, 608px"
@@ -87,7 +103,7 @@ export default function PhotoGallery({
                             >
                                 <Image
                                     src={getImageUrl(img)}
-                                    alt={`${title} — photo ${i + 2}`}
+                                    alt={describe(i + 2)}
                                     fill
                                     // Hidden below md, and a quarter of the
                                     // gallery above it — so these never need
@@ -143,7 +159,7 @@ export default function PhotoGallery({
                             <Image
                                 key={i}
                                 src={getImageUrl(img)}
-                                alt={`${title} — photo ${i + 1}`}
+                                alt={describe(i + 1)}
                                 // The lightbox column is 768px at most, so
                                 // there is no reason to send the original.
                                 // width/height only set the ratio Next

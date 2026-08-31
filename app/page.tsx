@@ -28,6 +28,39 @@ function townPhoto(slug: string): string | null {
     return null;
 }
 
+// What is in each town photograph, written for somebody who cannot see it —
+// which also happens to be what Google Images indexes on. The town name is
+// deliberately not the whole of it: the name is already the heading right below
+// the picture, and repeating it adds nothing, whereas "ruined tower on an
+// island, rowing boat, still water" is a description a search can match.
+//
+// Keyed by the same slug as the file, so a photo and its description are added
+// together. A town whose photo has been dropped in without a line here still
+// appears — it falls back to naming the town, which is the old behaviour and no
+// worse than it was.
+const TOWN_PHOTO_ALT: Record<string, string> = {
+    kirkcudbright:
+        "The roofless stone shell of MacLellan's Castle standing over the rooftops of "
+        + 'whitewashed harbour houses, its empty windows and crow-stepped gables lit by low '
+        + 'evening sun against a clear blue sky',
+    'castle-douglas':
+        'The ruined stone tower of Threave Castle on its island in the River Dee at sunrise, '
+        + 'a white clinker-built rowing boat moored on water so still it mirrors the golden '
+        + 'reed beds along the bank',
+    'gatehouse-of-fleet':
+        'The long three-storey grey stone mill at Gatehouse, rows of white sash windows under '
+        + 'a slate roof, seen across the Water of Fleet through overhanging summer trees and '
+        + 'reflected in the river',
+    dalbeattie:
+        'A gravel path curving away through tall moss-footed conifers in Dalbeattie forest, '
+        + 'low sun throwing long shadows across fallen leaves, with a loch showing through the '
+        + 'trunks ahead',
+};
+
+function townPhotoAlt(slug: string, name: string): string {
+    return TOWN_PHOTO_ALT[slug] || name + ', Dumfries & Galloway';
+}
+
 // The title and description come from the root layout's defaults, which are
 // written for this page. Only the canonical is here — it used to be on the
 // layout, where every page without one of its own inherited it and claimed to
@@ -173,6 +206,7 @@ export default async function HomePage({
             name: area.name,
             blurb: area.metaDescription,
             photo: townPhoto(area.slug),
+            photoAlt: townPhotoAlt(area.slug, area.name),
         }))
         .filter((t): t is typeof t & { photo: string } => t.photo !== null);
 
