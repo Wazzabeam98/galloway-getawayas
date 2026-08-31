@@ -1,4 +1,7 @@
 import { adminClient } from '@/lib/supabaseAdmin';
+import { createServerComponentClient } from '@supabase/auth-helpers-nextjs';
+import { cookies } from 'next/headers';
+import { notFound } from 'next/navigation';
 
 export type Permission =
     | 'can_calendar'
@@ -157,4 +160,53 @@ export async function ownsListing(userId: string, listingId: string): Promise<bo
         .maybeSingle();
 
     return !!data && data.host_id === userId;
+}
+
+
+// ---------------------------------------------------------------------------
+// WHO MAY OPEN THE OWNER PAGES
+// ---------------------------------------------------------------------------
+
+/**
+ * The signed-in admin, or a 404.
+ *
+ * This was written out nine times — once per page under /admin — byte for byte
+ * identical apart from whether the variable was called `data` or `auth`. Every
+ * copy was correct. Nothing made the tenth correct, and the tenth is the one
+ * somebody writes at half past eleven by pasting the ninth and changing the
+ * query underneath it.
+ *
+ * THREE THINGS IT DOES THAT ARE EASY TO GET WRONG SEPARATELY.
+ *
+ * getUser(), never getSession(). getSession() only decodes the auth cookie and
+ * never checks its signature, so the id everything hangs off would be whatever
+ * the caller wrote in it. getUser() asks the auth server, which verifies the
+ * token and that the session has not been revoked.
+ *
+ * notFound(), not a redirect and not a 403. A 403 confirms /admin exists and
+ * is worth attacking; a 404 says nothing. A stranger and a signed-in
+ * non-admin get the same page a typo gets.
+ *
+ * FAIL CLOSED. `!profile || profile.is_admin !== true` — a missing row, a
+ * failed read and a null all refuse. `!profile.is_admin` would do the same
+ * here, but `is_admin !== true` also refuses a truthy non-true value, which is
+ * the shape a column type change or a string 'false' would produce.
+ *
+ * Returns the user, because most of these pages need the id afterwards.
+ */
+export async function requireAdmin() {
+    const supabase = createServerComponentClient({ cookies });
+
+    const { data } = await supabase.auth.getUser();
+    if (!data || !data.user) notFound();
+
+    const { data: profile } = await supabase
+        .from('profiles')
+        .select('is_admin')
+        .eq('id', data.user.id)
+        .maybeSingle();
+
+    if (!profile || profile.is_admin !== true) notFound();
+
+    return data.user;
 }

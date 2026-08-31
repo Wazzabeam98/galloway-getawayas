@@ -195,6 +195,43 @@ Please:
 
 ## Things that bite
 
+- **Do not decide what a page rendered by grepping its HTML for text you
+  expect to be absent.** Next ships the components for a route's error and
+  not-found boundaries inside the RSC flight payload, in `<script>` tags, on
+  EVERY page under that segment. So `app/not-found.tsx`'s wording — "We
+  couldn't find that page" — is present in the HTML of pages that rendered
+  perfectly well.
+
+  This cost most of an afternoon. A check of the nine `/admin` pages grepped
+  the raw HTML for that string and reported all nine as 404s. They were fine;
+  every one of them was rendering "Owner tools" and the full list. The chase
+  went as far as suspecting a just-merged refactor of the admin auth guard, and
+  then the session harness, before anyone looked at what the page actually
+  said.
+
+  Two rules that between them make it not happen again:
+
+      strip <script> before reading anything out of a page
+      assert on what a page SAYS, not on what it does not say
+
+  The same trap has a sibling. `Welcome, {firstName}` renders as
+  `Welcome, <!-- -->Seed` — React puts a comment between static text and an
+  expression — so `/Welcome,\s*(\w+)/` does not match a page that is
+  displaying exactly that. Match the literal, or read `innerText` from a real
+  browser.
+
+  `scripts/signed-in-crawl.mjs` does it properly and its header records all of
+  this; copy that rather than starting again.
+
+- **A signed-in page check needs a session the SERVER accepts.** Most of the
+  site behind the login is client-rendered, so `curl` sees a spinner and
+  nothing else — a crawl of `/dashboard` with no browser is measuring the
+  loading state. `sessionCookieViaApp()` in `scripts/seed-lib.mjs` mints a real
+  one by walking a magic link through the app's own `/auth/callback`, which is
+  what a person clicking the link in their email does. For what the page
+  finally shows, drive a browser; for status codes and server-rendered
+  chrome, the cookie is enough.
+
 - **This targets es5.** Some modern syntax fails the build — spreading a `Set`,
   for example.
 - **Adding an import**: insert it before the first import, not after the last

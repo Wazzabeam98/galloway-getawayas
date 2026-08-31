@@ -20,9 +20,13 @@ export const dynamic = 'force-dynamic';
 export async function POST(request: Request) {
     try {
         const supabase = createRouteHandlerClient({ cookies });
-        const { data: { session } } = await supabase.auth.getSession();
+        // getUser(), not getSession(). getSession() only decodes the auth
+        // cookie — it never checks the signature — so the id below would be
+        // whatever the caller wrote in it. getUser() asks the auth server,
+        // which verifies the token and that the session has not been revoked.
+        const { data: { user } } = await supabase.auth.getUser();
 
-        if (!session || !session.user) {
+        if (!user) {
             return NextResponse.json({ ok: false }, { status: 401 });
         }
 
@@ -39,7 +43,7 @@ export async function POST(request: Request) {
             .from('messages')
             .select('id')
             .eq('booking_id', bookingId)
-            .eq('recipient_id', session.user.id)
+            .eq('recipient_id', user.id)
             .order('created_at', { ascending: false })
             .limit(1)
             .maybeSingle();
@@ -57,7 +61,7 @@ export async function POST(request: Request) {
             .from('messages')
             .update({ read_at: null })
             .eq('id', last.id)
-            .eq('recipient_id', session.user.id);
+            .eq('recipient_id', user.id);
 
         if (updateError) throw updateError;
 

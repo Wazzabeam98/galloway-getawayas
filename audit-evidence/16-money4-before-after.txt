@@ -1,0 +1,15 @@
+MONEY-4 getSession->getUser — accept-then-refuse, per route, live on production
+
+BEFORE FIX (getSession, deploy 5bf03b4) — forged cookie (fake sub, invalid sig):
+  stripe/refund        no cookie 401 | forged 404 (past auth, ACCEPTED)
+  bookings/cancel      no cookie 401 | forged 404 (past auth, ACCEPTED)
+  bookings/host-refund no cookie 401 | forged 404 (past auth, ACCEPTED)
+  stripe/connect GET   no cookie 401 | forged 200 (past auth, ACCEPTED)
+
+AFTER FIX (getUser, deploy be01baf):
+  stripe/refund        forged 401 (REFUSED) | real 404 (works)
+  bookings/cancel      forged 401 (REFUSED) | real 404 (works)
+  bookings/host-refund forged 401 (REFUSED) | real 404 (works)
+  stripe/connect GET   forged 401 (REFUSED) | real 200 (works)
+
+No real booking touched (fake bookingId), no money moved.

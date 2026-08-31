@@ -4,6 +4,7 @@ import { adminClient, supabaseUrl } from '@/lib/supabaseAdmin';
 import { logError } from '@/lib/logError';
 import { announceSubmission } from '@/lib/serviceSubmittedAlert';
 import { TRADES, audienceForTrade } from '@/lib/serviceProviders';
+import { withinLimits, callerAddress, GLOBAL_KEY } from '@/lib/rateLimit';
 
 export const dynamic = 'force-dynamic';
 
@@ -106,6 +107,67 @@ export async function POST(req: Request) {
         }
         if (!String(incoming.business_name || '').trim()) {
             return NextResponse.json({ ok: false, error: 'Your business needs a name.' }, { status: 400 });
+        }
+
+        // ------------------------------------------------------------------
+        // HOW OFTEN A STRANGER MAY DO THIS
+        //
+        // There is no auth gate above and there cannot be one: a tradesman has
+        // no account until this route makes them one. That leaves a public
+        // route which, on every call, creates a real Supabase auth user and
+        // asks Supabase to email it. The project's outbound mail is a single
+        // shared allowance, so a loop against this address takes down password
+        // resets and confirmations FOR THE WHOLE SITE. That is the failure
+        // being prevented here — not the junk rows.
+        //
+        // Three limits, and the global one is the load-bearing half. Per-IP
+        // alone is close to decorative, because the caller picks their own
+        // address; a cap on the total bounds the damage however the requests
+        // are spread.
+        //
+        // The numbers are deliberately generous for a real business. Twenty
+        // applications an hour across the entire site is far more than this
+        // has ever seen in a day, and it is nowhere near the mail allowance.
+        // ------------------------------------------------------------------
+        const verdict = await withinLimits([
+            { bucket: 'services-apply:all', key: GLOBAL_KEY, max: 20, windowMinutes: 60 },
+            { bucket: 'services-apply:ip', key: callerAddress(req.headers), max: 3, windowMinutes: 60 },
+            { bucket: 'services-apply:email', key: email, max: 2, windowMinutes: 60 * 24 },
+        ]);
+
+        if (!verdict.ok) {
+            // Reported every time. A tradesman does not hit this — three
+            // applications in an hour from one address is not a person filling
+            // in a form — so every one of these is either an attack or a real
+            // problem with the form, and both want a human. If it is the
+            // global limit, say so loudly: that is the one that means the
+            // site's email is being aimed at.
+            await logError(
+                verdict.hit && verdict.hit.startsWith('services-apply:all')
+                    ? '[services/apply] the SITE-WIDE application limit was hit — somebody may be '
+                        + 'aiming at the outbound email allowance'
+                    : '[services/apply] an applicant was rate limited',
+                { limit: verdict.hit, email, trade },
+                { path: 'services/apply' }
+            );
+
+            return NextResponse.json({
+                ok: false,
+                error: 'We have had a lot of applications just now. Please try again in an hour — '
+                    + 'nothing you typed has been lost.',
+            }, { status: 429 });
+        }
+
+        if (verdict.hit === 'unreadable') {
+            // The limiter failed open rather than closing the shop. Said out
+            // loud, because "the rate limit is not working" is not something
+            // to find out from a bill.
+            await logError(
+                '[services/apply] the rate limit could not be read, so this application was let '
+                    + 'through unchecked',
+                null,
+                { path: 'services/apply' }
+            );
         }
 
         const admin = adminClient();

@@ -12,6 +12,14 @@ import { AREAS, hasCopy } from '@/config/areas';
 
 export const dynamic = 'force-dynamic';
 
+// The title and description come from the root layout's defaults, which are
+// written for this page. Only the canonical is here — it used to be on the
+// layout, where every page without one of its own inherited it and claimed to
+// be the home page. See the note in app/layout.tsx.
+export const metadata = {
+    alternates: { canonical: '/' },
+};
+
 // The `where` slug the hero sends is the town with its spaces turned into
 // hyphens, which is exactly what townKey() produces once the hyphens come back
 // out. Reusing townKey means the search agrees with the passport about what

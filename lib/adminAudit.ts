@@ -10,6 +10,7 @@
 // would ever be logged. Owner powers are opted into route by route, here.
 
 import { adminClient } from '@/lib/supabaseAdmin';
+import { logError } from '@/lib/logError';
 
 export type AdminAction =
     | 'listing_hidden'
@@ -58,7 +59,7 @@ export async function recordAdminAction(entry: {
 
     try {
         const admin = adminClient();
-        await admin.from('admin_actions').insert({
+        const { error } = await admin.from('admin_actions').insert({
             admin_id: entry.adminId,
             action: entry.action,
             listing_id: entry.listingId,
@@ -66,8 +67,34 @@ export async function recordAdminAction(entry: {
             reason: entry.reason.trim(),
             detail: entry.detail || {},
         });
+
+        // supabase-js does not throw on a failed write, it hands the error
+        // back — so the catch below never saw the ordinary failure, and the
+        // console line only ever fired for an exception.
+        if (error) throw error;
     } catch (err: any) {
         console.error('[adminAudit] could not record', entry.action, err?.message);
+
+        // AN AUDIT ROW THAT SILENTLY DOES NOT EXIST IS WORSE THAN ONE THAT
+        // LOUDLY FAILS.
+        //
+        // This trail is what says who took a listing down and why. The action
+        // has already happened by the time this runs — that is deliberate, and
+        // it is why this returns nothing anyone should branch on — but a gap in
+        // it should not also be invisible. The whole point of a trail is that
+        // somebody can look back at it and believe what they see.
+        //
+        // Everything needed to write the row by hand goes into the report,
+        // because the alternative is knowing a moderation decision happened
+        // and not what it was.
+        await logError('[adminAudit] a moderation action was NOT recorded in the trail', {
+            action: entry.action,
+            admin_id: entry.adminId,
+            listing_id: entry.listingId,
+            host_id: entry.hostId,
+            reason: entry.reason.trim(),
+            error: (err && err.message) || String(err),
+        }, { path: 'lib/adminAudit', userId: entry.adminId });
     }
 }
 

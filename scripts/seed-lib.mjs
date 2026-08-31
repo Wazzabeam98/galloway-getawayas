@@ -195,6 +195,75 @@ export function readManifest() {
 // The refund route is a normal signed-in route, not a cron route, so a test
 // has to arrive with a real session cookie. @supabase/auth-helpers-nextjs
 // stores the session as a JSON array under `sb-<ref>-auth-token`.
+// A REAL session cookie, written by the app itself.
+//
+// WHY signIn() BELOW IS NOT ENOUGH, AND WHY THAT MATTERED.
+//
+// signIn() asks Supabase for tokens and then ASSEMBLES a cookie by hand in the
+// shape auth-helpers uses. That is fine for talking to PostgREST directly,
+// which is all the security probes need — they send the access token as a
+// bearer and never go through the app.
+//
+// It is not enough for fetching a page. A hand-built cookie satisfies the
+// browser-side client, which is why a client component would render as
+// signed-in, but `createServerComponentClient` did not accept it — so every
+// server component on the page rendered its SIGNED-OUT branch. Pages fetched
+// that way looked signed in and were not, and a crawl of them was measuring
+// the logged-out site while reporting on the logged-in one.
+//
+// This instead asks the admin API for a magic link and then walks it through
+// the application's own /auth/callback, exactly as a person clicking the link
+// in their email does. The app calls verifyOtp and writes its own cookies, and
+// what comes back in Set-Cookie is a session the server accepts because the
+// server made it.
+//
+// Returns every cookie the app set, joined for a Cookie header. auth-helpers
+// splits a large session across .0/.1 chunks, so taking only the first would
+// work until a token grew.
+export async function sessionCookieViaApp(env, email, siteUrl) {
+    const admin = {
+        apikey: env.SUPABASE_SERVICE_ROLE_KEY,
+        Authorization: 'Bearer ' + env.SUPABASE_SERVICE_ROLE_KEY,
+        'Content-Type': 'application/json',
+    };
+
+    const linkRes = await fetch(env.NEXT_PUBLIC_SUPABASE_URL + '/auth/v1/admin/generate_link', {
+        method: 'POST',
+        headers: admin,
+        body: JSON.stringify({ type: 'magiclink', email }),
+    });
+    const link = await linkRes.json();
+    if (!link.hashed_token) {
+        throw new Error('no magic link for ' + email + ': ' + JSON.stringify(link).slice(0, 200));
+    }
+
+    // redirect: manual, because the cookies are set on the 302 itself and
+    // following it throws them away.
+    const cb = await fetch(
+        siteUrl + '/auth/callback?type=magiclink&next=%2F&token_hash=' + encodeURIComponent(link.hashed_token),
+        { redirect: 'manual' }
+    );
+
+    const setCookies = typeof cb.headers.getSetCookie === 'function'
+        ? cb.headers.getSetCookie()
+        : [cb.headers.get('set-cookie')].filter(Boolean);
+
+    const cookie = setCookies
+        .map((c) => String(c).split(';')[0])
+        .filter((c) => c && !c.endsWith('='))
+        .join('; ');
+
+    if (!cookie) {
+        const to = cb.headers.get('location') || '';
+        throw new Error(
+            'the callback set no cookie for ' + email + ' (HTTP ' + cb.status + ')'
+            + (to.includes('error=') ? ' — it redirected to ' + decodeURIComponent(to.slice(0, 160)) : '')
+        );
+    }
+
+    return cookie;
+}
+
 export async function signIn(env, email, password) {
     const res = await fetch(env.NEXT_PUBLIC_SUPABASE_URL + '/auth/v1/token?grant_type=password', {
         method: 'POST',

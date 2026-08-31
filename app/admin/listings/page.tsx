@@ -1,6 +1,7 @@
 import { createServerComponentClient } from '@supabase/auth-helpers-nextjs';
 import { adminClient } from '@/lib/supabaseAdmin';
 import { cookies } from 'next/headers';
+import { requireAdmin } from '@/lib/access';
 import Link from 'next/link';
 import { notFound } from 'next/navigation';
 import { getImageUrl, displayName } from '@/lib/utils';
@@ -20,23 +21,10 @@ export const dynamic = 'force-dynamic';
 // the same job.
 export default async function AdminListings() {
     const supabase = createServerComponentClient({ cookies });
-    // getUser(), not getSession(). getSession() only decodes the cookie — it
-    // never checks the signature — so the id everything below hangs off would
-    // be whatever the caller wrote in it. getUser() asks the auth server,
-    // which verifies the token and that the session has not been revoked.
-    const { data: auth } = await supabase.auth.getUser();
-
-    if (!auth || !auth.user) notFound();
-
-    const { data: me } = await supabase
-        .from('profiles')
-        .select('is_admin')
-        .eq('id', auth.user.id)
-        .maybeSingle();
-
-    if (!me || me.is_admin !== true) notFound();
-
-    const myId = auth.user.id;
+    // One rule, in lib/access. It was written out nine times, byte for
+    // byte, and every copy was correct — but nothing made the tenth so.
+    const authUser = await requireAdmin();
+    const myId = authUser.id;
     const admin = adminClient();
 
     // Service role: bookings and profiles are behind row-level security, and

@@ -17,9 +17,13 @@ export async function GET(request: Request) {
         // Signed in only. Every call spends a lookup from a paid allowance, so
         // an open endpoint here is somebody else's bill.
         const supabase = createRouteHandlerClient({ cookies });
-        const { data: { session } } = await supabase.auth.getSession();
+        // getUser(), not getSession(). getSession() only decodes the auth
+        // cookie — it never checks the signature — so the id below would be
+        // whatever the caller wrote in it. getUser() asks the auth server,
+        // which verifies the token and that the session has not been revoked.
+        const { data: { user } } = await supabase.auth.getUser();
 
-        if (!session || !session.user) {
+        if (!user) {
             return NextResponse.json({ ok: false, error: 'Not signed in' }, { status: 401 });
         }
 

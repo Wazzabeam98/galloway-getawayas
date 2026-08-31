@@ -1,0 +1,13 @@
+forged sub = 00000000-0000-4000-8000-0000feedface
+
+/api/trips
+  no cookie   : 200
+  forged token: 200  {"trips":[]}
+
+/api/messages/threads
+  no cookie   : 200
+  forged token: 200  {"conversations":[]}
+
+/api/my-listings
+  no cookie   : 200
+  forged token: 200  {"listings":[]}

@@ -13,6 +13,7 @@ import { createRouteHandlerClient } from '@supabase/auth-helpers-nextjs';
 import { adminClient } from '@/lib/supabaseAdmin';
 import { cookies } from 'next/headers';
 import { NextResponse } from 'next/server';
+import { logError } from '@/lib/logError';
 import {
     sendEmail,
     emailLayout,
@@ -58,6 +59,12 @@ async function wants(admin: any, userId: string, column: string): Promise<boolea
 }
 
 export async function POST(request: Request) {
+    // Held outside the try so the catch can say WHICH notification failed.
+    // Inside it they are out of scope down there, and "a notification was not
+    // sent" without saying which one is barely better than silence.
+    let notificationType: string | null = null;
+    let notificationBookingId: string | null = null;
+
     try {
         const supabase = createRouteHandlerClient({ cookies });
         // getUser(), not getSession() — getSession() trusts an unsigned
@@ -72,6 +79,8 @@ export async function POST(request: Request) {
         const body = await request.json();
         const type: string = body && body.type;
         const bookingId: string = body && body.bookingId;
+        notificationType = type || null;
+        notificationBookingId = bookingId || null;
 
         if (!type || !bookingId) {
             return NextResponse.json({ ok: false, error: 'Missing type or bookingId' }, { status: 400 });
@@ -299,8 +308,25 @@ export async function POST(request: Request) {
         return NextResponse.json({ ok: false, error: 'Unknown notification type' }, { status: 400 });
     } catch (err: any) {
         // Never surface a failure to the browser — the booking or message
-        // itself already succeeded.
+        // itself already succeeded, and telling a guest their booking failed
+        // because an email did not send would be a lie about the money.
+        //
+        // BUT NOT SILENTLY, AND THE 200 IS WHY. Every notification on this
+        // site funnels through this route, and it answers 200 with
+        // { ok: false } whatever happens — so the caller cannot tell either.
+        // Two layers of quiet: nothing thrown, nothing reported, and a status
+        // code that says it went fine. A guest who is never told their card
+        // failed, a host never told they have been paid, and a booking
+        // confirmation that never arrives all look like this from here.
         console.error('[notify] failed:', err && err.message);
+
+        await logError('[notify] a notification was not sent', {
+            type: notificationType,
+            booking_id: notificationBookingId,
+            error: (err && err.message) || String(err),
+            stack: err && err.stack,
+        }, { path: 'api/notify' });
+
         return NextResponse.json({ ok: false }, { status: 200 });
     }
 }

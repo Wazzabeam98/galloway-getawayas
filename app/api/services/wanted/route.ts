@@ -3,6 +3,7 @@ import { cookies } from 'next/headers';
 import { NextResponse } from 'next/server';
 import { adminClient } from '@/lib/supabaseAdmin';
 import { logError } from '@/lib/logError';
+import { withinLimits, callerAddress, GLOBAL_KEY } from '@/lib/rateLimit';
 import { announceWanted } from '@/lib/serviceEnquiryAlert';
 import { canBeEnquiredAbout, tradeLabel } from '@/lib/serviceProviders';
 
@@ -37,6 +38,42 @@ export async function POST(req: Request) {
         const supabase = createRouteHandlerClient({ cookies });
         const { data: auth } = await supabase.auth.getUser();
         const hostId = auth && auth.user ? auth.user.id : null;
+
+        // HOW OFTEN A STRANGER MAY DO THIS.
+        //
+        // Open on purpose — a host telling us they cannot find a plumber
+        // should not have to be signed in to say so. But every call writes a
+        // row AND emails an alert with text the caller chose, which is a spam
+        // relay pointed at your own inbox. Once that inbox stops being read,
+        // the real ones stop being read with it.
+        //
+        // A signed-in host is counted by their own id rather than their
+        // address, so a household or an office behind one connection does not
+        // throttle each other.
+        const verdict = await withinLimits([
+            { bucket: 'services-wanted:all', key: GLOBAL_KEY, max: 40, windowMinutes: 60 },
+            {
+                bucket: hostId ? 'services-wanted:user' : 'services-wanted:ip',
+                key: hostId || callerAddress(req.headers),
+                max: 5,
+                windowMinutes: 60,
+            },
+        ]);
+
+        if (!verdict.ok) {
+            await logError(
+                verdict.hit && verdict.hit.startsWith('services-wanted:all')
+                    ? '[services/wanted] the site-wide limit was hit — somebody may be aiming at '
+                        + 'the alert inbox'
+                    : '[services/wanted] a request was rate limited',
+                { limit: verdict.hit, trade, area, hostId },
+                { path: 'services/wanted' }
+            );
+            return NextResponse.json({
+                ok: false,
+                error: 'We have had a lot of these just now. Please try again in an hour.',
+            }, { status: 429 });
+        }
 
         const admin = adminClient();
 

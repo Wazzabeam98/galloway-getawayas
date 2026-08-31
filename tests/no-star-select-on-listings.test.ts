@@ -71,7 +71,7 @@ function sourceFiles(dir: string, out: string[] = []): string[] {
  * exact bug this test exists for did not fail it. Found by mutation testing,
  * which is the only reason it is written this way.
  */
-function starSelectsOnListings(): { file: string; service: boolean }[] {
+function starSelectsOn(table: string): { file: string; service: boolean }[] {
     const found: { file: string; service: boolean }[] = [];
 
     for (const file of ['app', 'components', 'lib'].flatMap((d) => sourceFiles(d))) {
@@ -79,7 +79,7 @@ function starSelectsOnListings(): { file: string; service: boolean }[] {
 
         // The receiver of the call — `supabase.from(...)` or `admin.from(...)` —
         // then how that name was assigned, which is what says which key it holds.
-        const reads = /(\w+)\s*\.\s*from\(\s*'listings'\s*\)/g;
+        const reads = new RegExp("(\\w+)\\s*\\.\\s*from\\(\\s*'" + table + "'\\s*\\)", 'g');
         let match: RegExpExecArray | null;
 
         while ((match = reads.exec(source)) !== null) {
@@ -104,6 +104,8 @@ function starSelectsOnListings(): { file: string; service: boolean }[] {
 
     return found;
 }
+
+const starSelectsOnListings = () => starSelectsOn('listings');
 
 test('no anon-reachable query asks listings for every column', () => {
     const offenders = starSelectsOnListings()
@@ -166,4 +168,82 @@ test('the public listing page names its columns', () => {
         `${starred.length} of the ${reads.length} listings reads on the public page asks for `
         + 'every column. anon is refused and the page renders as "couldn’t be found".'
     );
+});
+
+
+/* -------------------------------------------------------------------------- */
+/* THE SAME RULE, ON reviews                                                   */
+/* -------------------------------------------------------------------------- */
+//
+// Added after the site audit found app/homes/[id]/page.tsx reading `reviews`
+// with a star — on the same page, for the same strangers, one table away from
+// everything above.
+//
+// It matters for a different reason from `listings`, and the difference is
+// worth writing down. anon HAS a column grant on every column of `reviews`, so
+// a star is not refused: it succeeds, and quietly puts `booking_id` and
+// `reviewee_id` into the page source. Those tie a named guest to a specific
+// stay. Nothing breaks, nothing errors, and the leak is invisible — which is
+// the worse of the two failures, because the listings one at least announced
+// itself by making the page say "couldn't be found".
+
+const REVIEWS_SIGNED_IN_ONLY: Record<string, string> = {
+    'app/account/page.tsx':
+        'the data download. Reads only the signed-in person’s own reviews, '
+        + 'and they are entitled to every column of their own.',
+    'app/dashboard/reviews/page.tsx':
+        'the host’s own reviews. Every read is .eq(reviewee_id, session.user.id) '
+        + 'or scoped to their own bookings, and /dashboard is behind the '
+        + 'middleware, so it never renders for a stranger. booking_id and '
+        + 'reviewee_id are their own business here — the reviewee IS them.',
+};
+
+test('no anon-reachable query asks reviews for every column', () => {
+    const offenders = starSelectsOn('reviews')
+        .filter((hit) => !hit.service)
+        .filter((hit) => !(hit.file in REVIEWS_SIGNED_IN_ONLY))
+        .map((hit) => hit.file);
+
+    assert.deepEqual(
+        offenders, [],
+        'These read reviews with a star and are not on the signed-in-only list:\n  '
+        + offenders.join('\n  ')
+        + '\n\nUnlike listings, anon can read every column of reviews — so a star here'
+        + '\nSUCCEEDS and puts booking_id and reviewee_id into the page source, which'
+        + '\nties a named guest to a specific stay. Name the columns.'
+    );
+});
+
+test('the reviews exception list has not rotted', () => {
+    const stars = starSelectsOn('reviews').map((hit) => hit.file);
+
+    const stale = Object.keys(REVIEWS_SIGNED_IN_ONLY).filter((file) => {
+        if (!fs.existsSync(path.join(ROOT, file))) return true;
+        return !stars.includes(file);
+    });
+
+    assert.deepEqual(
+        stale, [],
+        'These are excused from the reviews rule but no longer need to be:\n  '
+        + stale.join('\n  ') + '\n\nRemove them from REVIEWS_SIGNED_IN_ONLY.'
+    );
+});
+
+test('the public listing page does not leak who reviewed which booking', () => {
+    // The specific regression, named, so a failure says what came back rather
+    // than only that a rule was broken.
+    const page = fs.readFileSync(path.join(ROOT, 'app/homes/[id]/page.tsx'), 'utf8');
+    const read = /from\(\s*'reviews'\s*\)[\s\S]{0,400}?\.select\(\s*'([^']*)'/.exec(page);
+
+    assert.ok(read, 'the reviews read has moved — this test needs updating deliberately');
+
+    const columns = read![1].split(',').map((c) => c.trim());
+    for (const secret of ['booking_id', 'reviewee_id', 'is_published', 'published_at']) {
+        assert.ok(
+            !columns.includes(secret),
+            secret + ' is being sent to the public listing page'
+        );
+    }
+    assert.ok(columns.includes('rating'), 'and it still has to render the review');
+    assert.ok(columns.includes('comment'));
 });

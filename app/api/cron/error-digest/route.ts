@@ -159,10 +159,50 @@ export async function GET(request: Request) {
         }
     }
 
+    // ----------------------------------------------------------------
+    // While we are here once a day: throw away the rate-limit rows nobody
+    // will ever look at again.
+    //
+    // lib/rateLimit writes a row per limit per attempt, and nothing was
+    // deleting them. At this volume that is a handful a week, so it is not
+    // urgent — it is just a table that only ever grows, which is how a
+    // rate limiter ends up slower than the thing it is protecting.
+    //
+    // Seven days, against the longest window any limit uses (24 hours), so
+    // there is a wide margin before anything still being counted is touched.
+    // Widen the window past a week and this has to change with it.
+    //
+    // Reported rather than silent, and NOT allowed to break the digest: the
+    // digest is the thing that tells you about everything else, and a failed
+    // tidy-up must not stop it going out.
+    const RETENTION_DAYS = 7;
+    let pruned: number | null = null;
+    try {
+        const cutoff = new Date(Date.now() - RETENTION_DAYS * 24 * 60 * 60 * 1000).toISOString();
+        const { data: gone, error: pruneError } = await admin
+            .from('rate_limit_hits')
+            .delete()
+            .lt('created_at', cutoff)
+            .select('id');
+
+        if (pruneError) {
+            await logError('error-digest: could not prune rate_limit_hits', pruneError, {
+                path: '/api/cron/error-digest',
+            });
+        } else {
+            pruned = (gone || []).length;
+        }
+    } catch (err) {
+        await logError('error-digest: could not prune rate_limit_hits', err, {
+            path: '/api/cron/error-digest',
+        });
+    }
+
     return NextResponse.json({
         ok: true,
         sent: sent,
         errors: errors.length,
         issues: issues.length,
+        rateLimitRowsPruned: pruned,
     });
 }

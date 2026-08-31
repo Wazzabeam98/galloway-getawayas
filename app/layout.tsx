@@ -26,7 +26,19 @@ export const metadata: Metadata = {
   // Tells search engines which address is the real one, so the www and
   // vercel.app versions don't compete with this one.
   metadataBase: new URL(SITE_URL),
-  alternates: { canonical: '/' },
+
+  // NO `alternates` HERE, DELIBERATELY.
+  //
+  // This used to be `alternates: { canonical: '/' }`, and metadata is
+  // inherited — so every page that did not set its own canonical told Google
+  // it WAS the home page. Most pages set one, so the visible victim was the
+  // 404: a dead listing URL answered with `noindex`, then a second robots tag
+  // saying `index, follow` from here, then a canonical pointing at the home
+  // page. noindex wins, so it was doing little harm, and "little harm" is not
+  // a reason to leave a page lying about which page it is.
+  //
+  // The home page's canonical now lives on the home page, in app/page.tsx,
+  // where nothing can inherit it.
 
   openGraph: {
     type: 'website',

@@ -1,0 +1,5 @@
+SELF-PUBLISH: patch status 204 | listing status now = published
+SELF-PUBLISH from pending_review: patch 204 | status now = published
+SELF-APPROVE provider: patch 403 | provider status now = pending_review
+SELF-COMMISSION provider: patch 403 | commission now = 0.1
+cleaned up

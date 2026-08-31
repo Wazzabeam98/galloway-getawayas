@@ -1,0 +1,5 @@
+upload status 200 {"Key":"listings/CANARY-storage-audit-1787962793999.html","Id":"a9f647d8-5517-4537-9168-678f8f412db8"}
+public read status 200 content-type: text/plain
+overwrite(PUT) status 400
+self-delete status 400 {"statusCode":"403","error":"Unauthorized","message":"Access denied","code":"AccessDenied"}
+cleaned up
