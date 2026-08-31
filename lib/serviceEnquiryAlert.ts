@@ -684,3 +684,63 @@ export async function announceCancellation(
 
     return result;
 }
+
+// THE AGREED DAY MOVED ONTO A DAY A GUEST IS IN THE COTTAGE.
+//
+// The platform warns about this collision in two places already: the enquiry
+// form warns a host raising a job on a booked day, and the Stripe webhook
+// warns when a booking lands on planned work. Both fire when a date is SET.
+// Neither fires when it MOVES — and accepting a proposed change is the only
+// path that moves an agreed date, so it was the one path that never looked.
+//
+// Same stance as the webhook, deliberately: nothing is blocked. A short job
+// and a guest can share a day. What the host cannot see from the enquiry is
+// the guest, so they are told, and it is their conversation to have.
+export async function announceWorkNowClashes(
+    enquiry: any,
+    listing: any,
+    booking: any
+): Promise<boolean> {
+    const admin = adminClient();
+
+    const { data: hostUser } = await admin.auth.admin.getUserById(String(enquiry.host_id));
+    const to = (hostUser && hostUser.user && hostUser.user.email) || '';
+    if (!to || isAutomatedTestAddress(to)) return false;
+
+    const where = escapeHtml(String((listing && listing.title) || 'your property'));
+    const trade = escapeHtml(tradeLabel(String(enquiry.trade || '')) || 'Work');
+
+    const sent = await sendEmail(
+        to,
+        'The new day for your ' + (tradeLabel(String(enquiry.trade || '')) || 'job').toLowerCase()
+            + ' has a guest in the cottage',
+        emailLayout(
+            '<p style="margin:0 0 16px;font-size:16px;">You have agreed to move the '
+                + trade.toLowerCase() + ' at <strong>' + where + '</strong> to <strong>'
+                + escapeHtml(formatDay(enquiry.preferred_date))
+                + '</strong>.</p>'
+            + '<p style="margin:0 0 16px;font-size:16px;">There is a guest booked in that day — '
+                + escapeHtml(formatDay(booking.check_in)) + ' to '
+                + escapeHtml(formatDay(booking.check_out)) + '.</p>'
+            + '<p style="margin:0 0 16px;font-size:16px;">Nothing is blocked and nothing has changed — a short job and a guest can share a day. But it is a different conversation with the tradesman, and you have just agreed to the date, so we wanted you to know now rather than on the morning.</p>'
+            + button(SITE_URL + '/dashboard/calendar', 'Open your calendar'),
+            'You are receiving this because work you agreed on your cottage overlaps a guest stay.'
+        )
+    );
+
+    if (!sent) {
+        await logError('service-enquiry-clash-email', {
+            enquiry: String(enquiry.id),
+            error: 'the host was not told their new work day has a guest on it',
+        });
+    }
+
+    return sent;
+}
+
+function formatDay(value: any): string {
+    if (!value) return '';
+    return new Date(String(value)).toLocaleDateString('en-GB', {
+        weekday: 'short', day: 'numeric', month: 'long', year: 'numeric',
+    });
+}
