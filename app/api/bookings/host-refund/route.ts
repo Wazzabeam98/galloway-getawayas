@@ -2,7 +2,7 @@ import { createRouteHandlerClient } from '@supabase/auth-helpers-nextjs';
 import { adminClient } from '@/lib/supabaseAdmin';
 import { cookies } from 'next/headers';
 import { NextResponse } from 'next/server';
-import { stripeRequest } from '@/lib/stripe';
+import { issueRefunds } from '@/lib/refundSpread';
 import { clawBackPayout } from '@/lib/clawback';
 import { sendEmail, emailLayout, escapeHtml, button, SITE_URL } from '@/lib/email';
 import { logError } from '@/lib/logError';
@@ -46,7 +46,7 @@ export async function POST(request: Request) {
 
         const { data: booking } = await admin
             .from('bookings')
-            .select('id, listing_id, guest_id, host_id, check_in, status, payment_status, amount_paid, amount_refunded, stripe_payment_intent_id, payout_transfer_id, payout_amount')
+            .select('id, listing_id, guest_id, host_id, check_in, status, payment_status, amount_paid, amount_refunded, stripe_payment_intent_id, balance_payment_intent_id, payout_transfer_id, payout_amount')
             .eq('id', bookingId)
             .maybeSingle();
 
@@ -88,32 +88,67 @@ export async function POST(request: Request) {
             );
         }
 
-        const refund = await stripeRequest(
-            'POST',
-            '/refunds',
+        // Spread across every charge behind the stay, through the one helper
+        // all the refunding routes share. Naming `stripe_payment_intent_id`
+        // alone is only half the money on a deposit booking, and Stripe
+        // refuses a refund larger than the charge it names — so a host trying
+        // to give back more than the deposit got an error and the guest got
+        // nothing. See lib/refundSpread.ts.
+        const issued = await issueRefunds(
+            booking,
+            amount,
             {
-                payment_intent: booking.stripe_payment_intent_id,
-                amount: Math.round(amount * 100),
-                metadata: {
-                    booking_id: booking.id,
-                    reason: 'host_goodwill',
-                    initiated_by: 'host',
-                },
+                booking_id: booking.id,
+                reason: 'host_goodwill',
+                initiated_by: 'host',
             },
             // Distinct per amount, so a host can refund twice if they choose to
             // but a double-click can't.
-            'host-refund-' + booking.id + '-' + Math.round(amount * 100)
+            function (intentId) {
+                return 'host-refund-' + booking.id + '-' + Math.round(amount * 100) + '-' + intentId;
+            }
         );
 
-        await admin.from('payments').insert({
-            booking_id: booking.id,
-            kind: 'refund',
-            amount: amount,
-            status: 'succeeded',
-            stripe_payment_intent_id: booking.stripe_payment_intent_id,
-        });
+        if (issued.refundedPence <= 0) {
+            await logError(
+                '[bookings/host-refund] a host asked to refund \u00A3' + amount.toFixed(2)
+                    + ' and nothing could be sent back',
+                issued.failure || { booking_id: booking.id, due: amount },
+                { path: 'api/bookings/host-refund', userId: booking.host_id }
+            );
+            return NextResponse.json(
+                {
+                    ok: false,
+                    error: 'We couldn\u2019t send that refund. Nothing has been taken from you '
+                        + '\u2014 please try again shortly.',
+                },
+                { status: 502 }
+            );
+        }
 
-        const totalRefunded = round2(alreadyRefunded + amount);
+        const refund = issued.refunds[0];
+        const refundedNow = round2(issued.refundedPence / 100);
+
+        if (issued.refundedPence < Math.round(amount * 100)) {
+            await logError(
+                '[bookings/host-refund] \u00A3' + amount.toFixed(2) + ' was asked for but only \u00A3'
+                    + refundedNow.toFixed(2) + ' could be refunded',
+                issued.failure || { booking_id: booking.id, due: amount, sent: refundedNow },
+                { path: 'api/bookings/host-refund', userId: booking.host_id }
+            );
+        }
+
+        for (let i = 0; i < issued.refunds.length; i++) {
+            await admin.from('payments').insert({
+                booking_id: booking.id,
+                kind: 'refund',
+                amount: round2(issued.shares[i] / 100),
+                status: 'succeeded',
+                stripe_payment_intent_id: issued.charges[i].intentId,
+            });
+        }
+
+        const totalRefunded = round2(alreadyRefunded + refundedNow);
 
         // The stay is still happening, so the status is left alone. Only the
         // money changes.
@@ -127,7 +162,7 @@ export async function POST(request: Request) {
 
         // If they've already been paid for this stay, recover it.
         if (booking.payout_transfer_id) {
-            await clawBackPayout(admin, booking, amount, refund && refund.id);
+            await clawBackPayout(admin, booking, refundedNow, refund && refund.id);
         }
 
         const { data: listing } = await admin
@@ -142,10 +177,10 @@ export async function POST(request: Request) {
         if (guestEmail) {
             await sendEmail(
                 guestEmail,
-                'Your host has refunded you \u00A3' + amount.toFixed(2),
+                'Your host has refunded you \u00A3' + refundedNow.toFixed(2),
                 emailLayout(
                     '<p style="margin:0 0 16px;font-size:16px;">Your host has sent back <strong>\u00A3'
-                        + amount.toFixed(2)
+                        + refundedNow.toFixed(2)
                         + '</strong> on your stay at <strong>'
                         + escapeHtml((listing && listing.title) || 'their place')
                         + '</strong>.</p>'
@@ -156,7 +191,13 @@ export async function POST(request: Request) {
             );
         }
 
-        return NextResponse.json({ ok: true, refunded: amount, remaining: round2(refundable - amount) });
+        // What actually went back, not what was asked for. A host told
+        // \u00A3200 went when \u00A3150 did will tell the guest the same thing.
+        return NextResponse.json({
+            ok: true,
+            refunded: refundedNow,
+            remaining: round2(refundable - refundedNow),
+        });
     } catch (err: any) {
         console.error('[bookings/host-refund]', err && err.message);
         await logError('[bookings/host-refund] ' + ((err && err.message) || 'failed'), err, { path: 'bookings/host-refund' });

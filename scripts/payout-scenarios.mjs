@@ -254,16 +254,27 @@ async function main() {
     scenario('23b', 'A clawback that fails for any other reason is not billed to the host');
 
     // The host must actually have the money, or the clawback correctly carries
-    // it forward as a shortfall and never reaches Stripe at all. With funds
-    // present it attempts the reversal — against a transfer already reversed in
-    // full, which Stripe refuses for a reason that is not a shortfall.
+    // it forward as a shortfall and never reaches Stripe at all.
     await topUpConnected(accounts.indebted, 500);
     console.log('   topped the host up to £500 so the reversal is actually attempted');
 
-    // Scenario 22's transfer was reversed in full; scenario 23's never was,
-    // because the host had nothing to reverse against.
+    // A transfer id that is well formed and does not exist, so Stripe refuses
+    // the reversal for a reason that is plainly not a shortfall.
+    //
+    // This used to point at scenario 22's transfer, on the grounds that it had
+    // been reversed in full and Stripe would refuse a second reversal. That
+    // stopped working for a good reason: the clawback now reads the transfer
+    // first and recognises "already fully reversed" as its own answer —
+    // nothing to recover, nothing owed — rather than attempting a reversal it
+    // knows will fail. A second refund on a stay whose payout has already been
+    // pulled back must not invent a debt, which is what treating it as a
+    // shortfall would have done.
+    //
+    // So the scenario needs a different refusal, and an unknown transfer is
+    // the honest one: it is our fault, not the host's, and it must never be
+    // billed to them.
     await db.update('bookings', '?id=eq.' + bookings.s23b, {
-        payout_transfer_id: paid22.payout_transfer_id,
+        payout_transfer_id: 'tr_1AAAAAAAAAAAAAAAAAAAAAAA',
         payout_amount: 150,
         paid_out_at: new Date().toISOString(),
     });
