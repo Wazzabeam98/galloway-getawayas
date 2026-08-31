@@ -93,6 +93,9 @@ const Navbar = async () => {
                         <div className='hidden sm:block'>
                             <ModeSwitch mode={mode} />
                         </div>
+                    ) : isProvider ? (
+                        /* A tradesman isn't a lapsed host to convert. */
+                        null
                     ) : (
                         <Link href="/addhome" className="text-sm font-semibold hover:bg-slate-100 rounded-full py-2 px-4 transition text-slate-800">
                             Become a host
