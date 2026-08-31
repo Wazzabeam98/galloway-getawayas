@@ -92,12 +92,20 @@ test('a genuinely quiet day is still a success', async () => {
     const res: any = await route.GET(authorised());
 
     assert.equal(res.status, 200);
-    assert.deepEqual(res.body, { ok: true, sent: 0, skipped: 0, failed: 0 });
+    assert.deepEqual(res.body, {
+        ok: true, sent: 0, skipped: 0, failed: 0, hostsWaitingToOnboard: 0,
+    });
     assert.equal(logged.length, 0, 'nothing due is not an error');
 });
 
 // A host who has not finished Stripe onboarding is skipped, not failed, and
 // is picked up whenever a later run finds them ready. (Scenario 21.)
+//
+// It is no longer SILENT, which is the part that mattered. "Picked up whenever
+// a later run finds them ready" quietly assumed they would one day be ready; a
+// host who never finishes onboarding was skipped every day for ever while
+// their stays piled up, and nothing anywhere said so. See the run summary
+// test below.
 test('a host without Stripe onboarding is skipped rather than failed', async () => {
     const booking = {
         id: 'b1', listing_id: 'l1', host_id: 'h1', check_in: '2026-01-01',
@@ -117,4 +125,40 @@ test('a host without Stripe onboarding is skipped rather than failed', async () 
     assert.equal(res.body.sent, 0, 'nothing can be sent to a host with no Stripe account');
     assert.equal(res.body.failed, 0, 'and it is not a failure — they simply are not ready yet');
     assert.equal(res.body.skipped, 1);
+});
+
+// ---------------------------------------------------------------------------
+// A HOST WHO CANNOT BE PAID IS REPORTED, NOT JUST SKIPPED
+// ---------------------------------------------------------------------------
+
+test('stays that cannot be paid out are reported once per host, with the total', async () => {
+    // Two stays, one host, no Stripe account. The old behaviour was to skip
+    // both in silence: the run reported ok, nothing errored, and a real person
+    // was simply never paid.
+    const base = {
+        listing_id: 'l1', host_id: 'h1', check_in: '2026-01-01', amount_refunded: 0,
+        commission_rate: 10, status: 'confirmed', payment_status: 'paid', paid_out_at: null,
+    };
+    const bookings = [
+        { ...base, id: 'b1', total_price: 500, amount_paid: 500 },
+        { ...base, id: 'b2', total_price: 300, amount_paid: 300 },
+    ];
+
+    const { client } = fakeSupabase({
+        bookings: { data: bookings, error: null },
+        profiles: { data: { id: 'h1', stripe_account_id: null, stripe_payouts_enabled: false }, error: null },
+    });
+    const { route, logged } = loadRoute(client);
+
+    const res: any = await route.GET(authorised());
+
+    assert.equal(res.body.skipped, 2, 'both stays wait');
+    assert.equal(res.body.sent, 0);
+    assert.equal(res.body.hostsWaitingToOnboard, 1, 'one host, not two lines');
+
+    assert.equal(logged.length, 1, 'one line per host per run, not one per stay');
+    const message = String(logged[0].message || logged[0]);
+    assert.match(message, /2 stays/, 'says how many are waiting');
+    assert.match(message, /800\.00/, 'says how much is held up');
+    assert.match(message, /payouts/i);
 });
