@@ -183,7 +183,7 @@ site is. That was the biggest single item here.
 | **Listing page: 5 sequential queries + a live OpenStreetMap call** | 225ms TTFB before a byte moves, and a cache miss makes a guest wait on a third party. | 2 hrs |
 | **Nothing is cacheable** | Not `force-dynamic` — `Navbar` calls `cookies()` in the root layout, which is what actually forces it. Proved by stubbing it: five pages went static. Path in `SITE-AUDIT.md`. | half a day for step 1 |
 | **Two pages still have no `h1`** | `/services/join` and `/services/join/apply`. `/auth/reset` and `/unsubscribe` have picked one up since the last pass. All noindexed, so accessibility rather than SEO. | 15 min |
-| **The hero photo has `alt=""`** | One place now, `components/base/Hero.tsx:551`. Google Images is a real channel for "Kirkcudbright harbour". I will not invent what the photo shows — tell me and it is five minutes. | you + 5 min |
+| ~~**The hero photo has `alt=""`**~~ | Done in PR #46, along with the town photos, the listing cards and the listing gallery — each describes what is in the picture rather than repeating the place name. Two hero photos are deliberately described without a place name because nobody could confirm where they were taken; if that is ever settled it is a one-line change. | done |
 
 ---
 
@@ -198,9 +198,40 @@ towns, by the other session, and every one is deliberately held.
   the hold — that is a review, not a writing job. They also need a published
   listing in the town before they publish themselves, which is the second
   condition in `isPublishable`.
+
+  Each page now also carries a **"Things to do"** section (PR #46), and that
+  part of the review is factual rather than editorial: it names real
+  attractions and businesses, and a page recommending somewhere that has closed
+  is worse than one recommending nothing. See the photo entry below — the same
+  email settles both.
 - **A note on the towns carousel.** The home page now links to all ten. Guests
   can reach them and they read fine; Google is told not to index them. Nothing
   to fix — worth knowing the links are live before you decide the hold.
+- **Photos for the "Things to do" sections, by asking for them.** Those
+  sections are prose only. Every place named in them is run by somebody with a
+  photo library and a reason to say yes — a link from a booking site is free
+  publicity for them. The list, from the copy draft:
+
+  | Who | What they cover |
+  |---|---|
+  | National Trust for Scotland | Threave Garden and Estate, Broughton House |
+  | Historic Environment Scotland | Threave Castle, Cardoness Castle, Caerlaverock |
+  | Forestry and Land Scotland | Galloway Forest Park, the 7stanes centres |
+  | Independently run | Kirkcudbright Galleries, The Mill on the Fleet, Cream o' Galloway, Dalbeattie Museum, Wigtown Book Festival, The Bookshop, Bladnoch Distillery, Logan Botanic Garden, Castle Kennedy Gardens, Moffat Woollen Mill |
+  | Image libraries worth asking | VisitScotland, Dumfries & Galloway Council — both sometimes licence free for tourism use |
+
+  Ask for a **specific** photo, say where it will appear, and offer a credit and
+  a link. That last part is what makes it easy for them to say yes.
+
+  **Do this in the same email as the check.** Every one of these places has to
+  be confirmed as still trading before its town comes off `hold` (see
+  `AREA-BRIEF.md`), and "are you still open, and may we use a photo?" is one
+  message rather than two. A reply answers both. No reply is itself an answer
+  worth having before you recommend somewhere.
+
+  Nothing in the code is waiting on this — the sections read fine as prose, and
+  a photo per town is an improvement rather than a blocker.
+
 - **A real "list your property" landing page.** `/addhome` is a wizard and is
   noindexed, so your actual pitch appears on no indexable page. Less
   competition than the guest terms.
