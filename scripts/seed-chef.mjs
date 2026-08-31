@@ -133,8 +133,8 @@ async function seed() {
 
     const owner = await makeOwner();
 
-    // A profile to match, the way /api/services/apply upserts one at sign-up.
-    // Merge-duplicates so it is safe whether or not a trigger already made one.
+    // A profile to match, the way the services apply route upserts one at
+    // sign-up. Merge-duplicates so it is safe whether or not a trigger made one.
     await db.rest(
         'POST', '/profiles?on_conflict=id',
         [{ id: owner, email: LOGIN_EMAIL, full_name: 'Rosa Maclean', is_host: false }],
