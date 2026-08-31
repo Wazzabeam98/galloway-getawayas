@@ -57,7 +57,9 @@ export default function ListingCard({ listing }: { listing: CardListing }) {
 
                 {petFriendly && (
                     <span
-                        className="absolute top-2 left-2 inline-flex items-center gap-1 rounded-full bg-white/90 px-2 py-1 text-xs font-semibold text-stone-800 shadow-sm backdrop-blur"
+                        // Hairline ring + drop shadow so the edge holds on any
+                        // photo — a bare white pill dissolves into a pale sky.
+                        className="absolute top-2 left-2 inline-flex items-center gap-1 rounded-full bg-white/95 px-2 py-1 text-xs font-semibold text-stone-800 shadow-md ring-1 ring-black/10 backdrop-blur"
                         title="Dogs welcome"
                     >
                         <PawPrint className="w-3.5 h-3.5 text-emerald-700" />
