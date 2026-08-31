@@ -135,13 +135,17 @@ export default function GuestExperiences(props: {
                             from what it looks like — unlike a plumber, whom nobody
                             chooses from a photo. */}
                         {photos.length > 0 ? (
-                            <div className={`grid gap-0.5 ${photos.length === 1 ? 'grid-cols-1' : 'grid-cols-3'}`}>
-                                {photos.slice(0, 3).map((path, i) => (
+                            // One, two or three across — matched to how many there
+                            // are, so two photos fill the width rather than leaving
+                            // a third empty column.
+                            <div className={`grid gap-0.5 ${photos.length === 1 ? 'grid-cols-1' : photos.length === 2 ? 'grid-cols-2' : 'grid-cols-3'}`}>
+                                {photos.slice(0, 3).map((path) => (
                                     <img
                                         key={path}
                                         src={getImageUrl(path)}
                                         alt={`${who} — ${p.category}`}
-                                        className={`h-32 w-full object-cover ${photos.length > 1 && i === 0 ? 'col-span-1' : ''}`}
+                                        loading="lazy"
+                                        className="h-32 w-full object-cover"
                                     />
                                 ))}
                             </div>
@@ -162,12 +166,12 @@ export default function GuestExperiences(props: {
                                     />
                                 ) : null}
                                 <div className="min-w-0">
-                                    <div className="font-semibold text-gray-900">{p.business_name}</div>
+                                    <div className="font-semibold text-gray-900 break-words">{p.business_name}</div>
                                     {p.provider_name && p.provider_name.trim() && p.provider_name !== p.business_name ? (
-                                        <div className="text-sm text-gray-600">{p.provider_name}</div>
+                                        <div className="text-sm text-gray-600 break-words">{p.provider_name}</div>
                                     ) : null}
                                     {p.based_line ? (
-                                        <div className="text-xs text-gray-500">{p.based_line}</div>
+                                        <div className="text-xs text-gray-500 break-words">{p.based_line}</div>
                                     ) : null}
                                 </div>
                             </div>
