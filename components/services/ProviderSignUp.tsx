@@ -2086,6 +2086,17 @@ function ApplicationForm() {
                         Thanks — we check every business before it appears, usually within {REVIEW_WITHIN_HOURS} hours.
                         We will email you either way. You can still read what you sent below.
                     </p>
+                    {/* "Something else" is not on our list, so a person reads
+                        what they wrote and decides whether it fits before it can
+                        go live. Said plainly here so they are not left wondering
+                        why theirs is not instant — without promising a yes. */}
+                    {trade === 'other' && (
+                        <p className="text-sm text-amber-900/80 mt-3">
+                            Because you told us your business is something not on our list, we read what
+                            you described and decide whether it’s a fit for guests before listing you.
+                            Nothing more is needed from you — your listing is with us and we’ll be in touch.
+                        </p>
+                    )}
                 </div>
             )}
 
@@ -3690,6 +3701,13 @@ function ApplicationForm() {
                         We have it and will come back to you within {REVIEW_WITHIN_HOURS} hours. There is
                         nothing else for you to do.
                     </p>
+                    {trade === 'other' && (
+                        <p className="text-sm text-emerald-900/80 mt-3">
+                            You told us your business is something not on our list, so a person reads what
+                            you described and decides whether it’s a fit for guests. That’s ours to do —
+                            your listing is with us and we’ll be in touch.
+                        </p>
+                    )}
                     {verificationEmailed ? (
                         <p className="text-sm text-emerald-900/80 mt-3">
                             We have also sent a link to <strong>{contactEmail.trim()}</strong> to confirm the
