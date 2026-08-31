@@ -473,8 +473,17 @@ export default function AddHome() {
                     .upload(uniquePath, photo);
 
                 if (imgErr) {
-                    toast.error(imgErr.message, { theme: 'colored' });
-                    setFormError(`Photo upload failed: ${imgErr.message}`);
+                    // Storage speaks in routes and buckets. A host saw
+                    // "Route POST:/object/1788213666530_1948 not found", which
+                    // says nothing they can act on and does not tell them the
+                    // important part: their listing has NOT been saved, because
+                    // photos upload before the row is written.
+                    console.error('[addhome] photo upload failed', imgErr);
+                    const msg = 'We couldn\u2019t upload your photos, so nothing has been saved yet. '
+                        + 'Your details are still on this page \u2014 try again in a moment, or use '
+                        + '\u201CSave & finish later\u201D to keep them.';
+                    toast.error(msg, { theme: 'colored' });
+                    setFormError(msg);
                     return;
                 }
                 if (imgData?.path) uploadedPaths.push(imgData.path);
@@ -853,7 +862,16 @@ export default function AddHome() {
                 {step === 3 && (
                     <div>
                         <h2 className="text-3xl font-extrabold text-slate-900 mb-2">Confirm your location</h2>
-                        <p className="text-slate-600 mb-8">This is what we found from your address search — check it over.</p>
+                        {/* Only claim a lookup happened when one did. A host
+                            who chose "skip to manual listing form", or who hit
+                            the lookup while it was unavailable, arrives here
+                            with four empty boxes under a line telling them this
+                            is what we found. */}
+                        <p className="text-slate-600 mb-8">
+                            {street || city || postcode
+                                ? 'This is what we found from your address search — check it over.'
+                                : 'Where is your place? Guests only ever see the town and region.'}
+                        </p>
                         <div className="space-y-4">
                             <div>
                                 <label className="text-xs text-slate-500 font-semibold uppercase">Street address</label>

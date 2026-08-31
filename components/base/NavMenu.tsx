@@ -40,8 +40,22 @@ const NavMenu = ({
 
     return (
         <Popover>
+            {/* A BUTTON, BECAUSE THIS IS THE ONLY WAY INTO THE SIGNED-IN SITE.
+                This was a <div>. Radix's asChild hands it aria-expanded and
+                aria-haspopup, but a div is not focusable and Radix does not
+                make it one, so the control never entered the tab order. Checked
+                on 31 August 2026: tab order on the home page went logo →
+                "Become a host" → the hero carousel → search, and never reached
+                this. Log In, Sign Up, Listings, Bookings, Calendar, Earnings,
+                Co-hosts and Messages all live behind it and nowhere else — so a
+                host using a keyboard or a screen reader could not sign in, and
+                could not reach a single host page if they did. */}
             <PopoverTrigger asChild>
-                <div className='flex items-center gap-2 border p-1.5 pl-3 rounded-full cursor-pointer hover:shadow-md transition'>
+                <button
+                    type='button'
+                    aria-label='Your account and menu'
+                    className='flex items-center gap-2 border p-1.5 pl-3 rounded-full cursor-pointer hover:shadow-md transition'
+                >
                     <MenuUnreadDot enabled={session != null} host={isHost} />
                     {session != null ? (
                         <div className='w-8 h-8 rounded-full overflow-hidden bg-slate-900 text-white flex items-center justify-center text-sm font-semibold flex-shrink-0'>
@@ -60,7 +74,7 @@ const NavMenu = ({
                             <UserIcon className='w-4 h-4' />
                         </div>
                     )}
-                </div>
+                </button>
             </PopoverTrigger>
             <PopoverContent className='mr-6'>
                 <ul>
