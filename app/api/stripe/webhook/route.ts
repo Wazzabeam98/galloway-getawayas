@@ -1,10 +1,12 @@
 import { logError } from '@/lib/logError';
 import { guidanceFor } from '@/lib/disputes';
-import { sendEmail, sendEmailToAll, recipients, emailLayout, escapeHtml, formatDate, button, SITE_URL } from '@/lib/email';
+import { sendEmail, sendEmailToAll, recipients, emailLayout, escapeHtml, formatDate, button, detailRows, SITE_URL } from '@/lib/email';
 import { adminClient } from '@/lib/supabaseAdmin';
 import { NextResponse } from 'next/server';
 import { verifyStripeSignature, stripeRequest } from '@/lib/stripe';
 import { expiryFrom } from '@/lib/serviceOrders';
+import { requestedWhen } from '@/lib/serviceEnquiries';
+import { tradeLabel } from '@/lib/serviceProviders';
 
 export const dynamic = 'force-dynamic';
 
@@ -360,7 +362,7 @@ export async function POST(request: Request) {
 
                 const { data: booking } = await admin
                     .from('bookings')
-                    .select('id, status, total_price, listing_id, amount_paid, guest_id, check_in')
+                    .select('id, status, total_price, listing_id, amount_paid, guest_id, check_in, check_out, host_id')
                     .eq('id', bookingId)
                     .maybeSingle();
 
@@ -645,6 +647,81 @@ export async function POST(request: Request) {
                         ledgerError,
                         { path: 'stripe/webhook' }
                     );
+                }
+
+                // A WORK DAY JUST GOT A GUEST ON IT.
+                //
+                // The host asked a tradesman to come on a day this booking now
+                // covers. Neither blocks the other — a two-hour job the
+                // afternoon a guest arrives is fine — but it is a clash the host
+                // would otherwise find only by opening the calendar, and the
+                // whole point is that this booking arrived while they were not
+                // looking. So they are emailed: cottage, date, trade, enough to
+                // decide without opening anything.
+                //
+                // Guarded on the 23505 above: a redelivered paid event finds the
+                // payment already in the ledger, and must not send this twice.
+                // Only accepted, planned enquiries carry a date, so only they can
+                // land on a day. "Asked for", never "booked" — the wording comes
+                // from lib/serviceEnquiries and is the same line the calendar and
+                // the emails already hold.
+                const firstDelivery = !(ledgerError && ledgerError.code === '23505');
+
+                if (
+                    firstDelivery && booking
+                    && booking.listing_id && booking.check_in && booking.check_out && booking.host_id
+                ) {
+                    try {
+                        const { data: clashes } = await admin
+                            .from('service_enquiries')
+                            .select('trade, business_name, preferred_date, window_from, window_to')
+                            .eq('listing_id', booking.listing_id)
+                            .eq('status', 'accepted')
+                            .eq('urgency', 'planned')
+                            .gte('preferred_date', booking.check_in)
+                            .lt('preferred_date', booking.check_out);
+
+                        if (clashes && clashes.length) {
+                            const { data: hostUser } = await admin.auth.admin.getUserById(booking.host_id);
+                            const hostEmail = (hostUser && hostUser.user && hostUser.user.email) || '';
+
+                            if (hostEmail) {
+                                const rows = clashes.map((c: any) => ({
+                                    label: tradeLabel(c.trade) || 'Work',
+                                    // requestedWhen begins "Asked for" — dropped
+                                    // here only because the line above already
+                                    // says these are days you asked for.
+                                    value: (requestedWhen(c) || 'a day during this stay')
+                                        .replace(/^Asked for /, ''),
+                                }));
+
+                                await sendEmail(
+                                    hostEmail,
+                                    'A booking landed on a day you’ve got work coming — ' + listingTitle,
+                                    emailLayout(
+                                        '<p style="margin:0 0 16px;font-size:16px;">A new booking for <strong>'
+                                            + escapeHtml(listingTitle)
+                                            + '</strong> covers '
+                                            + formatDate(booking.check_in) + ' to ' + formatDate(booking.check_out)
+                                            + ', and that overlaps a day you have a trade coming to the cottage.</p>'
+                                        + '<p style="margin:0 0 8px;font-size:16px;">What you asked for on those dates:</p>'
+                                        + detailRows(rows)
+                                        + '<p style="margin:16px 0;font-size:16px;">Nothing is blocked and nothing has changed — a short job and a guest can share a day. But it is a different conversation with the tradesman, so we wanted you to know before it caught you out.</p>'
+                                        + button(SITE_URL + '/dashboard/calendar', 'Open your calendar'),
+                                        'You’re receiving this because a booking overlapped work you asked for on your Galloway Getaways cottage.'
+                                    )
+                                );
+                            }
+                        }
+                    } catch (err) {
+                        // A courtesy email that fails must never affect the
+                        // booking: the money has landed and the stay is live.
+                        await logError(
+                            '[webhook] could not warn the host that a booking overlaps work they asked for',
+                            err,
+                            { path: 'stripe/webhook' }
+                        );
+                    }
                 }
             }
         }

@@ -87,6 +87,13 @@ export default function EnquiryForm({
     // reading like a booking.
     const scroller = useRef<HTMLDivElement | null>(null);
     const [sending, setSending] = useState(false);
+
+    // A guest already in the cottage on the day being asked for. Not a block —
+    // a two-hour job the afternoon a guest arrives is a real thing to ask for.
+    // But it is a different conversation with the tradesman, so the host is
+    // told before it goes: a visible warning, and the send button says "Send
+    // anyway" rather than pretending the day is clear.
+    const [clash, setClash] = useState<null | { check_in: string; check_out: string }>(null);
     const [sent, setSent] = useState<any>(null);
 
     // EVERY problem, not the first one.
@@ -149,6 +156,53 @@ export default function EnquiryForm({
 
     const emergency = urgency === 'emergency';
     const planned = needsDate(urgency);
+
+    // Is a guest already in this cottage on the day being asked for? Checked as
+    // the day, the property or the urgency changes, so the warning is on screen
+    // before the host reaches the button rather than sprung at send. Reads the
+    // host's own confirmed bookings — the same rows the calendar shows. A
+    // checkout day is free, so the guest is in when check_in <= day < check_out.
+    useEffect(() => {
+        let cancelled = false;
+
+        const check = async () => {
+            if (!planned || !preferredDate || !listingId) {
+                setClash(null);
+                return;
+            }
+
+            const { data } = await supabase
+                .from('bookings')
+                .select('check_in, check_out')
+                .eq('listing_id', listingId)
+                .eq('status', 'confirmed')
+                .lte('check_in', preferredDate)
+                .gt('check_out', preferredDate)
+                .limit(1);
+
+            if (cancelled) return;
+            setClash((data && data[0]) || null);
+        };
+
+        check();
+        return () => { cancelled = true; };
+        // eslint-disable-next-line react-hooks/exhaustive-deps
+    }, [planned, preferredDate, listingId]);
+
+    const clashCottage = listings.find((l: any) => l.id === listingId);
+    const clashCottageTitle = (clashCottage && clashCottage.title) || 'that property';
+
+    // The stay, in words, for the warning. Its own small formatter rather than
+    // requestedWhen's — this is a booking that exists, not a request, so it does
+    // not borrow the "asked for" wording that guards the other direction.
+    const clashDates = clash
+        ? (() => {
+            const fmt = (d: string) => new Date(d + 'T12:00:00Z').toLocaleDateString('en-GB', {
+                day: 'numeric', month: 'long', timeZone: 'Europe/London',
+            });
+            return fmt(clash.check_in) + ' to ' + fmt(clash.check_out);
+        })()
+        : '';
     const chosenWindow = TIME_WINDOWS.filter((w) => w.key === windowKey)[0] || TIME_WINDOWS[0];
 
     // The page deliberately does not fetch `contact_phone`, so the browser
@@ -316,7 +370,7 @@ export default function EnquiryForm({
                 disabled={sending || (emergency && !canDoEmergency)}
                 className="flex-1 rounded-xl bg-emerald-700 px-4 py-3 text-white font-semibold disabled:opacity-50"
             >
-                {sending ? 'Sending…' : 'Send to ' + provider.business_name}
+                {sending ? 'Sending…' : clash ? 'Send anyway' : 'Send to ' + provider.business_name}
             </button>
         </div>
     );
@@ -458,6 +512,17 @@ export default function EnquiryForm({
                                 <DatePicker value={preferredDate} onChange={setPreferredDate} />
                             </div>
                             <Problem problems={problems} field="preferred_date" />
+
+                            {/* A guest is already in the cottage that day. Said
+                                before the button, not after — it does not stop
+                                the enquiry, it changes what the host says in it. */}
+                            {clash && (
+                                <div className="mt-3 rounded-xl border border-amber-300 bg-amber-50 p-3 text-sm text-amber-900">
+                                    <span className="font-semibold">There&apos;s a guest in {clashCottageTitle} that day</span>
+                                    {' '}— {clashDates}. You can still ask for it; it&apos;s a different
+                                    conversation with {provider.business_name}, so the send button says so.
+                                </div>
+                            )}
                         </div>
 
                         <label className="block">
