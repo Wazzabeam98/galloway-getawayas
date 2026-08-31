@@ -52,6 +52,7 @@ const LOCATIONS: { value: string; label: string }[] = [
   { value: 'newton-stewart', label: 'Newton Stewart' },
   { value: 'moffat', label: 'Moffat' },
   { value: 'stranraer', label: 'Stranraer' },
+  { value: 'portpatrick', label: 'Portpatrick' },
 ];
 
 // The four guest rows are identical apart from their wording and what they do

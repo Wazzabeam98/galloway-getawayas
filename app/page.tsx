@@ -8,6 +8,7 @@ import { cookies } from 'next/headers';
 import { format, parseISO } from 'date-fns';
 import Link from 'next/link';
 import ListingCard from '@/components/ListingCard';
+import TownsCarousel from '@/components/TownsCarousel';
 import { AREAS, hasCopy } from '@/config/areas';
 
 export const dynamic = 'force-dynamic';
@@ -143,6 +144,14 @@ export default async function HomePage({
         (area) => hasCopy(area) && area.townKeys.some((key) => (townCounts[key] || 0) > 0)
     );
 
+    // The carousel shows every town that has been written (its short blurb),
+    // whether or not it has stock yet — the panel leads to the area page, which
+    // renders for a human even while it is held out of search. Wigtown, with no
+    // copy, is simply not on it.
+    const carouselTowns = AREAS
+        .filter((area) => (area.metaDescription || '').trim().length > 0)
+        .map((area) => ({ slug: area.slug, name: area.name, blurb: area.metaDescription }));
+
     // What the guest asked for, said back to them, so a short list reads as a
     // result rather than as an empty site.
     const criteria: string[] = [];
@@ -221,6 +230,8 @@ export default async function HomePage({
                         </p>
                     </div>
                 )}
+
+                {!searching && <TownsCarousel towns={carouselTowns} />}
 
                 {/* The homepage's editorial, below the grid on purpose: the
                     properties come first, and someone who already knows they

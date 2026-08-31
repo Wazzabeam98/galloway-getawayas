@@ -53,7 +53,7 @@ export async function generateMetadata({
     }
 
     const listings = await listingsForArea(area);
-    const publishable = hasCopy(area) && listings.length > 0;
+    const publishable = hasCopy(area) && !area.hold && listings.length > 0;
 
     // Built the way people search: what, then where. "Holiday cottages in
     // Kirkcudbright" is the phrase; the brand goes on the end by the template
