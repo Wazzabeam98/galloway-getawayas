@@ -4,6 +4,7 @@ import { useState } from 'react';
 import { useRouter } from 'next/navigation';
 import { toast } from 'react-toastify';
 import { planForTrade, bandLabel, SUBSCRIPTION_MONTHLY, TRIAL_DAYS } from '@/lib/serviceProviders';
+import { ASSIGNABLE_MCCS, assignableMccLabel } from '@/lib/serviceOrders';
 
 const STATUS_STYLE: Record<string, string> = {
     pending_review: 'bg-amber-50 text-amber-900 border-amber-200',
@@ -58,6 +59,12 @@ export default function ProviderReviewRow({
     // edits are worth a word; some cannot stay up. Asked rather than assumed.
     const [hide, setHide] = useState(false);
     const [kindOpen, setKindOpen] = useState(false);
+
+    // Assigning a payout category to a "something else" business. Prefilled from
+    // whatever is already on the row, so re-assigning starts from the current
+    // answer rather than blank.
+    const [mcc, setMcc] = useState<string>(provider.stripe_mcc || '');
+    const [customLabel, setCustomLabel] = useState<string>(provider.custom_label || '');
 
     const decide = async (decision: 'approve' | 'decline' | 'approve_changes' | 'decline_changes') => {
         if ((decision === 'decline' || decision === 'decline_changes') && !note.trim()) {
@@ -179,6 +186,41 @@ export default function ProviderReviewRow({
         router.refresh();
     };
 
+    // Assigning the Stripe category, and the word a guest reads, to a "something
+    // else" business. Two things in one act: the code the account onboards with
+    // (never shown to a guest) and the word above them on the shop (always
+    // shown). Both are required, and the route refuses without either — the
+    // button below refuses too, as a courtesy.
+    const assignCategory = async () => {
+        if (!mcc) { toast.error('Pick a category.', { theme: 'colored' }); return; }
+        if (!customLabel.trim()) { toast.error('Type the word a guest will read.', { theme: 'colored' }); return; }
+
+        setBusy(true);
+
+        const res = await fetch('/api/admin/providers', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+                id: provider.id,
+                decision: 'assign_category',
+                mcc,
+                custom_label: customLabel.trim(),
+            }),
+        });
+
+        setBusy(false);
+
+        const body = await res.json().catch(() => ({}));
+
+        if (!res.ok) {
+            toast.error(body.error || 'That did not save.', { theme: 'colored' });
+            return;
+        }
+
+        toast.success('Category set.', { theme: 'colored' });
+        router.refresh();
+    };
+
     const pending = provider.status === 'pending_review';
     const regs: any[] = registrations || [];
     const tags: any[] = skills || [];
@@ -244,6 +286,65 @@ export default function ProviderReviewRow({
 
             {provider.description && (
                 <p className="text-sm text-slate-700 mt-3 whitespace-pre-line">{provider.description}</p>
+            )}
+
+            {/* A "something else" business has no fixed category. You read what
+                they described above and assign two things at once: the Stripe
+                code the account onboards with, and the word a guest reads on the
+                shop. Until both are set, a blocker holds Approve — they cannot
+                reach Stripe onboarding, and a guest could never be paid. */}
+            {provider.trade === 'other' && (
+                <div className="mt-4 rounded-xl border border-slate-200 bg-slate-50 p-4">
+                    <h4 className="text-xs font-bold uppercase tracking-wider text-slate-500 mb-1">
+                        Payout category
+                    </h4>
+                    <p className="text-sm text-slate-500 mb-3">
+                        They picked “something else”, so this is yours to set from what they wrote.
+                        {provider.category_assigned_at ? '' : ' Nothing goes live, and they cannot set up payouts, until you do.'}
+                    </p>
+
+                    {provider.custom_label && provider.stripe_mcc && (
+                        <p className="text-sm text-slate-700 mb-3">
+                            Guests see <strong className="font-semibold">{provider.custom_label}</strong>
+                            {' · '}Stripe category <strong className="font-semibold">{provider.stripe_mcc}</strong>
+                            <span className="text-slate-500"> ({assignableMccLabel(provider.stripe_mcc)})</span>
+                        </p>
+                    )}
+
+                    <label className="block text-sm font-semibold text-slate-900 mb-1">
+                        What a guest reads
+                    </label>
+                    <input
+                        type="text"
+                        value={customLabel}
+                        onChange={(e) => setCustomLabel(e.target.value)}
+                        placeholder="Massage therapy"
+                        className="w-full rounded-lg border border-slate-300 px-3 py-2 text-sm mb-3 focus:outline-none focus:ring-2 focus:ring-emerald-700"
+                    />
+
+                    <label className="block text-sm font-semibold text-slate-900 mb-1">
+                        Stripe category
+                    </label>
+                    <select
+                        value={mcc}
+                        onChange={(e) => setMcc(e.target.value)}
+                        className="w-full rounded-lg border border-slate-300 px-3 py-2 text-sm mb-3 bg-white focus:outline-none focus:ring-2 focus:ring-emerald-700"
+                    >
+                        <option value="">Choose a category…</option>
+                        {ASSIGNABLE_MCCS.map((m) => (
+                            <option key={m.code} value={m.code}>{m.label} ({m.code})</option>
+                        ))}
+                    </select>
+
+                    <button
+                        type="button"
+                        onClick={assignCategory}
+                        disabled={busy}
+                        className="rounded-full bg-slate-900 hover:bg-slate-800 text-white px-4 py-2 text-sm font-semibold transition disabled:opacity-60"
+                    >
+                        {busy ? 'Saving…' : provider.category_assigned_at ? 'Change category' : 'Assign category'}
+                    </button>
+                </div>
             )}
 
             <dl className="grid sm:grid-cols-2 gap-x-6 gap-y-1.5 text-sm mt-4">

@@ -132,6 +132,22 @@ alongside it.
 Fix: an owner-scoped path prefix in the INSERT policy. Half a day, because the
 upload paths in the app have to move with it.
 
+### Removed photos are never deleted — orphaned bytes accumulate — LOW, but it is a bill
+
+Flagged 31 August, during the guest-experiences gallery work. There is no
+storage DELETE policy on `listings` (2F above notes this as a security
+positive — nobody can wipe another host's photo). The cost side of the same
+fact: `removePhoto` in the listing and provider editors only drops the path
+from the row's `photos`/`images` array — the object stays in the bucket
+forever. Every re-crop, every swapped cover shot, every deleted gallery image
+leaves its bytes behind, unreferenced and unbilled-for-nothing. Bounded per
+provider by the gallery cap, but unbounded over time across all editing.
+
+Not urgent and not this — the gallery work ships without touching it. Noted
+here because it grows quietly: the way to know is a periodic sweep for storage
+objects no row references, run before the storage line on the Supabase bill
+starts to climb rather than after.
+
 ### `service_providers` exposes `commission_rate`, `settlement` and `owner_id`
 
 **Zero approved rows on production today, so nothing is leaking yet.** The

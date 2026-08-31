@@ -29,7 +29,12 @@ export const TRADES = [
     { key: 'chef', label: 'Private chef' },
     { key: 'cake', label: 'Cakes & baking' },
     { key: 'basket', label: 'Hampers & shopping' },
-    { key: 'paw', label: 'Pet care' },
+    // "Something else" — a business that is not on the list above. They describe
+    // what they do, and the owner decides at approval whether it fits and what
+    // Stripe category it takes. Guests never see the word "Something else"; the
+    // owner assigns a real word (custom_label) when they assign the code. See
+    // lib/serviceOrders.ts mccForProvider and the admin category-assignment flow.
+    { key: 'other', label: 'Something else' },
 ] as const;
 
 export type TradeKey = (typeof TRADES)[number]['key'];
@@ -53,7 +58,7 @@ export const HOST_TRADES = [
     'sponge', 'bin', 'trees', 'droplet',
     'electrician', 'joiner', 'plumber', 'roofer', 'painter', 'handyman',
 ] as const;
-export const GUEST_TRADES = ['chef', 'cake', 'basket', 'paw'] as const;
+export const GUEST_TRADES = ['chef', 'cake', 'basket', 'other'] as const;
 
 // A heading on the picker, not a thing anybody is.
 //
@@ -249,7 +254,7 @@ const TRADE_PLANS: Record<string, ProviderPlan> = {
     chef: 'commission',
     cake: 'commission',
     basket: 'commission',
-    paw: 'commission',
+    other: 'commission',
 };
 
 // The host trades that pay a percentage instead of a subscription. Named here
@@ -826,7 +831,7 @@ export function canBeBooked(trade: string): boolean {
 //   chef        the four guest trades are sold to somebody on holiday and
 //   cake        have their own shop. Nothing about this one applies.
 //   basket
-//   paw
+//   other
 export const SHOP_TRADES = [
     'electrician', 'joiner', 'plumber', 'roofer', 'painter', 'handyman',
     'droplet',
@@ -1954,6 +1959,47 @@ export function registrationBlockers(
     }
 
     return blockers;
+}
+
+// What stops an "other" provider being approved: no Stripe category assigned.
+//
+// A chef is always a caterer, so its code comes from the trade and there is
+// nothing to decide. "Something else" has no fixed code by definition — until
+// the owner reads what they described and assigns one (with the word a guest
+// will read), the connect route cannot onboard them and a guest could never be
+// paid, so approval is held. It fails closed the same way a missing MCC blocks
+// onboarding in app/api/services/connect; this is the courtesy that says so on
+// the queue rather than letting Approve look available and the payout stall
+// silently later.
+export function categoryBlockers(provider: { trade?: string | null; stripe_mcc?: string | null }): string[] {
+    if (String(provider.trade || '') !== 'other') return [];
+    if (String(provider.stripe_mcc || '').trim()) return [];
+    return ['No payout category assigned yet — pick one before approving.'];
+}
+
+// The whole approval gate, in one function, so the admin queue and the decision
+// route refuse on exactly the same list. Registrations for the regulated
+// trades, and a payout category for an "other" provider.
+export function approvalBlockers(
+    provider: RegistrationDraft & { stripe_mcc?: string | null },
+    rows: RegistrationRow[] | null | undefined,
+    today?: Date
+): string[] {
+    return registrationBlockers(provider, rows, today).concat(categoryBlockers(provider));
+}
+
+// The word a guest reads above a provider on the shop and the trip page.
+//
+// For the fixed guest trades it is the trade's own label ("Private chef"). For
+// an "other" provider it is the word the owner typed when they assigned the
+// category — never the meaningless "Something else". Falls back to a neutral
+// "Local experience" if an "other" somehow reaches a guest with no label, which
+// it should not, because a label is assigned in the same act as the code the
+// payout gate requires.
+export function guestCategory(provider: { trade?: string | null; custom_label?: string | null }): string {
+    const trade = String(provider.trade || '');
+    if (trade === 'other') return String(provider.custom_label || '').trim() || 'Local experience';
+    return tradeLabel(trade);
 }
 
 // What the provider is told while filling the form in. Deliberately narrower

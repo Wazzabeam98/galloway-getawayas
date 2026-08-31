@@ -158,7 +158,7 @@ test('the cleaner keeps her two toggles beside her prices rather than gaining a 
 test('the guest trades have no prices step either, so they see four', () => {
     // A chef quotes per job and has no extras to offer. A step containing one
     // heading and nothing under it is the thing this rule is against.
-    for (const trade of ['chef', 'cake', 'basket', 'paw']) {
+    for (const trade of ['chef', 'cake', 'basket', 'other']) {
         assert.deepEqual(keys(trade), ['trade', 'business', 'finish'], trade + ' has three steps');
         assert.equal(stepCount(trade), 3);
     }

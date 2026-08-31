@@ -5,7 +5,7 @@ import { redirect } from 'next/navigation';
 import { createServerComponentClient } from '@supabase/auth-helpers-nextjs';
 import { cookies } from 'next/headers';
 import { adminClient } from '@/lib/supabaseAdmin';
-import { tradeLabel, offeringsFor, EXTRA_GROUPS } from '@/lib/serviceProviders';
+import { tradeLabel, offeringsFor, EXTRA_GROUPS, audienceForTrade } from '@/lib/serviceProviders';
 
 const groupLabel = (key: string): string =>
     (EXTRA_GROUPS.find((g) => g.key === key) as any)?.label || key;
@@ -34,6 +34,15 @@ export default async function EditBusinessPage() {
     const provider = list.find((p) => p.status === 'approved') || list[0];
     if (!provider) redirect('/services/dashboard');
     if (provider.status !== 'approved') redirect(`/services/join?trade=${provider.trade}`);
+
+    // This editor is host-shaped — rates, service groups, registrations. A
+    // guest-trade provider edits their listing (the gallery, their price, and
+    // who they are) on the sign-up itself, which loads their row and shows the
+    // guest fields, so send them there rather than to a screen that does not
+    // ask for any of what they need to change.
+    if (audienceForTrade(provider.trade) === 'guest') {
+        redirect(`/services/join?trade=${provider.trade}`);
+    }
 
     const { data: areas } = await admin
         .from('service_areas')

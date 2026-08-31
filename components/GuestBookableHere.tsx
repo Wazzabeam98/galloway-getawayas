@@ -13,17 +13,10 @@ import { useEffect, useState } from 'react';
 interface Provider {
     id: string;
     business_name: string;
-    trade: string;
+    category: string;
     description: string | null;
     price: number;
 }
-
-const TRADE_WORD: Record<string, string> = {
-    chef: 'Private chef',
-    cake: 'Cakes & baking',
-    basket: 'Hampers & shopping',
-    paw: 'Pet care',
-};
 
 export default function GuestBookableHere(props: { listingId: string }) {
     const { listingId } = props;
@@ -67,7 +60,7 @@ export default function GuestBookableHere(props: { listingId: string }) {
                         <li key={p.id} className="flex items-start justify-between gap-4">
                             <div>
                                 <div className="text-xs uppercase tracking-wide text-emerald-700">
-                                    {TRADE_WORD[p.trade] || 'Experience'}
+                                    {p.category}
                                 </div>
                                 <div className="font-medium text-slate-900">{p.business_name}</div>
                                 {p.description ? (
