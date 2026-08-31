@@ -97,6 +97,29 @@ const NavMenu = ({
                                         <MessagesLink />
                                     </li>
                                 </>
+                            ) : isProvider ? (
+                                /* A provider's menu is their business, not a
+                                   traveller's. A plumber signing in is not
+                                   looking for a cottage, so "Your trips" and
+                                   "Become a host" give way to their own things.
+                                   (A provider who is also a host still gets the
+                                   full host menu in host mode, above.) */
+                                <>
+                                    <li className={itemClass}>
+                                        <Link href='/services/dashboard' className='font-semibold text-emerald-800'>
+                                            Your business
+                                        </Link>
+                                    </li>
+                                    <li className={itemClass}>
+                                        <Link href='/services/dashboard#requests'>Enquiries</Link>
+                                    </li>
+                                    <li className={itemClass}>
+                                        <Link href='/services/dashboard/edit'>Your profile</Link>
+                                    </li>
+                                    <li className={itemClass}>
+                                        <MessagesLink />
+                                    </li>
+                                </>
                             ) : (
                                 <>
                                     <li className={itemClass}>
@@ -117,18 +140,6 @@ const NavMenu = ({
                                         </li>
                                     )}
                                 </>
-                            )}
-
-                            {/* A provider's way into their own business. It sits
-                                above Account settings and shows in either mode,
-                                because running a trade is orthogonal to hosting
-                                — a plumber who is not a host still needs it. */}
-                            {isProvider && (
-                                <li className={itemClass}>
-                                    <Link href='/services/dashboard' className='font-semibold text-emerald-800'>
-                                        Your business
-                                    </Link>
-                                </li>
                             )}
 
                             <li className={itemClass}>
@@ -155,6 +166,10 @@ const NavMenu = ({
                                         className='w-full text-left rounded-md'
                                     />
                                 </li>
+                            ) : isProvider ? (
+                                /* A tradesman isn't a lapsed host to convert —
+                                   no "Become a host" nudge in his menu. */
+                                null
                             ) : (
                                 <li className={itemClass}>
                                     <Link href='/addhome'>Become a host</Link>

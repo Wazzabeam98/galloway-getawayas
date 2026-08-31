@@ -17,15 +17,39 @@ const LoginModel = () => {
     const handleLogin = async (e: React.FormEvent) => {
         e.preventDefault();
         setError('');
-        const { error } = await supabase.auth.signInWithPassword({
+        const { data: signIn, error } = await supabase.auth.signInWithPassword({
             email,
             password,
         });
         if (error) {
             setError(error.message);
-        } else {
-            window.location.reload();
+            return;
         }
+
+        // A tradesman signing in is not looking for a cottage. If this account
+        // runs an approved service business, land them on their dashboard
+        // rather than the guest homepage. RLS lets an owner read their own
+        // provider row, so this is a single scoped query. Anyone else falls
+        // through to the ordinary reload.
+        try {
+            const uid = signIn?.user?.id;
+            if (uid) {
+                const { data: provider } = await supabase
+                    .from('service_providers')
+                    .select('id')
+                    .eq('owner_id', uid)
+                    .eq('status', 'approved')
+                    .limit(1)
+                    .maybeSingle();
+                if (provider) {
+                    window.location.href = '/services/dashboard';
+                    return;
+                }
+            }
+        } catch {
+            // Never let the provider check block a successful sign-in.
+        }
+        window.location.reload();
     };
 
     // Sends the reset email. The link goes through /auth/callback, which

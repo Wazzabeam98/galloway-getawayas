@@ -8,6 +8,7 @@ import {
     Pencil,
     Inbox,
 } from 'lucide-react';
+import EnquiryActions from '@/components/services/EnquiryActions';
 
 // The provider's own view of their business — the screen a tradesman or an
 // experience-seller lands on when they log in. Until this existed an approved
@@ -191,7 +192,7 @@ export default function ProviderDashboard(props: ProviderDashboardProps) {
                 {/* LEFT */}
                 <div className="flex flex-col gap-4">
                     {/* Requests */}
-                    <section className="rounded-2xl border border-slate-200 bg-white p-4 sm:p-5">
+                    <section id="requests" className="rounded-2xl border border-slate-200 bg-white p-4 sm:p-5 scroll-mt-24">
                         <header className="flex items-center gap-3 pb-1">
                             <h3 className="font-bold text-slate-900">Requests</h3>
                             {toAnswer > 0 && (
@@ -231,13 +232,9 @@ export default function ProviderDashboard(props: ProviderDashboardProps) {
                                             )}
                                         </div>
                                         <div className="flex-none text-right">
-                                            {e.answerHref && e.chip === 'new' && (
-                                                <Link href={e.answerHref} className="inline-block text-[12.5px] font-bold text-slate-900 bg-white border border-slate-300 rounded-lg px-3 py-1.5 hover:bg-slate-50">
-                                                    Answer
-                                                </Link>
-                                            )}
+                                            {e.chip === 'new' && <EnquiryActions enquiryId={e.id} />}
                                             {e.replyBy && e.chip === 'new' && (
-                                                <div className="text-[11.5px] font-semibold text-amber-800 mt-1 whitespace-nowrap">Reply by {e.replyBy}</div>
+                                                <div className="text-[11.5px] font-semibold text-amber-800 mt-1.5 whitespace-nowrap">Reply by {e.replyBy}</div>
                                             )}
                                             {e.when && e.chip !== 'new' && (
                                                 <div className="text-[12px] text-slate-400 mt-0.5 whitespace-nowrap">{e.when}</div>
@@ -331,21 +328,21 @@ export default function ProviderDashboard(props: ProviderDashboardProps) {
                         </div>
                     )}
 
-                    {/* Profile — both */}
+                    {/* Profile — both. One way in, to one editor. */}
                     <div className="rounded-2xl border border-slate-200 bg-white p-4 sm:p-5">
                         <h3 className="font-bold text-sm text-slate-900">Your profile</h3>
                         <p className="mt-1 text-[13px] text-slate-500">
-                            What hosts see — your work, your rates and the area you cover.
+                            What hosts see — change all of it in one place.
                         </p>
                         <div className="flex flex-wrap gap-1.5 mt-3">
-                            {['Rates & call-out', 'Photos', 'Coverage area'].map((t) => (
+                            {['Services', 'Rates & call-out', 'Coverage area', 'Photos', 'Registrations'].map((t) => (
                                 <span key={t} className="text-xs font-semibold text-slate-500 bg-slate-50 border border-slate-200 rounded-md px-2 py-0.5">
                                     {t}
                                 </span>
                             ))}
                         </div>
-                        <Link href={editHref} className="inline-flex items-center gap-1.5 mt-3 text-[13px] font-semibold text-emerald-800 hover:underline">
-                            <Pencil className="w-3.5 h-3.5" strokeWidth={2} /> Edit business
+                        <Link href="/services/dashboard/edit" className="inline-flex items-center gap-1.5 mt-3 text-[13px] font-semibold text-emerald-800 hover:underline">
+                            <Pencil className="w-3.5 h-3.5" strokeWidth={2} /> Edit your business
                         </Link>
                     </div>
                 </div>
