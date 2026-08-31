@@ -1,3 +1,4 @@
+import { logError } from '@/lib/logError';
 import { createRouteHandlerClient } from '@supabase/auth-helpers-nextjs';
 import { adminClient } from '@/lib/supabaseAdmin';
 import { cookies } from 'next/headers';
@@ -7,6 +8,7 @@ import { sendEmail, emailLayout, escapeHtml, button, SITE_URL } from '@/lib/emai
 export const dynamic = 'force-dynamic';
 
 export async function POST(request: Request) {
+    let reporterId: string | null = null;
     try {
         const supabase = createRouteHandlerClient({ cookies });
         // getUser(), not getSession(). getSession() only decodes the auth
@@ -14,6 +16,7 @@ export async function POST(request: Request) {
         // whatever the caller wrote in it. getUser() asks the auth server,
         // which verifies the token and that the session has not been revoked.
         const { data: { user } } = await supabase.auth.getUser();
+        reporterId = (user && user.id) || null;
 
         if (!user) {
             return NextResponse.json({ ok: false, error: 'Not signed in' }, { status: 401 });
@@ -102,6 +105,12 @@ export async function POST(request: Request) {
         return NextResponse.json({ ok: true });
     } catch (err: any) {
         console.error('[listing-access/accept]', err && err.message);
+
+        // The console is nobody's alarm. The invitation looks live to both of them and grants nothing.
+        await logError('listing-access/accept: a co-host invitation could not be accepted', err, {
+            path: 'api/listing-access/accept',
+            userId: reporterId || undefined,
+        });
         return NextResponse.json(
             { ok: false, error: (err && err.message) || 'Could not accept the invitation' },
             { status: 500 }

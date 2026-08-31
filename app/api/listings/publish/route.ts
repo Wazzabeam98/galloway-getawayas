@@ -1,3 +1,4 @@
+import { logError } from '@/lib/logError';
 import { createRouteHandlerClient } from '@supabase/auth-helpers-nextjs';
 import { adminClient } from '@/lib/supabaseAdmin';
 import { cookies } from 'next/headers';
@@ -25,9 +26,11 @@ export const dynamic = 'force-dynamic';
 // and app/api/admin/listings/decide moves it the rest of the way. Nothing else
 // needs to know.
 export async function POST(request: Request) {
+    let reporterId: string | null = null;
     try {
         const supabase = createRouteHandlerClient({ cookies });
         const { data: { user } } = await supabase.auth.getUser();
+        reporterId = (user && user.id) || null;
 
         if (!user) {
             return NextResponse.json({ ok: false, error: 'Not signed in' }, { status: 401 });
@@ -82,6 +85,13 @@ export async function POST(request: Request) {
         return NextResponse.json({ ok: true, status: 'published' });
     } catch (err: any) {
         console.error('[listings/publish]', err && err.message);
+
+        // The console is nobody's alarm. A listing that will not publish is a property earning nothing, and the host
+        // sees only a button that did not work.
+        await logError('listings/publish: a listing could not be published', err, {
+            path: 'api/listings/publish',
+            userId: reporterId || undefined,
+        });
         return NextResponse.json(
             { ok: false, error: (err && err.message) || 'Could not publish that' },
             { status: 500 }
