@@ -82,18 +82,26 @@ test('written, and with somewhere to stay, is publishable', () => {
 
 /* ------------------------------------------------------- shipping unwritten */
 
-test('every area shipped today is unwritten, so none of them can reach Google yet', () => {
-    // This asserts the state the pages were BUILT in, deliberately. When the
-    // first area is written this test fails, and the person writing it reads
-    // this comment and changes it to name the ones that are ready. That is the
-    // point: publishing a page becomes a decision somebody made, not something
-    // that happened.
-    const live = (AREAS as Area[]).filter(hasCopy).map((a) => a.slug);
+test('no area can reach Google yet — the written ones are all held', () => {
+    // The copy is now written for nine towns, but every one of them carries
+    // `hold: true`, so none is publishable and none is in the sitemap. Adding
+    // the copy did not publish the pages; clearing a hold does. That keeps
+    // "a page goes in front of Google" a decision somebody made, exactly as the
+    // original build intended — the gate just moved from "is it written" to
+    // "is it written AND released".
+    //
+    // WHEN YOU CLEAR A HOLD, this test fails and names the town. Read
+    // AREA-BRIEF.md, check its attractions are still open, and add the slug to
+    // the expected list below. That failure is the checkpoint, not a nuisance.
+    const readyToPublish = (AREAS as Area[])
+        .filter((a) => hasCopy(a) && !a.hold)
+        .map((a) => a.slug);
+
     assert.deepEqual(
-        live, [],
-        'These areas now have copy: ' + live.join(', ')
-        + '\n\nGood — that is the intended direction. Update this test to list them,'
-        + '\nafter checking each one against AREA-BRIEF.md.'
+        readyToPublish, [],
+        'These areas are written AND no longer held, so they can reach Google: '
+        + readyToPublish.join(', ')
+        + '\n\nIf that was deliberate, add them here. If not, restore hold: true.'
     );
 });
 

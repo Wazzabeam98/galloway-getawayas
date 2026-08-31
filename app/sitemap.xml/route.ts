@@ -155,7 +155,7 @@ export async function GET() {
         }
 
         const areaPages: Entry[] = AREAS.filter((area) => {
-            if (!hasCopy(area)) return false;
+            if (!hasCopy(area) || area.hold) return false;
             return area.townKeys.some((key) => (counts[key] || 0) > 0);
         }).map((area) => ({
             loc: `${SITE_URL}/holiday-cottages/${area.slug}`,
