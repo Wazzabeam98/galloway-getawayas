@@ -93,7 +93,7 @@ test('a genuinely quiet day is still a success', async () => {
 
     assert.equal(res.status, 200);
     assert.deepEqual(res.body, {
-        ok: true, sent: 0, skipped: 0, failed: 0, hostsWaitingToOnboard: 0,
+        ok: true, sent: 0, skipped: 0, failed: 0, hostsWaitingToOnboard: 0, reconciled: 0,
     });
     assert.equal(logged.length, 0, 'nothing due is not an error');
 });
@@ -161,4 +161,89 @@ test('stays that cannot be paid out are reported once per host, with the total',
     assert.match(message, /2 stays/, 'says how many are waiting');
     assert.match(message, /800\.00/, 'says how much is held up');
     assert.match(message, /payouts/i);
+});
+
+// ---------------------------------------------------------------------------
+// A RETRY MUST NOT PAY THE SAME STAY TWICE
+// ---------------------------------------------------------------------------
+//
+// The run sends the transfer, then writes the payout row, then stamps
+// `paid_out_at`. Only the first of those moves money, so dying between them
+// leaves the money gone and the booking still looking unpaid — and the next
+// day's run picks it straight back up.
+//
+// The idempotency key was the whole defence and it is not enough. Watched on
+// the test project on 31 August 2026: inside Stripe's 24-hour key retention
+// the transfer was correctly replayed but a SECOND payout row was written for
+// it, so the ledger claimed £360 had gone twice when £360 had gone once. The
+// cron interval is 24 hours, so the next retry is outside the retention and
+// the replay becomes a real second transfer.
+//
+// These two tests hold the ledger check that replaced it.
+
+// A `payouts` handler that answers the pre-flight lookup and the later
+// inserts differently. The pre-flight is the only read that filters on
+// kind = 'transfer', which is what tells them apart.
+function payoutsLedger(existing: any, error: any = null) {
+    return (state: any) => {
+        const isPreflight = state.ops.some(
+            (o: any) => o.op === 'eq' && o.args[0] === 'kind' && o.args[1] === 'transfer'
+        );
+        if (isPreflight) return { data: existing, error };
+        return { data: [], error: null };
+    };
+}
+
+const paidStay = {
+    id: 'b1', listing_id: 'l1', host_id: 'h1', check_in: '2026-01-01',
+    total_price: 500, amount_paid: 500, amount_refunded: 0,
+    commission_rate: 10, status: 'confirmed', payment_status: 'paid', paid_out_at: null,
+    stripe_payment_intent_id: null, balance_payment_intent_id: null,
+};
+
+const readyHost = {
+    id: 'h1', stripe_account_id: 'acct_1', stripe_payouts_enabled: true, payout_balance_owed: 0,
+};
+
+test('a stay whose transfer already went is reconciled, not sent again', async () => {
+    const { client } = fakeSupabase({
+        bookings: { data: [paidStay], error: null },
+        profiles: { data: readyHost, error: null },
+        listings: { data: { title: 'A cottage', commission_rate: 10 }, error: null },
+        payouts: payoutsLedger({ id: 'p1', amount: 450, stripe_transfer_id: 'tr_already' }),
+    });
+
+    // loadRoute stubs stripeRequest to throw. That is the assertion that
+    // matters here: reaching Stripe at all would be the bug.
+    const { route, logged } = loadRoute(client);
+
+    const res: any = await route.GET(authorised());
+
+    assert.equal(res.status, 200);
+    assert.equal(res.body.sent, 0, 'nothing was sent — the money had already gone');
+    assert.equal(res.body.failed, 0, 'and it is not a failure');
+    assert.equal(res.body.reconciled, 1);
+
+    assert.equal(logged.length, 1, 'a run dying part-way through is worth knowing about');
+    assert.match(String(logged[0].message), /already been transferred/i);
+    assert.match(String(logged[0].message), /tr_already/);
+    assert.match(String(logged[0].message), /no second transfer/i);
+});
+
+test('a ledger the run cannot read stops it sending, rather than sending blind', async () => {
+    const { client } = fakeSupabase({
+        bookings: { data: [paidStay], error: null },
+        profiles: { data: readyHost, error: null },
+        listings: { data: { title: 'A cottage', commission_rate: 10 }, error: null },
+        payouts: payoutsLedger(null, { message: 'connection reset' }),
+    });
+    const { route, logged } = loadRoute(client);
+
+    const res: any = await route.GET(authorised());
+
+    assert.equal(res.status, 200);
+    assert.equal(res.body.sent, 0, 'an unanswered question must not become a transfer');
+    assert.equal(res.body.skipped, 1, 'it waits for a run that can read the ledger');
+    assert.equal(res.body.reconciled, 0);
+    assert.match(String(logged[0].message), /could not check whether this stay had already been paid/i);
 });

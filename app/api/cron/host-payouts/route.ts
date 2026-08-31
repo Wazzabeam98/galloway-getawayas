@@ -108,8 +108,100 @@ export async function GET(request: Request) {
     // never onboards produces one line a day instead of one per stay for ever.
     const waiting = new Map<string, { stays: number; total: number }>();
 
+    // Bookings this run reconciled rather than paid: the transfer had already
+    // gone on an earlier run and only the bookkeeping was missing.
+    let reconciled = 0;
+
     for (const booking of due || []) {
         try {
+            // HAS THIS STAY ALREADY BEEN TRANSFERRED?
+            //
+            // The run does three writes and only the first one moves money:
+            // the transfer at Stripe, then the payout row, then `paid_out_at`
+            // on the booking. Dying between them — and `maxDuration` is 60
+            // seconds against roughly ten network calls per booking, so a
+            // timeout mid-loop is the likeliest way — leaves the money sent
+            // and `paid_out_at` still null. The query above then hands the
+            // same booking to tomorrow's run.
+            //
+            // The idempotency key was the whole defence against that, and it
+            // is a weaker one than its comment claimed. Two things, both
+            // watched happening on the test project on 31 August 2026:
+            //
+            //   Stripe forgets an idempotency key after 24 hours, and this
+            //   cron runs every 24 hours. Inside the window the key replays
+            //   the original transfer correctly — but the run still wrote a
+            //   SECOND payout row for it, so the ledger said £360 had gone
+            //   twice when £360 had gone once. Outside the window the key is
+            //   simply gone, and the retry is a real second transfer.
+            //
+            //   Inside the window it can also fail outright. A key is bound to
+            //   the parameters it was first used with, and the amount here is
+            //   `hostShare - deduction` — a debt landing overnight changes it.
+            //   Stripe then answers "Keys for idempotent requests can only be
+            //   used with the same parameters they were first used with" and
+            //   refuses. Observed: the host was not paid, and would not have
+            //   been on any later run either.
+            //
+            // So the ledger is asked first, and it is asked about the booking
+            // rather than about the key. If a transfer already went for this
+            // stay, the only thing missing is the bookkeeping — put that right
+            // and move on. This does not depend on Stripe remembering
+            // anything, which is the point.
+            const { data: alreadySent, error: alreadySentError } = await admin
+                .from('payouts')
+                .select('id, amount, stripe_transfer_id')
+                .eq('booking_id', booking.id)
+                .eq('kind', 'transfer')
+                .eq('status', 'succeeded')
+                .not('stripe_transfer_id', 'is', null)
+                .order('created_at', { ascending: true })
+                .limit(1)
+                .maybeSingle();
+
+            // A failed read here must not fall through into sending money. It
+            // is the only thing standing between a retry and a second
+            // transfer, so an unanswered question is treated as "do not send",
+            // and the stay waits for a run that can read the ledger.
+            if (alreadySentError) {
+                await logError(
+                    'host-payouts: could not check whether this stay had already been paid, '
+                        + 'so nothing was sent — it will be retried on the next run',
+                    alreadySentError,
+                    { path: '/api/cron/host-payouts', userId: booking.host_id }
+                );
+                skipped++;
+                continue;
+            }
+
+            if (alreadySent && alreadySent.stripe_transfer_id) {
+                await admin
+                    .from('bookings')
+                    .update({
+                        paid_out_at: new Date().toISOString(),
+                        payout_amount: Number(alreadySent.amount || 0),
+                        payout_transfer_id: alreadySent.stripe_transfer_id,
+                    })
+                    .eq('id', booking.id);
+
+                // Loud rather than silent. Reaching here means an earlier run
+                // sent money and did not finish writing it down, which is
+                // worth knowing about even though this has just repaired it —
+                // it is the fingerprint of a run that is dying part-way
+                // through, and the next thing it drops might not be repairable.
+                await logError(
+                    'host-payouts: this stay had already been transferred ('
+                        + alreadySent.stripe_transfer_id
+                        + ') but was not marked paid out — an earlier run stopped part-way. '
+                        + 'The booking has been reconciled and no second transfer was sent.',
+                    { booking_id: booking.id, amount: alreadySent.amount },
+                    { path: '/api/cron/host-payouts', userId: booking.host_id }
+                );
+
+                reconciled++;
+                continue;
+            }
+
             const { data: host } = await admin
                 .from('profiles')
                 .select('id, stripe_account_id, stripe_payouts_enabled, payout_balance_owed')
@@ -213,8 +305,17 @@ export async function GET(request: Request) {
                             drawn_from: source || 'platform balance',
                         },
                     },
-                    // Built from the booking alone, so this stay can never pay
-                    // out twice however the data is later edited.
+                    // Built from the booking alone, so a retry inside Stripe's
+                    // 24-hour key retention replays this transfer rather than
+                    // sending a second one.
+                    //
+                    // It is a second line of defence and not the first. The
+                    // key expires after a day, this cron runs every day, and a
+                    // key is bound to the parameters it was first used with —
+                    // so a changed amount is refused rather than replayed. The
+                    // ledger check at the top of this loop is what actually
+                    // stops a stay being paid twice; this narrows the window
+                    // between the transfer landing and the row being written.
                     'payout-' + booking.id
                 );
 
@@ -495,6 +596,10 @@ export async function GET(request: Request) {
         sent: sent,
         skipped: skipped,
         failed: failed,
+        // Stays whose money had already gone on an earlier run that stopped
+        // before it finished writing it down. Anything above zero here means a
+        // run is dying part-way through, and /admin/errors will say which.
+        reconciled: reconciled,
         // Named separately from `skipped`, which also counts stays that
         // collected nothing and have no host to chase.
         hostsWaitingToOnboard: waiting.size,
