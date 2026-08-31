@@ -43,6 +43,18 @@ export default async function EditBusinessPage() {
         .select('provider_id, scheme, number, verified_at, verified_number, expires_at')
         .eq('provider_id', provider.id);
 
+    // Skills are a set of free-text tags reconciled through /api/services/skills.
+    // Here we just need their readable labels to seed the editor.
+    const { data: skillLinks } = await admin
+        .from('service_provider_skills')
+        .select('skill_id')
+        .eq('provider_id', provider.id);
+    const skillIds = (skillLinks || []).map((l: any) => l.skill_id);
+    const { data: skillRows } = skillIds.length
+        ? await admin.from('service_skills').select('id, label').in('id', skillIds)
+        : { data: [] as any[] };
+    const skills = (skillRows || []).map((r: any) => r.label);
+
     return (
         <div className="max-w-2xl mx-auto px-4 sm:px-6 py-8 pb-24">
             <Link href="/services/dashboard" className="inline-flex items-center gap-1.5 text-sm font-semibold text-slate-500 hover:text-slate-800">
@@ -64,6 +76,7 @@ export default async function EditBusinessPage() {
                     callout_fee: provider.callout_fee,
                     photos: provider.photos || [],
                 }}
+                skills={skills}
                 areas={(areas || []).map((a) => ({ id: a.id, label: a.label || '', radius_miles: Number(a.radius_miles) }))}
                 registrations={(registrations || []).map((r: any) => ({
                     scheme: r.scheme,
