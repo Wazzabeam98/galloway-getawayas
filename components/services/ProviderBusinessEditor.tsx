@@ -44,8 +44,8 @@ function numOrNull(v: string): number | null {
 }
 
 export default function ProviderBusinessEditor({
-    provider, areas: initialAreas, registrations: initialRegs,
-}: { provider: Provider; areas: Area[]; registrations: Registration[] }) {
+    provider, skills: initialSkills, areas: initialAreas, registrations: initialRegs,
+}: { provider: Provider; skills: string[]; areas: Area[]; registrations: Registration[] }) {
     const supabase = createClientComponentClient();
     const router = useRouter();
 
@@ -53,9 +53,22 @@ export default function ProviderBusinessEditor({
     const [description, setDescription] = useState(provider.description);
     const [hourly, setHourly] = useState(provider.hourly_rate == null ? '' : String(provider.hourly_rate));
     const [callout, setCallout] = useState(provider.callout_fee == null ? '' : String(provider.callout_fee));
+    const [skills, setSkills] = useState<string[]>(initialSkills);
+    const [newSkill, setNewSkill] = useState('');
     const [areas, setAreas] = useState<Area[]>(initialAreas);
     const [photos, setPhotos] = useState<string[]>(provider.photos);
     const [regs, setRegs] = useState<Registration[]>(initialRegs);
+
+    function addSkill() {
+        const t = newSkill.trim();
+        if (!t) return;
+        // Case-insensitive de-dupe for the type-ahead; the server normalises
+        // properly (slug/compact) when it reconciles the set.
+        if (!skills.some((s) => s.toLowerCase() === t.toLowerCase())) {
+            setSkills([...skills, t].slice(0, 20));
+        }
+        setNewSkill('');
+    }
 
     const [savingDetails, setSavingDetails] = useState(false);
     const [detailsSaved, setDetailsSaved] = useState(false);
@@ -84,6 +97,20 @@ export default function ProviderBusinessEditor({
                     .eq('id', a.id);
                 if (aErr) throw aErr;
             }
+
+            // Skills go through the reconcile route, not a direct write: the
+            // regulated concept (what stops a handyman tagging "boiler repair")
+            // is derived there under the service role. The whole set is sent.
+            const skillRes = await fetch('/api/services/skills', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ providerId: provider.id, labels: skills }),
+            });
+            if (!skillRes.ok) {
+                const d = await skillRes.json().catch(() => ({}));
+                throw new Error(d.error || 'Could not save your skills.');
+            }
+
             setDetailsSaved(true);
             router.refresh();
         } catch (e: any) {
@@ -199,7 +226,39 @@ export default function ProviderBusinessEditor({
                 ))}
             </section>
 
-            {/* One save for the fields above */}
+            {/* Services & skills */}
+            <section className={card}>
+                <h2 className={heading}>Services &amp; skills</h2>
+                <p className="text-[13px] text-slate-500 mt-0.5">The work you take on. Hosts search on these, so name them the way a host would.</p>
+                <div className="mt-3 flex flex-wrap gap-1.5">
+                    {skills.length === 0 && <span className="text-sm text-slate-400">None added yet.</span>}
+                    {skills.map((sk) => (
+                        <span key={sk} className="inline-flex items-center gap-1.5 text-[13px] font-semibold text-emerald-800 bg-emerald-50 border border-emerald-200 rounded-full pl-3 pr-1.5 py-1">
+                            {sk}
+                            <button onClick={() => setSkills(skills.filter((x) => x !== sk))} aria-label={`Remove ${sk}`} className="w-4 h-4 rounded-full bg-emerald-200/70 text-emerald-800 flex items-center justify-center hover:bg-emerald-300">
+                                <X className="w-3 h-3" strokeWidth={2.5} />
+                            </button>
+                        </span>
+                    ))}
+                </div>
+                {skills.length < 20 && (
+                    <div className="mt-3 flex items-center gap-2">
+                        <input
+                            className={inputCls}
+                            value={newSkill}
+                            onChange={(e) => setNewSkill(e.target.value)}
+                            onKeyDown={(e) => { if (e.key === 'Enter') { e.preventDefault(); addSkill(); } }}
+                            placeholder="e.g. Boiler servicing, bathroom fitting, leak repair"
+                        />
+                        <button onClick={addSkill} className="flex-none inline-flex items-center gap-1 text-[13px] font-bold text-slate-800 bg-white border border-slate-300 rounded-lg px-3 py-2 hover:bg-slate-50">
+                            <Plus className="w-3.5 h-3.5" strokeWidth={2.5} /> Add
+                        </button>
+                    </div>
+                )}
+                <p className="mt-2 text-[12px] text-slate-400">Regulated work (gas, oil, electrical) only shows to hosts once your matching registration is verified.</p>
+            </section>
+
+            {/* One save for the fields above, skills included */}
             <div className="flex items-center gap-3">
                 <button onClick={saveDetails} disabled={savingDetails} className="inline-flex items-center gap-2 font-bold text-sm text-white bg-emerald-700 hover:bg-emerald-800 disabled:opacity-60 rounded-xl px-5 py-2.5">
                     {savingDetails ? <Loader2 className="w-4 h-4 animate-spin" /> : <Check className="w-4 h-4" strokeWidth={2.5} />}
