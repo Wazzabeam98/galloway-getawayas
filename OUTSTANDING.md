@@ -192,6 +192,47 @@ What is left is the 24 that are not on the money or access path — admin
 reads, cron endpoints, and lookups whose failure a person sees immediately.
 Worth doing, not urgent.
 
+### The unified inbox has two placeholders waiting for it, and a third job
+
+**Whoever surfaces job threads inside `/messages` must do three things in the
+same pass.** Two of them are deliberate exclusions added on 31 August 2026 that
+exist only until that work happens, and each one is invisible unless you know
+to look for it.
+
+1. **Remove the filter in `lib/badgeCounts.ts`.** `unreadFor` excludes messages
+   with no `booking_id`, so the Messages badge counts only what the Messages
+   page can currently show.
+2. **Remove the filter in `app/api/cron/needs-reply/route.ts`** — the same
+   exclusion, for a different reason — **and handle a null `booking_id` while
+   you are there.** This one is not just a filter: the route groups by
+   `booking_id` and passes the result to `.in('id', bookingIds)`.
+3. **Add the needs-reply nudge for job threads**, which was deferred with the
+   rest. It wants its own wording. A tradesman waiting on a host is not the
+   same email as a guest waiting on a host, and the existing one says "guest"
+   throughout.
+
+**Why they are one job and not three.** Doing any of them alone puts back a bug
+that was live today:
+
+- Remove the badge filter without the inbox, and the badge points at a page
+  that cannot account for it. A host sees `1`, opens Messages, finds nothing.
+  That was the state between 17:39 and 20:43 on 31 August.
+- Remove the needs-reply filter without handling the null, and the **entire
+  nudge dies silently for everybody, booking threads included**. A job message
+  with no booking collapses every enquiry into one bucket keyed `"null"`, the
+  null reaches `.in('id', …)`, and Postgres answers `invalid input syntax for
+  type uuid: "null"`. Every lookup fails, every message is skipped as "no
+  booking", and the route returns `ok: true` with `emailed: 0` — which is
+  exactly what a quiet hour looks like. It was twelve hours from going live
+  when it was caught.
+- Add job threads to the inbox and leave the filters, and the badge undercounts
+  while nobody is ever chased about a job thread.
+
+`tests/needs-reply.test.ts` and `tests/unread-badge.test.ts` both assert the
+exclusions, so removing one without the other fails the suite rather than
+shipping quietly. That is the intended tripwire: the tests are what tell the
+next person the other half exists.
+
 ---
 
 # 4. SEO and performance
