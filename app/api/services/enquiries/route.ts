@@ -11,6 +11,7 @@ import {
     shouldStartTrial,
     trialEndsAt,
 } from '@/lib/serviceProviders';
+import { visibleInDirectory } from '@/lib/serviceSubscription';
 import {
     enquiryProblems,
     enquiryReference,
@@ -83,7 +84,7 @@ export async function POST(req: Request) {
         // ---- who is being asked -------------------------------------------
         const { data: provider } = await admin
             .from('service_providers')
-            .select('id, owner_id, business_name, trade, status, kind, contact_email, contact_phone, sms_opt_out, callout_fee, hourly_rate, callout_waived, does_gas, does_oil, notify_user_ids, plan, trial_ends_at')
+            .select('id, owner_id, business_name, trade, status, kind, contact_email, contact_phone, sms_opt_out, callout_fee, hourly_rate, callout_waived, does_gas, does_oil, notify_user_ids, plan, trial_ends_at, subscription_status')
             .eq('id', String(body.provider_id || ''))
             .maybeSingle();
 
@@ -95,6 +96,25 @@ export async function POST(req: Request) {
         // hidden or declined between a host loading the list and pressing the
         // button, and the stale page would still hold their id.
         if (provider.status !== 'approved') {
+            return NextResponse.json(
+                { ok: false, error: 'That business is not taking enquiries.' },
+                { status: 409 }
+            );
+        }
+
+        // NOR IF THEY HAVE STOPPED PAYING.
+        //
+        // The same staleness argument as the check above: they came off the
+        // directory when the grace period ran out, and a host holding an open
+        // tab still has their id. Sending a new job to a business we have
+        // taken off the site would be promising work we have no arrangement to
+        // send.
+        //
+        // This is the shop window closing, and no more than that. Enquiries
+        // already accepted are untouched — a date agreed between a host and a
+        // tradesman is a promise we brokered, and it must not evaporate
+        // because a card expired.
+        if (!visibleInDirectory(provider)) {
             return NextResponse.json(
                 { ok: false, error: 'That business is not taking enquiries.' },
                 { status: 409 }

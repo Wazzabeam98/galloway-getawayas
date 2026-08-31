@@ -251,6 +251,56 @@ export async function POST(request: Request) {
             const bookingId = (cs.metadata && cs.metadata.booking_id) || cs.client_reference_id;
             const kind = (cs.metadata && cs.metadata.kind) || 'full';
 
+            // A TRADESMAN PUTTING A CARD ON FILE.
+            //
+            // Nothing is charged here and nothing should be: the subscription
+            // was created with `trial_end` set from his existing
+            // `trial_ends_at`, so Stripe bills him for the first time on the
+            // day we put in writing rather than today. What this event means is
+            // only that he finished the Checkout page.
+            //
+            // This write is what "has a card" means everywhere else — the
+            // reminder ladder stops, the grace clock stops, and the listing
+            // stops being at risk. It is deliberately NOT written when the
+            // session is created, because an abandoned checkout must never
+            // leave a row claiming he pays us.
+            if (kind === 'provider_subscription') {
+                const providerId = (cs.metadata && cs.metadata.provider_id) || null;
+                const subscriptionId = (cs.subscription as string) || null;
+                const customerId = (cs.customer as string) || null;
+
+                if (providerId && subscriptionId) {
+                    const { error: subError } = await admin
+                        .from('service_providers')
+                        .update({
+                            stripe_subscription_id: subscriptionId,
+                            stripe_customer_id: customerId,
+                            // Trialing, not active: he has a card and a
+                            // subscription, and Stripe has charged him nothing
+                            // yet. customer.subscription.updated moves it on
+                            // when the trial actually ends.
+                            subscription_status: 'trialing',
+                            updated_at: new Date().toISOString(),
+                        })
+                        .eq('id', providerId)
+                        // Guarded on there being no subscription yet. A
+                        // redelivered event, or a second checkout completed by
+                        // an old link, must not overwrite a live subscription
+                        // id with a different one — that would leave us
+                        // reconciling against the wrong subscription and him
+                        // paying twice.
+                        .is('stripe_subscription_id', null);
+
+                    if (subError) {
+                        await logError(
+                            '[webhook] could not record a provider subscription',
+                            subError,
+                            { path: 'stripe/webhook' }
+                        );
+                    }
+                }
+            }
+
             // A guest experience. The card is HELD, not charged — the session
             // completing means the hold is placed, and the order now waits for
             // the provider to confirm before a penny moves. Created here, once,
@@ -749,6 +799,79 @@ export async function POST(request: Request) {
         // bank adds something, or the deadline shifts), closed (won or lost),
         // and funds_reinstated (we won and the money came back).
         // -------------------------------------------------------------
+        // THE SUBSCRIPTION MOVING, AFTER HE HAS A CARD.
+        //
+        // From here on the money is Stripe Billing's problem rather than ours:
+        // it retries, it dunns, it updates expired cards. What we keep is a
+        // copy of its verdict, because the directory has to know whether to
+        // show him.
+        //
+        // The vocabulary is Stripe's own, copied rather than translated. A
+        // mapping between two sets of status names is a thing that can be
+        // wrong in a way nobody notices until somebody is either billed twice
+        // or never billed at all.
+        //
+        // NOTE WHICH STATUS HIDES A LISTING: only 'unpaid'. past_due does not,
+        // because Stripe is still retrying and a listing that flickers off on
+        // the first failed card and back on the retry is worse than one that
+        // waits for the answer. See visibleInDirectory.
+        if (event.type === 'customer.subscription.updated'
+            || event.type === 'customer.subscription.deleted') {
+            const sub = event.data.object;
+            const subscriptionId = String(sub.id || '');
+
+            // Deleted means cancelled outright — by Stripe after its retries
+            // gave up, or by us. Either way he is no longer paying, so the
+            // listing comes down. 'canceled' rather than 'unpaid' would be
+            // more faithful to Stripe and would leave him listed, which is the
+            // wrong way round for the one case where we know he is not paying.
+            const status = event.type === 'customer.subscription.deleted'
+                ? 'unpaid'
+                : String(sub.status || 'active');
+
+            if (subscriptionId) {
+                const { error: statusError } = await admin
+                    .from('service_providers')
+                    .update({ subscription_status: status, updated_at: new Date().toISOString() })
+                    .eq('stripe_subscription_id', subscriptionId);
+
+                if (statusError) {
+                    await logError(
+                        '[webhook] could not record a subscription status change',
+                        statusError,
+                        { path: 'stripe/webhook' }
+                    );
+                }
+            }
+        }
+
+        // A payment that failed. Recorded, not acted on.
+        //
+        // Stripe will retry on its own schedule and this event fires on every
+        // attempt, so doing anything irreversible here would act three or four
+        // times on one failure. The status change that matters arrives as
+        // customer.subscription.updated when Stripe moves him to past_due, and
+        // as .deleted when it gives up.
+        if (event.type === 'invoice.payment_failed') {
+            const inv = event.data.object;
+            const subscriptionId = (inv.subscription as string) || '';
+
+            if (subscriptionId) {
+                const { data: prov } = await admin
+                    .from('service_providers')
+                    .select('id, business_name, contact_email')
+                    .eq('stripe_subscription_id', subscriptionId)
+                    .maybeSingle();
+
+                await logError(
+                    '[webhook] a provider subscription payment failed',
+                    new Error('invoice ' + String(inv.id || '') + ' failed for '
+                        + String((prov && prov.business_name) || subscriptionId)),
+                    { path: 'stripe/webhook' }
+                );
+            }
+        }
+
         if (event.type.indexOf('charge.dispute.') === 0) {
             const d = event.data.object;
 

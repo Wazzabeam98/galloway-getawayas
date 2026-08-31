@@ -91,8 +91,28 @@ test('an empty or missing token hashes to something, and to nothing findable', (
 // The round trip above passes just as happily with three copies of the hashing
 // as with one — it was passing, in effect, before any of this was extracted.
 // This is the test that would actually have caught the drift: nothing outside
-// lib/enquiryToken.ts may hash a token at all.
-test('nothing outside lib/enquiryToken.ts hashes a reply token', () => {
+// the token modules may hash a token at all.
+//
+// TWO TOKEN MODULES NOW, AND THE LIST IS THE POINT.
+//
+// lib/serviceBillingToken.ts was added on 31 August 2026 for the card link in
+// the subscription reminders. It is a genuinely different token — derived by
+// HMAC rather than minted at random, because it goes in four emails sent weeks
+// apart and all four have to keep working — so it cannot reuse the reply
+// token's mint, and folding them together would mean one link's rotation
+// silently breaking the other's.
+//
+// It is named here rather than the check being loosened. A THIRD file that
+// hashes something token-shaped still fails this test, which is the whole
+// value of it: the failure mode being guarded against is a copy of the hashing
+// appearing somewhere nobody looks, and that is exactly as dangerous with two
+// legitimate modules as with one.
+const TOKEN_MODULES = [
+    path.join('lib', 'enquiryToken.ts'),
+    path.join('lib', 'serviceBillingToken.ts'),
+];
+
+test('nothing outside the token modules hashes a token', () => {
     const ROOT = path.resolve(__dirname, '..', '..');
 
     const walk = (dir: string, out: string[] = []): string[] => {
@@ -112,7 +132,7 @@ test('nothing outside lib/enquiryToken.ts hashes a reply token', () => {
         if (!fs.existsSync(full)) continue;
 
         for (const file of walk(full)) {
-            if (file.endsWith(path.join('lib', 'enquiryToken.ts'))) continue;
+            if (TOKEN_MODULES.some((m) => file.endsWith(m))) continue;
 
             const source = fs.readFileSync(file, 'utf8');
             // Any sha256 of anything token-shaped, and any minting of one.
@@ -125,9 +145,9 @@ test('nothing outside lib/enquiryToken.ts hashes a reply token', () => {
 
     assert.deepEqual(
         offenders, [],
-        'These hash or mint a reply token themselves:\n  ' + offenders.join('\n  ')
-        + '\n\nUse newReplyToken and hashReplyToken from lib/enquiryToken.ts. Two'
-        + '\nimplementations agree until one of them changes, and then a reply link'
-        + '\nsimply stops working with nothing thrown and nothing logged.'
+        'These hash or mint a token themselves:\n  ' + offenders.join('\n  ')
+        + '\n\nUse lib/enquiryToken.ts for a reply token, or lib/serviceBillingToken.ts'
+        + '\nfor a card link. Two implementations agree until one of them changes, and'
+        + '\nthen a link simply stops working with nothing thrown and nothing logged.'
     );
 });

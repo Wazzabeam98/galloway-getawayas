@@ -341,7 +341,31 @@ Three things this has to get right:
   ninety days — the guard that only stamps a null `trial_ends_at` is what
   makes that safe, wherever it ends up living.
 
-## What has been built, 31 August 2026
+## What has been built, 31 August 2026 — second pass
+
+The reminder ladder, the card capture and the grace period. Built on top of the
+stamp below. Still nothing that charges anybody without Stripe doing it.
+
+- `20260831170000_provider_subscription_billing.sql` — `stripe_customer_id`,
+  `stripe_subscription_id`, `subscription_status`, `reminders_sent`,
+  `billing_token_hash`. **Run on test and production.**
+- `lib/serviceSubscription.ts` — the ladder, the seven-day grace, and
+  `visibleInDirectory`. Pure, so the cron, the webhook and the tests agree.
+- `lib/serviceBillingToken.ts` — the card link, derived by HMAC rather than
+  minted, so all four emails keep working.
+- `lib/serviceSubscriptionAlert.ts` — the six emails.
+- `app/api/cron/service-subscriptions/route.ts` — daily at 07:00. Sends what is
+  due, catches up what was missed, and hides after grace.
+- `app/api/services/billing/route.ts` + `app/services/billing/[token]/page.tsx`
+  — Stripe Checkout in subscription mode with `trial_end` from `trial_ends_at`.
+- Webhook: `checkout.session.completed` for `provider_subscription`,
+  `customer.subscription.updated` / `.deleted`, `invoice.payment_failed`.
+- The directory and the enquiry route both refuse an `unpaid` provider.
+
+**Two environment variables are needed before any of it does anything:**
+`STRIPE_SUBSCRIPTION_PRICE_ID` and `BILLING_TOKEN_SECRET`. See `.env.example`.
+
+## What was built earlier the same day
 
 The stamp, and nothing else. No billing, no reminders, no Stripe. The point of
 landing it alone is that the deadline for this became invisible when it stopped
