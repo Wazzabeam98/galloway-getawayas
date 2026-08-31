@@ -38,6 +38,7 @@ import {
     escapeHtml,
     detailRows,
     button,
+    formatDate,
     SITE_URL,
 } from '@/lib/email';
 import { logError } from '@/lib/logError';
@@ -540,4 +541,114 @@ export async function markViewed(id: string): Promise<void> {
         .update({ status: 'viewed', viewed_at: new Date().toISOString(), updated_at: new Date().toISOString() })
         .eq('id', id)
         .eq('status', 'sent');
+}
+
+// The tradesman has moved an accepted job to a different day. The host is told
+// the new day and the old one — it is still "asked for", not a slot, but a
+// changed date is a different conversation and they need to know.
+export async function announceAmendment(
+    enquiry: any,
+    provider: any,
+    listing: any,
+    previousDate: string | null
+): Promise<AlertResult> {
+    const result: AlertResult = { ok: true, provider: false, host: false, admins: [] };
+    const ref = escapeHtml(String(enquiry.reference || ''));
+    const name = String(enquiry.business_name || 'the tradesman');
+    const trade = (tradeLabel(String(enquiry.trade || '')) || 'tradesman').toLowerCase();
+    const place = String((listing && (listing.location || listing.title)) || enquiry.area_key || 'the cottage');
+    const newText = enquiry.preferred_date ? formatDate(enquiry.preferred_date) : 'a new day';
+    const oldText = previousDate ? formatDate(previousDate) : '';
+
+    if (enquiry.host_email && !isAutomatedTestAddress(enquiry.host_email)) {
+        result.host = await sendEmail(
+            String(enquiry.host_email),
+            name + ' has changed the date (' + String(enquiry.reference) + ')',
+            emailLayout(
+                '<p style="margin:0 0 16px;font-size:16px;"><strong>' + escapeHtml(name) + '</strong> has moved the '
+                    + escapeHtml(trade) + ' work at <strong>' + escapeHtml(place) + '</strong> to <strong>'
+                    + escapeHtml(newText) + '</strong>' + (oldText ? ' (was ' + escapeHtml(oldText) + ')' : '') + '.</p>'
+                    + '<p style="margin:0 0 16px;font-size:15px;color:#64748b;">It is still a day they’ve asked to come, not a booking — confirm the time between you.</p>'
+                    + button(SITE_URL + '/dashboard/enquiries', 'See your enquiries'),
+                'You are receiving this because a tradesman changed the date of work you asked for through Galloway Getaways. Reference ' + ref + '.'
+            )
+        );
+    }
+    return result;
+}
+
+// A job that was accepted has been called off. Told to the side that did NOT
+// do it: a tradesman cancelling leaves the host uncovered — urgent when the day
+// is close — while a host cancelling only frees the tradesman's day. The reason
+// travels either way.
+export async function announceCancellation(
+    enquiry: any,
+    provider: any,
+    listing: any
+): Promise<AlertResult> {
+    const result: AlertResult = { ok: true, provider: false, host: false, admins: [] };
+    const byProvider = String(enquiry.cancelled_by || '') === 'provider';
+    const ref = escapeHtml(String(enquiry.reference || ''));
+    const name = String(enquiry.business_name || 'the tradesman');
+    const trade = (tradeLabel(String(enquiry.trade || '')) || 'tradesman').toLowerCase();
+    const reason = String(enquiry.cancel_reason || '').trim();
+    const place = String((listing && (listing.location || listing.title)) || enquiry.area_key || 'the cottage');
+    const dateText = enquiry.preferred_date ? formatDate(enquiry.preferred_date) : 'the day you agreed';
+
+    let daysAway: number | null = null;
+    if (enquiry.preferred_date) {
+        const d = new Date(String(enquiry.preferred_date) + 'T12:00:00Z');
+        if (!isNaN(d.getTime())) daysAway = Math.floor((d.getTime() - Date.now()) / 86400000);
+    }
+    const soon = daysAway !== null && daysAway >= 0 && daysAway < 7;
+
+    const reasonRow = reason
+        ? '<p style="margin:16px 0 0;font-size:15px;"><strong>Reason given:</strong> <em>' + escapeHtml(reason) + '</em></p>'
+        : '';
+
+    if (byProvider) {
+        // -> the host, now uncovered
+        if (enquiry.host_email && !isAutomatedTestAddress(enquiry.host_email)) {
+            const weekday = enquiry.preferred_date
+                ? new Date(String(enquiry.preferred_date) + 'T12:00:00Z').toLocaleDateString('en-GB', { weekday: 'long', timeZone: 'Europe/London' })
+                : '';
+            const subject = soon
+                ? 'Urgent: your ' + trade + ' has cancelled ' + (weekday ? weekday + '’s visit' : 'the visit') + ' (' + String(enquiry.reference) + ')'
+                : name + ' has cancelled (' + String(enquiry.reference) + ')';
+            const soonLine = soon
+                ? '<p style="margin:16px 0 0;font-size:15px;color:#b45309;"><strong>This is soon</strong> — the day is '
+                    + (daysAway === 0 ? 'today' : daysAway === 1 ? 'tomorrow' : 'in ' + daysAway + ' days') + '.</p>'
+                : '';
+
+            result.host = await sendEmail(
+                String(enquiry.host_email),
+                subject,
+                emailLayout(
+                    '<p style="margin:0 0 16px;font-size:16px;"><strong>' + escapeHtml(name) + '</strong> has cancelled the '
+                        + escapeHtml(trade) + ' work at <strong>' + escapeHtml(place) + '</strong> on '
+                        + escapeHtml(dateText) + '. You’ll need to arrange someone else.</p>'
+                        + reasonRow + soonLine
+                        + button(SITE_URL + '/services/' + String(enquiry.trade || ''), 'Find someone else who covers you'),
+                    'You are receiving this because a tradesman you asked through Galloway Getaways has cancelled. Reference ' + ref + '.'
+                )
+            );
+        }
+    } else {
+        // host cancelled -> the tradesman, whose day is freed
+        if (provider && provider.contact_email && !isAutomatedTestAddress(provider.contact_email)) {
+            result.provider = await sendEmail(
+                String(provider.contact_email),
+                'A job has been called off (' + String(enquiry.reference) + ')',
+                emailLayout(
+                    '<p style="margin:0 0 16px;font-size:16px;">The ' + escapeHtml(trade) + ' work at <strong>'
+                        + escapeHtml(place) + '</strong> on ' + escapeHtml(dateText)
+                        + ' is no longer needed — the host has called it off, so there is nothing to turn out for.</p>'
+                        + reasonRow,
+                    'You are receiving this because a host cancelled a job you had accepted on Galloway Getaways. Reference ' + ref + '.'
+                )
+            );
+        }
+    }
+
+    return result;
 }
