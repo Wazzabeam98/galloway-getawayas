@@ -11,7 +11,7 @@ import { accessibleListings } from "@/lib/access";
 import LeaveListingBtn from "@/components/LeaveListingBtn";
 import HideListingBtn from "@/components/HideListingBtn";
 import Link from "next/link";
-import { Eye, Home, Plus } from "lucide-react";
+import { ChevronRight, Eye, Home, Plus, Wrench } from "lucide-react";
 
 function ListingCard({ item, isDraft }: { item: any; isDraft: boolean }) {
     const editHref = isDraft ? `/addhome?draft=${item.id}` : `/edit-listing/${item.id}`;
@@ -180,6 +180,27 @@ export default async function Dashboard() {
                 missing"; this answers "is it about to matter". */}
             <TemplateGapWarning />
             <div className="max-w-7xl mx-auto px-6 py-10">
+                {/* A host's second revenue line, made visible on the page
+                    itself rather than left seven items down a menu. Kept to one
+                    slim row above the listings so it is seen without scrolling
+                    and still does not out-shout the properties the host came
+                    for. */}
+                <Link
+                    href="/services"
+                    className="flex items-center gap-4 rounded-2xl border border-slate-200 bg-white hover:bg-slate-50 transition px-5 py-4 mb-8"
+                >
+                    <span className="flex-shrink-0 w-10 h-10 rounded-full bg-emerald-50 text-emerald-700 flex items-center justify-center">
+                        <Wrench className="w-5 h-5" />
+                    </span>
+                    <span className="min-w-0">
+                        <span className="block font-semibold text-slate-900">Services for your property</span>
+                        <span className="block text-sm text-slate-500">
+                            Find a local trade — cleaning, plumbing, joinery and more — to keep your place guest-ready.
+                        </span>
+                    </span>
+                    <ChevronRight className="w-5 h-5 text-slate-400 ml-auto flex-shrink-0" />
+                </Link>
+
                 <div className="flex items-center justify-between mb-8">
                     <h1 className="text-2xl md:text-3xl font-bold text-slate-900">Your listings</h1>
                     <Link

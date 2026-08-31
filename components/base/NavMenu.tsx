@@ -72,6 +72,13 @@ const NavMenu = ({
                                     <li className={itemClass}>
                                         <BookingsLink />
                                     </li>
+                                    {/* Third, next to Bookings, not seventh
+                                        under Co-hosts: services are a host's
+                                        second revenue line and belong beside
+                                        the first, above the operational items. */}
+                                    <li className={itemClass}>
+                                        <Link href='/services'>Services</Link>
+                                    </li>
                                     <li className={itemClass}>
                                         <Link href='/dashboard/calendar'>Calendar</Link>
                                     </li>
@@ -83,9 +90,6 @@ const NavMenu = ({
                                     </li>
                                     <li className={itemClass}>
                                         <Link href='/dashboard/people'>Co-hosts</Link>
-                                    </li>
-                                    <li className={itemClass}>
-                                        <Link href='/services'>Services</Link>
                                     </li>
                                     <li className={itemClass}>
                                         <MessagesLink />
