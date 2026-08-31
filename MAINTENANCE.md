@@ -773,12 +773,36 @@ The lesson worth keeping: the two-step order — add, deploy, then drop — is w
 made a change of mind cheap rather than a reconstruction job. It was written to
 survive a bad deploy and it ended up surviving a bad decision.
 
-**There is no free trial.** It is 10% per job from the first job, at
-`commission_rate` on the provider row. `TRIAL_DAYS`, `trialEndsAt()` and
-`trial_ends_at` are all gone rather than left dormant — the words "Free for 90
-days" came off the sign-up in commit `ccbc10c` while the machinery behind them
-lived on for several commits, which is how a promise nobody meant to make gets
-made again.
+**There IS a free trial, and this paragraph used to say the opposite.** Read
+the correction before the rule, because the wrong version was here for four
+days and may well have been pasted somewhere else in the meantime.
+
+What it said: "There is no free trial", and that `TRIAL_DAYS`, `trialEndsAt()`
+and `trial_ends_at` were "all gone rather than left dormant". That was true when
+it was written and was reversed on 27 August 2026 by
+`20260827135718_provider_trial_and_plan.sql`, which argues the case at length and
+is worth reading before touching any of it.
+
+The rule as it stands:
+
+- Cleaning (`sponge`) and waste (`bin`) and the four guest trades pay **10% a
+  job**, at `commission_rate` on the provider row. No trial, nothing to start.
+- The other eight host trades pay **£20 a month after 90 free days**, with no
+  commission at all. `TRIAL_DAYS`, `trialEndsAt()` and `trial_ends_at` are all
+  live again.
+- **The 90 days start when the first enquiry is sent to him**, not at approval —
+  see `20260831140000_trial_starts_at_first_enquiry.sql`. The only place that may
+  start a clock is `app/api/services/enquiries/route.ts`, and it stamps only
+  when the email actually went.
+- Nothing bills anybody yet. There is no Stripe subscription behind any of it.
+  `SUBSCRIPTION-SCOPE.md` is the lifecycle this is being built towards.
+
+The original warning is still the right warning, and it is why the stamp lives
+where somebody is told rather than where a form was filled in: the words "Free
+for 90 days" came off the sign-up in commit `ccbc10c` while the machinery behind
+them lived on for several commits, which is how a promise nobody meant to make
+gets made again. A dormant clock and a stale paragraph are the same bug in two
+media — this one nearly deleted the feature it was describing.
 
 ## SMS — one way, emergencies only
 

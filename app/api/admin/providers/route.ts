@@ -7,7 +7,7 @@ import { logError } from '@/lib/logError';
 import { idsFrom, decideBatch, MAX_BATCH } from '@/lib/reviewQueue';
 import {
     reviewDigest, registrationBlockers, schemeLabel,
-    planForTrade, trialEndsAt, TRIAL_DAYS, SUBSCRIPTION_MONTHLY,
+    planForTrade, TRIAL_DAYS, SUBSCRIPTION_MONTHLY,
 } from '@/lib/serviceProviders';
 
 export const dynamic = 'force-dynamic';
@@ -280,28 +280,31 @@ export async function POST(req: Request) {
                     approved_digest: digest, changes_pending_at: null, updated_at: now,
                 };
 
-                // What they pay, stamped in the same write that puts them live.
+                // What they pay, settled in the same write that puts them live.
                 //
-                // Approval is the moment the promise is made — it is when they go
-                // on the site and when the email goes out with the date in it —
-                // so it is where the clock starts. Submission starts nothing: a
-                // draft sitting in the queue for a fortnight must not be eating a
-                // free period nobody has granted yet.
+                // THE CLOCK NO LONGER STARTS HERE. It used to: approval stamped
+                // `trial_ends_at`, on the reasoning that approval is when the
+                // promise is made. The trouble is that approval is not when the
+                // value arrives. A tradesman approved in September who hears
+                // nothing until January would have spent his whole free period
+                // waiting for us to find him work, which is a bill for our own
+                // lack of traffic.
                 //
-                // The plan is re-derived from the trade rather than trusted off
-                // the row. `plan` has a column default of 'commission' and the
-                // row is written from the browser, so what is sitting there is
-                // whatever the default happened to be when they started — which
-                // for a plumber is wrong.
+                // So the stamp lives at the first enquiry instead — see
+                // app/api/services/enquiries/route.ts, and trialEndsAt in
+                // lib/serviceProviders.ts for the reasoning. The guard that went
+                // with it ("only if it is null") went with it too; it is doing
+                // the same job in the new place.
+                //
+                // What still belongs here is the plan, re-derived from the trade
+                // rather than trusted off the row. `plan` has a column default of
+                // 'commission' and the row is written from the browser, so what
+                // is sitting there is whatever the default happened to be when
+                // they started — which for a plumber is wrong.
                 const plan = planForTrade(String(provider.trade || ''));
                 patch.plan = plan;
 
                 if (plan === 'subscription') {
-                    // Only stamp it once. Re-approving after a change must not
-                    // hand somebody another 90 days, and `approve_changes` does
-                    // not come through this branch at all.
-                    if (!provider.trial_ends_at) patch.trial_ends_at = trialEndsAt(now);
-
                     // Whatever is in the column, a subscription provider is 0%.
                     // The default is 0.10 and a row written before the plan
                     // existed is still carrying it.
@@ -357,26 +360,26 @@ export async function POST(req: Request) {
                     if (decision === 'approve') {
                         // What it costs, in the email that makes the promise.
                         //
-                        // The date is read back off the patch rather than
-                        // recalculated, so the words and the column cannot
-                        // disagree — and a re-approval that did not re-stamp it
-                        // quotes the original date rather than a fresh one.
-                        const trialDate = patch.trial_ends_at || provider.trial_ends_at;
-
+                        // NO DATE HERE ANY MORE, because at approval there is not
+                        // one — the ninety days start when we send him his first
+                        // enquiry, which may be months away or never. Quoting a
+                        // date computed here would be inventing one, and the
+                        // whole reason the clock moved is that a date stamped at
+                        // approval charges him for our silence.
+                        //
+                        // What replaces it is a promise about when he WILL be
+                        // told, which the email that stamps the clock then keeps.
                         const terms = patch.plan === 'subscription'
                             ? '<p style="margin:0 0 16px;font-size:16px;">Your first '
-                                + TRIAL_DAYS + ' days are free'
-                                + (trialDate
-                                    ? ', up to <strong>' + escapeHtml(
-                                        new Date(String(trialDate)).toLocaleDateString('en-GB', {
-                                            day: 'numeric', month: 'long', year: 'numeric',
-                                        })
-                                    ) + '</strong>'
-                                    : '')
-                                + '. After that it is £' + SUBSCRIPTION_MONTHLY
+                                + TRIAL_DAYS + ' days are free, and they do not start today — they start'
+                                + ' when we send you your first enquiry. If we do not find you any work,'
+                                + ' you are not paying for it.</p>'
+                                + '<p style="margin:0 0 16px;font-size:16px;">After those '
+                                + TRIAL_DAYS + ' days it is £' + SUBSCRIPTION_MONTHLY
                                 + ' a month, and we take no commission on your work — you quote and get paid'
-                                + ' direct, the same as you do now. We will write to you before anything'
-                                + ' is due, and there is nothing to set up today.</p>'
+                                + ' direct, the same as you do now. We will tell you the day your free period'
+                                + ' starts and write to you well before anything is due. There is nothing to'
+                                + ' set up today.</p>'
                             : '<p style="margin:0 0 16px;font-size:16px;">There is nothing to pay to be listed.'
                                 + ' We take 10% of a job when you accept one through the site, and nothing at'
                                 + ' all when you do not.</p>';

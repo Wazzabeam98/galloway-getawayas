@@ -196,9 +196,11 @@ export function audienceLabel(audience: string): string {
 // is worth keeping rather than pretending it was never made: a dormant
 // `trial_ends_at` is one query away from becoming a promise on a page again.
 // The answer to that is not to have no trial, it is that the trial has to be
-// stamped where the promise is actually made — at approval, in the email that
-// tells them they are live and gives them the date — rather than sitting on a
-// draft nobody has accepted yet. Submission still starts nothing.
+// stamped where the value is actually delivered — which is the first enquiry
+// reaching him, not the approval and certainly not the draft. Submission
+// starts nothing, and approval no longer starts anything either: see
+// trialEndsAt below for why that moved, and SUBSCRIPTION-SCOPE.md for the
+// whole lifecycle it belongs to.
 //
 // It is also a different shape from what was removed. 'trial' used to be a
 // value of `plan`, which meant the plan could not say what happened when the
@@ -269,9 +271,27 @@ export const TRIAL_DAYS = 90;
 // £20 a month, said in one place so a page and an email cannot disagree.
 export const SUBSCRIPTION_MONTHLY = 20;
 
-// Nothing bills anyone yet. This is the date the free period ends, stamped at
-// approval so it starts when they are actually live rather than when they
-// happened to fill a form in.
+// Nothing bills anyone yet. This is the date the free period ends.
+//
+// WHERE THE CLOCK STARTS, AND WHY IT MOVED OFF APPROVAL
+//
+// It is stamped when the FIRST ENQUIRY IS SENT to him, not when he is
+// approved. A tradesman approved in September who hears nothing until January
+// should not burn his free ninety days waiting for the site to find him work.
+// What is being sold is the lead, so the lead is what starts the clock.
+//
+// It is the enquiry being SENT rather than answered, which is a smaller rule
+// than "accepted, declined or expired" and has the same effect. An enquiry has
+// three endings and all three would start it, so every enquiry starts it, and
+// the only question left is the date — sent, or settled. The gap between those
+// is bounded by the expiry windows in lib/serviceEnquiries.ts: twenty minutes
+// for an emergency, five days at the very most. Five days against ninety is
+// noise, and stamping at the send is one write in one place that cannot be
+// gamed by sitting on the email.
+//
+// Conditional on the email actually going. sendEmail returns false rather than
+// throwing, and a lead he never received is not a lead — see the caller in
+// app/api/services/enquiries/route.ts, which stamps only on a true.
 export function trialEndsAt(approvedAt: Date | string): string {
     const from = approvedAt instanceof Date ? approvedAt : new Date(String(approvedAt));
     const end = new Date(from.getTime());
@@ -314,17 +334,56 @@ export function commissionRateFor(provider: any): number {
 // What a provider is told they will pay, in one place so the sign-up, the
 // admin card and the approval email cannot say three different things.
 //
-// Said in the present tense and without a date, because at the point the
-// sign-up shows this there is no approval yet and therefore no clock. The
-// email is where the date appears, because the email is sent at the moment
-// the clock actually starts.
+// Said in the present tense and without a date, because there is no date to
+// give until his first enquiry goes out — which is true at the sign-up, and
+// true at approval too now that the clock no longer starts there. The date
+// appears in the email sent when the clock actually starts.
 export function planTerms(trade: string): string {
     return planForTrade(trade) === 'subscription'
-        ? 'Nothing to pay for your first ' + TRIAL_DAYS + ' days once you are approved, '
-            + 'then £' + SUBSCRIPTION_MONTHLY + ' a month. We take no commission — you quote '
-            + 'and get paid direct.'
+        ? 'Nothing to pay for your first ' + TRIAL_DAYS + ' days once we send you your '
+            + 'first enquiry, then £' + SUBSCRIPTION_MONTHLY + ' a month. We take no '
+            + 'commission — you quote and get paid direct.'
         : 'Nothing to pay to be listed. We take 10% of a job when you accept one through '
             + 'the site, and nothing at all when you do not.';
+}
+
+// THREE STATES, NOT TWO. Read this before writing "your free period has ended"
+// anywhere.
+//
+// `trialActive` below answers false for a trial that has ended AND for one
+// that has not started, and now that the clock starts at the first enquiry
+// rather than at approval, "not started" is an ordinary state a provider can
+// sit in for months. A page that treats false as "ended" would tell a plumber
+// who has never had an enquiry that his free period is over, which is both
+// wrong and alarming. Anything showing words to a provider wants this.
+export type TrialState = 'not_applicable' | 'not_started' | 'running' | 'ended';
+
+export function trialState(provider: any, now?: Date): TrialState {
+    if (!provider) return 'not_applicable';
+    if (String(provider.plan || '') !== 'subscription') return 'not_applicable';
+    if (!provider.trial_ends_at) return 'not_started';
+
+    const ends = new Date(String(provider.trial_ends_at)).getTime();
+    // An unreadable date is not evidence that anything has run out.
+    if (!(ends > 0)) return 'not_started';
+
+    return ends > (now || new Date()).getTime() ? 'running' : 'ended';
+}
+
+// Whether this enquiry should start his ninety days.
+//
+// Pure, so the rule is testable without a database and is stated once. The
+// caller does the write, and does it guarded on the column still being null so
+// that two enquiries landing together cannot both stamp.
+//
+// `status` is checked as well as the date because an enquiry should only ever
+// reach an approved provider, and if that ever stops being true this must not
+// be the place that quietly starts charging somebody who was taken down.
+export function shouldStartTrial(provider: any): boolean {
+    if (!provider) return false;
+    if (String(provider.plan || '') !== 'subscription') return false;
+    if (String(provider.status || '') !== 'approved') return false;
+    return !provider.trial_ends_at;
 }
 
 // Whether the free period is still running, for a page that wants to say so.

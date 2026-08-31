@@ -27,6 +27,8 @@ const {
     commissionRateFor,
     trialEndsAt,
     trialActive,
+    trialState,
+    shouldStartTrial,
     planTerms,
     TRIAL_DAYS,
     SUBSCRIPTION_MONTHLY,
@@ -308,6 +310,92 @@ test('a running trial is only a thing a subscription provider can have', () => {
         'a commission row carrying a date is not owed free months');
     assert.equal(trialActive({ plan: 'subscription', trial_ends_at: null }, now), false);
     assert.equal(trialActive(null, now), false);
+});
+
+// ---------------------------------------------------------------------------
+// WHERE THE CLOCK STARTS
+//
+// At the first enquiry sent to him, not at approval. The rule lives here so it
+// is testable without a database; the write is in the enquiry route, guarded
+// on the column still being null so two enquiries in the same second cannot
+// both stamp.
+// ---------------------------------------------------------------------------
+
+test('the first enquiry to an approved subscription provider starts his clock', () => {
+    assert.equal(
+        shouldStartTrial({ plan: 'subscription', status: 'approved', trial_ends_at: null }),
+        true
+    );
+});
+
+test('a second enquiry does not restart anything', () => {
+    // The expensive bug this prevents: every enquiry pushing the free period
+    // another ninety days out, so a busy tradesman never pays at all.
+    assert.equal(
+        shouldStartTrial({
+            plan: 'subscription',
+            status: 'approved',
+            trial_ends_at: '2026-11-25T00:00:00.000Z',
+        }),
+        false,
+        'the date he already has is the date that stands'
+    );
+});
+
+test('a commission provider never starts a clock, however many enquiries he gets', () => {
+    assert.equal(
+        shouldStartTrial({ plan: 'commission', status: 'approved', trial_ends_at: null }),
+        false
+    );
+});
+
+test('an enquiry to somebody not approved starts nothing', () => {
+    // An enquiry should only ever reach an approved provider. If that stops
+    // being true, this must not be the place that quietly starts charging
+    // somebody who was taken down.
+    for (const status of ['draft', 'pending_review', 'declined', 'hidden']) {
+        assert.equal(
+            shouldStartTrial({ plan: 'subscription', status, trial_ends_at: null }),
+            false,
+            status + ' does not start a free period'
+        );
+    }
+
+    assert.equal(shouldStartTrial(null), false);
+});
+
+// The bug this exists to make impossible: telling a plumber who has never had
+// an enquiry that his free period has ended. `trialActive` answers false for
+// "ended" and for "not started" alike, and those need different words now that
+// a provider can sit in the second one for months.
+test('a trial that has not started is a different state from one that has ended', () => {
+    const now = new Date('2026-09-01T00:00:00.000Z');
+
+    assert.equal(
+        trialState({ plan: 'subscription', trial_ends_at: null }, now),
+        'not_started',
+        'approved, waiting for his first lead'
+    );
+    assert.equal(
+        trialState({ plan: 'subscription', trial_ends_at: '2026-11-25T00:00:00.000Z' }, now),
+        'running'
+    );
+    assert.equal(
+        trialState({ plan: 'subscription', trial_ends_at: '2026-08-01T00:00:00.000Z' }, now),
+        'ended'
+    );
+    assert.equal(
+        trialState({ plan: 'commission', trial_ends_at: null }, now),
+        'not_applicable',
+        'a cleaner has no free period to be in a state about'
+    );
+    assert.equal(trialState(null, now), 'not_applicable');
+
+    // An unreadable date must not read as "your free period is over".
+    assert.equal(
+        trialState({ plan: 'subscription', trial_ends_at: 'not a date' }, now),
+        'not_started'
+    );
 });
 
 test('what a provider is told they will pay comes from the same numbers', () => {

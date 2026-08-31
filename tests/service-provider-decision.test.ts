@@ -25,7 +25,7 @@ process.env.SUPABASE_SERVICE_ROLE_KEY = 'test-service-key';
 
 const ROUTE = '@/app/api/admin/providers/route';
 
-const { TRADES, requiredSchemes, planForTrade, TRIAL_DAYS } = require('@/lib/serviceProviders');
+const { TRADES, requiredSchemes, planForTrade } = require('@/lib/serviceProviders');
 
 const ADMIN_ID = 'admin-1';
 const PROVIDER_ID = 'prov-1';
@@ -540,19 +540,25 @@ test('a decline is never blocked by a missing number', async () => {
 });
 
 // ---------------------------------------------------------------------------
-// WHAT APPROVAL STAMPS
+// WHAT APPROVAL STAMPS — AND WHAT IT DELIBERATELY DOES NOT
 //
-// Approval is where the promise is made: it is the write that puts them on the
-// site and the email that gives them a date. So it is where the plan is fixed
-// and where the free period starts.
+// Approval fixes the plan. It does NOT start the free period any more, and the
+// tests below are mostly here to keep it that way.
 //
-// The failure this guards against is the one that removed the trial the first
-// time — a clock measured somewhere nobody looks, running against somebody who
-// was never told. Here it runs from the same write as `approved_at`, or it
-// does not run at all.
+// It used to. The reasoning was that approval is where the promise is made,
+// which is true and is not the same as where the value arrives: a tradesman
+// approved in September who hears nothing until January would have spent his
+// whole free period waiting for us to find him work. The clock now starts when
+// the first enquiry is sent to him — app/api/services/enquiries/route.ts —
+// which is the only place in the codebase that may start one.
+//
+// The original failure these guard against is unchanged and still worth
+// naming: a clock measured somewhere nobody looks, running against somebody
+// who was never told. The answer to it is not "stamp it at approval", it is
+// "stamp it where somebody is told" — and the enquiry email is now that place.
 // ---------------------------------------------------------------------------
 
-test('approving a maintenance trade stamps the subscription and starts the clock', async () => {
+test('approving a maintenance trade fixes the plan and starts no clock', async () => {
     const { route, updates } = load({ trade: 'plumber' });
 
     const res: any = await route.POST(call('approve'));
@@ -560,13 +566,12 @@ test('approving a maintenance trade stamps the subscription and starts the clock
 
     const patch = updates[0].patch;
     assert.equal(patch.plan, 'subscription');
-    assert.equal(typeof patch.trial_ends_at, 'string');
     assert.equal(patch.commission_rate, 0, 'no commission on top of a subscription');
 
-    // Ninety days from the approval itself, not from some other moment.
-    const days = (new Date(patch.trial_ends_at).getTime() - new Date(patch.approved_at).getTime())
-        / (1000 * 60 * 60 * 24);
-    assert.equal(Math.round(days), TRIAL_DAYS);
+    // The whole point of the change. A date here would be a bill for our own
+    // silence — he has been approved, not sent any work.
+    assert.equal('trial_ends_at' in patch, false,
+        'approval fixes what he pays, not when he starts paying it');
 });
 
 test('every subscription trade gets the same treatment, not just the plumber', async () => {
@@ -596,7 +601,7 @@ test('every subscription trade gets the same treatment, not just the plumber', a
 
         assert.equal(res.status, 200, trade + ' is approvable');
         assert.equal(updates[0].patch.plan, 'subscription', trade + ' is on the subscription');
-        assert.equal(typeof updates[0].patch.trial_ends_at, 'string', trade + ' gets a date');
+        assert.equal('trial_ends_at' in updates[0].patch, false, trade + ' starts no clock here');
         assert.equal(updates[0].patch.commission_rate, 0, trade + ' pays no commission');
     }
 });
@@ -631,8 +636,10 @@ test('every commission trade is left on commission', async () => {
     }
 });
 
-// The one that costs money if it is wrong. A plumber who edits their
-// description and is looked at again must not be handed another three months.
+// The one that costs money if it is wrong. A plumber part-way through his free
+// period who edits his description and is looked at again must not have the
+// date moved — in either direction. Re-approval is silent about the clock now,
+// which is a stronger guarantee than the guard this used to rely on.
 test('re-approving does not hand out a second free period', async () => {
     const ORIGINAL = '2026-09-01T00:00:00.000Z';
     const { route, updates } = load({ trade: 'plumber', trialEndsAt: ORIGINAL });
@@ -674,7 +681,7 @@ test('a declined provider is put on no plan and given no date', async () => {
     assert.equal('trial_ends_at' in patch, false);
 });
 
-test('the email tells a subscription trade what it costs and when', async () => {
+test('the email tells a subscription trade what it costs, and that it has not started', async () => {
     const { route, sent } = load({ trade: 'plumber' });
 
     await route.POST(call('approve'));
@@ -685,10 +692,21 @@ test('the email tells a subscription trade what it costs and when', async () => 
     assert.match(body, /90 days are free/);
     assert.match(body, /£20 a month/);
     assert.match(body, /no commission/);
-    // The date they can hold us to, not just a number of days. Matched by
-    // shape rather than by value: the clock starts when the test runs, so
-    // naming a month would have made this fail on a calendar page turning.
-    assert.match(body, /\d{1,2} (January|February|March|April|May|June|July|August|September|October|November|December) \d{4}/);
+    assert.match(body, /first enquiry/, 'he is told what actually starts the clock');
+
+    // NO DATE, AND THIS IS THE ASSERTION THAT MATTERS.
+    //
+    // It used to be the exact opposite: this test demanded a date, because
+    // approval stamped one. Nothing stamps one now until his first enquiry
+    // goes out, so a date in this email could only have been invented here —
+    // and an invented date is the promise-by-accident the whole trial design
+    // has been trying to avoid twice over. Matched by shape rather than value
+    // because there is no correct value.
+    assert.equal(
+        /\d{1,2} (January|February|March|April|May|June|July|August|September|October|November|December) \d{4}/.test(body),
+        false,
+        'approval has no date to give, so it must not print one'
+    );
 });
 
 test('the email tells a commission trade the opposite, and no date', async () => {
