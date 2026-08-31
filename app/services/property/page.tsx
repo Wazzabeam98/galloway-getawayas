@@ -51,21 +51,23 @@ export default function PropertyServicesPage() {
                 maintenance and repairs. You see who they are and what they charge before you ask,
                 and you ask one of them — not five.
             </p>
-            <p className="text-sm text-slate-500 mt-3 mb-10">
+            <p className="text-sm text-slate-500 mt-3">
                 We take nothing from the job. Whatever you agree is between you and them.
             </p>
 
-            {/* Kept here as well as on the hub: the footer links straight to
-                this page, so a host who arrives directly still needs the pointer
-                across to the guest half. */}
-            <div className="rounded-xl border border-slate-200 bg-slate-50 p-4 mb-10 text-sm text-slate-600">
-                Looking for what your{' '}
-                <span className="font-medium text-slate-800">guests</span> can book during a stay —
-                a private chef, a welcome hamper, pet care?{' '}
-                <Link href="/trips" className="text-emerald-700 font-semibold underline hover:text-emerald-800">
+            {/* One quiet line, not a boxed card. Its job is to turn back
+                somebody who wants the guest half, without competing with the
+                trades a host actually came here for. The footer links straight
+                to this page, so the pointer still has to live here as well as
+                on the hub — it just no longer sits above the thing they came
+                for, shouting as loud as it. */}
+            <p className="text-sm text-slate-400 mt-2 mb-10">
+                Looking for what your guests can book during a stay — a private chef, a
+                welcome hamper, pet care?{' '}
+                <Link href="/trips" className="underline hover:text-slate-600">
                     Those are offered to guests on their trip page.
                 </Link>
-            </div>
+            </p>
 
             <TradeTileGrid>
                 {live.map((trade) => (
