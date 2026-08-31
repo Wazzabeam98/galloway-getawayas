@@ -3,6 +3,7 @@ export const dynamic = "force-dynamic";
 import { createServerComponentClient } from "@supabase/auth-helpers-nextjs";
 import { cookies } from "next/headers";
 import EarningsDateFilter from "@/components/EarningsDateFilter";
+import MonthlyTrendChart from "@/components/MonthlyTrendChart";
 import { DEFAULT_COMMISSION_PERCENT, rateFor, netOfFee, feeAmount } from '@/lib/fees';
 import { formatUk } from '@/lib/cancellation';
 import { createClient } from '@supabase/supabase-js';
@@ -109,7 +110,8 @@ export default async function EarningsPage({ searchParams }: { searchParams?: { 
         );
         months.push({ label, net: monthNet });
     }
-    const maxMonth = Math.max(1, ...months.map((m) => m.net));
+    // The scale moved into MonthlyTrendChart with the bars — it is only
+    // needed where the heights are worked out.
 
     const byListing = new Map<string, number>();
     confirmed.forEach((b) => {
@@ -238,18 +240,7 @@ export default async function EarningsPage({ searchParams }: { searchParams?: { 
             <div className="border rounded-2xl p-6 mb-10">
                 <h2 className="font-bold text-slate-900 mb-1">Monthly trend</h2>
                 <p className="text-xs text-slate-400 mb-6">Net payout, by check-in month, within the selected period</p>
-                <div className="flex items-end gap-3 h-40 overflow-x-auto">
-                    {months.map((m, i) => (
-                        <div key={`${m.label}-${i}`} className="flex-1 min-w-[28px] flex flex-col items-center justify-end h-full">
-                            <div
-                                className="w-full bg-emerald-700 rounded-t-lg min-h-[2px]"
-                                style={{ height: `${(m.net / maxMonth) * 100}%` }}
-                                title={`£${m.net.toFixed(2)}`}
-                            />
-                            <span className="text-xs text-slate-500 mt-2">{m.label}</span>
-                        </div>
-                    ))}
-                </div>
+                <MonthlyTrendChart months={months} />
             </div>
 
             <div className="border rounded-2xl p-6 mb-8">
