@@ -21,7 +21,7 @@ export const metadata: Metadata = {
     template: '%s | Galloway Getaways',
   },
   description:
-    'Book self catering holiday cottages and apartments across Dumfries & Galloway. Book direct with local hosts for our best rate guarantee and no booking fees.',
+    'Book self catering holiday cottages and apartments across Dumfries & Galloway. Booked direct with the people who own them — no booking fee, ever.',
 
   // Tells search engines which address is the real one, so the www and
   // vercel.app versions don't compete with this one.

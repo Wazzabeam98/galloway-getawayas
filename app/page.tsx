@@ -238,6 +238,28 @@ export default async function HomePage({
                                 platform and another, and it is the reason booking direct is nearly
                                 always cheaper.
                             </p>
+
+                            {/* The owner's own founding lines, a subsection of the
+                                booking-direct point rather than a fifth heading —
+                                so it is an h3 under the h2, and the page's
+                                structure stays real. */}
+                            <h3 className="text-xl font-bold text-stone-900 mt-8">
+                                Why we started this
+                            </h3>
+                            <p className="text-stone-600 leading-relaxed mt-3">
+                                We were born and raised in Dumfries and Galloway, and we let cottages
+                                here ourselves. The big platforms take a large share of every
+                                booking, and the guest never finds out who owns the place they stayed
+                                in. Our fees are about half, so more of it stays with the host and
+                                with the region.
+                            </p>
+                            <p className="text-stone-600 leading-relaxed mt-4">
+                                That’s the whole idea, and it goes further than the booking. A guest
+                                can arrange a birthday cake, a chef or a day out, all from local
+                                businesses on one site. A host can find a joiner who covers their
+                                village at nine on a Sunday morning. This only works as a community
+                                rather than a directory, and that’s how we intend to run it.
+                            </p>
                         </div>
 
                         <div>
