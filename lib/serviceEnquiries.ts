@@ -84,6 +84,19 @@ export function canRespond(status: string): boolean {
     return isOpen(status);
 }
 
+// Calling off a job that was already accepted. Either side may, and only from
+// 'accepted' — an open enquiry is withdrawn or declined, a finished one is
+// finished. The route decides who is asking and words the alert accordingly.
+export function canCancel(status: string): boolean {
+    return String(status || '') === 'accepted';
+}
+
+// A cancelled enquiry is done. Re-asking is a fresh row, so the only thing to
+// offer on this one is that re-ask — the same tradesman, a new request.
+export function canReask(status: string): boolean {
+    return String(status || '') === 'cancelled';
+}
+
 // ---------------------------------------------------------------------------
 // URGENCY
 // ---------------------------------------------------------------------------
@@ -553,9 +566,26 @@ export function canSend(draft: EnquiryDraft): boolean {
 export function hostStatusSummary(
     status: string,
     businessName?: string | null,
-    row?: { urgency?: string | null; expires_at?: string | null } | null
+    row?: { urgency?: string | null; expires_at?: string | null; cancelled_by?: string | null; cancel_reason?: string | null } | null
 ): { label: string; detail: string } {
     const who = String(businessName || 'They').trim() || 'They';
+
+    // Called off after it was accepted. Worded from whichever side did it, and
+    // the tradesman's reason is carried through so the host can decide what to
+    // do — chase, or find someone else.
+    if (status === 'cancelled') {
+        // Trim the reason's own trailing full stop so we never print "…week..".
+        const reason = String((row && row.cancel_reason) || '').trim().replace(/[.\s]+$/, '');
+        if (row && row.cancelled_by === 'host') {
+            return { label: 'Cancelled', detail: 'You cancelled this' + (reason ? ' — ' + reason + '.' : '.') };
+        }
+        return {
+            label: 'Cancelled by them',
+            detail: who + ' has cancelled'
+                + (reason ? ' — ' + reason + '.' : '.')
+                + ' You’ll need someone else for this one.',
+        };
+    }
 
     // A waiting emergency used to count down to the release. It does not any
     // more: the release is a safety net, not an offer, and a host who is told

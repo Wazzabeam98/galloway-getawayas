@@ -10,12 +10,15 @@ import {
     hostStatusSummary,
     contactReleased,
     canWithdraw,
+    canReask,
     faultLabels,
     snapshotLine,
     requestedWhen,
     OUTCOMES,
     outcomeLabel,
 } from '@/lib/serviceEnquiries';
+import HostCancelButton from '@/components/services/HostCancelButton';
+import ReaskButton from '@/components/services/ReaskButton';
 
 // What a host has asked, and what came back.
 //
@@ -48,6 +51,7 @@ interface Enquiry {
     trade: string;
     business_name: string;
     provider_id: string;
+    listing_id: string | null;
     status: string;
     urgency: string;
     summary: string;
@@ -56,9 +60,13 @@ interface Enquiry {
     preferred_date: string | null;
     window_from: string | null;
     window_to: string | null;
+    host_name: string | null;
+    host_phone: string | null;
     outcome: string | null;
     sent_at: string;
     expires_at: string | null;
+    cancelled_by: string | null;
+    cancel_reason: string | null;
 
     // Copied onto the row by the respond route at the moment of acceptance,
     // and null until then. The host's screen therefore never reads
@@ -94,7 +102,7 @@ export default function EnquiriesPage() {
 
         const { data } = await supabase
             .from('service_enquiries')
-            .select('id, reference, trade, business_name, provider_id, status, urgency, summary, fault_keys, price_snapshot, preferred_date, window_from, window_to, outcome, sent_at, expires_at, provider_phone, provider_email')
+            .select('id, reference, trade, business_name, provider_id, listing_id, status, urgency, summary, fault_keys, price_snapshot, preferred_date, window_from, window_to, host_name, host_phone, outcome, sent_at, expires_at, provider_phone, provider_email, cancelled_by, cancel_reason')
             .eq('host_id', session.user.id)
             .order('sent_at', { ascending: false });
 
@@ -249,6 +257,31 @@ export default function EnquiriesPage() {
                                     >
                                         See who else covers you
                                     </Link>
+                                )}
+
+                                {/* A host can call off a job they'd had accepted. */}
+                                {contactReleased(row.status) && (
+                                    <HostCancelButton enquiryId={row.id} onDone={load} />
+                                )}
+
+                                {/* Cancelled — the one thing left to do is re-ask. */}
+                                {canReask(row.status) && (
+                                    <ReaskButton
+                                        source={{
+                                            provider_id: row.provider_id,
+                                            listing_id: row.listing_id,
+                                            business_name: row.business_name,
+                                            trade: row.trade,
+                                            urgency: row.urgency,
+                                            summary: row.summary,
+                                            fault_keys: row.fault_keys,
+                                            host_name: row.host_name,
+                                            host_phone: row.host_phone,
+                                            window_from: row.window_from,
+                                            window_to: row.window_to,
+                                        }}
+                                        onDone={load}
+                                    />
                                 )}
 
                                 {contactReleased(row.status) && !row.outcome && (

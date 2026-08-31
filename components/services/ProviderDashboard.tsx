@@ -11,6 +11,7 @@ import {
     ChevronRight,
 } from 'lucide-react';
 import EnquiryActions from '@/components/services/EnquiryActions';
+import UpcomingJobActions from '@/components/services/UpcomingJobActions';
 
 // The provider's own view of their business — the screen a tradesman or an
 // experience-seller lands on when they log in. Until this existed an approved
@@ -54,6 +55,7 @@ export type DashboardUpcoming = {
     month: string;
     title: string;
     window: string;
+    preferredDate?: string | null;
     hostName?: string | null;
     hostPhone?: string | null;
     listing?: { id: string; title: string; location: string; image: string | null } | null;
@@ -304,6 +306,9 @@ export default function ProviderDashboard(props: ProviderDashboardProps) {
                                                         )}
                                                     </div>
                                                 )}
+
+                                                {/* Change the day, or call it off. */}
+                                                <UpcomingJobActions enquiryId={u.id} preferredDate={u.preferredDate || null} />
                                             </div>
                                         </div>
                                     </li>

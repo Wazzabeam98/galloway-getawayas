@@ -177,6 +177,7 @@ export default async function ProviderDashboardPage() {
             month: d ? d.toLocaleDateString('en-GB', { month: 'short', timeZone: LONDON }) : 'TBC',
             title: e.summary,
             window,
+            preferredDate: e.preferred_date || null,
             hostName: e.host_name || null,
             hostPhone: e.host_phone || null,
             listing: l ? {
