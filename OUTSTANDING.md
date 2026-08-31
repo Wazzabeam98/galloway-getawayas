@@ -139,22 +139,32 @@ refuses. The pair to run is in `SECURITY-WRITE-AUDIT.md`.
 
 # 3. Failures that stay quiet
 
-### 34 of 63 API routes never reach `/admin/errors`
+### 24 of 63 API routes never reach `/admin/errors`
 
-Recounted today. The number went **up** and the situation did not get worse:
-`notify` and `adminAudit` came off the list, and eight new `services/*` routes
-arrived with the experiences work, none of them reporting. It was 32 of 59.
+Down from 34. The ten money- and access-path routes named in the last pass now
+report, and a test holds them there —
+`tests/money-routes-report-failures.test.ts`, which fails if any of them goes
+back to a catch that only writes to the console.
 
-Worst of what is left, all money- or listing-path:
+Proved end to end rather than by reading the code: a host's Stripe account id
+was pointed at an account that does not exist, `/api/stripe/connect` was called
+with a real session, and the failure arrived in `error_log` with its path,
+message and the host's id. Before the change the same call returned the same
+500 and recorded nothing.
 
-`stripe/balance-checkout`, `stripe/connect`, `listings/save`,
-`listings/publish`, `listings/visibility`, `listing-access/*`,
-`booking-guests/*`, `my-listings`.
+Two of the ten were worse than "no reporting":
 
-`notify` still answers **200** with `{ok:false}` when it fails. That is now
-deliberate and commented: the caller cannot tell, but the error reaches
-`/admin/errors`, and returning a failure code here would make callers retry a
-notification that may already have been sent.
+- **`listings/save`** had an inner catch for a photo it could not move out of
+  the public bucket, with a comment saying it was *"the one thing the owner
+  most needs to know about"* — going to `console.error` only.
+- **`my-listings`** had no `try`/`catch` at all. Both of its callers treat a
+  failed response as "no properties", so a co-host whose access lookup broke
+  saw an empty calendar that looked exactly like having none. The status is
+  still 500; what changed is that somebody is told.
+
+What is left is the 24 that are not on the money or access path — admin
+reads, cron endpoints, and lookups whose failure a person sees immediately.
+Worth doing, not urgent.
 
 ---
 
@@ -244,8 +254,8 @@ Neither is a defect. Both made working things look broken.
    The trace is done and the answer is the bad one: the run obeys a number
    that three unsafe writers can get wrong. This is now the thing standing
    between here and paying a real host.
-4. **The eight silent money-path routes** (section 3). Same ten lines each as
-   `notify` got.
+4. **The remaining 24 silent routes** (section 3) — none on the money or
+   access path now, so this is tidying rather than risk.
 5. **Owner-scoped upload paths** (2F), whenever the upload paths are being
    touched anyway.
 

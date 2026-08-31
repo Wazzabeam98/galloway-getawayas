@@ -1,3 +1,4 @@
+import { logError } from '@/lib/logError';
 import { createRouteHandlerClient } from '@supabase/auth-helpers-nextjs';
 import { adminClient } from '@/lib/supabaseAdmin';
 import { cookies } from 'next/headers';
@@ -21,12 +22,14 @@ async function bookedBy(admin: any, bookingId: string, userId: string) {
 }
 
 export async function POST(request: Request) {
+    let reporterId: string | null = null;
     try {
         const supabase = createRouteHandlerClient({ cookies });
         // getUser(), not getSession() — getSession() trusts an unsigned
         // cookie, so a forged one impersonates any user. getUser() verifies
         // the token against the auth server. Matches the admin/services routes.
         const { data: { user } } = await supabase.auth.getUser();
+        reporterId = (user && user.id) || null;
 
         if (!user) {
             return NextResponse.json({ ok: false, error: 'Not signed in' }, { status: 401 });
@@ -179,6 +182,12 @@ export async function POST(request: Request) {
         return NextResponse.json({ ok: false, error: 'Unknown action' }, { status: 400 });
     } catch (err: any) {
         console.error('[booking-guests]', err && err.message);
+
+        // The console is nobody's alarm. The guest never hears about the stay they were added to.
+        await logError('booking-guests: a guest invitation failed', err, {
+            path: 'api/booking-guests',
+            userId: reporterId || undefined,
+        });
         return NextResponse.json(
             { ok: false, error: (err && err.message) || 'Something went wrong' },
             { status: 500 }

@@ -1,3 +1,4 @@
+import { logError } from '@/lib/logError';
 import { createRouteHandlerClient } from '@supabase/auth-helpers-nextjs';
 import { createClient } from '@supabase/supabase-js';
 import { cookies } from 'next/headers';
@@ -6,6 +7,7 @@ import { NextResponse } from 'next/server';
 export const dynamic = 'force-dynamic';
 
 export async function POST(request: Request) {
+    let reporterId: string | null = null;
     try {
         const supabase = createRouteHandlerClient({ cookies });
         // getUser(), not getSession(). getSession() only decodes the auth
@@ -13,6 +15,7 @@ export async function POST(request: Request) {
         // whatever the caller wrote in it. getUser() asks the auth server,
         // which verifies the token and that the session has not been revoked.
         const { data: { user } } = await supabase.auth.getUser();
+        reporterId = (user && user.id) || null;
 
         if (!user) {
             return NextResponse.json({ ok: false, error: 'Not signed in' }, { status: 401 });
@@ -74,6 +77,12 @@ export async function POST(request: Request) {
         return NextResponse.json({ ok: true });
     } catch (err: any) {
         console.error('[booking-guests/accept]', err && err.message);
+
+        // The console is nobody's alarm. The guest clicked the link and got nothing; nobody else finds out.
+        await logError('booking-guests/accept: a guest invitation could not be accepted', err, {
+            path: 'api/booking-guests/accept',
+            userId: reporterId || undefined,
+        });
         return NextResponse.json(
             { ok: false, error: (err && err.message) || 'Could not accept the invitation' },
             { status: 500 }

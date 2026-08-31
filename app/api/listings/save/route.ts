@@ -1,3 +1,4 @@
+import { logError } from '@/lib/logError';
 import { createRouteHandlerClient } from '@supabase/auth-helpers-nextjs';
 import { adminClient } from '@/lib/supabaseAdmin';
 import { cookies } from 'next/headers';
@@ -27,6 +28,7 @@ const PROTECTED = [
 const BUCKET = process.env.NEXT_PUBLIC_S3_BUCKET || 'listings';
 
 export async function POST(request: Request) {
+    let reporterId: string | null = null;
     try {
         const supabase = createRouteHandlerClient({ cookies });
         // getUser(), not getSession(). getSession() only decodes the cookie —
@@ -36,6 +38,7 @@ export async function POST(request: Request) {
         // somebody else's. getUser() asks the auth server, which verifies the
         // token and that it has not been revoked.
         const { data: { user } } = await supabase.auth.getUser();
+        reporterId = (user && user.id) || null;
 
         if (!user) {
             return NextResponse.json({ ok: false, error: 'Not signed in' }, { status: 401 });
@@ -182,6 +185,14 @@ export async function POST(request: Request) {
                 // the owner most needs to know about.
                 failedToMove.push(path);
                 console.error('[listings/save] could not move', path, err?.message);
+
+                // Reported, not just logged. The comment above says this is
+                // the one thing the owner most needs to know about, and until
+                // now it only ever reached a console nobody reads.
+                await logError('listings/save: a dropped photo is still in the public bucket', err, {
+                    path: 'api/listings/save',
+                    userId: user.id,
+                });
             }
         }
 
@@ -210,6 +221,12 @@ export async function POST(request: Request) {
         });
     } catch (err: any) {
         console.error('[listings/save]', err && err.message);
+
+        // The console is nobody's alarm. Edits that vanish are the complaint nobody can reproduce later.
+        await logError('listings/save: a listing could not be saved', err, {
+            path: 'api/listings/save',
+            userId: reporterId || undefined,
+        });
         return NextResponse.json(
             { ok: false, error: (err && err.message) || 'Could not save' },
             { status: 500 }

@@ -1,3 +1,4 @@
+import { logError } from '@/lib/logError';
 import { createRouteHandlerClient } from '@supabase/auth-helpers-nextjs';
 import { adminClient } from '@/lib/supabaseAdmin';
 import { cookies } from 'next/headers';
@@ -8,12 +9,14 @@ import { SITE_URL } from '@/lib/email';
 export const dynamic = 'force-dynamic';
 
 export async function POST(request: Request) {
+    let reporterId: string | null = null;
     try {
         const supabase = createRouteHandlerClient({ cookies });
         // getUser(), not getSession() — getSession() trusts an unsigned
         // cookie, so a forged one impersonates any user. getUser() verifies
         // the token against the auth server. Matches the admin/services routes.
         const { data: { user } } = await supabase.auth.getUser();
+        reporterId = (user && user.id) || null;
 
         if (!user) {
             return NextResponse.json({ ok: false, error: 'Not signed in' }, { status: 401 });
@@ -124,6 +127,13 @@ export async function POST(request: Request) {
         return NextResponse.json({ ok: true, url: checkout.url });
     } catch (err: any) {
         console.error('[stripe/balance-checkout]', err && err.message);
+
+        // The console is nobody's alarm. A guest who cannot reach the payment page will not chase it. This is the
+        // balance that pays for a stay, so a failure here is money that never arrives.
+        await logError('stripe/balance-checkout: a guest could not open the page to pay their balance', err, {
+            path: 'api/stripe/balance-checkout',
+            userId: reporterId || undefined,
+        });
         return NextResponse.json(
             { ok: false, error: (err && err.message) || 'Could not open the payment page' },
             { status: 500 }
