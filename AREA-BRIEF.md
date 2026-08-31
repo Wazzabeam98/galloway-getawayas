@@ -100,7 +100,22 @@ Include the town name. Under 160 characters or Google truncates it.
 Leave it empty and the page falls back to a generated line, which is adequate
 for a page that is `noindex` anyway and not good enough for one that is not.
 
-### 3. `gettingThere` — a few bullet lines.
+### 3. `thingsToDo` — two or three paragraphs.
+
+What there is to actually do in and around the town. One string per paragraph,
+same as `intro`, and no headings inside them.
+
+This is where naming things earns its keep — "Threave Garden", "the Grey Mare's
+Tail", "the 7stanes trails" are what people search for, and a page that names
+them is a page that can turn up for them. It is also the riskiest section for
+exactly that reason.
+
+**Check every named place is still trading before the town comes off `hold`.**
+Opening hours, ownership and whole businesses change. A page recommending
+somewhere that shut two years ago reads worse than a page recommending nothing,
+and it is the kind of mistake a guest notices and remembers.
+
+### 4. `gettingThere` — a few bullet lines.
 
 Driving times from **Glasgow, Carlisle and Edinburgh** at minimum; add Newcastle
 and Belfast (via Cairnryan) where they make sense. One string per line.
@@ -109,7 +124,7 @@ Boring to write and one of the first things people actually search. "How far is
 Kirkcudbright from Glasgow" is a real query with real volume, and answering it
 plainly on the page is how you turn up for it.
 
-### 4. `faqs` — three or four questions.
+### 5. `faqs` — three or four questions.
 
 Real questions people ask about that town. These become `FAQPage` structured
 data, which is what wins the expandable answer box in Google results — the
@@ -125,7 +140,7 @@ visit X?", "Is there parking in X?", "What is there to do in X with children?",
 **Only ask questions you actually answer.** A FAQ that dodges is worse than no
 FAQ, and Google penalises marked-up answers that do not answer.
 
-### 5. `nearby` — already filled in.
+### 6. `nearby` — already filled in.
 
 Neighbouring area slugs, so the pages support each other rather than competing.
 Already set for all nine; change them if the geography is wrong. A test fails if

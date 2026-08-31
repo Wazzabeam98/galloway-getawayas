@@ -59,19 +59,45 @@ were read on master at `43c5158`.
 
 # 1. Needs a decision from you
 
-Two, and you asked to take them together.
+One. The other — `full_name` being readable against the owner's wishes — turned
+out to rest on a wrong claim and is now done; it is kept below, struck through,
+because the correction is the useful part.
 
-### `full_name` is readable even when the owner asked for it not to be
+### ~~`full_name` is readable even when the owner asked for it not to be~~
 
-**Unchanged, and re-checked on production today.** `anon` has SELECT on
-`profiles.full_name`, and `show_full_name` is not part of the grant — so the
-column is readable for rows that set it to false. One person on production has
-set it to false today, which is one person the site is not honouring.
+**This entry was wrong, and it has been sitting here making the job look far
+bigger than it was. Done on 31 August 2026.**
 
-Why it is still yours and not mine: names appear on listings and reviews by
-design, so the fix is a view that respects the preference and a sweep of every
-public byline through it. Get it wrong and every host name on the site
-disappears at once.
+The claim was that `show_full_name` is not part of the `anon` grant, so the
+preference could not be honoured in the browser. It is part of the grant. Two
+independent checks:
+
+- `audit-evidence/07-data-privacy-really-prod.txt`, which ran against
+  production with the anon key, selects `show_full_name` among the columns a
+  stranger may read and records it as readable.
+- A live probe of the test project on 31 August: `show_full_name` returns 200,
+  and `email` returns 401 in the same run — so column grants are genuinely
+  being enforced and the readable result is not a blanket permission.
+
+`20260828234003_profiles_revoke_private_columns.sql` grants it explicitly.
+
+No view was needed. There was already a single rule — `displayName()` in
+`lib/utils.ts` — and 17 of the 22 places a name is shown were already going
+through it. Three were not, and were fixed rather than decided on:
+
+- the guest named to a host in the new-booking email, and the sender named in
+  the new-message email — both took the first word of the legal name without
+  consulting the switch
+- `service_orders.guest_name`, stored at checkout and shown to a third-party
+  provider
+
+Trip invites still show the booker's full name, on purpose: you are inviting
+people who already know you, and masking it there reads as broken.
+
+Admin screens now show the real name everywhere, through `adminName()`, and the
+privacy policy and the account toggle both say so plainly. `tests/display-names.test.ts`
+covers the rule and the split, including a walk of the tree that fails if
+`adminName` is ever called from outside `app/admin`.
 
 ### `services/apply` still lets a stranger squat somebody's email
 
@@ -183,7 +209,7 @@ site is. That was the biggest single item here.
 | **Listing page: 5 sequential queries + a live OpenStreetMap call** | 225ms TTFB before a byte moves, and a cache miss makes a guest wait on a third party. | 2 hrs |
 | **Nothing is cacheable** | Not `force-dynamic` — `Navbar` calls `cookies()` in the root layout, which is what actually forces it. Proved by stubbing it: five pages went static. Path in `SITE-AUDIT.md`. | half a day for step 1 |
 | **Two pages still have no `h1`** | `/services/join` and `/services/join/apply`. `/auth/reset` and `/unsubscribe` have picked one up since the last pass. All noindexed, so accessibility rather than SEO. | 15 min |
-| **The hero photo has `alt=""`** | One place now, `components/base/Hero.tsx:551`. Google Images is a real channel for "Kirkcudbright harbour". I will not invent what the photo shows — tell me and it is five minutes. | you + 5 min |
+| ~~**The hero photo has `alt=""`**~~ | Done in PR #46, along with the town photos, the listing cards and the listing gallery — each describes what is in the picture rather than repeating the place name. Two hero photos are deliberately described without a place name because nobody could confirm where they were taken; if that is ever settled it is a one-line change. | done |
 
 ---
 
@@ -198,9 +224,40 @@ towns, by the other session, and every one is deliberately held.
   the hold — that is a review, not a writing job. They also need a published
   listing in the town before they publish themselves, which is the second
   condition in `isPublishable`.
+
+  Each page now also carries a **"Things to do"** section (PR #46), and that
+  part of the review is factual rather than editorial: it names real
+  attractions and businesses, and a page recommending somewhere that has closed
+  is worse than one recommending nothing. See the photo entry below — the same
+  email settles both.
 - **A note on the towns carousel.** The home page now links to all ten. Guests
   can reach them and they read fine; Google is told not to index them. Nothing
   to fix — worth knowing the links are live before you decide the hold.
+- **Photos for the "Things to do" sections, by asking for them.** Those
+  sections are prose only. Every place named in them is run by somebody with a
+  photo library and a reason to say yes — a link from a booking site is free
+  publicity for them. The list, from the copy draft:
+
+  | Who | What they cover |
+  |---|---|
+  | National Trust for Scotland | Threave Garden and Estate, Broughton House |
+  | Historic Environment Scotland | Threave Castle, Cardoness Castle, Caerlaverock |
+  | Forestry and Land Scotland | Galloway Forest Park, the 7stanes centres |
+  | Independently run | Kirkcudbright Galleries, The Mill on the Fleet, Cream o' Galloway, Dalbeattie Museum, Wigtown Book Festival, The Bookshop, Bladnoch Distillery, Logan Botanic Garden, Castle Kennedy Gardens, Moffat Woollen Mill |
+  | Image libraries worth asking | VisitScotland, Dumfries & Galloway Council — both sometimes licence free for tourism use |
+
+  Ask for a **specific** photo, say where it will appear, and offer a credit and
+  a link. That last part is what makes it easy for them to say yes.
+
+  **Do this in the same email as the check.** Every one of these places has to
+  be confirmed as still trading before its town comes off `hold` (see
+  `AREA-BRIEF.md`), and "are you still open, and may we use a photo?" is one
+  message rather than two. A reply answers both. No reply is itself an answer
+  worth having before you recommend somewhere.
+
+  Nothing in the code is waiting on this — the sections read fine as prose, and
+  a photo per town is an improvement rather than a blocker.
+
 - **A real "list your property" landing page.** `/addhome` is a wizard and is
   noindexed, so your actual pitch appears on no indexable page. Less
   competition than the guest terms.

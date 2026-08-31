@@ -48,6 +48,7 @@ function written(overrides: Partial<Area> = {}): Area {
         townKeys: ['testtown'],
         intro: ['A real paragraph about the place.'],
         metaDescription: 'A real description.',
+        thingsToDo: [],
         gettingThere: [],
         faqs: [],
         nearby: [],
@@ -83,7 +84,7 @@ test('written, and with somewhere to stay, is publishable', () => {
 /* ------------------------------------------------------- shipping unwritten */
 
 test('no area can reach Google yet — the written ones are all held', () => {
-    // The copy is now written for nine towns, but every one of them carries
+    // The copy is now written for all ten towns, but every one of them carries
     // `hold: true`, so none is publishable and none is in the sitemap. Adding
     // the copy did not publish the pages; clearing a hold does. That keeps
     // "a page goes in front of Google" a decision somebody made, exactly as the

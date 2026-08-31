@@ -6,7 +6,7 @@ import { requireAdmin } from '@/lib/access';
 import Link from 'next/link';
 import { notFound } from 'next/navigation';
 import { DEFAULT_COMMISSION_PERCENT, netOfFee, feeAmount } from '@/lib/fees';
-import { displayName } from '@/lib/utils';
+import { adminName } from '@/lib/utils';
 import { formatUk } from '@/lib/cancellation';
 import { outstandingOf, debtReason, debtExplanation, round2 } from '@/lib/hostDebt';
 
@@ -93,7 +93,7 @@ export default async function AdminPayouts() {
     const hostInfo: Record<string, any> = {};
     (hosts || []).forEach((h: any) => {
         hostInfo[h.id] = {
-            name: displayName(h, 'Host'),
+            name: adminName(h, 'Host'),
             connected: !!h.stripe_account_id,
             payoutsOn: h.stripe_payouts_enabled === true,
             owed: Number(h.payout_balance_owed || 0),

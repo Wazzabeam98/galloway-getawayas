@@ -4,7 +4,7 @@ import { cookies } from 'next/headers';
 import { requireAdmin } from '@/lib/access';
 import Link from 'next/link';
 import { notFound } from 'next/navigation';
-import { getImageUrl, displayName } from '@/lib/utils';
+import { getImageUrl, adminName } from '@/lib/utils';
 import { publicArea } from '@/lib/places';
 import AdminListingRow from '@/components/admin/AdminListingRow';
 import ListingReviewQueue from '@/components/admin/ListingReviewQueue';
@@ -71,7 +71,7 @@ export default async function AdminListings() {
     const hostName: Record<string, string> = {};
     (hosts || []).forEach((h: any) => {
         // The owner's own view, so the real name rather than what guests see.
-        hostName[h.id] = h.full_name || h.preferred_name || 'Host';
+        hostName[h.id] = adminName(h, 'Host');
     });
 
     // Live bookings per listing, so nobody hides a property without knowing

@@ -1,4 +1,4 @@
-import { formatTime } from '@/lib/utils';
+import { displayName, formatTime } from '@/lib/utils';
 import { round2 } from '@/lib/hostDebt';
 // =====================================================================
 // GALLOWAY GETAWAYS — notification sender
@@ -33,7 +33,13 @@ async function emailFor(admin: any, userId: string): Promise<string> {
     return (data && data.user && data.user.email) || '';
 }
 
-async function firstNameFor(admin: any, userId: string, fallback: string): Promise<string> {
+// THE PERSON THIS EMAIL IS GOING TO, greeted by their own name.
+//
+// Deliberately does NOT consult show_full_name. That switch governs what OTHER
+// people see; using somebody's own name in their own email discloses nothing
+// they have not already told us, and "Hi there" to a named account reads as a
+// site that has forgotten who they are.
+async function ownFirstNameFor(admin: any, userId: string, fallback: string): Promise<string> {
     const { data } = await admin
         .from('profiles')
         .select('full_name, preferred_name')
@@ -43,6 +49,25 @@ async function firstNameFor(admin: any, userId: string, fallback: string): Promi
     const name = (data && (data.preferred_name || data.full_name)) || '';
     const first = name.trim().split(' ')[0];
     return first || fallback;
+}
+
+// SOMEBODY ELSE, named to the person reading the email — the guest named to a
+// host, the sender named to a recipient. This one honours the switch.
+//
+// displayName() first, then the first word of whatever it allowed. Not the
+// other way round: taking the first word of the legal name and then checking
+// the switch would already have leaked it. If the switch is off and no
+// preferred name is set, displayName returns the fallback and there is no name
+// to shorten, which is the intended outcome.
+async function otherFirstNameFor(admin: any, userId: string, fallback: string): Promise<string> {
+    const { data } = await admin
+        .from('profiles')
+        .select('full_name, preferred_name, show_full_name')
+        .eq('id', userId)
+        .maybeSingle();
+
+    const shown = displayName(data, fallback);
+    return shown.trim().split(' ')[0] || fallback;
 }
 
 // Optional emails only. Transactional ones ignore this entirely.
@@ -139,8 +164,8 @@ export async function POST(request: Request) {
             }
 
             const to = await emailFor(admin, booking.host_id);
-            const hostFirst = escapeHtml(await firstNameFor(admin, booking.host_id, 'there'));
-            const guestFirst = escapeHtml(await firstNameFor(admin, booking.guest_id, 'A guest'));
+            const hostFirst = escapeHtml(await ownFirstNameFor(admin, booking.host_id, 'there'));
+            const guestFirst = escapeHtml(await otherFirstNameFor(admin, booking.guest_id, 'A guest'));
             const instant = booking.status === 'confirmed';
 
             const heading = instant ? 'New booking' : 'New booking request';
@@ -176,7 +201,7 @@ export async function POST(request: Request) {
             }
 
             const to = await emailFor(admin, booking.guest_id);
-            const guestFirst = escapeHtml(await firstNameFor(admin, booking.guest_id, 'there'));
+            const guestFirst = escapeHtml(await ownFirstNameFor(admin, booking.guest_id, 'there'));
 
             let heading = '';
             let intro = '';
@@ -275,8 +300,8 @@ export async function POST(request: Request) {
             }
 
             const to = await emailFor(admin, recipientId);
-            const recipientFirst = escapeHtml(await firstNameFor(admin, recipientId, 'there'));
-            const senderFirst = escapeHtml(await firstNameFor(admin, uid, 'Someone'));
+            const recipientFirst = escapeHtml(await ownFirstNameFor(admin, recipientId, 'there'));
+            const senderFirst = escapeHtml(await otherFirstNameFor(admin, uid, 'Someone'));
 
             const rawPreview = String((body && body.preview) || '').slice(0, 180);
             const preview = escapeHtml(rawPreview) + (rawPreview.length >= 180 ? '&hellip;' : '');

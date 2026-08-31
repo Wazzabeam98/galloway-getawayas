@@ -257,6 +257,22 @@ export default async function AreaPage({ params }: { params: { area: string } })
                     )}
                 </section>
 
+                {/* --- things to do --- */}
+                <section className="mt-14 max-w-3xl">
+                    <h2 className="text-xl md:text-2xl font-bold text-stone-900 mb-4">
+                        Things to do in {area.name}
+                    </h2>
+                    {area.thingsToDo.length ? (
+                        area.thingsToDo.map((paragraph, i) => (
+                            <p key={i} className="text-stone-700 leading-relaxed mb-4">
+                                {paragraph}
+                            </p>
+                        ))
+                    ) : (
+                        <Placeholder what={`what there is to do in and around ${area.name}`} />
+                    )}
+                </section>
+
                 {/* --- getting there --- */}
                 <section className="mt-14 max-w-3xl">
                     <h2 className="text-xl md:text-2xl font-bold text-stone-900 mb-4">

@@ -5,6 +5,7 @@ import { adminClient } from '@/lib/supabaseAdmin';
 import { NextResponse } from 'next/server';
 import { verifyStripeSignature, stripeRequest } from '@/lib/stripe';
 import { expiryFrom } from '@/lib/serviceOrders';
+import { displayName } from '@/lib/utils';
 
 export const dynamic = 'force-dynamic';
 
@@ -264,7 +265,7 @@ export async function POST(request: Request) {
 
                 const { data: guest } = await admin
                     .from('profiles')
-                    .select('id, full_name, preferred_name, phone, email')
+                    .select('id, full_name, preferred_name, show_full_name, phone, email')
                     .eq('id', md.guest_id)
                     .maybeSingle();
 
@@ -284,7 +285,16 @@ export async function POST(request: Request) {
                         price: Number(cs.amount_total || 0) / 100,
                         commission_rate: Number(md.commission_rate) || 0.10,
                         status: 'authorised',
-                        guest_name: guest ? (guest.preferred_name || guest.full_name) : null,
+                        // The provider is a third party — a chef, a photographer, a
+                        // guide — so this goes through displayName() like any other
+                        // place one person is named to another. It is stored rather
+                        // than looked up at read time, so an unhonoured value here
+                        // would outlive the setting that should have masked it.
+                        //
+                        // Empty fallback, stored as null: the provider's dashboard
+                        // omits the "For ..." line entirely when there is no name,
+                        // which reads better than "For Guest".
+                        guest_name: displayName(guest, '') || null,
                         guest_phone: guest ? guest.phone : null,
                         guest_email: (guest && guest.email) || cs.customer_details?.email || null,
                         note: md.note || null,
