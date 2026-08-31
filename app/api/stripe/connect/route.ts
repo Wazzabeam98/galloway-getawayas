@@ -1,3 +1,4 @@
+import { logError } from '@/lib/logError';
 import { createRouteHandlerClient } from '@supabase/auth-helpers-nextjs';
 import { adminClient } from '@/lib/supabaseAdmin';
 import { cookies } from 'next/headers';
@@ -8,6 +9,7 @@ import { SITE_URL } from '@/lib/email';
 export const dynamic = 'force-dynamic';
 
 export async function POST(request: Request) {
+    let reporterId: string | null = null;
     try {
         const supabase = createRouteHandlerClient({ cookies });
         // getUser(), not getSession(). getSession() only decodes the auth
@@ -16,6 +18,7 @@ export async function POST(request: Request) {
         // id is accepted. This route moves money, so the identity it acts on
         // has to be verified against the auth server, which getUser() does.
         const { data: { user } } = await supabase.auth.getUser();
+        reporterId = (user && user.id) || null;
 
         if (!user) {
             return NextResponse.json({ ok: false, error: 'Not signed in' }, { status: 401 });
@@ -117,6 +120,13 @@ export async function POST(request: Request) {
         return NextResponse.json({ ok: true, url: accountLink.url });
     } catch (err: any) {
         console.error('[stripe/connect]', err && err.message);
+
+        // The console is nobody's alarm. A host who cannot finish onboarding cannot be paid at all, and the payout
+        // run will simply skip them every day without saying why.
+        await logError('stripe/connect: a host could not get through Stripe onboarding', err, {
+            path: 'api/stripe/connect',
+            userId: reporterId || undefined,
+        });
         return NextResponse.json(
             { ok: false, error: (err && err.message) || 'Something went wrong' },
             { status: 500 }
@@ -126,6 +136,7 @@ export async function POST(request: Request) {
 
 // Lets the Payments section read live status without waiting for a webhook.
 export async function GET() {
+    let statusReporterId: string | null = null;
     try {
         const supabase = createRouteHandlerClient({ cookies });
         // getUser(), not getSession(). getSession() only decodes the auth
@@ -134,6 +145,7 @@ export async function GET() {
         // id is accepted. This route moves money, so the identity it acts on
         // has to be verified against the auth server, which getUser() does.
         const { data: { user } } = await supabase.auth.getUser();
+        statusReporterId = (user && user.id) || null;
 
         if (!user) {
             return NextResponse.json({ ok: false, error: 'Not signed in' }, { status: 401 });
@@ -177,6 +189,15 @@ export async function GET() {
         });
     } catch (err: any) {
         console.error('[stripe/connect GET]', err && err.message);
+
+        // The console is nobody's alarm. This is the read the dashboard uses
+        // to decide whether a host is ready to be paid; if it fails they are
+        // told their payout account cannot be checked and nobody else knows.
+        await logError('stripe/connect: could not read a payout account status', err, {
+            path: 'api/stripe/connect',
+            userId: statusReporterId || undefined,
+        });
+
         return NextResponse.json({ ok: false, error: 'Could not check your payout account' }, { status: 500 });
     }
 }

@@ -1,3 +1,4 @@
+import { logError } from '@/lib/logError';
 import { createRouteHandlerClient } from '@supabase/auth-helpers-nextjs';
 import { createClient } from '@supabase/supabase-js';
 import { cookies } from 'next/headers';
@@ -10,12 +11,14 @@ export const dynamic = 'force-dynamic';
 // a co-host they trusted with the listing — it changes what guests can see,
 // not where any money goes, and it can always be undone.
 export async function POST(request: Request) {
+    let reporterId: string | null = null;
     try {
         const supabase = createRouteHandlerClient({ cookies });
         // getUser(), not getSession() — getSession() trusts an unsigned
         // cookie, so a forged one impersonates any user. getUser() verifies
         // the token against the auth server. Matches the admin/services routes.
         const { data: { user } } = await supabase.auth.getUser();
+        reporterId = (user && user.id) || null;
 
         if (!user) {
             return NextResponse.json({ ok: false, error: 'Not signed in' }, { status: 401 });
@@ -89,6 +92,13 @@ export async function POST(request: Request) {
         return NextResponse.json({ ok: true, status: hidden ? 'hidden' : 'published' });
     } catch (err: any) {
         console.error('[listings/visibility]', err && err.message);
+
+        // The console is nobody's alarm. Hiding is what a host reaches for when something is wrong with a property.
+        // If it fails quietly they believe it is hidden when it is still bookable.
+        await logError('listings/visibility: a listing could not be shown or hidden', err, {
+            path: 'api/listings/visibility',
+            userId: reporterId || undefined,
+        });
         return NextResponse.json(
             { ok: false, error: (err && err.message) || 'Could not change that' },
             { status: 500 }
