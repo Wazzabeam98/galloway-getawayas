@@ -164,7 +164,23 @@ export default function TradeShopPage({ params }: { params: { trade: string } })
                 .from('service_providers')
                 .select('id, business_name, description, logo, trade, callout_fee, hourly_rate, callout_waived, does_gas, does_oil')
                 .eq('trade', trade)
-                .eq('status', 'approved');
+                .eq('status', 'approved')
+                // OUT OF THE SHOP WINDOW WHEN THEY HAVE NOT PAID.
+                //
+                // Two columns, never one. `status` is what an admin decided
+                // about the business; `subscription_status` is whether the
+                // subscription is being paid. Folding non-payment into
+                // `status` would collide with the approve route, which guards
+                // its write on the status it read.
+                //
+                // Only 'unpaid' hides — not past_due, where Stripe is still
+                // retrying. See visibleInDirectory in lib/serviceSubscription.
+                //
+                // This is a client component on the anon key, so it depends on
+                // the column grant in 20260831170000. Without it the filter
+                // returns nothing and the whole directory empties, which is at
+                // least the loud version of the failure.
+                .neq('subscription_status', 'unpaid');
 
             const list = (rows || []) as Provider[];
             setProviders(list);
