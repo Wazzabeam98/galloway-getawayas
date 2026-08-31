@@ -174,8 +174,15 @@ export const AREAS: Area[] = [
         slug: 'wigtown',
         name: 'Wigtown',
         townKeys: ['wigtown'],
-        intro: [],
-        metaDescription: '',
+        // Staged: copy written, held out of the index and sitemap until it has
+        // been checked live. Clear `hold` to publish (still needs stock).
+        hold: true,
+        intro: [
+            "Wigtown is Scotland’s National Book Town, which for a place of about a thousand people means an improbable number of bookshops — second-hand, antiquarian and new — strung around a broad central square. The designation came in 1998 and the town rebuilt itself around it; The Bookshop on North Main Street is the largest second-hand bookshop in Scotland.",
+            "Every autumn the Wigtown Book Festival brings ten days of writers, talks and events and fills the town. The rest of the year it is quiet, which is the other half of the appeal — a wet afternoon works through the shelves, a dry one goes down to the salt marsh below the town where the Bladnoch meets Wigtown Bay.",
+            "It sits at the top of the Machars, the peninsula running south to Whithorn — where St Ninian landed, the cradle of Scottish Christianity — and on to the Isle of Whithorn and the sea. Bladnoch, Scotland’s most southerly distillery, is a mile out of town, and Newton Stewart and the Galloway Forest Park are fifteen minutes north.",
+        ],
+        metaDescription: "Scotland’s National Book Town, on the Machars — more bookshops than a place its size has any right to, and a book festival every autumn.",
         gettingThere: [],
         faqs: [],
         nearby: ['newton-stewart', 'gatehouse-of-fleet'],
