@@ -1,3 +1,4 @@
+import { logError } from '@/lib/logError';
 import { createServerComponentClient } from '@supabase/auth-helpers-nextjs';
 import { createClient } from '@supabase/supabase-js';
 import { cookies } from 'next/headers';
@@ -33,9 +34,29 @@ export default async function AdminPayouts() {
     const rows = bookings || [];
 
     const { data: listings } = await admin.from('listings').select('id, title, commission_rate');
-    const { data: hosts } = await admin
-        .from('profile_private')
+    // `profiles`, not `profile_private`. That view is scoped by auth.uid() in
+    // its own WHERE clause — which is part of the view body, so it applies to
+    // the service key too, and auth.uid() is null there. It returned NOTHING,
+    // every time, to this page. Proved against the test project: the same
+    // service key gets 0 rows from the view and 13 from the table.
+    //
+    // So every host on this page was drawn with the fallback name, every
+    // `owed` was zero, and the running-total half of the check below was
+    // always £0.00 — it was comparing real debts against nothing and reporting
+    // whatever it found. The view's own definition intends admins to see
+    // everything; reading it with a key that has no session defeated that.
+    //
+    // The page is admin-only via requireAdmin, and reads bookings, listings
+    // and payouts through the same admin client.
+    const { data: hosts, error: hostsError } = await admin
+        .from('profiles')
         .select('id, full_name, preferred_name, show_full_name, stripe_account_id, stripe_payouts_enabled, payout_balance_owed');
+
+    if (hostsError) {
+        await logError('admin/payouts: could not load the hosts', hostsError, {
+            path: 'admin/payouts',
+        });
+    }
 
     const listingTitle: Record<string, string> = {};
     const listingRate: Record<string, number> = {};
@@ -257,23 +278,49 @@ export default async function AdminPayouts() {
                     {/* The itemised rows and profiles.payout_balance_owed are
                         the same money counted two ways. If they ever disagree,
                         one of them is wrong and somebody needs to know which
-                        before a host is told a figure. */}
+                        before a host is told a figure.
+
+                        PER HOST, not site-wide. This compared the sum of every
+                        debt row against the sum of every running total, so one
+                        host £70 light and another £70 heavy cancelled exactly
+                        and it stayed silent while both were wrong. A warning
+                        that two errors can hide inside is not a warning. */}
                     {(() => {
-                        const itemised = debts.reduce(
-                            (sum: number, d: any) => round2(sum + outstandingOf(d)),
-                            0
-                        );
-                        const totals = (hosts || []).reduce(
-                            (sum: number, h: any) => round2(sum + Number(h.payout_balance_owed || 0)),
-                            0
-                        );
-                        if (Math.abs(itemised - totals) < 0.005) return null;
+                        const itemisedBy: Record<string, number> = {};
+                        debts.forEach((d: any) => {
+                            itemisedBy[d.host_id] = round2((itemisedBy[d.host_id] || 0) + outstandingOf(d));
+                        });
+
+                        // Every host who appears on either side. A host with
+                        // debt rows and a zero total is exactly as wrong as one
+                        // with a total and no rows, and looking only at hosts
+                        // who have rows would miss the second.
+                        const ids = Array.from(new Set([
+                            ...Object.keys(itemisedBy),
+                            ...(hosts || []).map((h: any) => h.id),
+                        ]));
+
+                        const off = ids
+                            .map((id) => ({
+                                id,
+                                name: (hostInfo[id] && hostInfo[id].name) || 'Unknown host',
+                                itemised: round2(itemisedBy[id] || 0),
+                                total: round2((hostInfo[id] && hostInfo[id].owed) || 0),
+                            }))
+                            .filter((r) => Math.abs(r.itemised - r.total) >= 0.005);
+
+                        if (off.length === 0) return null;
+
                         return (
-                            <p className="text-xs font-semibold text-red-700 mt-4">
-                                These lines come to £{itemised.toFixed(2)} but the running totals on
-                                the host records say £{totals.toFixed(2)}. They should match — check
-                                before quoting either at a host.
-                            </p>
+                            <div className="text-xs font-semibold text-red-700 mt-4 space-y-1">
+                                {off.map((r) => (
+                                    <p key={r.id}>
+                                        {r.name}: these lines come to £{r.itemised.toFixed(2)} but the
+                                        running total on the host record says £{r.total.toFixed(2)}.
+                                        They should match — check before quoting either at them.
+                                    </p>
+                                ))}
+                            </div>
                         );
                     })()}
                 </div>

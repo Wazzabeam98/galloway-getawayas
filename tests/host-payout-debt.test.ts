@@ -156,9 +156,22 @@ function harness(opts: {
         return chain;
     }
 
+    // The debt now comes down through the database function rather than a
+    // read-add-write in the route, so the double models what that function
+    // does — add the delta, never below zero — and records the resulting
+    // balance where the profiles update used to be recorded. The assertions
+    // below still read as "what does the host owe afterwards".
+    let debtBalance = Number(opts.owedBalance || 0);
+
     const client = {
         from: (table: string) => builder(table),
         auth: { admin: { getUserById: async () => ({ data: { user: { email: '' } } }) } },
+        rpc: async (name: string, args: any) => {
+            if (name !== 'adjust_payout_balance') return { data: null, error: null };
+            debtBalance = Math.max(0, Math.round((debtBalance + Number(args.p_delta)) * 100) / 100);
+            profileWrites.push({ payout_balance_owed: debtBalance });
+            return { data: debtBalance, error: null };
+        },
     };
 
     stubModule('@supabase/supabase-js', { createClient: () => client });

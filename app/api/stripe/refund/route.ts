@@ -121,20 +121,20 @@ export async function POST(request: Request) {
             const penalty = round2(Number(booking.total_price || 0) * 0.05);
 
             if (penalty > 0) {
-                const { data: hostProfile } = await admin
-                    .from('profiles')
-                    .select('payout_balance_owed')
-                    .eq('id', booking.host_id)
-                    .maybeSingle();
+                // One statement, inside the database. Read-add-write here meant
+                // a clawback landing at the same moment overwrote this penalty,
+                // or was overwritten by it.
+                const { error: penaltyError } = await admin.rpc('adjust_payout_balance', {
+                    p_host: booking.host_id,
+                    p_delta: penalty,
+                });
 
-                await admin
-                    .from('profiles')
-                    .update({
-                        payout_balance_owed: round2(
-                            Number((hostProfile && hostProfile.payout_balance_owed) || 0) + penalty
-                        ),
-                    })
-                    .eq('id', booking.host_id);
+                if (penaltyError) {
+                    await logError('refund: a cancellation penalty was not added to what the host owes', penaltyError, {
+                        path: 'api/stripe/refund',
+                        userId: booking.host_id,
+                    });
+                }
 
                 await admin.from('payouts').insert({
                     booking_id: booking.id,

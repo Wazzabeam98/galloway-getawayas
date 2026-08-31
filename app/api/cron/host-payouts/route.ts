@@ -166,10 +166,45 @@ export async function GET(request: Request) {
             }
 
             if (deduction > 0) {
-                await admin
-                    .from('profiles')
-                    .update({ payout_balance_owed: round2(owed - deduction) })
-                    .eq('id', booking.host_id);
+                // One statement, inside the database. `owed` was read before
+                // the transfer above, so a debt arriving while we were waiting
+                // on Stripe used to be wiped out by this write — the widest
+                // window of the three places that move this number, because a
+                // network round trip sits inside it. Subtracting what we
+                // actually recovered, rather than writing a total worked out
+                // from a stale read, closes it.
+                const { data: newBalance, error: balanceError } = await admin.rpc(
+                    'adjust_payout_balance',
+                    { p_host: booking.host_id, p_delta: -deduction }
+                );
+
+                if (balanceError || newBalance === null) {
+                    // The money has already moved. The debt is recovered and
+                    // the record of it is not, which is the direction that
+                    // over-charges a host next time round.
+                    await logError(
+                        'host-payouts: recovered £' + deduction.toFixed(2)
+                            + ' but could not bring down what the host owes',
+                        balanceError || 'no profile for that host',
+                        { path: '/api/cron/host-payouts', userId: booking.host_id }
+                    );
+                } else if (round2(Number(newBalance)) < round2(owed - deduction)) {
+                    // Lower than it should be, which only happens if something
+                    // else took the same debt off at the same time. A larger
+                    // figure is fine and expected — that is a new debt landing
+                    // while the transfer was in flight, which is precisely what
+                    // this change stopped losing.
+                    await logError(
+                        'host-payouts: the same debt looks to have been recovered twice',
+                        {
+                            expected: round2(owed - deduction),
+                            actual: round2(Number(newBalance)),
+                            deducted: deduction,
+                            booking_id: booking.id,
+                        },
+                        { path: '/api/cron/host-payouts', userId: booking.host_id }
+                    );
+                }
 
                 // Close off the individual debts this has just paid down.
                 //
