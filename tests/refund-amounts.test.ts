@@ -132,6 +132,17 @@ function load(routePath: string, options: Options = {}) {
             });
             return chain;
         },
+        // The cancellation penalty now goes through the database function
+        // instead of a read-add-write on profiles. Modelled here the same way,
+        // and recorded where the profiles update used to be.
+        async rpc(name: string, args: any) {
+            if (name !== 'adjust_payout_balance') return { data: null, error: null };
+            const current = Number(rows.profiles.payout_balance_owed || 0);
+            const next = Math.max(0, Math.round((current + Number(args.p_delta)) * 100) / 100);
+            rows.profiles.payout_balance_owed = next;
+            updates.push({ table: 'profiles', patch: { payout_balance_owed: next } });
+            return { data: next, error: null };
+        },
     };
 
     stubModule('@supabase/supabase-js', { createClient: () => admin });

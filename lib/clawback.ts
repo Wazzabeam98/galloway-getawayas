@@ -27,15 +27,24 @@ async function availableAt(accountId: string): Promise<number | null> {
 }
 
 async function carryForward(admin: any, booking: any, amount: number, note: string): Promise<void> {
-    const { data: host } = await admin
-        .from('profiles')
-        .select('payout_balance_owed')
-        .eq('id', booking.host_id)
-        .maybeSingle();
+    // One statement, inside the database. This used to read the running total,
+    // add to it here, and write it back — so a second debt arriving in that gap
+    // was read from a stale value and overwritten. Two debts of £40 and £25
+    // landing together left £40.
+    const { error: adjustError } = await admin.rpc('adjust_payout_balance', {
+        p_host: booking.host_id,
+        p_delta: amount,
+    });
 
-    const owed = round2(Number((host && host.payout_balance_owed) || 0) + amount);
-
-    await admin.from('profiles').update({ payout_balance_owed: owed }).eq('id', booking.host_id);
+    // A debt that failed to record is money we will never recover, and the
+    // reversal above has already happened. It cannot be retried from here
+    // without risking recording it twice, so it is reported instead.
+    if (adjustError) {
+        await logError('clawback: a shortfall could not be added to what the host owes', adjustError, {
+            path: 'lib/clawback',
+            userId: booking.host_id,
+        });
+    }
 
     await admin.from('payouts').insert({
         booking_id: booking.id,

@@ -51,9 +51,21 @@ function fakeAdmin(profile: any = { payout_balance_owed: 0 }) {
     const withAccount = { stripe_account_id: 'acct_test', ...profile };
     const writes: any[] = [];
     const updates: any[] = [];
+    let balance = Number(profile.payout_balance_owed || 0);
     return {
         writes,
         updates,
+        // The debt now moves through the database function rather than a
+        // read-add-write in JavaScript, so the double models what that function
+        // does: add the delta to the running balance and never go below zero.
+        // Recorded in the shape a profiles update used to take, so the
+        // assertions still read as "what does the host owe afterwards".
+        async rpc(name: string, args: any) {
+            if (name !== 'adjust_payout_balance') return { data: null, error: null };
+            balance = Math.max(0, Math.round((balance + Number(args.p_delta)) * 100) / 100);
+            updates.push({ table: 'profiles', patch: { payout_balance_owed: balance }, id: args.p_host });
+            return { data: balance, error: null };
+        },
         from(table: string) {
             return {
                 insert: async (row: any) => { writes.push({ table, row }); return { data: null, error: null }; },
