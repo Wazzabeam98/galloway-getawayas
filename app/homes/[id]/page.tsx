@@ -532,7 +532,7 @@ const FindHome = async ({ params }: { params: { id: string } }) => {
                     }}
                 />
 
-                <PhotoGallery images={images} title={home.title} />
+                <PhotoGallery images={images} title={home.title} area={placeSummary(home.location)} />
 
                 <div className='grid grid-cols-1 lg:grid-cols-3 gap-10 mt-5'>
                     <div className='order-2 lg:order-1 lg:col-span-2'>

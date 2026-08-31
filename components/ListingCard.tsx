@@ -13,9 +13,15 @@ import { hasPublicScore } from '@/lib/reviews';
 // (lib/reviews.ts), and a second copy of that condition is a second place for
 // it to be got wrong.
 //
-// The alt text is the property title. Not decorative: for "holiday cottage
-// Kirkcudbright" Google Images is a real way in, and these are the only
-// pictures on the site of the places being sold.
+// The alt text is the property title plus what the place is and where it is.
+// Not decorative: for "holiday cottage Kirkcudbright" Google Images is a real
+// way in, and these are the only pictures on the site of the places being sold.
+//
+// The title alone was too thin — "Rowan Cottage" is a name, not a description,
+// and it tells a search engine nothing about what the picture shows. These
+// photos are uploaded by hosts, so the code cannot know whether a given one is
+// the kitchen or the view; what it can say truthfully is what the property is
+// and which town it is in, which is the query guests actually type.
 
 export interface CardListing {
     id: string;
@@ -41,7 +47,7 @@ export default function ListingCard({ listing }: { listing: CardListing }) {
                 {listing.images && listing.images.length > 0 ? (
                     <Image
                         src={getImageUrl(listing.images[0])}
-                        alt={listing.title}
+                        alt={`${listing.title}, a self-catering holiday cottage in ${publicArea(listing.location)}`}
                         fill
                         // One card per row on a phone, two on a tablet, four on
                         // a laptop — so the browser asks for a photo the size of

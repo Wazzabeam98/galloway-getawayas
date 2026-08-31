@@ -14,15 +14,23 @@ import Link from 'next/link';
 // and passes a resolved `photo` path, so this component always has a real image
 // to show. The onError fallback stays as a safety net for a file that vanishes
 // between the check and the request, not as the normal empty state.
+//
+// `photoAlt` describes what is actually in the photograph, and page.tsx is
+// where those descriptions live, next to the file lookup. The town name is
+// already the heading directly under the picture, so repeating it in the alt
+// tells Google Images nothing it does not have — "a roofless stone tower house
+// against a blue sky" is what puts the photo in front of somebody searching
+// for one.
 
 interface Town {
     slug: string;
     name: string;
     blurb: string;
     photo: string;
+    photoAlt: string;
 }
 
-function TownPhoto({ photo, name }: { photo: string; name: string }) {
+function TownPhoto({ photo, alt, name }: { photo: string; alt: string; name: string }) {
     const [broken, setBroken] = useState(false);
 
     return (
@@ -31,7 +39,7 @@ function TownPhoto({ photo, name }: { photo: string; name: string }) {
                 // eslint-disable-next-line @next/next/no-img-element
                 <img
                     src={photo}
-                    alt={name}
+                    alt={alt}
                     className="h-full w-full object-cover"
                     loading="lazy"
                     onError={() => setBroken(true)}
@@ -104,7 +112,7 @@ export default function TownsCarousel({ towns }: { towns: Town[] }) {
                                 href={'/holiday-cottages/' + t.slug}
                                 className="group block h-full rounded-2xl border border-stone-200 hover:border-stone-900 transition overflow-hidden"
                             >
-                                <TownPhoto photo={t.photo} name={t.name} />
+                                <TownPhoto photo={t.photo} alt={t.photoAlt} name={t.name} />
                                 <div className="p-4">
                                     <h3 className="font-bold text-stone-900">{t.name}</h3>
                                     <p className="mt-1 text-sm text-stone-600">{t.blurb}</p>
