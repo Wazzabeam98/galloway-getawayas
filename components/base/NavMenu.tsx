@@ -116,8 +116,11 @@ const NavMenu = ({
                                     <li className={itemClass}>
                                         <Link href='/services/dashboard/edit'>Your profile</Link>
                                     </li>
+                                    {/* A tradesman's messages are his job threads,
+                                        not booking chat — a home he can navigate to
+                                        so a thread is never a lost email. */}
                                     <li className={itemClass}>
-                                        <MessagesLink />
+                                        <Link href='/services/messages'>Messages</Link>
                                     </li>
                                 </>
                             ) : (

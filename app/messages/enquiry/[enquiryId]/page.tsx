@@ -21,8 +21,9 @@ export default async function EnquiryThreadPage({ params }: { params: { enquiryI
     const ctx = await enquiryThreadContext(admin, params.enquiryId, user.id);
     if (!ctx) redirect('/');
 
-    // Back to wherever this side manages the job.
-    const backHref = ctx.isProvider ? '/services/dashboard' : '/dashboard/enquiries';
+    // Back to wherever this side finds their threads: the tradesman's job
+    // messages list, or the host's enquiries.
+    const backHref = ctx.isProvider ? '/services/messages' : '/dashboard/enquiries';
 
     return <EnquiryThread enquiryId={params.enquiryId} backHref={backHref} />;
 }
