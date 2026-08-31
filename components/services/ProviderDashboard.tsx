@@ -56,6 +56,7 @@ export type DashboardUpcoming = {
     title: string;
     window: string;
     preferredDate?: string | null;
+    proposedDate?: string | null;
     hostName?: string | null;
     hostPhone?: string | null;
     listing?: { id: string; title: string; location: string; image: string | null } | null;
@@ -307,8 +308,8 @@ export default function ProviderDashboard(props: ProviderDashboardProps) {
                                                     </div>
                                                 )}
 
-                                                {/* Change the day, or call it off. */}
-                                                <UpcomingJobActions enquiryId={u.id} preferredDate={u.preferredDate || null} />
+                                                {/* Ask to change the day, or call it off. */}
+                                                <UpcomingJobActions enquiryId={u.id} preferredDate={u.preferredDate || null} proposedDate={u.proposedDate || null} />
                                             </div>
                                         </div>
                                     </li>

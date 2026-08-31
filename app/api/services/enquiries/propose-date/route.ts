@@ -3,34 +3,40 @@ import { createRouteHandlerClient } from '@supabase/auth-helpers-nextjs';
 import { cookies } from 'next/headers';
 import { adminClient } from '@/lib/supabaseAdmin';
 import { logError } from '@/lib/logError';
-import { announceAmendment } from '@/lib/serviceEnquiryAlert';
+import { announceProposedChange } from '@/lib/serviceEnquiryAlert';
 
 export const dynamic = 'force-dynamic';
 
-// The tradesman moving an accepted job to a different day.
+// The tradesman ASKING to move an accepted job to a different day.
 //
-// `preferred_date` is the host's request, not something a provider normally
-// writes — so, like accepting and cancelling, this goes through a route under
-// the service role and is authorised by provider ownership. It stays 'accepted'
-// (he still means to come, just on another day) and the host is told.
+// He cannot move it himself: the host is the one who knows whether a guest is
+// in the cottage that day, and an accepted job is close to a booking. So this
+// only records a proposal — proposed_date — and emails the host to accept or
+// decline. preferred_date, the day that actually stands, is untouched until
+// the host agrees (see respond-date). Authorised by provider ownership, under
+// the service role, like accepting.
+//
+// Passing null clears a proposal he no longer wants to make.
 export async function POST(req: Request) {
     try {
         const body = await req.json();
         const enquiryId = String(body.enquiryId || '');
-        const preferredDate = String(body.preferred_date || '').trim();
+        const clear = body.clear === true;
+        const proposedDate = clear ? null : String(body.proposed_date || '').trim();
         const windowFrom = body.window_from ? String(body.window_from) : null;
         const windowTo = body.window_to ? String(body.window_to) : null;
 
-        if (!enquiryId || !preferredDate) {
-            return NextResponse.json({ ok: false, error: 'Need an enquiry and a date.' }, { status: 400 });
+        if (!enquiryId) {
+            return NextResponse.json({ ok: false, error: 'No enquiry.' }, { status: 400 });
         }
-        // A plain YYYY-MM-DD, and not in the past.
-        if (!/^\d{4}-\d{2}-\d{2}$/.test(preferredDate)) {
-            return NextResponse.json({ ok: false, error: 'That date is not valid.' }, { status: 400 });
-        }
-        const todayKey = new Date().toLocaleDateString('en-CA', { timeZone: 'Europe/London' });
-        if (preferredDate < todayKey) {
-            return NextResponse.json({ ok: false, error: 'Pick a day that hasn’t passed.' }, { status: 400 });
+        if (!clear) {
+            if (!/^\d{4}-\d{2}-\d{2}$/.test(proposedDate || '')) {
+                return NextResponse.json({ ok: false, error: 'That date is not valid.' }, { status: 400 });
+            }
+            const todayKey = new Date().toLocaleDateString('en-CA', { timeZone: 'Europe/London' });
+            if ((proposedDate as string) < todayKey) {
+                return NextResponse.json({ ok: false, error: 'Pick a day that hasn’t passed.' }, { status: 400 });
+            }
         }
 
         const supabase = createRouteHandlerClient({ cookies });
@@ -62,16 +68,17 @@ export async function POST(req: Request) {
             return NextResponse.json({ ok: false, error: 'Only an accepted job can be moved.' }, { status: 409 });
         }
 
-        const previousDate = enquiry.preferred_date || null;
         const now = new Date().toISOString();
-
-        const patch: any = { preferred_date: preferredDate, updated_at: now };
-        if (windowFrom !== null) patch.window_from = windowFrom;
-        if (windowTo !== null) patch.window_to = windowTo;
 
         const { data: saved, error } = await admin
             .from('service_enquiries')
-            .update(patch)
+            .update({
+                proposed_date: proposedDate,
+                proposed_window_from: clear ? null : windowFrom,
+                proposed_window_to: clear ? null : windowTo,
+                proposed_at: clear ? null : now,
+                updated_at: now,
+            })
             .eq('id', enquiry.id)
             .eq('status', 'accepted')
             .select('*')
@@ -81,21 +88,20 @@ export async function POST(req: Request) {
             return NextResponse.json({ ok: false, error: 'This one has already changed.' }, { status: 409 });
         }
 
-        let listing: any = null;
-        if (saved.listing_id) {
-            const { data } = await admin
-                .from('listings')
-                .select('id, title, location')
-                .eq('id', saved.listing_id)
-                .maybeSingle();
-            listing = data;
+        // Only tell the host when there is something to tell — not on a clear.
+        let alert: any = null;
+        if (!clear) {
+            let listing: any = null;
+            if (saved.listing_id) {
+                const { data } = await admin.from('listings').select('id, title, location').eq('id', saved.listing_id).maybeSingle();
+                listing = data;
+            }
+            alert = await announceProposedChange(saved, provider, listing);
         }
-
-        const alert = await announceAmendment(saved, provider, listing, previousDate);
 
         return NextResponse.json({ ok: true, emailed: alert });
     } catch (err: any) {
-        await logError('service-enquiry-amend', err);
+        await logError('service-enquiry-propose-date', err);
         return NextResponse.json({ ok: false, error: 'Something went wrong.' }, { status: 500 });
     }
 }

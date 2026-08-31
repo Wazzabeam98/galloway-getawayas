@@ -125,7 +125,7 @@ export default async function ProviderDashboardPage() {
     // Everything that has arrived for this provider.
     const { data: enquiryRows } = await admin
         .from('service_enquiries')
-        .select('id, status, summary, area_key, urgency, preferred_date, window_from, window_to, host_name, host_phone, listing_id, sent_at, expires_at')
+        .select('id, status, summary, area_key, urgency, preferred_date, window_from, window_to, host_name, host_phone, listing_id, proposed_date, sent_at, expires_at')
         .eq('provider_id', provider.id)
         .order('sent_at', { ascending: false });
 
@@ -178,6 +178,7 @@ export default async function ProviderDashboardPage() {
             title: e.summary,
             window,
             preferredDate: e.preferred_date || null,
+            proposedDate: e.proposed_date || null,
             hostName: e.host_name || null,
             hostPhone: e.host_phone || null,
             listing: l ? {
