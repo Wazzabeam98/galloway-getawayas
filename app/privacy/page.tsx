@@ -67,6 +67,17 @@ export default function PrivacyPage() {
                         <strong>Your host</strong> — your name and booking details, so they can prepare for
                         your stay. Your exact address is not shared with them.
                     </li>
+                    <li>
+                        <strong>Us</strong> &mdash; the two directors of Galloway Getaways can see your
+                        real name on our internal admin pages, whatever you have chosen under
+                        &ldquo;Show my full legal name&rdquo; in{' '}
+                        <Link href="/account" className="text-emerald-700 underline">
+                            Account settings
+                        </Link>
+                        . That setting controls what other guests and hosts see. We still need to know who
+                        we are dealing with when we approve a new host, pay one, or sort out a dispute
+                        between two people, and we would rather say so plainly than leave it implied.
+                    </li>
                     <li><strong>Stripe</strong>, to process payments and payouts.</li>
                     <li><strong>Supabase</strong>, which hosts our database, and <strong>Vercel</strong>, which hosts the site.</li>
                     <li>

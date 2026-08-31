@@ -21,7 +21,7 @@ import { cookies } from 'next/headers';
 import { requireAdmin } from '@/lib/access';
 import { notFound } from 'next/navigation';
 import { adminClient } from '@/lib/supabaseAdmin';
-import { displayName } from '@/lib/utils';
+import { adminName } from '@/lib/utils';
 import CommissionEditor, { CommissionRow } from '@/components/admin/CommissionEditor';
 
 export const dynamic = 'force-dynamic';
@@ -54,7 +54,7 @@ export default async function CommissionAdmin() {
             .in('id', hostIds);
 
         (hosts || []).forEach((h: any) => {
-            hostNames[h.id] = displayName(h, 'Host');
+            hostNames[h.id] = adminName(h, 'Host');
         });
     }
 

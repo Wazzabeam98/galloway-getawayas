@@ -61,6 +61,32 @@ export function displayName(
   return fallback;
 }
 
+// The same person, named on an ADMIN screen.
+//
+// Deliberately ignores show_full_name. Approving a host, settling a payout or
+// handling a dispute are decisions about a real person with a real legal name,
+// and a director who cannot see who they are dealing with cannot make them.
+// The switch is a promise to guests and hosts about what OTHER GUESTS AND
+// HOSTS see; it was never a promise that the company does not know who its
+// users are. The privacy policy says so in those words.
+//
+// Never call this from anything a guest or a host can load. Its only callers
+// are under app/admin, which is behind an is_admin check.
+export function adminName(
+  profile: NameProfile | null | undefined,
+  fallback: string = "User"
+): string {
+  if (!profile) return fallback;
+
+  const legal = (profile.full_name || "").trim();
+  if (legal) return legal;
+
+  // No legal name on the account at all — a preferred name is better than
+  // "Host" for working out who a row belongs to.
+  const preferred = (profile.preferred_name || "").trim();
+  return preferred || fallback;
+}
+
 // A time column comes back from PostgREST as "15:00:00". Guests should read
 // "3pm". One place, so the listing page, the trip card, the confirmation page
 // and the confirmation email cannot drift apart on how a time looks.

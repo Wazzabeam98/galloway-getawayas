@@ -59,19 +59,45 @@ were read on master at `43c5158`.
 
 # 1. Needs a decision from you
 
-Two, and you asked to take them together.
+One. The other — `full_name` being readable against the owner's wishes — turned
+out to rest on a wrong claim and is now done; it is kept below, struck through,
+because the correction is the useful part.
 
-### `full_name` is readable even when the owner asked for it not to be
+### ~~`full_name` is readable even when the owner asked for it not to be~~
 
-**Unchanged, and re-checked on production today.** `anon` has SELECT on
-`profiles.full_name`, and `show_full_name` is not part of the grant — so the
-column is readable for rows that set it to false. One person on production has
-set it to false today, which is one person the site is not honouring.
+**This entry was wrong, and it has been sitting here making the job look far
+bigger than it was. Done on 31 August 2026.**
 
-Why it is still yours and not mine: names appear on listings and reviews by
-design, so the fix is a view that respects the preference and a sweep of every
-public byline through it. Get it wrong and every host name on the site
-disappears at once.
+The claim was that `show_full_name` is not part of the `anon` grant, so the
+preference could not be honoured in the browser. It is part of the grant. Two
+independent checks:
+
+- `audit-evidence/07-data-privacy-really-prod.txt`, which ran against
+  production with the anon key, selects `show_full_name` among the columns a
+  stranger may read and records it as readable.
+- A live probe of the test project on 31 August: `show_full_name` returns 200,
+  and `email` returns 401 in the same run — so column grants are genuinely
+  being enforced and the readable result is not a blanket permission.
+
+`20260828234003_profiles_revoke_private_columns.sql` grants it explicitly.
+
+No view was needed. There was already a single rule — `displayName()` in
+`lib/utils.ts` — and 17 of the 22 places a name is shown were already going
+through it. Three were not, and were fixed rather than decided on:
+
+- the guest named to a host in the new-booking email, and the sender named in
+  the new-message email — both took the first word of the legal name without
+  consulting the switch
+- `service_orders.guest_name`, stored at checkout and shown to a third-party
+  provider
+
+Trip invites still show the booker's full name, on purpose: you are inviting
+people who already know you, and masking it there reads as broken.
+
+Admin screens now show the real name everywhere, through `adminName()`, and the
+privacy policy and the account toggle both say so plainly. `tests/display-names.test.ts`
+covers the rule and the split, including a walk of the tree that fails if
+`adminName` is ever called from outside `app/admin`.
 
 ### `services/apply` still lets a stranger squat somebody's email
 
