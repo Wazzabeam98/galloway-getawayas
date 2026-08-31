@@ -46,6 +46,7 @@ export default function GuestExperiences(props: {
 
     const [providers, setProviders] = useState<Provider[]>([]);
     const [loaded, setLoaded] = useState(false);
+    const [open, setOpen] = useState(true);
     const [dateFor, setDateFor] = useState<Record<string, string>>({});
     const [busy, setBusy] = useState<string | null>(null);
     const [error, setError] = useState<string | null>(null);
@@ -54,7 +55,7 @@ export default function GuestExperiences(props: {
         let live = true;
         fetch('/api/services/experiences?booking=' + encodeURIComponent(bookingId))
             .then((r) => r.json())
-            .then((d) => { if (live) { setProviders((d && d.providers) || []); setLoaded(true); } })
+            .then((d) => { if (live) { setOpen(d && d.open !== false); setProviders((d && d.providers) || []); setLoaded(true); } })
             .catch(() => { if (live) setLoaded(true); });
         return () => { live = false; };
     }, [bookingId]);
@@ -79,8 +80,27 @@ export default function GuestExperiences(props: {
         setBusy(null);
     }
 
-    // Nothing to show, or not loaded yet — render nothing rather than an empty box.
-    if (!loaded || providers.length === 0) return null;
+    if (!loaded) return null;
+
+    // Closed until launch. The homepage promises this, so the trip page should
+    // not be silent about it — a visible "coming soon", not a hidden nothing.
+    // There is no button: the section says it is coming and cannot be used, and
+    // the server refuses a request even if one were forged.
+    if (!open) {
+        return (
+            <section className="mt-8 rounded-lg border border-dashed border-gray-300 p-5">
+                <h3 className="text-lg font-semibold text-gray-900">Coming soon to your stay</h3>
+                <p className="mt-1 text-sm text-gray-500">
+                    Local experiences you’ll be able to book for your dates — a private chef, a
+                    welcome hamper, a cake, pet care. We’re lining up local businesses now.
+                </p>
+            </section>
+        );
+    }
+
+    // Open, but nothing covers this stay yet — render nothing rather than an
+    // empty box.
+    if (providers.length === 0) return null;
 
     const max = lastNight(checkOut);
 

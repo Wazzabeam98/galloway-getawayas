@@ -4,7 +4,7 @@ import { cookies } from 'next/headers';
 import { NextResponse } from 'next/server';
 import { stripeRequest } from '@/lib/stripe';
 import { SITE_URL } from '@/lib/email';
-import { isLiveToGuests, priceOrder } from '@/lib/serviceOrders';
+import { isLiveToGuests, priceOrder, guestExperiencesOpen } from '@/lib/serviceOrders';
 import { dateFromKey, dateKey } from '@/lib/pricing';
 
 export const dynamic = 'force-dynamic';
@@ -33,6 +33,16 @@ export async function POST(request: Request) {
         const { data: { user } } = await supabase.auth.getUser();
         if (!user) {
             return NextResponse.json({ ok: false, error: 'Not signed in' }, { status: 401 });
+        }
+
+        // The lock. Closed until launch, and enforced here rather than only in
+        // the UI, so a direct POST is refused the same as a hidden button —
+        // whatever the provider's state.
+        if (!guestExperiencesOpen()) {
+            return NextResponse.json(
+                { ok: false, error: 'Guest experiences aren’t open yet.' },
+                { status: 403 }
+            );
         }
 
         const body = await request.json().catch(function () { return {}; });

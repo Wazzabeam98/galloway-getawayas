@@ -2,7 +2,7 @@ import { createRouteHandlerClient } from '@supabase/auth-helpers-nextjs';
 import { adminClient } from '@/lib/supabaseAdmin';
 import { cookies } from 'next/headers';
 import { NextResponse } from 'next/server';
-import { isLiveToGuests, mccForTrade } from '@/lib/serviceOrders';
+import { isLiveToGuests, mccForTrade, guestExperiencesOpen } from '@/lib/serviceOrders';
 import { pointForListing, coversPoint } from '@/lib/serviceProviders';
 
 export const dynamic = 'force-dynamic';
@@ -23,6 +23,14 @@ export async function GET(request: Request) {
         const { data: { user } } = await supabase.auth.getUser();
         if (!user) {
             return NextResponse.json({ ok: false, error: 'Not signed in' }, { status: 401 });
+        }
+
+        // Closed until launch. The surface reads `open` to show its "coming
+        // soon" state; nothing bookable is returned while it is false, so the
+        // trip page and the host panel cannot list a provider before the owner
+        // opens it — even for a caller who owns a live chef.
+        if (!guestExperiencesOpen()) {
+            return NextResponse.json({ ok: true, open: false, stay: null, providers: [] });
         }
 
         // Two ways in, and both are owner-checked. A GUEST asks by their own
@@ -74,7 +82,7 @@ export async function GET(request: Request) {
         const point = pointForListing(listing);
         if (!point) {
             // No location to match against — better nothing than a wrong list.
-            return NextResponse.json({ ok: true, stay, providers: [] });
+            return NextResponse.json({ ok: true, open: true, stay, providers: [] });
         }
 
         // Live guest providers with a price. The gate is enforced in the query
@@ -113,7 +121,7 @@ export async function GET(request: Request) {
                 price: Number(p.experience_price),
             }));
 
-        return NextResponse.json({ ok: true, stay, providers });
+        return NextResponse.json({ ok: true, open: true, stay, providers });
     } catch (err: any) {
         console.error('[services/experiences]', err && err.message);
         return NextResponse.json({ ok: false, error: 'Could not load experiences' }, { status: 500 });

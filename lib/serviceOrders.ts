@@ -13,6 +13,27 @@ import { serviceCeiling, serviceCommission } from '@/lib/pricing';
 import { commissionRateFor } from '@/lib/serviceProviders';
 
 // ---------------------------------------------------------------------------
+// THE LAUNCH SWITCH
+// ---------------------------------------------------------------------------
+//
+// Guest experiences do not open to guests until this says so, whatever else is
+// true — a chef can be approved, connected and covering the cottage, and a
+// guest still cannot book until the switch is on. It is a deliberate launch
+// gate, not a bug: the owner opens it the moment the first chef is ready.
+//
+// ONE ENV VAR, GUEST_EXPERIENCES_OPEN, and nothing else. Absent or anything
+// other than the string 'true' means closed. Read on the SERVER only — this is
+// the lock, not the shop window, so it must not be a NEXT_PUBLIC_ value a
+// browser could see or a UI that only hides a button. The order route and the
+// experiences route both consult it, so a direct API call is refused the same
+// as a click.
+//
+// Flipping it takes a redeploy to bind on Vercel — see MAINTENANCE.md.
+export function guestExperiencesOpen(): boolean {
+    return process.env.GUEST_EXPERIENCES_OPEN === 'true';
+}
+
+// ---------------------------------------------------------------------------
 // WHO STRIPE THINKS EACH PROVIDER IS
 // ---------------------------------------------------------------------------
 //

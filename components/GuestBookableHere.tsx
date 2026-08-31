@@ -30,12 +30,13 @@ export default function GuestBookableHere(props: { listingId: string }) {
 
     const [providers, setProviders] = useState<Provider[]>([]);
     const [loaded, setLoaded] = useState(false);
+    const [open, setOpen] = useState(true);
 
     useEffect(() => {
         let live = true;
         fetch('/api/services/experiences?listing=' + encodeURIComponent(listingId))
             .then((r) => r.json())
-            .then((d) => { if (live) { setProviders((d && d.providers) || []); setLoaded(true); } })
+            .then((d) => { if (live) { setOpen(d && d.open !== false); setProviders((d && d.providers) || []); setLoaded(true); } })
             .catch(() => { if (live) setLoaded(true); });
         return () => { live = false; };
     }, [listingId]);
@@ -50,7 +51,12 @@ export default function GuestBookableHere(props: { listingId: string }) {
                 page — worth a line in your welcome note.
             </p>
 
-            {providers.length === 0 ? (
+            {!open ? (
+                <p className="mt-4 text-sm text-slate-500">
+                    Coming soon. Once guest experiences open, the local businesses that cover this
+                    cottage will appear here — worth a line in your welcome note when they do.
+                </p>
+            ) : providers.length === 0 ? (
                 <p className="mt-4 text-sm text-slate-500">
                     Nothing covers this cottage yet. As local chefs, bakers and others sign up and go
                     live, they’ll appear here.

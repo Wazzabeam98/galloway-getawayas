@@ -13,7 +13,7 @@ import {
     isLiveToGuests, isAwaitingConnect,
     priceOrder,
     canTransition, releasesHold,
-    CONFIRM_WINDOW_HOURS, expiryFrom,
+    CONFIRM_WINDOW_HOURS, expiryFrom, guestExperiencesOpen,
 } from '@/lib/serviceOrders';
 import { GUEST_TRADES } from '@/lib/serviceProviders';
 
@@ -171,4 +171,29 @@ test('expiry is the window added to creation', () => {
     const expires = expiryFrom(created);
     const gapHours = (new Date(expires).getTime() - new Date(created).getTime()) / (60 * 60 * 1000);
     assert.equal(gapHours, CONFIRM_WINDOW_HOURS);
+});
+
+// --- the launch switch -------------------------------------------------------
+
+test('guest experiences are closed unless the env var is exactly "true"', () => {
+    const prev = process.env.GUEST_EXPERIENCES_OPEN;
+    try {
+        delete process.env.GUEST_EXPERIENCES_OPEN;
+        assert.equal(guestExperiencesOpen(), false, 'absent is closed');
+
+        process.env.GUEST_EXPERIENCES_OPEN = 'false';
+        assert.equal(guestExperiencesOpen(), false);
+
+        process.env.GUEST_EXPERIENCES_OPEN = 'TRUE';
+        assert.equal(guestExperiencesOpen(), false, 'only the exact string true opens it');
+
+        process.env.GUEST_EXPERIENCES_OPEN = '1';
+        assert.equal(guestExperiencesOpen(), false);
+
+        process.env.GUEST_EXPERIENCES_OPEN = 'true';
+        assert.equal(guestExperiencesOpen(), true, 'the one value that opens it');
+    } finally {
+        if (prev === undefined) delete process.env.GUEST_EXPERIENCES_OPEN;
+        else process.env.GUEST_EXPERIENCES_OPEN = prev;
+    }
 });
