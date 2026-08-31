@@ -23,6 +23,9 @@ const {
     fromRow,
     MIN_AMENITIES,
     MAX_PRICE_PER_NIGHT,
+    cardBadges,
+    BADGE_AMENITIES,
+    MAX_CARD_BADGES,
 } = require('../lib/listingRules');
 
 // A listing with nothing wrong with it, to vary one field at a time from.
@@ -276,4 +279,62 @@ test('a row missing the new columns fails the new rules and no others', () => {
 test('an empty row is not silently acceptable', () => {
     assert.ok(publishProblems(fromRow(null)).length > 0);
     assert.ok(publishProblems(fromRow({})).length > 0);
+});
+
+// ---------------------------------------------------------------------------
+// BADGES ON A CARD
+//
+// Driven off the amenities the host already ticks, so there is no second flag
+// to set and nothing to keep in step. Two at most: a third badge is how the
+// first two stop being read.
+// ---------------------------------------------------------------------------
+
+test('a hot tub and a dog-friendly cottage both get a badge', () => {
+    const badges = cardBadges(['Wifi', 'Hot tub', 'Pets allowed', 'Kitchen']);
+
+    assert.equal(badges.length, 2);
+    assert.deepEqual(badges.map((b: any) => b.label), ['Hot tub', 'Pet friendly']);
+});
+
+test('the hot tub comes first, whatever order the host ticked them in', () => {
+    // The host's own order is not a ranking of anything — it is the order the
+    // checkboxes happen to sit in on the form.
+    const badges = cardBadges(['Pets allowed', 'Hot tub']);
+    assert.deepEqual(badges.map((b: any) => b.label), ['Hot tub', 'Pet friendly']);
+});
+
+test('a cottage with neither gets no badges at all', () => {
+    assert.deepEqual(cardBadges(['Wifi', 'Kitchen', 'Smoke alarm']), []);
+    assert.deepEqual(cardBadges([]), []);
+    assert.deepEqual(cardBadges(null), [], 'a listing with no amenities column');
+    assert.deepEqual(cardBadges(undefined), []);
+});
+
+test('nothing else on the amenity list earns a badge', () => {
+    // The sixteen others are not badge-worthy because they are not what
+    // somebody types into Google. If one is added to BADGE_AMENITIES this
+    // fails, which is the point: it should be a decision, not a drift.
+    const badges = cardBadges([
+        'Wifi', 'Kitchen', 'Washing machine', 'TV', 'Heating', 'Cot',
+        'Dedicated workspace', 'EV charger', 'Free parking on premises',
+        'Gym', 'Indoor fireplace', 'Outdoor furniture', 'Pool',
+        'Beach access', 'Waterfront', 'Carbon monoxide alarm', 'Smoke alarm',
+    ]);
+
+    assert.deepEqual(badges, []);
+});
+
+// The cap is the instruction, and it has to survive somebody adding a third
+// candidate to BADGE_AMENITIES without re-reading the comment above it. So it
+// is asserted against a list built to overflow rather than against today's
+// list, which cannot overflow because it is exactly two long.
+test('a card never shows more than two badges, however many it qualifies for', () => {
+    assert.equal(MAX_CARD_BADGES, 2);
+
+    const everything = BADGE_AMENITIES.map((b: any) => b.amenity);
+    assert.equal(cardBadges(everything).length <= MAX_CARD_BADGES, true);
+
+    // And the slice itself, independent of how long the list happens to be.
+    const overflowing = ['Hot tub', 'Pets allowed', 'Hot tub', 'Pets allowed'];
+    assert.equal(cardBadges(overflowing).length, 2);
 });

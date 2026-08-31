@@ -32,6 +32,57 @@ export const MAX_PRICE_PER_NIGHT = 5000;
 // and loses the booking to it.
 export const MIN_AMENITIES = 3;
 
+// ---------------------------------------------------------------------------
+// WHAT EARNS A BADGE ON A CARD
+//
+// Two at most, and only these. A badge is not a summary of the property, it is
+// the one or two things that make somebody click this card instead of the one
+// beside it — and the moment there are three of them nobody reads any.
+//
+// WHY THESE TWO AND NOT THE OTHER SIXTEEN
+//
+// Because they are what people type into Google, which is not the same as what
+// is interesting about a cottage. The evidence is what the big agencies spend
+// their own SEO money on: Sykes, cottages.com, holidaycottages.co.uk, Snaptrip
+// and Independent Cottages all keep a standing landing page for hot tubs and
+// another for dog-friendly, and Sykes keeps BOTH of them cut to Dumfries &
+// Galloway specifically — "dog-friendly-cottages-dumfries-galloway" and
+// "dumfries-galloway-hot-tub-breaks". There are also whole businesses that
+// exist to list nothing but hot tub cottages. Nobody runs a landing page for
+// outdoor furniture.
+//
+// So this list is a claim about search demand, not about quality. A log burner
+// or a sea view might sell a particular cottage harder; they are not what an
+// unfamiliar guest types, and the badge is aimed at the guest who has not
+// arrived yet.
+//
+// The order is the order they appear in. It agrees with DECIDES_ON in
+// components/AmenityList.tsx, which ranks the same two first and fourth for
+// the same reason — if these two lists ever disagree, that one is about the
+// detail page and this one is about the card, and this one wins here.
+//
+// The cap is enforced below rather than by this list being short, because the
+// list getting longer is exactly how the cap would otherwise be lost.
+export const BADGE_AMENITIES: Array<{ amenity: string; label: string; title: string }> = [
+    { amenity: 'Hot tub', label: 'Hot tub', title: 'Hot tub' },
+    { amenity: 'Pets allowed', label: 'Pet friendly', title: 'Dogs welcome' },
+];
+
+export const MAX_CARD_BADGES = 2;
+
+// What to show on one card, in order, capped.
+//
+// Reads the amenities the host has already ticked — there is no separate flag
+// to set and nothing for a host to keep in step, which is the whole reason the
+// paw was built this way and the reason the hot tub matches it.
+export function cardBadges(amenities: string[] | null | undefined) {
+    if (!Array.isArray(amenities)) return [];
+
+    return BADGE_AMENITIES
+        .filter((b) => amenities.indexOf(b.amenity) !== -1)
+        .slice(0, MAX_CARD_BADGES);
+}
+
 // The shape the rules read. Every surface builds one of these out of whatever
 // it happens to hold — wizard state, edit-screen state, a database row — so no
 // rule has to know where its answer came from.
