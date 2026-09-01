@@ -128,19 +128,48 @@ Three things bite every single session on the MacBook:
 
 ## House rules for this codebase
 
-- **every change goes to master through a pull request.** master is protected
-  and the `test-and-build` check has to be green before the merge button
-  works, so a direct push is refused rather than merely reported afterwards.
-  This replaced "push straight to master for anything that isn't payments" on
-  28 August 2026: Vercel already refused to promote a build that would not
+- **every change goes to master through a pull request.** Read back off the
+  GitHub API on 1 September 2026, so this describes the settings rather than
+  the intention:
+
+  | | |
+  |---|---|
+  | branch protected | yes |
+  | required check | `test-and-build` |
+  | branches must be up to date before merging | yes |
+  | force pushes, deletions | refused |
+  | reviews required by GitHub | **no** |
+  | admins included in the rules | **no** |
+
+  The last two are the ones to know. GitHub does not require a human to read
+  anything, and as the repo's owner you can merge past a red check — the rules
+  bind everyone else. **Money-touching code — payments, payouts, refunds —
+  still wants a human reading the diff before the merge, and that part is a
+  habit rather than a gate.**
+
+  "Branches must be up to date" is what stops the failure that caused it. Three
+  times in two days, two sessions each merged a PR whose check had passed
+  against an older master, and master went red on a combination neither branch
+  had ever run — once for 82 minutes. GitHub now refuses the merge until the
+  branch has been rebased and the check re-run against current master.
+
+  This paragraph used to say master was protected when it was not: no
+  protection rule and no ruleset existed, a red check did not block the merge
+  button, and a direct push would have been accepted. It was written as an
+  intention and read as a fact for four days. If you change these settings,
+  change this table — `tests/doc-claims.test.ts` cannot check a GitHub setting,
+  which is exactly why it went stale unnoticed.
+
+  The rule replaced "push straight to master for anything that isn't payments"
+  on 28 August 2026: Vercel already refused to promote a build that would not
   compile, but nothing stopped a green build with failing *tests* reaching
-  visitors, because Vercel never runs `npm test`. Money-touching code —
-  payments, payouts, refunds — additionally wants a human reading the diff
-  before the merge, not just a green tick
+  visitors, because Vercel never runs `npm test`.
 - from the work laptop, at the Commit changes dialog, choose **"Create a new
   branch for this commit and start a pull request"** rather than committing
-  to master. Then press *Enable auto-merge* and it lands by itself once the
-  check passes
+  to master. Then press *Enable auto-merge* — allowed on this repo, checked
+  1 September 2026 — and it lands by itself once the check passes. With
+  up-to-date branches required, auto-merge is also what does the rebasing for
+  you, which is what keeps that requirement from costing anything
 - locally, `git config core.hooksPath scripts/hooks` installs a pre-push hook
   that runs the tests and the build before anything leaves the machine. It
   refuses the push and names the file and line. `git push --no-verify` skips
