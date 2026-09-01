@@ -378,6 +378,13 @@ export function guestMayCancelFree(serviceDate: string, now: Date): boolean {
 // The partial unique index in 20260902090000 carries the same predicate
 // (`where exclusive_per_date`), and the order route's clash pre-check reads this
 // function — keep the two in step.
-export function exclusivePerDate(provider: { exclusive_per_date?: boolean | null } | null | undefined): boolean {
-    return !!(provider && provider.exclusive_per_date);
+export function exclusivePerDate(
+    provider: { exclusive_per_date?: boolean | null; shape?: string | null } | null | undefined
+): boolean {
+    if (!provider) return false;
+    // Shape is the source of truth now: a "comes to you" provider holds the
+    // date. exclusive_per_date is kept in sync with it (and still carries the
+    // partial unique index's predicate), so either answers — reading both means
+    // a row written before the shape column, or after, both resolve correctly.
+    return provider.shape === 'comes_to_you' || !!provider.exclusive_per_date;
 }
