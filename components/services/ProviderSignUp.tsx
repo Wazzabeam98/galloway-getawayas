@@ -1462,12 +1462,12 @@ function ApplicationForm() {
         });
 
         // The menu, for a guest trade. Only rows with a name and a real price;
-        // a chef's item is named "Private dinner" when they left it blank. Empty
-        // rows drop out, so a half-filled form does not create a phantom item.
+        // everyone names their items now, so a nameless row is an empty one and
+        // drops out, and a half-filled form does not create a phantom item.
         const items_ = audienceForTrade(trade) === 'guest'
             ? items
                 .map((it, i) => ({
-                    name: String(it.name || '').trim() || (trade === 'chef' ? 'Private dinner' : ''),
+                    name: String(it.name || '').trim(),
                     description: String(it.description || '').trim() || null,
                     price: String(it.price || '').trim() !== '' ? Number(it.price) : null,
                     sort_order: i,
@@ -1890,14 +1890,13 @@ function ApplicationForm() {
         // The menu — replaced wholesale, the same way areas are. A guest trade
         // only; a host trade never has items. The order snapshots what it was
         // for, so replacing the live rows never touches a placed order. Empty
-        // rows (no name or no price) are dropped, and a chef's blank item is
-        // named "Private dinner".
+        // rows (no name or no price) are dropped.
         if (audienceForTrade(trade) === 'guest') {
             await supabase.from('service_provider_items').delete().eq('provider_id', id);
             const itemRows = items
                 .map((it, i) => ({
                     provider_id: id,
-                    name: String(it.name || '').trim() || (trade === 'chef' ? 'Private dinner' : ''),
+                    name: String(it.name || '').trim(),
                     description: String(it.description || '').trim() || null,
                     price: String(it.price || '').trim() !== '' ? Number(it.price) : null,
                     sort_order: i,
@@ -2112,15 +2111,15 @@ function ApplicationForm() {
                         Thanks — we check every business before it appears, usually within {REVIEW_WITHIN_HOURS} hours.
                         We will email you either way. You can still read what you sent below.
                     </p>
-                    {/* "Something else" is not on our list, so a person reads
-                        what they wrote and decides whether it fits before it can
-                        go live. Said plainly here so they are not left wondering
-                        why theirs is not instant — without promising a yes. */}
-                    {trade === 'other' && (
+                    {/* A guest business is read by a person, who decides whether
+                        it fits and what category it takes before it can go live.
+                        Said plainly here so they are not left wondering why theirs
+                        is not instant — without promising a yes. */}
+                    {audienceForTrade(trade) === 'guest' && (
                         <p className="text-sm text-amber-900/80 mt-3">
-                            Because you told us your business is something not on our list, we read what
-                            you described and decide whether it’s a fit for guests before listing you.
-                            Nothing more is needed from you — your listing is with us and we’ll be in touch.
+                            We read what you described and decide whether it’s a fit for guests before
+                            listing you. Nothing more is needed from you — your listing is with us and
+                            we’ll be in touch.
                         </p>
                     )}
                 </div>
@@ -2436,52 +2435,31 @@ function ApplicationForm() {
                 </section>
                 )}
 
-                {/* WHAT THEY SELL, AND FOR HOW MUCH.
-                    One model, framed by trade. A chef genuinely has one thing at
-                    one price, so they see a single "your experience" price. A
-                    baker sells a cake, cupcakes and a tray bake at three prices
-                    nobody could guess, so they build a menu — as many items as
-                    they like, each a name, a line and a price. The guest picks an
-                    item; the order snapshots it. A provider with no priced item
-                    is simply not live to guests. */}
+                {/* WHAT THEY OFFER, AND FOR HOW MUCH.
+                    One model for everyone now — no preset trade to frame it by.
+                    Everyone names each thing a guest can book and its price: a
+                    chef with one set dinner adds one row; a baker lists a cake,
+                    cupcakes and a tray bake at three prices nobody could guess.
+                    The guest picks an item; the order snapshots it. A provider
+                    with no priced item is simply not live to guests. A one-item
+                    menu renders as a single price on the card, so the chef's
+                    "one thing, one price" reads exactly as it should. */}
                 {onStep('business') && audienceForTrade(trade) === 'guest' && (() => {
                     const rows = items.length ? items : [{ name: '', description: '', price: '' }];
                     const setRow = (i: number, field: 'name' | 'description' | 'price', val: string) =>
                         setItems(rows.map((r, j) => (j === i ? { ...r, [field]: val } : r)));
                     const addRow = () => setItems([...rows, { name: '', description: '', price: '' }]);
                     const removeRow = (i: number) => { const next = rows.filter((_, j) => j !== i); setItems(next); };
-                    const single = trade === 'chef';
 
-                    if (single) {
-                        return (
-                            <section className="mb-8">
-                                <label className="block text-sm font-semibold text-slate-900 mb-1.5">Your price</label>
-                                <p className="text-sm text-slate-500 mb-2">
-                                    One price for your experience. Your words above say what it covers — a
-                                    three-course dinner for six.
-                                </p>
-                                <div className="flex items-center gap-2">
-                                    <span className="text-slate-500">£</span>
-                                    <input
-                                        type="number" min="0" step="0.01" inputMode="decimal"
-                                        value={rows[0].price}
-                                        onChange={(e) => setRow(0, 'price', e.target.value)}
-                                        placeholder="180"
-                                        className="w-40 rounded-xl border border-slate-300 px-4 py-3 focus:outline-none focus:ring-2 focus:ring-emerald-700"
-                                    />
-                                </div>
-                            </section>
-                        );
-                    }
-
-                    const namePh = trade === 'cake' ? 'Celebration cake' : trade === 'basket' ? 'Welcome hamper' : 'What you’re selling';
-                    const descPh = trade === 'cake' ? 'Serves 8, choice of sponge' : trade === 'basket' ? 'Local cheese, bread, jam' : 'A short line about it';
+                    const namePh = 'What you’re offering';
+                    const descPh = 'A short line about it';
                     return (
                         <section className="mb-8">
-                            <h2 className="text-sm font-semibold text-slate-900 mb-1">Your menu</h2>
+                            <h2 className="text-sm font-semibold text-slate-900 mb-1">What you offer</h2>
                             <p className="text-sm text-slate-500 mb-3">
-                                What guests can order, and the price of each. Add as many as you like — a
-                                cake, a box of cupcakes, a tray bake. You can edit or remove any of them later.
+                                Name each thing a guest can book and its price. One is plenty — a set
+                                dinner, say — or list as many as you like: a cake, a box of cupcakes, a
+                                tray bake. You can edit or remove any of them later.
                             </p>
                             <div className="space-y-3">
                                 {rows.map((it, i) => (
@@ -3800,11 +3778,11 @@ function ApplicationForm() {
                         Everything you typed is with us — the work you cover, your areas, your prices.
                         Nothing here is lost whatever happens next.
                     </p>
-                    {trade === 'other' && (
+                    {audienceForTrade(trade) === 'guest' && (
                         <p className="text-sm text-emerald-900/80 mt-3">
-                            You told us your business is something not on our list, so a person reads what
-                            you described and decides whether it’s a fit for guests. That’s ours to do —
-                            your listing is with us and we’ll be in touch.
+                            A person reads what you described and decides whether it’s a fit for guests,
+                            and what category it takes. That’s ours to do — your listing is with us and
+                            we’ll be in touch.
                         </p>
                     )}
                     {verificationEmailed ? (

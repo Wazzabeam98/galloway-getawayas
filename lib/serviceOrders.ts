@@ -37,35 +37,17 @@ export function guestExperiencesOpen(): boolean {
 // WHO STRIPE THINKS EACH PROVIDER IS
 // ---------------------------------------------------------------------------
 //
-// One category per trade, ours to set, never the provider's to guess. A
-// provider asked "what is your MCC?" would answer wrong, and a wrong MCC is a
-// payout hold months later that nobody traces back — so the account is created
-// with the code from this table, keyed off the trade we already know.
+// There are no fixed per-trade MCCs any more. Every guest provider is 'guest'
+// and has NO fixed category by definition — the owner reads what they described
+// and assigns a code by hand at review, stored on the row as stripe_mcc. See
+// mccForProvider below, which reads that per-provider code. Host trades never
+// take a Connect charge, so they never needed a code here either.
 //
-// If a new guest trade is added and has no code here, `mccForTrade` returns
-// null and the provider cannot be onboarded — which is the right failure: a
-// trade with no category is not one to list until somebody has chosen its code.
-// That is a decision for a person, not a default.
-//
-//   chef    5811  Caterers
-//   cake    5462  Bakeries
-//   basket  5411  Grocery stores. For a holiday let the common service is
-//                 filling the fridge before arrival, not a gift hamper — and a
-//                 hamper billed under a grocery code is unremarkable, where a
-//                 weekly shop billed under a gift-shop code is not.
-//
-// There is no entry for "other". A "something else" provider has no fixed
-// category by definition — the owner reads what they described and assigns a
-// code by hand at approval, stored on the row as stripe_mcc. See mccForProvider
-// below, which prefers that per-provider code over this table.
-//
-// The table is owned here and changed here, and reviewed with the owner before
-// it reaches production.
-export const TRADE_MCC: Record<string, string> = {
-    chef: '5811',
-    cake: '5462',
-    basket: '5411',
-};
+// The map is kept (empty) so mccForTrade stays a total function and the fallback
+// in mccForProvider stays honest: a provider with no assigned code returns null
+// and cannot be onboarded, which is the right failure — a category is a decision
+// for a person, not a default.
+export const TRADE_MCC: Record<string, string> = {};
 
 export function mccForTrade(trade: string): string | null {
     return TRADE_MCC[String(trade || '')] || null;
@@ -86,17 +68,23 @@ export function mccForProvider(
     return mccForTrade(String(provider.trade || ''));
 }
 
-// The MCCs the owner may assign to an "other" provider, in plain words. A short
+// The MCCs the owner may assign to a guest provider, in plain words. A short
 // curated list, NOT Stripe's full catalogue — the point of a person reading the
 // description and choosing is that the choice is a small, sane one. Add to this
-// as real "something else" businesses arrive; a code that is not here cannot be
-// assigned, which is the right failure.
+// as real businesses arrive; a code that is not here cannot be assigned, which
+// is the right failure.
+//
+// Every guest provider now flows through here, so the three that used to be
+// fixed trades — a chef (5811), a baker (5462), a hamper/shop (5411) — are
+// first-class choices at the top, not just the long tail.
 export const ASSIGNABLE_MCCS: Array<{ code: string; label: string }> = [
+    { code: '5811', label: 'Caterers & private chefs' },
+    { code: '5462', label: 'Bakeries & cakes' },
+    { code: '5411', label: 'Groceries & hampers' },
     { code: '7299', label: 'Personal services (massage, wellbeing, catch-all)' },
     { code: '7997', label: 'Clubs, activities & recreation' },
     { code: '7911', label: 'Dance, classes & instruction' },
     { code: '7333', label: 'Photography & videography' },
-    { code: '5811', label: 'Caterers & food' },
     { code: '5812', label: 'Eating places & prepared meals' },
     { code: '7230', label: 'Hair, beauty & barber' },
     { code: '5992', label: 'Florists' },
@@ -109,14 +97,12 @@ export function assignableMccLabel(code: string): string {
     return found ? found.label : String(code || '');
 }
 
-// What Stripe is told the account sells, alongside the MCC. Plain, and framed
-// as the guest-facing thing it is. One per trade so the account a provider
-// onboards describes their business, not lodging.
-export const TRADE_STRIPE_DESCRIPTION: Record<string, string> = {
-    chef: 'Private chef and in-home dining for holiday guests.',
-    cake: 'Cakes and baking for holiday guests.',
-    basket: 'Welcome hampers and shopping for holiday guests.',
-};
+// What Stripe is told the account sells, alongside the MCC. There are no fixed
+// per-trade descriptions any more; a guest provider's is set at review beside
+// the code (stripe_product_description) and read by stripeProfileForProvider.
+// Kept (empty) so stripeProfileForTrade stays a total function whose fallback is
+// the neutral line below.
+export const TRADE_STRIPE_DESCRIPTION: Record<string, string> = {};
 
 // The business_profile for a provider's connected account: the category and a
 // description, both keyed off the trade we already know. Returns null for a
@@ -300,21 +286,18 @@ export function guestMayCancelFree(serviceDate: string, now: Date): boolean {
     return start - now.getTime() >= FREE_CANCEL_HOURS * 60 * 60 * 1000;
 }
 
-// WHICH TRADES CAN ONLY DO ONE THING ON A DATE.
+// WHO CAN ONLY DO ONE THING ON A DATE — an owner-set flag, not a trade.
 //
 // A chef cooks one evening: a second live order for the same chef and date is a
-// clash, not a queue, because they cannot be in two cottages at once. A baker
-// can bake five cakes for one Saturday; a hamper maker can make ten. So the
-// "one live order per provider per date" rule is a CHEF rule, not a guest-trade
-// rule — applied to a baker it loses her second order for the day, which is
-// exactly wrong.
+// clash, not a queue, because they cannot be in two cottages at once. A masseur
+// is the same. A baker can bake five cakes for one Saturday; a hamper maker can
+// make ten. There is no longer a trade to key this on — everyone is 'guest' —
+// so it is a per-provider flag the owner sets at review (exclusive_per_date),
+// snapshotted onto the order so the hard guard can see it.
 //
-// Chef is the only exclusive trade today. The partial unique index in
-// 20260901160000 carries the same `trade = 'chef'` predicate, and the order
-// route's clash pre-check reads this function — keep the three in step if the
-// list ever grows.
-export const EXCLUSIVE_TRADES = ['chef'] as const;
-
-export function exclusivePerDate(trade: string): boolean {
-    return (EXCLUSIVE_TRADES as readonly string[]).indexOf(String(trade || '')) !== -1;
+// The partial unique index in 20260902090000 carries the same predicate
+// (`where exclusive_per_date`), and the order route's clash pre-check reads this
+// function — keep the two in step.
+export function exclusivePerDate(provider: { exclusive_per_date?: boolean | null } | null | undefined): boolean {
+    return !!(provider && provider.exclusive_per_date);
 }

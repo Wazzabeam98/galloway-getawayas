@@ -253,12 +253,13 @@ export async function POST(req: Request) {
             // (custom_label). The blocker that holds approval clears only once
             // both are set — see categoryBlockers.
             if (decision === 'assign_category') {
-                if (String(provider.trade || '') !== 'other') {
-                    return { status: 400, body: { ok: false, error: 'Only a "something else" business needs a category assigned; the rest read it from their trade.' } };
+                if (String(provider.audience || '') !== 'guest') {
+                    return { status: 400, body: { ok: false, error: 'Only a guest business is categorised here; a host trade is not.' } };
                 }
 
                 const mcc = String(body.mcc || '').trim();
                 const label = String(body.custom_label || '').trim();
+                const exclusive = body.exclusive_per_date === true;
 
                 // The code must be one of the curated set, not any four digits.
                 // The whole point of a person choosing is that the choice is a
@@ -276,9 +277,13 @@ export async function POST(req: Request) {
                         stripe_mcc: mcc,
                         // What Stripe is told the account sells. Built from the
                         // guest-facing word so the account describes the real
-                        // business rather than "something else".
+                        // business.
                         stripe_product_description: label + ' for holiday guests.',
                         custom_label: label,
+                        // Whether they hold a cottage-date exclusively (a chef, a
+                        // masseur) — the flag the order route and the unique index
+                        // read. Off by default; on only when the owner ticks it.
+                        exclusive_per_date: exclusive,
                         category_assigned_by: auth.user.id,
                         category_assigned_at: new Date().toISOString(),
                         updated_at: new Date().toISOString(),

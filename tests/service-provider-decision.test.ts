@@ -47,6 +47,7 @@ function load(options: {
     pricingChoice?: string | null;
     bandPrices?: any[];
     stripeMcc?: string | null;
+    customLabel?: string | null;
 } = {}) {
     const delivered = options.delivered !== false;
     const sent: any[] = [];
@@ -72,9 +73,11 @@ function load(options: {
         pricing_choice: options.pricingChoice === undefined ? null : options.pricingChoice,
         billable_hourly_rate: options.pricingChoice === 'hourly' ? 18 : null,
         covered_bands: options.pricingChoice === 'hourly' ? ['beds_1_2'] : [],
-        // A "something else" business needs a payout category before approval;
-        // supplied here so a test about some other gate is not held up by it.
+        // A guest provider needs a payout category — a code AND the word guests
+        // read — before approval; supplied here so a test about some other gate
+        // is not held up by it.
         stripe_mcc: options.stripeMcc === undefined ? null : options.stripeMcc,
+        custom_label: options.customLabel === undefined ? null : options.customLabel,
     };
 
     function builder(table: string) {
@@ -451,10 +454,10 @@ test('a number edited since it was checked is refused again', async () => {
 });
 
 // This named the joiner alone. The rule covers every trade the law does not
-// restrict -- all four guest trades and every host trade but the electrician --
-// and a single name would have gone on passing if any one of the others had
-// started demanding paperwork it does not need. Derived from requiredSchemes
-// so a new trade is covered the day it is added.
+// restrict -- the guest trade and every host trade but the electrician -- and a
+// single name would have gone on passing if any one of the others had started
+// demanding paperwork it does not need. Derived from requiredSchemes so a new
+// trade is covered the day it is added.
 test('a trade that needs no registration is unaffected', async () => {
     const unregulated = TRADES
         .map((t: any) => t.key)
@@ -464,10 +467,14 @@ test('a trade that needs no registration is unaffected', async () => {
     assert.equal(unregulated.length > 1, true, 'this is a rule about many trades, not one');
 
     for (const trade of unregulated) {
-        // "other" needs no registration either, but it does need a payout
-        // category — a separate gate. Supply one so this test exercises only
-        // the registration rule it is about.
-        const { route, updates } = load({ trade, registrations: [], stripeMcc: trade === 'other' ? '7299' : null });
+        // 'guest' needs no registration either, but it does need a payout
+        // category — code and word, a separate gate. Supply both so this test
+        // exercises only the registration rule it is about.
+        const { route, updates } = load({
+            trade, registrations: [],
+            stripeMcc: trade === 'guest' ? '7299' : null,
+            customLabel: trade === 'guest' ? 'Massage & wellbeing' : null,
+        });
 
         const res: any = await route.POST(call('approve'));
 
@@ -630,11 +637,15 @@ test('every commission trade is left on commission', async () => {
         .map((t: any) => t.key)
         .filter((trade: string) => planForTrade(trade) === 'commission');
 
-    assert.equal(commission.length, 6, 'cleaning, waste and the four guest trades');
+    assert.equal(commission.length, 3, 'cleaning, waste and the one guest trade');
 
     for (const trade of commission) {
-        // "other" needs a payout category before approval; the rest do not.
-        const { route, updates } = load({ trade, registrations: [], stripeMcc: trade === 'other' ? '7299' : null });
+        // 'guest' needs a payout category before approval; the rest do not.
+        const { route, updates } = load({
+            trade, registrations: [],
+            stripeMcc: trade === 'guest' ? '7299' : null,
+            customLabel: trade === 'guest' ? 'Massage & wellbeing' : null,
+        });
 
         const res: any = await route.POST(call('approve'));
 

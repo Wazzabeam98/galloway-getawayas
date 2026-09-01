@@ -123,8 +123,15 @@ async function seed() {
     const [prov] = await db.insert('service_providers', [{
         owner_id: baker,
         business_name: 'Effie’s Bakes',
-        trade: 'cake',
+        // One guest trade; the category is assigned. A baker is a guest business
+        // categorised as cakes & baking (bakery MCC 5462), NOT exclusive — she
+        // can make several cakes for one date.
+        trade: 'guest',
         audience: 'guest',
+        custom_label: 'Cakes & baking',
+        stripe_mcc: '5462',
+        stripe_product_description: 'Cakes and baking for holiday guests.',
+        exclusive_per_date: false,
         kind: 'external',
         description:
             'Celebration cakes and traybakes made to order and dropped at your cottage. '
@@ -179,7 +186,7 @@ async function seed() {
     await stripe.request('POST', '/payment_intents/' + pi.id + '/capture');
     await db.insert('service_orders', [{
         provider_id: prov.id, guest_id: guest, listing_id: listing.id, booking_id: booking.id,
-        trade: 'cake', service_date: '2026-09-21', guests: 2, price: 35, commission_rate: 0.10, status: 'confirmed',
+        trade: 'guest', exclusive_per_date: false, service_date: '2026-09-21', guests: 2, price: 35, commission_rate: 0.10, status: 'confirmed',
         item_id: chocolate ? chocolate.id : null, item_name: 'Chocolate fudge cake', item_description: 'Serves 10, rich and dense',
         guest_name: 'Gwen', guest_phone: '07700 900321', guest_email: GUEST_EMAIL,
         note: '"Happy Birthday Mum" piped on top, for the Sunday.',

@@ -484,23 +484,32 @@ test('the host sign-up offers the property trades and nothing else', () => {
     assert.equal(keys.indexOf('chef'), -1);
 });
 
-test('the guest sign-up offers the experience trades', () => {
+test('the guest sign-up has one trade, not a picker of them', () => {
     const keys = tradesFor('guest').map((t: any) => t.key);
 
-    assert.deepEqual(keys.slice().sort(), ['basket', 'cake', 'chef', 'other']);
+    // No preset list any more: one 'guest' trade, and the category (chef, baker,
+    // wild-swimming guide) is the word the owner assigns at review, not one the
+    // applicant picks. See GUEST-EXPERIENCES-ONE-FORM.md.
+    assert.deepEqual(keys, ['guest'], 'one guest trade, not a category picker');
     assert.equal(keys.indexOf('sponge'), -1, 'a changeover clean is not bought by a guest');
 });
 
-test('the audience is derived from the trade, never asked', () => {
+test('the audience is an explicit choice, and the sentinel maps to it', () => {
+    // Decision reversed on purpose (GUEST-EXPERIENCES-ONE-FORM.md): the audience
+    // is ASKED at sign-up now — a one-question fork, "something for guests
+    // staying in a cottage" vs "a service for cottage owners" — not inferred
+    // from a trade the applicant picked. Someone following a friend's link must
+    // not land on the wrong payment model (commission vs subscription) without
+    // being asked. audienceForTrade still maps the sentinel each fork sets, so
+    // the rest of the wizard can read which flow it is in.
+    assert.equal(audienceForTrade('guest'), 'guest', 'the guest fork sets trade=guest');
+
     assert.equal(audienceForTrade('sponge'), 'host');
     assert.equal(audienceForTrade('bin'), 'host');
     assert.equal(audienceForTrade('trees'), 'host');
     assert.equal(audienceForTrade('plumber'), 'host');
     assert.equal(audienceForTrade('roofer'), 'host');
     assert.equal(audienceForTrade('droplet'), 'host');
-
-    assert.equal(audienceForTrade('cake'), 'guest');
-    assert.equal(audienceForTrade('chef'), 'guest');
 });
 
 test('an unknown trade yields no audience rather than a wrong one', () => {

@@ -311,7 +311,7 @@ export async function POST(request: Request) {
 
                 const { data: prov } = await admin
                     .from('service_providers')
-                    .select('id, business_name, trade, contact_email')
+                    .select('id, business_name, trade, contact_email, exclusive_per_date')
                     .eq('id', md.provider_id)
                     .maybeSingle();
 
@@ -332,6 +332,10 @@ export async function POST(request: Request) {
                         listing_id: md.listing_id || null,
                         booking_id: md.booking_id || null,
                         trade: (prov && prov.trade) || null,
+                        // Snapshotted so the one-per-date unique index can see it
+                        // (an index predicate reads only its own table's columns).
+                        // A chef/masseur is exclusive; a baker is not.
+                        exclusive_per_date: !!(prov && prov.exclusive_per_date),
                         service_date: md.service_date,
                         guests: Number.isFinite(guestsNum as number) ? guestsNum : null,
                         price: Number(cs.amount_total || 0) / 100,

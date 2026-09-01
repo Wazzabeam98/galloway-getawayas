@@ -60,11 +60,14 @@ export default function ProviderReviewRow({
     const [hide, setHide] = useState(false);
     const [kindOpen, setKindOpen] = useState(false);
 
-    // Assigning a payout category to a "something else" business. Prefilled from
-    // whatever is already on the row, so re-assigning starts from the current
-    // answer rather than blank.
+    // Assigning a payout category to a guest business. Prefilled from whatever
+    // is already on the row, so re-assigning starts from the current answer
+    // rather than blank.
     const [mcc, setMcc] = useState<string>(provider.stripe_mcc || '');
     const [customLabel, setCustomLabel] = useState<string>(provider.custom_label || '');
+    // Whether they hold a cottage-date exclusively (a chef, a masseur) — one
+    // live order per date. Off for a baker, who can make many.
+    const [exclusive, setExclusive] = useState<boolean>(!!provider.exclusive_per_date);
 
     const decide = async (decision: 'approve' | 'decline' | 'approve_changes' | 'decline_changes') => {
         if ((decision === 'decline' || decision === 'decline_changes') && !note.trim()) {
@@ -205,6 +208,7 @@ export default function ProviderReviewRow({
                 decision: 'assign_category',
                 mcc,
                 custom_label: customLabel.trim(),
+                exclusive_per_date: exclusive,
             }),
         });
 
@@ -288,18 +292,19 @@ export default function ProviderReviewRow({
                 <p className="text-sm text-slate-700 mt-3 whitespace-pre-line">{provider.description}</p>
             )}
 
-            {/* A "something else" business has no fixed category. You read what
-                they described above and assign two things at once: the Stripe
-                code the account onboards with, and the word a guest reads on the
-                shop. Until both are set, a blocker holds Approve — they cannot
-                reach Stripe onboarding, and a guest could never be paid. */}
-            {provider.trade === 'other' && (
+            {/* Every guest business is categorised here — nobody picks a category
+                any more, so you read what they described above and assign it:
+                the Stripe code the account onboards with, the word a guest reads
+                on the shop, and whether they hold a date exclusively. Until the
+                code and the word are both set, a blocker holds Approve — they
+                cannot reach Stripe onboarding, and a guest could never be paid. */}
+            {provider.audience === 'guest' && (
                 <div className="mt-4 rounded-xl border border-slate-200 bg-slate-50 p-4">
                     <h4 className="text-xs font-bold uppercase tracking-wider text-slate-500 mb-1">
-                        Payout category
+                        Guest category
                     </h4>
                     <p className="text-sm text-slate-500 mb-3">
-                        They picked “something else”, so this is yours to set from what they wrote.
+                        Read what they wrote and set this from it.
                         {provider.category_assigned_at ? '' : ' Nothing goes live, and they cannot set up payouts, until you do.'}
                     </p>
 
@@ -308,6 +313,7 @@ export default function ProviderReviewRow({
                             Guests see <strong className="font-semibold">{provider.custom_label}</strong>
                             {' · '}Stripe category <strong className="font-semibold">{provider.stripe_mcc}</strong>
                             <span className="text-slate-500"> ({assignableMccLabel(provider.stripe_mcc)})</span>
+                            {provider.exclusive_per_date ? <span className="text-slate-500"> · holds a date exclusively</span> : null}
                         </p>
                     )}
 
@@ -318,7 +324,7 @@ export default function ProviderReviewRow({
                         type="text"
                         value={customLabel}
                         onChange={(e) => setCustomLabel(e.target.value)}
-                        placeholder="Massage therapy"
+                        placeholder="Private chef, Cakes & baking, Wild swimming…"
                         className="w-full rounded-lg border border-slate-300 px-3 py-2 text-sm mb-3 focus:outline-none focus:ring-2 focus:ring-emerald-700"
                     />
 
@@ -335,6 +341,23 @@ export default function ProviderReviewRow({
                             <option key={m.code} value={m.code}>{m.label} ({m.code})</option>
                         ))}
                     </select>
+
+                    <label className="flex items-start gap-2 text-sm text-slate-700 mb-3 cursor-pointer">
+                        <input
+                            type="checkbox"
+                            checked={exclusive}
+                            onChange={(e) => setExclusive(e.target.checked)}
+                            className="mt-0.5"
+                        />
+                        <span>
+                            <span className="font-semibold text-slate-900">Holds a date exclusively</span>
+                            <span className="block text-slate-500">
+                                One booking per cottage-date — a chef or a masseur cannot be in two
+                                places at once. Leave off for a baker or hamper maker, who can fulfil
+                                several on a date.
+                            </span>
+                        </span>
+                    </label>
 
                     <button
                         type="button"

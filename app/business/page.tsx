@@ -1,6 +1,5 @@
 import Link from 'next/link';
 import { Sparkles, ChefHat, ArrowRight } from 'lucide-react';
-import { tradesFor } from '@/lib/serviceProviders';
 
 export const metadata = {
     // The root layout appends ' | Galloway Getaways' to every page title, so
@@ -57,12 +56,16 @@ export default function BusinessPage() {
                     </span>
                 </Link>
 
-                <div className="rounded-2xl border border-slate-300 p-6">
+                <Link
+                    href="/services/join?trade=guest"
+                    className="group rounded-2xl border border-slate-300 p-6 hover:border-emerald-700 hover:bg-emerald-50/40 transition"
+                >
                     <ChefHat className="w-8 h-8 text-emerald-700 mb-4" strokeWidth={1.5} />
-                    <h2 className="font-bold text-slate-900 text-lg">Sell to guests</h2>
+                    <h2 className="font-bold text-slate-900 text-lg">Something for guests staying in a cottage</h2>
                     <p className="text-sm text-slate-600 mt-2">
-                        Private chefs, cakes, hampers and more — bought by people staying in the
-                        cottages rather than by the people who own them.
+                        A private chef, a cake, a welcome hamper, a wild-swimming guide, a whisky
+                        tasting — anything a guest would book for their stay. Bought by the people
+                        staying in the cottages, not by the owners.
                     </p>
 
                     {/* Said plainly, not buried: signing up is not going live.
@@ -70,24 +73,16 @@ export default function BusinessPage() {
                         have connected Stripe for payouts — the same two steps a
                         cleaner or a host goes through. */}
                     <p className="text-sm text-slate-500 mt-3">
-                        You apply, we check your business, and you connect Stripe so we can pay you.
-                        A guest can book you once you are approved and connected — not the moment you
-                        sign up.
+                        You describe your business and set your prices; we check it and give it a
+                        category; you connect Stripe so we can pay you. A guest can book you once you
+                        are approved and connected — not the moment you sign up.
                     </p>
 
-                    <div className="mt-4 grid grid-cols-2 gap-2">
-                        {tradesFor('guest').map((t) => (
-                            <Link
-                                key={t.key}
-                                href={'/services/join?trade=' + t.key}
-                                className="group flex items-center justify-between rounded-xl border border-slate-300 px-3 py-2 text-sm font-medium text-slate-800 hover:border-emerald-700 hover:bg-emerald-50/40 transition"
-                            >
-                                {t.label}
-                                <ArrowRight className="w-4 h-4 text-emerald-700 group-hover:translate-x-0.5 transition" />
-                            </Link>
-                        ))}
-                    </div>
-                </div>
+                    <span className="inline-flex items-center gap-1.5 text-sm font-semibold text-emerald-700 mt-4">
+                        Start
+                        <ArrowRight className="w-4 h-4 group-hover:translate-x-0.5 transition" />
+                    </span>
+                </Link>
             </div>
         </div>
     );

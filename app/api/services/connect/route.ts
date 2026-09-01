@@ -18,8 +18,9 @@ export const dynamic = 'force-dynamic';
 //     lodging account — one person can be a host and a provider and their two
 //     businesses must not share one Stripe category. See migration
 //     20260829030000.
-//   * it is created with the trade's own MCC, from stripeProfileForTrade, never
-//     7011. A wrong category is a payout hold nobody traces back.
+//   * it is created with the provider's own assigned MCC, from
+//     stripeProfileForProvider (the code the owner set at review), never 7011.
+//     A wrong category is a payout hold nobody traces back.
 //
 // getUser(), not getSession(): this stands up a money account, so the identity
 // has to be verified against the auth server, not read from a forgeable cookie.
@@ -80,12 +81,11 @@ export async function POST(request: Request) {
             );
         }
 
-        // There must be a category. A fixed trade reads it from the trade; an
-        // "other" provider reads the code the owner assigned at approval. Either
-        // way, no code means no onboarding — that is a decision for a person,
-        // not a default (see lib/serviceOrders mccForProvider). For an "other"
-        // provider this is exactly the gate that holds them until the owner has
-        // picked a code, so it can never be reached before the category exists.
+        // There must be a category. A guest provider reads the code the owner
+        // assigned at review; no code means no onboarding — a decision for a
+        // person, not a default (see lib/serviceOrders mccForProvider). This is
+        // exactly the gate that holds a provider until the owner has picked a
+        // code, so it can never be reached before the category exists.
         const profile = stripeProfileForProvider(provider);
         if (!profile) {
             return NextResponse.json(

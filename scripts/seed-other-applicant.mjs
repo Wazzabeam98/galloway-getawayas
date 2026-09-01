@@ -79,14 +79,15 @@ async function seed() {
         'return=minimal,resolution=merge-duplicates'
     ).catch((e) => console.log('  (profile upsert note: ' + e.message + ')'));
 
-    // Trade 'other', pending review, and NO stripe_mcc / custom_label — so the
-    // category blocker holds approval until you assign one. A wellbeing business
-    // is a good demo: it is genuinely not on the list, and it maps cleanly to
-    // 7299 (personal services), the first code in ASSIGNABLE_MCCS.
+    // A guest business, pending review, with NO stripe_mcc / custom_label — so
+    // the category blocker holds approval until you assign one. This is now the
+    // ordinary guest case, not an exception: nobody picks a category. A wellbeing
+    // business is a good demo — it maps cleanly to 7299 (personal services), and
+    // it is a natural one to tick "holds a date exclusively" on at review.
     const [prov] = await db.insert('service_providers', [{
         owner_id: owner,
         business_name: 'Rowan Therapies',
-        trade: 'other',
+        trade: 'guest',
         audience: 'guest',
         kind: 'external',
         description:

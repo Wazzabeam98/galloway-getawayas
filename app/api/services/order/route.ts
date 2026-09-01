@@ -88,7 +88,7 @@ export async function POST(request: Request) {
 
         const { data: provider } = await admin
             .from('service_providers')
-            .select('id, business_name, trade, status, stripe_account_id, stripe_payouts_enabled, plan, commission_rate')
+            .select('id, business_name, trade, status, stripe_account_id, stripe_payouts_enabled, plan, commission_rate, exclusive_per_date')
             .eq('id', item.provider_id)
             .maybeSingle();
 
@@ -110,13 +110,14 @@ export async function POST(request: Request) {
             );
         }
 
-        // One chef, one evening — but ONLY a chef. A chef cooks one dinner and
-        // cannot be in two cottages at once, so a second live order for the date
-        // is a clash. A baker bakes many cakes for one Saturday, a hamper maker
-        // many hampers, so for them a second order is fine. exclusivePerDate is
-        // the shared rule; the partial unique index (20260901160000) enforces
-        // the same, chef-only, as the hard guard behind this courtesy.
-        if (exclusivePerDate(String(provider.trade || ''))) {
+        // One booking per date — but ONLY for a provider the owner has marked
+        // exclusive (a chef, a masseur). They cannot be in two cottages at once,
+        // so a second live order for the date is a clash. A baker bakes many
+        // cakes for one Saturday, a hamper maker many hampers, so for them a
+        // second order is fine. exclusivePerDate reads the per-provider flag; the
+        // partial unique index (20260902090000) enforces the same as the hard
+        // guard behind this courtesy.
+        if (exclusivePerDate(provider)) {
             const { data: clash } = await admin
                 .from('service_orders')
                 .select('id')
