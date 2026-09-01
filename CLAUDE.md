@@ -128,19 +128,40 @@ Three things bite every single session on the MacBook:
 
 ## House rules for this codebase
 
-- **every change goes to master through a pull request.** master is protected
-  and the `test-and-build` check has to be green before the merge button
-  works, so a direct push is refused rather than merely reported afterwards.
-  This replaced "push straight to master for anything that isn't payments" on
-  28 August 2026: Vercel already refused to promote a build that would not
+- **every change goes to master through a pull request.**
+
+  **What the rules actually are:**
+  [Settings → Branches](https://github.com/Wazzabeam98/galloway-getawayas/settings/branches).
+  Read the page rather than a paragraph here — the last version of this
+  paragraph described protection that did not exist, and was believed for four
+  days. A link that goes out of date still sends you somewhere true.
+
+  What does not change, and is why the rules are set the way they are:
+
+  - **A green `test-and-build` is required, and branches must be up to date
+    before merging.** That second one exists because of a specific failure:
+    three times in two days, two sessions each merged a PR whose check had
+    passed against an older master, and master went red on a combination
+    neither branch had ever run — once for 82 minutes. Enable auto-merge and
+    GitHub does the rebasing, so the requirement costs nothing.
+  - **Admins are deliberately NOT included in the rules.** You can merge past a
+    red check. That is a decision, not an oversight: being able to ship at 11pm
+    when you have to is worth more than a gate you would route around anyway,
+    and a rule people route around teaches them the rules are optional.
+  - **GitHub does not require anyone to read a diff.** Money-touching code —
+    payments, payouts, refunds — still wants a human on it before the merge,
+    and that is a habit rather than a gate. Saying otherwise is how the old
+    paragraph went wrong.
+
+  The rule replaced "push straight to master for anything that isn't payments"
+  on 28 August 2026: Vercel already refused to promote a build that would not
   compile, but nothing stopped a green build with failing *tests* reaching
-  visitors, because Vercel never runs `npm test`. Money-touching code —
-  payments, payouts, refunds — additionally wants a human reading the diff
-  before the merge, not just a green tick
+  visitors, because Vercel never runs `npm test`.
 - from the work laptop, at the Commit changes dialog, choose **"Create a new
   branch for this commit and start a pull request"** rather than committing
   to master. Then press *Enable auto-merge* and it lands by itself once the
-  check passes
+  check passes — and does the rebasing that up-to-date branches would otherwise
+  cost you on every PR
 - locally, `git config core.hooksPath scripts/hooks` installs a pre-push hook
   that runs the tests and the build before anything leaves the machine. It
   refuses the push and names the file and line. `git push --no-verify` skips
