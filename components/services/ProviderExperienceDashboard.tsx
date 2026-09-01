@@ -1,6 +1,7 @@
 'use client';
 
 import { useCallback, useEffect, useState } from 'react';
+import { unitMultiplies, unitNoun, unitLabel } from '@/lib/serviceOrders';
 
 // What an approved guest-trade provider does after approval: set up payouts,
 // and answer the requests that come in.
@@ -18,6 +19,11 @@ interface Order {
     guests: number | null;
     price: number;
     item_name: string | null;
+    // How it was priced and how many — so a chef reads "6 people", not just a
+    // total. Snapshotted on the order, released like everything else.
+    item_unit: string | null;
+    unit_price: number | null;
+    quantity: number | null;
     guest_name: string | null;
     // Released only once the provider confirms — the route sends null until then.
     guest_phone: string | null;
@@ -27,6 +33,18 @@ interface Order {
     listing: { id: string; title: string; address: string | null; image: string | null } | null;
     note: string | null;
     expires_at: string | null;
+}
+
+// What the provider is turning up to, when the price is a rate: "6 people ·
+// £30.00 per person". Nothing for a flat price — the total says it all there.
+// Shown for one as well as many, because "cooking for 1" is a fact a chef wants
+// as plainly as "cooking for 10".
+function countLine(o: Order): string | null {
+    if (!o.item_unit || !unitMultiplies(o.item_unit) || !o.quantity) return null;
+    const noun = unitNoun(o.item_unit);
+    const plural = o.quantity === 1 ? noun : (noun === 'person' ? 'people' : noun + 's');
+    const each = o.unit_price != null ? ' · £' + o.unit_price.toFixed(2) + ' ' + unitLabel(o.item_unit) : '';
+    return o.quantity + ' ' + plural + each;
 }
 
 const STATUS_WORD: Record<string, string> = {
@@ -151,6 +169,7 @@ export default function ProviderExperienceDashboard(props: { providerId: string 
                                     {o.guests ? ' · ' + o.guests + ' guest' + (o.guests === 1 ? '' : 's') : ''}
                                     {' · £' + o.price.toFixed(2)}
                                 </div>
+                                {countLine(o) ? <div className="text-sm font-medium text-gray-700">{countLine(o)}</div> : null}
                                 {o.guest_name ? <div className="text-sm text-gray-500">For {o.guest_name}</div> : null}
                                 {o.note ? <p className="mt-1 text-sm text-gray-600 whitespace-pre-line">{o.note}</p> : null}
                                 <p className="mt-1 text-xs text-gray-400">
@@ -194,6 +213,7 @@ export default function ProviderExperienceDashboard(props: { providerId: string 
                                     {o.guests ? ' · ' + o.guests + ' guest' + (o.guests === 1 ? '' : 's') : ''}
                                     {' · £' + o.price.toFixed(2)}
                                 </div>
+                                {countLine(o) ? <div className="text-sm font-medium text-gray-700">{countLine(o)}</div> : null}
                                 {o.guest_name ? <div className="mt-0.5 text-sm text-gray-700">For {o.guest_name}</div> : null}
                                 {o.note ? <p className="mt-1 text-sm text-gray-600 whitespace-pre-line">{o.note}</p> : null}
 

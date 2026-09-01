@@ -2,6 +2,7 @@
 
 import { useCallback, useEffect, useState } from 'react';
 import { getImageUrl } from '@/lib/utils';
+import { unitMultiplies, unitLabel, quantityQuestion, orderTotal, MAX_ORDER_QUANTITY } from '@/lib/serviceOrders';
 
 // What a guest sees on a stay they have already paid for: the local guest
 // experiences near their cottage they can book for their dates.
@@ -24,6 +25,11 @@ interface Item {
     name: string;
     description: string | null;
     price: number;
+    // How the price is charged — 'flat' (once) or per person/night/hour/etc.
+    // For anything but flat the guest picks a quantity and the total multiplies.
+    unit: string;
+    // The item's own photo — the gallery is per item now, not a separate strip.
+    image: string | null;
 }
 
 interface Provider {
@@ -85,6 +91,9 @@ export default function GuestExperiences(props: {
     // Which item the guest has picked, per provider. A single-item provider
     // needs no pick — the card defaults to it.
     const [itemFor, setItemFor] = useState<Record<string, string>>({});
+    // How many, per provider, for an item priced per person/night/etc. Flat
+    // items ignore it. Defaults to 1 until they change it.
+    const [qtyFor, setQtyFor] = useState<Record<string, number>>({});
     const [busy, setBusy] = useState<string | null>(null);
     const [error, setError] = useState<string | null>(null);
     const [note, setNote] = useState<string | null>(null);
@@ -126,19 +135,39 @@ export default function GuestExperiences(props: {
         setBusy(null);
     }
 
+    // The item in play for a provider: the guest's pick, or the only one there
+    // is when there is a single item.
+    function pickedItem(provider: Provider): Item | null {
+        const id = itemFor[provider.id] || (provider.items.length === 1 ? provider.items[0].id : '');
+        return provider.items.find((i) => i.id === id) || null;
+    }
+
+    // The chosen count for that item. Always 1 for a flat price; otherwise what
+    // they set, defaulting to 1. Kept in [1, MAX] so the total shown and the
+    // total charged agree with the server's own cap.
+    function quantityFor(provider: Provider): number {
+        const item = pickedItem(provider);
+        if (!item || !unitMultiplies(item.unit)) return 1;
+        const n = qtyFor[provider.id] || 1;
+        return Math.min(Math.max(1, Math.floor(n)), MAX_ORDER_QUANTITY);
+    }
+
     async function request(provider: Provider) {
         // Which item: the guest's pick, or the only one there is.
-        const itemId = itemFor[provider.id] || (provider.items.length === 1 ? provider.items[0].id : '');
-        if (!itemId) { setError('Pick one first.'); return; }
+        const item = pickedItem(provider);
+        if (!item) { setError('Pick one first.'); return; }
         const serviceDate = dateFor[provider.id];
         if (!serviceDate) { setError('Pick a date first.'); return; }
+        // The count, for a per-unit price. The server validates it against the
+        // item's unit and caps it; this is just what the guest chose.
+        const quantity = quantityFor(provider);
         setBusy(provider.id);
         setError(null);
         try {
             const res = await fetch('/api/services/order', {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({ itemId, bookingId, serviceDate }),
+                body: JSON.stringify({ itemId: item.id, bookingId, serviceDate, quantity }),
             });
             const d = await res.json();
             if (d && d.ok && d.url) { window.location.href = d.url; return; }
@@ -227,31 +256,23 @@ export default function GuestExperiences(props: {
 
             <div className="mt-4 grid gap-4 sm:grid-cols-2">
                 {providers.map((p) => {
-                    const photos = (p.photos || []).filter(Boolean);
                     // The name the guest is told they are dealing with: the person
                     // where they gave one, the business otherwise.
                     const who = (p.provider_name && p.provider_name.trim()) || p.business_name;
+                    // The card leads with a real item photo — the gallery is per
+                    // item now, so the hero is the first item that has one (which
+                    // is the single item for a chef, a representative cake for a
+                    // baker). No photo yet means no strip, not an empty box.
+                    const hero = (p.items.find((i) => i.image) || {}).image || null;
                     return (
                     <div key={p.id} className="overflow-hidden rounded-lg border border-gray-200">
-                        {/* The gallery is the listing. Their own photos of the
-                            work, first thing, because a guest picks an experience
-                            from what it looks like — unlike a plumber, whom nobody
-                            chooses from a photo. */}
-                        {photos.length > 0 ? (
-                            // One, two or three across — matched to how many there
-                            // are, so two photos fill the width rather than leaving
-                            // a third empty column.
-                            <div className={`grid gap-0.5 ${photos.length === 1 ? 'grid-cols-1' : photos.length === 2 ? 'grid-cols-2' : 'grid-cols-3'}`}>
-                                {photos.slice(0, 3).map((path) => (
-                                    <img
-                                        key={path}
-                                        src={getImageUrl(path)}
-                                        alt={`${who} — ${p.category}`}
-                                        loading="lazy"
-                                        className="h-32 w-full object-cover"
-                                    />
-                                ))}
-                            </div>
+                        {hero ? (
+                            <img
+                                src={hero}
+                                alt={`${who} — ${p.category}`}
+                                loading="lazy"
+                                className="h-40 w-full object-cover"
+                            />
                         ) : null}
 
                         <div className="p-4">
@@ -293,7 +314,12 @@ export default function GuestExperiences(props: {
                                 wall of prices. The guest chooses the cake before
                                 the date. */}
                             {p.items.length === 1 ? (
-                                <div className="mt-2 font-semibold text-gray-900">£{p.items[0].price.toFixed(2)}</div>
+                                <div className="mt-2 font-semibold text-gray-900">
+                                    £{p.items[0].price.toFixed(2)}
+                                    {unitLabel(p.items[0].unit) ? (
+                                        <span className="ml-1 font-normal text-gray-500">{unitLabel(p.items[0].unit)}</span>
+                                    ) : null}
+                                </div>
                             ) : (
                                 // Collapsed by default so one baker's eight-item
                                 // menu doesn't stand four times taller than the
@@ -328,10 +354,22 @@ export default function GuestExperiences(props: {
                                                         onChange={() => setItemFor((s) => ({ ...s, [p.id]: it.id }))}
                                                         className="mt-1"
                                                     />
+                                                    {/* The item's own photo, so the guest sees which
+                                                        cake the £45 one is — the whole point of a
+                                                        per-item picture. */}
+                                                    {it.image ? (
+                                                        <img src={it.image} alt="" loading="lazy"
+                                                            className="h-12 w-12 flex-none rounded-md object-cover" />
+                                                    ) : null}
                                                     <span className="min-w-0 flex-1">
                                                         <span className="flex justify-between gap-2">
                                                             <span className="break-words text-sm font-medium text-gray-900">{it.name}</span>
-                                                            <span className="whitespace-nowrap text-sm font-semibold text-gray-900">£{it.price.toFixed(2)}</span>
+                                                            <span className="whitespace-nowrap text-sm font-semibold text-gray-900">
+                                                                £{it.price.toFixed(2)}
+                                                                {unitLabel(it.unit) ? (
+                                                                    <span className="ml-1 font-normal text-gray-500">{unitLabel(it.unit)}</span>
+                                                                ) : null}
+                                                            </span>
                                                         </span>
                                                         {it.description ? (
                                                             <span className="block break-words text-xs text-gray-500">{it.description}</span>
@@ -343,6 +381,43 @@ export default function GuestExperiences(props: {
                                     </div>
                                 </details>
                             )}
+
+                            {/* HOW MANY, AND THE NUMBER BACK BEFORE THEY PAY.
+                                A per-person or per-item price multiplies, and it
+                                is the provider who turns up to the count — ten for
+                                dinner is a different evening from four — so the
+                                guest sets it and sees the sum spelled out before
+                                the hold. A flat price shows none of this. */}
+                            {(() => {
+                                const item = pickedItem(p);
+                                if (!item || !unitMultiplies(item.unit)) return null;
+                                const qty = quantityFor(p);
+                                return (
+                                    <div className="mt-3">
+                                        <label className="block text-xs text-gray-500">
+                                            {quantityQuestion(item.unit)}
+                                            <input
+                                                type="number"
+                                                min={1}
+                                                max={MAX_ORDER_QUANTITY}
+                                                inputMode="numeric"
+                                                value={qtyFor[p.id] || 1}
+                                                onChange={(e) => setQtyFor((s) => ({
+                                                    ...s,
+                                                    [p.id]: Math.min(Math.max(1, Math.floor(Number(e.target.value) || 1)), MAX_ORDER_QUANTITY),
+                                                }))}
+                                                className="mt-1 block w-24 rounded-md border border-gray-300 px-2 py-1 text-sm"
+                                            />
+                                        </label>
+                                        <div className="mt-2 text-sm text-gray-700">
+                                            £{item.price.toFixed(2)} {unitLabel(item.unit)} × {qty}
+                                            <span className="mx-1">=</span>
+                                            <span className="font-semibold text-gray-900">£{orderTotal(item.price, qty).toFixed(2)}</span>
+                                            <span className="ml-1 text-xs text-gray-400">held, not charged</span>
+                                        </div>
+                                    </div>
+                                );
+                            })()}
 
                             <label className="mt-3 block text-xs text-gray-500">
                                 Date during your stay

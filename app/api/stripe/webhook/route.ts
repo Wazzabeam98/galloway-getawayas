@@ -361,6 +361,12 @@ export async function POST(request: Request) {
                         item_id: md.item_id || null,
                         item_name: md.item_name || null,
                         item_description: md.item_description || null,
+                        // The unit, per-unit price and count, snapshotted with
+                        // the rest. price (above) is the total actually charged;
+                        // these say how it was arrived at — "6 × £30 per person".
+                        item_unit: md.item_unit || null,
+                        unit_price: md.unit_price ? Number(md.unit_price) : null,
+                        quantity: md.quantity ? parseInt(md.quantity, 10) : 1,
                         stripe_payment_intent_id: piId,
                         expires_at: expiryFrom(nowIso),
                         created_at: nowIso,

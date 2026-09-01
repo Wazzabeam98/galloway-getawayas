@@ -38,7 +38,7 @@ export async function GET(request: Request) {
 
         const { data: orders } = await admin
             .from('service_orders')
-            .select('id, status, service_date, guests, price, item_name, guest_name, guest_phone, guest_email, note, listing_id, expires_at, created_at')
+            .select('id, status, service_date, guests, price, item_name, item_unit, unit_price, quantity, guest_name, guest_phone, guest_email, note, listing_id, expires_at, created_at')
             .eq('provider_id', providerId)
             .order('created_at', { ascending: false })
             .limit(50);

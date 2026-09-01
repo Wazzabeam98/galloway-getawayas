@@ -2,8 +2,9 @@ import { createRouteHandlerClient } from '@supabase/auth-helpers-nextjs';
 import { adminClient } from '@/lib/supabaseAdmin';
 import { cookies } from 'next/headers';
 import { NextResponse } from 'next/server';
-import { isLiveToGuests, mccForProvider, guestExperiencesOpen } from '@/lib/serviceOrders';
+import { isLiveToGuests, mccForProvider, guestExperiencesOpen, normaliseUnit } from '@/lib/serviceOrders';
 import { pointForListing, coversPoint, guestCategory } from '@/lib/serviceProviders';
+import { getImageUrl } from '@/lib/utils';
 
 export const dynamic = 'force-dynamic';
 
@@ -112,7 +113,7 @@ export async function GET(request: Request) {
         const { data: itemRows } = providerIds.length
             ? await admin
                 .from('service_provider_items')
-                .select('id, provider_id, name, description, price, sort_order, created_at')
+                .select('id, provider_id, name, description, price, unit, image, sort_order, created_at')
                 .in('provider_id', providerIds)
                 .eq('active', true)
                 .gt('price', 0)
@@ -124,6 +125,10 @@ export async function GET(request: Request) {
         for (const it of itemRows || []) {
             (itemsByProvider[it.provider_id] = itemsByProvider[it.provider_id] || []).push({
                 id: it.id, name: it.name, description: it.description, price: Number(it.price),
+                // The unit drives the quantity picker and the "per person" label;
+                // the image is the item's own photo — the gallery is per item now.
+                unit: normaliseUnit(it.unit),
+                image: it.image ? getImageUrl(it.image) : null,
             });
         }
 
