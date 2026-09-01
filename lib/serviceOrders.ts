@@ -299,3 +299,22 @@ export function guestMayCancelFree(serviceDate: string, now: Date): boolean {
     if (isNaN(start)) return false;
     return start - now.getTime() >= FREE_CANCEL_HOURS * 60 * 60 * 1000;
 }
+
+// WHICH TRADES CAN ONLY DO ONE THING ON A DATE.
+//
+// A chef cooks one evening: a second live order for the same chef and date is a
+// clash, not a queue, because they cannot be in two cottages at once. A baker
+// can bake five cakes for one Saturday; a hamper maker can make ten. So the
+// "one live order per provider per date" rule is a CHEF rule, not a guest-trade
+// rule — applied to a baker it loses her second order for the day, which is
+// exactly wrong.
+//
+// Chef is the only exclusive trade today. The partial unique index in
+// 20260901160000 carries the same `trade = 'chef'` predicate, and the order
+// route's clash pre-check reads this function — keep the three in step if the
+// list ever grows.
+export const EXCLUSIVE_TRADES = ['chef'] as const;
+
+export function exclusivePerDate(trade: string): boolean {
+    return (EXCLUSIVE_TRADES as readonly string[]).indexOf(String(trade || '')) !== -1;
+}
