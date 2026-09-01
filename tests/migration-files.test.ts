@@ -74,8 +74,21 @@ test('no two migrations share a timestamp', () => {
 // that have already run.
 const CLOCK_RULE_FROM = '20260902000000';
 
+// One file landed on the wrong side of the cutoff by a day AND had already run.
+// 20260902090000_one_form_guest.sql was applied to both production and test —
+// and named in both schema_migrations ledgers — before this rule's enforcement
+// reached it. Renaming it now to a real clock time would break those ledger
+// rows, which is the exact breakage the cutoff comment above refuses "to prove
+// a point about files that have already run". So it is grandfathered here, by
+// its full name, not by moving the cutoff. A NEW round-hour migration still
+// fails: this set does not grow without another file having genuinely run.
+const ALREADY_RUN_ROUND_HOURS = new Set<string>([
+    '20260902090000_one_form_guest.sql',
+]);
+
 test('a new migration uses a real clock time, not a round hour', () => {
     const lazy = migrations().filter((n) => {
+        if (ALREADY_RUN_ROUND_HOURS.has(n)) return false;
         const stamp = n.slice(0, 14);
         if (stamp < CLOCK_RULE_FROM) return false;
         // Minutes and seconds both zero is somebody typing a round number.
