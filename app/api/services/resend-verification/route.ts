@@ -1,7 +1,8 @@
 import { NextResponse } from 'next/server';
-import { createClient } from '@supabase/supabase-js';
-import { adminClient, supabaseUrl } from '@/lib/supabaseAdmin';
+import { adminClient } from '@/lib/supabaseAdmin';
 import { logError } from '@/lib/logError';
+import { sendEmail } from '@/lib/email';
+import { mintToken, verificationEmail, RESEND_CEILING, RESEND_COOLDOWN_SECONDS } from '@/lib/serviceApplications';
 
 export const dynamic = 'force-dynamic';
 
@@ -23,33 +24,29 @@ export const dynamic = 'force-dynamic';
 //
 // WHAT HOLDS IT SHUT
 //
-//   1. NO ADDRESS IS ACCEPTED. It takes a providerId — the id of a lodged
+//   1. NO ADDRESS IS ACCEPTED. It takes an applicationId — the id of a lodged
 //      application, handed back by /api/services/apply to whoever lodged it —
-//      and sends to the owner of that row. There is no field for a stranger to
-//      type into, and no way to aim it at somebody.
+//      and sends to the address on that row. There is no field for a stranger
+//      to type into, and no way to aim it at somebody.
 //
-//   2. THE ANON CLIENT SENDS, NOT THE SERVICE ROLE. So Supabase's own throttle
-//      is still above us. The service role would step over it.
+//   2. ONE ANSWER, ALWAYS. `{ ok: true }` whether the row exists, is already
+//      claimed, or a mail went. Nothing here tells a caller which.
 //
-//   3. ONE ANSWER, ALWAYS. `{ ok: true }` whether the row exists, the account
-//      is already confirmed, or a mail went. Supabase's own endpoint gives
-//      nothing away about who has an account and neither does this. Real
-//      outcomes go to error_log.
+//   3. A COOLDOWN and a DAILY CEILING, both now counted on the application row
+//      itself. They used to be read off the auth account — `confirmation_sent_at`
+//      and `user_metadata` — and there is no account any more at this point in
+//      the flow. That is the whole change: the address has not been proved yet,
+//      so there is deliberately nobody to hang this state off but the
+//      application.
 //
-//   4. A COOLDOWN, from `confirmation_sent_at` on the account — the timestamp
-//      Supabase itself maintains, so there is no state of ours to get wrong.
-//
-//   5. A DAILY CEILING, counted in the account's user_metadata. Somebody on
-//      their sixth resend of the day has a different problem, and telling them
-//      to talk to us is a better answer than another email.
+//   4. A FRESH TOKEN EVERY TIME, replacing the old one. The previous link stops
+//      working the moment a new one is sent, so a chain of resends does not
+//      leave a trail of live credentials in an inbox.
 //
 // NONE OF THIS CLOSES THE UNDERLYING EXPOSURE. The anon key is public and
 // /auth/v1/resend is reachable with it regardless of what is here. The fixes
 // that matter are on the project: custom SMTP with its own quota, and tightened
 // auth rate limits. See MAINTENANCE.md, launch blockers.
-
-const COOLDOWN_SECONDS = 60;
-const CEILING_PER_DAY = 5;
 
 // One shape, every time. Nothing about the answer depends on what was found.
 const OK = (extra: Record<string, any> = {}) => NextResponse.json({ ok: true, ...extra });
@@ -57,70 +54,72 @@ const OK = (extra: Record<string, any> = {}) => NextResponse.json({ ok: true, ..
 export async function POST(req: Request) {
     try {
         const body = await req.json().catch(() => ({}));
-        const providerId = String(body.providerId || '').trim();
-        if (!providerId) return OK();
+        const applicationId = String(body.applicationId || '').trim();
+        if (!applicationId) return OK();
 
         const admin = adminClient();
 
-        const { data: provider } = await admin
-            .from('service_providers')
-            .select('id, owner_id')
-            .eq('id', providerId)
+        const { data: application } = await admin
+            .from('service_applications')
+            .select('id, email, business_name, token_sent_at, resend_count, last_resend_at, claimed_at, created_at')
+            .eq('id', applicationId)
             .maybeSingle();
 
-        if (!provider || !provider.owner_id) return OK();
+        // Missing or already finished. Both answer the same as success.
+        if (!application || application.claimed_at) return OK();
 
-        const { data: got, error: userError } = await admin.auth.admin.getUserById(provider.owner_id);
-        const user = got && got.user;
-        if (userError || !user || !user.email) return OK();
-
-        // Already confirmed. Nothing to send, and saying so would tell a
-        // caller something about the account.
-        if (user.email_confirmed_at || (user as any).confirmed_at) return OK({ alreadyConfirmed: true });
-
-        // The cooldown, read off Supabase's own timestamp rather than a column
-        // of ours. `wait` is safe to return: the caller already holds the id of
-        // this application, so it tells them nothing they did not know.
-        const lastSent = (user as any).confirmation_sent_at;
+        // The cooldown. `wait` is safe to return: the caller already holds the
+        // id of this application, so it tells them nothing they did not know.
+        const lastSent = application.last_resend_at || application.token_sent_at;
         if (lastSent) {
             const secondsSince = (Date.now() - new Date(lastSent).getTime()) / 1000;
-            if (secondsSince < COOLDOWN_SECONDS) {
-                return OK({ wait: Math.ceil(COOLDOWN_SECONDS - secondsSince) });
+            if (secondsSince < RESEND_COOLDOWN_SECONDS) {
+                return OK({ wait: Math.ceil(RESEND_COOLDOWN_SECONDS - secondsSince) });
             }
         }
 
-        // The daily ceiling. Kept in user_metadata so there is no migration and
-        // no new table for a counter that resets every day.
-        const meta: any = (user.user_metadata as any) || {};
-        const today = new Date().toISOString().slice(0, 10);
-        const usedToday = meta.resend_day === today ? Number(meta.resend_count || 0) : 0;
+        // The ceiling. Somebody on their sixth link of the day has a different
+        // problem, and telling them to talk to us is a better answer than
+        // another email.
+        if (Number(application.resend_count || 0) >= RESEND_CEILING) return OK({ capped: true });
 
-        if (usedToday >= CEILING_PER_DAY) return OK({ capped: true });
+        // A new token, which retires the old one — the unique index is on the
+        // hash, so writing a new one leaves exactly one live link.
+        const { token, hash } = mintToken();
 
-        const anon = createClient(supabaseUrl(), process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY || '', {
-            auth: { persistSession: false, autoRefreshToken: false, detectSessionInUrl: false },
-        });
+        const { error: tokenError } = await admin
+            .from('service_applications')
+            .update({
+                token_hash: hash,
+                token_sent_at: new Date().toISOString(),
+                last_resend_at: new Date().toISOString(),
+                resend_count: Number(application.resend_count || 0) + 1,
+            })
+            .eq('id', application.id);
 
-        const origin = new URL(req.url).origin;
-        const { error: mailError } = await anon.auth.resend({
-            type: 'signup',
-            email: user.email,
-            options: { emailRedirectTo: `${origin}/auth/callback?next=/services/join` },
-        });
-
-        if (mailError) {
+        if (tokenError) {
             await logError('service-resend-verification', {
-                provider: providerId,
-                message: mailError.message,
+                application: applicationId,
+                message: tokenError.message,
             });
             return OK({ sent: false });
         }
 
-        // Counted only when one actually went, so a refused send does not spend
-        // somebody's allowance for the day.
-        await admin.auth.admin.updateUserById(provider.owner_id, {
-            user_metadata: { ...meta, resend_day: today, resend_count: usedToday + 1 },
-        });
+        // THE TOKEN IS WRITTEN BEFORE THE MAIL GOES, and that ordering is
+        // deliberate. The other way round, a send that succeeded while the
+        // write failed would email a link that authenticates against nothing.
+        // This way the worst case is a live token nobody was told about, which
+        // expires on its own.
+        const mail = verificationEmail(application, token, new URL(req.url).origin);
+        const went = await sendEmail(application.email, mail.subject, mail.html);
+
+        if (!went) {
+            await logError('service-resend-verification', {
+                application: applicationId,
+                message: 'sendEmail returned false',
+            });
+            return OK({ sent: false });
+        }
 
         return OK({ sent: true });
     } catch (err: any) {

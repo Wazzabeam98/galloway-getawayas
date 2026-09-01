@@ -1,55 +1,52 @@
 import { NextResponse } from 'next/server';
-import { createClient } from '@supabase/supabase-js';
-import { adminClient, supabaseUrl } from '@/lib/supabaseAdmin';
+import { adminClient } from '@/lib/supabaseAdmin';
 import { logError } from '@/lib/logError';
-import { announceSubmission } from '@/lib/serviceSubmittedAlert';
-import { TRADES, audienceForTrade } from '@/lib/serviceProviders';
+import { TRADES } from '@/lib/serviceProviders';
 import { withinLimits, callerAddress, GLOBAL_KEY } from '@/lib/rateLimit';
+import { sendEmail } from '@/lib/email';
+import { mintToken, verificationEmail, alreadyHaveAccountEmail } from '@/lib/serviceApplications';
 
 export const dynamic = 'force-dynamic';
 
-// One press: make the account, lodge the application.
+// One press: lodge the application. The account waits until the address is proved.
 //
-// WHY THIS ROUTE EXISTS
+// WHAT THIS USED TO DO, AND WHY IT COULD NOT STAY
 //
-// It used to take two. "Create account and send" made an account and sent a
-// confirmation email, and the Finish screen asked them to open the link, come
-// back, and press send a second time. A tradesman does not do that. Worse,
-// anything that went wrong in between lost the application silently: the row
-// was never written, so there was nothing to find and nothing to chase. That is
-// exactly what happened on the first real walk through — a confirmation link
-// went to the wrong page and the application simply did not exist.
+// It created a real Supabase auth user on the first press, from a public form,
+// with nothing showing that the person filling it in owned the address they
+// typed. So a stranger could put your email into it and you had an account you
+// never made: you could not sign up later, because the address was taken, and
+// you got a confirmation email you never asked for. The rate limits below bound
+// the volume. They do nothing about one deliberate squat.
 //
-// The obstacle was never the design, it was the session. With email
-// confirmation switched on, signUp returns a user and NO session, so the
-// browser had no identity to write the row with and the write had to wait for
-// the link to be opened. This route does the writing instead, under the service
-// role, on behalf of the account it has just made.
+// Now the application goes into service_applications — a table no browser role
+// can read — and /api/services/finish makes the account when the emailed link
+// is opened by somebody who has demonstrably received mail there.
 //
-// VERIFICATION HAPPENS AFTERWARDS, ON ITS OWN TIME
+// WHAT IS KEPT FROM THE OLD DESIGN, ON PURPOSE
 //
-// The account is created UNCONFIRMED — `email_confirm: false` — so
-// `email_confirmed_at` stays null and stays honest. Supabase's own confirmation
-// email is then asked for separately. Nothing about the application waits on it:
-// the row is in the queue the moment this returns. What the applicant cannot do
-// until they confirm is sign in and EDIT it, which is the right way round.
+// The reason this was one press in the first place was that the two-press
+// version LOST people: the row was never written, so a failure in between left
+// nothing to find and nothing to chase. That failure is not reintroduced. The
+// application row is written before any email is sent, so an applicant who
+// never opens the link is still a person you can see and ring — see the
+// "Waiting on the applicant" list on /admin/providers.
 //
-// The admin queue shows unverified applicants as such — see
-// components/admin/ProviderReviewRow.tsx — with the caveat that it says nothing
-// about the CONTACT address, which is a different field and never verified.
+// NOBODY IS TOLD WHETHER AN ADDRESS HAS AN ACCOUNT
+//
+// The old route answered a 409 saying "there is already an account on that
+// address", which is an oracle any stranger could query for any address. Both
+// cases now return exactly the same thing, and the difference is carried in the
+// email — which only the address's owner can read.
 //
 // WHAT THIS DOES NOT TOUCH
 //
-// No RLS changed for this. The service role is not subject to the column grants
-// in 20260827185827_provider_status_grants.sql, which bind `authenticated`. A
-// provider still cannot write their own `status` from the browser, and the
-// `submit_service_provider` function is still how a signed-in provider
-// re-submits. This route sets the status directly because it IS the platform,
-// not somebody claiming to be.
+// No RLS changed for this. service_applications has RLS on and no policies at
+// all, with the grants revoked: PostgREST does not admit it exists to anon.
+// The service role is not subject to either.
 
 interface Body {
     email?: string;
-    password?: string;
     name?: string;
     provider?: Record<string, any>;
     areas?: any[];
@@ -80,8 +77,11 @@ const PROVIDER_COLUMNS = [
 
 const AREA_COLUMNS = ['label', 'centre_lat', 'centre_lng', 'radius_miles'];
 const EXTRA_COLUMNS = ['extra_key', 'offered', 'price', 'notes'];
-const ITEM_COLUMNS = ['name', 'description', 'price', 'sort_order', 'active'];
 const PRICE_COLUMNS = ['band_key', 'price', 'typical_hours'];
+// A guest trade's menu — one item for a chef, many for a baker. Whitelisted like
+// the rest; provider_id is stamped when the payload is materialised at /finish,
+// never taken from the browser.
+const ITEM_COLUMNS = ['name', 'description', 'price', 'sort_order', 'active'];
 
 function pick(row: any, columns: string[]) {
     const out: any = {};
@@ -90,21 +90,15 @@ function pick(row: any, columns: string[]) {
 }
 
 export async function POST(req: Request) {
-    let createdUserId: string | null = null;
-
     try {
         const body: Body = await req.json();
 
         const email = String(body.email || '').trim().toLowerCase();
-        const password = String(body.password || '');
         const name = String(body.name || '').trim();
         const incoming = body.provider || {};
 
         if (!email || !email.includes('@')) {
             return NextResponse.json({ ok: false, error: 'Give us an email address we can reach you on.' }, { status: 400 });
-        }
-        if (password.length < 8) {
-            return NextResponse.json({ ok: false, error: 'Passwords need at least 8 characters.' }, { status: 400 });
         }
 
         const trade = String(incoming.trade || '');
@@ -178,153 +172,98 @@ export async function POST(req: Request) {
 
         const admin = adminClient();
 
-        // The account. Unconfirmed on purpose — see the note at the top.
-        const { data: made, error: userError } = await admin.auth.admin.createUser({
-            email,
-            password,
-            email_confirm: false,
-            user_metadata: { name: name || incoming.business_name },
-        });
-
-        if (userError || !made || !made.user) {
-            const message = String((userError && userError.message) || '');
-            // The one worth translating. Everything else is ours to fix, not
-            // theirs to decipher.
-            if (/already|registered|exists/i.test(message)) {
-                return NextResponse.json({
-                    ok: false,
-                    code: 'account_exists',
-                    error: 'There is already an account on that address. Sign in below and we will save this to it.',
-                }, { status: 409 });
-            }
-            await logError('service-apply-create-user', { email, message });
-            return NextResponse.json({ ok: false, error: 'We could not make your account. Try again.' }, { status: 500 });
+        // Whether this address already has an account decides which email is
+        // sent and nothing else. It is never in the response — see the header.
+        let addressHasAccount = false;
+        try {
+            const { data: existing } = await admin.auth.admin.listUsers({ page: 1, perPage: 200 });
+            addressHasAccount = ((existing && existing.users) || []).some(
+                (u: any) => String(u.email || '').toLowerCase() === email
+            );
+        } catch (err: any) {
+            // Unreadable is not "no". Falling through sends the ordinary link,
+            // which fails safely at /finish if an account does turn out to
+            // exist — that route refuses rather than making a second one.
+            await logError('service-apply-account-check', { email, message: String(err && err.message) });
         }
 
-        const owner = made.user.id;
-        createdUserId = owner;
+        const { token, hash } = mintToken();
 
-        await admin.from('profiles').upsert(
-            { id: owner, email, full_name: name || incoming.business_name, is_host: false },
-            { onConflict: 'id' }
-        );
-
-        // The application itself. Status and submitted_at are set here rather
-        // than taken from the payload: this is the moment it was lodged, and
-        // the applicant does not get a say in it.
-        const row = {
-            ...pick(incoming, PROVIDER_COLUMNS),
-            owner_id: owner,
-            audience: audienceForTrade(trade),
-            status: 'pending_review',
-            submitted_at: new Date().toISOString(),
-            review_note: null,
-            updated_at: new Date().toISOString(),
-        };
-
-        const { data: provider, error: rowError } = await admin
-            .from('service_providers')
-            .insert(row)
-            .select('id, owner_id, business_name, logo, contact_email, contact_phone, trade, audience, photos, description, status, declined_at, approved_digest, changes_pending_at, does_gas, does_oil')
+        // The application, before any email goes. This ordering is the whole
+        // reason the old two-press flow lost people, and it is not repeated:
+        // if the mail fails, the work is still here and still chaseable.
+        const { data: application, error: appError } = await admin
+            .from('service_applications')
+            .insert({
+                email,
+                name: name || null,
+                trade,
+                business_name: String(incoming.business_name || '').trim(),
+                contact_phone: String(incoming.contact_phone || '').trim() || null,
+                payload: {
+                    provider: pick(incoming, PROVIDER_COLUMNS),
+                    areas: (body.areas || []).map((a) => pick(a, AREA_COLUMNS)),
+                    extras: (body.extras || []).map((e) => pick(e, EXTRA_COLUMNS)),
+                    prices: (body.prices || []).map((p) => pick(p, PRICE_COLUMNS)),
+                    items: (body.items || []).map((it: any) => pick(it, ITEM_COLUMNS)),
+                    registrations: (body.registrations || []).map((r: any) => ({
+                        scheme: String(r.scheme || ''),
+                        number: String(r.number || '').trim(),
+                    })).filter((r: any) => r.scheme && r.number),
+                    skills: (body.skills || []).map((l: any) => String(l || '').trim()).filter(Boolean),
+                },
+                token_hash: hash,
+            })
+            .select('id, email, business_name')
             .single();
 
-        if (rowError || !provider) {
-            await logError('service-apply-insert', { owner, message: rowError && rowError.message });
-            return NextResponse.json({ ok: false, error: 'We made your account but could not save the application. Sign in and it will be waiting.' }, { status: 500 });
+        if (appError || !application) {
+            await logError('service-apply-insert', { email, message: appError && appError.message });
+            return NextResponse.json({
+                ok: false,
+                error: 'We could not save your application. Nothing has been lost from this page — try again.',
+            }, { status: 500 });
         }
 
-        const id = provider.id;
-
-        // The children. Written after the parent so a failure here leaves a
-        // real application rather than an orphan, and reported rather than
-        // swallowed — a listing that covers nowhere is not a listing.
-        const areas = (body.areas || []).map((a) => ({ ...pick(a, AREA_COLUMNS), provider_id: id }));
-        if (areas.length) await admin.from('service_areas').insert(areas);
-
-        const extras = (body.extras || []).map((e) => ({ ...pick(e, EXTRA_COLUMNS), provider_id: id }));
-        if (extras.length) await admin.from('service_provider_extras').insert(extras);
-
-        const prices = (body.prices || []).map((p) => ({ ...pick(p, PRICE_COLUMNS), provider_id: id }));
-        if (prices.length) await admin.from('service_provider_prices').insert(prices);
-
-        // The menu — a guest trade's items. Whitelisted like the rest; the
-        // browser cannot set provider_id, which is stamped here.
-        const menuItems = (body.items || []).map((it) => ({ ...pick(it, ITEM_COLUMNS), provider_id: id }));
-        if (menuItems.length) await admin.from('service_provider_items').insert(menuItems);
-
-        // Registrations carry no verified columns from here. They cannot: the
-        // whole point of 20260825205043_trade_registration.sql is that only an admin
-        // decision writes those, and a fresh application has had none.
-        const regs = (body.registrations || [])
-            .map((r: any) => ({
-                provider_id: id,
-                scheme: String(r.scheme || ''),
-                number: String(r.number || '').trim(),
-                updated_at: new Date().toISOString(),
-            }))
-            .filter((r) => r.scheme && r.number);
-        if (regs.length) await admin.from('service_provider_registrations').insert(regs);
-
-        // Skills go through their own route for a reason — `regulated_concept`
-        // is what stops a handyman tagging "boiler repair" — and that reason
-        // holds here, so the same table is written the same way.
-        const labels = (body.skills || []).map((l) => String(l || '').trim()).filter(Boolean);
-        if (labels.length) {
-            const { data: known } = await admin
-                .from('service_skills')
-                .select('id, label, slug')
-                .is('merged_into', null);
-
-            const bySlug = new Map((known || []).map((s: any) => [String(s.label).toLowerCase(), s.id]));
-            const rows = labels
-                .map((l) => bySlug.get(l.toLowerCase()))
-                .filter(Boolean)
-                .map((skill_id) => ({ provider_id: id, skill_id }));
-
-            if (rows.length) await admin.from('service_provider_skills').insert(rows);
-        }
-
-        // Now ask Supabase to send the confirmation email. Deliberately after
-        // the row: if the mail fails, the application is still lodged and the
-        // failure is ours to chase, not a reason to lose their work.
-        //
-        // An anon client, because this is the ordinary signup confirmation and
-        // the service role does not send one. resend() takes no code challenge,
-        // so the link is a plain token hash and opens on any device.
-        //
         // WHETHER IT WENT IS REPORTED, NOT ASSUMED. The panel used to say "we
-        // have also sent a link" whatever happened here, and that is a lie the
+        // have also sent a link" whatever happened, which is a claim the
         // applicant cannot check: they wait for an email that was never
-        // accepted. Two ways it fails on test alone — the built-in SMTP is rate
-        // limited to a handful an hour for the whole project, and addresses on
-        // reserved TLDs like .test are refused outright as invalid.
+        // accepted.
+        const mail = addressHasAccount
+            ? alreadyHaveAccountEmail(application)
+            : verificationEmail(application, token, new URL(req.url).origin);
+
         let verificationEmailed = false;
         try {
-            const anon = createClient(supabaseUrl(), process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY || '', {
-                auth: { persistSession: false, autoRefreshToken: false, detectSessionInUrl: false },
-            });
-            const origin = new URL(req.url).origin;
-            const { error: mailError } = await anon.auth.resend({
-                type: 'signup',
-                email,
-                options: { emailRedirectTo: `${origin}/auth/callback?next=/services/join?trade=${encodeURIComponent(trade)}` },
-            });
-            if (mailError) await logError('service-apply-verification-email', { owner, message: mailError.message });
-            else verificationEmailed = true;
+            verificationEmailed = await sendEmail(application.email, mail.subject, mail.html);
+            if (!verificationEmailed) {
+                await logError('service-apply-verification-email', {
+                    application: application.id,
+                    message: 'sendEmail returned false',
+                });
+            }
         } catch (err: any) {
-            await logError('service-apply-verification-email', { owner, message: String(err && err.message) });
+            await logError('service-apply-verification-email', {
+                application: application.id,
+                message: String(err && err.message),
+            });
         }
 
-        // And tell us. Same implementation the signed-in route uses.
-        try {
-            await announceSubmission(provider);
-        } catch (err: any) {
-            await logError('service-apply-alert', { provider: id, message: String(err && err.message) });
-        }
-
-        return NextResponse.json({ ok: true, providerId: id, email, verificationEmailed });
+        // NOBODY IS TOLD ABOUT THIS ONE YET.
+        //
+        // announceSubmission used to fire here. It now fires when the link is
+        // opened, because an application nobody has proved is not something to
+        // put in front of a person — the review queue filling with unverified
+        // strangers is the noise this change exists to prevent. What is waiting
+        // on its applicant shows on /admin/providers instead.
+        return NextResponse.json({
+            ok: true,
+            applicationId: application.id,
+            email,
+            verificationEmailed,
+        });
     } catch (err: any) {
-        await logError('service-apply', { createdUserId, error: String(err && err.message) });
+        await logError('service-apply', { error: String(err && err.message) });
         return NextResponse.json({ ok: false, error: 'Something went wrong. Try again.' }, { status: 500 });
     }
 }

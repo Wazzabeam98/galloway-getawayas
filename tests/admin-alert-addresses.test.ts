@@ -194,14 +194,22 @@ function loadDigest(options: { alertTo?: string | null; delivered?: boolean; err
         : options.errors;
 
     const admin: any = {
-        from() {
+        from(table: string) {
+            // The digest reads two tables now: error_log, and the applications
+            // still waiting on their applicant. They have to answer separately
+            // — handing the error rows back for both would put fake tradesmen
+            // in the email these tests are reading.
+            const rows = table === 'service_applications' ? [] : errors;
             const chain: any = {
                 select: () => chain,
                 eq: () => chain,
                 gte: () => chain,
+                lt: () => chain,
+                is: () => chain,
                 order: () => chain,
                 limit: () => chain,
-                then: (r: any) => r({ data: errors, error: null }),
+                delete: () => chain,
+                then: (r: any) => r({ data: rows, error: null }),
             };
             return chain;
         },

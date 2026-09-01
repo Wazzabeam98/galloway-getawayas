@@ -112,6 +112,11 @@ function ApplicationForm() {
     const [session, setSession] = useState<any>(null);
 
     const [providerId, setProviderId] = useState<string | null>(null);
+    // Set only on the unauthenticated path, where a press lodges an
+    // application rather than making an account. A provider row does not exist
+    // yet — that happens when the emailed link is opened — so this is the
+    // handle the resend button uses, and it is deliberately not providerId.
+    const [applicationId, setApplicationId] = useState<string | null>(null);
     const [status, setStatus] = useState('draft');
     const [reviewNote, setReviewNote] = useState<string | null>(null);
 
@@ -1496,14 +1501,13 @@ function ApplicationForm() {
             const res = await fetch('/api/services/resend-verification', {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({ providerId }),
+                body: JSON.stringify({ applicationId }),
             });
             const out = await res.json().catch(() => ({}));
 
             if (out.sent) setResendSaid('Sent. Give it a minute or two, and check the spam folder.');
             else if (out.wait) setResendSaid('One is already on its way — try again in ' + out.wait + ' seconds.');
             else if (out.capped) setResendSaid('That is as many as we can send today. Email us and we will sort it out.');
-            else if (out.alreadyConfirmed) setResendSaid('That address is already confirmed — you can sign in with it.');
             else setResendSaid('We could not send it just now. Your application is still with us either way.');
         } catch (err) {
             setResendSaid('We could not reach the site. Your application is still with us either way.');
@@ -1515,18 +1519,16 @@ function ApplicationForm() {
         const email = contactEmail.trim();
         setAccountExists(false);
 
-        // The same three gates the old createAccount kept. They belong here
-        // now: this is the press that makes the account.
+        // No password gate here any more. This press does not make an account:
+        // it lodges the application and emails a link, and the password is
+        // chosen on the page that link opens — which is the only point at which
+        // anybody has shown they can receive mail at this address.
         if (!email || email.indexOf('@') === -1) {
-            setAcctError('Add an email address above — that is the one your account will use.');
-            return;
-        }
-        if (acctPassword.length < 8) {
-            setAcctError('Pick a password of at least 8 characters.');
+            setAcctError('Add an email address above — that is the one we will send your link to.');
             return;
         }
         if (!acctConsent) {
-            setAcctError('Tick the box and we will make your account.');
+            setAcctError('Tick the box and we will send you your link.');
             return;
         }
 
@@ -1541,7 +1543,6 @@ function ApplicationForm() {
                 headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify({
                     email,
-                    password: acctPassword,
                     name: businessName.trim(),
                     ...rows,
                 }),
@@ -1551,20 +1552,13 @@ function ApplicationForm() {
             setSaving(false);
 
             if (!res.ok || !out.ok) {
-                // An address that already has an account is the one worth
-                // handling rather than reporting: they have one, so offer the
-                // way in instead of an error.
-                if (out.code === 'account_exists') {
-                    // Not an error line. A fork, with both ways out on screen.
-                    // As a small red sentence this was quiet enough to be read
-                    // as nothing having happened — the same failure mode as the
-                    // step-two bug, and on the same screen.
-                    setAccountExists(true);
-                    setAcctError('');
-                    setShowSignIn(true);
-                    scrollPanelToTop();
-                    return;
-                }
+                // There is no account_exists fork any more, because the route
+                // no longer answers that question. "There is already an account
+                // on that address" is an oracle any stranger could query for
+                // any address, so both cases now return the same thing and the
+                // difference is carried in the email — which only its owner can
+                // read. Somebody who already has an account gets a message
+                // telling them to sign in.
                 setAcctError(out.error || 'That did not work. Try again.');
                 return;
             }
@@ -1585,8 +1579,7 @@ function ApplicationForm() {
             // both ended on step two. The step is now pinned to finish and
             // `lodged` holds that effect off for good.
             forgetDraft();
-            setProviderId(out.providerId);
-            setStatus('pending_review');
+            setApplicationId(out.applicationId);
             setLodged(true);
             setVerificationEmailed(out.verificationEmailed !== false);
             setStep('finish');
@@ -3674,21 +3667,22 @@ function ApplicationForm() {
             {onStep('finish') && !session && !lodged && (
                 <div className="rounded-2xl border border-slate-300 p-5 mb-8">
                     <h2 className="text-sm font-semibold text-slate-900 mb-1.5">
-                        Set a password
+                        Where we will send your link
                     </h2>
+                    {/* NO PASSWORD FIELD HERE ANY MORE, and that is the change.
+                        This press used to create a real account from a public
+                        form, so a stranger could type your address in and you
+                        had an account you never made — you could not sign up
+                        later, and you got a confirmation email you never asked
+                        for. The password now belongs on the page the emailed
+                        link opens, because that is the first moment anybody has
+                        shown they can receive mail at this address. */}
                     <p className="text-sm text-slate-500 mb-4">
-                        So you can come back and change any of this. We will use{' '}
-                        <strong className="text-slate-900">{contactEmail.trim() || 'the email address above'}</strong>.
+                        We will email{' '}
+                        <strong className="text-slate-900">{contactEmail.trim() || 'the address above'}</strong>{' '}
+                        a link. Open it, pick a password, and your application goes to us. Everything
+                        you have typed is saved either way.
                     </p>
-
-                    <input
-                        type="password"
-                        value={acctPassword}
-                        onChange={(e) => { setAcctPassword(e.target.value); setAcctError(''); }}
-                        autoComplete="new-password"
-                        placeholder="At least 8 characters"
-                        className="w-full md:max-w-sm rounded-xl border border-slate-300 px-3.5 py-3 focus:outline-none focus:ring-2 focus:ring-emerald-700"
-                    />
 
                     {/* What it costs, beside the tick box that agrees to it.
                         Nothing on the site said this before — the model lived
@@ -3707,7 +3701,7 @@ function ApplicationForm() {
                             onChange={(e) => { setAcctConsent(e.target.checked); setAcctError(''); }}
                             className="mt-0.5 w-4 h-4 rounded border-slate-300 shrink-0"
                         />
-                        <span>I am happy to create an account</span>
+                        <span>I am happy for you to email me a link</span>
                     </label>
 
                     {acctError && (
@@ -3801,10 +3795,10 @@ function ApplicationForm() {
 
             {onStep('finish') && lodged && (
                 <div className="rounded-2xl border-2 border-emerald-700 bg-emerald-50 p-5 mb-8">
-                    <p className="font-semibold text-emerald-900">Your application is in.</p>
+                    <p className="font-semibold text-emerald-900">Saved. One step left.</p>
                     <p className="text-sm text-emerald-900/80 mt-1">
-                        We have it and will come back to you within {REVIEW_WITHIN_HOURS} hours. There is
-                        nothing else for you to do.
+                        Everything you typed is with us — the work you cover, your areas, your prices.
+                        Nothing here is lost whatever happens next.
                     </p>
                     {trade === 'other' && (
                         <p className="text-sm text-emerald-900/80 mt-3">
@@ -3815,9 +3809,10 @@ function ApplicationForm() {
                     )}
                     {verificationEmailed ? (
                         <p className="text-sm text-emerald-900/80 mt-3">
-                            We have also sent a link to <strong>{contactEmail.trim()}</strong> to confirm the
-                            address. Open it whenever you like — it lets you sign back in and change your
-                            details. Your application does not wait on it.
+                            We have sent a link to <strong>{contactEmail.trim()}</strong>. Open it, pick a
+                            password, and your application goes straight to us — usually answered within{' '}
+                            {REVIEW_WITHIN_HOURS} hours. The link works for 14 days, and if you miss it we
+                            will send another.
                         </p>
                     ) : (
                         /* The send was refused. Saying "we have sent a link"
@@ -3825,10 +3820,10 @@ function ApplicationForm() {
                            that was never accepted — and the application, which
                            IS in, is the part that matters. */
                         <p className="text-sm text-amber-900 mt-3 bg-amber-50 border border-amber-200 rounded-xl px-3.5 py-2.5">
-                            We could not send the confirmation email to{' '}
-                            <strong>{contactEmail.trim()}</strong> just now — so do not wait for one. It
-                            changes nothing about your application, which is with us. We will sort the
-                            confirmation out and be in touch either way.
+                            We could not send the link to <strong>{contactEmail.trim()}</strong> just
+                            now — so do not sit waiting for one. Everything you typed is saved and we
+                            can see it. Press the button below to try again, or leave it with us and we
+                            will chase you ourselves.
                         </p>
                     )}
 
@@ -4002,7 +3997,7 @@ function ApplicationForm() {
                         to press was the only one they had to go looking for.
 
                         `min-w-0` and the truncating label are what stop it
-                        colliding with Back at 375: "Create account and send" is
+                        colliding with Back at 375: "Save and email me a link" is
                         the longest label the form has, and the two buttons plus
                         their padding do not fit a phone otherwise. */}
                     {lastStep && !locked && (
@@ -4016,12 +4011,15 @@ function ApplicationForm() {
                                 {status === 'approved'
                                     ? (saving ? 'Saving…' : 'Save changes')
                                     : acctBusy
-                                        ? 'Making your account…'
+                                        ? 'Saving…'
                                         : saving
                                             ? 'Sending…'
                                             : session
                                                 ? 'Send for review'
-                                                : 'Create account and send'}
+                                                /* Not "create account" any more: this press
+                                                   creates nothing. It saves the application and
+                                                   emails a link. */
+                                                : 'Save and email me a link'}
                             </span>
                         </button>
                     )}

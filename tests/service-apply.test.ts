@@ -1,12 +1,22 @@
-// One press: the account is made and the application is lodged.
+// One press lodges the application. Nothing is created that could be squatted.
 //
-// This replaced a two-step shape — make an account, get a confirmation email,
-// come back, press send again — which lost applications whenever anything went
-// wrong in between, because no row had been written to lose. It did: the first
-// real walk through ended with no service_providers row at all.
+// WHAT CHANGED, AND WHY THESE TESTS ARE MOSTLY ABOUT ABSENCES
 //
-// So what is asserted here is mostly about what must NOT be possible to lose,
-// and what an applicant must NOT be able to decide for themselves.
+// This route used to create a real Supabase auth user on the first press, from
+// a public form, with nothing showing that the person filling it in owned the
+// address they typed. So a stranger could put your address into it and you had
+// an account you never made: you could not sign up later, because it was
+// taken, and you got a confirmation email you never asked for.
+//
+// The account is now made by /api/services/finish, when the emailed link comes
+// back — see tests/service-finish.test.ts. What is asserted here is therefore
+// as much about what must NOT happen as about what must.
+//
+// The one thing kept from the old design on purpose: the application row is
+// written BEFORE any email is sent. The two-press version this replaced lost
+// people, because no row had been written to lose, and that failure is not
+// being reintroduced — it is the reason the chase list on /admin/providers
+// exists.
 
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
@@ -20,43 +30,28 @@ process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY = 'test-anon-key';
 
 const ROUTE = '@/app/api/services/apply/route';
 
-function load(options: { createError?: string; insertError?: string; mailError?: string } = {}) {
+function load(options: { insertError?: string; mailSent?: boolean; existingEmails?: string[] } = {}) {
     const inserted: Record<string, any[]> = {};
     const created: any[] = [];
     const announced: any[] = [];
-    const resent: any[] = [];
+    const mailed: any[] = [];
     const logged: any[] = [];
 
-    const provider = { id: 'prov-new', owner_id: 'user-new', business_name: 'Kirkcudbright Joinery' };
+    const application = { id: 'app-1', email: 'joiner@example.com', business_name: 'Kirkcudbright Joinery' };
 
     function builder(table: string) {
-        const state: any = { table };
         const chain: any = new Proxy({}, {
             get(_t, prop: string) {
-                if (prop === 'then') {
-                    if (table === 'service_skills') {
-                        return (r: any) => r({ data: [{ id: 'sk-1', label: 'Sash windows', slug: 'sash-windows' }], error: null });
-                    }
-                    return (r: any) => r({ data: null, error: null });
-                }
+                if (prop === 'then') return (r: any) => r({ data: null, error: null });
                 if (prop === 'insert') {
                     return (rows: any) => {
                         inserted[table] = (inserted[table] || []).concat(rows);
-                        state.rows = rows;
                         return chain;
                     };
                 }
                 if (prop === 'single') {
-                    if (options.insertError) {
-                        return async () => ({ data: null, error: { message: options.insertError } });
-                    }
-                    return async () => ({ data: provider, error: null });
-                }
-                if (prop === 'upsert') {
-                    return (rows: any) => {
-                        inserted[table] = (inserted[table] || []).concat(rows);
-                        return chain;
-                    };
+                    if (options.insertError) return async () => ({ data: null, error: { message: options.insertError } });
+                    return async () => ({ data: application, error: null });
                 }
                 return () => chain;
             },
@@ -71,25 +66,29 @@ function load(options: { createError?: string; insertError?: string; mailError?:
             from: (t: string) => builder(t),
             auth: {
                 admin: {
+                    // If this is ever reached, the squat is back.
                     createUser: async (attrs: any) => {
                         created.push(attrs);
-                        if (options.createError) return { data: null, error: { message: options.createError } };
                         return { data: { user: { id: 'user-new', email: attrs.email } }, error: null };
                     },
+                    listUsers: async () => ({
+                        data: { users: (options.existingEmails || []).map((e) => ({ email: e })) },
+                        error: null,
+                    }),
                 },
             },
         }),
     });
 
-    stubModule('@supabase/supabase-js', {
-        createClient: () => ({
-            auth: {
-                resend: async (args: any) => {
-                    resent.push(args);
-                    return options.mailError ? { error: { message: options.mailError } } : { error: null };
-                },
-            },
-        }),
+    stubModule('@/lib/email', {
+        sendEmail: async (to: string, subject: string, html: string) => {
+            mailed.push({ to, subject, html });
+            return options.mailSent === false ? false : true;
+        },
+        emailLayout: (body: string, footer: string) => body + '|' + footer,
+        escapeHtml: (v: string) => String(v),
+        button: (url: string, label: string) => '<a href="' + url + '">' + label + '</a>',
+        SITE_URL: 'https://gallowaygetaways.co.uk',
     });
 
     stubModule('@/lib/serviceSubmittedAlert', {
@@ -104,23 +103,21 @@ function load(options: { createError?: string; insertError?: string; mailError?:
         NextResponse: { json: (body: any, init?: any) => ({ body, status: (init && init.status) || 200 }) },
     });
 
-    // Note: the alert is STUBBED above, so it must not be cleared here — that
-    // would drop the stub straight back out of the cache and the route would
-    // load the real one.
+    clearModule('@/lib/serviceApplications');
     clearModule(ROUTE);
     const route = require(ROUTE.replace('@/', '../'));
-    return { route, inserted, created, announced, resent, logged };
+    return { route, inserted, created, announced, mailed, logged };
 }
 
 const APPLICATION = {
-    email: 'JOINER@example.test',
-    password: 'a-long-enough-password',
+    email: 'JOINER@example.com',
     name: 'Kirkcudbright Joinery',
     provider: {
         business_name: 'Kirkcudbright Joinery',
         trade: 'joiner',
         description: 'Second fix and sash windows.',
-        contact_email: 'joiner@example.test',
+        contact_email: 'joiner@example.com',
+        contact_phone: '07700 900412',
         callout_fee: 45,
     },
     areas: [{ label: 'Kirkcudbright', centre_lat: 54.8, centre_lng: -4.05, radius_miles: 10 }],
@@ -137,181 +134,148 @@ const call = (body: any) =>
         body: JSON.stringify(body),
     });
 
-/* ------------------------------------------------- the press does everything */
+/* ------------------------------------------------------ the squat, closed */
 
-test('one press writes the account and the application', async () => {
+test('no account is created, however complete the application is', async () => {
     const { route, created, inserted } = load();
     const res: any = await route.POST(call(APPLICATION));
 
     assert.equal(res.status, 200);
     assert.equal(res.body.ok, true);
-    assert.equal(created.length, 1);
-    assert.equal(inserted.service_providers.length, 1);
+    assert.deepEqual(created, [], 'creating an auth user here is the squat');
+    assert.equal(inserted.service_applications.length, 1);
+    assert.equal(inserted.service_providers, undefined, 'nothing reaches the real table yet');
 });
 
-test('the row is lodged, not left as a draft', async () => {
-    // The whole fault this replaced: an application that was never sent.
+test('a password sent by an old client is ignored rather than used', async () => {
+    // The wizard no longer asks for one. If a stale bundle still sends it, it
+    // must not become an account, and it must certainly not be stored.
+    const { route, created, inserted } = load();
+    await route.POST(call({ ...APPLICATION, password: 'a-long-enough-password' }));
+
+    assert.deepEqual(created, []);
+    const row = inserted.service_applications[0];
+    assert.equal(JSON.stringify(row).includes('a-long-enough-password'), false,
+        'a password must never be written down outside Supabase');
+});
+
+/* ----------------------------------------------- the row, before the email */
+
+test('the application is written before any email is sent', async () => {
+    const { route, inserted, mailed } = load();
+    await route.POST(call(APPLICATION));
+
+    assert.equal(inserted.service_applications.length, 1);
+    assert.equal(mailed.length, 1);
+});
+
+test('a failed write is reported and nothing is emailed', async () => {
+    const { route, mailed, logged } = load({ insertError: 'connection reset' });
+    const res: any = await route.POST(call(APPLICATION));
+
+    assert.equal(res.status, 500);
+    assert.equal(res.body.ok, false);
+    assert.match(String(res.body.error), /nothing has been lost/i);
+    assert.deepEqual(mailed, [], 'a link to an application that does not exist helps nobody');
+    assert.ok(logged.some((l) => /service-apply-insert/.test(String(l.message))));
+});
+
+test('the address is lower-cased, so a capital does not make a second application', async () => {
     const { route, inserted } = load();
     await route.POST(call(APPLICATION));
-
-    assert.equal(inserted.service_providers[0].status, 'pending_review');
-    assert.ok(inserted.service_providers[0].submitted_at, 'it carries the moment it was lodged');
+    assert.equal(inserted.service_applications[0].email, 'joiner@example.com');
 });
 
-test('the account is created UNCONFIRMED, so the badge can tell the truth', async () => {
-    const { route, created } = load();
+/* --------------------------------------------------- the token, never stored */
+
+test('the token is stored as a hash and never in the clear', async () => {
+    const { route, inserted, mailed } = load();
     await route.POST(call(APPLICATION));
 
-    assert.equal(created[0].email_confirm, false);
+    const row = inserted.service_applications[0];
+    assert.match(row.token_hash, /^[0-9a-f]{64}$/, 'a sha256 hex digest');
+
+    // The link in the email carries the real token. That token must not be
+    // findable anywhere in the row — a read of this table must not be a set of
+    // working links, every one of which creates an account on somebody's
+    // address.
+    const link = String(mailed[0].html).match(/finish\/([A-Za-z0-9_-]+)/);
+    assert.ok(link, 'the email carries a link');
+    assert.equal(JSON.stringify(row).includes(link![1]), false);
+    assert.notEqual(row.token_hash, link![1]);
 });
 
-test('the address is lower-cased, so a capital does not make a second account', async () => {
-    const { route, created } = load();
-    await route.POST(call(APPLICATION));
+/* ------------------------------------------------ nothing is given away */
 
-    assert.equal(created[0].email, 'joiner@example.test');
+test('an address that already has an account answers exactly like one that does not', async () => {
+    // The old route returned a 409 saying "there is already an account on that
+    // address", which is an oracle any stranger could query for any address.
+    const fresh: any = await (async () => {
+        const { route } = load({ existingEmails: [] });
+        return route.POST(call(APPLICATION));
+    })();
+
+    const taken: any = await (async () => {
+        const { route } = load({ existingEmails: ['joiner@example.com'] });
+        return route.POST(call(APPLICATION));
+    })();
+
+    assert.equal(fresh.status, taken.status);
+    assert.equal(fresh.body.ok, taken.body.ok);
+    assert.deepEqual(Object.keys(fresh.body).sort(), Object.keys(taken.body).sort());
+    assert.equal(JSON.stringify(taken.body).toLowerCase().includes('already'), false);
 });
 
-test('the children are written against the new row', async () => {
-    const { route, inserted } = load();
-    await route.POST(call(APPLICATION));
+test('the difference is carried in the email, which only its owner can read', async () => {
+    const taken = load({ existingEmails: ['joiner@example.com'] });
+    await taken.route.POST(call(APPLICATION));
 
-    assert.equal(inserted.service_areas[0].provider_id, 'prov-new');
-    assert.equal(inserted.service_provider_prices[0].provider_id, 'prov-new');
-    assert.equal(inserted.service_provider_extras[0].provider_id, 'prov-new');
-    assert.equal(inserted.service_provider_registrations[0].provider_id, 'prov-new');
-    assert.equal(inserted.service_provider_skills[0].skill_id, 'sk-1');
+    assert.match(String(taken.mailed[0].html), /already have a Galloway Getaways account/i);
+    assert.equal(/finish\//.test(String(taken.mailed[0].html)), false,
+        'no account-creating link to an address that already has one');
 });
 
-/* ----------------------------------------- what an applicant may not decide */
+/* ------------------------------------------------ what the applicant cannot set */
 
-test('an applicant cannot approve themselves through this route', async () => {
-    // The payload is a stranger's by definition. Anything not on the whitelist
-    // is dropped rather than trusted — the same rule the column grants enforce
-    // for the browser, said again where the service role is doing the writing
-    // and the grants therefore do not apply.
+test('an applicant cannot approve themselves, or set their own commission', async () => {
     const { route, inserted } = load();
     await route.POST(call({
         ...APPLICATION,
-        provider: {
-            ...APPLICATION.provider,
-            status: 'approved',
-            approved_digest: 'forged',
-            commission_rate: 0,
-            approved_at: '2020-01-01',
-        },
+        provider: { ...APPLICATION.provider, status: 'approved', commission_rate: 0, owner_id: 'someone-else' },
     }));
 
-    const row = inserted.service_providers[0];
-    assert.equal(row.status, 'pending_review', 'status is the platform\'s, not theirs');
-    assert.equal(row.approved_digest, undefined);
-    assert.equal(row.commission_rate, undefined);
-    assert.equal(row.approved_at, undefined);
+    const payload = inserted.service_applications[0].payload;
+    assert.equal(payload.provider.status, undefined);
+    assert.equal(payload.provider.commission_rate, undefined);
+    assert.equal(payload.provider.owner_id, undefined);
 });
 
 test('a registration cannot arrive already verified', async () => {
     const { route, inserted } = load();
     await route.POST(call({
         ...APPLICATION,
-        registrations: [{ scheme: 'gas_safe', number: '123456', verified_at: '2020-01-01', verified_number: '123456' }],
+        registrations: [{ scheme: 'gas_safe', number: '123456', verified: true, verified_at: '2020-01-01' }],
     }));
 
-    const reg = inserted.service_provider_registrations[0];
-    assert.equal(reg.verified_at, undefined);
-    assert.equal(reg.verified_number, undefined);
+    const reg = inserted.service_applications[0].payload.registrations[0];
+    assert.deepEqual(Object.keys(reg).sort(), ['number', 'scheme']);
 });
 
-test('the owner is the account just made, whatever the payload says', async () => {
-    const { route, inserted } = load();
-    await route.POST(call({ ...APPLICATION, provider: { ...APPLICATION.provider, owner_id: 'somebody-else' } }));
+/* --------------------------------------------------------- nobody is told yet */
 
-    assert.equal(inserted.service_providers[0].owner_id, 'user-new');
-});
-
-/* ------------------------------------------------------------ what it needs */
-
-test('a trade that does not exist is refused', async () => {
-    const { route } = load();
-    const res: any = await route.POST(call({ ...APPLICATION, provider: { ...APPLICATION.provider, trade: 'wizard' } }));
-    assert.equal(res.status, 400);
-});
-
-test('a short password is refused before an account is made', async () => {
-    const { route, created } = load();
-    const res: any = await route.POST(call({ ...APPLICATION, password: 'short' }));
-    assert.equal(res.status, 400);
-    assert.equal(created.length, 0, 'nothing was created');
-});
-
-test('an address already in use is offered the way in, not an error', async () => {
-    const { route } = load({ createError: 'User already registered' });
-    const res: any = await route.POST(call(APPLICATION));
-
-    assert.equal(res.status, 409);
-    assert.equal(res.body.code, 'account_exists');
-    assert.match(res.body.error, /already an account/i);
-});
-
-/* --------------------------------------------------- verification and telling us */
-
-test('the confirmation email is asked for, and does not hold the row up', async () => {
-    const { route, resent, inserted } = load();
-    await route.POST(call(APPLICATION));
-
-    // Sent after the row exists, so a mail failure cannot cost them the
-    // application.
-    assert.equal(inserted.service_providers.length, 1);
-    assert.equal(resent.length, 1);
-    assert.equal(resent[0].type, 'signup');
-    assert.equal(resent[0].email, 'joiner@example.test');
-});
-
-test('we are told a business is waiting', async () => {
+test('the directors are not told about an application nobody has proved', async () => {
     const { route, announced } = load();
     await route.POST(call(APPLICATION));
 
-    assert.equal(announced.length, 1);
-    assert.equal(announced[0].id, 'prov-new');
+    assert.deepEqual(announced, [],
+        'the review queue filling with unverified strangers is the noise this change prevents');
 });
 
-test('a failed insert says the account survived rather than pretending it worked', async () => {
-    const { route, logged } = load({ insertError: 'boom' });
+test('whether the email actually went is reported, not assumed', async () => {
+    const { route, logged } = load({ mailSent: false });
     const res: any = await route.POST(call(APPLICATION));
 
-    assert.equal(res.status, 500);
-    assert.match(res.body.error, /sign in and it will be waiting/i);
-    assert.equal(logged.some((l) => l.message === 'service-apply-insert'), true);
-});
-
-/* ------------------------------------ what the applicant is told about email */
-
-test('a sent confirmation is reported as sent', async () => {
-    const { route } = load();
-    const res: any = await route.POST(call(APPLICATION));
-
-    assert.equal(res.body.verificationEmailed, true);
-});
-
-test('a REFUSED confirmation is reported as refused, and the application still stands', async () => {
-    // Two real ways this fails on test alone: the built-in SMTP is rate limited
-    // to a handful an hour for the whole project, and a reserved TLD like
-    // .test is rejected outright as invalid. Both were observed on 27 Aug.
-    //
-    // The panel used to say "we have also sent a link" whatever happened, which
-    // leaves somebody watching an inbox for a message that was never accepted.
-    const { route, inserted, logged } = load({ mailError: 'email rate limit exceeded' });
-    const res: any = await route.POST(call(APPLICATION));
-
-    assert.equal(res.body.ok, true, 'the application is in regardless');
-    assert.equal(inserted.service_providers.length, 1);
-    assert.equal(res.body.verificationEmailed, false, 'and the caller is told the email did not go');
-    assert.equal(logged.some((l) => l.message === 'service-apply-verification-email'), true);
-});
-
-test('the email is asked for AFTER the row, so a mail failure cannot cost the application', async () => {
-    const { route, inserted, resent } = load({ mailError: 'email rate limit exceeded' });
-    await route.POST(call(APPLICATION));
-
-    assert.equal(inserted.service_providers.length, 1);
-    assert.equal(resent.length, 1);
+    assert.equal(res.body.ok, true, 'the application is lodged either way');
+    assert.equal(res.body.verificationEmailed, false, 'and the panel is told the truth about the email');
+    assert.ok(logged.some((l) => /verification-email/.test(String(l.message))));
 });
