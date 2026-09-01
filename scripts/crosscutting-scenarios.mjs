@@ -11,6 +11,7 @@ import {
     readManifest, round2, signIn, SEED_DOMAIN, dayOffset,
 } from './seed-lib.mjs';
 import { resolveTarget, LOCAL_URL } from './target.cjs';
+import { writeRunnerResults } from './scenario-report.cjs';
 
 const env = loadEnv();
 assertTestEnvironment(env);
@@ -305,6 +306,53 @@ async function main() {
             rowsAfter === rowsBefore
                 && still.payout_transfer_id === paidOut.payout_transfer_id,
             rowsBefore + ' → ' + rowsAfter + ' payout rows');
+
+        // AND THE CASE THAT ACTUALLY HAPPENS, WHICH THE ABOVE NEVER REACHES.
+        //
+        // Re-running the job whole proves nothing about paying twice: the
+        // booking has paid_out_at set, so the run does not even select it.
+        // That is the guard's success path, and a guard's success path is the
+        // one thing that cannot tell you whether the guard works.
+        //
+        // The state that pays a host twice is the half-finished one. The run
+        // does three writes and only the first moves money — the transfer,
+        // then the payout row, then paid_out_at — and maxDuration is 60
+        // seconds against roughly ten network calls per booking. Dying in the
+        // middle leaves the money gone and the booking looking unpaid, and
+        // tomorrow's run picks it straight back up.
+        //
+        // Stripe's idempotency key was the whole defence and it expires after
+        // 24 hours, which is exactly the interval between runs. So this clears
+        // paid_out_at, exactly as a timeout would have left it, and asks
+        // whether the second run sends anything.
+        const transfersBefore = await stripe.request(
+            'GET', '/transfers?transfer_group=booking_' + paidOut.id + '&limit=10'
+        );
+
+        await db.update('bookings', '?id=eq.' + paidOut.id, {
+            paid_out_at: null, payout_amount: null, payout_transfer_id: null,
+        });
+
+        const thirdPayout = await payoutRun();
+        console.log('   run again with paid_out_at lost → ' + JSON.stringify(thirdPayout));
+
+        const transfersAfter = await stripe.request(
+            'GET', '/transfers?transfer_group=booking_' + paidOut.id + '&limit=10'
+        );
+        const repaired = await booking(paidOut.id);
+        const rowsFinal = (await payoutsFor(paidOut.id)).length;
+
+        check('a run that lost paid_out_at does not send a second transfer',
+            (transfersAfter.data || []).length === (transfersBefore.data || []).length,
+            (transfersBefore.data || []).length + ' → ' + (transfersAfter.data || []).length
+                + ' transfers at Stripe');
+        check('it does not write a second payout row for the same transfer',
+            rowsFinal === rowsBefore, rowsBefore + ' → ' + rowsFinal + ' payout rows');
+        check('the booking is repaired rather than left looking unpaid',
+            repaired.paid_out_at !== null
+                && repaired.payout_transfer_id === paidOut.payout_transfer_id,
+            'paid_out_at=' + repaired.paid_out_at
+                + ' transfer=' + repaired.payout_transfer_id);
     } else {
         check('there is a paid-out booking to re-run against', false, 'none found');
     }
@@ -346,6 +394,14 @@ async function main() {
     }
     const failed = results.filter((r) => r.status === 'failed').length;
     console.log('\n' + results.length + ' scenarios, ' + (results.length - failed) + ' passed, ' + failed + ' failed');
+    // Written whether this passed or failed. A failed run is evidence too,
+    // and recording only the good days is how a claim of coverage goes stale
+    // without anyone noticing. See scripts/scenario-report.cjs.
+    const recorded = writeRunnerResults('crosscutting', SITE, results);
+    console.log('\nrecorded in SCENARIO-RESULTS.json  ('
+        + recorded.passed + ' passed, ' + recorded.failed + ' failed, '
+        + recorded.untestable + ' not testable here)');
+
     process.exit(failed ? 1 : 0);
 }
 

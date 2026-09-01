@@ -11,6 +11,7 @@ import {
     readManifest, round2, sleep, signIn, SEED_DOMAIN, dayOffset,
 } from './seed-lib.mjs';
 import { resolveTarget, LOCAL_URL } from './target.cjs';
+import { writeRunnerResults } from './scenario-report.cjs';
 
 const env = loadEnv();
 assertTestEnvironment(env);
@@ -363,6 +364,14 @@ async function main() {
         '\n' + results.length + ' scenarios, ' + (results.length - failed - untested) +
         ' passed, ' + failed + ' failed, ' + untested + ' not testable here'
     );
+    // Written whether this passed or failed. A failed run is evidence too,
+    // and recording only the good days is how a claim of coverage goes stale
+    // without anyone noticing. See scripts/scenario-report.cjs.
+    const recorded = writeRunnerResults('payout', SITE, results);
+    console.log('\nrecorded in SCENARIO-RESULTS.json  ('
+        + recorded.passed + ' passed, ' + recorded.failed + ' failed, '
+        + recorded.untestable + ' not testable here)');
+
     process.exit(failed ? 1 : 0);
 }
 
