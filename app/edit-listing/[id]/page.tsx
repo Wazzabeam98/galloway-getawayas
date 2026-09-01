@@ -880,7 +880,7 @@ export default function EditListing() {
                         {activeSection === 'description' && (
                             <section>
                                 <h2 className="text-xl font-bold text-slate-900 mb-2">Title</h2>
-                                <input type="text" value={title} onChange={(e) => setTitle(e.target.value)} className="w-full p-3 border rounded-xl mb-6" />
+                                <input type="text" value={title} onChange={(e) => setTitle(e.target.value)} maxLength={80} className="w-full p-3 border rounded-xl mb-6" />
                                 <h2 className="text-xl font-bold text-slate-900 mb-2">Description</h2>
                                 <textarea value={description} onChange={(e) => setDescription(e.target.value)} rows={8} className="w-full p-3 border rounded-xl" />
                             </section>
