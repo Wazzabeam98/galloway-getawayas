@@ -130,7 +130,11 @@ test('every npm script named in the documents exists', () => {
     const missing: string[] = [];
 
     for (const doc of DOCS) {
-        const cited = read(doc).match(/npm run ([a-z:]+)/g) || [];
+        // [a-z0-9:_-] — the digits matter. Without them this truncated
+        // `npm run test:e2e` at the 2 and reported `test:e` as missing, which
+        // is a false alarm from the checker rather than a fault in the
+        // document. A check that cries wolf gets switched off.
+        const cited = read(doc).match(/npm run ([a-z0-9:_-]+)/g) || [];
         for (const raw of Array.from(new Set(cited))) {
             const name = raw.replace('npm run ', '');
             if (!pkg.scripts[name]) missing.push(doc + ': npm run ' + name);
