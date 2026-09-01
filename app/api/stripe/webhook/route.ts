@@ -358,12 +358,14 @@ export async function POST(request: Request) {
                     .select('id')
                     .single();
 
-                // LOST THE RACE. Two guests can both pass the order route's
-                // pre-check in the same moment; the partial unique index
-                // (20260901120000) then lets exactly one order exist and rejects
-                // the other. The rejected guest has a hold on their card for a
-                // slot that is no longer theirs — so release it here, at once,
-                // rather than leaving them held for 48 hours for nothing.
+                // LOST THE RACE (chefs only). Two guests can both pass the order
+                // route's pre-check for a chef in the same moment; the partial
+                // unique index (20260901160000, chef-only) then lets exactly one
+                // order exist and rejects the other. The rejected guest has a
+                // hold on their card for an evening that is no longer theirs —
+                // so release it here, at once, rather than leaving them held for
+                // 48 hours for nothing. A baker has no such index, so this never
+                // fires for them (they can take many orders per date).
                 //
                 // '23505' is a unique violation. Any other insert error is a
                 // real failure: the hold stands and the sweep will release it,
