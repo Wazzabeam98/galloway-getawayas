@@ -399,9 +399,34 @@ async function main() {
         label: 's22', total_price: 600, amount_paid: 600,
         check_in: dayOffset(-6), check_out: dayOffset(-4),
     });
+    // PAID AS A DEPOSIT AND A BALANCE, ON PURPOSE.
+    //
+    // Scenario 23 needs a host with genuinely nothing at Stripe, and it gets
+    // there by draining them to their bank — which only moves the AVAILABLE
+    // bucket. So the payout has to land there, and that only happens on an
+    // UNTIED transfer.
+    //
+    // lib/payoutSource.ts names the guest's charge as a transfer's
+    // source_transaction wherever one charge covers the host's share, and
+    // Stripe then settles it on that charge's clock — into PENDING, for about
+    // a week, where nothing can drain it. Two charges of £150 against a £270
+    // share means no single charge covers it, the transfer goes untied out of
+    // the platform's settled balance, and it arrives in the host's available
+    // balance where this scenario can empty it.
+    //
+    // That is also the honest shape of the case: a deposit and a balance is
+    // how most stays are actually paid.
+    const s23DepositIntent = await chargeFor(150, 's23-deposit');
+    const s23BalanceIntent = await chargeFor(150, 's23-balance');
     const s23 = await createBooking(listingIndebted, guest, hostIndebted, {
         label: 's23', total_price: 300, amount_paid: 300,
         check_in: dayOffset(-3), check_out: dayOffset(-1),
+        noCharge: true,
+        stripe_payment_intent_id: s23DepositIntent,
+        balance_payment_intent_id: s23BalanceIntent,
+        payment_plan: 'deposit',
+        deposit_amount: 150,
+        balance_amount: 0,
     });
     // Scenario 24's payout is deliberately small next to the debt scenario 23
     // leaves behind. It is seeded in the future so the first payout run cannot
