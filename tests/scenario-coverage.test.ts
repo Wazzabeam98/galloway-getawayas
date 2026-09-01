@@ -30,7 +30,17 @@ const path = require('path');
 const report = require(path.resolve(__dirname, '..', '..', 'scripts', 'scenario-report.cjs'));
 
 const RUNNERS = ['payout', 'refund', 'balance', 'crosscutting'];
-const HOW = 'Run them:  npm run scenarios   (needs a dev server and the test project)';
+// What to do about it. Attached to every failure whose remedy is "run them",
+// and deliberately not to the one where the last run recorded a real failure —
+// there the remedy is to fix the bug, not to run it again until it is quiet.
+const HOW =
+    'Run them:  npm run scenarios   (needs a dev server and the test project)\n'
+    + 'Then commit the refreshed SCENARIO-RESULTS.json alongside your change.\n'
+    + '\n'
+    + 'If you are merging a branch that changes the money path, run this BEFORE\n'
+    + 'you merge, not after. This test runs on master too, so leaving it until\n'
+    + 'afterwards turns one branch\'s tidy-up into everybody\'s red build — and a\n'
+    + 'red master that nobody understands is where --no-verify comes from.';
 
 test('the scenario results exist at all', () => {
     const results = report.readResults();

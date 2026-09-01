@@ -95,6 +95,12 @@ recorded a failure, or if any of the twenty money-path files listed in
 the tests, so "I will run the scenarios later" is no longer a thing that can
 happen quietly.
 
+**If you are merging a branch that changes the money path, run this before you
+merge, not after.** The same test runs on master, so leaving it until afterwards
+turns one branch's tidy-up into everybody's red build — and a red master nobody
+understands is where `--no-verify` comes from. Refresh the file in the branch,
+alongside the change it is evidence about.
+
 ### Why this stopped being a sentence
 
 This section used to read *"Scenarios 12-24 are scripted and passing"*. That was
