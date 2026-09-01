@@ -19,6 +19,13 @@ import { getImageUrl } from '@/lib/utils';
 // request sends them to Stripe to authorise their card, held not charged until
 // the provider confirms.
 
+interface Item {
+    id: string;
+    name: string;
+    description: string | null;
+    price: number;
+}
+
 interface Provider {
     id: string;
     business_name: string;
@@ -31,7 +38,8 @@ interface Provider {
     category: string;
     description: string | null;
     photos: string[] | null;
-    price: number;
+    // The menu. One item for a chef ("your experience"), many for a baker.
+    items: Item[];
 }
 
 // What the guest has already asked for on this stay — so a request is something
@@ -41,6 +49,7 @@ interface Order {
     status: string;
     service_date: string;
     price: number;
+    item_name: string | null;
     provider_business_name: string | null;
 }
 
@@ -73,6 +82,9 @@ export default function GuestExperiences(props: {
     const [loaded, setLoaded] = useState(false);
     const [open, setOpen] = useState(true);
     const [dateFor, setDateFor] = useState<Record<string, string>>({});
+    // Which item the guest has picked, per provider. A single-item provider
+    // needs no pick — the card defaults to it.
+    const [itemFor, setItemFor] = useState<Record<string, string>>({});
     const [busy, setBusy] = useState<string | null>(null);
     const [error, setError] = useState<string | null>(null);
     const [note, setNote] = useState<string | null>(null);
@@ -115,6 +127,9 @@ export default function GuestExperiences(props: {
     }
 
     async function request(provider: Provider) {
+        // Which item: the guest's pick, or the only one there is.
+        const itemId = itemFor[provider.id] || (provider.items.length === 1 ? provider.items[0].id : '');
+        if (!itemId) { setError('Pick one first.'); return; }
         const serviceDate = dateFor[provider.id];
         if (!serviceDate) { setError('Pick a date first.'); return; }
         setBusy(provider.id);
@@ -123,7 +138,7 @@ export default function GuestExperiences(props: {
             const res = await fetch('/api/services/order', {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({ providerId: provider.id, bookingId, serviceDate }),
+                body: JSON.stringify({ itemId, bookingId, serviceDate }),
             });
             const d = await res.json();
             if (d && d.ok && d.url) { window.location.href = d.url; return; }
@@ -182,7 +197,7 @@ export default function GuestExperiences(props: {
                             <li key={o.id} className="flex flex-wrap items-center justify-between gap-x-3 gap-y-1 py-2">
                                 <div className="min-w-0">
                                     <div className="text-sm font-medium text-gray-900 break-words">
-                                        {o.provider_business_name || 'Experience'}
+                                        {o.item_name ? o.item_name + ' · ' : ''}{o.provider_business_name || 'Experience'}
                                     </div>
                                     <div className="text-xs text-gray-500">
                                         {o.service_date} · £{o.price.toFixed(2)} · {ORDER_WORD[o.status] || o.status}
@@ -268,7 +283,66 @@ export default function GuestExperiences(props: {
                                 <p className="mt-2 whitespace-pre-line text-sm text-gray-600">{p.description}</p>
                             ) : null}
 
-                            <div className="mt-2 font-semibold text-gray-900">£{p.price.toFixed(2)}</div>
+                            {/* THE MENU.
+                                One item (a chef) reads like a single price — the
+                                card is the provider, and the price sits under
+                                their words. Many items (a baker) lead with a
+                                "from" price, so the card is still "Effie
+                                Sinclair, cakes from £18" at a glance, and the
+                                items are a tidy pick-one list below rather than a
+                                wall of prices. The guest chooses the cake before
+                                the date. */}
+                            {p.items.length === 1 ? (
+                                <div className="mt-2 font-semibold text-gray-900">£{p.items[0].price.toFixed(2)}</div>
+                            ) : (
+                                // Collapsed by default so one baker's eight-item
+                                // menu doesn't stand four times taller than the
+                                // chef card beside it. The summary keeps the two
+                                // things that sell the range — the "from" price and
+                                // that there IS a range — and a tap opens the list
+                                // to pick from. Radios stay mounted inside, so a
+                                // selection survives closing and reopening.
+                                <details className="group mt-2">
+                                    <summary className="flex cursor-pointer list-none items-center gap-1.5 text-sm text-gray-700">
+                                        <span>
+                                            from <span className="font-semibold text-gray-900">£{Math.min(...p.items.map((i) => i.price)).toFixed(2)}</span>
+                                            <span className="text-gray-400"> · </span>
+                                            <span className="text-gray-600 underline decoration-gray-300 underline-offset-2 group-open:no-underline">{p.items.length} to choose from</span>
+                                        </span>
+                                        <svg className="h-4 w-4 flex-none text-gray-400 transition-transform group-open:rotate-180" viewBox="0 0 20 20" fill="currentColor" aria-hidden="true">
+                                            <path fillRule="evenodd" d="M5.23 7.21a.75.75 0 0 1 1.06.02L10 11.06l3.71-3.83a.75.75 0 1 1 1.08 1.04l-4.25 4.39a.75.75 0 0 1-1.08 0L5.21 8.27a.75.75 0 0 1 .02-1.06Z" clipRule="evenodd" />
+                                        </svg>
+                                    </summary>
+                                    <div className="mt-2 space-y-1.5">
+                                        {p.items.map((it) => {
+                                            const picked = (itemFor[p.id] || '') === it.id;
+                                            return (
+                                                <label
+                                                    key={it.id}
+                                                    className={`flex cursor-pointer items-start gap-2 rounded-md border p-2 ${picked ? 'border-emerald-500 bg-emerald-50' : 'border-gray-200'}`}
+                                                >
+                                                    <input
+                                                        type="radio"
+                                                        name={'item-' + p.id}
+                                                        checked={picked}
+                                                        onChange={() => setItemFor((s) => ({ ...s, [p.id]: it.id }))}
+                                                        className="mt-1"
+                                                    />
+                                                    <span className="min-w-0 flex-1">
+                                                        <span className="flex justify-between gap-2">
+                                                            <span className="break-words text-sm font-medium text-gray-900">{it.name}</span>
+                                                            <span className="whitespace-nowrap text-sm font-semibold text-gray-900">£{it.price.toFixed(2)}</span>
+                                                        </span>
+                                                        {it.description ? (
+                                                            <span className="block break-words text-xs text-gray-500">{it.description}</span>
+                                                        ) : null}
+                                                    </span>
+                                                </label>
+                                            );
+                                        })}
+                                    </div>
+                                </details>
+                            )}
 
                             <label className="mt-3 block text-xs text-gray-500">
                                 Date during your stay

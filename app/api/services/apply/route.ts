@@ -53,6 +53,7 @@ interface Body {
     registrations?: any[];
     extras?: any[];
     prices?: any[];
+    items?: any[];
     skills?: string[];
 }
 
@@ -77,6 +78,10 @@ const PROVIDER_COLUMNS = [
 const AREA_COLUMNS = ['label', 'centre_lat', 'centre_lng', 'radius_miles'];
 const EXTRA_COLUMNS = ['extra_key', 'offered', 'price', 'notes'];
 const PRICE_COLUMNS = ['band_key', 'price', 'typical_hours'];
+// A guest trade's menu — one item for a chef, many for a baker. Whitelisted like
+// the rest; provider_id is stamped when the payload is materialised at /finish,
+// never taken from the browser.
+const ITEM_COLUMNS = ['name', 'description', 'price', 'sort_order', 'active'];
 
 function pick(row: any, columns: string[]) {
     const out: any = {};
@@ -200,6 +205,7 @@ export async function POST(req: Request) {
                     areas: (body.areas || []).map((a) => pick(a, AREA_COLUMNS)),
                     extras: (body.extras || []).map((e) => pick(e, EXTRA_COLUMNS)),
                     prices: (body.prices || []).map((p) => pick(p, PRICE_COLUMNS)),
+                    items: (body.items || []).map((it: any) => pick(it, ITEM_COLUMNS)),
                     registrations: (body.registrations || []).map((r: any) => ({
                         scheme: String(r.scheme || ''),
                         number: String(r.number || '').trim(),

@@ -17,6 +17,7 @@ interface Order {
     service_date: string;
     guests: number | null;
     price: number;
+    item_name: string | null;
     guest_name: string | null;
     // Released only once the provider confirms — the route sends null until then.
     guest_phone: string | null;
@@ -144,7 +145,8 @@ export default function ProviderExperienceDashboard(props: { providerId: string 
                     <div className="mt-3 space-y-3">
                         {waiting.map((o) => (
                             <div key={o.id} className="rounded-xl border border-gray-200 p-4">
-                                <div className="text-sm text-gray-900">
+                                {o.item_name ? <div className="text-sm font-semibold text-gray-900">{o.item_name}</div> : null}
+                                <div className="text-sm text-gray-600">
                                     {o.service_date}
                                     {o.guests ? ' · ' + o.guests + ' guest' + (o.guests === 1 ? '' : 's') : ''}
                                     {' · £' + o.price.toFixed(2)}
@@ -186,7 +188,8 @@ export default function ProviderExperienceDashboard(props: { providerId: string 
                     <div className="mt-3 space-y-3">
                         {confirmed.map((o) => (
                             <div key={o.id} className="rounded-xl border border-emerald-200 bg-emerald-50/40 p-4">
-                                <div className="text-sm font-medium text-gray-900">
+                                {o.item_name ? <div className="text-sm font-semibold text-gray-900">{o.item_name}</div> : null}
+                                <div className="text-sm text-gray-600">
                                     {o.service_date}
                                     {o.guests ? ' · ' + o.guests + ' guest' + (o.guests === 1 ? '' : 's') : ''}
                                     {' · £' + o.price.toFixed(2)}

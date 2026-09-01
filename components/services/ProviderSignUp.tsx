@@ -7,7 +7,7 @@ import { createClientComponentClient } from '@supabase/auth-helpers-nextjs';
 import { supabaseEmailFlow } from '@/lib/supabaseEmailFlow';
 import { toast } from 'react-toastify';
 import {
-    Sparkles, Wrench, Trees, Droplet, ChefHat, Cake, ShoppingBasket, PawPrint, Trash2,
+    Sparkles, Wrench, Trees, Droplet, ChefHat, Cake, ShoppingBasket, Trash2,
     Plus, X, ChevronLeft, ChevronRight, Check, Zap, Hammer, Paintbrush, Home,
 } from 'lucide-react';
 import { TradeTile, TradeTileGrid, TRADE_ICONS, GROUP_ICONS } from '@/components/services/TradeTiles';
@@ -199,9 +199,10 @@ function ApplicationForm() {
     // number mid-keystroke, and blank stays genuinely blank rather than 0.
     const [prices, setPrices] = useState<Record<string, { price: string; typical_hours: string }>>({});
 
-    // The one fixed price a guest-trade provider charges for their experience.
-    // Their own words carry what it covers; this is the number.
-    const [experiencePrice, setExperiencePrice] = useState('');
+    // The menu — what a guest trade sells, and for how much. A chef has a list
+    // of one (their experience, one price); a baker has many. Prices stay
+    // strings so a half-typed number is not coerced mid-keystroke.
+    const [items, setItems] = useState<Array<{ name: string; description: string; price: string }>>([]);
 
     // Who they are, for a guest trade only. A guest is choosing someone to come
     // into the cottage they are staying in, so the listing carries a bit of the
@@ -319,7 +320,7 @@ function ApplicationForm() {
                 // it is inherited from another one they hold.
                 const { data: existing } = await supabase
                     .from('service_providers')
-                    .select('id, business_name, trade, description, sms_opt_out, audience, photos, logo, status, review_note, callout_fee, hourly_rate, callout_waived, does_gas, does_oil, kind, pricing_choice, billable_hourly_rate, covered_bands, experience_price, provider_name, based_line, headshot')
+                    .select('id, business_name, trade, description, sms_opt_out, audience, photos, logo, status, review_note, callout_fee, hourly_rate, callout_waived, does_gas, does_oil, kind, pricing_choice, billable_hourly_rate, covered_bands, provider_name, based_line, headshot')
                     .eq('owner_id', session.user.id)
                     .eq('trade', tradeFromUrl)
                     .maybeSingle();
@@ -361,11 +362,22 @@ function ApplicationForm() {
                             : String(existing.billable_hourly_rate)
                     );
                     setCoveredBands(Array.isArray(existing.covered_bands) ? existing.covered_bands : []);
-                    setExperiencePrice(
-                        (existing as any).experience_price === null || (existing as any).experience_price === undefined
-                            ? ''
-                            : String((existing as any).experience_price)
-                    );
+
+                    // The menu, if they have one. Loaded in the order they set.
+                    const { data: itemRows } = await supabase
+                        .from('service_provider_items')
+                        .select('name, description, price, sort_order, created_at')
+                        .eq('provider_id', existing.id)
+                        .order('sort_order', { ascending: true })
+                        .order('created_at', { ascending: true });
+                    if (itemRows && itemRows.length) {
+                        setItems(itemRows.map((r: any) => ({
+                            name: r.name || '',
+                            description: r.description || '',
+                            price: r.price === null || r.price === undefined ? '' : String(r.price),
+                        })));
+                    }
+
                     setProviderName((existing as any).provider_name || '');
                     setBasedLine((existing as any).based_line || '');
                     setHeadshot((existing as any).headshot || null);
@@ -560,7 +572,7 @@ function ApplicationForm() {
             if (d.calloutFee) setCalloutFee(d.calloutFee);
             if (d.hourlyRate) setHourlyRate(d.hourlyRate);
             if (d.areas) setAreas(d.areas);
-            if (d.experiencePrice) setExperiencePrice(d.experiencePrice);
+            if (Array.isArray(d.items) && d.items.length) setItems(d.items);
             if (d.providerName) setProviderName(d.providerName);
             if (d.basedLine) setBasedLine(d.basedLine);
             if (d.headshot) setHeadshot(d.headshot);
@@ -666,7 +678,7 @@ function ApplicationForm() {
                     photos, logo, buildingType, panes,
                     // The guest-trade fields: the price, and who they are. The
                     // headshot is a storage path like the photos.
-                    experiencePrice, providerName, basedLine, headshot,
+                    items, providerName, basedLine, headshot,
                 })
             );
         } catch (err) {
@@ -679,7 +691,7 @@ function ApplicationForm() {
         pricingChoice, billableHourlyRate, coveredBands,
         doesGas, doesOil, registrations, calloutWaived, skills,
         photos, logo, buildingType, panes,
-        experiencePrice, providerName, basedLine, headshot,
+        items, providerName, basedLine, headshot,
     ]);
 
     // Which registration boxes this application shows at all. An electrician
@@ -1376,9 +1388,6 @@ function ApplicationForm() {
             contact_phone: contactPhone.trim() || null,
             sms_opt_out: smsOptOut,
             audience: audienceForTrade(trade),
-            experience_price: audienceForTrade(trade) === 'guest' && experiencePrice.trim() !== ''
-                ? Number(experiencePrice)
-                : null,
             // Who they are — a guest trade only. A guest is choosing someone to
             // come into their cottage, so the listing carries a bit of the
             // person. Null for a host trade, where a logo and a trade say enough.
@@ -1452,12 +1461,28 @@ function ApplicationForm() {
             };
         });
 
+        // The menu, for a guest trade. Only rows with a name and a real price;
+        // a chef's item is named "Private dinner" when they left it blank. Empty
+        // rows drop out, so a half-filled form does not create a phantom item.
+        const items_ = audienceForTrade(trade) === 'guest'
+            ? items
+                .map((it, i) => ({
+                    name: String(it.name || '').trim() || (trade === 'chef' ? 'Private dinner' : ''),
+                    description: String(it.description || '').trim() || null,
+                    price: String(it.price || '').trim() !== '' ? Number(it.price) : null,
+                    sort_order: i,
+                    active: true,
+                }))
+                .filter((r) => r.name && r.price !== null && Number(r.price) > 0)
+            : [];
+
         return {
             provider,
             registrations: registrations_,
             extras: extras_,
             prices: prices_,
             areas: areas_,
+            items: items_,
             skills: hasSkills ? skills : [],
         };
     };
@@ -1623,9 +1648,6 @@ function ApplicationForm() {
             contact_phone: contactPhone.trim() || null,
             sms_opt_out: smsOptOut,
             audience: audienceForTrade(trade),
-            experience_price: audienceForTrade(trade) === 'guest' && experiencePrice.trim() !== ''
-                ? Number(experiencePrice)
-                : null,
             // Who they are — a guest trade only. A guest is choosing someone to
             // come into their cottage, so the listing carries a bit of the
             // person. Null for a host trade, where a logo and a trade say enough.
@@ -1863,6 +1885,26 @@ function ApplicationForm() {
                 };
             });
             await supabase.from('service_areas').insert(rows);
+        }
+
+        // The menu — replaced wholesale, the same way areas are. A guest trade
+        // only; a host trade never has items. The order snapshots what it was
+        // for, so replacing the live rows never touches a placed order. Empty
+        // rows (no name or no price) are dropped, and a chef's blank item is
+        // named "Private dinner".
+        if (audienceForTrade(trade) === 'guest') {
+            await supabase.from('service_provider_items').delete().eq('provider_id', id);
+            const itemRows = items
+                .map((it, i) => ({
+                    provider_id: id,
+                    name: String(it.name || '').trim() || (trade === 'chef' ? 'Private dinner' : ''),
+                    description: String(it.description || '').trim() || null,
+                    price: String(it.price || '').trim() !== '' ? Number(it.price) : null,
+                    sort_order: i,
+                    active: true,
+                }))
+                .filter((r) => r.name && r.price !== null && Number(r.price) > 0);
+            if (itemRows.length) await supabase.from('service_provider_items').insert(itemRows);
         }
 
         // Skills go through a route rather than being written from here.
@@ -2394,37 +2436,93 @@ function ApplicationForm() {
                 </section>
                 )}
 
-                {/* A guest-trade provider sets one fixed price here. The example
-                    is trade-aware — a chef's three-course dinner is not a baker's
-                    example. (A per-item menu is coming for the trades that sell
-                    more than one thing; this is the interim one-price form.) A
-                    provider with no price is simply not live to guests (the order
-                    route refuses it), the same way an un-connected one is not. */}
+                {/* WHAT THEY SELL, AND FOR HOW MUCH.
+                    One model, framed by trade. A chef genuinely has one thing at
+                    one price, so they see a single "your experience" price. A
+                    baker sells a cake, cupcakes and a tray bake at three prices
+                    nobody could guess, so they build a menu — as many items as
+                    they like, each a name, a line and a price. The guest picks an
+                    item; the order snapshots it. A provider with no priced item
+                    is simply not live to guests. */}
                 {onStep('business') && audienceForTrade(trade) === 'guest' && (() => {
-                    const hint =
-                        trade === 'chef' ? 'Say above what it covers — a three-course dinner for six.'
-                        : trade === 'cake' ? 'Say above what it covers — a celebration cake, or a box of cupcakes.'
-                        : trade === 'basket' ? 'Say above what it covers — a welcome hamper, or the fridge filled before you arrive.'
-                        : 'Say above what the guest gets for it.';
-                    const ph = trade === 'chef' ? '180' : trade === 'cake' ? '45' : trade === 'basket' ? '40' : '50';
+                    const rows = items.length ? items : [{ name: '', description: '', price: '' }];
+                    const setRow = (i: number, field: 'name' | 'description' | 'price', val: string) =>
+                        setItems(rows.map((r, j) => (j === i ? { ...r, [field]: val } : r)));
+                    const addRow = () => setItems([...rows, { name: '', description: '', price: '' }]);
+                    const removeRow = (i: number) => { const next = rows.filter((_, j) => j !== i); setItems(next); };
+                    const single = trade === 'chef';
+
+                    if (single) {
+                        return (
+                            <section className="mb-8">
+                                <label className="block text-sm font-semibold text-slate-900 mb-1.5">Your price</label>
+                                <p className="text-sm text-slate-500 mb-2">
+                                    One price for your experience. Your words above say what it covers — a
+                                    three-course dinner for six.
+                                </p>
+                                <div className="flex items-center gap-2">
+                                    <span className="text-slate-500">£</span>
+                                    <input
+                                        type="number" min="0" step="0.01" inputMode="decimal"
+                                        value={rows[0].price}
+                                        onChange={(e) => setRow(0, 'price', e.target.value)}
+                                        placeholder="180"
+                                        className="w-40 rounded-xl border border-slate-300 px-4 py-3 focus:outline-none focus:ring-2 focus:ring-emerald-700"
+                                    />
+                                </div>
+                            </section>
+                        );
+                    }
+
+                    const namePh = trade === 'cake' ? 'Celebration cake' : trade === 'basket' ? 'Welcome hamper' : 'What you’re selling';
+                    const descPh = trade === 'cake' ? 'Serves 8, choice of sponge' : trade === 'basket' ? 'Local cheese, bread, jam' : 'A short line about it';
                     return (
-                    <section className="mb-8">
-                        <label className="block text-sm font-semibold text-slate-900 mb-1.5">Your price</label>
-                        <p className="text-sm text-slate-500 mb-2">{hint}</p>
-                        <div className="flex items-center gap-2">
-                            <span className="text-slate-500">£</span>
-                            <input
-                                type="number"
-                                min="0"
-                                step="0.01"
-                                inputMode="decimal"
-                                value={experiencePrice}
-                                onChange={(e) => setExperiencePrice(e.target.value)}
-                                placeholder={ph}
-                                className="w-40 rounded-xl border border-slate-300 px-4 py-3 focus:outline-none focus:ring-2 focus:ring-emerald-700"
-                            />
-                        </div>
-                    </section>
+                        <section className="mb-8">
+                            <h2 className="text-sm font-semibold text-slate-900 mb-1">Your menu</h2>
+                            <p className="text-sm text-slate-500 mb-3">
+                                What guests can order, and the price of each. Add as many as you like — a
+                                cake, a box of cupcakes, a tray bake. You can edit or remove any of them later.
+                            </p>
+                            <div className="space-y-3">
+                                {rows.map((it, i) => (
+                                    <div key={i} className="rounded-xl border border-slate-200 p-3">
+                                        <div className="flex items-start gap-2">
+                                            <input
+                                                type="text" value={it.name}
+                                                onChange={(e) => setRow(i, 'name', e.target.value)}
+                                                placeholder={namePh}
+                                                className="flex-1 rounded-lg border border-slate-300 px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-emerald-700"
+                                            />
+                                            <div className="flex items-center gap-1">
+                                                <span className="text-slate-500 text-sm">£</span>
+                                                <input
+                                                    type="number" min="0" step="0.01" inputMode="decimal" value={it.price}
+                                                    onChange={(e) => setRow(i, 'price', e.target.value)}
+                                                    placeholder="45"
+                                                    className="w-24 rounded-lg border border-slate-300 px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-emerald-700"
+                                                />
+                                            </div>
+                                            {rows.length > 1 && (
+                                                <button type="button" onClick={() => removeRow(i)} aria-label="Remove item"
+                                                    className="mt-1 rounded-md p-1 text-slate-400 hover:text-slate-700">
+                                                    <X className="w-4 h-4" />
+                                                </button>
+                                            )}
+                                        </div>
+                                        <input
+                                            type="text" value={it.description}
+                                            onChange={(e) => setRow(i, 'description', e.target.value)}
+                                            placeholder={descPh}
+                                            className="mt-2 w-full rounded-lg border border-slate-300 px-3 py-2 text-sm text-slate-600 focus:outline-none focus:ring-2 focus:ring-emerald-700"
+                                        />
+                                    </div>
+                                ))}
+                            </div>
+                            <button type="button" onClick={addRow}
+                                className="mt-3 inline-flex items-center gap-2 rounded-xl border-2 border-dashed border-slate-300 px-4 py-2.5 text-sm text-slate-600 hover:border-slate-400">
+                                <Plus className="w-4 h-4" /> Add another
+                            </button>
+                        </section>
                     );
                 })()}
 

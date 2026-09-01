@@ -148,6 +148,11 @@ export async function POST(req: Request) {
         const prices = (payload.prices || []).map((p: any) => ({ ...p, provider_id: id }));
         if (prices.length) await admin.from('service_provider_prices').insert(prices);
 
+        // The menu — a guest trade's items, one for a chef, many for a baker.
+        // Stamped with provider_id here, the same as the other children.
+        const items = (payload.items || []).map((it: any) => ({ ...it, provider_id: id }));
+        if (items.length) await admin.from('service_provider_items').insert(items);
+
         // Registrations carry no verified columns from here — only an admin
         // decision writes those, and a fresh application has had none.
         const regs = (payload.registrations || []).map((r: any) => ({

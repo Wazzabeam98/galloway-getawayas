@@ -46,12 +46,14 @@ export async function POST(request: Request) {
         }
 
         const body = await request.json().catch(function () { return {}; });
-        const providerId: string = body && body.providerId;
+        // The guest picks an ITEM off the menu now, not a provider. The provider
+        // and the price both come from the item — never the browser.
+        const itemId: string = body && body.itemId;
         const bookingId: string = body && body.bookingId;
         const serviceDate: string = body && body.serviceDate;
         const note: string = (body && body.note ? String(body.note) : '').slice(0, 500);
 
-        if (!providerId || !bookingId || !serviceDate) {
+        if (!itemId || !bookingId || !serviceDate) {
             return NextResponse.json({ ok: false, error: 'Missing details' }, { status: 400 });
         }
 
@@ -72,18 +74,27 @@ export async function POST(request: Request) {
             return NextResponse.json({ ok: false, error: 'Not your booking' }, { status: 403 });
         }
 
+        // The item is the source of the price. Active and priced, or it is not
+        // for sale — the same gate the menu applies, enforced here too.
+        const { data: item } = await admin
+            .from('service_provider_items')
+            .select('id, provider_id, name, description, price, active')
+            .eq('id', itemId)
+            .maybeSingle();
+
+        if (!item || item.active !== true || !(Number(item.price) > 0)) {
+            return NextResponse.json({ ok: false, error: 'That item isn’t available.' }, { status: 400 });
+        }
+
         const { data: provider } = await admin
             .from('service_providers')
-            .select('id, business_name, trade, status, stripe_account_id, stripe_payouts_enabled, experience_price, plan, commission_rate')
-            .eq('id', providerId)
+            .select('id, business_name, trade, status, stripe_account_id, stripe_payouts_enabled, plan, commission_rate')
+            .eq('id', item.provider_id)
             .maybeSingle();
 
         // A provider a guest may not buy from must never be reachable here, not
         // only hidden from the surface — the gate is enforced, not decorative.
         if (!provider || !isLiveToGuests(provider) || !provider.stripe_account_id) {
-            return NextResponse.json({ ok: false, error: 'That experience isn’t available.' }, { status: 400 });
-        }
-        if (!(Number(provider.experience_price) > 0)) {
             return NextResponse.json({ ok: false, error: 'That experience isn’t available.' }, { status: 400 });
         }
 
@@ -122,9 +133,10 @@ export async function POST(request: Request) {
             }
         }
 
-        const pricing = priceOrder(provider, { bandPrice: Number(provider.experience_price) }, []);
+        const pricing = priceOrder(provider, { bandPrice: Number(item.price) }, []);
 
-        const label = (provider.business_name || 'Your experience');
+        const business = (provider.business_name || 'Your experience');
+        const itemName = (item.name || business);
 
         const checkout = await stripeRequest('POST', '/checkout/sessions', {
             mode: 'payment',
@@ -137,11 +149,11 @@ export async function POST(request: Request) {
                         currency: 'gbp',
                         unit_amount: pricing.amountPence,
                         product_data: {
-                            name: label,
-                            // Named plainly so the guest sees whose experience
-                            // this is at the moment they pay — the liability
-                            // disclosure is on the checkout page, not buried.
-                            description: 'Booked with ' + label
+                            // The item they picked, so the checkout shows what
+                            // they are buying; whose it is and the liability line
+                            // are in the description, not buried.
+                            name: itemName,
+                            description: 'Booked with ' + business
                                 + '. Galloway Getaways takes the payment on their behalf and is not the provider.',
                         },
                     },
@@ -154,7 +166,7 @@ export async function POST(request: Request) {
                 on_behalf_of: provider.stripe_account_id,
                 application_fee_amount: pricing.applicationFeePence,
                 transfer_data: { destination: provider.stripe_account_id },
-                description: 'Galloway experience — ' + label,
+                description: 'Galloway experience — ' + business + ' · ' + itemName,
                 metadata: {
                     kind: 'service_order',
                     provider_id: provider.id,
@@ -173,6 +185,10 @@ export async function POST(request: Request) {
                 guests: String(booking.guests ?? ''),
                 commission_rate: String(pricing.commissionRate),
                 note: note,
+                // The chosen item, snapshotted onto the order via the webhook.
+                item_id: item.id,
+                item_name: itemName,
+                item_description: item.description || '',
             },
         });
 

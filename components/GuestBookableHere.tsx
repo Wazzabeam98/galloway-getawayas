@@ -15,7 +15,7 @@ interface Provider {
     business_name: string;
     category: string;
     description: string | null;
-    price: number;
+    items: { id: string; name: string; description: string | null; price: number }[];
 }
 
 export default function GuestBookableHere(props: { listingId: string }) {
@@ -67,7 +67,11 @@ export default function GuestBookableHere(props: { listingId: string }) {
                                     <p className="text-sm text-slate-600 whitespace-pre-line">{p.description}</p>
                                 ) : null}
                             </div>
-                            <div className="font-semibold text-slate-900 whitespace-nowrap">£{p.price.toFixed(2)}</div>
+                            <div className="font-semibold text-slate-900 whitespace-nowrap">
+                                {p.items.length === 1
+                                    ? '£' + p.items[0].price.toFixed(2)
+                                    : 'from £' + Math.min(...p.items.map((i) => i.price)).toFixed(2)}
+                            </div>
                         </li>
                     ))}
                 </ul>

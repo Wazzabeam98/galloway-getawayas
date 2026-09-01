@@ -85,16 +85,15 @@ export async function GET(request: Request) {
             return NextResponse.json({ ok: true, open: true, stay, providers: [] });
         }
 
-        // Live guest providers with a price. The gate is enforced in the query
-        // and again in isLiveToGuests, so a provider missing either half never
-        // reaches a guest.
+        // Live guest providers. "Live" now means approved + payouts on + AT
+        // LEAST ONE PRICED ITEM on the menu — a provider with an empty menu has
+        // nothing for a guest to buy, the same way one with no price used to.
         const { data: rows } = await admin
             .from('service_providers')
-            .select('id, business_name, provider_name, based_line, headshot, trade, custom_label, stripe_mcc, description, photos, experience_price, status, stripe_payouts_enabled')
+            .select('id, business_name, provider_name, based_line, headshot, trade, custom_label, stripe_mcc, description, photos, status, stripe_payouts_enabled')
             .eq('audience', 'guest')
             .eq('status', 'approved')
-            .eq('stripe_payouts_enabled', true)
-            .gt('experience_price', 0);
+            .eq('stripe_payouts_enabled', true);
 
         const providerIds = (rows || []).map((r) => r.id);
         const { data: areas } = providerIds.length
@@ -109,11 +108,31 @@ export async function GET(request: Request) {
             (areasByProvider[a.provider_id] = areasByProvider[a.provider_id] || []).push(a);
         }
 
+        // The menu — active, priced items, in the order the provider set.
+        const { data: itemRows } = providerIds.length
+            ? await admin
+                .from('service_provider_items')
+                .select('id, provider_id, name, description, price, sort_order, created_at')
+                .in('provider_id', providerIds)
+                .eq('active', true)
+                .gt('price', 0)
+                .order('sort_order', { ascending: true })
+                .order('created_at', { ascending: true })
+            : { data: [] as any[] };
+
+        const itemsByProvider: Record<string, any[]> = {};
+        for (const it of itemRows || []) {
+            (itemsByProvider[it.provider_id] = itemsByProvider[it.provider_id] || []).push({
+                id: it.id, name: it.name, description: it.description, price: Number(it.price),
+            });
+        }
+
         const providers = (rows || [])
             // Provider-aware, not mccForTrade: an "other" provider the owner has
             // categorised has a code on the row and no entry in the trade table,
             // and must not be filtered out here for it.
             .filter((p) => isLiveToGuests(p) && mccForProvider(p))
+            .filter((p) => (itemsByProvider[p.id] || []).length > 0)
             .filter((p) => coversPoint(areasByProvider[p.id] || [], point.lat, point.lng))
             .map((p) => ({
                 id: p.id,
@@ -128,7 +147,9 @@ export async function GET(request: Request) {
                 category: guestCategory(p),
                 description: p.description,
                 photos: p.photos,
-                price: Number(p.experience_price),
+                // The menu. One item for a chef, many for a baker. The card leads
+                // with the provider and a "from" price, and lists the rest.
+                items: itemsByProvider[p.id] || [],
             }));
 
         // What the guest has already asked for on THIS stay, so the trip page
@@ -140,7 +161,7 @@ export async function GET(request: Request) {
         if (bookingId) {
             const { data: mine } = await admin
                 .from('service_orders')
-                .select('id, status, service_date, price, provider_business_name')
+                .select('id, status, service_date, price, item_name, provider_business_name')
                 .eq('booking_id', bookingId)
                 .eq('guest_id', user.id)
                 .order('created_at', { ascending: false });
@@ -149,6 +170,7 @@ export async function GET(request: Request) {
                 status: o.status,
                 service_date: o.service_date,
                 price: Number(o.price),
+                item_name: o.item_name,
                 provider_business_name: o.provider_business_name,
             }));
         }

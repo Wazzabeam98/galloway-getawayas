@@ -61,7 +61,7 @@ export default function BusinessPage() {
                     <ChefHat className="w-8 h-8 text-emerald-700 mb-4" strokeWidth={1.5} />
                     <h2 className="font-bold text-slate-900 text-lg">Sell to guests</h2>
                     <p className="text-sm text-slate-600 mt-2">
-                        Private chefs, cakes, hampers, pet care — bought by people staying in the
+                        Private chefs, cakes, hampers and more — bought by people staying in the
                         cottages rather than by the people who own them.
                     </p>
 

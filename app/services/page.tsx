@@ -56,7 +56,7 @@ export default function ServicesHub() {
                     <h2 className="font-bold text-slate-900 text-lg">For your stay</h2>
                     <p className="text-sm text-slate-600 mt-2">
                         Staying with us? Local experiences you can book while you’re here — a private
-                        chef, a welcome hamper, pet care. They appear on your trip page once you’ve
+                        chef, a welcome hamper, a cake. They appear on your trip page once you’ve
                         booked a cottage, matched to where you’re staying and your dates.
                     </p>
                     <span className="inline-flex items-center gap-1.5 text-sm font-semibold text-emerald-700 mt-4">

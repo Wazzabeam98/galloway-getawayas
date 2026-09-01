@@ -63,7 +63,7 @@ export default function PropertyServicesPage() {
                 for, shouting as loud as it. */}
             <p className="text-sm text-slate-400 mt-2 mb-10">
                 Looking for what your guests can book during a stay — a private chef, a
-                welcome hamper, pet care?{' '}
+                welcome hamper, a cake?{' '}
                 <Link href="/trips" className="underline hover:text-slate-600">
                     Those are offered to guests on their trip page.
                 </Link>
