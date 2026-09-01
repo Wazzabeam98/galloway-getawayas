@@ -108,10 +108,17 @@ checked: 2026-09-01
 | Production | `supabase-pink-elephant` | `hviwjxigqivjfhmhpjiy` |
 | Test | `galloway-getaways-test` | `yefoqcabuijcowoqewtc` |
 
-- **Vercel Preview reads test; production reads production.** Every
-  environment-sensitive variable is split per environment — the three Supabase
-  ones, `STRIPE_SECRET_KEY`, `STRIPE_WEBHOOK_SECRET`, `CRON_SECRET`,
-  `RESEND_API_KEY`. A preview cannot reach production data or live money.
+- **Vercel Preview reads test; production reads production.** That separation
+  is the whole reason a preview cannot reach production data or live money, and
+  it rests on every environment-sensitive variable being scoped per
+  environment — the three Supabase ones, `STRIPE_SECRET_KEY`,
+  `STRIPE_WEBHOOK_SECRET`, `CRON_SECRET`, `RESEND_API_KEY`.
+
+  **Which of them actually are:**
+  [Vercel → Settings → Environment Variables](https://vercel.com/wazzabeam98s-projects/galloway-getawayas/settings/environment-variables).
+  Not checkable from this repo. This project has already shipped one variable
+  scoped to the wrong environment, so the list is worth reading rather than
+  assuming.
 - **`galloway-getawayas-git-master-….vercel.app` is production, not a preview.**
   master is the production branch, so that hostname is an alias on the live
   deployment.
@@ -242,9 +249,14 @@ checked: 2026-09-01
 - **An early fraud warning is not a chargeback** and the two must never be
   treated alike. One is a warning; the other has already taken the money.
 - **Stripe's Adaptive Pricing is on by default and will offer euros** for a
-  cottage priced in pounds. Off in the Dashboard *and* in
-  `app/api/stripe/checkout/route.ts`, because the toggle is per account and per
-  mode and travels less well than code does.
+  cottage priced in pounds. `app/api/stripe/checkout/route.ts` sends
+  `adaptive_pricing: { enabled: false }` on every session, which is the half
+  that travels with the code and cannot be turned off by someone with a login.
+  The account toggle is per account and per mode:
+  [Stripe → Settings → Adaptive Pricing](https://dashboard.stripe.com/settings/adaptive-pricing).
+  Nothing about the money was ever at risk from it — the session always
+  reported this currency and this amount — only what the guest was shown, plus
+  the 2-4% conversion they would have paid for the privilege.
 
 ### Tests
 
@@ -277,10 +289,23 @@ checked: 2026-09-01
   its own allowance. This is why decline emails kept arriving on a night when no
   confirmation would send, and why mail looked like it worked.
 
-**Production has custom SMTP through Resend** — confirmed 1 September 2026 from
-Resend's own send log. **Test does not**, so it falls back to Supabase's
-built-in service, which is two emails an hour project-wide and delivers only to
-pre-authorised team addresses. A brand-new address on test was refused
+**Whether a project has its own SMTP is a setting in Supabase, not a fact in
+this repo.** Check it rather than believing a sentence here — this file asserted
+the wrong answer for four days and made a test-only problem look like a launch
+blocker.
+
+- production →
+  [Auth settings](https://supabase.com/dashboard/project/hviwjxigqivjfhmhpjiy/settings/auth)
+- test →
+  [Auth settings](https://supabase.com/dashboard/project/yefoqcabuijcowoqewtc/settings/auth)
+
+**Why it matters, which does not change.** Without custom SMTP a project falls
+back to Supabase's built-in service: two emails an hour project-wide, delivered
+only to pre-authorised team addresses. On that service a member of the public
+**cannot confirm an address or reset a password at all** — it is not a
+throughput problem to tune later.
+
+Observed on test, 1 September 2026: a brand-new address refused
 `429 over_email_send_rate_limit` on its first ever send. That is why no address
 but Liam's has ever received auth mail there, and why the seeders create users
 through the admin API rather than through the signup form.
@@ -323,6 +348,11 @@ green for fifteen commits against a merged feature branch.
 checked: 2026-09-01
 
 The guest-facing half of the services marketplace is built and gated behind that
-flag. It is off on production. Turning it on is a business decision, not a
-deploy: production has zero approved providers, and the first approval is also
-what makes `service_providers.commission_rate` readable by `anon`.
+flag. Whether it is set, and on which environments, is a Vercel variable:
+[Settings → Environment Variables](https://vercel.com/wazzabeam98s-projects/galloway-getawayas/settings/environment-variables).
+
+Turning it on is a business decision rather than a deploy. Production has zero
+approved providers, and the first approval is also what makes
+`service_providers.commission_rate`, `settlement` and `owner_id` readable by
+`anon` — the read policy is `status = 'approved'`, so nothing leaks until one
+exists.
