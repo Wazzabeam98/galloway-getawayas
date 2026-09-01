@@ -295,10 +295,24 @@ export default function GuestExperiences(props: {
                             {p.items.length === 1 ? (
                                 <div className="mt-2 font-semibold text-gray-900">£{p.items[0].price.toFixed(2)}</div>
                             ) : (
-                                <div className="mt-2">
-                                    <div className="text-sm text-gray-500">
-                                        from <span className="font-semibold text-gray-900">£{Math.min(...p.items.map((i) => i.price)).toFixed(2)}</span>
-                                    </div>
+                                // Collapsed by default so one baker's eight-item
+                                // menu doesn't stand four times taller than the
+                                // chef card beside it. The summary keeps the two
+                                // things that sell the range — the "from" price and
+                                // that there IS a range — and a tap opens the list
+                                // to pick from. Radios stay mounted inside, so a
+                                // selection survives closing and reopening.
+                                <details className="group mt-2">
+                                    <summary className="flex cursor-pointer list-none items-center gap-1.5 text-sm text-gray-700">
+                                        <span>
+                                            from <span className="font-semibold text-gray-900">£{Math.min(...p.items.map((i) => i.price)).toFixed(2)}</span>
+                                            <span className="text-gray-400"> · </span>
+                                            <span className="text-gray-600 underline decoration-gray-300 underline-offset-2 group-open:no-underline">{p.items.length} to choose from</span>
+                                        </span>
+                                        <svg className="h-4 w-4 flex-none text-gray-400 transition-transform group-open:rotate-180" viewBox="0 0 20 20" fill="currentColor" aria-hidden="true">
+                                            <path fillRule="evenodd" d="M5.23 7.21a.75.75 0 0 1 1.06.02L10 11.06l3.71-3.83a.75.75 0 1 1 1.08 1.04l-4.25 4.39a.75.75 0 0 1-1.08 0L5.21 8.27a.75.75 0 0 1 .02-1.06Z" clipRule="evenodd" />
+                                        </svg>
+                                    </summary>
                                     <div className="mt-2 space-y-1.5">
                                         {p.items.map((it) => {
                                             const picked = (itemFor[p.id] || '') === it.id;
@@ -327,7 +341,7 @@ export default function GuestExperiences(props: {
                                             );
                                         })}
                                     </div>
-                                </div>
+                                </details>
                             )}
 
                             <label className="mt-3 block text-xs text-gray-500">
