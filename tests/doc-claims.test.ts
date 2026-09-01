@@ -222,3 +222,61 @@ test('the OUTSTANDING.md header is generated, not typed', () => {
         'the generated block does not name a commit — re-run scripts/doc-header.mjs --write'
     );
 });
+
+/* ------------------------------------------------ links to somebody else's console */
+
+// WHERE A SETTING LIVES IN A CONSOLE, THE DOCUMENTS LINK TO IT RATHER THAN
+// DESCRIBING IT.
+//
+// Twice in two days the most consequential stale claim was a setting nothing
+// here can read — whether master was protected, and whether production had
+// custom SMTP. Both were asserted in prose, both were wrong, both were believed.
+//
+// A link that goes out of date still sends you somewhere true. A paragraph that
+// goes out of date tells you something false. So the value moved to the link
+// and the reasoning stayed in the document.
+//
+// Almost nothing about those links is checkable — this cannot fetch them, and
+// would not want to. One thing is: WHICH PROJECT they point at. There are two
+// Supabase projects and one is production, so a link that names the wrong ref
+// sends somebody to change a setting on the wrong database, confidently.
+test('a Supabase console link names one of the two known projects', () => {
+    const PROD = 'hviwjxigqivjfhmhpjiy';
+    const TEST = 'yefoqcabuijcowoqewtc';
+    const wrong: string[] = [];
+
+    for (const doc of DOCS) {
+        const links = read(doc).match(/supabase\.com\/dashboard\/project\/([a-z0-9]+)/g) || [];
+        for (const link of Array.from(new Set(links))) {
+            const ref = link.split('/').pop() as string;
+            if (ref !== PROD && ref !== TEST) wrong.push(doc + ': ' + ref);
+        }
+    }
+
+    assert.deepEqual(
+        wrong, [],
+        'These Supabase links point at a project that is neither production nor test:\n  '
+        + wrong.join('\n  ')
+        + '\n\n  production ' + PROD + '\n  test       ' + TEST
+        + '\n\nA link to the wrong project sends somebody to change a setting on the'
+        + '\nwrong database, believing they are on the right one.'
+    );
+});
+
+test('a console link is https and complete', () => {
+    // A bare hostname, or a markdown link with an empty target, reads as a
+    // pointer and is not one.
+    const bad: string[] = [];
+    const CONSOLES = /(vercel\.com|supabase\.com|dashboard\.stripe\.com|github\.com\/[^)\s]*\/settings)/;
+
+    for (const doc of DOCS) {
+        const links = read(doc).match(/\]\(([^)]*)\)/g) || [];
+        for (const raw of Array.from(new Set(links))) {
+            const target = raw.slice(2, -1);
+            if (!CONSOLES.test(target)) continue;
+            if (!/^https:\/\//.test(target)) bad.push(doc + ': ' + target);
+        }
+    }
+
+    assert.deepEqual(bad, [], 'These console links are not absolute https URLs:\n  ' + bad.join('\n  '));
+});
