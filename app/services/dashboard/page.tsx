@@ -12,6 +12,7 @@ import ProviderDashboard, {
     DashboardEnquiry,
     DashboardUpcoming,
 } from '@/components/services/ProviderDashboard';
+import ProviderExperienceDashboard from '@/components/services/ProviderExperienceDashboard';
 
 export const metadata = {
     title: 'Your business',
@@ -100,6 +101,42 @@ export default async function ProviderDashboardPage() {
     // or returned application belongs back in the wizard, with its note.
     if (provider.status !== 'approved') {
         redirect(`/services/join?trade=${provider.trade}`);
+    }
+
+    // A GUEST-TRADE PROVIDER GETS A DIFFERENT HOME.
+    //
+    // Everything below this point is the host/enquiry model — a "Requests"
+    // inbox read from service_enquiries, a rates-and-registrations profile card,
+    // "you're listed". A chef has none of that: they receive service_orders, are
+    // paid through the platform, and their screen is payouts + orders to
+    // confirm. Rendering the host dashboard for them showed an inbox that could
+    // never fill and chips for rates and coverage they do not have. So they
+    // branch here, to their own dashboard, rather than being shown a plumber's.
+    if (provider.audience === 'guest') {
+        return (
+            <div className="max-w-2xl mx-auto px-4 sm:px-6 py-8 pb-24">
+                <div className="flex flex-wrap items-start justify-between gap-3">
+                    <div>
+                        <h1 className="text-2xl sm:text-3xl font-extrabold tracking-tight text-slate-900">
+                            {provider.business_name}
+                        </h1>
+                        <p className="mt-1 text-sm text-slate-500">
+                            {tradeLabel(provider.trade)} · guest experiences
+                        </p>
+                    </div>
+                    <Link
+                        href={`/services/join?trade=${provider.trade}`}
+                        className="rounded-full border border-slate-300 px-4 py-2 text-sm font-semibold text-slate-700 hover:border-slate-500"
+                    >
+                        Edit your listing
+                    </Link>
+                </div>
+
+                {/* Payouts (the second gate) and the requests to confirm —
+                    the whole of a guest provider's working screen. */}
+                <ProviderExperienceDashboard providerId={provider.id} />
+            </div>
+        );
     }
 
     const offPlatform = provider.plan === 'subscription';

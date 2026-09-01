@@ -9,25 +9,52 @@ import { installAliases } from './helpers/stub';
 installAliases();
 
 import {
-    TRADE_MCC, mccForTrade, stripeProfileForTrade,
+    TRADE_MCC, mccForTrade, mccForProvider, stripeProfileForTrade, stripeProfileForProvider,
     isLiveToGuests, isAwaitingConnect,
     priceOrder,
     canTransition, releasesHold,
     CONFIRM_WINDOW_HOURS, expiryFrom, guestExperiencesOpen,
+    FREE_CANCEL_HOURS, guestMayCancelFree,
 } from '@/lib/serviceOrders';
 import { GUEST_TRADES } from '@/lib/serviceProviders';
 
 // --- who Stripe thinks each provider is --------------------------------------
 
-test('every guest trade has an MCC, and it is ours not the provider’s', () => {
+test('every fixed guest trade has an MCC, and it is ours not the provider’s', () => {
     // The gap this closes: a guest trade with no category cannot be onboarded,
-    // so a new one added without a code fails loudly rather than defaulting to
-    // lodging. Looped over GUEST_TRADES so a fifth guest trade added tomorrow
-    // makes this fail until someone chooses its code.
+    // so a new FIXED one added without a code fails loudly rather than
+    // defaulting to lodging. Looped over GUEST_TRADES so a fifth fixed guest
+    // trade added tomorrow makes this fail until someone chooses its code.
+    //
+    // 'other' is the one deliberate exception — a "something else" business has
+    // no fixed category by definition; the owner assigns its code per provider
+    // at approval. It is covered by the next test, not this one.
     for (const trade of GUEST_TRADES as unknown as string[]) {
+        if (trade === 'other') continue;
         assert.equal(typeof mccForTrade(trade), 'string', trade + ' has no MCC');
         assert.match(mccForTrade(trade) as string, /^\d{4}$/, trade + ' MCC is not a 4-digit code');
     }
+});
+
+test('“other” has no fixed code, but a per-provider one resolves and gates', () => {
+    // No fixed code — which is exactly what holds an un-categorised "other"
+    // provider out of Stripe onboarding until the owner picks one.
+    assert.equal(mccForTrade('other'), null, 'other must have no fixed trade code');
+    assert.equal(mccForProvider({ trade: 'other' }), null, 'an un-categorised other has no code');
+    assert.equal(stripeProfileForProvider({ trade: 'other' }), null, 'and so cannot be onboarded');
+
+    // Once the owner assigns a code on the row, that provider resolves exactly
+    // like a fixed trade — so it is not filtered out for having no table entry.
+    assert.equal(mccForProvider({ trade: 'other', stripe_mcc: '7299' }), '7299');
+    const profile = stripeProfileForProvider({
+        trade: 'other', stripe_mcc: '7299', stripe_product_description: 'Massage therapy for holiday guests.',
+    });
+    assert.equal(profile && profile.mcc, '7299');
+    assert.ok(profile && profile.product_description.length > 0);
+
+    // A fixed trade is unchanged by the per-provider path: with no code on the
+    // row, it still reads its own from the table.
+    assert.equal(mccForProvider({ trade: 'chef' }), '5811');
 });
 
 test('a trade with no code cannot be onboarded', () => {
@@ -196,4 +223,21 @@ test('guest experiences are closed unless the env var is exactly "true"', () => 
         if (prev === undefined) delete process.env.GUEST_EXPERIENCES_OPEN;
         else process.env.GUEST_EXPERIENCES_OPEN = prev;
     }
+});
+
+// Free cancellation follows the provider's own "48 hours ahead" promise: at or
+// beyond the window it is free (a full refund on a confirmed booking), inside it
+// the provider decides. Measured to the start of the service date.
+test('free cancellation holds the 48-hour line', () => {
+    const svc = '2026-09-20';
+    const start = new Date(svc + 'T00:00:00Z').getTime();
+    const hoursBefore = (h: number) => new Date(start - h * 3600 * 1000);
+
+    assert.equal(FREE_CANCEL_HOURS, 48);
+    assert.equal(guestMayCancelFree(svc, hoursBefore(72)), true, 'three days out is free');
+    assert.equal(guestMayCancelFree(svc, hoursBefore(49)), true, 'just outside the window is free');
+    assert.equal(guestMayCancelFree(svc, hoursBefore(48)), true, 'exactly 48h is free (at or beyond)');
+    assert.equal(guestMayCancelFree(svc, hoursBefore(47)), false, 'inside 48h is the provider’s call');
+    assert.equal(guestMayCancelFree(svc, hoursBefore(1)), false, 'the day before is not free');
+    assert.equal(guestMayCancelFree('not-a-date', hoursBefore(72)), false, 'an unparseable date is never free');
 });

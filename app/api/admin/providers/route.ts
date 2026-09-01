@@ -6,9 +6,10 @@ import { sendEmail, emailLayout, escapeHtml, button, SITE_URL } from '@/lib/emai
 import { logError } from '@/lib/logError';
 import { idsFrom, decideBatch, MAX_BATCH } from '@/lib/reviewQueue';
 import {
-    reviewDigest, registrationBlockers, schemeLabel,
+    reviewDigest, approvalBlockers, schemeLabel,
     planForTrade, TRIAL_DAYS, SUBSCRIPTION_MONTHLY,
 } from '@/lib/serviceProviders';
+import { ASSIGNABLE_MCCS } from '@/lib/serviceOrders';
 
 export const dynamic = 'force-dynamic';
 
@@ -79,6 +80,10 @@ export async function POST(req: Request) {
                 // has to be checked against is_admin on the server, and it is not
                 // a thing a provider may do to their own row.
                 'make_in_house', 'make_external',
+                // The Stripe category for an "other" provider, assigned by hand
+                // after reading what they described. Its own act, like verifying
+                // a registration — and a blocker holds approval until it is done.
+                'assign_category',
             ];
 
             if (!id || DECISIONS.indexOf(decision) === -1) {
@@ -93,7 +98,7 @@ export async function POST(req: Request) {
 
             const { data: provider } = await admin
                 .from('service_providers')
-                .select('id, business_name, logo, contact_email, status, approved_digest, changes_pending_at, trade, description, audience, photos, does_gas, does_oil, plan, trial_ends_at, kind, pricing_choice, billable_hourly_rate, covered_bands')
+                .select('id, business_name, logo, contact_email, status, approved_digest, changes_pending_at, trade, description, audience, photos, does_gas, does_oil, plan, trial_ends_at, kind, pricing_choice, billable_hourly_rate, covered_bands, stripe_mcc, stripe_product_description, custom_label')
                 .eq('id', id)
                 .maybeSingle();
 
@@ -234,6 +239,72 @@ export async function POST(req: Request) {
                 return { status: 200, body: { ok: true, emailed: false, verified: schemeLabel(scheme) } };
             }
 
+            // ASSIGNING A PAYOUT CATEGORY TO AN "OTHER" PROVIDER
+            //
+            // A chef is always a caterer, so its code comes from the trade and
+            // there is nothing to decide. "Something else" has no fixed code —
+            // the owner reads what they described and picks one, together with
+            // the word a guest will read on the shop. Its own act, like
+            // verifying a registration, and recorded the same way: who assigned
+            // it and when, because it decides a payout category.
+            //
+            // Two things are written together and neither is optional: a code a
+            // guest never sees (stripe_mcc) and a word a guest always sees
+            // (custom_label). The blocker that holds approval clears only once
+            // both are set — see categoryBlockers.
+            if (decision === 'assign_category') {
+                if (String(provider.trade || '') !== 'other') {
+                    return { status: 400, body: { ok: false, error: 'Only a "something else" business needs a category assigned; the rest read it from their trade.' } };
+                }
+
+                const mcc = String(body.mcc || '').trim();
+                const label = String(body.custom_label || '').trim();
+
+                // The code must be one of the curated set, not any four digits.
+                // The whole point of a person choosing is that the choice is a
+                // small, sane one.
+                if (!ASSIGNABLE_MCCS.some((m) => m.code === mcc)) {
+                    return { status: 400, body: { ok: false, error: 'Pick a category from the list.' } };
+                }
+                if (!label) {
+                    return { status: 400, body: { ok: false, error: 'Give the word a guest will read for this business.' } };
+                }
+
+                const { error: catError } = await admin
+                    .from('service_providers')
+                    .update({
+                        stripe_mcc: mcc,
+                        // What Stripe is told the account sells. Built from the
+                        // guest-facing word so the account describes the real
+                        // business rather than "something else".
+                        stripe_product_description: label + ' for holiday guests.',
+                        custom_label: label,
+                        category_assigned_by: auth.user.id,
+                        category_assigned_at: new Date().toISOString(),
+                        updated_at: new Date().toISOString(),
+                    })
+                    .eq('id', id);
+
+                if (catError) {
+                    return { status: 500, body: { ok: false, error: catError.message } };
+                }
+
+                await logError(
+                    'service-provider-category-assigned',
+                    {
+                        provider: id,
+                        business: provider.business_name || null,
+                        mcc,
+                        label,
+                    },
+                    { path: '/api/admin/providers', userId: auth.user.id }
+                );
+
+                // Not emailed. It changes nothing the provider agreed to; it is
+                // the platform deciding what category their account carries.
+                return { status: 200, body: { ok: true, emailed: false, category: label } };
+            }
+
             // Nothing restricted goes live unchecked.
             //
             // The screen disables the button for the same reason and off the same
@@ -241,7 +312,7 @@ export async function POST(req: Request) {
             // A stale tab, a second click, or somebody who has edited their number
             // since the page loaded all arrive here.
             if (decision === 'approve') {
-                const stops = registrationBlockers(provider, registrations);
+                const stops = approvalBlockers(provider, registrations);
 
                 if (stops.length > 0) {
                     return { status: 409, body: { ok: false, error: stops.join(' ') } };

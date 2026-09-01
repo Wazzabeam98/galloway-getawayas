@@ -4,7 +4,7 @@ import { cookies } from 'next/headers';
 import { NextResponse } from 'next/server';
 import { stripeRequest } from '@/lib/stripe';
 import { SITE_URL } from '@/lib/email';
-import { stripeProfileForTrade } from '@/lib/serviceOrders';
+import { stripeProfileForProvider } from '@/lib/serviceOrders';
 
 export const dynamic = 'force-dynamic';
 
@@ -48,7 +48,7 @@ export async function POST(request: Request) {
 
         const { data: provider } = await admin
             .from('service_providers')
-            .select('id, owner_id, trade, status, business_name, stripe_account_id')
+            .select('id, owner_id, trade, status, business_name, stripe_account_id, stripe_mcc, stripe_product_description')
             .eq('id', providerId)
             .maybeSingle();
 
@@ -80,13 +80,16 @@ export async function POST(request: Request) {
             );
         }
 
-        // The trade must have a category. A guest trade with no MCC cannot be
-        // onboarded — that is a decision for a person, not a default (see
-        // lib/serviceOrders TRADE_MCC).
-        const profile = stripeProfileForTrade(String(provider.trade || ''));
+        // There must be a category. A fixed trade reads it from the trade; an
+        // "other" provider reads the code the owner assigned at approval. Either
+        // way, no code means no onboarding — that is a decision for a person,
+        // not a default (see lib/serviceOrders mccForProvider). For an "other"
+        // provider this is exactly the gate that holds them until the owner has
+        // picked a code, so it can never be reached before the category exists.
+        const profile = stripeProfileForProvider(provider);
         if (!profile) {
             return NextResponse.json(
-                { ok: false, error: 'This trade is not set up for payouts yet.' },
+                { ok: false, error: 'This business is not set up for payouts yet.' },
                 { status: 400 }
             );
         }

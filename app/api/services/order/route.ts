@@ -99,6 +99,27 @@ export async function POST(request: Request) {
             );
         }
 
+        // One chef, one evening. A friendly refusal before we send them to
+        // Stripe if that provider already has a live order for the date — a
+        // held request or a confirmed one. This is the courtesy; the hard guard
+        // is the partial unique index (20260901120000), which also catches the
+        // race where two guests pass this check at the same moment (the webhook
+        // that loses the race releases its hold — see the webhook).
+        const { data: clash } = await admin
+            .from('service_orders')
+            .select('id')
+            .eq('provider_id', provider.id)
+            .eq('service_date', dateKey(when))
+            .in('status', ['authorised', 'confirmed'])
+            .limit(1);
+
+        if (clash && clash.length > 0) {
+            return NextResponse.json(
+                { ok: false, error: 'Someone’s already booked them for that evening — try another night of your stay.' },
+                { status: 409 }
+            );
+        }
+
         const pricing = priceOrder(provider, { bandPrice: Number(provider.experience_price) }, []);
 
         const label = (provider.business_name || 'Your experience');

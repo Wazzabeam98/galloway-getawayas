@@ -240,7 +240,7 @@ test('every trade has a plan, and the guest trades are all commission', () => {
     // The trap in "quoted trades go on the subscription": pricingModelFor
     // returns 'quoted' for all four of these as well, so deriving the plan
     // from it would have put a cake baker on £20 a month.
-    for (const trade of ['chef', 'cake', 'basket', 'paw']) {
+    for (const trade of ['chef', 'cake', 'basket', 'other']) {
         assert.equal(planForTrade(trade), 'commission', trade + ' sells through the site');
         assert.equal(pricingModelFor(trade), 'quoted',
             trade + ' is quoted, which is exactly why the plan is not read off the pricing model');

@@ -53,12 +53,11 @@ export function guestExperiencesOpen(): boolean {
 //                 filling the fridge before arrival, not a gift hamper — and a
 //                 hamper billed under a grocery code is unremarkable, where a
 //                 weekly shop billed under a gift-shop code is not.
-//   paw     7299  Miscellaneous personal services. A DELIBERATE catch-all —
-//                 pet sitting and dog walking have no code of their own. Do NOT
-//                 "improve" this to 0742 (that is VETERINARY services, which
-//                 these providers are not) or 5995 (that is pet RETAIL — shops,
-//                 food and supplies, also not this). 7299 is the least-wrong
-//                 and it is chosen, not overlooked.
+//
+// There is no entry for "other". A "something else" provider has no fixed
+// category by definition — the owner reads what they described and assigns a
+// code by hand at approval, stored on the row as stripe_mcc. See mccForProvider
+// below, which prefers that per-provider code over this table.
 //
 // The table is owned here and changed here, and reviewed with the owner before
 // it reaches production.
@@ -66,11 +65,48 @@ export const TRADE_MCC: Record<string, string> = {
     chef: '5811',
     cake: '5462',
     basket: '5411',
-    paw: '7299',
 };
 
 export function mccForTrade(trade: string): string | null {
     return TRADE_MCC[String(trade || '')] || null;
+}
+
+// The code for a specific provider, which is the per-provider one where it has
+// been assigned (an "other" provider, categorised by the owner) and otherwise
+// the trade's fixed code. This is what the guest gate and the connect route ask
+// — never mccForTrade directly — so an approved, categorised "other" provider
+// is treated exactly like a chef and is not filtered out for having no entry in
+// the table above.
+export function mccForProvider(
+    provider: { trade?: string | null; stripe_mcc?: string | null } | null | undefined
+): string | null {
+    if (!provider) return null;
+    const assigned = String(provider.stripe_mcc || '').trim();
+    if (assigned) return assigned;
+    return mccForTrade(String(provider.trade || ''));
+}
+
+// The MCCs the owner may assign to an "other" provider, in plain words. A short
+// curated list, NOT Stripe's full catalogue — the point of a person reading the
+// description and choosing is that the choice is a small, sane one. Add to this
+// as real "something else" businesses arrive; a code that is not here cannot be
+// assigned, which is the right failure.
+export const ASSIGNABLE_MCCS: Array<{ code: string; label: string }> = [
+    { code: '7299', label: 'Personal services (massage, wellbeing, catch-all)' },
+    { code: '7997', label: 'Clubs, activities & recreation' },
+    { code: '7911', label: 'Dance, classes & instruction' },
+    { code: '7333', label: 'Photography & videography' },
+    { code: '5811', label: 'Caterers & food' },
+    { code: '5812', label: 'Eating places & prepared meals' },
+    { code: '7230', label: 'Hair, beauty & barber' },
+    { code: '5992', label: 'Florists' },
+    { code: '7392', label: 'Guiding, consulting & planning' },
+    { code: '7999', label: 'Recreation services (not elsewhere listed)' },
+];
+
+export function assignableMccLabel(code: string): string {
+    const found = ASSIGNABLE_MCCS.filter((m) => m.code === String(code || ''))[0];
+    return found ? found.label : String(code || '');
 }
 
 // What Stripe is told the account sells, alongside the MCC. Plain, and framed
@@ -80,7 +116,6 @@ export const TRADE_STRIPE_DESCRIPTION: Record<string, string> = {
     chef: 'Private chef and in-home dining for holiday guests.',
     cake: 'Cakes and baking for holiday guests.',
     basket: 'Welcome hampers and shopping for holiday guests.',
-    paw: 'Pet care for holiday guests.',
 };
 
 // The business_profile for a provider's connected account: the category and a
@@ -97,6 +132,31 @@ export function stripeProfileForTrade(
         product_description: TRADE_STRIPE_DESCRIPTION[String(trade || '')]
             || 'A local experience for holiday guests.',
     };
+}
+
+// The business_profile for a specific provider's connected account. Same as
+// stripeProfileForTrade, but it honours a per-provider code first — so an
+// "other" provider the owner has categorised onboards with the code and the
+// description the owner assigned, and every fixed trade is unchanged. Returns
+// null when no code is available, which is what still stops an un-categorised
+// "other" provider being onboarded at all.
+export function stripeProfileForProvider(
+    provider: {
+        trade?: string | null;
+        stripe_mcc?: string | null;
+        stripe_product_description?: string | null;
+    } | null | undefined
+): { mcc: string; product_description: string } | null {
+    if (!provider) return null;
+    const assigned = String(provider.stripe_mcc || '').trim();
+    if (assigned) {
+        return {
+            mcc: assigned,
+            product_description: String(provider.stripe_product_description || '').trim()
+                || 'A local experience for holiday guests.',
+        };
+    }
+    return stripeProfileForTrade(String(provider.trade || ''));
 }
 
 // ---------------------------------------------------------------------------
@@ -217,4 +277,25 @@ export const CONFIRM_WINDOW_HOURS = 48;
 export function expiryFrom(createdISO: string): string {
     const t = new Date(createdISO).getTime() + CONFIRM_WINDOW_HOURS * 60 * 60 * 1000;
     return new Date(t).toISOString();
+}
+
+// FREE CANCELLATION, AND WHERE THE LINE IS.
+//
+// A guest can always cancel a request that has not been answered — the hold is
+// released and nothing was ever taken. A CONFIRMED booking is different: money
+// has moved, so cancelling it is a refund, and a refund follows the provider's
+// own promise. The one every provider makes on their listing is "let me know 48
+// hours ahead and there's nothing to pay", so that is the line the guest-facing
+// cancel honours: 48 hours or more before the service date, a confirmed booking
+// refunds in full; inside that window it is the provider's call, and the guest
+// is pointed to them (the provider can still refund out of goodwill).
+//
+// Measured to the START of the service date, which is the earliest the work
+// could begin. Pure and takes `now`, so it tests without a clock.
+export const FREE_CANCEL_HOURS = 48;
+
+export function guestMayCancelFree(serviceDate: string, now: Date): boolean {
+    const start = new Date(String(serviceDate) + 'T00:00:00Z').getTime();
+    if (isNaN(start)) return false;
+    return start - now.getTime() >= FREE_CANCEL_HOURS * 60 * 60 * 1000;
 }

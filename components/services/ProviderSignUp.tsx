@@ -197,6 +197,16 @@ function ApplicationForm() {
     // The one fixed price a guest-trade provider charges for their experience.
     // Their own words carry what it covers; this is the number.
     const [experiencePrice, setExperiencePrice] = useState('');
+
+    // Who they are, for a guest trade only. A guest is choosing someone to come
+    // into the cottage they are staying in, so the listing carries a bit of the
+    // person and not only the price. A name and a line is what a real chef will
+    // actually write — plus a photo of them, and their gallery, which is the
+    // listing. All optional.
+    const [providerName, setProviderName] = useState('');
+    const [basedLine, setBasedLine] = useState('');
+    const [headshot, setHeadshot] = useState<string | null>(null);
+    const [uploadingHeadshot, setUploadingHeadshot] = useState(false);
     // Keyed by extra. Price stays a string for the same reason band prices
     // do — a half-typed number should not be coerced mid-keystroke.
     const [extras, setExtras] = useState<Record<string, { offered: boolean; price: string; notes: string }>>({});
@@ -304,7 +314,7 @@ function ApplicationForm() {
                 // it is inherited from another one they hold.
                 const { data: existing } = await supabase
                     .from('service_providers')
-                    .select('id, business_name, trade, description, sms_opt_out, audience, photos, logo, status, review_note, callout_fee, hourly_rate, callout_waived, does_gas, does_oil, kind, pricing_choice, billable_hourly_rate, covered_bands')
+                    .select('id, business_name, trade, description, sms_opt_out, audience, photos, logo, status, review_note, callout_fee, hourly_rate, callout_waived, does_gas, does_oil, kind, pricing_choice, billable_hourly_rate, covered_bands, experience_price, provider_name, based_line, headshot')
                     .eq('owner_id', session.user.id)
                     .eq('trade', tradeFromUrl)
                     .maybeSingle();
@@ -346,6 +356,14 @@ function ApplicationForm() {
                             : String(existing.billable_hourly_rate)
                     );
                     setCoveredBands(Array.isArray(existing.covered_bands) ? existing.covered_bands : []);
+                    setExperiencePrice(
+                        (existing as any).experience_price === null || (existing as any).experience_price === undefined
+                            ? ''
+                            : String((existing as any).experience_price)
+                    );
+                    setProviderName((existing as any).provider_name || '');
+                    setBasedLine((existing as any).based_line || '');
+                    setHeadshot((existing as any).headshot || null);
 
                     // The numbers only. Whether one has been checked is not
                     // read here and not shown here — it is not theirs to see
@@ -537,6 +555,10 @@ function ApplicationForm() {
             if (d.calloutFee) setCalloutFee(d.calloutFee);
             if (d.hourlyRate) setHourlyRate(d.hourlyRate);
             if (d.areas) setAreas(d.areas);
+            if (d.experiencePrice) setExperiencePrice(d.experiencePrice);
+            if (d.providerName) setProviderName(d.providerName);
+            if (d.basedLine) setBasedLine(d.basedLine);
+            if (d.headshot) setHeadshot(d.headshot);
 
             // Whether there is anything in here worth calling kept work.
             //
@@ -637,6 +659,9 @@ function ApplicationForm() {
                     // in came back to none of them, with the files sitting in
                     // the bucket.
                     photos, logo, buildingType, panes,
+                    // The guest-trade fields: the price, and who they are. The
+                    // headshot is a storage path like the photos.
+                    experiencePrice, providerName, basedLine, headshot,
                 })
             );
         } catch (err) {
@@ -649,6 +674,7 @@ function ApplicationForm() {
         pricingChoice, billableHourlyRate, coveredBands,
         doesGas, doesOil, registrations, calloutWaived, skills,
         photos, logo, buildingType, panes,
+        experiencePrice, providerName, basedLine, headshot,
     ]);
 
     // Which registration boxes this application shows at all. An electrician
@@ -1156,6 +1182,45 @@ function ApplicationForm() {
         e.target.value = '';
     };
 
+    // A portrait for a guest-trade provider — the person a guest is letting into
+    // the cottage. Kept apart from the work gallery (photos). Same owner-prefixed
+    // path and same compression as the logo; the only difference is which state
+    // it lands in.
+    const uploadHeadshot = async (e: React.ChangeEvent<HTMLInputElement>) => {
+        const file = (e.target.files || [])[0];
+        if (!file) return;
+
+        if (!session) {
+            toast.info('Your photo can go on as soon as this is sent — nothing has been lost, just pick it again then.', {
+                theme: 'colored',
+            });
+            e.target.value = '';
+            return;
+        }
+
+        setUploadingHeadshot(true);
+
+        try {
+            const ready = await compressImage(file);
+            const path = 'providers/headshot-' + session.user.id + '-' + Date.now() + '.jpg';
+
+            const { error } = await supabase.storage
+                .from(Env.S3_BUCKET)
+                .upload(path, ready, { contentType: 'image/jpeg' });
+
+            if (error) {
+                toast.error(error.message, { theme: 'colored' });
+            } else {
+                setHeadshot(path);
+            }
+        } catch (err) {
+            toast.error('That image could not be read. Try a different one.', { theme: 'colored' });
+        }
+
+        setUploadingHeadshot(false);
+        e.target.value = '';
+    };
+
     // Removing a draft. Drafts only: an application we are looking at, or a
     // business already on the site, is not something to throw away with a
     // button — those come off through us.
@@ -1309,6 +1374,12 @@ function ApplicationForm() {
             experience_price: audienceForTrade(trade) === 'guest' && experiencePrice.trim() !== ''
                 ? Number(experiencePrice)
                 : null,
+            // Who they are — a guest trade only. A guest is choosing someone to
+            // come into their cottage, so the listing carries a bit of the
+            // person. Null for a host trade, where a logo and a trade say enough.
+            provider_name: audienceForTrade(trade) === 'guest' ? (providerName.trim() || null) : null,
+            based_line: audienceForTrade(trade) === 'guest' ? (basedLine.trim() || null) : null,
+            headshot: audienceForTrade(trade) === 'guest' ? headshot : null,
             photos,
             logo,
             does_gas: asksAboutFuel(trade) ? doesGas : false,
@@ -1562,6 +1633,12 @@ function ApplicationForm() {
             experience_price: audienceForTrade(trade) === 'guest' && experiencePrice.trim() !== ''
                 ? Number(experiencePrice)
                 : null,
+            // Who they are — a guest trade only. A guest is choosing someone to
+            // come into their cottage, so the listing carries a bit of the
+            // person. Null for a host trade, where a logo and a trade say enough.
+            provider_name: audienceForTrade(trade) === 'guest' ? (providerName.trim() || null) : null,
+            based_line: audienceForTrade(trade) === 'guest' ? (basedLine.trim() || null) : null,
+            headshot: audienceForTrade(trade) === 'guest' ? headshot : null,
             photos,
             logo,
             does_gas: asksAboutFuel(trade) ? doesGas : false,
@@ -2000,6 +2077,17 @@ function ApplicationForm() {
                         Thanks — we check every business before it appears, usually within {REVIEW_WITHIN_HOURS} hours.
                         We will email you either way. You can still read what you sent below.
                     </p>
+                    {/* "Something else" is not on our list, so a person reads
+                        what they wrote and decides whether it fits before it can
+                        go live. Said plainly here so they are not left wondering
+                        why theirs is not instant — without promising a yes. */}
+                    {trade === 'other' && (
+                        <p className="text-sm text-amber-900/80 mt-3">
+                            Because you told us your business is something not on our list, we read what
+                            you described and decide whether it’s a fit for guests before listing you.
+                            Nothing more is needed from you — your listing is with us and we’ll be in touch.
+                        </p>
+                    )}
                 </div>
             )}
 
@@ -2029,8 +2117,27 @@ function ApplicationForm() {
 
             {status === 'approved' && (
                 <div className="mb-8 rounded-2xl border border-emerald-300 bg-emerald-50 p-5">
-                    <p className="font-semibold text-emerald-900">{summary.label}</p>
-                    <p className="text-sm text-emerald-900/80 mt-1">{summary.detail}</p>
+                    {/* NO "LIVE" FOR A GUEST PROVIDER WHO IS NOT YET CONNECTED.
+                        statusSummary('approved') says "Live · people can find
+                        you" — true for a host, whose approval is the end of it.
+                        A guest provider has a second gate (payouts), and the
+                        dashboard right below says so; claiming "Live" above it
+                        was the panel telling them they were live and not live at
+                        once. So the header defers to that gate instead of
+                        pre-empting it. */}
+                    {audienceForTrade(trade) === 'guest' ? (
+                        <>
+                            <p className="font-semibold text-emerald-900">You’re approved</p>
+                            <p className="text-sm text-emerald-900/80 mt-1">
+                                Manage your experience and requests below.
+                            </p>
+                        </>
+                    ) : (
+                        <>
+                            <p className="font-semibold text-emerald-900">{summary.label}</p>
+                            <p className="text-sm text-emerald-900/80 mt-1">{summary.detail}</p>
+                        </>
+                    )}
 
                     {/* A guest-trade provider does two more things here after
                         approval: set up payouts (the second gate) and answer the
@@ -2234,25 +2341,40 @@ function ApplicationForm() {
                     </section>
                 ) : (
                     <section className="mb-8">
-                        <h2 className="text-sm font-semibold text-slate-900 mb-3">Photos of your work</h2>
-                        <div className="grid grid-cols-3 gap-2 mb-3">
-                            {photos.map((p) => (
-                                <div key={p} className="relative aspect-[4/3] rounded-xl overflow-hidden bg-slate-100">
-                                    <img src={getImageUrl(p)} alt="" className="w-full h-full object-cover" />
-                                    <button
-                                        type="button"
-                                        onClick={() => setPhotos((prev) => prev.filter((x) => x !== p))}
-                                        aria-label="Remove photo"
-                                        className="absolute top-1.5 right-1.5 w-7 h-7 rounded-full bg-white/90 flex items-center justify-center"
-                                    >
-                                        <X className="w-3.5 h-3.5" />
-                                    </button>
-                                </div>
-                            ))}
-                        </div>
+                        <h2 className="text-sm font-semibold text-slate-900 mb-1">Your photos</h2>
+                        {/* The gallery IS the listing for a guest experience — a
+                            guest picks a chef from what the food looks like, not
+                            from a logo. So this is a prompt, not an afterthought,
+                            and an empty gallery says so plainly. */}
+                        <p className="text-sm text-slate-500 mb-3">
+                            This is what guests choose from — the food, the table, a hamper made up.
+                            Add a few good ones; a listing with photos is the one that gets booked.
+                        </p>
+                        {photos.length === 0 ? (
+                            <div className="mb-3 rounded-xl border border-dashed border-amber-300 bg-amber-50 px-4 py-3 text-sm text-amber-900">
+                                No photos yet. A guest experience with no photos is easy to scroll past —
+                                three or four is plenty to start.
+                            </div>
+                        ) : (
+                            <div className="grid grid-cols-3 gap-2 mb-3">
+                                {photos.map((p) => (
+                                    <div key={p} className="relative aspect-[4/3] rounded-xl overflow-hidden bg-slate-100">
+                                        <img src={getImageUrl(p)} alt="" className="w-full h-full object-cover" />
+                                        <button
+                                            type="button"
+                                            onClick={() => setPhotos((prev) => prev.filter((x) => x !== p))}
+                                            aria-label="Remove photo"
+                                            className="absolute top-1.5 right-1.5 w-7 h-7 rounded-full bg-white/90 flex items-center justify-center"
+                                        >
+                                            <X className="w-3.5 h-3.5" />
+                                        </button>
+                                    </div>
+                                ))}
+                            </div>
+                        )}
                         <label className="inline-flex items-center gap-2 rounded-xl border-2 border-dashed border-slate-300 px-4 py-3 cursor-pointer text-sm text-slate-600 hover:border-slate-400">
                             <Plus className="w-4 h-4" />
-                            {processingPhotos ? 'Preparing your photos…' : 'Add photos'}
+                            {processingPhotos ? 'Preparing your photos…' : photos.length ? 'Add more' : 'Add photos'}
                             <input type="file" accept="image/png, image/jpeg" multiple onChange={addPhotos} className="hidden" disabled={processingPhotos} />
                         </label>
                     </section>
@@ -2304,6 +2426,69 @@ function ApplicationForm() {
                             placeholder="180"
                             className="w-40 rounded-xl border border-slate-300 px-4 py-3 focus:outline-none focus:ring-2 focus:ring-emerald-700"
                         />
+                    </div>
+                </section>
+                )}
+
+                {/* Who they are — a guest trade only. A guest is choosing
+                    someone to come into the cottage they are staying in, so the
+                    listing should carry a bit of the person and not only what
+                    they charge. All of it is optional; a name is the one that
+                    earns its place, the rest fill in trust. Deliberately no
+                    vetting badges — nothing here is checked, so nothing claims
+                    to be. */}
+                {onStep('business') && audienceForTrade(trade) === 'guest' && (
+                <section className="mb-8">
+                    <h2 className="text-sm font-semibold text-slate-900 mb-1">A bit about you</h2>
+                    <p className="text-sm text-slate-500 mb-4">
+                        A guest is choosing who comes into the cottage they’re staying in. This is
+                        where you tell them who that is. All optional.
+                    </p>
+
+                    <label className="block text-sm font-semibold text-slate-900 mb-1.5">Your name</label>
+                    <input
+                        type="text"
+                        value={providerName}
+                        onChange={(e) => setProviderName(e.target.value)}
+                        placeholder="Rosa"
+                        className="w-full md:max-w-md rounded-xl border border-slate-300 px-4 py-3 mb-4 focus:outline-none focus:ring-2 focus:ring-emerald-700"
+                    />
+
+                    <label className="block text-sm font-semibold text-slate-900 mb-1.5">A short line under your name</label>
+                    <input
+                        type="text"
+                        value={basedLine}
+                        onChange={(e) => setBasedLine(e.target.value)}
+                        placeholder="Kirkcudbright · cooking since 2019"
+                        className="w-full md:max-w-md rounded-xl border border-slate-300 px-4 py-3 mb-4 focus:outline-none focus:ring-2 focus:ring-emerald-700"
+                    />
+
+                    <label className="block text-sm font-semibold text-slate-900 mb-1.5">A photo of you</label>
+                    <div className="flex items-center gap-3">
+                        {headshot && (
+                            <img src={getImageUrl(headshot)} alt="" className="w-16 h-16 rounded-full object-cover" />
+                        )}
+                        <label className="inline-flex items-center gap-2 rounded-xl border-2 border-dashed border-slate-300 px-4 py-2.5 cursor-pointer text-sm text-slate-600 hover:border-slate-400">
+                            <Plus className="w-4 h-4" />
+                            {uploadingHeadshot ? 'Uploading…' : headshot ? 'Replace' : 'Add a photo'}
+                            <input
+                                type="file"
+                                accept="image/png, image/jpeg"
+                                onChange={uploadHeadshot}
+                                className="hidden"
+                                disabled={uploadingHeadshot}
+                            />
+                        </label>
+                        {headshot && (
+                            <button
+                                type="button"
+                                onClick={() => setHeadshot(null)}
+                                className="inline-flex items-center gap-1.5 rounded-xl border border-slate-300 px-4 py-2.5 text-sm text-slate-600 hover:border-slate-500"
+                            >
+                                <X className="w-3.5 h-3.5" />
+                                Remove
+                            </button>
+                        )}
                     </div>
                 </section>
                 )}
@@ -3518,6 +3703,13 @@ function ApplicationForm() {
                         We have it and will come back to you within {REVIEW_WITHIN_HOURS} hours. There is
                         nothing else for you to do.
                     </p>
+                    {trade === 'other' && (
+                        <p className="text-sm text-emerald-900/80 mt-3">
+                            You told us your business is something not on our list, so a person reads what
+                            you described and decides whether it’s a fit for guests. That’s ours to do —
+                            your listing is with us and we’ll be in touch.
+                        </p>
+                    )}
                     {verificationEmailed ? (
                         <p className="text-sm text-emerald-900/80 mt-3">
                             We have also sent a link to <strong>{contactEmail.trim()}</strong> to confirm the

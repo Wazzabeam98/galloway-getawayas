@@ -2,8 +2,8 @@ import { createRouteHandlerClient } from '@supabase/auth-helpers-nextjs';
 import { adminClient } from '@/lib/supabaseAdmin';
 import { cookies } from 'next/headers';
 import { NextResponse } from 'next/server';
-import { isLiveToGuests, mccForTrade, guestExperiencesOpen } from '@/lib/serviceOrders';
-import { pointForListing, coversPoint } from '@/lib/serviceProviders';
+import { isLiveToGuests, mccForProvider, guestExperiencesOpen } from '@/lib/serviceOrders';
+import { pointForListing, coversPoint, guestCategory } from '@/lib/serviceProviders';
 
 export const dynamic = 'force-dynamic';
 
@@ -90,7 +90,7 @@ export async function GET(request: Request) {
         // reaches a guest.
         const { data: rows } = await admin
             .from('service_providers')
-            .select('id, business_name, trade, description, photos, experience_price, status, stripe_payouts_enabled')
+            .select('id, business_name, provider_name, based_line, headshot, trade, custom_label, stripe_mcc, description, photos, experience_price, status, stripe_payouts_enabled')
             .eq('audience', 'guest')
             .eq('status', 'approved')
             .eq('stripe_payouts_enabled', true)
@@ -110,18 +110,50 @@ export async function GET(request: Request) {
         }
 
         const providers = (rows || [])
-            .filter((p) => isLiveToGuests(p) && mccForTrade(p.trade))
+            // Provider-aware, not mccForTrade: an "other" provider the owner has
+            // categorised has a code on the row and no entry in the trade table,
+            // and must not be filtered out here for it.
+            .filter((p) => isLiveToGuests(p) && mccForProvider(p))
             .filter((p) => coversPoint(areasByProvider[p.id] || [], point.lat, point.lng))
             .map((p) => ({
                 id: p.id,
                 business_name: p.business_name,
-                trade: p.trade,
+                // The person behind the price, and the words that say who they
+                // are — a guest is choosing someone to come into their cottage.
+                provider_name: p.provider_name,
+                based_line: p.based_line,
+                headshot: p.headshot,
+                // The word the guest reads: the trade's own for a fixed trade,
+                // the owner-assigned word for an "other" — never "Something else".
+                category: guestCategory(p),
                 description: p.description,
                 photos: p.photos,
                 price: Number(p.experience_price),
             }));
 
-        return NextResponse.json({ ok: true, open: true, stay, providers });
+        // What the guest has already asked for on THIS stay, so the trip page
+        // can show it back to them — until now a request vanished into an email
+        // they never got. Their own orders only (guest_id), and only the ones
+        // still live or recently settled are worth showing; the cancel button
+        // acts on the authorised and confirmed ones.
+        let orders: any[] = [];
+        if (bookingId) {
+            const { data: mine } = await admin
+                .from('service_orders')
+                .select('id, status, service_date, price, provider_business_name')
+                .eq('booking_id', bookingId)
+                .eq('guest_id', user.id)
+                .order('created_at', { ascending: false });
+            orders = (mine || []).map((o) => ({
+                id: o.id,
+                status: o.status,
+                service_date: o.service_date,
+                price: Number(o.price),
+                provider_business_name: o.provider_business_name,
+            }));
+        }
+
+        return NextResponse.json({ ok: true, open: true, stay, providers, orders });
     } catch (err: any) {
         console.error('[services/experiences]', err && err.message);
         return NextResponse.json({ ok: false, error: 'Could not load experiences' }, { status: 500 });

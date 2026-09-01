@@ -306,7 +306,7 @@ test('what is not in the shop, and why', () => {
 
     // The guest trades are sold to somebody on holiday and have their own
     // shop. Nothing about the host flow applies to them.
-    for (const trade of ['chef', 'cake', 'basket', 'paw']) {
+    for (const trade of ['chef', 'cake', 'basket', 'other']) {
         assert.equal(canBeEnquiredAbout(trade), false, trade + ' is a guest trade');
     }
 });
@@ -487,7 +487,7 @@ test('the host sign-up offers the property trades and nothing else', () => {
 test('the guest sign-up offers the experience trades', () => {
     const keys = tradesFor('guest').map((t: any) => t.key);
 
-    assert.deepEqual(keys.slice().sort(), ['basket', 'cake', 'chef', 'paw']);
+    assert.deepEqual(keys.slice().sort(), ['basket', 'cake', 'chef', 'other']);
     assert.equal(keys.indexOf('sponge'), -1, 'a changeover clean is not bought by a guest');
 });
 
