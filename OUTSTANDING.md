@@ -12,7 +12,7 @@ the check changed my mind, the entry says so.
 
 | | |
 |---|---|
-| master | `fab70d3`, 2026-09-01 |
+| master | `9c9aea7`, 2026-09-01 |
 | tests | 1103 pass |
 | migrations | 74 |
 

@@ -77,6 +77,20 @@ Production first, then test, then merge. If a migration is destructive its
 pre-flight decides whether it runs at all — read the count before. A branch
 carrying a migration should say so in its description.
 
+**If somebody else applied it, record it.**
+
+```
+node scripts/migrate.mjs --target prod supabase/migrations/<file> \
+  --record --note "what you checked"
+```
+
+Two sessions work on this repo and only one goes through this runner. A
+migration applied by hand leaves the schema changed and the ledger silent, so
+`--status` calls it outstanding for ever — and a warning that is wrong every
+time is one people stop reading, at which point the real one goes past. It
+records an **assumption**, not an observation, and the note is required because
+an unexplained row is what the table exists to stop.
+
 **`--status` is how you check what is outstanding.**
 `public.schema_migrations` records what has been applied to each database, and
 the runner writes the row in the same transaction as the DDL. It also stores a

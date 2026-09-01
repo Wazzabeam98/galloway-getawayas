@@ -47,6 +47,11 @@
 //
 //   node scripts/migrate.mjs --sql "select ..."
 //       A read-only query. Refuses anything that writes.
+//
+//   node scripts/migrate.mjs --target prod <file> --record --note "why"
+//       Somebody else applied it, by hand or from a branch that predates the
+//       ledger. Writes the row as an ASSUMPTION so --status stops calling it
+//       outstanding. Checks nothing — the note is what a person can check.
 
 import fs from 'node:fs';
 import pg from 'pg';
@@ -90,7 +95,7 @@ const valueOf = (name) => {
 // The file is the one bare argument that is not the VALUE of a flag. Listing
 // the value-taking flags in one place, because adding a new one and forgetting
 // it here is how `--target prod` came to be treated as a filename.
-const VALUE_FLAGS = ['--sql', '--read', '--target'];
+const VALUE_FLAGS = ['--sql', '--read', '--target', '--note'];
 const file = (() => {
     for (let i = 0; i < args.length; i++) {
         if (args[i].startsWith('--')) continue;
@@ -197,7 +202,10 @@ if (!file && !inlineSql && !flag('status')) {
     die('nothing to run. Give a migration file, --sql "select ...", or --status.');
 }
 
-const sql = flag('status') ? '' : (inlineSql ?? fs.readFileSync(file, 'utf8'));
+// --record writes a ledger row for a migration somebody else applied. It reads
+// no SQL and executes none, so it must not be dragged through the classifier or
+// the --apply gate below.
+const sql = (flag('status') || flag('record')) ? '' : (inlineSql ?? fs.readFileSync(file, 'utf8'));
 
 // What this SQL would do — see scripts/sqlRisk.cjs. It lives there rather than
 // here because the only way to test it in this file was to run this script,
@@ -224,7 +232,7 @@ const readOnlyQuery = !!inlineSql && !writes;
 // --status is read-only and must not be told to add --apply. It is a question,
 // and requiring the word that stands between a migration and the database in
 // order to ask a question is how that word becomes reflex.
-if (!flag('apply') && !readOnlyQuery && !flag('status')) {
+if (!flag('apply') && !readOnlyQuery && !flag('status') && !flag('record')) {
     console.log('\n  dry run — nothing was executed. Add --apply to run it.\n');
     process.exit(0);
 }
@@ -364,6 +372,86 @@ async function readQuery(sqlText) {
     }
 }
 
+/* ---------------------------------------------------------------- --record */
+
+// "I have checked, this one has already been applied. Write it down."
+//
+// WHY THIS EXISTS
+//
+// Two sessions work on this repo and only one of them goes through this runner.
+// A migration applied by hand — in the Supabase SQL editor, or by a branch cut
+// before the ledger existed — leaves the schema changed and the ledger silent,
+// so --status calls it OUTSTANDING for ever.
+//
+// That is worse than it sounds. The warning is on the pre-push hook, and a
+// warning that is wrong every time is a warning people stop reading — at which
+// point the genuinely outstanding migration goes past unnoticed, which is the
+// exact failure the ledger was built to prevent. It happened on 1 September:
+// 20260902090000_one_form_guest.sql read as outstanding on both projects and
+// was applied on both.
+//
+// WHAT IT DOES NOT DO
+//
+// It does not check. It cannot: there is no general way to ask a database
+// whether a particular file has been run, which is why this table exists at all.
+// So it records an ASSERTION — backfilled = true, exactly like the original
+// backfill — and --status keeps printing it under "assumed, not observed".
+//
+// The note is required for the same reason. "Verified from the schema on
+// 1 Sept: index present, column present" is a sentence somebody can check. An
+// unexplained row is the thing this whole table was built to stop.
+//
+// AND NO CHECKSUM. Storing today's hash would say "the file matched when it was
+// applied", which is not something we know — we were not there. Null is the
+// honest answer and --status already treats it as un-checkable.
+if (flag('record')) {
+    const name = pathModule.basename(file || '');
+    const note = valueOf('note');
+
+    if (!file) die('--record needs the migration file it is recording.');
+
+    const inFolder = fs.existsSync(
+        new URL('../supabase/migrations/' + name, import.meta.url)
+    );
+    if (!inFolder) {
+        die('there is no supabase/migrations/' + name + '.\n'
+            + '  --record writes down a migration from the folder. If the file has been\n'
+            + '  renamed, record it under the name the folder uses now.');
+    }
+
+    if (!note) {
+        die('--record needs --note "why you believe this has already been applied".\n'
+            + '  An unexplained row is what this table exists to stop. Say what you\n'
+            + '  checked:  --note "verified from the schema on 1 Sept — index present"');
+    }
+
+    const client = await connect();
+    try {
+        const already = await client.query(
+            'select backfilled from public.schema_migrations where filename = $1', [name]
+        );
+
+        if (already.rows.length) {
+            console.log('\n  Already recorded' + (already.rows[0].backfilled ? ' (as an assumption)' : ' by this runner') + '. Nothing to do.\n');
+            process.exit(0);
+        }
+
+        await client.query(
+            `insert into public.schema_migrations (filename, checksum, backfilled, note)
+             values ($1, null, true, $2)`,
+            [name, note]
+        );
+
+        console.log('\n  Recorded ' + name + ' on ' + target.name + '.');
+        console.log('  Marked as an ASSUMPTION, not an observation — --status will keep saying so.');
+        console.log('  note: ' + note + '\n');
+    } finally {
+        await client.end().catch(() => {});
+    }
+
+    process.exit(0);
+}
+
 /* ---------------------------------------------------------------- --status */
 
 // What this database says has run, against what the folder says should have.
@@ -445,7 +533,16 @@ if (flag('status')) {
         // 2026 with another session's migration.
         console.log('\n      If you think one of these has already run, check the schema before');
         console.log('      re-applying it. A backfill only recorded the folder as it was at the');
-        console.log('      time, so a migration merged since is applied and unrecorded.');
+        console.log('      time, so a migration merged since is applied and unrecorded — and the');
+        console.log('      other session applies migrations by hand, which never writes a row.');
+        console.log('');
+        console.log('      Once you have checked the schema and it IS applied, say so:');
+        console.log('        node scripts/migrate.mjs --target ' + targetName + ' \\');
+        console.log('          supabase/migrations/<file> --record --note "what you checked"');
+        console.log('');
+        console.log('      That records it as an assumption, not an observation. It is worth');
+        console.log('      doing rather than ignoring: a warning that is wrong every time is a');
+        console.log('      warning people stop reading, and then the real one goes past.');
     }
 
     if (edited.length) {
