@@ -4,7 +4,10 @@ import { cookies } from 'next/headers';
 import { NextResponse } from 'next/server';
 import { stripeRequest } from '@/lib/stripe';
 import { SITE_URL } from '@/lib/email';
-import { isLiveToGuests, priceOrder, guestExperiencesOpen, exclusivePerDate } from '@/lib/serviceOrders';
+import {
+    isLiveToGuests, priceOrder, guestExperiencesOpen, exclusivePerDate,
+    normaliseUnit, unitMultiplies, unitNoun, orderQuantity, orderTotal, MAX_ORDER_QUANTITY,
+} from '@/lib/serviceOrders';
 import { dateFromKey, dateKey } from '@/lib/pricing';
 
 export const dynamic = 'force-dynamic';
@@ -49,6 +52,10 @@ export async function POST(request: Request) {
         // The guest picks an ITEM off the menu now, not a provider. The provider
         // and the price both come from the item — never the browser.
         const itemId: string = body && body.itemId;
+        // How many units, for a per-person / per-night / per-item price. The
+        // browser sends what the guest typed; it is validated against the item's
+        // unit below, never trusted as the multiplier on its own.
+        const requestedQuantity: unknown = body && body.quantity;
         const bookingId: string = body && body.bookingId;
         const serviceDate: string = body && body.serviceDate;
         const note: string = (body && body.note ? String(body.note) : '').slice(0, 500);
@@ -78,13 +85,33 @@ export async function POST(request: Request) {
         // for sale — the same gate the menu applies, enforced here too.
         const { data: item } = await admin
             .from('service_provider_items')
-            .select('id, provider_id, name, description, price, active')
+            .select('id, provider_id, name, description, price, active, unit')
             .eq('id', itemId)
             .maybeSingle();
 
         if (!item || item.active !== true || !(Number(item.price) > 0)) {
             return NextResponse.json({ ok: false, error: 'That item isn’t available.' }, { status: 400 });
         }
+
+        // The unit decides whether a quantity even applies, and the quantity is
+        // validated against it — a flat price is always one, a rate is a whole
+        // number from one up to the cap. Out of range is refused, not clamped:
+        // charging for the cap when someone typed past it would be a surprise on
+        // their card, and a genuinely large order is a phone call.
+        const unit = normaliseUnit(item.unit);
+        const quantity = orderQuantity(unit, unitMultiplies(unit) ? requestedQuantity : 1);
+        if (quantity === null) {
+            return NextResponse.json(
+                {
+                    ok: false,
+                    error: 'Choose how many, up to ' + MAX_ORDER_QUANTITY
+                        + '. For anything larger, message the provider directly.',
+                },
+                { status: 400 }
+            );
+        }
+        const unitPrice = Number(item.price);
+        const total = orderTotal(unitPrice, quantity);
 
         const { data: provider } = await admin
             .from('service_providers')
@@ -134,10 +161,18 @@ export async function POST(request: Request) {
             }
         }
 
-        const pricing = priceOrder(provider, { bandPrice: Number(item.price) }, []);
+        // The TOTAL is what Stripe holds and what the 10% fee is taken from, so
+        // it is what priceOrder is handed. unit price × quantity, computed here
+        // and never trusted from the browser.
+        const pricing = priceOrder(provider, { bandPrice: total }, []);
 
         const business = (provider.business_name || 'Your experience');
         const itemName = (item.name || business);
+        // What the checkout line reads: "Celebration cake × 3 people". The bare
+        // item name for a flat price or a quantity of one.
+        const lineName = quantity > 1
+            ? itemName + ' × ' + quantity + ' ' + unitNoun(unit) + (quantity === 1 ? '' : 's')
+            : itemName;
 
         const checkout = await stripeRequest('POST', '/checkout/sessions', {
             mode: 'payment',
@@ -153,7 +188,7 @@ export async function POST(request: Request) {
                             // The item they picked, so the checkout shows what
                             // they are buying; whose it is and the liability line
                             // are in the description, not buried.
-                            name: itemName,
+                            name: lineName,
                             description: 'Booked with ' + business
                                 + '. Galloway Getaways takes the payment on their behalf and is not the provider.',
                         },
@@ -190,6 +225,11 @@ export async function POST(request: Request) {
                 item_id: item.id,
                 item_name: itemName,
                 item_description: item.description || '',
+                // The unit, the per-unit price and the count — snapshotted too,
+                // so "6 × £30" and "per person" outlive any later menu edit.
+                item_unit: unit,
+                unit_price: String(unitPrice),
+                quantity: String(quantity),
             },
         });
 

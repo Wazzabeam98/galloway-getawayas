@@ -13,6 +13,7 @@ import {
 import { TradeTile, TradeTileGrid, TRADE_ICONS, GROUP_ICONS } from '@/components/services/TradeTiles';
 import { compressImage } from '@/lib/compressImage';
 import { getImageUrl, generateRandomNumber } from '@/lib/utils';
+import { ORDER_UNITS } from '@/lib/serviceOrders';
 import Env from '@/config/Env';
 import {
     skillKey,
@@ -192,7 +193,6 @@ function ApplicationForm() {
     const [areas, setAreas] = useState<AreaRow[]>([]);
 
     const [saving, setSaving] = useState(false);
-    const [processingPhotos, setProcessingPhotos] = useState(false);
     const [touchedSubmit, setTouchedSubmit] = useState(false);
 
     // Keyed by band. Kept as strings so a half-typed price is not coerced to a
@@ -202,7 +202,23 @@ function ApplicationForm() {
     // The menu — what a guest trade sells, and for how much. A chef has a list
     // of one (their experience, one price); a baker has many. Prices stay
     // strings so a half-typed number is not coerced mid-keystroke.
-    const [items, setItems] = useState<Array<{ name: string; description: string; price: string }>>([]);
+    const [items, setItems] = useState<Array<{
+        // id is present for a row loaded from the database, absent for one added
+        // in this session — which is how the save upserts the first and inserts
+        // the second, rather than deleting and re-inserting (and orphaning the
+        // photos attached to them).
+        id?: string;
+        name: string;
+        description: string;
+        price: string;
+        // 'flat' | 'person' | 'night' | 'hour' | 'ticket' | 'item'.
+        unit: string;
+        // The item's own photo, a storage path. The gallery is per item now.
+        image: string | null;
+    }>>([]);
+    // Which item row is uploading a photo, by index, so only that row shows a
+    // spinner rather than all of them.
+    const [uploadingItem, setUploadingItem] = useState<number | null>(null);
 
     // Who they are, for a guest trade only. A guest is choosing someone to come
     // into the cottage they are staying in, so the listing carries a bit of the
@@ -366,15 +382,18 @@ function ApplicationForm() {
                     // The menu, if they have one. Loaded in the order they set.
                     const { data: itemRows } = await supabase
                         .from('service_provider_items')
-                        .select('name, description, price, sort_order, created_at')
+                        .select('id, name, description, price, unit, image, sort_order, created_at')
                         .eq('provider_id', existing.id)
                         .order('sort_order', { ascending: true })
                         .order('created_at', { ascending: true });
                     if (itemRows && itemRows.length) {
                         setItems(itemRows.map((r: any) => ({
+                            id: r.id,
                             name: r.name || '',
                             description: r.description || '',
                             price: r.price === null || r.price === undefined ? '' : String(r.price),
+                            unit: r.unit || 'flat',
+                            image: r.image || null,
                         })));
                     }
 
@@ -1119,33 +1138,6 @@ function ApplicationForm() {
         scrollPanelToTop();
     };
 
-    const addPhotos = async (e: React.ChangeEvent<HTMLInputElement>) => {
-        const files = Array.from(e.target.files || []);
-        if (!files.length || !session) return;
-
-        setProcessingPhotos(true);
-
-        for (const file of files) {
-            try {
-                const ready = await compressImage(file);
-                const path = 'providers/' + session.user.id + '-' + Date.now() + '_' + generateRandomNumber() + '.jpg';
-
-                const { error } = await supabase.storage
-                    .from(Env.S3_BUCKET)
-                    .upload(path, ready, { contentType: 'image/jpeg' });
-
-                if (error) {
-                    toast.error(error.message, { theme: 'colored' });
-                } else {
-                    setPhotos((prev) => [...prev, path]);
-                }
-            } catch (err) {
-                toast.error('That photo could not be read. Try a different one.', { theme: 'colored' });
-            }
-        }
-
-        setProcessingPhotos(false);
-    };
 
     // One row per circle. The town carries the coordinates, so a tradesperson
     // picks a place and a distance rather than a latitude.
@@ -1235,6 +1227,44 @@ function ApplicationForm() {
         }
 
         setUploadingHeadshot(false);
+        e.target.value = '';
+    };
+
+    // A photo for one menu item — the cake itself, not the baker. Same
+    // owner-prefixed path and compression as the gallery and headshot; it lands
+    // on the item row at index i so the picture and the price stay together.
+    const uploadItemPhoto = async (i: number, e: React.ChangeEvent<HTMLInputElement>) => {
+        const file = (e.target.files || [])[0];
+        if (!file) return;
+
+        if (!session) {
+            toast.info('Your photo can go on as soon as this is sent — nothing has been lost, just pick it again then.', {
+                theme: 'colored',
+            });
+            e.target.value = '';
+            return;
+        }
+
+        setUploadingItem(i);
+
+        try {
+            const ready = await compressImage(file);
+            const path = 'providers/item-' + session.user.id + '-' + Date.now() + '_' + generateRandomNumber() + '.jpg';
+
+            const { error } = await supabase.storage
+                .from(Env.S3_BUCKET)
+                .upload(path, ready, { contentType: 'image/jpeg' });
+
+            if (error) {
+                toast.error(error.message, { theme: 'colored' });
+            } else {
+                setItems((rows) => rows.map((r, j) => (j === i ? { ...r, image: path } : r)));
+            }
+        } catch (err) {
+            toast.error('That image could not be read. Try a different one.', { theme: 'colored' });
+        }
+
+        setUploadingItem(null);
         e.target.value = '';
     };
 
@@ -1470,6 +1500,8 @@ function ApplicationForm() {
                     name: String(it.name || '').trim(),
                     description: String(it.description || '').trim() || null,
                     price: String(it.price || '').trim() !== '' ? Number(it.price) : null,
+                    unit: String(it.unit || 'flat'),
+                    image: it.image || null,
                     sort_order: i,
                     active: true,
                 }))
@@ -1887,23 +1919,48 @@ function ApplicationForm() {
             await supabase.from('service_areas').insert(rows);
         }
 
-        // The menu — replaced wholesale, the same way areas are. A guest trade
-        // only; a host trade never has items. The order snapshots what it was
-        // for, so replacing the live rows never touches a placed order. Empty
-        // rows (no name or no price) are dropped.
+        // The menu — UPSERTED BY ID, not deleted and re-inserted. A guest trade
+        // only; a host trade never has items. An item now carries a photo, and
+        // delete-then-insert would give every row a new id on every save and
+        // orphan the photo attached to it — the kind of thing nobody notices
+        // until someone's pictures vanish. So a row that was only edited keeps
+        // its id (and its photo); only a row the provider actually removed is
+        // deleted. The order snapshots what it was for, so none of this touches
+        // a placed order. Empty rows (no name or no price) are dropped.
         if (audienceForTrade(trade) === 'guest') {
-            await supabase.from('service_provider_items').delete().eq('provider_id', id);
-            const itemRows = items
+            const valid = items
                 .map((it, i) => ({
+                    id: it.id,
                     provider_id: id,
                     name: String(it.name || '').trim(),
                     description: String(it.description || '').trim() || null,
                     price: String(it.price || '').trim() !== '' ? Number(it.price) : null,
+                    unit: String(it.unit || 'flat'),
+                    image: it.image || null,
                     sort_order: i,
                     active: true,
                 }))
                 .filter((r) => r.name && r.price !== null && Number(r.price) > 0);
-            if (itemRows.length) await supabase.from('service_provider_items').insert(itemRows);
+
+            // Delete only the rows that are in the database but no longer on the
+            // form — the ones the provider took off the menu.
+            const { data: existingItems } = await supabase
+                .from('service_provider_items').select('id').eq('provider_id', id);
+            const keep = new Set(valid.map((r) => r.id).filter(Boolean));
+            const removed = (existingItems || [])
+                .map((r: any) => r.id)
+                .filter((x: string) => !keep.has(x));
+            if (removed.length) {
+                await supabase.from('service_provider_items').delete().in('id', removed);
+            }
+
+            // Edited rows keep their id (update in place); new rows have none
+            // (insert, letting the id default). Split so each request carries a
+            // uniform set of columns.
+            const toUpdate = valid.filter((r) => r.id);
+            const toInsert = valid.filter((r) => !r.id).map(({ id: _omit, ...rest }) => rest);
+            if (toUpdate.length) await supabase.from('service_provider_items').upsert(toUpdate);
+            if (toInsert.length) await supabase.from('service_provider_items').insert(toInsert);
         }
 
         // Skills go through a route rather than being written from here.
@@ -2374,44 +2431,13 @@ function ApplicationForm() {
                         </div>
                     </section>
                 ) : (
-                    <section className="mb-8">
-                        <h2 className="text-sm font-semibold text-slate-900 mb-1">Your photos</h2>
-                        {/* The gallery IS the listing for a guest experience — a
-                            guest picks a chef from what the food looks like, not
-                            from a logo. So this is a prompt, not an afterthought,
-                            and an empty gallery says so plainly. */}
-                        <p className="text-sm text-slate-500 mb-3">
-                            This is what guests choose from — the food, the table, a hamper made up.
-                            Add a few good ones; a listing with photos is the one that gets booked.
-                        </p>
-                        {photos.length === 0 ? (
-                            <div className="mb-3 rounded-xl border border-dashed border-amber-300 bg-amber-50 px-4 py-3 text-sm text-amber-900">
-                                No photos yet. A guest experience with no photos is easy to scroll past —
-                                three or four is plenty to start.
-                            </div>
-                        ) : (
-                            <div className="grid grid-cols-3 gap-2 mb-3">
-                                {photos.map((p) => (
-                                    <div key={p} className="relative aspect-[4/3] rounded-xl overflow-hidden bg-slate-100">
-                                        <img src={getImageUrl(p)} alt="" className="w-full h-full object-cover" />
-                                        <button
-                                            type="button"
-                                            onClick={() => setPhotos((prev) => prev.filter((x) => x !== p))}
-                                            aria-label="Remove photo"
-                                            className="absolute top-1.5 right-1.5 w-7 h-7 rounded-full bg-white/90 flex items-center justify-center"
-                                        >
-                                            <X className="w-3.5 h-3.5" />
-                                        </button>
-                                    </div>
-                                ))}
-                            </div>
-                        )}
-                        <label className="inline-flex items-center gap-2 rounded-xl border-2 border-dashed border-slate-300 px-4 py-3 cursor-pointer text-sm text-slate-600 hover:border-slate-400">
-                            <Plus className="w-4 h-4" />
-                            {processingPhotos ? 'Preparing your photos…' : photos.length ? 'Add more' : 'Add photos'}
-                            <input type="file" accept="image/png, image/jpeg" multiple onChange={addPhotos} className="hidden" disabled={processingPhotos} />
-                        </label>
-                    </section>
+                    // Guest trades have no separate gallery any more — the photos
+                    // ARE the menu items, added beside each price on the business
+                    // step. A guest picks the cake from the cake's own picture,
+                    // not from a strip that doesn't say which is which. So this
+                    // step shows nothing for them; the item photos and the
+                    // headshot are the whole of their imagery.
+                    null
                 ))}
 
                 {/* The trade chip is gone: it said what they picked, and the
@@ -2445,11 +2471,19 @@ function ApplicationForm() {
                     menu renders as a single price on the card, so the chef's
                     "one thing, one price" reads exactly as it should. */}
                 {onStep('business') && audienceForTrade(trade) === 'guest' && (() => {
-                    const rows = items.length ? items : [{ name: '', description: '', price: '' }];
-                    const setRow = (i: number, field: 'name' | 'description' | 'price', val: string) =>
+                    const blank = { id: undefined as string | undefined, name: '', description: '', price: '', unit: 'flat', image: null as string | null };
+                    const rows = items.length ? items : [blank];
+                    const setRow = (i: number, field: 'name' | 'description' | 'price' | 'unit', val: string) =>
                         setItems(rows.map((r, j) => (j === i ? { ...r, [field]: val } : r)));
-                    const addRow = () => setItems([...rows, { name: '', description: '', price: '' }]);
+                    const addRow = () => setItems([...rows, { ...blank }]);
                     const removeRow = (i: number) => { const next = rows.filter((_, j) => j !== i); setItems(next); };
+
+                    // Provider-facing wording for each unit. 'flat' leads because a
+                    // single set price is the commonest and the simplest to read.
+                    const UNIT_WORD: Record<string, string> = {
+                        flat: 'One set price', person: 'Per person', night: 'Per night',
+                        hour: 'Per hour', ticket: 'Per ticket', item: 'Per item',
+                    };
 
                     const namePh = 'What you’re offering';
                     const descPh = 'A short line about it';
@@ -2457,35 +2491,66 @@ function ApplicationForm() {
                         <section className="mb-8">
                             <h2 className="text-sm font-semibold text-slate-900 mb-1">What you offer</h2>
                             <p className="text-sm text-slate-500 mb-3">
-                                Name each thing a guest can book and its price. One is plenty — a set
-                                dinner, say — or list as many as you like: a cake, a box of cupcakes, a
-                                tray bake. You can edit or remove any of them later.
+                                Name each thing a guest can book, with a photo and a price. One is
+                                plenty — a set dinner, say — or list as many as you like: a cake, a box
+                                of cupcakes, a tray bake. Choose how each is priced: a set price, or per
+                                person, night, hour, ticket or item — a guest booking six at a per-person
+                                price pays for six. You can edit or remove any of them later.
                             </p>
                             <div className="space-y-3">
                                 {rows.map((it, i) => (
-                                    <div key={i} className="rounded-xl border border-slate-200 p-3">
-                                        <div className="flex items-start gap-2">
-                                            <input
-                                                type="text" value={it.name}
-                                                onChange={(e) => setRow(i, 'name', e.target.value)}
-                                                placeholder={namePh}
-                                                className="flex-1 rounded-lg border border-slate-300 px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-emerald-700"
-                                            />
-                                            <div className="flex items-center gap-1">
-                                                <span className="text-slate-500 text-sm">£</span>
-                                                <input
-                                                    type="number" min="0" step="0.01" inputMode="decimal" value={it.price}
-                                                    onChange={(e) => setRow(i, 'price', e.target.value)}
-                                                    placeholder="45"
-                                                    className="w-24 rounded-lg border border-slate-300 px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-emerald-700"
-                                                />
+                                    <div key={it.id || i} className="rounded-xl border border-slate-200 p-3">
+                                        <div className="flex items-start gap-3">
+                                            {/* The item's own photo. A square well that
+                                                shows the picture once it is on, so the
+                                                cake and its price sit together. */}
+                                            <label className="relative flex-none w-16 h-16 rounded-lg border border-dashed border-slate-300 overflow-hidden cursor-pointer hover:border-slate-400 bg-slate-50 flex items-center justify-center text-center">
+                                                {it.image ? (
+                                                    <img src={getImageUrl(it.image)} alt="" className="w-full h-full object-cover" />
+                                                ) : (
+                                                    <span className="text-[10px] leading-tight text-slate-500 px-1">
+                                                        {uploadingItem === i ? '…' : 'Add photo'}
+                                                    </span>
+                                                )}
+                                                <input type="file" accept="image/*" className="sr-only"
+                                                    onChange={(e) => uploadItemPhoto(i, e)} />
+                                            </label>
+
+                                            <div className="min-w-0 flex-1">
+                                                <div className="flex items-start gap-2">
+                                                    <input
+                                                        type="text" value={it.name}
+                                                        onChange={(e) => setRow(i, 'name', e.target.value)}
+                                                        placeholder={namePh}
+                                                        className="flex-1 min-w-0 rounded-lg border border-slate-300 px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-emerald-700"
+                                                    />
+                                                    {rows.length > 1 && (
+                                                        <button type="button" onClick={() => removeRow(i)} aria-label="Remove item"
+                                                            className="mt-1 rounded-md p-1 text-slate-400 hover:text-slate-700">
+                                                            <X className="w-4 h-4" />
+                                                        </button>
+                                                    )}
+                                                </div>
+                                                <div className="mt-2 flex items-center gap-2">
+                                                    <span className="text-slate-500 text-sm">£</span>
+                                                    <input
+                                                        type="number" min="0" step="0.01" inputMode="decimal" value={it.price}
+                                                        onChange={(e) => setRow(i, 'price', e.target.value)}
+                                                        placeholder="45"
+                                                        className="w-24 rounded-lg border border-slate-300 px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-emerald-700"
+                                                    />
+                                                    <select
+                                                        value={it.unit || 'flat'}
+                                                        onChange={(e) => setRow(i, 'unit', e.target.value)}
+                                                        aria-label="How this is priced"
+                                                        className="flex-1 min-w-0 rounded-lg border border-slate-300 px-2 py-2 text-sm bg-white focus:outline-none focus:ring-2 focus:ring-emerald-700"
+                                                    >
+                                                        {ORDER_UNITS.map((u) => (
+                                                            <option key={u} value={u}>{UNIT_WORD[u]}</option>
+                                                        ))}
+                                                    </select>
+                                                </div>
                                             </div>
-                                            {rows.length > 1 && (
-                                                <button type="button" onClick={() => removeRow(i)} aria-label="Remove item"
-                                                    className="mt-1 rounded-md p-1 text-slate-400 hover:text-slate-700">
-                                                    <X className="w-4 h-4" />
-                                                </button>
-                                            )}
                                         </div>
                                         <input
                                             type="text" value={it.description}

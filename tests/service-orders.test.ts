@@ -15,6 +15,8 @@ import {
     canTransition, releasesHold,
     CONFIRM_WINDOW_HOURS, expiryFrom, guestExperiencesOpen,
     FREE_CANCEL_HOURS, guestMayCancelFree,
+    ORDER_UNITS, MAX_ORDER_QUANTITY, normaliseUnit, unitMultiplies,
+    unitNoun, unitLabel, quantityQuestion, orderQuantity, orderTotal,
 } from '@/lib/serviceOrders';
 import { GUEST_TRADES } from '@/lib/serviceProviders';
 
@@ -250,4 +252,73 @@ test('free cancellation holds the 48-hour line', () => {
     assert.equal(guestMayCancelFree(svc, hoursBefore(47)), false, 'inside 48h is the provider’s call');
     assert.equal(guestMayCancelFree(svc, hoursBefore(1)), false, 'the day before is not free');
     assert.equal(guestMayCancelFree('not-a-date', hoursBefore(72)), false, 'an unparseable date is never free');
+});
+
+// --- units, the quantity that multiplies them, and the cap -------------------
+
+test('the unit vocabulary is closed, and anything else falls back to flat', () => {
+    assert.deepEqual(ORDER_UNITS, ['flat', 'person', 'night', 'hour', 'ticket', 'item']);
+    assert.equal(normaliseUnit('person'), 'person');
+    assert.equal(normaliseUnit('PERSON'), 'flat', 'case matters — an unknown value is flat');
+    assert.equal(normaliseUnit(''), 'flat');
+    assert.equal(normaliseUnit(null), 'flat');
+    assert.equal(normaliseUnit('subscription'), 'flat', 'a made-up unit charges once, never guesses a rate');
+});
+
+test('flat is charged once; every other unit multiplies', () => {
+    assert.equal(unitMultiplies('flat'), false);
+    for (const u of ['person', 'night', 'hour', 'ticket', 'item']) {
+        assert.equal(unitMultiplies(u), true, u + ' multiplies');
+    }
+});
+
+test('the words read naturally — "per person", "How many people?"', () => {
+    assert.equal(unitLabel('person'), 'per person');
+    assert.equal(unitLabel('night'), 'per night');
+    assert.equal(unitLabel('flat'), '', 'a flat price has no per-unit suffix');
+    assert.equal(unitNoun('flat'), '');
+    assert.equal(quantityQuestion('person'), 'How many people?', 'people, not persons');
+    assert.equal(quantityQuestion('item'), 'How many items?');
+    assert.equal(quantityQuestion('flat'), '', 'a flat price asks nothing');
+});
+
+test('a flat item is always one, whatever quantity the browser sends', () => {
+    assert.equal(orderQuantity('flat', 6), 1);
+    assert.equal(orderQuantity('flat', 0), 1);
+    assert.equal(orderQuantity('flat', 'nonsense'), 1);
+    assert.equal(orderQuantity('flat', undefined), 1);
+});
+
+test('a rate takes a whole number from one up to the cap, and refuses the rest', () => {
+    assert.equal(orderQuantity('person', 1), 1);
+    assert.equal(orderQuantity('person', 6), 6);
+    assert.equal(orderQuantity('person', MAX_ORDER_QUANTITY), MAX_ORDER_QUANTITY, 'the cap itself is allowed');
+    // Refused — the route turns null into a 400 rather than clamping, so a
+    // fat-fingered 100 never becomes a silent charge for 50.
+    assert.equal(orderQuantity('person', MAX_ORDER_QUANTITY + 1), null, 'past the cap is refused, not clamped');
+    assert.equal(orderQuantity('person', 100), null);
+    assert.equal(orderQuantity('person', 0), null);
+    assert.equal(orderQuantity('person', -3), null);
+    assert.equal(orderQuantity('person', 2.5), null, 'half a person is not a quantity');
+    assert.equal(orderQuantity('person', 'six'), null);
+});
+
+test('the total is unit price times quantity, to whole pence', () => {
+    assert.equal(orderTotal(30, 6), 180);
+    assert.equal(orderTotal(45, 1), 45);
+    assert.equal(orderTotal(19.99, 3), 59.97);
+    // A price that would land on a fraction of a penny is rounded, once, here.
+    assert.equal(orderTotal(0.335, 3), 1.01);
+});
+
+test('the fee is ten percent of the TOTAL, so it scales with the count', () => {
+    const guest = { plan: 'commission', commission_rate: 0.10 };
+    // Six heads at £30 is £180, and our cut is £18 — not £3 (10% of one head).
+    const total = orderTotal(30, 6);
+    const pricing = priceOrder(guest, { bandPrice: total }, []);
+    assert.equal(pricing.price, 180);
+    assert.equal(pricing.amountPence, 18000, 'the hold is the whole £180');
+    assert.equal(pricing.applicationFeePence, 1800, 'our fee is 10% of £180');
+    // amountPence − applicationFeePence is exactly the provider's net.
+    assert.equal(pricing.amountPence - pricing.applicationFeePence, 16200);
 });

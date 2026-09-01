@@ -81,7 +81,7 @@ const PRICE_COLUMNS = ['band_key', 'price', 'typical_hours'];
 // A guest trade's menu — one item for a chef, many for a baker. Whitelisted like
 // the rest; provider_id is stamped when the payload is materialised at /finish,
 // never taken from the browser.
-const ITEM_COLUMNS = ['name', 'description', 'price', 'sort_order', 'active'];
+const ITEM_COLUMNS = ['name', 'description', 'price', 'unit', 'image', 'sort_order', 'active'];
 
 function pick(row: any, columns: string[]) {
     const out: any = {};

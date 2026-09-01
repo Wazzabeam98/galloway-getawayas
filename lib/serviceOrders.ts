@@ -216,6 +216,86 @@ export function priceOrder(
 }
 
 // ---------------------------------------------------------------------------
+// UNITS, AND THE QUANTITY THAT MULTIPLIES THEM
+// ---------------------------------------------------------------------------
+//
+// A menu item's price carries a unit. 'flat' is a set price — a chef's whole
+// evening — charged once, with no quantity to pick. Every other unit is a rate:
+// the guest picks a quantity and the charge is unit price × quantity. This is
+// the honest reading of "£30 per person" — six people is £180, not £30 — and
+// the amount held on the card, the amount captured and the 10% fee all scale
+// with it, because the total is what priceOrder is handed.
+//
+// A guest choosing a quantity can choose it wrong, and it is the provider who
+// turns up to it. Two guards sit under that: the surface shows the number and
+// the total back before they pay, and the count is capped here so a
+// fat-fingered 100 cannot put a four-figure hold on a card. The cap is a
+// safety rail, not a business limit — a genuinely large order is a phone call,
+// not a silent charge — and it lives in one place so the route and the surface
+// cannot disagree.
+
+export type OrderUnit = 'flat' | 'person' | 'night' | 'hour' | 'ticket' | 'item';
+
+export const ORDER_UNITS: OrderUnit[] = ['flat', 'person', 'night', 'hour', 'ticket', 'item'];
+
+/** A fat-finger guard, not a business rule. Tune freely; it is the one cap. */
+export const MAX_ORDER_QUANTITY = 50;
+
+/** Anything that is not a valid unit is treated as 'flat' — the safe default. */
+export function normaliseUnit(unit: string | null | undefined): OrderUnit {
+    return (ORDER_UNITS as string[]).includes(String(unit)) ? (unit as OrderUnit) : 'flat';
+}
+
+/** A flat price is charged once; every other unit multiplies by a quantity. */
+export function unitMultiplies(unit: string | null | undefined): boolean {
+    return normaliseUnit(unit) !== 'flat';
+}
+
+/** The word for one of them, singular. 'flat' has none — it is not counted. */
+export function unitNoun(unit: string | null | undefined): string {
+    const map: Record<OrderUnit, string> = {
+        flat: '', person: 'person', night: 'night', hour: 'hour', ticket: 'ticket', item: 'item',
+    };
+    return map[normaliseUnit(unit)];
+}
+
+/** The suffix a price reads with: "per person". Empty for a flat price. */
+export function unitLabel(unit: string | null | undefined): string {
+    const noun = unitNoun(unit);
+    return noun ? 'per ' + noun : '';
+}
+
+/** The question beside the quantity box: "How many people?". Empty for flat. */
+export function quantityQuestion(unit: string | null | undefined): string {
+    const noun = unitNoun(unit);
+    if (!noun) return '';
+    // "How many people?" reads better than "How many persons?".
+    const plural = noun === 'person' ? 'people' : noun + 's';
+    return 'How many ' + plural + '?';
+}
+
+/**
+ * The quantity an order is actually for, from whatever the browser sent.
+ *
+ * A flat item is always one. Otherwise it is a whole number, at least one and
+ * at most the cap. Returns null when the request is out of range for a
+ * multiplying unit — the route turns that into a plain refusal rather than
+ * silently clamping, because charging for 50 when someone typed 100 is its own
+ * kind of wrong.
+ */
+export function orderQuantity(unit: string | null | undefined, requested: unknown): number | null {
+    if (!unitMultiplies(unit)) return 1;
+    const n = Number(requested);
+    if (!Number.isInteger(n) || n < 1 || n > MAX_ORDER_QUANTITY) return null;
+    return n;
+}
+
+/** The total in pounds: unit price × quantity, rounded to whole pence. */
+export function orderTotal(unitPrice: number, quantity: number): number {
+    return Math.round(Number(unitPrice) * Number(quantity) * 100) / 100;
+}
+
+// ---------------------------------------------------------------------------
 // THE STATES, AND WHICH MAY FOLLOW WHICH
 // ---------------------------------------------------------------------------
 //
