@@ -1,0 +1,225 @@
+{
+  "runners": {
+    "payout": {
+      "ranAt": "2026-09-01T09:58:08.545Z",
+      "target": "http://localhost:3010",
+      "passed": 7,
+      "failed": 0,
+      "untestable": 0,
+      "scenarios": [
+        {
+          "number": "20",
+          "title": "Transfer runs the day after check-in, commission at the booking’s stamped rate",
+          "status": "passed",
+          "failedChecks": []
+        },
+        {
+          "number": "21",
+          "title": "Host has not finished Stripe onboarding — skipped, not failed",
+          "status": "passed",
+          "failedChecks": []
+        },
+        {
+          "number": "22",
+          "title": "Clawback succeeds from the host’s Stripe balance",
+          "status": "passed",
+          "failedChecks": []
+        },
+        {
+          "number": "23",
+          "title": "Clawback fails on an empty balance — shortfall recorded on payout_balance_owed",
+          "status": "passed",
+          "failedChecks": []
+        },
+        {
+          "number": "23b",
+          "title": "A clawback that fails for any other reason is not billed to the host",
+          "status": "passed",
+          "failedChecks": []
+        },
+        {
+          "number": "24",
+          "title": "The next payout is smaller than the debt — withheld entirely, carried forward",
+          "status": "passed",
+          "failedChecks": []
+        },
+        {
+          "number": "19",
+          "title": "A refund issued after the host has been paid out triggers a clawback",
+          "status": "passed",
+          "failedChecks": []
+        }
+      ]
+    },
+    "refund": {
+      "ranAt": "2026-09-01T09:59:02.097Z",
+      "target": "http://localhost:3010",
+      "passed": 7,
+      "failed": 0,
+      "untestable": 0,
+      "scenarios": [
+        {
+          "number": "12",
+          "title": "Host declines a pending request — guest refunded in full",
+          "status": "passed",
+          "failedChecks": []
+        },
+        {
+          "number": "13",
+          "title": "Host cancels a confirmed booking — full refund, 5% fee, dates released",
+          "status": "passed",
+          "failedChecks": []
+        },
+        {
+          "number": "14",
+          "title": "Host gives partial goodwill money back — stay stands, host still paid the rest",
+          "status": "passed",
+          "failedChecks": []
+        },
+        {
+          "number": "15",
+          "title": "Guest cancels inside the free window — full refund",
+          "status": "passed",
+          "failedChecks": []
+        },
+        {
+          "number": "16",
+          "title": "Guest cancels in the partial window — 50%",
+          "status": "passed",
+          "failedChecks": []
+        },
+        {
+          "number": "17",
+          "title": "Guest cancels in the non-refundable window — nothing",
+          "status": "passed",
+          "failedChecks": []
+        },
+        {
+          "number": "18",
+          "title": "Guest cancels a deposit-only booking — they get back what they paid",
+          "status": "passed",
+          "failedChecks": []
+        }
+      ]
+    },
+    "balance": {
+      "ranAt": "2026-09-01T09:59:47.516Z",
+      "target": "http://localhost:3010",
+      "passed": 7,
+      "failed": 0,
+      "untestable": 0,
+      "scenarios": [
+        {
+          "number": "11",
+          "title": "Card requires authentication when charged off-session",
+          "status": "passed",
+          "failedChecks": []
+        },
+        {
+          "number": "11b",
+          "title": "A booking waiting on the guest’s bank gets a week, not 72 hours",
+          "status": "passed",
+          "failedChecks": []
+        },
+        {
+          "number": "3",
+          "title": "Balance charged automatically against the saved card",
+          "status": "passed",
+          "failedChecks": []
+        },
+        {
+          "number": "7",
+          "title": "First balance attempt fails — guest told, 72 hours given, booking untouched",
+          "status": "passed",
+          "failedChecks": []
+        },
+        {
+          "number": "8",
+          "title": "Attempt 2 fails — 48 hours",
+          "status": "passed",
+          "failedChecks": []
+        },
+        {
+          "number": "9",
+          "title": "Attempt 3 fails — 24 hours",
+          "status": "passed",
+          "failedChecks": []
+        },
+        {
+          "number": "10",
+          "title": "Fourth run cancels the booking and refunds per the tier in force",
+          "status": "passed",
+          "failedChecks": []
+        }
+      ]
+    },
+    "crosscutting": {
+      "ranAt": "2026-09-01T10:00:44.741Z",
+      "target": "http://localhost:3010",
+      "passed": 6,
+      "failed": 0,
+      "untestable": 0,
+      "scenarios": [
+        {
+          "number": "25",
+          "title": "The price changes between loading the page and pressing pay",
+          "status": "passed",
+          "failedChecks": []
+        },
+        {
+          "number": "26",
+          "title": "Dates taken on Airbnb while the guest is deciding",
+          "status": "passed",
+          "failedChecks": []
+        },
+        {
+          "number": "27",
+          "title": "Two guests book the same dates at the same moment",
+          "status": "passed",
+          "failedChecks": []
+        },
+        {
+          "number": "27b",
+          "title": "A guest who pays for nights taken meanwhile is refunded and told",
+          "status": "passed",
+          "failedChecks": []
+        },
+        {
+          "number": "28",
+          "title": "The webhook arrives after the guest reaches the confirmation page",
+          "status": "passed",
+          "failedChecks": []
+        },
+        {
+          "number": "29",
+          "title": "A webhook delivered twice, or a scheduled job run twice",
+          "status": "passed",
+          "failedChecks": []
+        }
+      ]
+    }
+  },
+  "updatedAt": "2026-09-01T10:00:44.741Z",
+  "fingerprint": {
+    "app/api/cron/host-payouts/route.ts": "6c88578d2b8bd566",
+    "app/api/cron/balance-charges/route.ts": "e1bb5d9ae1379701",
+    "app/api/stripe/refund/route.ts": "a5ccaff6e0a2e2e3",
+    "app/api/stripe/checkout/route.ts": "f9bf640caca46d44",
+    "app/api/stripe/webhook/route.ts": "b57bbee8f7ba9a78",
+    "app/api/bookings/cancel/route.ts": "23ca258200f01b59",
+    "app/api/bookings/host-refund/route.ts": "fd88f68757c99a95",
+    "lib/clawback.ts": "11a032e0004870fa",
+    "lib/payoutSource.ts": "b00c942802e9f678",
+    "lib/payoutTiming.ts": "5c9fe4cce4f9d03c",
+    "lib/hostDebt.ts": "3dccd9c9ee9d8459",
+    "lib/refundSpread.ts": "fad761755dc4b85b",
+    "lib/fees.ts": "eee8370bca28610e",
+    "lib/pricing.ts": "409f796fc35cbc12",
+    "lib/cancellation.ts": "11d0a7ea3f494211",
+    "scripts/seed-payments.mjs": "9228438aa5af1424",
+    "scripts/payout-scenarios.mjs": "cdb63b1817b61b48",
+    "scripts/refund-scenarios.mjs": "ce35c9d173e4ff52",
+    "scripts/balance-scenarios.mjs": "dc0bc43fe0254c51",
+    "scripts/crosscutting-scenarios.mjs": "fd1f8b683ad60f1a"
+  }
+}

@@ -9,7 +9,8 @@
     "lint": "next lint",
     "test": "rm -rf .test-build && tsc -p tsconfig.test.json && node --test .test-build/tests",
     "test:e2e": "playwright test",
-    "e2e:sync": "node scripts/e2e-sync.mjs"
+    "e2e:sync": "node scripts/e2e-sync.mjs",
+    "scenarios": "node scripts/scenarios.mjs"
   },
   "dependencies": {
     "@hookform/resolvers": "^3.3.1",

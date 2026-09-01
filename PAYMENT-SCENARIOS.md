@@ -4,7 +4,9 @@ Every one of these also needs a final check that the database agrees with
 Stripe afterwards. That is where nearly every real bug in this project has
 been — not in the payment succeeding, but in the record of it afterwards.
 
-Roughly eight of these have been tested by hand. The rest never have.
+Twenty-seven of them are scripted and run by `npm run scenarios`; what passed
+and when is in `SCENARIO-RESULTS.json`, not in this sentence. The handful that
+cannot be scripted are named at the bottom.
 
 ## Money in
 
@@ -74,19 +76,38 @@ Roughly eight of these have been tested by hand. The rest never have.
 
 ## Progress
 
-Scenarios 12-24 — the refunds and the payouts — are scripted and passing
-against the test project and Stripe test mode. Reseed between the two:
+**This section no longer says what passes. `SCENARIO-RESULTS.json` does, and it
+is written by the runners rather than by a person.**
 
 ```
-node scripts/seed-payments.mjs && node scripts/payout-scenarios.mjs
-node scripts/seed-payments.mjs && node scripts/refund-scenarios.mjs
+npm run scenarios
 ```
 
-Scenarios 3 and 7-11, the automatic balance charge and its failure ladder:
+That seeds and runs all four runners in order, reseeding between each — they
+share hosts, and each leaves bookings paid out, cancelled or in debt, so the
+second one fails on the first one's state without it. It needs a dev server and
+the test project. At the end it prints where you stand and writes the file.
 
-```
-node scripts/seed-payments.mjs && node scripts/balance-scenarios.mjs
-```
+**Commit `SCENARIO-RESULTS.json`. It is the evidence, not a build artefact.**
+`tests/scenario-coverage.test.ts` fails if it is missing, if the last run
+recorded a failure, or if any of the twenty money-path files listed in
+`scripts/scenario-report.cjs` has changed since that run. The pre-push hook runs
+the tests, so "I will run the scenarios later" is no longer a thing that can
+happen quietly.
+
+### Why this stopped being a sentence
+
+This section used to read *"Scenarios 12-24 are scripted and passing"*. That was
+written on 21 August 2026 and it was true that day.
+
+On 31 August, PR #57 made a payout transfer name the charge that funds it. That
+lands the host's money in their **pending** balance instead of their available
+one — and scenario 22 reads the available balance. The sentence was false from
+that moment, and stayed there for ten days telling everyone the ground was
+covered. Three sessions touched the payout and clawback path in that window.
+Each proved its own change well. None ran this suite.
+
+A sentence cannot fail. Output can.
 
 Scenarios 1, 2, 4 and 5 were done by hand through a real Stripe Checkout page
 in a browser, with `stripe listen` forwarding the webhooks. A Checkout Session
@@ -100,19 +121,39 @@ was confirmed is that while the challenge is outstanding the booking stays
 webhook path it finishes through is the same one scenarios 1, 2 and 4 all
 proved works.
 
-Scenarios 25-29, the cross-cutting cases:
+The individual runners are still there if you want one of them on its own —
+see `scripts/README.md` — but reseed first, and prefer `npm run scenarios`,
+because only that writes the record.
 
-```
-node scripts/seed-payments.mjs && node scripts/crosscutting-scenarios.mjs
-```
-
-See `scripts/README.md`. Scenario 23 needed a fix before it could pass at all —
+Scenario 23 needed a fix before it could pass at all —
 Stripe does not refuse a reversal the host cannot fund, it takes their account
 negative and absorbs the difference out of the next transfer, so the money was
 being recovered twice. The clawback now reverses only what the host is actually
 holding and carries the rest on `payout_balance_owed`.
 
 ## Fixed
+
+- A retried payout could pay a host twice. The run does three writes and only
+  the first moves money, so dying between them left the transfer sent and
+  `paid_out_at` unwritten — and Stripe forgets an idempotency key after 24
+  hours, which is exactly the interval between runs. It now asks the ledger
+  about the booking before it sends anything, and there is a unique index
+  behind it. **Scenario 29 now clears `paid_out_at` and re-runs**, which is the
+  case the old "run it twice" check could never reach: with `paid_out_at` set,
+  the second run does not even select the booking. (PR #63.)
+- A stay paid as a deposit and then a balance could not be refunded at all.
+  Two charges, and a Stripe refund names one — so a £300 stay paid as £150 +
+  £150 came back as "Refund amount (£300.00) is greater than charge amount
+  (£150.00)", the route threw, and the guest got nothing. All four refunding
+  routes had their own copy of the same wrong line; they now share
+  `lib/refundSpread.ts`. Scenario 23's booking is a deposit-plus-balance one
+  now, which is what surfaced it — before that no seeded booking anywhere had
+  a second payment intent. (PR #64.)
+- `/api/stripe/refund` moved money with no idempotency key at all. (PR #64.)
+- The clawback read the host's settled balance, which `lib/payoutSource.ts`
+  had made permanently £0 for the week that matters — so it recovered nothing
+  and wrote the whole amount up as a debt instead. It now asks whether that
+  particular payout has settled rather than what the host is holding. (PR #64.)
 
 - ~~`host-payouts/route.ts` rounds `hostShare` and `commission` independently.~~
   `feeAmount` now derives from `netOfFee` by subtraction, so the two always sum
@@ -155,10 +196,12 @@ holding and carries the rest on `payout_balance_owed`.
   to it and works the figure out itself from what was paid and the
   cancellation policy. That is correct for what it does, but passing it an
   amount and expecting a partial refund will silently refund everything.
-- The migration that makes overlapping confirmed stays impossible is applied to
-  the **test project only**. It has to be run against production before this
-  ships. See `MAINTENANCE.md`, and run the pre-flight query in the migration
-  first.
+- ~~The migration that makes overlapping confirmed stays impossible is applied
+  to the test project only.~~ **Done.** `bookings_no_overlapping_confirmed` was
+  read back off *both* projects on 31 August 2026 and is live on production.
+  This entry is kept struck through rather than deleted, because a note saying
+  a migration is outstanding when it is not is how the next person wastes an
+  afternoon.
 - On the pay-in-full path the webhook stores `stripe_payment_method_id` even
   though the card was deliberately not saved for future use — checkout only
   sets `setup_future_usage` on the deposit path. Nothing charges it, because
