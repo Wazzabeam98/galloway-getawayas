@@ -40,6 +40,7 @@
     "app/api/stripe/refund/route.ts",
     "app/api/bookings/cancel/route.ts",
     "app/api/listings/visibility/route.ts",
+    "app/api/listings/publish/route.ts",
     "app/api/admin/listings/decide/route.ts",
     "app/api/services/wanted/route.ts",
     "app/api/services/enquiries/route.ts",

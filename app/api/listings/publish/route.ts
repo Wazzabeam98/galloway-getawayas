@@ -3,6 +3,7 @@ import { createRouteHandlerClient } from '@supabase/auth-helpers-nextjs';
 import { adminClient } from '@/lib/supabaseAdmin';
 import { cookies } from 'next/headers';
 import { NextResponse } from 'next/server';
+import { coordinatePatchFor } from '@/lib/postcodeGeocode';
 
 export const dynamic = 'force-dynamic';
 
@@ -47,7 +48,7 @@ export async function POST(request: Request) {
 
         const { data: listing } = await admin
             .from('listings')
-            .select('id, host_id, title, price_per_night, status')
+            .select('id, host_id, title, price_per_night, status, postcode, latitude, longitude')
             .eq('id', listingId)
             .maybeSingle();
 
@@ -75,7 +76,17 @@ export async function POST(request: Request) {
 
         const { error } = await admin
             .from('listings')
-            .update({ status: 'published' })
+            // THE OTHER DOOR A POSTCODE COMES THROUGH.
+            //
+            // The wizard writes the listing row straight from the browser and
+            // then calls this, so a server-side fill in listings/save would
+            // never see a brand-new listing. This is the one point the server
+            // touches every publish, which makes it the right place for the
+            // second half.
+            //
+            // Empty object when there is nothing to do, so this stays a single
+            // update.
+            .update({ status: 'published', ...(await coordinatePatchFor(listing, {})) })
             .eq('id', listingId);
 
         if (error) {

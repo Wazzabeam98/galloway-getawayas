@@ -3,6 +3,7 @@ import { createRouteHandlerClient } from '@supabase/auth-helpers-nextjs';
 import { adminClient } from '@/lib/supabaseAdmin';
 import { cookies } from 'next/headers';
 import { NextResponse } from 'next/server';
+import { coordinatePatchFor } from '@/lib/postcodeGeocode';
 import { checkListing } from '@/lib/access';
 import { isAdmin, recordAdminAction, cleanReason, REMOVED_BUCKET } from '@/lib/adminAudit';
 import { fromRow, newProblems } from '@/lib/listingRules';
@@ -122,6 +123,18 @@ export async function POST(request: Request) {
                 );
             }
         }
+
+        // A POSTCODE THAT MEANS SOMETHING.
+        //
+        // Publishing has demanded a postcode since 28 August and nothing did
+        // anything with it: coordinates had one writer in the codebase, the
+        // address lookup in the wizard, so a host who typed their postcode by
+        // hand passed every rule and still had none. Filled here rather than in
+        // the browser, so it holds whichever screen the edit came from.
+        //
+        // Best effort, and deliberately after the rules: a third party having a
+        // bad minute must never be why somebody cannot save their own listing.
+        Object.assign(safe, await coordinatePatchFor(before, safe));
 
         const { error } = await admin.from('listings').update(safe).eq('id', listingId);
 
