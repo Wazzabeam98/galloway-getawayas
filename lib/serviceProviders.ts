@@ -26,15 +26,14 @@ export const TRADES = [
     { key: 'roofer', label: 'Roofer' },
     { key: 'painter', label: 'Painter & decorator' },
     { key: 'handyman', label: 'Handyman' },
-    { key: 'chef', label: 'Private chef' },
-    { key: 'cake', label: 'Cakes & baking' },
-    { key: 'basket', label: 'Hampers & shopping' },
-    // "Something else" — a business that is not on the list above. They describe
-    // what they do, and the owner decides at approval whether it fits and what
-    // Stripe category it takes. Guests never see the word "Something else"; the
-    // owner assigns a real word (custom_label) when they assign the code. See
-    // lib/serviceOrders.ts mccForProvider and the admin category-assignment flow.
-    { key: 'other', label: 'Something else' },
+    // A guest experience — a private chef, a baker, a wild-swimming guide, a
+    // whisky tasting, anyone offering something to guests staying nearby. There
+    // is no preset list of these and no category the applicant picks: they
+    // describe the business, and the owner assigns the guest-facing word
+    // (custom_label), the Stripe code (stripe_mcc) and whether they hold a date
+    // exclusively (exclusive_per_date) at review. One shape for all of them,
+    // renamed from the old 'other' exception. See GUEST-EXPERIENCES-ONE-FORM.md.
+    { key: 'guest', label: 'Guest experience' },
 ] as const;
 
 export type TradeKey = (typeof TRADES)[number]['key'];
@@ -58,7 +57,10 @@ export const HOST_TRADES = [
     'sponge', 'bin', 'trees', 'droplet',
     'electrician', 'joiner', 'plumber', 'roofer', 'painter', 'handyman',
 ] as const;
-export const GUEST_TRADES = ['chef', 'cake', 'basket', 'other'] as const;
+// One guest trade now, not a preset list. Everyone offering something to guests
+// is 'guest'; what kind of thing they offer is the owner-assigned category, not
+// a trade. See GUEST-EXPERIENCES-ONE-FORM.md.
+export const GUEST_TRADES = ['guest'] as const;
 
 // A heading on the picker, not a thing anybody is.
 //
@@ -250,11 +252,9 @@ const TRADE_PLANS: Record<string, ProviderPlan> = {
     sponge: 'commission',
     bin: 'commission',
 
-    // Guest trades, unchanged and out of scope of the rule above.
-    chef: 'commission',
-    cake: 'commission',
-    basket: 'commission',
-    other: 'commission',
+    // The one guest trade — always commission (10% on the sale), never a
+    // subscription. A guest experience bills nothing until a guest buys.
+    guest: 'commission',
 };
 
 // The host trades that pay a percentage instead of a subscription. Named here
@@ -1971,15 +1971,23 @@ export function registrationBlockers(
 // onboarding in app/api/services/connect; this is the courtesy that says so on
 // the queue rather than letting Approve look available and the payout stall
 // silently later.
-export function categoryBlockers(provider: { trade?: string | null; stripe_mcc?: string | null }): string[] {
-    if (String(provider.trade || '') !== 'other') return [];
-    if (String(provider.stripe_mcc || '').trim()) return [];
-    return ['No payout category assigned yet — pick one before approving.'];
+export function categoryBlockers(
+    provider: { trade?: string | null; stripe_mcc?: string | null; custom_label?: string | null }
+): string[] {
+    // Now universal for guest providers, not the old 'other'-only exception:
+    // nobody picks a category, so every guest application arrives uncategorised
+    // and Approve is held until the owner has set BOTH the word a guest reads
+    // (custom_label) and the payout code (stripe_mcc).
+    if (String(provider.trade || '') !== 'guest') return [];
+    const hasCode = !!String(provider.stripe_mcc || '').trim();
+    const hasWord = !!String(provider.custom_label || '').trim();
+    if (hasCode && hasWord) return [];
+    return ['No guest category assigned yet — set the word guests see and the payout category before approving.'];
 }
 
 // The whole approval gate, in one function, so the admin queue and the decision
-// route refuse on exactly the same list. Registrations for the regulated
-// trades, and a payout category for an "other" provider.
+// route refuse on exactly the same list. Registrations for the regulated host
+// trades, and a payout category (word + code) for every guest provider.
 export function approvalBlockers(
     provider: RegistrationDraft & { stripe_mcc?: string | null },
     rows: RegistrationRow[] | null | undefined,
@@ -1990,16 +1998,13 @@ export function approvalBlockers(
 
 // The word a guest reads above a provider on the shop and the trip page.
 //
-// For the fixed guest trades it is the trade's own label ("Private chef"). For
-// an "other" provider it is the word the owner typed when they assigned the
-// category — never the meaningless "Something else". Falls back to a neutral
-// "Local experience" if an "other" somehow reaches a guest with no label, which
-// it should not, because a label is assigned in the same act as the code the
-// payout gate requires.
+// Always the word the owner typed when they assigned the category — there are
+// no fixed guest trades any more, so there is no trade label to fall back to.
+// A neutral "Local experience" covers the case a guest provider somehow reaches
+// a guest with no label, which the payout gate should prevent, because the word
+// is assigned in the same act as the code the gate requires.
 export function guestCategory(provider: { trade?: string | null; custom_label?: string | null }): string {
-    const trade = String(provider.trade || '');
-    if (trade === 'other') return String(provider.custom_label || '').trim() || 'Local experience';
-    return tradeLabel(trade);
+    return String(provider.custom_label || '').trim() || 'Local experience';
 }
 
 // What the provider is told while filling the form in. Deliberately narrower

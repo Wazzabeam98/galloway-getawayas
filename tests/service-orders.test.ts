@@ -9,9 +9,9 @@ import { installAliases } from './helpers/stub';
 installAliases();
 
 import {
-    TRADE_MCC, mccForTrade, mccForProvider, stripeProfileForTrade, stripeProfileForProvider,
+    TRADE_MCC, ASSIGNABLE_MCCS, mccForTrade, mccForProvider, stripeProfileForTrade, stripeProfileForProvider,
     isLiveToGuests, isAwaitingConnect,
-    priceOrder,
+    priceOrder, exclusivePerDate,
     canTransition, releasesHold,
     CONFIRM_WINDOW_HOURS, expiryFrom, guestExperiencesOpen,
     FREE_CANCEL_HOURS, guestMayCancelFree,
@@ -20,66 +20,76 @@ import { GUEST_TRADES } from '@/lib/serviceProviders';
 
 // --- who Stripe thinks each provider is --------------------------------------
 
-test('every fixed guest trade has an MCC, and it is ours not the provider’s', () => {
-    // The gap this closes: a guest trade with no category cannot be onboarded,
-    // so a new FIXED one added without a code fails loudly rather than
-    // defaulting to lodging. Looped over GUEST_TRADES so a fifth fixed guest
-    // trade added tomorrow makes this fail until someone chooses its code.
-    //
-    // 'other' is the one deliberate exception — a "something else" business has
-    // no fixed category by definition; the owner assigns its code per provider
-    // at approval. It is covered by the next test, not this one.
+test('no guest trade carries a fixed MCC — the code is assigned per provider', () => {
+    // The change this locks: there is no preset guest trade any more, so there
+    // is no fixed category to look up. mccForTrade answers null for the guest
+    // sentinel exactly as it does for a host trade — which is what holds an
+    // un-categorised provider out of onboarding until the owner assigns a code.
+    assert.deepEqual(TRADE_MCC, {}, 'no fixed per-trade codes remain');
     for (const trade of GUEST_TRADES as unknown as string[]) {
-        if (trade === 'other') continue;
-        assert.equal(typeof mccForTrade(trade), 'string', trade + ' has no MCC');
-        assert.match(mccForTrade(trade) as string, /^\d{4}$/, trade + ' MCC is not a 4-digit code');
+        assert.equal(mccForTrade(trade), null, trade + ' must have no fixed code');
     }
 });
 
-test('“other” has no fixed code, but a per-provider one resolves and gates', () => {
-    // No fixed code — which is exactly what holds an un-categorised "other"
-    // provider out of Stripe onboarding until the owner picks one.
-    assert.equal(mccForTrade('other'), null, 'other must have no fixed trade code');
-    assert.equal(mccForProvider({ trade: 'other' }), null, 'an un-categorised other has no code');
-    assert.equal(stripeProfileForProvider({ trade: 'other' }), null, 'and so cannot be onboarded');
+test('a guest provider has no fixed code, but an assigned one resolves and gates', () => {
+    // No fixed code — which is exactly what holds an un-categorised guest
+    // provider out of Stripe onboarding until the owner picks one at review.
+    assert.equal(mccForProvider({ trade: 'guest' }), null, 'an un-categorised guest has no code');
+    assert.equal(stripeProfileForProvider({ trade: 'guest' }), null, 'and so cannot be onboarded');
 
-    // Once the owner assigns a code on the row, that provider resolves exactly
-    // like a fixed trade — so it is not filtered out for having no table entry.
-    assert.equal(mccForProvider({ trade: 'other', stripe_mcc: '7299' }), '7299');
+    // Once the owner assigns a code on the row, that provider resolves — so it
+    // is not filtered out of the guest surface for having no fixed table entry.
+    assert.equal(mccForProvider({ trade: 'guest', stripe_mcc: '7299' }), '7299');
     const profile = stripeProfileForProvider({
-        trade: 'other', stripe_mcc: '7299', stripe_product_description: 'Massage therapy for holiday guests.',
+        trade: 'guest', stripe_mcc: '7299', stripe_product_description: 'Massage therapy for holiday guests.',
     });
     assert.equal(profile && profile.mcc, '7299');
     assert.ok(profile && profile.product_description.length > 0);
 
-    // A fixed trade is unchanged by the per-provider path: with no code on the
-    // row, it still reads its own from the table.
-    assert.equal(mccForProvider({ trade: 'chef' }), '5811');
+    // The assigned code is the ONLY way a guest provider resolves now — there is
+    // no fixed fallback behind it.
+    assert.equal(mccForProvider({ trade: 'guest' }), null);
 });
 
-test('a trade with no code cannot be onboarded', () => {
+test('a host trade or unknown value has no guest code', () => {
     assert.equal(mccForTrade('sponge'), null, 'a host trade is not a guest experience');
     assert.equal(mccForTrade(''), null);
     assert.equal(mccForTrade('nonsense'), null);
 });
 
-test('the MCC table is not a host category', () => {
+test('lodging can never be a guest category', () => {
     // 7011 is lodging. No guest experience may carry it — that is the whole
-    // reason the provider gets its own account.
+    // reason the provider gets its own account. With no fixed table left, the
+    // guard is that the owner cannot ASSIGN it either.
+    assert.ok(!ASSIGNABLE_MCCS.some((m) => m.code === '7011'), 'lodging is not assignable');
     for (const code of Object.values(TRADE_MCC)) {
-        assert.notEqual(code, '7011', 'a guest trade must not be filed as lodging');
+        assert.notEqual(code, '7011');
     }
 });
 
-test('the Stripe profile carries the trade’s own category and a description', () => {
-    const chef = stripeProfileForTrade('chef');
-    assert.equal(chef && chef.mcc, '5811');
-    assert.ok(chef && chef.product_description.length > 0, 'a description Stripe can read');
-
-    // A trade with no code yields no profile — which is what stops the connect
-    // route creating an account for an un-categorised trade.
-    assert.equal(stripeProfileForTrade('sponge'), null);
+test('there is no fixed Stripe profile — it comes from the assigned code', () => {
+    // TRADE_STRIPE_DESCRIPTION is empty, so stripeProfileForTrade yields nothing;
+    // that is what stops the connect route onboarding on a trade alone. The
+    // profile a provider onboards with is the per-provider one the owner set.
+    assert.equal(stripeProfileForTrade('guest'), null);
+    assert.equal(stripeProfileForTrade('chef'), null, 'no fixed chef profile any more');
     assert.equal(stripeProfileForTrade(''), null);
+
+    const profile = stripeProfileForProvider({
+        trade: 'guest', stripe_mcc: '5811', stripe_product_description: 'Private chef for holiday guests.',
+    });
+    assert.equal(profile && profile.mcc, '5811');
+    assert.ok(profile && profile.product_description.length > 0);
+});
+
+test('exclusivity is a per-provider flag, not a trade', () => {
+    // The chef-only rule became exclusive_per_date, set by the owner at review
+    // and snapshotted onto the order. The order route pre-check and the partial
+    // unique index both read it.
+    assert.equal(exclusivePerDate({ exclusive_per_date: true }), true, 'a chef/masseur holds the date');
+    assert.equal(exclusivePerDate({ exclusive_per_date: false }), false, 'a baker does not');
+    assert.equal(exclusivePerDate({}), false, 'unset is not exclusive');
+    assert.equal(exclusivePerDate(null), false);
 });
 
 // --- who a guest may see -----------------------------------------------------

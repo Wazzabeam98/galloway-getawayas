@@ -73,10 +73,39 @@ export async function GET(request: Request) {
 
     const waiting = waitingRows || [];
 
+    // ------------------------------------------------------------------
+    // BUSINESSES WAITING ON YOU.
+    //
+    // The mirror of the block above, and the reason it exists: a guest business
+    // now needs a review decision from you before it can go live — nobody picks
+    // a category any more, so every guest application arrives uncategorised and
+    // Approve is held until you set the word and the code. A provider who proved
+    // their address, filled the form and is sitting in pending_review is waiting
+    // on YOU, and until this block they were on no list — the "signed up, thinks
+    // they're live, gets nothing" case. Oldest first, so the longest wait is the
+    // one you see. A guest still to be categorised is flagged, because that is
+    // the extra step that holds them.
+    // ------------------------------------------------------------------
+    const { data: reviewRows, error: reviewError } = await admin
+        .from('service_providers')
+        .select('id, business_name, trade, audience, submitted_at, created_at, custom_label, stripe_mcc')
+        .eq('status', 'pending_review')
+        .order('submitted_at', { ascending: true, nullsFirst: true })
+        .limit(50);
+
+    if (reviewError) {
+        await logError('error-digest: could not read the review queue waiting on the owner', reviewError, {
+            path: '/api/cron/error-digest',
+        });
+    }
+
+    const reviewQueue = reviewRows || [];
+
     // The send condition is errors OR people, not errors alone. A quiet day
     // for the site is not a quiet day for a joiner who applied a fortnight ago
-    // and has heard nothing, and the old early return would have swallowed him.
-    if (errors.length === 0 && waiting.length === 0) {
+    // and has heard nothing, or a chef sitting unreviewed — and the old early
+    // return would have swallowed them.
+    if (errors.length === 0 && waiting.length === 0 && reviewQueue.length === 0) {
         return NextResponse.json({ ok: true, sent: 0, reason: 'nothing to report' });
     }
 
@@ -145,6 +174,50 @@ export async function GET(request: Request) {
             : '')
     );
 
+    // Whole days a proved application has sat in the review queue. From
+    // submitted_at (when they lodged it with a proved address), or created_at if
+    // that is somehow missing.
+    const daysInQueue = (p: any): number => {
+        const when = p.submitted_at || p.created_at;
+        if (!when) return 0;
+        const since = Date.now() - new Date(when).getTime();
+        return since <= 0 ? 0 : Math.floor(since / (24 * 60 * 60 * 1000));
+    };
+
+    // The review queue, as a block you can act on. A guest business with no
+    // category yet is flagged, because assigning it is the step that unblocks
+    // Approve and the one it is easy to leave undone.
+    const reviewHtml = reviewQueue.length === 0 ? '' : (
+        '<p style="margin:0 0 10px;font-size:16px;"><strong>'
+            + reviewQueue.length + (reviewQueue.length === 1 ? ' business is' : ' businesses are')
+            + ' waiting on you to review.</strong> They have proved their address and applied.'
+            + ' Until you approve them, they cannot go live — however long that takes.</p>'
+        + '<table style="width:100%;border-collapse:collapse;margin:0 0 16px;">'
+        + reviewQueue.slice(0, 15).map((p: any) => {
+            const days = daysInQueue(p);
+            const overdue = days >= 1;
+            const isGuest = String(p.audience || '') === 'guest';
+            const needsCategory = isGuest && !(p.custom_label && p.stripe_mcc);
+            return '<tr>'
+                + '<td style="padding:8px 10px 8px 0;border-bottom:1px solid #e5e7eb;font-size:14px;">'
+                    + '<strong>' + escapeHtml(String(p.business_name || 'Unnamed')) + '</strong>'
+                    + '<div style="color:#6b7280;font-size:12px;">'
+                    + escapeHtml(isGuest ? 'Guest experience' : String(p.trade || ''))
+                    + (needsCategory ? ' &middot; <span style="color:#b91c1c;">needs a category</span>' : '')
+                    + '</div>'
+                + '</td>'
+                + '<td style="padding:8px 0;border-bottom:1px solid #e5e7eb;font-size:13px;white-space:nowrap;'
+                    + (overdue ? 'color:#b91c1c;' : 'color:#6b7280;') + '">'
+                    + 'waiting ' + days + (days === 1 ? ' day' : ' days')
+                + '</td>'
+                + '</tr>';
+        }).join('')
+        + '</table>'
+        + (reviewQueue.length > 15
+            ? '<p style="margin:0 0 16px;font-size:14px;color:#64748b;">and ' + (reviewQueue.length - 15) + ' more.</p>'
+            : '')
+    );
+
     const rowsHtml = issues
         .slice(0, 15)
         .map((g) => {
@@ -193,9 +266,13 @@ export async function GET(request: Request) {
         const result = await sendEmailToAll(
             to,
             errors.length === 0
-                ? (waiting.length === 1
-                    ? '1 tradesman is waiting on himself'
-                    : waiting.length + ' tradesmen are waiting on themselves')
+                ? (reviewQueue.length > 0
+                    ? (reviewQueue.length === 1
+                        ? '1 business is waiting on you to review'
+                        : reviewQueue.length + ' businesses are waiting on you to review')
+                    : (waiting.length === 1
+                        ? '1 tradesman is waiting on himself'
+                        : waiting.length + ' tradesmen are waiting on themselves'))
                 : issues.length === 1
                     ? 'Something went wrong on the site yesterday'
                     : issues.length + ' things went wrong on the site yesterday',
@@ -211,6 +288,7 @@ export async function GET(request: Request) {
                         + '<table style="width:100%;border-collapse:collapse;margin:0 0 16px;">'
                         + rowsHtml
                         + '</table>')
+                    + reviewHtml
                     + waitingHtml
                     + (issues.length > 15
                         ? '<p style="margin:0 0 16px;font-size:14px;color:#64748b;">and ' + (issues.length - 15) + ' more.</p>'

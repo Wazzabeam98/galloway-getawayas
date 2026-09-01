@@ -128,9 +128,9 @@ export async function GET(request: Request) {
         }
 
         const providers = (rows || [])
-            // Provider-aware, not mccForTrade: an "other" provider the owner has
-            // categorised has a code on the row and no entry in the trade table,
-            // and must not be filtered out here for it.
+            // Provider-aware, not mccForTrade: a guest provider carries the code
+            // the owner assigned at review (there are no fixed trade codes), and
+            // must be kept on the strength of that assigned code.
             .filter((p) => isLiveToGuests(p) && mccForProvider(p))
             .filter((p) => (itemsByProvider[p.id] || []).length > 0)
             .filter((p) => coversPoint(areasByProvider[p.id] || [], point.lat, point.lng))

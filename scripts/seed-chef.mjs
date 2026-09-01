@@ -146,8 +146,15 @@ async function seed() {
     const [chef] = await db.insert('service_providers', [{
         owner_id: owner,
         business_name: 'Rosa’s Table',
-        trade: 'chef',
+        // One guest trade now; the category is assigned, not picked. A chef is a
+        // guest business the owner has categorised as a private chef, charged
+        // under caterers (5811), holding a date exclusively.
+        trade: 'guest',
         audience: 'guest',
+        custom_label: 'Private chef',
+        stripe_mcc: '5811',
+        stripe_product_description: 'Private chef and in-home dining for holiday guests.',
+        exclusive_per_date: true,
         kind: 'external',
         description:
             'Three-course dinner cooked in your cottage, for up to six. Seasonal, mostly '
@@ -179,6 +186,18 @@ async function seed() {
         updated_at: now.toISOString(),
     }]);
 
+    // The menu — a chef's list of one, £180. A guest is shown only providers
+    // with at least one priced item, so this is what makes her bookable now
+    // that experience_price is unread.
+    await db.insert('service_provider_items', [{
+        provider_id: chef.id,
+        name: 'Private dinner',
+        description: 'Three courses cooked in your cottage, for up to six.',
+        price: 180,
+        sort_order: 0,
+        active: true,
+    }]);
+
     // Covers the same ground the walkthrough plumber does, so the chef shows up
     // for the same test cottages around Kirkcudbright and Gatehouse of Fleet.
     await db.insert('service_areas', [{
@@ -197,7 +216,7 @@ async function seed() {
     console.log('  LOGIN');
     console.log('    email     ' + LOGIN_EMAIL);
     console.log('    password  ' + LOGIN_PASSWORD);
-    console.log('    then open /services/join?trade=chef to edit the listing and see requests');
+    console.log('    then open /services/join?trade=guest to edit the listing and see requests');
     console.log('');
     console.log('  NOTE: guests only see her while GUEST_EXPERIENCES_OPEN is set on the app.');
 }
