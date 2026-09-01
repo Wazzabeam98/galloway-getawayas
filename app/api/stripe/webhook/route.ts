@@ -251,6 +251,33 @@ export async function POST(request: Request) {
             const bookingId = (cs.metadata && cs.metadata.booking_id) || cs.client_reference_id;
             const kind = (cs.metadata && cs.metadata.kind) || 'full';
 
+            // A SLOT BOOKING WAS PAID.
+            //
+            // The seat was already claimed when the guest started Checkout, and a
+            // 'holding' order was written then. Payment is automatic-capture, so
+            // completing Checkout means the money moved: turn the hold into a
+            // confirmed booking. Idempotent twice over — the stripe_events unique
+            // insert dedupes redelivery, and the update only touches a row still
+            // 'holding', so a replay after the sweep already expired it does
+            // nothing. The seat is not touched here; it was taken at booking.
+            if (kind === 'slot_order') {
+                const orderId = cs.metadata && cs.metadata.order_id;
+                const slotPi = (cs.payment_intent as string) || null;
+                if (orderId) {
+                    const { error: slotConfErr } = await admin
+                        .from('service_orders')
+                        .update({ status: 'confirmed', stripe_payment_intent_id: slotPi })
+                        .eq('id', orderId)
+                        .eq('status', 'holding');
+                    if (slotConfErr) {
+                        console.error('[webhook] slot-order confirm', orderId, slotConfErr.message);
+                    }
+                    // TODO(marketplace next phase): email the provider the new
+                    // booking (the diary notification) and the guest their
+                    // confirmation.
+                }
+            }
+
             // A TRADESMAN PUTTING A CARD ON FILE.
             //
             // Nothing is charged here and nothing should be: the subscription

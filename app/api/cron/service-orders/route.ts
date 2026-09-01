@@ -60,5 +60,50 @@ export async function GET(request: Request) {
         }
     }
 
-    return NextResponse.json({ ok: true, released, failures });
+    // SLOT HOLDS THAT WERE NEVER PAID.
+    //
+    // A slot claims its seat when the guest starts Checkout and writes a
+    // 'holding' order; if they never pay, the seat must come back so the 2pm
+    // reopens. There is no PaymentIntent to cancel — a hold stores one only once
+    // the webhook confirms it — so this just lets the hold go and gives the seat
+    // back.
+    //
+    // A five-minute grace past expiry, so a genuine payment whose webhook is a
+    // little late still wins: the Checkout session expires at the same 15 minutes
+    // as the hold, so a completed payment can only have happened before expiry,
+    // and the grace keeps the sweep from racing its confirmation. The update is
+    // guarded on `status = 'holding'`, so a booking the webhook confirmed in the
+    // meantime is never touched, and its seat is never released.
+    const graceIso = new Date(Date.now() - 5 * 60 * 1000).toISOString();
+    const { data: staleHolds } = await admin
+        .from('service_orders')
+        .select('id, slot_session_id, quantity')
+        .eq('status', 'holding')
+        .lt('expires_at', graceIso);
+
+    let seatsReleased = 0;
+    for (const hold of staleHolds || []) {
+        try {
+            const { data: expired } = await admin
+                .from('service_orders')
+                .update({ status: 'expired', cancelled_at: nowIso })
+                .eq('id', hold.id)
+                .eq('status', 'holding')
+                .select('id');
+            if (expired && expired.length && hold.slot_session_id) {
+                const { data: s } = await admin
+                    .from('slot_sessions').select('seats_taken').eq('id', hold.slot_session_id).maybeSingle();
+                if (s) {
+                    await admin.from('slot_sessions')
+                        .update({ seats_taken: Math.max(0, s.seats_taken - (hold.quantity || 1)) })
+                        .eq('id', hold.slot_session_id);
+                }
+                seatsReleased++;
+            }
+        } catch (err: any) {
+            failures.push('hold ' + hold.id + ': ' + (err && err.message));
+        }
+    }
+
+    return NextResponse.json({ ok: true, released, seatsReleased, failures });
 }
