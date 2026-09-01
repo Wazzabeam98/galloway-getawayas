@@ -10,6 +10,7 @@ import {
     planForTrade, TRIAL_DAYS, SUBSCRIPTION_MONTHLY,
 } from '@/lib/serviceProviders';
 import { ASSIGNABLE_MCCS } from '@/lib/serviceOrders';
+import { SHAPES, shapeOf } from '@/lib/serviceSlots';
 
 export const dynamic = 'force-dynamic';
 
@@ -98,7 +99,7 @@ export async function POST(req: Request) {
 
             const { data: provider } = await admin
                 .from('service_providers')
-                .select('id, business_name, logo, contact_email, status, approved_digest, changes_pending_at, trade, description, audience, photos, does_gas, does_oil, plan, trial_ends_at, kind, pricing_choice, billable_hourly_rate, covered_bands, stripe_mcc, stripe_product_description, custom_label')
+                .select('id, business_name, logo, contact_email, status, approved_digest, changes_pending_at, trade, description, audience, photos, does_gas, does_oil, plan, trial_ends_at, kind, pricing_choice, billable_hourly_rate, covered_bands, stripe_mcc, stripe_product_description, custom_label, shape')
                 .eq('id', id)
                 .maybeSingle();
 
@@ -259,11 +260,15 @@ export async function POST(req: Request) {
 
                 const mcc = String(body.mcc || '').trim();
                 const label = String(body.custom_label || '').trim();
-                const exclusive = body.exclusive_per_date === true;
+                // The shape decides the booking model AND the exclusivity — a
+                // "comes to you" holds the date, the others don't — so
+                // exclusive_per_date is derived from it, not ticked separately.
+                // The provider's sign-up answers pre-fill it; this is where it is
+                // confirmed. Falls back to the current shape if none was sent.
+                const shape = SHAPES.indexOf(String(body.shape) as any) !== -1
+                    ? String(body.shape)
+                    : shapeOf(provider);
 
-                // The code must be one of the curated set, not any four digits.
-                // The whole point of a person choosing is that the choice is a
-                // small, sane one.
                 if (!ASSIGNABLE_MCCS.some((m) => m.code === mcc)) {
                     return { status: 400, body: { ok: false, error: 'Pick a category from the list.' } };
                 }
@@ -275,15 +280,12 @@ export async function POST(req: Request) {
                     .from('service_providers')
                     .update({
                         stripe_mcc: mcc,
-                        // What Stripe is told the account sells. Built from the
-                        // guest-facing word so the account describes the real
-                        // business.
                         stripe_product_description: label + ' for holiday guests.',
                         custom_label: label,
-                        // Whether they hold a cottage-date exclusively (a chef, a
-                        // masseur) — the flag the order route and the unique index
-                        // read. Off by default; on only when the owner ticks it.
-                        exclusive_per_date: exclusive,
+                        shape,
+                        // Kept in sync with the shape so the order route's
+                        // pre-check and the partial unique index keep working.
+                        exclusive_per_date: shape === 'comes_to_you',
                         category_assigned_by: auth.user.id,
                         category_assigned_at: new Date().toISOString(),
                         updated_at: new Date().toISOString(),

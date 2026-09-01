@@ -65,9 +65,10 @@ export default function ProviderReviewRow({
     // rather than blank.
     const [mcc, setMcc] = useState<string>(provider.stripe_mcc || '');
     const [customLabel, setCustomLabel] = useState<string>(provider.custom_label || '');
-    // Whether they hold a cottage-date exclusively (a chef, a masseur) — one
-    // live order per date. Off for a baker, who can make many.
-    const [exclusive, setExclusive] = useState<boolean>(!!provider.exclusive_per_date);
+    // The booking shape — the sign-up answers pre-fill it; this confirms it.
+    // exclusive_per_date is derived from it on the server (comes_to_you holds
+    // the date), so there is no separate exclusivity tick any more.
+    const [shape, setShape] = useState<string>((provider as any).shape || 'made_to_order');
 
     const decide = async (decision: 'approve' | 'decline' | 'approve_changes' | 'decline_changes') => {
         if ((decision === 'decline' || decision === 'decline_changes') && !note.trim()) {
@@ -208,7 +209,7 @@ export default function ProviderReviewRow({
                 decision: 'assign_category',
                 mcc,
                 custom_label: customLabel.trim(),
-                exclusive_per_date: exclusive,
+                shape,
             }),
         });
 
@@ -342,22 +343,24 @@ export default function ProviderReviewRow({
                         ))}
                     </select>
 
-                    <label className="flex items-start gap-2 text-sm text-slate-700 mb-3 cursor-pointer">
-                        <input
-                            type="checkbox"
-                            checked={exclusive}
-                            onChange={(e) => setExclusive(e.target.checked)}
-                            className="mt-0.5"
-                        />
-                        <span>
-                            <span className="font-semibold text-slate-900">Holds a date exclusively</span>
-                            <span className="block text-slate-500">
-                                One booking per cottage-date — a chef or a masseur cannot be in two
-                                places at once. Leave off for a baker or hamper maker, who can fulfil
-                                several on a date.
-                            </span>
-                        </span>
+                    <label className="block text-sm font-semibold text-slate-900 mb-1">
+                        Booking shape
                     </label>
+                    <div className="mb-3 space-y-1.5">
+                        {[
+                            { key: 'made_to_order', label: 'Makes something for a date', hint: 'A cake, a hamper — several a day, guest picks a date, provider confirms.' },
+                            { key: 'comes_to_you', label: 'Comes to the cottage', hint: 'A chef, a masseur — one a date (holds it), provider confirms.' },
+                            { key: 'slot', label: 'Runs set times a guest books into', hint: 'A sauna, a class, a tasting — a date and a time with capacity, paid on the spot.' },
+                        ].map((s) => (
+                            <label key={s.key} className={`flex cursor-pointer items-start gap-2 rounded-lg border p-2.5 text-sm ${shape === s.key ? 'border-emerald-600 bg-emerald-50/60' : 'border-slate-200 hover:border-slate-300'}`}>
+                                <input type="radio" name={'shape-' + provider.id} checked={shape === s.key} onChange={() => setShape(s.key)} className="mt-0.5 accent-emerald-600" />
+                                <span>
+                                    <span className="font-semibold text-slate-900">{s.label}</span>
+                                    <span className="block text-slate-500">{s.hint}</span>
+                                </span>
+                            </label>
+                        ))}
+                    </div>
 
                     <button
                         type="button"
