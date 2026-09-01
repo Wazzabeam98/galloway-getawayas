@@ -21,6 +21,9 @@ interface Order {
     // Released only once the provider confirms — the route sends null until then.
     guest_phone: string | null;
     guest_email: string | null;
+    // The cottage, released on confirm with the contact. address is the exact
+    // address; a provider has to get there.
+    listing: { id: string; title: string; address: string | null; image: string | null } | null;
     note: string | null;
     expires_at: string | null;
 }
@@ -190,6 +193,22 @@ export default function ProviderExperienceDashboard(props: { providerId: string 
                                 </div>
                                 {o.guest_name ? <div className="mt-0.5 text-sm text-gray-700">For {o.guest_name}</div> : null}
                                 {o.note ? <p className="mt-1 text-sm text-gray-600 whitespace-pre-line">{o.note}</p> : null}
+
+                                {/* The cottage — photo, name, exact address, link.
+                                    Released on confirm, because they have to get
+                                    there. The same card the plumber's accepted job
+                                    shows, with the address a booked guest gets. */}
+                                {o.listing ? (
+                                    <a href={'/homes/' + o.listing.id} className="mt-2 flex items-center gap-3 rounded-lg border border-gray-200 bg-white p-2 hover:border-emerald-300">
+                                        {o.listing.image ? (
+                                            <img src={o.listing.image} alt="" className="h-12 w-12 flex-none rounded-md object-cover" />
+                                        ) : <div className="h-12 w-12 flex-none rounded-md bg-gray-100" />}
+                                        <div className="min-w-0">
+                                            <div className="truncate text-sm font-medium text-gray-900">{o.listing.title}</div>
+                                            {o.listing.address ? <div className="text-xs text-gray-500">{o.listing.address}</div> : null}
+                                        </div>
+                                    </a>
+                                ) : null}
 
                                 {(o.guest_phone || o.guest_email) ? (
                                     <div className="mt-2 flex flex-wrap gap-2">
