@@ -90,7 +90,7 @@ export async function GET(request: Request) {
         // reaches a guest.
         const { data: rows } = await admin
             .from('service_providers')
-            .select('id, business_name, provider_name, based_line, about, what_to_expect, headshot, trade, custom_label, stripe_mcc, description, photos, experience_price, status, stripe_payouts_enabled')
+            .select('id, business_name, provider_name, based_line, headshot, trade, custom_label, stripe_mcc, description, photos, experience_price, status, stripe_payouts_enabled')
             .eq('audience', 'guest')
             .eq('status', 'approved')
             .eq('stripe_payouts_enabled', true)
@@ -122,8 +122,6 @@ export async function GET(request: Request) {
                 // are — a guest is choosing someone to come into their cottage.
                 provider_name: p.provider_name,
                 based_line: p.based_line,
-                about: p.about,
-                what_to_expect: p.what_to_expect,
                 headshot: p.headshot,
                 // The word the guest reads: the trade's own for a fixed trade,
                 // the owner-assigned word for an "other" — never "Something else".

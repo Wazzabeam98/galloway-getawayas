@@ -71,6 +71,10 @@ const PROVIDER_COLUMNS = [
     // The one fixed price a guest-trade provider charges. Whitelisted like the
     // rest; commission_rate stays the platform's and is not here.
     'experience_price',
+    // Who they are — a name, a line, a photo of them. Whitelisted so a
+    // first-time applicant (who posts here, having no session yet) keeps them;
+    // without this they were silently dropped for anyone applying fresh.
+    'provider_name', 'based_line', 'headshot',
 ];
 
 const AREA_COLUMNS = ['label', 'centre_lat', 'centre_lng', 'radius_miles'];

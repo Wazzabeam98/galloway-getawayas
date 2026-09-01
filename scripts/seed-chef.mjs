@@ -156,18 +156,9 @@ async function seed() {
         // The one fixed price. Their own words above carry what it covers.
         experience_price: 180,
 
-        // Who they are — the fields the guest listing now carries.
+        // Who they are — a name and a line, the fields the listing carries.
         provider_name: 'Rosa Maclean',
         based_line: 'Kirkcudbright · cooking privately since 2016',
-        about:
-            'I trained in Edinburgh and cooked in restaurants for ten years before coming home '
-            + 'to Galloway. Now I cook for people on holiday — supper clubs, private dinners, '
-            + 'the odd birthday. It is just me: I do the shopping, the cooking and the washing up.',
-        what_to_expect:
-            'Tell me about allergies and anything you don’t eat when you book — I can cater for '
-            + 'most things with a couple of days’ notice, including coeliac and vegan. I bring my '
-            + 'own knives, pans and anything your kitchen is missing. If you need to cancel, let '
-            + 'me know 48 hours ahead and there’s nothing to pay.',
 
         contact_email: contactEmail,
         contact_phone: '01557 555 0134',

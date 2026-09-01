@@ -200,12 +200,11 @@ function ApplicationForm() {
 
     // Who they are, for a guest trade only. A guest is choosing someone to come
     // into the cottage they are staying in, so the listing carries a bit of the
-    // person and not only the price. All optional; a name is the one that earns
-    // its place, the rest fill in trust.
+    // person and not only the price. A name and a line is what a real chef will
+    // actually write — plus a photo of them, and their gallery, which is the
+    // listing. All optional.
     const [providerName, setProviderName] = useState('');
-    const [about, setAbout] = useState('');
     const [basedLine, setBasedLine] = useState('');
-    const [whatToExpect, setWhatToExpect] = useState('');
     const [headshot, setHeadshot] = useState<string | null>(null);
     const [uploadingHeadshot, setUploadingHeadshot] = useState(false);
     // Keyed by extra. Price stays a string for the same reason band prices
@@ -315,7 +314,7 @@ function ApplicationForm() {
                 // it is inherited from another one they hold.
                 const { data: existing } = await supabase
                     .from('service_providers')
-                    .select('id, business_name, trade, description, sms_opt_out, audience, photos, logo, status, review_note, callout_fee, hourly_rate, callout_waived, does_gas, does_oil, kind, pricing_choice, billable_hourly_rate, covered_bands, experience_price, provider_name, about, based_line, what_to_expect, headshot')
+                    .select('id, business_name, trade, description, sms_opt_out, audience, photos, logo, status, review_note, callout_fee, hourly_rate, callout_waived, does_gas, does_oil, kind, pricing_choice, billable_hourly_rate, covered_bands, experience_price, provider_name, based_line, headshot')
                     .eq('owner_id', session.user.id)
                     .eq('trade', tradeFromUrl)
                     .maybeSingle();
@@ -363,9 +362,7 @@ function ApplicationForm() {
                             : String((existing as any).experience_price)
                     );
                     setProviderName((existing as any).provider_name || '');
-                    setAbout((existing as any).about || '');
                     setBasedLine((existing as any).based_line || '');
-                    setWhatToExpect((existing as any).what_to_expect || '');
                     setHeadshot((existing as any).headshot || null);
 
                     // The numbers only. Whether one has been checked is not
@@ -560,9 +557,7 @@ function ApplicationForm() {
             if (d.areas) setAreas(d.areas);
             if (d.experiencePrice) setExperiencePrice(d.experiencePrice);
             if (d.providerName) setProviderName(d.providerName);
-            if (d.about) setAbout(d.about);
             if (d.basedLine) setBasedLine(d.basedLine);
-            if (d.whatToExpect) setWhatToExpect(d.whatToExpect);
             if (d.headshot) setHeadshot(d.headshot);
 
             // Whether there is anything in here worth calling kept work.
@@ -666,7 +661,7 @@ function ApplicationForm() {
                     photos, logo, buildingType, panes,
                     // The guest-trade fields: the price, and who they are. The
                     // headshot is a storage path like the photos.
-                    experiencePrice, providerName, about, basedLine, whatToExpect, headshot,
+                    experiencePrice, providerName, basedLine, headshot,
                 })
             );
         } catch (err) {
@@ -679,7 +674,7 @@ function ApplicationForm() {
         pricingChoice, billableHourlyRate, coveredBands,
         doesGas, doesOil, registrations, calloutWaived, skills,
         photos, logo, buildingType, panes,
-        experiencePrice, providerName, about, basedLine, whatToExpect, headshot,
+        experiencePrice, providerName, basedLine, headshot,
     ]);
 
     // Which registration boxes this application shows at all. An electrician
@@ -1383,9 +1378,7 @@ function ApplicationForm() {
             // come into their cottage, so the listing carries a bit of the
             // person. Null for a host trade, where a logo and a trade say enough.
             provider_name: audienceForTrade(trade) === 'guest' ? (providerName.trim() || null) : null,
-            about: audienceForTrade(trade) === 'guest' ? (about.trim() || null) : null,
             based_line: audienceForTrade(trade) === 'guest' ? (basedLine.trim() || null) : null,
-            what_to_expect: audienceForTrade(trade) === 'guest' ? (whatToExpect.trim() || null) : null,
             headshot: audienceForTrade(trade) === 'guest' ? headshot : null,
             photos,
             logo,
@@ -1644,9 +1637,7 @@ function ApplicationForm() {
             // come into their cottage, so the listing carries a bit of the
             // person. Null for a host trade, where a logo and a trade say enough.
             provider_name: audienceForTrade(trade) === 'guest' ? (providerName.trim() || null) : null,
-            about: audienceForTrade(trade) === 'guest' ? (about.trim() || null) : null,
             based_line: audienceForTrade(trade) === 'guest' ? (basedLine.trim() || null) : null,
-            what_to_expect: audienceForTrade(trade) === 'guest' ? (whatToExpect.trim() || null) : null,
             headshot: audienceForTrade(trade) === 'guest' ? headshot : null,
             photos,
             logo,
@@ -2350,25 +2341,40 @@ function ApplicationForm() {
                     </section>
                 ) : (
                     <section className="mb-8">
-                        <h2 className="text-sm font-semibold text-slate-900 mb-3">Photos of your work</h2>
-                        <div className="grid grid-cols-3 gap-2 mb-3">
-                            {photos.map((p) => (
-                                <div key={p} className="relative aspect-[4/3] rounded-xl overflow-hidden bg-slate-100">
-                                    <img src={getImageUrl(p)} alt="" className="w-full h-full object-cover" />
-                                    <button
-                                        type="button"
-                                        onClick={() => setPhotos((prev) => prev.filter((x) => x !== p))}
-                                        aria-label="Remove photo"
-                                        className="absolute top-1.5 right-1.5 w-7 h-7 rounded-full bg-white/90 flex items-center justify-center"
-                                    >
-                                        <X className="w-3.5 h-3.5" />
-                                    </button>
-                                </div>
-                            ))}
-                        </div>
+                        <h2 className="text-sm font-semibold text-slate-900 mb-1">Your photos</h2>
+                        {/* The gallery IS the listing for a guest experience — a
+                            guest picks a chef from what the food looks like, not
+                            from a logo. So this is a prompt, not an afterthought,
+                            and an empty gallery says so plainly. */}
+                        <p className="text-sm text-slate-500 mb-3">
+                            This is what guests choose from — the food, the table, a hamper made up.
+                            Add a few good ones; a listing with photos is the one that gets booked.
+                        </p>
+                        {photos.length === 0 ? (
+                            <div className="mb-3 rounded-xl border border-dashed border-amber-300 bg-amber-50 px-4 py-3 text-sm text-amber-900">
+                                No photos yet. A guest experience with no photos is easy to scroll past —
+                                three or four is plenty to start.
+                            </div>
+                        ) : (
+                            <div className="grid grid-cols-3 gap-2 mb-3">
+                                {photos.map((p) => (
+                                    <div key={p} className="relative aspect-[4/3] rounded-xl overflow-hidden bg-slate-100">
+                                        <img src={getImageUrl(p)} alt="" className="w-full h-full object-cover" />
+                                        <button
+                                            type="button"
+                                            onClick={() => setPhotos((prev) => prev.filter((x) => x !== p))}
+                                            aria-label="Remove photo"
+                                            className="absolute top-1.5 right-1.5 w-7 h-7 rounded-full bg-white/90 flex items-center justify-center"
+                                        >
+                                            <X className="w-3.5 h-3.5" />
+                                        </button>
+                                    </div>
+                                ))}
+                            </div>
+                        )}
                         <label className="inline-flex items-center gap-2 rounded-xl border-2 border-dashed border-slate-300 px-4 py-3 cursor-pointer text-sm text-slate-600 hover:border-slate-400">
                             <Plus className="w-4 h-4" />
-                            {processingPhotos ? 'Preparing your photos…' : 'Add photos'}
+                            {processingPhotos ? 'Preparing your photos…' : photos.length ? 'Add more' : 'Add photos'}
                             <input type="file" accept="image/png, image/jpeg" multiple onChange={addPhotos} className="hidden" disabled={processingPhotos} />
                         </label>
                     </section>
@@ -2455,29 +2461,6 @@ function ApplicationForm() {
                         onChange={(e) => setBasedLine(e.target.value)}
                         placeholder="Kirkcudbright · cooking since 2019"
                         className="w-full md:max-w-md rounded-xl border border-slate-300 px-4 py-3 mb-4 focus:outline-none focus:ring-2 focus:ring-emerald-700"
-                    />
-
-                    <label className="block text-sm font-semibold text-slate-900 mb-1.5">Your story</label>
-                    <textarea
-                        value={about}
-                        onChange={(e) => setAbout(e.target.value)}
-                        rows={4}
-                        placeholder="Who you are, where you’re from, how long you’ve done this."
-                        className="w-full md:max-w-xl rounded-xl border border-slate-300 px-4 py-3 mb-4 focus:outline-none focus:ring-2 focus:ring-emerald-700"
-                    />
-
-                    <label className="block text-sm font-semibold text-slate-900 mb-1.5">What to expect</label>
-                    <p className="text-sm text-slate-500 mb-2">
-                        The things a guest should know before booking — allergies and what you can
-                        cater for, whether you bring your own equipment, and what happens if plans
-                        change. In your own words.
-                    </p>
-                    <textarea
-                        value={whatToExpect}
-                        onChange={(e) => setWhatToExpect(e.target.value)}
-                        rows={4}
-                        placeholder="I can cook for most dietary needs with notice. I bring everything I need. If you need to cancel, let me know 48 hours ahead."
-                        className="w-full md:max-w-xl rounded-xl border border-slate-300 px-4 py-3 mb-4 focus:outline-none focus:ring-2 focus:ring-emerald-700"
                     />
 
                     <label className="block text-sm font-semibold text-slate-900 mb-1.5">A photo of you</label>

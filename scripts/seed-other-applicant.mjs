@@ -97,14 +97,6 @@ async function seed() {
 
         provider_name: 'Rowan Kerr',
         based_line: 'Gatehouse of Fleet · massage since 2018',
-        about:
-            'I qualified in sports and remedial massage in Glasgow and moved back to Galloway a '
-            + 'few years ago. I work out of my own place and travel to cottages nearby. It is '
-            + 'just me — I bring the table, the oils and the bowls.',
-        what_to_expect:
-            'Tell me about injuries or anything sore when you book. I bring my own table and '
-            + 'everything else; you just need a bit of floor space. If you need to move the time '
-            + 'or cancel, a day’s notice and there is nothing to pay.',
 
         contact_email: LOGIN_EMAIL,
         contact_phone: '01557 555 0161',

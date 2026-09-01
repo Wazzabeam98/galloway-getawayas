@@ -49,7 +49,7 @@ export default async function AdminProviders() {
     // are silently piling up.
     const { data: providers, error } = await admin
         .from('service_providers')
-        .select('id, business_name, trade, description, photos, logo, audience, kind, status, plan, contact_email, contact_phone, submitted_at, created_at, owner_id, approved_digest, changes_pending_at, does_gas, does_oil, callout_fee, hourly_rate, callout_waived, trial_ends_at, pricing_choice, billable_hourly_rate, covered_bands, provider_name, based_line, about, what_to_expect, headshot, stripe_mcc, custom_label, category_assigned_at')
+        .select('id, business_name, trade, description, photos, logo, audience, kind, status, plan, contact_email, contact_phone, submitted_at, created_at, owner_id, approved_digest, changes_pending_at, does_gas, does_oil, callout_fee, hourly_rate, callout_waived, trial_ends_at, pricing_choice, billable_hourly_rate, covered_bands, provider_name, based_line, headshot, stripe_mcc, custom_label, category_assigned_at')
         .order('submitted_at', { ascending: false, nullsFirst: false });
 
     // WHO HAS PROVED THEY CAN READ THEIR EMAIL.

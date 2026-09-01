@@ -25,8 +25,6 @@ interface Provider {
     // The person behind the business, and the words that say who they are.
     provider_name: string | null;
     based_line: string | null;
-    about: string | null;
-    what_to_expect: string | null;
     headshot: string | null;
     // The word above them — the trade's own, or the owner-assigned word for a
     // "something else" business. Never a raw trade key.
@@ -269,18 +267,8 @@ export default function GuestExperiences(props: {
                             {p.description ? (
                                 <p className="mt-2 whitespace-pre-line text-sm text-gray-600">{p.description}</p>
                             ) : null}
-                            {p.about ? (
-                                <p className="mt-2 whitespace-pre-line text-sm text-gray-500">{p.about}</p>
-                            ) : null}
 
                             <div className="mt-2 font-semibold text-gray-900">£{p.price.toFixed(2)}</div>
-
-                            {p.what_to_expect ? (
-                                <details className="mt-2 text-sm text-gray-600">
-                                    <summary className="cursor-pointer text-emerald-700">What to expect</summary>
-                                    <p className="mt-1 whitespace-pre-line">{p.what_to_expect}</p>
-                                </details>
-                            ) : null}
 
                             <label className="mt-3 block text-xs text-gray-500">
                                 Date during your stay
