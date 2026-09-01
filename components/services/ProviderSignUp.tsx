@@ -2126,8 +2126,27 @@ function ApplicationForm() {
 
             {status === 'approved' && (
                 <div className="mb-8 rounded-2xl border border-emerald-300 bg-emerald-50 p-5">
-                    <p className="font-semibold text-emerald-900">{summary.label}</p>
-                    <p className="text-sm text-emerald-900/80 mt-1">{summary.detail}</p>
+                    {/* NO "LIVE" FOR A GUEST PROVIDER WHO IS NOT YET CONNECTED.
+                        statusSummary('approved') says "Live · people can find
+                        you" — true for a host, whose approval is the end of it.
+                        A guest provider has a second gate (payouts), and the
+                        dashboard right below says so; claiming "Live" above it
+                        was the panel telling them they were live and not live at
+                        once. So the header defers to that gate instead of
+                        pre-empting it. */}
+                    {audienceForTrade(trade) === 'guest' ? (
+                        <>
+                            <p className="font-semibold text-emerald-900">You’re approved</p>
+                            <p className="text-sm text-emerald-900/80 mt-1">
+                                Manage your experience and requests below.
+                            </p>
+                        </>
+                    ) : (
+                        <>
+                            <p className="font-semibold text-emerald-900">{summary.label}</p>
+                            <p className="text-sm text-emerald-900/80 mt-1">{summary.detail}</p>
+                        </>
+                    )}
 
                     {/* A guest-trade provider does two more things here after
                         approval: set up payouts (the second gate) and answer the
