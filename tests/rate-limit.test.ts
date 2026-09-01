@@ -175,9 +175,24 @@ test('services/apply is gated before it creates anything', () => {
     const code = raw.replace(/\/\/[^\n]*/g, '').replace(/\/\*[\s\S]*?\*\//g, '');
 
     assert.match(code, /withinLimits/, 'the route is ungated again');
+
+    // THIS ROUTE NO LONGER MAKES AN ACCOUNT AT ALL, and that is worth pinning
+    // here rather than only in service-apply.test.ts. Creating a Supabase auth
+    // user from an unauthenticated public form is what let a stranger squat
+    // somebody's address; the account is now made by /api/services/finish,
+    // when the emailed link proves the address. If createUser ever comes back
+    // to this file, the squat comes back with it.
+    assert.doesNotMatch(
+        code, /createUser/,
+        'services/apply must not create an auth user — that is what /finish is for'
+    );
+
+    // The limit still has to come before the expensive, irreversible half.
+    // That used to be the account; it is now the email, which spends the same
+    // shared outbound allowance every password reset on the site draws on.
     assert.ok(
-        code.indexOf('withinLimits') < code.indexOf('createUser'),
-        'the limit has to be checked BEFORE an auth user is made, or it has already sent the email'
+        code.indexOf('withinLimits') < code.indexOf('sendEmail'),
+        'the limit has to be checked BEFORE the email goes, or it has already been spent'
     );
     assert.match(code, /GLOBAL_KEY/, 'the site-wide cap is the half that protects the mail allowance');
     assert.match(code, /429/);

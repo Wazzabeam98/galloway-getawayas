@@ -107,9 +107,19 @@ test('an empty or missing token hashes to something, and to nothing findable', (
 // value of it: the failure mode being guarded against is a copy of the hashing
 // appearing somewhere nobody looks, and that is exactly as dangerous with two
 // legitimate modules as with one.
+//
+// THREE NOW. lib/serviceApplicationToken.ts was added on 1 September 2026 for
+// the "finish your application" link, and it is named here for the same reason
+// the billing token was rather than the check being widened. It cannot share
+// the reply token's mint: that one is 24 bytes because the SMS budget was
+// measured against exactly 32 base64url characters, so its length is fixed by
+// something with nothing to do with this link, and sharing it would leave an
+// account-creating link at the mercy of an SMS arithmetic change. Which is the
+// coupling this test exists to prevent.
 const TOKEN_MODULES = [
     path.join('lib', 'enquiryToken.ts'),
     path.join('lib', 'serviceBillingToken.ts'),
+    path.join('lib', 'serviceApplicationToken.ts'),
 ];
 
 test('nothing outside the token modules hashes a token', () => {
