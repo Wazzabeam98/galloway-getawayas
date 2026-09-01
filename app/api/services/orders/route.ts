@@ -2,6 +2,7 @@ import { createRouteHandlerClient } from '@supabase/auth-helpers-nextjs';
 import { adminClient } from '@/lib/supabaseAdmin';
 import { cookies } from 'next/headers';
 import { NextResponse } from 'next/server';
+import { getImageUrl } from '@/lib/utils';
 
 export const dynamic = 'force-dynamic';
 
@@ -37,25 +38,52 @@ export async function GET(request: Request) {
 
         const { data: orders } = await admin
             .from('service_orders')
-            .select('id, status, service_date, guests, price, guest_name, guest_phone, guest_email, note, expires_at, created_at')
+            .select('id, status, service_date, guests, price, guest_name, guest_phone, guest_email, note, listing_id, expires_at, created_at')
             .eq('provider_id', providerId)
             .order('created_at', { ascending: false })
             .limit(50);
 
-        // CONTACT IS RELEASED ON CONFIRM, NOT BEFORE.
+        // THE PROPERTY IS RELEASED ON CONFIRM, WITH THE CONTACT.
+        //
+        // A confirmed provider has to physically get there — a chef with a car
+        // full of equipment, a baker with a cake — so they need the cottage, not
+        // just a date and a name. Same release the host's accepted-enquiry gives
+        // a plumber: the name, a photo, a link, and the EXACT address (the
+        // listing's `location` is the full street + postcode, the same address a
+        // booked guest gets to arrive; the public listing only ever shows an
+        // approximate area). Fetched once for the confirmed orders on this page.
+        const confirmed = (orders || []).filter((o) => o.status === 'confirmed');
+        const listingIds = Array.from(new Set(confirmed.map((o) => o.listing_id).filter(Boolean)));
+        const { data: listingRows } = listingIds.length
+            ? await admin.from('listings').select('id, title, location, images').in('id', listingIds)
+            : { data: [] as any[] };
+        const listingById: Record<string, any> = {};
+        for (const l of listingRows || []) listingById[l.id] = l;
+
+        // CONTACT AND PROPERTY ARE RELEASED ON CONFIRM, NOT BEFORE.
         //
         // The same rule an accepted enquiry follows for the host: while a
         // request is only held, the provider decides on the date, the price and
-        // the note — not on the guest's phone number. The moment they confirm
-        // and the card is captured, they are doing the job, so they get what
-        // they need to do it: name, phone and email. An unanswered or declined
-        // order carries no contact out of this route at all.
+        // the note — not on the guest's number or where they live. The moment
+        // they confirm and the card is captured, they are doing the job, so they
+        // get what they need to do it: name, phone, email, and the cottage with
+        // its address. An unanswered or declined order carries none of it.
         const rows = (orders || []).map((o) => {
             const released = o.status === 'confirmed';
+            const l = released && o.listing_id ? listingById[o.listing_id] : null;
             return {
                 ...o,
                 guest_phone: released ? o.guest_phone : null,
                 guest_email: released ? o.guest_email : null,
+                // The property, released on confirm. `address` is the exact
+                // address (listing.location); `area` is not separated out here —
+                // the provider is going there, so they get the real thing.
+                listing: l ? {
+                    id: l.id,
+                    title: l.title,
+                    address: l.location || null,
+                    image: (Array.isArray(l.images) && l.images[0]) ? getImageUrl(l.images[0]) : null,
+                } : null,
             };
         }).sort((a, b) => {
             // Awaiting-answer first, then the rest by recency.

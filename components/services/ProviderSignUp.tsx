@@ -2401,34 +2401,39 @@ function ApplicationForm() {
                 </section>
                 )}
 
-                {/* A guest-trade provider sets one fixed price here. The
-                    variability lives in their own words above — "three-course
-                    dinner for up to six, £180" — rather than in a pricing matrix
-                    we would have to maintain. A provider with no price is simply
-                    not live to guests (the order route refuses it), the same way
-                    an un-connected one is not. */}
-                {onStep('business') && audienceForTrade(trade) === 'guest' && (
-                <section className="mb-8">
-                    <label className="block text-sm font-semibold text-slate-900 mb-1.5">Your price</label>
-                    <p className="text-sm text-slate-500 mb-2">
-                        One price for your experience. Say above what it covers — a three-course
-                        dinner for six, a welcome hamper, a morning’s dog walking.
-                    </p>
-                    <div className="flex items-center gap-2">
-                        <span className="text-slate-500">£</span>
-                        <input
-                            type="number"
-                            min="0"
-                            step="0.01"
-                            inputMode="decimal"
-                            value={experiencePrice}
-                            onChange={(e) => setExperiencePrice(e.target.value)}
-                            placeholder="180"
-                            className="w-40 rounded-xl border border-slate-300 px-4 py-3 focus:outline-none focus:ring-2 focus:ring-emerald-700"
-                        />
-                    </div>
-                </section>
-                )}
+                {/* A guest-trade provider sets one fixed price here. The example
+                    is trade-aware — a chef's three-course dinner is not a baker's
+                    example. (A per-item menu is coming for the trades that sell
+                    more than one thing; this is the interim one-price form.) A
+                    provider with no price is simply not live to guests (the order
+                    route refuses it), the same way an un-connected one is not. */}
+                {onStep('business') && audienceForTrade(trade) === 'guest' && (() => {
+                    const hint =
+                        trade === 'chef' ? 'Say above what it covers — a three-course dinner for six.'
+                        : trade === 'cake' ? 'Say above what it covers — a celebration cake, or a box of cupcakes.'
+                        : trade === 'basket' ? 'Say above what it covers — a welcome hamper, or the fridge filled before you arrive.'
+                        : 'Say above what the guest gets for it.';
+                    const ph = trade === 'chef' ? '180' : trade === 'cake' ? '45' : trade === 'basket' ? '40' : '50';
+                    return (
+                    <section className="mb-8">
+                        <label className="block text-sm font-semibold text-slate-900 mb-1.5">Your price</label>
+                        <p className="text-sm text-slate-500 mb-2">{hint}</p>
+                        <div className="flex items-center gap-2">
+                            <span className="text-slate-500">£</span>
+                            <input
+                                type="number"
+                                min="0"
+                                step="0.01"
+                                inputMode="decimal"
+                                value={experiencePrice}
+                                onChange={(e) => setExperiencePrice(e.target.value)}
+                                placeholder={ph}
+                                className="w-40 rounded-xl border border-slate-300 px-4 py-3 focus:outline-none focus:ring-2 focus:ring-emerald-700"
+                            />
+                        </div>
+                    </section>
+                    );
+                })()}
 
                 {/* Who they are — a guest trade only. A guest is choosing
                     someone to come into the cottage they are staying in, so the
