@@ -6,6 +6,7 @@
 // holds the Resend API key.
 // =====================================================================
 
+import { isAutomatedTestAddress } from '@/lib/testAddresses';
 import { logError } from '@/lib/logError';
 
 export const SITE_URL = 'https://gallowaygetaways.co.uk';
@@ -200,6 +201,47 @@ async function report(message: string, detail: any): Promise<void> {
 }
 
 export async function sendEmail(to: string, subject: string, html: string): Promise<boolean> {
+    // NOTHING IS EVER SENT TO A RESERVED TLD, AND THE DECISION IS MADE HERE.
+    //
+    // lib/testAddresses.ts has existed since the seeded tradesmen started
+    // ringing the real alert bell, and its own comment says the decision is
+    // made "on the address, not on an environment variable". It was, at five
+    // of the twenty-two files that send mail. The other seventeen sent
+    // anyway.
+    //
+    // That is not seventeen oversights, it is the wrong place for the check.
+    // A rule that has to be remembered at every call site is a rule that is
+    // eventually forgotten at one, and the forgetting is silent — the payout
+    // route posted "You've been paid" to a reserved .test domain and nobody
+    // knew until the bounces were counted. Resend's log on 1 September 2026
+    // still showed `delivery_delayed` against .test recipients from the
+    // night's testing.
+    //
+    // The cost is not noise. Bounces to domains that cannot exist are what
+    // sending reputation is scored on, and this account has to deliver
+    // booking confirmations to real guests within weeks.
+    //
+    // So it moves to the one place every message passes through. A reserved
+    // TLD can never be a real person, so there is no input on which this
+    // suppresses somebody's genuine mail.
+    //
+    // Returns true. The caller asked us to write to an address that cannot
+    // receive anything, and answering "failed" would have seventeen call
+    // sites reporting an error for every seeded account — which is the noise
+    // this exists to remove, arriving by a different route.
+    //
+    // Checked BEFORE the API key, so a local run with no key does not report
+    // "nothing is being emailed" for mail that was never going anywhere.
+    //
+    // The five call sites that already check are left alone. Two of them do
+    // more than suppress — host-payouts uses the blanked address to skip a
+    // Stripe account read as well — so removing their checks would change
+    // behaviour beyond this.
+    if (isAutomatedTestAddress(to)) {
+        console.log('[email] suppressed — reserved test domain:', to, '|', subject);
+        return true;
+    }
+
     const key = process.env.RESEND_API_KEY;
 
     if (!key) {
