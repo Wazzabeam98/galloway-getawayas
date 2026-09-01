@@ -281,3 +281,64 @@ the earnings are shared; the middle is what differs.
    three booking flows, the slot diary dashboard, and fake businesses across all
    three shapes. Complete over partial: a marketplace can't be judged from a
    fragment.
+
+## 10. The sign-up: plain questions, an inferred shape (design)
+
+A provider thinks "I run a sauna" or "I bake cakes," never "I am a slot." So the
+sign-up must never show the word "shape" or a list of models. It asks plain
+questions, infers the shape, and shows only the fields that apply.
+
+**One question decides the shape.** After the plain opener (what you offer — a
+name, a line, a photo), a single question does almost all the work:
+
+> **When someone books you, which is it?**
+> - **I go to them** — I come to the cottage *(a private chef, a massage)* → comes_to_you
+> - **I make something for a date** — they collect it or I drop it off *(cakes, hampers)* → made_to_order
+> - **They come to me at a set time** — I run sessions people book into *(a sauna, a class, a tasting, a guided walk)* → slot
+
+"Do you go to them or do they come to you" and "set times or a date" collapse
+into these three concrete choices, each with examples so a provider recognises
+themselves. Nobody reasons about models.
+
+**Then only the fields that apply:**
+
+- **comes_to_you** — a menu, each item priced fixed or per person (chosen per
+  item), plus the areas covered. Exclusive on the date — derived, never asked.
+- **made_to_order** — the same menu, plus one field: *"How much notice do you
+  need?"* (the lead time).
+- **slot** — one offering (name, line, price), then three plain questions:
+  - *"Private or shared?"* — **private** (the whole thing for one group — a
+    sauna) → per-session price, capacity one; **shared** (several people join — a
+    class) → per-person price, and *"how many fit?"*.
+  - *"How long is each session?"*
+  - *"Which days and times are you open?"* — a day-picker and an open/close time.
+
+Nothing says "flat", "unit" or "capacity kind"; those are read off private/shared.
+
+**The inference, in full:**
+
+| Answer | Sets |
+|---|---|
+| I go to them | shape = comes_to_you (exclusive) |
+| I make something for a date | shape = made_to_order; "notice" → lead_time_days |
+| They come at a set time | shape = slot; the schedule questions below |
+| slot · private | item unit = flat, capacity = 1 |
+| slot · shared + "N fit" | item unit = per person, capacity = N |
+| session length | slot_length_minutes |
+| days + open/close | the weekly availability rows |
+
+**Two moments, not one.** The answers set a *proposed* shape, so the provider
+sees the right fields and it is stored. At review the owner *confirms* it beside
+the category and the guest word — the same panel, now carrying the 3-way shape
+control (**built** — §8's admin work). The provider never picks from a model
+list; the owner keeps the final say, exactly as with the MCC.
+
+**Built vs cut, honestly.** The three booking flows, both money paths, the diary,
+the seat contention and this inference are designed and — except the sign-up UI —
+built and proven. I did **not** rewire the 3,000-line sign-up wizard overnight,
+on purpose: it is the one flow that must not break; its fresh-applicant path runs
+through an email round-trip I can't exercise before morning; and you asked to see
+these questions before they are built, so building the wrong questions would be
+worse than building none. The seed sets shapes directly, so the whole marketplace
+is browsable and bookable without the new sign-up. This is the corner I cut — a
+short, safe build once the questions above are agreed.
