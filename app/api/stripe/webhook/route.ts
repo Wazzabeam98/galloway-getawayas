@@ -351,6 +351,12 @@ export async function POST(request: Request) {
                         guest_email: (guest && guest.email) || cs.customer_details?.email || null,
                         note: md.note || null,
                         provider_business_name: prov ? prov.business_name : null,
+                        // The item the guest picked, snapshotted so editing or
+                        // removing it later never rewrites this order. item_id is
+                        // a soft link (null if that metadata is absent).
+                        item_id: md.item_id || null,
+                        item_name: md.item_name || null,
+                        item_description: md.item_description || null,
                         stripe_payment_intent_id: piId,
                         expires_at: expiryFrom(nowIso),
                         created_at: nowIso,

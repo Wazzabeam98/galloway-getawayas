@@ -56,6 +56,7 @@ interface Body {
     registrations?: any[];
     extras?: any[];
     prices?: any[];
+    items?: any[];
     skills?: string[];
 }
 
@@ -79,6 +80,7 @@ const PROVIDER_COLUMNS = [
 
 const AREA_COLUMNS = ['label', 'centre_lat', 'centre_lng', 'radius_miles'];
 const EXTRA_COLUMNS = ['extra_key', 'offered', 'price', 'notes'];
+const ITEM_COLUMNS = ['name', 'description', 'price', 'sort_order', 'active'];
 const PRICE_COLUMNS = ['band_key', 'price', 'typical_hours'];
 
 function pick(row: any, columns: string[]) {
@@ -244,6 +246,11 @@ export async function POST(req: Request) {
 
         const prices = (body.prices || []).map((p) => ({ ...pick(p, PRICE_COLUMNS), provider_id: id }));
         if (prices.length) await admin.from('service_provider_prices').insert(prices);
+
+        // The menu — a guest trade's items. Whitelisted like the rest; the
+        // browser cannot set provider_id, which is stamped here.
+        const menuItems = (body.items || []).map((it) => ({ ...pick(it, ITEM_COLUMNS), provider_id: id }));
+        if (menuItems.length) await admin.from('service_provider_items').insert(menuItems);
 
         // Registrations carry no verified columns from here. They cannot: the
         // whole point of 20260825205043_trade_registration.sql is that only an admin
