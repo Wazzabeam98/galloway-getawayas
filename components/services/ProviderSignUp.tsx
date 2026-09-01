@@ -7,7 +7,7 @@ import { createClientComponentClient } from '@supabase/auth-helpers-nextjs';
 import { supabaseEmailFlow } from '@/lib/supabaseEmailFlow';
 import { toast } from 'react-toastify';
 import {
-    Sparkles, Wrench, Trees, Droplet, ChefHat, Cake, ShoppingBasket, PawPrint, Trash2,
+    Sparkles, Wrench, Trees, Droplet, ChefHat, Cake, ShoppingBasket, Trash2,
     Plus, X, ChevronLeft, ChevronRight, Check, Zap, Hammer, Paintbrush, Home,
 } from 'lucide-react';
 import { TradeTile, TradeTileGrid, TRADE_ICONS, GROUP_ICONS } from '@/components/services/TradeTiles';
