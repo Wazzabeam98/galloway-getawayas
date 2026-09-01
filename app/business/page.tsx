@@ -45,7 +45,7 @@ export default function BusinessPage() {
                     className="group rounded-2xl border border-slate-300 p-6 hover:border-emerald-700 hover:bg-emerald-50/40 transition"
                 >
                     <Sparkles className="w-8 h-8 text-emerald-700 mb-4" strokeWidth={1.5} />
-                    <h2 className="font-bold text-slate-900 text-lg">Work for property owners</h2>
+                    <h2 className="font-bold text-slate-900 text-lg">Get work from property owners</h2>
                     <p className="text-sm text-slate-600 mt-2">
                         Changeover cleaning, waste, gardening, maintenance and window cleaning. Owners
                         find you by the areas you cover and ask you for work.
@@ -61,7 +61,7 @@ export default function BusinessPage() {
                     className="group rounded-2xl border border-slate-300 p-6 hover:border-emerald-700 hover:bg-emerald-50/40 transition"
                 >
                     <ChefHat className="w-8 h-8 text-emerald-700 mb-4" strokeWidth={1.5} />
-                    <h2 className="font-bold text-slate-900 text-lg">Something for guests staying in a cottage</h2>
+                    <h2 className="font-bold text-slate-900 text-lg">Sell guest experiences</h2>
                     <p className="text-sm text-slate-600 mt-2">
                         A private chef, a cake, a welcome hamper, a wild-swimming guide, a whisky
                         tasting — anything a guest would book for their stay. Bought by the people
