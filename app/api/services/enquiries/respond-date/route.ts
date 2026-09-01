@@ -3,7 +3,7 @@ import { createRouteHandlerClient } from '@supabase/auth-helpers-nextjs';
 import { cookies } from 'next/headers';
 import { adminClient } from '@/lib/supabaseAdmin';
 import { logError } from '@/lib/logError';
-import { announceChangeDecision } from '@/lib/serviceEnquiryAlert';
+import { announceChangeDecision, announceWorkNowClashes } from '@/lib/serviceEnquiryAlert';
 
 export const dynamic = 'force-dynamic';
 
@@ -94,7 +94,48 @@ export async function POST(req: Request) {
 
         const alert = await announceChangeDecision(saved, provider, listing, accepted);
 
-        return NextResponse.json({ ok: true, accepted, emailed: alert });
+        // IS THERE A GUEST IN THE COTTAGE ON THE NEW DAY?
+        //
+        // Only worth asking when the day actually moved. Declining leaves the
+        // agreed date exactly where it was, and re-checking a date nobody
+        // changed would warn about a collision that has been there all along.
+        //
+        // The platform warns about this in two other places — the enquiry form
+        // when a host raises a job, and the Stripe webhook when a booking
+        // lands on planned work — and both fire when a date is SET. This is
+        // the only path that MOVES one, and it was the only one not looking.
+        //
+        // Same stance as the webhook: nothing is blocked. The host is told,
+        // because the guest is the thing they cannot see from the enquiry.
+        let clash = false;
+
+        if (accepted && saved.listing_id && saved.preferred_date) {
+            try {
+                const { data: guests } = await admin
+                    .from('bookings')
+                    .select('id, check_in, check_out')
+                    .eq('listing_id', saved.listing_id)
+                    .eq('status', 'confirmed')
+                    .lte('check_in', saved.preferred_date)
+                    .gt('check_out', saved.preferred_date)
+                    .limit(1);
+
+                if (guests && guests.length) {
+                    clash = true;
+                    await announceWorkNowClashes(saved, listing, guests[0]);
+                }
+            } catch (err: any) {
+                // The date change is agreed and saved by this point. Failing to
+                // notice a guest must not undo it — but it must not pass as
+                // "no guest", either, which is why it is reported.
+                await logError('service-enquiry-date-clash', {
+                    enquiry: String(saved.id),
+                    error: String(err && err.message),
+                });
+            }
+        }
+
+        return NextResponse.json({ ok: true, accepted, clash, emailed: alert });
     } catch (err: any) {
         await logError('service-enquiry-respond-date', err);
         return NextResponse.json({ ok: false, error: 'Something went wrong.' }, { status: 500 });

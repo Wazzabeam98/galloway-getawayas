@@ -18,9 +18,30 @@ import { adminClient } from '@/lib/supabaseAdmin';
  * anything archived, and the extra work only happens when they do.
  */
 export async function unreadFor(supabase: any, uid: string): Promise<number> {
+    // BOOKING THREADS ONLY, AND THAT IS NOT AN OVERSIGHT.
+    //
+    // Since 20260831180000 a message hangs off either a booking or an enquiry.
+    // This number is the badge on Messages, and the Messages page is keyed on
+    // bookings — api/messages/threads drives from bookings.map(b => b.id), and
+    // surfacing job threads there was deliberately deferred as its own careful
+    // pass over a 1200-line page.
+    //
+    // Counting job messages here therefore produced a badge that the page it
+    // points at could not account for: a host saw "1", opened Messages, and
+    // found nothing. A badge that leads nowhere is worse than no badge,
+    // because it teaches people to ignore the badge.
+    //
+    // Nothing is lost by leaving them out. A job thread already carries its own
+    // unread count where it lives — on the host's enquiries list and on the
+    // tradesman's Upcoming work — and the other side is emailed when a message
+    // arrives. When the unified inbox learns about enquiry threads, this filter
+    // comes off in the same change, and the test above will say so. It is one
+    // of two placeholders that must be removed together — see "The unified
+    // inbox has two placeholders waiting for it" in OUTSTANDING.md.
     const { count } = await supabase
         .from('messages')
         .select('id', { count: 'exact', head: true })
+        .not('booking_id', 'is', null)
         .eq('recipient_id', uid)
         .is('read_at', null);
 

@@ -16,10 +16,27 @@ type Call = { method: string; path: string; body: any; idempotencyKey?: string; 
 
 // `balance` is what the host is holding at Stripe, in pounds; null means the
 // read itself fails. `onReversal` decides what the reversal call does.
-function load(options: { balance?: number | null; onReversal?: (call: Call) => any } = {}) {
+function load(options: {
+    balance?: number | null;
+    /**
+     * The state of the transfer's own entry on the connected account.
+     * 'pending' means the payout has not settled yet, which is the ordinary
+     * case the day after check-in and the one that used to read as £0.
+     * 'untied' means the transfer named no charge, so there is no entry to ask
+     * about and the settled balance is the honest limit.
+     */
+    entry?: 'pending' | 'available' | 'untied';
+    /** The transfer's own size in pounds, and what is left un-reversed on it. */
+    transferAmount?: number;
+    transferReversed?: number;
+    onReversal?: (call: Call) => any;
+} = {}) {
     const calls: Call[] = [];
     const logged: any[] = [];
     const balance = options.balance === undefined ? 1000 : options.balance;
+    const entry = options.entry || 'available';
+    const transferAmount = options.transferAmount === undefined ? 1000 : options.transferAmount;
+    const transferReversed = options.transferReversed || 0;
     const onReversal = options.onReversal || (() => ({ id: 'trr_stub' }));
 
     stubModule('@/lib/stripe', {
@@ -31,6 +48,23 @@ function load(options: { balance?: number | null; onReversal?: (call: Call) => a
             if (path === '/balance') {
                 if (balance === null) throw new Error('could not read the balance');
                 return { available: [{ currency: 'gbp', amount: Math.round(balance * 100) }] };
+            }
+            // The three reads that answer "is this payout still sitting where
+            // we put it": the transfer, the charge it made on the connected
+            // account, and that charge's balance entry.
+            if (/^\/transfers\/[^/]+$/.test(path)) {
+                return {
+                    id: 'tr_test',
+                    amount: Math.round(transferAmount * 100),
+                    amount_reversed: Math.round(transferReversed * 100),
+                    destination_payment: entry === 'untied' ? null : 'py_test',
+                };
+            }
+            if (path.indexOf('/charges/') === 0) {
+                return { id: 'py_test', balance_transaction: 'txn_test' };
+            }
+            if (path.indexOf('/balance_transactions/') === 0) {
+                return { id: 'txn_test', status: entry };
             }
             return onReversal(call);
         },
@@ -264,4 +298,115 @@ test('a booking that was never paid out is left alone', async () => {
 
     assert.deepEqual(result, { reversed: 0, owed: 0, failed: 0 });
     assert.equal(calls.length, 0, 'Stripe must not be called at all');
+});
+
+// ---------------------------------------------------------------------------
+// IS THIS PAYOUT STILL SITTING WHERE WE PUT IT?
+// ---------------------------------------------------------------------------
+//
+// The header of this file says a clawback cannot be exercised against real
+// Stripe because Stripe reverses whether or not the host can fund it. That was
+// written before lib/payoutSource.ts existed and it stopped being the whole
+// story. A payout now names the guest's charge as its source_transaction, so
+// Stripe settles it on that charge's clock — into the host's PENDING balance,
+// for about a week. The payout run goes the day after check-in, so for the
+// entire week that matters `available` reads £0.
+//
+// Reading `available` alone therefore never attempted the reversal at all and
+// wrote the whole amount up as a debt. Watched on test on 31 August 2026: £810
+// pending, £0 available, a £600 refund, £540 carried forward, nothing reversed.
+//
+// `available + pending` is the obvious repair and it is NOT safe — also watched
+// the same night, on an untied transfer whose money had been paid out to the
+// bank: the reversal was accepted against other stays' pending money and took
+// the connected account to MINUS £270.
+//
+// So the question is about this transfer, not about this host.
+
+const paidOutStay = {
+    id: 'b-pending', host_id: 'h-pending',
+    payout_transfer_id: 'tr_test', payout_amount: 540,
+};
+
+test('a payout that has not settled yet is reversed in full, not billed as a debt', async () => {
+    const { clawBackPayout, calls } = load({
+        balance: 0, entry: 'pending', transferAmount: 540,
+    });
+    const admin = fakeAdmin();
+
+    const result = await clawBackPayout(admin, paidOutStay, 540, 're_1');
+
+    assert.equal(result.reversed, 540, 'the money is there — it is simply not settled yet');
+    assert.equal(result.owed, 0, 'and it must not become a debt the host is chased for');
+
+    const reversal = calls.find((c) => c.path.indexOf('/reversals') >= 0);
+    assert.ok(reversal, 'the reversal has to actually be attempted');
+    assert.equal(reversal!.body.amount, 54000);
+    assert.equal(admin.updates.length, 0, 'nothing goes onto payout_balance_owed');
+});
+
+test('a settled payout the host has spent is still limited to what they hold', async () => {
+    // This is the case the file was written for and it must not have moved:
+    // the money reached the host, settled, and went to their bank. Reversing
+    // it would take the account negative and Stripe would recover the same
+    // money a second time out of their next transfer.
+    const { clawBackPayout, calls } = load({
+        balance: 0, entry: 'available', transferAmount: 540,
+    });
+    const admin = fakeAdmin();
+
+    const result = await clawBackPayout(admin, paidOutStay, 540, 're_2');
+
+    assert.equal(result.reversed, 0, 'there is nothing settled to take');
+    assert.equal(result.owed, 540, 'so it is carried forward where a person can see it');
+    assert.equal(
+        calls.filter((c) => c.path.indexOf('/reversals') >= 0).length, 0,
+        'and no reversal is attempted'
+    );
+});
+
+test('an untied transfer falls back to the settled balance', async () => {
+    // A deposit-plus-balance stay pays out untied — no single charge covers
+    // the host's share — so there is no entry to ask about and the cautious
+    // answer is the right one.
+    const { clawBackPayout } = load({ balance: 200, entry: 'untied', transferAmount: 540 });
+    const admin = fakeAdmin();
+
+    const result = await clawBackPayout(admin, paidOutStay, 540, 're_3');
+
+    assert.equal(result.reversed, 200, 'only what has actually settled');
+    assert.equal(result.owed, 340);
+});
+
+test('what is already reversed is not offered again', async () => {
+    const { clawBackPayout } = load({
+        balance: 0, entry: 'pending', transferAmount: 540, transferReversed: 500,
+    });
+    const admin = fakeAdmin();
+
+    const result = await clawBackPayout(admin, paidOutStay, 540, 're_4');
+
+    assert.equal(result.reversed, 40, 'only the un-reversed remainder is reachable');
+    assert.equal(result.owed, 500);
+});
+
+test('a payout already reversed in full is not turned into a debt', async () => {
+    // A second refund on the same stay, or a clawback repeated. The money has
+    // already come back, so there is nothing to recover — and treating "no
+    // room left on the transfer" as "the host is short" would charge them for
+    // a payout that was recovered in full. That is the one thing this file
+    // must never do.
+    const { clawBackPayout, calls } = load({
+        balance: 0, entry: 'pending', transferAmount: 540, transferReversed: 540,
+    });
+    const admin = fakeAdmin();
+
+    const result = await clawBackPayout(admin, paidOutStay, 540, 're_5');
+
+    assert.equal(result.reversed, 0);
+    assert.equal(result.owed, 0, 'nothing is owed for money that is already back');
+    assert.equal(result.failed, 0);
+    assert.equal(admin.updates.length, 0, 'and payout_balance_owed does not move');
+    assert.equal(admin.writes.length, 0, 'no reversal row either — nothing happened');
+    assert.equal(calls.filter((c) => c.path.indexOf('/reversals') >= 0).length, 0);
 });

@@ -2,10 +2,11 @@ import { createRouteHandlerClient } from '@supabase/auth-helpers-nextjs';
 import { adminClient } from '@/lib/supabaseAdmin';
 import { cookies } from 'next/headers';
 import { NextResponse } from 'next/server';
-import { stripeRequest } from '@/lib/stripe';
+import { issueRefunds } from '@/lib/refundSpread';
 import { refundDue } from '@/lib/cancellation';
 import { logError } from '@/lib/logError';
 import { sendEmail, emailLayout, escapeHtml } from '@/lib/email';
+import { stripeRequest } from '@/lib/stripe';
 
 export const dynamic = 'force-dynamic';
 
@@ -84,7 +85,7 @@ export async function POST(request: Request) {
 
         const { data: booking } = await admin
             .from('bookings')
-            .select('id, listing_id, guest_id, check_in, status, payment_status, amount_paid, amount_refunded, cleaning_fee, stripe_payment_intent_id, balance_amount')
+            .select('id, listing_id, guest_id, check_in, status, payment_status, amount_paid, amount_refunded, cleaning_fee, stripe_payment_intent_id, balance_payment_intent_id, balance_amount')
             .eq('id', bookingId)
             .maybeSingle();
 
@@ -142,23 +143,37 @@ export async function POST(request: Request) {
 
         // The money goes back before the booking changes. If Stripe refuses,
         // the guest still has their stay rather than neither.
+        //
+        // Spread across every charge behind the stay, through the one helper
+        // all the refunding routes share. This used to name
+        // `stripe_payment_intent_id` alone, which is only half the money on a
+        // deposit booking — the deposit is 25%, so any refund above a quarter
+        // of the total was refused by Stripe outright and the guest got
+        // nothing. See lib/refundSpread.ts.
+        let refundedNow = 0;
+
         if (amount > 0 && booking.stripe_payment_intent_id) {
-            try {
-                await stripeRequest(
-                    'POST',
-                    '/refunds',
-                    {
-                        payment_intent: booking.stripe_payment_intent_id,
-                        amount: Math.round(amount * 100),
-                        metadata: {
-                            booking_id: booking.id,
-                            reason: 'guest_cancelled',
-                            initiated_by: 'guest',
-                        },
-                    },
-                    'guest-cancel-' + booking.id
+            const issued = await issueRefunds(
+                booking,
+                amount,
+                {
+                    booking_id: booking.id,
+                    reason: 'guest_cancelled',
+                    initiated_by: 'guest',
+                },
+                // A stay can only be cancelled once, so the booking alone is
+                // enough to tell two attempts at the same cancellation apart
+                // from anything else.
+                function (intentId) { return 'guest-cancel-' + booking.id + '-' + intentId; }
+            );
+
+            if (issued.refundedPence <= 0) {
+                await logError(
+                    '[bookings/cancel] a guest cancelled but nothing could be refunded, '
+                        + 'so the stay has been left as it is',
+                    issued.failure || { booking_id: booking.id, due: amount },
+                    { path: 'api/bookings/cancel', userId: user.id }
                 );
-            } catch (err: any) {
                 return NextResponse.json(
                     {
                         ok: false,
@@ -168,16 +183,32 @@ export async function POST(request: Request) {
                 );
             }
 
-            await admin.from('payments').insert({
-                booking_id: booking.id,
-                kind: 'refund',
-                amount: amount,
-                status: 'succeeded',
-                stripe_payment_intent_id: booking.stripe_payment_intent_id,
-            });
+            refundedNow = round2(issued.refundedPence / 100);
+
+            // Part-refunded is not the same as refunded, and the row must say
+            // which. Silently writing the full figure here is how a guest ends
+            // up recorded as made whole when they are short.
+            if (issued.refundedPence < Math.round(amount * 100)) {
+                await logError(
+                    '[bookings/cancel] the guest is owed \u00A3' + amount.toFixed(2)
+                        + ' but only \u00A3' + refundedNow.toFixed(2) + ' could be refunded',
+                    issued.failure || { booking_id: booking.id, due: amount, sent: refundedNow },
+                    { path: 'api/bookings/cancel', userId: user.id }
+                );
+            }
+
+            for (let i = 0; i < issued.refunds.length; i++) {
+                await admin.from('payments').insert({
+                    booking_id: booking.id,
+                    kind: 'refund',
+                    amount: round2(issued.shares[i] / 100),
+                    status: 'succeeded',
+                    stripe_payment_intent_id: issued.charges[i].intentId,
+                });
+            }
         }
 
-        const totalRefunded = round2(alreadyRefunded + amount);
+        const totalRefunded = round2(alreadyRefunded + refundedNow);
 
         await admin
             .from('bookings')
@@ -244,7 +275,11 @@ export async function POST(request: Request) {
             await logError('[bookings/cancel] could not read service orders for a cancelled stay', cascadeErr, { path: 'bookings/cancel' });
         }
 
-        return NextResponse.json({ ok: true, refunded: amount });
+        // What actually went back, not what was due. They are the same on the
+        // ordinary path and they are not when a charge refuses, and this is
+        // the number the guest is shown. (The experience refunds above are the
+        // provider's money, reversed in full, and are not folded into this.)
+        return NextResponse.json({ ok: true, refunded: refundedNow });
     } catch (err: any) {
         console.error('[bookings/cancel]', err && err.message);
         await logError('[bookings/cancel] ' + ((err && err.message) || 'failed'), err, { path: 'bookings/cancel' });

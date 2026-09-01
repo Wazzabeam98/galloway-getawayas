@@ -83,6 +83,39 @@ export default function ProviderBusinessEditor({
     const [uploading, setUploading] = useState(false);
     const [savingReg, setSavingReg] = useState<string | null>(null);
 
+    // TELL US A LIVE LISTING CHANGED.
+    //
+    // business_name, description and photos are in REVIEWABLE_FIELDS: they are
+    // the shop window, and they are the route by which a business approved as
+    // one thing quietly becomes another. The sign-up form has always called
+    // this after saving; this editor did not, so an approved provider could
+    // rewrite their name and description and nobody was told.
+    //
+    // /admin/providers still worked the change out from the digest, so it was
+    // discoverable — but only by somebody who went and looked, which is not
+    // the same as being told.
+    //
+    // The route is the one written for exactly this: "an existing provider
+    // editing writes it straight from the browser, so there is no server step
+    // to hang the alert off — hence a route the page calls once the row and
+    // its areas are saved." It sets changes_pending_at and emails, once, and
+    // does nothing when nothing reviewable actually changed.
+    //
+    // Deliberately not fatal. The edit is already saved by the time this runs,
+    // and failing the save because an alert did not go would lose the change
+    // the provider just made.
+    async function announceChange() {
+        try {
+            await fetch('/api/services/submitted', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ id: provider.id }),
+            });
+        } catch {
+            /* the row is saved; the queue still finds it from the digest */
+        }
+    }
+
     async function saveDetails() {
         setSavingDetails(true); setDetailsSaved(false); setError('');
         try {
@@ -132,6 +165,8 @@ export default function ProviderBusinessEditor({
                 throw new Error(d.error || 'Could not save your skills.');
             }
 
+            await announceChange();
+
             setDetailsSaved(true);
             router.refresh();
         } catch (e: any) {
@@ -144,6 +179,9 @@ export default function ProviderBusinessEditor({
     async function persistPhotos(next: string[]) {
         const { error: e } = await supabase.from('service_providers').update({ photos: next }).eq('id', provider.id);
         if (e) { setError(e.message); return false; }
+        // Photos are reviewable too — swapping the pictures changes what
+        // somebody is chosen on as surely as changing the words.
+        await announceChange();
         setPhotos(next);
         router.refresh();
         return true;

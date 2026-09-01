@@ -89,8 +89,18 @@ test('every runner that talks to the site imports the guard', () => {
     // Hitting an /api/ path is the tell that a script talks to the site rather
     // than to Supabase, Stripe or git. It is what separates journeys.mjs and
     // the scenario runners from migrate.mjs and e2e-sync.mjs.
+    //
+    // AND it has to actually make the call. scripts/scenario-report.cjs lists
+    // the route FILES the payment scenarios are evidence about —
+    // 'app/api/cron/host-payouts/route.ts' and its neighbours — so it matched
+    // the tell while reaching nothing at all. Naming a route is not calling
+    // one. Requiring a fetch as well keeps every real runner in scope; the
+    // count assertion below is what stops this narrowing into vacuousness.
     const talkers = harnessFiles().filter(
-        (rel) => rel !== GUARD && rel.startsWith('scripts/') && read(rel).includes('/api/')
+        (rel) => rel !== GUARD
+            && rel.startsWith('scripts/')
+            && read(rel).includes('/api/')
+            && read(rel).includes('fetch(')
     );
 
     // If this ever empties, the tell has stopped working and the rule below is

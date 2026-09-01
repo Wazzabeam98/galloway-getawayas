@@ -1,12 +1,17 @@
 'use client';
 
-import React, { useState } from 'react';
+import React, { useEffect, useState } from 'react';
+import { createPortal } from 'react-dom';
 import { createClientComponentClient } from '@supabase/auth-helpers-nextjs';
 import { supabaseEmailFlow } from '@/lib/supabaseEmailFlow';
 import GoogleButton from './GoogleButton';
 
 const LoginModel = () => {
     const [isOpen, setIsOpen] = useState(false);
+    // The overlay is rendered into document.body rather than where this
+    // component sits. See the comment above the portal below.
+    const [mounted, setMounted] = useState(false);
+    useEffect(function () { setMounted(true); }, []);
     const [email, setEmail] = useState('');
     const [password, setPassword] = useState('');
     const [error, setError] = useState('');
@@ -83,14 +88,44 @@ const LoginModel = () => {
 
     return (
         <>
-            <li 
-                onClick={() => setIsOpen(true)}
-                className="hover:bg-slate-200 rounded-md p-2 cursor-pointer list-none"
-            >
-                Log In
+            {/* A button rather than a clickable <li>: this and Sign Up were the
+                only two items in the account menu that were not links, so they
+                were the two a keyboard could not reach — which meant nobody
+                using one could sign in at all. */}
+            <li className="list-none">
+                <button
+                    type="button"
+                    onClick={() => setIsOpen(true)}
+                    className="w-full text-left hover:bg-slate-200 rounded-md p-2 cursor-pointer"
+                >
+                    Log In
+                </button>
             </li>
 
-            {isOpen && (
+            {isOpen && mounted && createPortal((
+                // WHY THIS IS A PORTAL AND NOT JUST A FIXED DIV.
+                //
+                // A CSS transform on an ancestor makes that ancestor the
+                // containing block for `position: fixed` descendants — so
+                // `fixed inset-0` stops meaning "the viewport" and starts
+                // meaning "that box".
+                //
+                // One of the eleven places this component is used is inside
+                // the account menu in the navbar, which is a Radix popover:
+                // Radix positions it with `transform: translate(x, y)`. So
+                // choosing "Log In" from the menu built the overlay inside a
+                // 288px dropdown instead of the screen. Measured on 31 August
+                // 2026, at both widths: the panel came out 280px wide with its
+                // top at -70px, so the "Log In" heading and "Welcome to
+                // Galloway Getaways" were above the top of the window. It is
+                // the first thing a returning host or guest ever clicks.
+                //
+                // Portalling to document.body puts it outside every transform
+                // there is, which is also why the Sign Up modal was fine — it
+                // is built on the Radix dialog, and that portals already.
+                //
+                // The other ten uses render this at page level where nothing
+                // transforms them, and are unaffected either way.
                 <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 px-4">
                     <div className="bg-white rounded-2xl max-w-[425px] w-full p-6 relative shadow-lg">
                         <button 
@@ -156,7 +191,7 @@ const LoginModel = () => {
                         />
                     </div>
                 </div>
-            )}
+            ), document.body)}
         </>
     );
 };

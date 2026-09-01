@@ -74,6 +74,9 @@ interface Options {
     actor?: string;
     reason?: string;
     status?: string;
+    /** Charge amounts in pence, keyed by payment intent id. */
+    charges?: Record<string, number>;
+    balanceIntentId?: string | null;
 }
 
 /**
@@ -100,6 +103,7 @@ function load(routePath: string, options: Options = {}) {
         // unless a test says otherwise.
         cleaning_fee: options.cleaningFee === undefined ? 60 : options.cleaningFee,
         stripe_payment_intent_id: 'pi_1',
+        balance_payment_intent_id: options.balanceIntentId ?? null,
         payout_transfer_id: null,
         payout_amount: 0,
         balance_amount: 0,
@@ -159,11 +163,44 @@ function load(routePath: string, options: Options = {}) {
         }),
     });
     stubModule('next/headers', { cookies: () => ({}) });
+    // The route now reads the charge behind each payment intent before it
+    // refunds, because a deposit booking has two of them and a Stripe refund
+    // may not exceed the one it names. See lib/refundSpread.ts. The double has
+    // to answer those reads or every refund here looks unfundable.
+    //
+    // One charge, holding everything paid, unless a test says otherwise —
+    // which is the single-charge booking these cases were all written around.
+    const chargeAmounts: Record<string, number> = options.charges
+        || { pi_1: Math.round((options.amountPaid ?? 400) * 100) };
+    const refundedPerIntent: Record<string, number> = {};
+
     stubModule('@/lib/stripe', {
-        stripeRequest: async (method: string, path: string, body: any) => {
+        stripeRequest: async (method: string, path: string, body: any, idempotencyKey?: string) => {
             if (path === '/refunds') {
-                refunds.push({ amount: body.amount, metadata: body.metadata });
-                return { id: 're_1' };
+                refunds.push({
+                    amount: body.amount,
+                    metadata: body.metadata,
+                    intent: body.payment_intent,
+                    idempotencyKey: idempotencyKey,
+                });
+                refundedPerIntent[body.payment_intent] =
+                    (refundedPerIntent[body.payment_intent] || 0) + body.amount;
+                return { id: 're_' + refunds.length };
+            }
+            const intentMatch = path.match(/^\/payment_intents\/(.+)$/);
+            if (intentMatch) {
+                return chargeAmounts[intentMatch[1]] === undefined
+                    ? {}
+                    : { id: intentMatch[1], latest_charge: 'ch_' + intentMatch[1] };
+            }
+            const chargeMatch = path.match(/^\/charges\/ch_(.+)$/);
+            if (chargeMatch) {
+                const intent = chargeMatch[1];
+                return {
+                    id: 'ch_' + intent,
+                    amount: chargeAmounts[intent] || 0,
+                    amount_refunded: refundedPerIntent[intent] || 0,
+                };
             }
             return {};
         },
@@ -180,6 +217,14 @@ function load(routePath: string, options: Options = {}) {
     // like any module, so without this every test after the first in this file
     // silently reuses the first one's fake database. See MAINTENANCE.md.
     clearModule('@/lib/supabaseAdmin');
+    // And lib/refundSpread, for exactly the same reason: it captures
+    // stripeRequest when it loads. Without this every test after the first in
+    // this file reads charges through the FIRST test's Stripe double, which
+    // has already recorded that test's refund — so the charge looks fully
+    // refunded, there is nothing left to refund against, and six tests fail
+    // with 0. Third time this module-caching shape has cost time here; see
+    // MAINTENANCE.md.
+    clearModule('@/lib/refundSpread');
     clearModule(routePath);
 
     return { route: require(routePath), refunds, updates };
@@ -326,4 +371,133 @@ test('cancelling from Your trips outside the window returns everything', async (
     await route.POST(post('http://x/api/bookings/cancel', { bookingId: 'b-1' }));
 
     assert.equal(poundsRefunded(refunds), 400);
+});
+
+// ---------------------------------------------------------------------------
+// A STAY PAID TWICE IS REFUNDED TWICE
+// ---------------------------------------------------------------------------
+//
+// A deposit booking is charged at checkout and again thirty days before
+// check-in, and a Stripe refund names ONE payment intent and may not exceed
+// what that charge took. The route refunded the whole amount against
+// `stripe_payment_intent_id` alone, so Stripe answered
+//
+//   Refund amount (£300.00) is greater than charge amount (£150.00)
+//
+// the route threw, and the guest got nothing. Watched happening on the test
+// project on 31 August 2026, on a £150 + £150 booking.
+//
+// The deposit is 25% of the total, so this bit every deposit booking refunded
+// above a quarter of what it cost — which is nearly all of them.
+
+test('a deposit booking is refunded across both of its charges', async () => {
+    const { route, refunds } = load(REFUND_ROUTE, {
+        policy: 'Moderate', daysAway: 10, actor: HOST, reason: 'cancelled',
+        amountPaid: 300, totalPrice: 300, cleaningFee: 0,
+        balanceIntentId: 'pi_balance',
+        charges: { pi_1: 15000, pi_balance: 15000 },
+    });
+    const res = await route.POST(post('http://x/api/stripe/refund', { bookingId: 'b-1' }));
+
+    assert.equal(res.body.ok, true, 'this used to throw and refund nothing at all');
+    assert.equal(poundsRefunded(refunds), 300, 'the whole £300 goes back');
+    assert.equal(refunds.length, 2, 'one refund per charge, because Stripe names one intent each');
+
+    assert.equal(refunds[0].intent, 'pi_1', 'the deposit first — the older charge');
+    assert.equal(refunds[0].amount, 15000);
+    assert.equal(refunds[1].intent, 'pi_balance');
+    assert.equal(refunds[1].amount, 15000);
+
+    assert.equal(res.body.refunded, 300);
+    assert.equal(res.body.shortOfDue, 0);
+});
+
+test('a partial refund on a deposit booking stops at the first charge that covers it', async () => {
+    // £100 of a £300 stay. The deposit alone covers it, so the balance charge
+    // is left alone entirely.
+    const { route, refunds } = load(REFUND_ROUTE, {
+        policy: 'Moderate', daysAway: 4, amountPaid: 300, totalPrice: 300, cleaningFee: 0,
+        balanceIntentId: 'pi_balance',
+        charges: { pi_1: 15000, pi_balance: 15000 },
+    });
+    await route.POST(post('http://x/api/stripe/refund', { bookingId: 'b-1' }));
+
+    assert.equal(poundsRefunded(refunds), 150, 'half of £300 in the 50% band');
+    assert.equal(refunds.length, 1, 'the deposit covers it on its own');
+    assert.equal(refunds[0].intent, 'pi_1');
+});
+
+test('the same intent in both columns is not counted twice', async () => {
+    // The webhook's balance branch writes `stripe_payment_intent_id` as well,
+    // so a balance paid by hand from the reminder link can leave both columns
+    // holding the same intent. Counting it twice would offer £300 of room on a
+    // £150 charge and produce the very overspend this fixes.
+    const { route, refunds } = load(REFUND_ROUTE, {
+        policy: 'Moderate', daysAway: 10, actor: HOST, reason: 'cancelled',
+        amountPaid: 300, totalPrice: 300, cleaningFee: 0,
+        balanceIntentId: 'pi_1',
+        charges: { pi_1: 15000 },
+    });
+    const res = await route.POST(post('http://x/api/stripe/refund', { bookingId: 'b-1' }));
+
+    assert.equal(refunds.length, 1, 'one charge, one refund');
+    assert.equal(poundsRefunded(refunds), 150, 'and never more than the charge holds');
+    assert.equal(res.body.refunded, 150, 'what actually went back, not what was due');
+    assert.equal(res.body.shortOfDue, 150, 'and the difference is named rather than hidden');
+});
+
+test('a refund carries an idempotency key, so a double-click cannot pay twice', async () => {
+    // This call had none. Two cancel requests arriving together both read the
+    // same `amount_refunded`, both worked out the same amount, and both
+    // refunded it — the guest got their money back twice.
+    const { route, refunds } = load(REFUND_ROUTE, { policy: 'Moderate', daysAway: 10 });
+    await route.POST(post('http://x/api/stripe/refund', { bookingId: 'b-1' }));
+
+    assert.equal(refunds.length, 1);
+    assert.ok(refunds[0].idempotencyKey, 'a money-moving call without one is a double refund waiting');
+    assert.match(String(refunds[0].idempotencyKey), /^refund-b-1-0-pi_1$/);
+});
+
+test('a second refund gets its own key, so it is not replayed as the first', async () => {
+    // A booking may legitimately be refunded twice — a partial now, the rest
+    // later. Keying on the booking alone would make Stripe replay the first
+    // refund and send the guest nothing the second time.
+    const { route, refunds } = load(REFUND_ROUTE, {
+        policy: 'Moderate', daysAway: 10, alreadyRefunded: 100,
+    });
+    await route.POST(post('http://x/api/stripe/refund', { bookingId: 'b-1' }));
+
+    assert.match(String(refunds[0].idempotencyKey), /^refund-b-1-10000-pi_1$/);
+});
+
+test('a charge that cannot be read stops the refund rather than half-doing it', async () => {
+    const { route, refunds } = load(REFUND_ROUTE, {
+        policy: 'Moderate', daysAway: 10, charges: {},
+    });
+    const res = await route.POST(post('http://x/api/stripe/refund', { bookingId: 'b-1' }));
+
+    assert.equal(refunds.length, 0);
+    assert.equal(res.body.ok, false);
+    assert.equal(res.status, 502);
+    assert.match(String(res.body.error), /could not reach the original payment/i);
+});
+
+test('the guest cancel button also refunds across both charges', async () => {
+    // Same bug, same fix, a different route. All four places that refund had
+    // their own copy of "refund against stripe_payment_intent_id", and this is
+    // the one a guest actually presses.
+    const { route, refunds } = load(CANCEL_ROUTE, {
+        policy: 'Moderate', daysAway: 10,
+        amountPaid: 300, totalPrice: 300, cleaningFee: 0,
+        balanceIntentId: 'pi_balance',
+        charges: { pi_1: 7500, pi_balance: 22500 },
+    });
+    const res = await route.POST(post('http://x/api/bookings/cancel', { bookingId: 'b-1' }));
+
+    assert.equal(res.body.ok, true, 'this used to refuse and leave the stay standing');
+    assert.equal(poundsRefunded(refunds), 300);
+    assert.equal(refunds.length, 2, 'the £75 deposit, then £225 of the balance');
+    assert.equal(refunds[0].amount, 7500);
+    assert.equal(refunds[1].amount, 22500);
+    assert.equal(res.body.refunded, 300);
 });

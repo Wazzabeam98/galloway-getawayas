@@ -32,7 +32,10 @@ export async function GET(request: Request) {
             return NextResponse.json(
                 {
                     ok: false,
-                    error: 'Address lookup is not configured — GETADDRESS_API_KEY is empty in this environment.',
+                    // Same wording as /address/autocomplete, and for the same
+                    // reason: the person reading it is a host, not whoever can
+                    // set the variable.
+                    error: 'We can\u2019t look up addresses just now. Enter yours by hand instead \u2014 nothing else changes.',
                 },
                 { status: 503 }
             );

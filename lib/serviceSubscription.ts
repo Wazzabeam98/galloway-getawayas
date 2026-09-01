@@ -76,14 +76,40 @@ export interface Reminder {
     subject: string;
     /** Whether this email carries the card link. */
     asks: boolean;
+    /**
+     * Sent by the enquiry route at the moment the clock is stamped, not by the
+     * cron. `remindersDue` never returns one of these — see the note there.
+     */
+    atFirstEnquiry?: boolean;
 }
 
 export const REMINDERS: Reminder[] = [
     {
+        // SENT FROM THE ENQUIRY ROUTE, NOT FROM THE CRON.
+        //
+        // It says "your free period has started today", and it has to be true
+        // when he reads it. The cron runs once a day at seven in the morning,
+        // so a tradesman whose first enquiry landed at three in the afternoon
+        // would read "today" the next morning about something that happened
+        // yesterday — which is a small lie in the one email whose whole job is
+        // to be believed about a date.
+        //
+        // So it goes out beside the stamp, in
+        // app/api/services/enquiries/route.ts. It is still declared here
+        // because its wording lives with the other five and they must not
+        // drift apart; `offset` is kept for the same reason and is not read by
+        // anything now.
+        //
+        // There is deliberately no cron fallback. One that fired days later
+        // would have to say something other than "today", which means a second
+        // wording for the same email — and the failure it would cover is
+        // already caught: a provider who never gets this still gets the
+        // thirty-day note, and the send failure is in /admin/errors.
         key: 'trial_started',
         offset: -TRIAL_DAYS,
         needsCard: false,
         asks: false,
+        atFirstEnquiry: true,
         subject: 'Your free period has started',
     },
     {
@@ -166,6 +192,10 @@ export function remindersDue(provider: any, now?: Date): Reminder[] {
     const card = hasCard(provider);
 
     return REMINDERS.filter((r) => {
+        // Sent from the enquiry route at the moment the clock starts, so the
+        // cron must never send it — late, it would say "today" about a day
+        // that has passed.
+        if (r.atFirstEnquiry) return false;
         if (already.indexOf(r.key) !== -1) return false;
         if (r.needsCard && card) return false;
         return dueDate(provider.trial_ends_at, r.offset).getTime() <= at.getTime();

@@ -6,6 +6,7 @@ import { stripeRequest } from '@/lib/stripe';
 import { refundDue } from '@/lib/cancellation';
 import { clawBackPayout } from '@/lib/clawback';
 import { logError } from '@/lib/logError';
+import { issueRefunds } from '@/lib/refundSpread';
 
 export const dynamic = 'force-dynamic';
 
@@ -39,7 +40,7 @@ export async function POST(request: Request) {
 
         const { data: booking } = await admin
             .from('bookings')
-            .select('id, listing_id, guest_id, host_id, check_in, status, payment_status, total_price, amount_paid, amount_refunded, cleaning_fee, stripe_payment_intent_id, payout_transfer_id, payout_amount')
+            .select('id, listing_id, guest_id, host_id, check_in, status, payment_status, total_price, amount_paid, amount_refunded, cleaning_fee, stripe_payment_intent_id, balance_payment_intent_id, payout_transfer_id, payout_amount')
             .eq('id', bookingId)
             .maybeSingle();
 
@@ -100,17 +101,87 @@ export async function POST(request: Request) {
             return NextResponse.json({ ok: true, refunded: 0, nonRefundable: true });
         }
 
-        const refund = await stripeRequest('POST', '/refunds', {
-            payment_intent: booking.stripe_payment_intent_id,
-            amount: Math.round(amount * 100),
-            metadata: {
+        // ONE STAY CAN HAVE TWO CHARGES, AND A REFUND NAMES ONE.
+        //
+        // A deposit booking is charged twice — 25% at checkout and the balance
+        // thirty days before check-in — and a Stripe refund names a single
+        // payment intent and may not exceed what that charge took. This route
+        // used to refund the whole amount against `stripe_payment_intent_id`
+        // alone, so a £300 stay paid as £150 + £150 came back from Stripe as
+        // "Refund amount (£300.00) is greater than charge amount (£150.00)",
+        // the route threw, and the guest got nothing at all. See
+        // lib/refundSpread.ts for how long that had been true and why nothing
+        // caught it.
+        const issued = await issueRefunds(
+            booking,
+            amount,
+            {
                 booking_id: booking.id,
                 reason: reason,
                 initiated_by: isHost ? 'host' : 'guest',
             },
-        });
+            // THIS CALL HAD NO IDEMPOTENCY KEY AT ALL.
+            //
+            // Two cancel requests arriving together — a double-clicked button,
+            // a retried fetch — both read the same `amount_refunded`, both
+            // worked out the same amount, and both refunded it. The guest got
+            // their money back twice and the platform ate the difference.
+            //
+            // Keyed on what is ALREADY refunded rather than on the booking
+            // alone, because a booking may legitimately be refunded more than
+            // once: a partial now and the rest later must not replay the first.
+            // Two concurrent requests read the same running total and so build
+            // the same key, which is exactly when a replay is what we want.
+            function (intentId) {
+                return 'refund-' + booking.id
+                    + '-' + Math.round(alreadyRefunded * 100)
+                    + '-' + intentId;
+            }
+        );
 
-        const totalRefunded = round2(alreadyRefunded + amount);
+        const charges = issued.charges;
+        const shares = issued.shares;
+        const refunds = issued.refunds;
+
+        if (!charges.length) {
+            await logError(
+                '[stripe/refund] a refund is due but no charge behind the booking could be read, '
+                    + 'so nothing was sent back',
+                { booking_id: booking.id, due: amount },
+                { path: 'stripe/refund', userId: user.id }
+            );
+            return NextResponse.json(
+                {
+                    ok: false,
+                    error: 'We could not reach the original payment to refund it. '
+                        + 'Nothing has been taken or given back — please try again shortly.',
+                },
+                { status: 502 }
+            );
+        }
+
+        if (issued.refundedPence <= 0) {
+            throw issued.failure || new Error('No refund could be issued');
+        }
+
+        // Everything below records what ACTUALLY went back, never what was
+        // due. Those are the same number on the ordinary path and they are not
+        // when a charge refuses, and it is the difference that has to reach the
+        // booking — otherwise the row says a guest was made whole when they
+        // were not.
+        const refund = refunds[0];
+        const amountRefundedNow = round2(issued.refundedPence / 100);
+
+        if (issued.refundedPence < Math.round(amount * 100)) {
+            await logError(
+                '[stripe/refund] the guest is owed \u00A3' + amount.toFixed(2)
+                    + ' but only \u00A3' + amountRefundedNow.toFixed(2) + ' could be refunded',
+                issued.failure || { booking_id: booking.id, due: amount, sent: amountRefundedNow },
+                { path: 'stripe/refund', userId: user.id }
+            );
+        }
+
+        const totalRefunded = round2(alreadyRefunded + amountRefundedNow);
         const fullyRefunded = totalRefunded >= round2(paid);
 
         // Cancelling a stay a guest has already had confirmed is the most
@@ -192,26 +263,39 @@ export async function POST(request: Request) {
                     ok: false,
                     error: 'The refund went through but the booking could not be updated. '
                         + 'Please check it before trying again.',
-                    refunded: amount,
+                    refunded: amountRefundedNow,
                 },
                 { status: 500 }
             );
         }
 
-        await admin.from('payments').insert({
-            booking_id: booking.id,
-            kind: 'refund',
-            amount: amount,
-            status: 'succeeded',
-            stripe_payment_intent_id: booking.stripe_payment_intent_id,
-        });
-
-        // Recover the host's share if they have already been paid.
-        if (booking.payout_transfer_id) {
-            await clawBackPayout(admin, booking, amount, refund && refund.id);
+        // One ledger row per refund actually issued, naming the charge it came
+        // out of. A single row saying "£300 off the deposit intent" would be a
+        // record of something that never happened.
+        for (let i = 0; i < refunds.length; i++) {
+            await admin.from('payments').insert({
+                booking_id: booking.id,
+                kind: 'refund',
+                amount: round2(shares[i] / 100),
+                status: 'succeeded',
+                stripe_payment_intent_id: charges[i].intentId,
+            });
         }
 
-        return NextResponse.json({ ok: true, refunded: amount, refundId: refund && refund.id });
+        // Recover the host's share if they have already been paid. Against
+        // what went back, not what was due.
+        if (booking.payout_transfer_id) {
+            await clawBackPayout(admin, booking, amountRefundedNow, refund && refund.id);
+        }
+
+        return NextResponse.json({
+            ok: true,
+            refunded: amountRefundedNow,
+            refundId: refund && refund.id,
+            // Named so a caller can tell "we gave back everything owed" from
+            // "we gave back what we could reach".
+            shortOfDue: amountRefundedNow < amount ? round2(amount - amountRefundedNow) : 0,
+        });
     } catch (err: any) {
         console.error('[stripe/refund]', err && err.message);
         await logError('[stripe/refund] ' + ((err && err.message) || 'failed'), err, { path: 'stripe/refund' });
