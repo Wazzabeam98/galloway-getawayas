@@ -86,17 +86,51 @@ success, and the row simply is not there. Adding `hidden` to listings and
 - A branch carrying a migration should say so in its description, so whoever
   merges knows there is a database step they did not write.
 
-**How to check what is outstanding**, in a checkout of the branch:
+**Start one with the generator, not by copying a filename:**
 
 ```
-node scripts/migrate.mjs --target prod --sql "select table_name from information_schema.tables where table_schema='public' order by table_name"
+node scripts/new-migration.mjs "what it does"
 ```
 
-and compare against `supabase/migrations`. There is no ledger table — the
-migrations are applied by hand and nothing records that they ran, which is the
-weakness this rule works around rather than fixes. A `schema_migrations` table
-would make it checkable instead of remembered, and is worth building the next
-time this bites.
+It stamps the file with the real clock, to the second, which is the whole point
+— see below.
+
+**How to check what is outstanding:**
+
+```
+node scripts/migrate.mjs --target prod --status
+```
+
+`public.schema_migrations` records what has been applied to each database, and
+the runner writes the row in the same transaction as the DDL, so the two cannot
+disagree. It also stores a checksum of the file at the moment it ran, which
+catches the thing no amount of reading finds: **a migration edited after it was
+applied**, where the name says applied and the schema no longer matches the
+file.
+
+The 71 migrations written before the ledger existed are marked `backfilled`
+with no checksum, and `--status` prints them as *assumed, not observed* rather
+than as ticks. Nobody watched those run. The assumption rests on production and
+test having been compared, in full, on 1 September 2026 and found identical —
+`node scripts/schema-diff.mjs` is that comparison, kept.
+
+## Name a migration with the actual clock
+
+`YYYYMMDDHHMMSS`, from the real clock, to the second. **Not a round hour.**
+
+There are 24 round hours in a day and 86,400 seconds. On 1 September 2026 two
+sessions picked the same round hour twice — `20260901120000` and then
+`20260901180000`, hours apart — because both were reaching for the next tidy
+number. Each cost a red CI check, a rebase, a rename, and a ledger row that had
+to be carried across by hand.
+
+`tests/migration-files.test.ts` refuses a round hour on anything dated from
+2 September 2026. Earlier files are left alone: they have already run, and
+renaming 72 of them to satisfy a new convention would break every
+`schema_migrations` row that names them, to prove a point about files nobody
+will write again.
+
+If you are not using the generator: `date -u +%Y%m%d%H%M%S`.
 
 ## Which database am I on?
 

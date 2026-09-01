@@ -59,6 +59,38 @@ test('no two migrations share a timestamp', () => {
     );
 });
 
+// A timestamp two sessions can both pick is a timestamp two sessions will both
+// pick. It happened twice on 1 September 2026 — 20260901120000 and then
+// 20260901180000, the same two sessions, hours apart — because the convention
+// was a round hour, and there are only 24 of those in a day.
+//
+// The clock has 86,400 seconds in it. Using the real one makes a collision an
+// accident rather than a near-certainty, and it costs nothing: the timestamp
+// was never meaningful beyond ordering.
+//
+// FROM A CUTOFF, NOT RETROSPECTIVELY. Every migration written before this rule
+// is a round hour and renaming 72 files to satisfy a new convention would break
+// every schema_migrations row that names them, to prove a point about files
+// that have already run.
+const CLOCK_RULE_FROM = '20260902000000';
+
+test('a new migration uses a real clock time, not a round hour', () => {
+    const lazy = migrations().filter((n) => {
+        const stamp = n.slice(0, 14);
+        if (stamp < CLOCK_RULE_FROM) return false;
+        // Minutes and seconds both zero is somebody typing a round number.
+        return stamp.slice(10, 14) === '0000';
+    });
+
+    assert.deepEqual(
+        lazy, [],
+        'These use a round hour, which is what two sessions collide on:\n  ' + lazy.join('\n  ')
+        + '\n\nName it with the actual clock instead. scripts/new-migration.mjs does it for you:'
+        + '\n    node scripts/new-migration.mjs "what it does"'
+        + '\n\nOr by hand:  date -u +%Y%m%d%H%M%S'
+    );
+});
+
 test('nothing in migrations says it must not be run', () => {
     // The exact hazard: a file that drops columns under a heading telling you
     // not to yet, sitting where anything applying the folder would find it.
