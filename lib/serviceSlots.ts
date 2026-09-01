@@ -167,5 +167,10 @@ export function guestMayCancelFree(
     return now.getTime() <= deadline.getTime();
 }
 
-/** How long a slot seat is held across Checkout before the sweep releases it. */
-export const SLOT_HOLD_MINUTES = 15;
+// How long a slot seat is held across Checkout before the sweep releases it.
+// Stripe won't let a Checkout Session expire in under 30 minutes, and the hold
+// and the session must expire together (otherwise a payment could complete
+// after the seat was released). So the hold is 30 minutes — the floor Stripe
+// imposes — not the 15 first sketched. The sweep's 5-minute grace then releases
+// an abandoned seat at ~35 minutes, safely after the Checkout is dead.
+export const SLOT_HOLD_MINUTES = 30;

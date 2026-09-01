@@ -114,6 +114,8 @@ test('an unreadable date is never a free cancel', () => {
     assert.equal(guestMayCancelFree('slot', 'not-a-date', '15:00', 4, new Date('2026-09-20T00:00:00Z')), false);
 });
 
-test('the seat hold has a fifteen-minute life', () => {
-    assert.equal(SLOT_HOLD_MINUTES, 15);
+test('the seat hold lives as long as Stripe’s Checkout floor (30 min)', () => {
+    // Stripe won't expire a Checkout Session in under 30 minutes, and the hold
+    // must expire with it, so the hold is 30 — not the 15 first sketched.
+    assert.equal(SLOT_HOLD_MINUTES, 30);
 });
