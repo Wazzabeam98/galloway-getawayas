@@ -97,7 +97,7 @@ export async function POST(request: Request) {
 
         const { data: order } = await admin
             .from('service_orders')
-            .select('id, provider_id, status, stripe_payment_intent_id, guest_email, guest_name, service_date, price, provider_business_name')
+            .select('id, provider_id, status, shape, slot_session_id, quantity, stripe_payment_intent_id, guest_email, guest_name, service_date, price, provider_business_name')
             .eq('id', orderId)
             .maybeSingle();
 
@@ -139,11 +139,23 @@ export async function POST(request: Request) {
                 { payment_intent: order.stripe_payment_intent_id, refund_application_fee: 'true', reverse_transfer: 'true' },
                 'refund-' + order.id
             );
-            await admin
+            const { data: refunded } = await admin
                 .from('service_orders')
                 .update({ status: 'refunded', cancelled_at: new Date().toISOString() })
                 .eq('id', order.id)
-                .eq('status', 'confirmed');
+                .eq('status', 'confirmed')
+                .select('id');
+
+            // A slot's seat reopens when the provider cancels it, the same as a
+            // guest cancel — the 2pm goes back on sale.
+            if (refunded && refunded.length && order.shape === 'slot' && order.slot_session_id) {
+                const { data: s } = await admin.from('slot_sessions').select('seats_taken').eq('id', order.slot_session_id).maybeSingle();
+                if (s) {
+                    await admin.from('slot_sessions')
+                        .update({ seats_taken: Math.max(0, s.seats_taken - (order.quantity || 1)) })
+                        .eq('id', order.slot_session_id);
+                }
+            }
 
             await notifyGuest(order, 'refunded');
 

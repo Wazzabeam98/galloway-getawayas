@@ -13,6 +13,8 @@ import ProviderDashboard, {
     DashboardUpcoming,
 } from '@/components/services/ProviderDashboard';
 import ProviderExperienceDashboard from '@/components/services/ProviderExperienceDashboard';
+import ProviderSlotDashboard from '@/components/services/ProviderSlotDashboard';
+import { shapeOf } from '@/lib/serviceSlots';
 
 export const metadata = {
     title: 'Your business',
@@ -73,7 +75,7 @@ export default async function ProviderDashboardPage() {
     // half-finished draft for a second trade.
     const { data: providers } = await admin
         .from('service_providers')
-        .select('id, business_name, trade, audience, plan, status, stripe_payouts_enabled, trial_ends_at')
+        .select('id, business_name, trade, audience, plan, status, stripe_payouts_enabled, trial_ends_at, shape')
         .eq('owner_id', user.id)
         .order('updated_at', { ascending: false });
 
@@ -132,9 +134,12 @@ export default async function ProviderDashboardPage() {
                     </Link>
                 </div>
 
-                {/* Payouts (the second gate) and the requests to confirm —
-                    the whole of a guest provider's working screen. */}
-                <ProviderExperienceDashboard providerId={provider.id} />
+                {/* Two homes by shape: a slot provider gets a DIARY (a booked
+                    week, nothing to approve), everyone else the INBOX (requests
+                    to confirm, then coming up). The payouts gate is in both. */}
+                {shapeOf(provider) === 'slot'
+                    ? <ProviderSlotDashboard providerId={provider.id} />
+                    : <ProviderExperienceDashboard providerId={provider.id} />}
             </div>
         );
     }
