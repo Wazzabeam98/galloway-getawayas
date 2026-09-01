@@ -133,7 +133,29 @@ export async function GET(request: Request) {
                 price: Number(p.experience_price),
             }));
 
-        return NextResponse.json({ ok: true, open: true, stay, providers });
+        // What the guest has already asked for on THIS stay, so the trip page
+        // can show it back to them — until now a request vanished into an email
+        // they never got. Their own orders only (guest_id), and only the ones
+        // still live or recently settled are worth showing; the cancel button
+        // acts on the authorised and confirmed ones.
+        let orders: any[] = [];
+        if (bookingId) {
+            const { data: mine } = await admin
+                .from('service_orders')
+                .select('id, status, service_date, price, provider_business_name')
+                .eq('booking_id', bookingId)
+                .eq('guest_id', user.id)
+                .order('created_at', { ascending: false });
+            orders = (mine || []).map((o) => ({
+                id: o.id,
+                status: o.status,
+                service_date: o.service_date,
+                price: Number(o.price),
+                provider_business_name: o.provider_business_name,
+            }));
+        }
+
+        return NextResponse.json({ ok: true, open: true, stay, providers, orders });
     } catch (err: any) {
         console.error('[services/experiences]', err && err.message);
         return NextResponse.json({ ok: false, error: 'Could not load experiences' }, { status: 500 });

@@ -1,6 +1,6 @@
 'use client';
 
-import { useEffect, useState } from 'react';
+import { useCallback, useEffect, useState } from 'react';
 import { getImageUrl } from '@/lib/utils';
 
 // What a guest sees on a stay they have already paid for: the local guest
@@ -36,6 +36,25 @@ interface Provider {
     price: number;
 }
 
+// What the guest has already asked for on this stay — so a request is something
+// they can see and pull out of, not an email they may never have received.
+interface Order {
+    id: string;
+    status: string;
+    service_date: string;
+    price: number;
+    provider_business_name: string | null;
+}
+
+const ORDER_WORD: Record<string, string> = {
+    authorised: 'Awaiting their answer',
+    confirmed: 'Confirmed',
+    declined: 'They couldn’t make it',
+    expired: 'No answer in time',
+    cancelled: 'Cancelled',
+    refunded: 'Refunded',
+};
+
 // yyyy-mm-dd one day before check-out — the last night the guest is here.
 function lastNight(checkOut: string): string {
     const d = new Date(checkOut + 'T00:00:00');
@@ -52,20 +71,50 @@ export default function GuestExperiences(props: {
     const { bookingId, checkIn, checkOut, town } = props;
 
     const [providers, setProviders] = useState<Provider[]>([]);
+    const [orders, setOrders] = useState<Order[]>([]);
     const [loaded, setLoaded] = useState(false);
     const [open, setOpen] = useState(true);
     const [dateFor, setDateFor] = useState<Record<string, string>>({});
     const [busy, setBusy] = useState<string | null>(null);
     const [error, setError] = useState<string | null>(null);
+    const [note, setNote] = useState<string | null>(null);
 
-    useEffect(() => {
-        let live = true;
-        fetch('/api/services/experiences?booking=' + encodeURIComponent(bookingId))
+    const load = useCallback(() => {
+        return fetch('/api/services/experiences?booking=' + encodeURIComponent(bookingId))
             .then((r) => r.json())
-            .then((d) => { if (live) { setOpen(d && d.open !== false); setProviders((d && d.providers) || []); setLoaded(true); } })
-            .catch(() => { if (live) setLoaded(true); });
-        return () => { live = false; };
+            .then((d) => {
+                setOpen(d && d.open !== false);
+                setProviders((d && d.providers) || []);
+                setOrders((d && d.orders) || []);
+                setLoaded(true);
+            })
+            .catch(() => setLoaded(true));
     }, [bookingId]);
+
+    useEffect(() => { load(); }, [load]);
+
+    async function cancel(order: Order) {
+        setBusy(order.id);
+        setError(null);
+        setNote(null);
+        try {
+            const res = await fetch('/api/services/orders/cancel', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ orderId: order.id }),
+            });
+            const d = await res.json();
+            if (d && d.ok) {
+                setNote(d.status === 'refunded' ? 'Cancelled and refunded in full.' : 'Request cancelled.');
+                await load();
+            } else {
+                setError((d && d.error) || 'Could not cancel that.');
+            }
+        } catch {
+            setError('Could not cancel that.');
+        }
+        setBusy(null);
+    }
 
     async function request(provider: Provider) {
         const serviceDate = dateFor[provider.id];
@@ -105,11 +154,16 @@ export default function GuestExperiences(props: {
         );
     }
 
-    // Open, but nothing covers this stay yet — render nothing rather than an
-    // empty box.
-    if (providers.length === 0) return null;
+    // Open, but nothing covers this stay and nothing has been requested —
+    // render nothing rather than an empty box. If they have a request in
+    // flight, show it even when no provider currently covers them.
+    if (providers.length === 0 && orders.length === 0) return null;
 
     const max = lastNight(checkOut);
+
+    // A request is "in flight" while it is held or confirmed — those are the two
+    // the guest can still act on.
+    const canCancel = (s: string) => s === 'authorised' || s === 'confirmed';
 
     return (
         <section className="mt-8">
@@ -121,6 +175,42 @@ export default function GuestExperiences(props: {
                 provider is who you’re booking, and your card is only held until
                 they confirm.
             </p>
+
+            {orders.length > 0 ? (
+                <div className="mt-4 rounded-lg border border-gray-200 bg-gray-50 p-4">
+                    <div className="text-sm font-semibold text-gray-900">Your requests</div>
+                    <ul className="mt-2 divide-y divide-gray-200">
+                        {orders.map((o) => (
+                            <li key={o.id} className="flex flex-wrap items-center justify-between gap-x-3 gap-y-1 py-2">
+                                <div className="min-w-0">
+                                    <div className="text-sm font-medium text-gray-900 break-words">
+                                        {o.provider_business_name || 'Experience'}
+                                    </div>
+                                    <div className="text-xs text-gray-500">
+                                        {o.service_date} · £{o.price.toFixed(2)} · {ORDER_WORD[o.status] || o.status}
+                                    </div>
+                                </div>
+                                {canCancel(o.status) ? (
+                                    <button
+                                        type="button"
+                                        disabled={busy === o.id}
+                                        onClick={() => cancel(o)}
+                                        className="shrink-0 rounded-md border border-gray-300 px-3 py-1.5 text-xs font-medium text-gray-700 hover:border-gray-400 disabled:opacity-60"
+                                    >
+                                        {busy === o.id ? 'Cancelling…' : o.status === 'confirmed' ? 'Cancel' : 'Cancel request'}
+                                    </button>
+                                ) : null}
+                            </li>
+                        ))}
+                    </ul>
+                    <p className="mt-1 text-[11px] leading-snug text-gray-400">
+                        Cancel a held request any time. A confirmed booking is refunded in full up to 48 hours before the date.
+                    </p>
+                    {note ? <p className="mt-2 text-xs text-emerald-700">{note}</p> : null}
+                </div>
+            ) : null}
+
+            {providers.length === 0 ? null : (
 
             <div className="mt-4 grid gap-4 sm:grid-cols-2">
                 {providers.map((p) => {
@@ -222,6 +312,7 @@ export default function GuestExperiences(props: {
                     );
                 })}
             </div>
+            )}
 
             {error ? <p className="mt-3 text-sm text-red-600">{error}</p> : null}
         </section>

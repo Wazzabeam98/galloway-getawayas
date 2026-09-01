@@ -14,6 +14,7 @@ import {
     priceOrder,
     canTransition, releasesHold,
     CONFIRM_WINDOW_HOURS, expiryFrom, guestExperiencesOpen,
+    FREE_CANCEL_HOURS, guestMayCancelFree,
 } from '@/lib/serviceOrders';
 import { GUEST_TRADES } from '@/lib/serviceProviders';
 
@@ -222,4 +223,21 @@ test('guest experiences are closed unless the env var is exactly "true"', () => 
         if (prev === undefined) delete process.env.GUEST_EXPERIENCES_OPEN;
         else process.env.GUEST_EXPERIENCES_OPEN = prev;
     }
+});
+
+// Free cancellation follows the provider's own "48 hours ahead" promise: at or
+// beyond the window it is free (a full refund on a confirmed booking), inside it
+// the provider decides. Measured to the start of the service date.
+test('free cancellation holds the 48-hour line', () => {
+    const svc = '2026-09-20';
+    const start = new Date(svc + 'T00:00:00Z').getTime();
+    const hoursBefore = (h: number) => new Date(start - h * 3600 * 1000);
+
+    assert.equal(FREE_CANCEL_HOURS, 48);
+    assert.equal(guestMayCancelFree(svc, hoursBefore(72)), true, 'three days out is free');
+    assert.equal(guestMayCancelFree(svc, hoursBefore(49)), true, 'just outside the window is free');
+    assert.equal(guestMayCancelFree(svc, hoursBefore(48)), true, 'exactly 48h is free (at or beyond)');
+    assert.equal(guestMayCancelFree(svc, hoursBefore(47)), false, 'inside 48h is the provider’s call');
+    assert.equal(guestMayCancelFree(svc, hoursBefore(1)), false, 'the day before is not free');
+    assert.equal(guestMayCancelFree('not-a-date', hoursBefore(72)), false, 'an unparseable date is never free');
 });
