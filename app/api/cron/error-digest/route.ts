@@ -2,6 +2,7 @@ import { adminClient } from '@/lib/supabaseAdmin';
 import { NextResponse } from 'next/server';
 import { logError } from '@/lib/logError';
 import { sendEmailToAll, recipients, emailLayout, escapeHtml, button, SITE_URL } from '@/lib/email';
+import { RETENTION_DAYS, daysWaiting } from '@/lib/serviceApplications';
 
 export const dynamic = 'force-dynamic';
 export const maxDuration = 60;
@@ -44,7 +45,38 @@ export async function GET(request: Request) {
 
     const errors = rows || [];
 
-    if (errors.length === 0) {
+    // ------------------------------------------------------------------
+    // TRADESMEN WAITING ON THEMSELVES.
+    //
+    // Somebody who fills in the application form and never opens their link
+    // has no account and nothing in the review queue, so there is no screen he
+    // appears on by default and no reason anybody would go looking. That is
+    // the same as losing him, which is the thing the whole flow was
+    // reorganised to stop — so he comes to you, in the one email that already
+    // arrives every day, rather than waiting on a page being remembered.
+    //
+    // Oldest first: the ones nearest deletion are the ones worth a phone call
+    // today.
+    // ------------------------------------------------------------------
+    const { data: waitingRows, error: waitingError } = await admin
+        .from('service_applications')
+        .select('id, business_name, trade, email, contact_phone, created_at, resend_count')
+        .is('claimed_at', null)
+        .order('created_at', { ascending: true })
+        .limit(50);
+
+    if (waitingError) {
+        await logError('error-digest: could not read the applications waiting on their applicant', waitingError, {
+            path: '/api/cron/error-digest',
+        });
+    }
+
+    const waiting = waitingRows || [];
+
+    // The send condition is errors OR people, not errors alone. A quiet day
+    // for the site is not a quiet day for a joiner who applied a fortnight ago
+    // and has heard nothing, and the old early return would have swallowed him.
+    if (errors.length === 0 && waiting.length === 0) {
         return NextResponse.json({ ok: true, sent: 0, reason: 'nothing to report' });
     }
 
@@ -74,6 +106,44 @@ export async function GET(request: Request) {
         .sort((a, b) => b.count - a.count);
 
     const serverCount = errors.filter((e: any) => e.source === 'server').length;
+
+    // The chase list, as a block you can act on from the email: a name, how
+    // long they have been waiting, and the number to ring. The phone comes
+    // before the address on purpose — the address is the one they have already
+    // failed to open.
+    const waitingHtml = waiting.length === 0 ? '' : (
+        '<p style="margin:0 0 10px;font-size:16px;"><strong>'
+            + waiting.length + (waiting.length === 1 ? ' business is' : ' businesses are')
+            + ' waiting on their applicant.</strong> They filled the form in but have not opened'
+            + ' their link, so there is no account and nothing in the review queue yet. Ring them.</p>'
+        + '<table style="width:100%;border-collapse:collapse;margin:0 0 16px;">'
+        + waiting.slice(0, 15).map((w: any) => {
+            const days = daysWaiting(w);
+            const left = RETENTION_DAYS - days;
+            const urgent = left <= 21;
+            return '<tr>'
+                + '<td style="padding:8px 10px 8px 0;border-bottom:1px solid #e5e7eb;font-size:14px;">'
+                    + '<strong>' + escapeHtml(String(w.business_name || 'Unnamed')) + '</strong>'
+                    + '<div style="color:#6b7280;font-size:12px;">' + escapeHtml(String(w.trade || '')) + '</div>'
+                + '</td>'
+                + '<td style="padding:8px 10px 8px 0;border-bottom:1px solid #e5e7eb;font-size:14px;white-space:nowrap;">'
+                    + (w.contact_phone
+                        ? '<a href="tel:' + escapeHtml(String(w.contact_phone).replace(/\s+/g, '')) + '" style="color:#047857;text-decoration:none;font-weight:600;">'
+                            + escapeHtml(String(w.contact_phone)) + '</a>'
+                        : '<span style="color:#9ca3af;">no number</span>')
+                + '</td>'
+                + '<td style="padding:8px 0;border-bottom:1px solid #e5e7eb;font-size:13px;white-space:nowrap;'
+                    + (urgent ? 'color:#b91c1c;' : 'color:#6b7280;') + '">'
+                    + days + (days === 1 ? ' day' : ' days')
+                    + (urgent ? '<br><span style="font-size:11px;">deleted in ' + (left > 0 ? left : 0) + '</span>' : '')
+                + '</td>'
+                + '</tr>';
+        }).join('')
+        + '</table>'
+        + (waiting.length > 15
+            ? '<p style="margin:0 0 16px;font-size:14px;color:#64748b;">and ' + (waiting.length - 15) + ' more.</p>'
+            : '')
+    );
 
     const rowsHtml = issues
         .slice(0, 15)
@@ -122,25 +192,38 @@ export async function GET(request: Request) {
     {
         const result = await sendEmailToAll(
             to,
-            issues.length === 1
-                ? 'Something went wrong on the site yesterday'
-                : issues.length + ' things went wrong on the site yesterday',
+            errors.length === 0
+                ? (waiting.length === 1
+                    ? '1 tradesman is waiting on himself'
+                    : waiting.length + ' tradesmen are waiting on themselves')
+                : issues.length === 1
+                    ? 'Something went wrong on the site yesterday'
+                    : issues.length + ' things went wrong on the site yesterday',
             emailLayout(
-                '<p style="margin:0 0 16px;font-size:16px;">In the last 24 hours there '
-                    + (errors.length === 1 ? 'was <strong>1 error</strong>' : 'were <strong>' + errors.length + ' errors</strong>')
-                    + ', across <strong>' + issues.length + '</strong> distinct problem'
-                    + (issues.length === 1 ? '' : 's')
-                    + (serverCount > 0 ? ', ' + serverCount + ' of them on the server' : '')
-                    + '.</p>'
-                    + '<table style="width:100%;border-collapse:collapse;margin:0 0 16px;">'
-                    + rowsHtml
-                    + '</table>'
+                (errors.length === 0
+                    ? ''
+                    : '<p style="margin:0 0 16px;font-size:16px;">In the last 24 hours there '
+                        + (errors.length === 1 ? 'was <strong>1 error</strong>' : 'were <strong>' + errors.length + ' errors</strong>')
+                        + ', across <strong>' + issues.length + '</strong> distinct problem'
+                        + (issues.length === 1 ? '' : 's')
+                        + (serverCount > 0 ? ', ' + serverCount + ' of them on the server' : '')
+                        + '.</p>'
+                        + '<table style="width:100%;border-collapse:collapse;margin:0 0 16px;">'
+                        + rowsHtml
+                        + '</table>')
+                    + waitingHtml
                     + (issues.length > 15
                         ? '<p style="margin:0 0 16px;font-size:14px;color:#64748b;">and ' + (issues.length - 15) + ' more.</p>'
                         : '')
-                    + '<p style="margin:0 0 16px;font-size:14px;color:#64748b;">Some of these will be harmless. What matters is anything on the server, and anything that kept happening.</p>'
-                    + button(SITE_URL + '/admin/errors', 'Look at them properly'),
-                'You\u2019re receiving this because you own Galloway Getaways. It only sends when something has actually gone wrong.'
+                    + (errors.length === 0
+                        ? ''
+                        : '<p style="margin:0 0 16px;font-size:14px;color:#64748b;">Some of these will be harmless. What matters is anything on the server, and anything that kept happening.</p>')
+                    + button(
+                        SITE_URL + (errors.length === 0 ? '/admin/providers' : '/admin/errors'),
+                        errors.length === 0 ? 'See who is waiting' : 'Look at them properly'
+                    ),
+                'You\u2019re receiving this because you own Galloway Getaways. It only sends when '
+                    + 'there is something to do about.'
             )
         );
 
@@ -160,6 +243,45 @@ export async function GET(request: Request) {
     }
 
     // ----------------------------------------------------------------
+    // AND SWEEP THE APPLICATIONS NOBODY EVER CLAIMED.
+    //
+    // service_applications holds a real person's name, phone and business
+    // details for somebody who has no account with us and never proved their
+    // address. Keeping that indefinitely because they did not finish a form is
+    // not a position worth defending, so it goes at RETENTION_DAYS.
+    //
+    // Claimed rows are left alone — those became real businesses, and the row
+    // is the record of what was submitted and when.
+    //
+    // Nobody vanishes without warning: the digest above and the admin list
+    // both show a countdown once a row is inside three weeks of this.
+    // ----------------------------------------------------------------
+    let applicationsSwept: number | null = null;
+
+    try {
+        const cutoff = new Date(Date.now() - RETENTION_DAYS * 24 * 3600 * 1000).toISOString();
+
+        const { data: swept, error: sweepError } = await admin
+            .from('service_applications')
+            .delete()
+            .is('claimed_at', null)
+            .lt('created_at', cutoff)
+            .select('id');
+
+        if (sweepError) {
+            await logError('error-digest: could not sweep unclaimed service applications', sweepError, {
+                path: '/api/cron/error-digest',
+            });
+        } else {
+            applicationsSwept = (swept || []).length;
+        }
+    } catch (err) {
+        await logError('error-digest: could not sweep unclaimed service applications', err, {
+            path: '/api/cron/error-digest',
+        });
+    }
+
+    // ----------------------------------------------------------------
     // While we are here once a day: throw away the rate-limit rows nobody
     // will ever look at again.
     //
@@ -175,10 +297,14 @@ export async function GET(request: Request) {
     // Reported rather than silent, and NOT allowed to break the digest: the
     // digest is the thing that tells you about everything else, and a failed
     // tidy-up must not stop it going out.
-    const RETENTION_DAYS = 7;
+    // Named for what it retains. It used to be RETENTION_DAYS, which now
+    // collides with the applications one imported at the top of this file —
+    // two different retentions, seven days apart in meaning and eighty-three in
+    // value, are not a name to share.
+    const RATE_LIMIT_RETENTION_DAYS = 7;
     let pruned: number | null = null;
     try {
-        const cutoff = new Date(Date.now() - RETENTION_DAYS * 24 * 60 * 60 * 1000).toISOString();
+        const cutoff = new Date(Date.now() - RATE_LIMIT_RETENTION_DAYS * 24 * 60 * 60 * 1000).toISOString();
         const { data: gone, error: pruneError } = await admin
             .from('rate_limit_hits')
             .delete()
@@ -204,5 +330,7 @@ export async function GET(request: Request) {
         errors: errors.length,
         issues: issues.length,
         rateLimitRowsPruned: pruned,
+        waitingOnApplicant: waiting.length,
+        applicationsSwept: applicationsSwept,
     });
 }

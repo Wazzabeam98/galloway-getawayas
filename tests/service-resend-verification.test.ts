@@ -1,16 +1,19 @@
-// Asking again for the confirmation email.
+// Asking again for the link on a lodged application.
 //
-// The capability is already public — /auth/v1/resend takes the anon key and the
-// anon key ships in the client bundle — so this route does not open a door. The
-// job is to avoid building a wider one, and what makes it wider would be a free
-// text email field, a service-role send, or an answer that varies with what was
-// found.
+// WHAT THIS ROUTE IS GUARDING
 //
-// The sharp edge is that the built-in mail quota is PROJECT-WIDE: a brand-new
-// address was refused 429 on its first ever send because the project's
-// allowance was spent (27 Aug 2026). Anyone who can trigger sends can stop
-// every real confirmation and password reset. So most of this file is about
-// what the route refuses to do.
+// The outbound mail allowance is shared with every password reset and booking
+// confirmation on the site, so anything that can be made to send email can be
+// made to stop all of it. A resend button with a free-text address field would
+// be that attack with a friendly front end.
+//
+// WHAT CHANGED ON 1 SEPTEMBER 2026
+//
+// The cooldown and the ceiling used to be read off the auth account —
+// `confirmation_sent_at` and `user_metadata`. There is no account at this point
+// in the flow any more: that is the whole change, and the reason the state now
+// lives on the application row. What did NOT change is the shape of the
+// answer, which is the half that matters.
 
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
@@ -20,35 +23,32 @@ installAliases();
 
 process.env.NEXT_PUBLIC_SUPABASE_URL = 'http://example.invalid';
 process.env.SUPABASE_SERVICE_ROLE_KEY = 'test-service-key';
-process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY = 'test-anon-key';
 
 const ROUTE = '@/app/api/services/resend-verification/route';
-const PROVIDER = 'prov-1';
-const OWNER = 'owner-1';
 
-function load(options: {
-    provider?: any;
-    user?: any;
-    mailError?: string;
-} = {}) {
-    const resent: any[] = [];
-    const updated: any[] = [];
+const AGES_AGO = new Date(Date.now() - 3600 * 1000).toISOString();
+
+function load(row: any | null, options: { mailSent?: boolean; updateError?: string } = {}) {
+    const mailed: any[] = [];
+    const updates: any[] = [];
     const logged: any[] = [];
-    const anonKeysUsed: string[] = [];
-
-    const provider = options.provider === undefined
-        ? { id: PROVIDER, owner_id: OWNER }
-        : options.provider;
-
-    const user = options.user === undefined
-        ? { id: OWNER, email: 'applicant@example.test', email_confirmed_at: null, confirmation_sent_at: null, user_metadata: {} }
-        : options.user;
 
     function builder() {
         const chain: any = new Proxy({}, {
             get(_t, prop: string) {
-                if (prop === 'maybeSingle') return async () => ({ data: provider, error: null });
-                if (prop === 'then') return (r: any) => r({ data: provider, error: null });
+                if (prop === 'then') return (r: any) => r({ data: null, error: null });
+                if (prop === 'maybeSingle') return async () => ({ data: row, error: null });
+                if (prop === 'update') {
+                    return (patch: any) => {
+                        updates.push(patch);
+                        return {
+                            eq: async () => ({
+                                data: null,
+                                error: options.updateError ? { message: options.updateError } : null,
+                            }),
+                        };
+                    };
+                }
                 return () => chain;
             },
         });
@@ -57,30 +57,18 @@ function load(options: {
 
     stubModule('@/lib/supabaseAdmin', {
         supabaseUrl: () => 'http://example.invalid',
-        serviceRoleKey: () => 'test-service-key',
-        adminClient: () => ({
-            from: () => builder(),
-            auth: {
-                admin: {
-                    getUserById: async () => (user ? { data: { user }, error: null } : { data: null, error: { message: 'no user' } }),
-                    updateUserById: async (id: string, attrs: any) => { updated.push({ id, attrs }); return { data: null, error: null }; },
-                },
-            },
-        }),
+        adminClient: () => ({ from: () => builder() }),
     });
 
-    stubModule('@supabase/supabase-js', {
-        createClient: (_url: string, key: string) => {
-            anonKeysUsed.push(key);
-            return {
-                auth: {
-                    resend: async (args: any) => {
-                        resent.push(args);
-                        return options.mailError ? { error: { message: options.mailError } } : { error: null };
-                    },
-                },
-            };
+    stubModule('@/lib/email', {
+        sendEmail: async (to: string, subject: string, html: string) => {
+            mailed.push({ to, subject, html });
+            return options.mailSent === false ? false : true;
         },
+        emailLayout: (body: string, footer: string) => body + '|' + footer,
+        escapeHtml: (v: string) => String(v),
+        button: (url: string, label: string) => '<a href="' + url + '">' + label + '</a>',
+        SITE_URL: 'https://gallowaygetaways.co.uk',
     });
 
     stubModule('@/lib/logError', {
@@ -91,10 +79,22 @@ function load(options: {
         NextResponse: { json: (body: any, init?: any) => ({ body, status: (init && init.status) || 200 }) },
     });
 
+    clearModule('@/lib/serviceApplications');
     clearModule(ROUTE);
     const route = require(ROUTE.replace('@/', '../'));
-    return { route, resent, updated, logged, anonKeysUsed };
+    return { route, mailed, updates, logged };
 }
+
+const LIVE = {
+    id: 'app-1',
+    email: 'joiner@example.com',
+    business_name: 'Kirkcudbright Joinery',
+    token_sent_at: AGES_AGO,
+    resend_count: 0,
+    last_resend_at: null,
+    claimed_at: null,
+    created_at: AGES_AGO,
+};
 
 const call = (body: any) =>
     new Request('http://example.invalid/api/services/resend-verification', {
@@ -103,131 +103,117 @@ const call = (body: any) =>
         body: JSON.stringify(body),
     });
 
-/* ------------------------------------------------------- it does the job */
+/* ------------------------------------------------------------ it works */
 
 test('a lodged application can ask again, and the email goes to its owner', async () => {
-    const { route, resent } = load();
-    const res: any = await route.POST(call({ providerId: PROVIDER }));
+    const { route, mailed } = load(LIVE);
+    const res: any = await route.POST(call({ applicationId: 'app-1' }));
 
     assert.equal(res.body.ok, true);
-    assert.equal(res.body.sent, true);
-    assert.equal(resent.length, 1);
-    assert.equal(resent[0].email, 'applicant@example.test');
-    assert.equal(resent[0].type, 'signup');
+    assert.equal(mailed.length, 1);
+    assert.equal(mailed[0].to, 'joiner@example.com');
+    assert.match(String(mailed[0].html), /finish\//);
 });
-
-test('it sends with the ANON key, so Supabase throttle is still above it', async () => {
-    // The service role would step over the one limit that exists.
-    const { route, anonKeysUsed } = load();
-    await route.POST(call({ providerId: PROVIDER }));
-
-    assert.equal(anonKeysUsed.includes('test-anon-key'), true);
-    assert.equal(anonKeysUsed.includes('test-service-key'), false);
-});
-
-/* ------------------------------------------------------ it cannot be aimed */
 
 test('an email address in the body is ignored entirely', async () => {
-    // The whole design. There is no way to point this at somebody.
-    const { route, resent } = load();
-    await route.POST(call({ providerId: PROVIDER, email: 'victim@example.test' }));
+    // There is no field for a stranger to type into, and no way to aim this
+    // at somebody. The address comes off the row, always.
+    const { route, mailed } = load(LIVE);
+    await route.POST(call({ applicationId: 'app-1', email: 'attacker@example.com' }));
 
-    assert.equal(resent[0].email, 'applicant@example.test');
+    assert.equal(mailed[0].to, 'joiner@example.com');
 });
 
-test('with no application id, nothing is sent', async () => {
-    const { route, resent } = load();
-    const res: any = await route.POST(call({ email: 'victim@example.test' }));
+/* -------------------------------------------- a fresh token, every time */
+
+test('a new link retires the old one', async () => {
+    // Otherwise a chain of resends leaves a trail of live account-creating
+    // credentials sitting in an inbox.
+    const { route, updates } = load(LIVE);
+    await route.POST(call({ applicationId: 'app-1' }));
+
+    assert.equal(updates.length, 1);
+    assert.match(updates[0].token_hash, /^[0-9a-f]{64}$/);
+    assert.ok(updates[0].token_sent_at, 'the fourteen days start again');
+    assert.equal(updates[0].resend_count, 1);
+});
+
+test('the token is written before the mail goes', async () => {
+    // The other order emails a link that authenticates against nothing. This
+    // order's worst case is a live token nobody was told about, which expires
+    // on its own.
+    const { route, mailed, logged } = load(LIVE, { updateError: 'connection reset' });
+    const res: any = await route.POST(call({ applicationId: 'app-1' }));
+
+    assert.equal(res.body.ok, true, 'the answer never varies');
+    assert.deepEqual(mailed, [], 'nothing is sent if the token could not be stored');
+    assert.ok(logged.length > 0);
+});
+
+/* ------------------------------------------------------ one answer, always */
+
+test('a missing application answers exactly like a successful send', async () => {
+    const good: any = await (async () => { const l = load(LIVE); return l.route.POST(call({ applicationId: 'app-1' })); })();
+    const gone: any = await (async () => { const l = load(null); return l.route.POST(call({ applicationId: 'nope' })); })();
+
+    assert.equal(good.body.ok, true);
+    assert.equal(gone.body.ok, true);
+    assert.equal(gone.status, 200);
+});
+
+test('an application already finished sends nothing and says nothing', async () => {
+    const { route, mailed } = load({ ...LIVE, claimed_at: new Date().toISOString() });
+    const res: any = await route.POST(call({ applicationId: 'app-1' }));
 
     assert.equal(res.body.ok, true);
-    assert.equal(resent.length, 0);
+    assert.deepEqual(mailed, []);
 });
 
-test('an application that does not exist is answered the same as one that does', async () => {
-    // No oracle. A caller cannot learn whether an id is real.
-    const real = await load().route.POST(call({ providerId: PROVIDER }));
-    const fake = await load({ provider: null }).route.POST(call({ providerId: 'made-up' }));
+test('no id at all is not an error either', async () => {
+    const { route, mailed } = load(LIVE);
+    const res: any = await route.POST(call({}));
 
-    assert.equal(real.body.ok, true);
-    assert.equal(fake.body.ok, true);
-    assert.equal(fake.status, real.status);
+    assert.equal(res.body.ok, true);
+    assert.deepEqual(mailed, []);
 });
 
-/* --------------------------------------------------------------- the limits */
+/* ------------------------------------------------- cooldown and ceiling */
 
 test('a second ask inside the cooldown does not send', async () => {
-    const justNow = new Date(Date.now() - 5000).toISOString();
-    const { route, resent } = load({
-        user: { id: OWNER, email: 'applicant@example.test', email_confirmed_at: null, confirmation_sent_at: justNow, user_metadata: {} },
+    const { route, mailed } = load({
+        ...LIVE,
+        last_resend_at: new Date(Date.now() - 5 * 1000).toISOString(),
     });
-    const res: any = await route.POST(call({ providerId: PROVIDER }));
+    const res: any = await route.POST(call({ applicationId: 'app-1' }));
 
-    assert.equal(resent.length, 0);
-    assert.equal(typeof res.body.wait, 'number');
-    assert.ok(res.body.wait > 0 && res.body.wait <= 60);
+    assert.equal(res.body.ok, true);
+    assert.ok(res.body.wait > 0, 'the caller already holds this id, so a wait tells them nothing new');
+    assert.deepEqual(mailed, []);
 });
 
 test('once the cooldown has passed it sends again', async () => {
-    const agesAgo = new Date(Date.now() - 10 * 60 * 1000).toISOString();
-    const { route, resent } = load({
-        user: { id: OWNER, email: 'applicant@example.test', email_confirmed_at: null, confirmation_sent_at: agesAgo, user_metadata: {} },
+    const { route, mailed } = load({
+        ...LIVE,
+        last_resend_at: new Date(Date.now() - 120 * 1000).toISOString(),
     });
-    await route.POST(call({ providerId: PROVIDER }));
-
-    assert.equal(resent.length, 1);
+    await route.POST(call({ applicationId: 'app-1' }));
+    assert.equal(mailed.length, 1);
 });
 
 test('the daily ceiling stops it, and says to talk to us instead', async () => {
-    const today = new Date().toISOString().slice(0, 10);
-    const { route, resent } = load({
-        user: {
-            id: OWNER, email: 'applicant@example.test', email_confirmed_at: null, confirmation_sent_at: null,
-            user_metadata: { resend_day: today, resend_count: 5 },
-        },
-    });
-    const res: any = await route.POST(call({ providerId: PROVIDER }));
+    const { route, mailed } = load({ ...LIVE, resend_count: 5 });
+    const res: any = await route.POST(call({ applicationId: 'app-1' }));
 
-    assert.equal(resent.length, 0);
-    assert.equal(res.body.capped, true);
-});
-
-test('yesterday does not count against today', async () => {
-    const { route, resent } = load({
-        user: {
-            id: OWNER, email: 'applicant@example.test', email_confirmed_at: null, confirmation_sent_at: null,
-            user_metadata: { resend_day: '2020-01-01', resend_count: 99 },
-        },
-    });
-    await route.POST(call({ providerId: PROVIDER }));
-
-    assert.equal(resent.length, 1);
-});
-
-test('a refused send does not spend the allowance', async () => {
-    // Otherwise a rate-limited evening burns somebody's five and they cannot
-    // try when the quota comes back.
-    const { route, updated, logged } = load({ mailError: 'email rate limit exceeded' });
-    const res: any = await route.POST(call({ providerId: PROVIDER }));
-
-    assert.equal(res.body.sent, false);
-    assert.equal(updated.length, 0, 'the counter was not moved');
-    assert.equal(logged.some((l) => l.message === 'service-resend-verification'), true);
-});
-
-test('a successful send is counted', async () => {
-    const { route, updated } = load();
-    await route.POST(call({ providerId: PROVIDER }));
-
-    assert.equal(updated.length, 1);
-    assert.equal(updated[0].attrs.user_metadata.resend_count, 1);
-});
-
-test('an already-confirmed account is not emailed', async () => {
-    const { route, resent } = load({
-        user: { id: OWNER, email: 'applicant@example.test', email_confirmed_at: '2026-08-01T00:00:00Z', user_metadata: {} },
-    });
-    const res: any = await route.POST(call({ providerId: PROVIDER }));
-
-    assert.equal(resent.length, 0);
     assert.equal(res.body.ok, true);
+    assert.equal(res.body.capped, true);
+    assert.deepEqual(mailed, [], 'somebody on their sixth link has a different problem');
+});
+
+test('a refused send does not claim to have gone', async () => {
+    const { route, logged } = load(LIVE, { mailSent: false });
+    const res: any = await route.POST(call({ applicationId: 'app-1' }));
+
+    assert.equal(res.body.ok, true);
+    assert.equal(res.body.sent, false);
+    assert.ok(logged.some((l) => /resend-verification/.test(String(l.message))));
 });

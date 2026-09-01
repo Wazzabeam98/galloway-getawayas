@@ -23,6 +23,8 @@ import {
 import { skillIsPublic, blockedSkillReason } from '@/lib/serviceSkills';
 import { asksAboutFuel } from '@/lib/serviceProviders';
 import ProviderReviewRow from '@/components/admin/ProviderReviewRow';
+import WaitingOnApplicant from '@/components/admin/WaitingOnApplicant';
+import { daysWaiting, daysUntilDeleted, RETENTION_DAYS } from '@/lib/serviceApplications';
 import BulkApprove from '@/components/admin/BulkApprove';
 
 export const dynamic = 'force-dynamic';
@@ -174,6 +176,27 @@ export default async function AdminProviders() {
         (r: any) => r.status !== 'pending_review' && changedIds.indexOf(r.id) === -1
     );
 
+    // Applications that never proved their address. They have no account and no
+    // provider row, so they are on no other screen — see
+    // components/admin/WaitingOnApplicant.tsx.
+    const { data: unclaimedRows } = await admin
+        .from('service_applications')
+        .select('id, business_name, trade, email, contact_phone, created_at, resend_count')
+        .is('claimed_at', null)
+        .order('created_at', { ascending: true })
+        .limit(100);
+
+    const unclaimed = (unclaimedRows || []).map((r: any) => ({
+        id: r.id,
+        business_name: r.business_name,
+        trade: r.trade,
+        email: r.email,
+        contact_phone: r.contact_phone,
+        resend_count: Number(r.resend_count || 0),
+        daysWaiting: daysWaiting(r),
+        daysLeft: daysUntilDeleted(r),
+    }));
+
     return (
         <div className="max-w-4xl mx-auto px-4 sm:px-6 py-10">
             <Link href="/admin" className="text-sm text-slate-500 hover:text-slate-800 underline">
@@ -192,6 +215,8 @@ export default async function AdminProviders() {
                         .map((reason) => counts[reason] + ' ' + attentionLabel(reason))
                         .join(' · ') + '.'}
             </p>
+
+            <WaitingOnApplicant rows={unclaimed} />
 
             {waiting.length > 0 && (
                 <section className="mb-12">
