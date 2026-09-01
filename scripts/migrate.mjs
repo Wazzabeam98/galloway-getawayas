@@ -50,6 +50,8 @@
 
 import fs from 'node:fs';
 import pg from 'pg';
+import crypto from 'node:crypto';
+import pathModule from 'node:path';
 import { loadEnv, TEST_PROJECT_REF } from './seed-lib.mjs';
 import { createRequire } from 'node:module';
 
@@ -189,11 +191,13 @@ const dbUrl = encodePassword(url);
 /* ------------------------------------------------------- reading the SQL */
 
 const inlineSql = valueOf('sql');
-if (!file && !inlineSql) {
-    die('nothing to run. Give a migration file, or --sql "select ...".');
+// --status asks a question rather than running anything, so it is the one mode
+// that legitimately arrives with no file and no SQL.
+if (!file && !inlineSql && !flag('status')) {
+    die('nothing to run. Give a migration file, --sql "select ...", or --status.');
 }
 
-const sql = inlineSql ?? fs.readFileSync(file, 'utf8');
+const sql = flag('status') ? '' : (inlineSql ?? fs.readFileSync(file, 'utf8'));
 
 // What this SQL would do — see scripts/sqlRisk.cjs. It lives there rather than
 // here because the only way to test it in this file was to run this script,
@@ -217,7 +221,10 @@ if (destructive.length) console.log('  WARNING  LOSES DATA: ' + destructive.join
 // it is the word that stands between a migration file and the database.
 const readOnlyQuery = !!inlineSql && !writes;
 
-if (!flag('apply') && !readOnlyQuery) {
+// --status is read-only and must not be told to add --apply. It is a question,
+// and requiring the word that stands between a migration and the database in
+// order to ask a question is how that word becomes reflex.
+if (!flag('apply') && !readOnlyQuery && !flag('status')) {
     console.log('\n  dry run — nothing was executed. Add --apply to run it.\n');
     process.exit(0);
 }
@@ -246,6 +253,24 @@ if (destructive.length && !flag('destructive')) {
 // node-postgres sends a query with no parameters over the SIMPLE protocol,
 // which permits multiple commands. It also reports which statement failed,
 // rather than the file.
+/**
+ * Exit without cutting stdout off mid-sentence.
+ *
+ * process.exit() does not wait for a PIPED stdout to drain. Straight to a
+ * terminal it looks fine, because that write is synchronous; piped into a file
+ * or read by another script it is not, and the tail is simply lost. A large
+ * --sql result therefore came back as truncated JSON with a zero exit status —
+ * no error anywhere, just an object that stops mid-key.
+ *
+ * Found on 1 September 2026 by scripts/schema-diff.mjs, which reads about 4,300
+ * rows through this and got roughly a third of them. Nothing before that had
+ * ever asked this runner for more output than a pipe buffer holds.
+ */
+async function finish(code) {
+    await new Promise((resolve) => process.stdout.write('', resolve));
+    process.exit(code);
+}
+
 async function connect() {
     const client = new pg.Client({
         connectionString: dbUrl,
@@ -264,12 +289,57 @@ async function connect() {
  * that matches no migration and no rollback to reach for — which on production
  * is the worst place to be doing arithmetic about what did and did not run.
  */
+function checksumOf(text) {
+    return crypto.createHash('sha256').update(text).digest('hex');
+}
+
 async function applyFile(path) {
     const sqlText = fs.readFileSync(path, 'utf8');
     const client = await connect();
     try {
         await client.query('begin');
         const results = await client.query(sqlText);
+
+        // THE LEDGER ROW GOES IN THE SAME TRANSACTION AS THE DDL.
+        //
+        // Not after it. A separate write can fail on its own, and then the
+        // schema has moved and the record says it has not — which is precisely
+        // the state this table exists to end, recreated by the thing meant to
+        // end it. In one transaction they cannot disagree: either both happened
+        // or neither did.
+        //
+        // Guarded on the table existing, because the migration that CREATES it
+        // has to be able to run before it exists. That one is recorded by the
+        // backfill, like everything else written before this idea.
+        //
+        // The checksum is the file's bytes as they are at this moment. If the
+        // file is edited afterwards, --status can say so; without it, an edited
+        // migration is invisible.
+        const { rows: hasLedger } = await client.query(
+            "select to_regclass('public.schema_migrations') is not null as present"
+        );
+
+        // ONLY FILES FROM supabase/migrations ARE MIGRATIONS.
+        //
+        // The runner will happily apply any .sql path it is given — a probe, a
+        // one-off fix, the temporary file scripts/backfill-migrations.mjs
+        // builds — and none of those is a migration. The first backfill run
+        // recorded its own temp file, which is how this rule came to be
+        // written down rather than assumed.
+        const inMigrationsFolder =
+            pathModule.resolve(pathModule.dirname(path))
+            === pathModule.resolve(pathModule.dirname(new URL('../supabase/migrations/x', import.meta.url).pathname));
+
+        if (hasLedger[0] && hasLedger[0].present && inMigrationsFolder) {
+            await client.query(
+                `insert into public.schema_migrations (filename, checksum, backfilled, note)
+                 values ($1, $2, false, null)
+                 on conflict (filename) do update
+                   set applied_at = now(), checksum = excluded.checksum, backfilled = false`,
+                [pathModule.basename(path), checksumOf(sqlText)]
+            );
+        }
+
         await client.query('commit');
         const list = Array.isArray(results) ? results : [results];
         return list
@@ -294,12 +364,135 @@ async function readQuery(sqlText) {
     }
 }
 
+/* ---------------------------------------------------------------- --status */
+
+// What this database says has run, against what the folder says should have.
+//
+// Read-only, and it answers three different questions that are easy to confuse:
+//
+//   OUTSTANDING  in the folder, not in the ledger. Something to run.
+//   EDITED       in both, but the file no longer matches what was applied.
+//                Nobody finds this by reading: the file looks right and the
+//                schema does not match it.
+//   UNKNOWN      in the ledger as an assumption rather than an observation.
+//
+// The third is printed as prominently as the other two on purpose. Every
+// migration written before the ledger existed is an assertion made from the
+// state of the schema, and a status screen that showed those as plain ticks
+// would be claiming somebody watched them run. Nobody did.
+if (flag('status')) {
+    const dir = new URL('../supabase/migrations/', import.meta.url);
+    const onDisk = fs.readdirSync(dir)
+        .filter((n) => n.endsWith('.sql'))
+        .sort();
+
+    let ledger;
+    try {
+        ledger = await readQuery(
+            'select filename, applied_at, checksum, backfilled, note '
+            + 'from public.schema_migrations order by filename'
+        );
+    } catch (err) {
+        console.error(
+            '\n  Could not read public.schema_migrations on ' + target.name + '.'
+            + '\n  ' + String(err.message).split(dbUrl).join(redacted)
+            + '\n\n  If the table does not exist yet, apply'
+            + '\n  supabase/migrations/20260901180000_a_record_of_what_has_run.sql first.\n'
+        );
+        process.exit(1);
+    }
+
+    const known = new Map(ledger.map((r) => [r.filename, r]));
+
+    const outstanding = [];
+    const edited = [];
+    const assumed = [];
+    let observed = 0;
+
+    for (const name of onDisk) {
+        const row = known.get(name);
+        if (!row) { outstanding.push(name); continue; }
+
+        if (row.backfilled) { assumed.push(name); continue; }
+
+        const now = crypto.createHash('sha256')
+            .update(fs.readFileSync(new URL(name, dir), 'utf8'))
+            .digest('hex');
+
+        if (row.checksum && row.checksum !== now) edited.push({ name, was: row.checksum, is: now });
+        else observed++;
+    }
+
+    // In the ledger and not on disk. A deleted or renamed migration file.
+    const orphaned = ledger.map((r) => r.filename).filter((n) => !onDisk.includes(n));
+
+    const rule = '  ' + '-'.repeat(68);
+    console.log('\n  ' + target.name + ' — ' + onDisk.length + ' migration files, '
+        + ledger.length + ' rows in the ledger');
+    console.log(rule);
+
+    if (outstanding.length) {
+        console.log('\n  OUTSTANDING — in the folder, never applied here (' + outstanding.length + ')');
+        outstanding.forEach((n) => console.log('      ' + n));
+        console.log('\n      Run each with:  node scripts/migrate.mjs --target '
+            + targetName + ' supabase/migrations/<file> --apply');
+        // A backfill only knows the folder as it was when it ran. A migration
+        // somebody else merged afterwards is genuinely applied and genuinely
+        // absent from the ledger, and it shows up here looking identical to one
+        // that was never run. This listing errs towards telling you to check,
+        // which is the right direction — but it should say which kind of
+        // "outstanding" it cannot tell apart. Watched happening on 1 September
+        // 2026 with another session's migration.
+        console.log('\n      If you think one of these has already run, check the schema before');
+        console.log('      re-applying it. A backfill only recorded the folder as it was at the');
+        console.log('      time, so a migration merged since is applied and unrecorded.');
+    }
+
+    if (edited.length) {
+        console.log('\n  EDITED SINCE IT RAN (' + edited.length + ')');
+        console.log('      The file no longer matches what was applied. The schema here is');
+        console.log('      NOT what these files describe, and reading them will not show it.');
+        edited.forEach((e) => console.log('      ' + e.name
+            + '\n          applied: ' + e.was.slice(0, 16)
+            + '\n          file now: ' + e.is.slice(0, 16)));
+    }
+
+    if (orphaned.length) {
+        console.log('\n  IN THE LEDGER, NOT IN THE FOLDER (' + orphaned.length + ')');
+        console.log('      Renamed or deleted after it ran. Harmless if deliberate.');
+        orphaned.forEach((n) => console.log('      ' + n));
+    }
+
+    if (assumed.length) {
+        console.log('\n  ASSUMED, NOT OBSERVED (' + assumed.length + ')');
+        console.log('      Backfilled. Nobody watched these run and no checksum was taken,');
+        console.log('      so an edit to any of them cannot be detected. They are here');
+        console.log('      because the schema said so, not because the runner saw it.');
+        const note = assumed.map((n) => known.get(n).note).find(Boolean);
+        if (note) console.log('      Basis: ' + note);
+    }
+
+    console.log('\n  OBSERVED — applied by this runner, checksum matches (' + observed + ')');
+
+    console.log('\n' + rule);
+    if (!outstanding.length && !edited.length) {
+        console.log('  Nothing outstanding, nothing edited.'
+            + (assumed.length ? ' ' + assumed.length + ' of the ' + onDisk.length
+                + ' are assumptions, above.' : ''));
+    } else {
+        console.log('  ' + outstanding.length + ' outstanding, ' + edited.length + ' edited.');
+    }
+    console.log('');
+
+    process.exit(outstanding.length || edited.length ? 1 : 0);
+}
+
 if (readOnlyQuery) {
     try {
         const rows = await readQuery(inlineSql);
         console.log(JSON.stringify(rows, null, 2));
         console.log('');
-        process.exit(0);
+        await finish(0);
     } catch (err) {
         console.error('\n  FAILED: ' + String(err.message).split(dbUrl).join(redacted) + '\n');
         process.exit(1);
