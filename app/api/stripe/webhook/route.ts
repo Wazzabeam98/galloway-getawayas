@@ -408,7 +408,13 @@ export async function POST(request: Request) {
                                 + '<p>Their card is held, not charged. Confirm within 48 hours to '
                                 + 'take the booking; if you can’t make it, decline and the hold is '
                                 + 'released.</p>'
-                                + button(SITE_URL + '/services/join?section=orders', 'View the request'),
+                                // Their dashboard, where the request is waiting
+                                // to confirm or decline. The old link carried
+                                // ?section=orders, which nothing reads, so it
+                                // dropped the chef on the trade picker — the
+                                // first link a provider ever clicks, dead. A
+                                // guest provider's dashboard now lives here.
+                                + button(SITE_URL + '/services/dashboard', 'View the request'),
                                 'You’re receiving this because you offer experiences on Galloway Getaways.'
                             )
                         );
