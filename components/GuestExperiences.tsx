@@ -431,13 +431,25 @@ export default function GuestExperiences(props: {
                                 />
                             </label>
 
+                            {/* The reassurance, said plainly and BEFORE the button
+                                rather than buried under it: this is a request, not
+                                a payment. The card is authorised now, not charged —
+                                so the reader knows the commitment is the provider's
+                                to make first. The 48 hours is the real confirm
+                                window (CONFIRM_WINDOW_HOURS). */}
+                            <p className="mt-3 rounded-md bg-gray-50 px-3 py-2 text-xs leading-relaxed text-gray-600">
+                                <span className="font-semibold text-gray-900">Your card isn’t charged yet.</span>{' '}
+                                {who} has 48 hours to confirm. You’re only charged if they say yes — if
+                                they decline or don’t reply, nothing is taken.
+                            </p>
+
                             <button
                                 type="button"
                                 disabled={busy === p.id}
                                 onClick={() => request(p)}
-                                className="mt-3 w-full rounded-md bg-emerald-700 px-3 py-2 text-sm font-medium text-white disabled:opacity-60"
+                                className="mt-2 w-full rounded-md bg-emerald-700 px-3 py-2 text-sm font-medium text-white disabled:opacity-60"
                             >
-                                {busy === p.id ? 'Starting…' : 'Request & hold my card'}
+                                {busy === p.id ? 'Sending…' : 'Send request'}
                             </button>
 
                             <p className="mt-2 text-[11px] leading-snug text-gray-400">

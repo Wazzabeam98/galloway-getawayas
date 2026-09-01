@@ -270,6 +270,24 @@ because it shared a section with false ones is the same mistake pointing the
 other way. Each of these was re-checked today rather than copied across, and one
 of them turned out to have changed since it was written.
 
+### A confirmed guest order has no message thread with the provider
+
+Once a provider confirms a guest order, the two have no way to talk. The card's
+"Message host" is the cottage host and is correct — but that is not the baker
+who just took the cake order, and there is no thread with her at all. A chef
+coming into a cottage and a guest with an allergy have things to say; right now
+that is a phone call (the dashboard releases the guest's number on confirm) or
+nothing.
+
+The cause is in the data model: `messages` is keyed on `booking_id` XOR
+`enquiry_id`, and a guest order is neither — `service_orders` has no thread and
+`messages` has no `order_id`. So this is not a UI gap to paper over; it needs a
+thread the order can own. Whoever builds it should look at the unified-inbox
+work above in the same pass — job threads and order threads are the same missing
+shape (a message with no `booking_id`), and the badge and needs-reply filters
+already exclude exactly that. Flagged in the overnight report and again on
+2 September 2026; recorded here on Liam's instruction rather than built.
+
 ### The test project has no SMTP of its own
 
 **Production is fine** — it has custom SMTP through Resend, settled on
