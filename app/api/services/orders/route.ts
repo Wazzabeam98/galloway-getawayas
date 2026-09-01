@@ -37,13 +37,28 @@ export async function GET(request: Request) {
 
         const { data: orders } = await admin
             .from('service_orders')
-            .select('id, status, service_date, guests, price, guest_name, note, expires_at, created_at')
+            .select('id, status, service_date, guests, price, guest_name, guest_phone, guest_email, note, expires_at, created_at')
             .eq('provider_id', providerId)
             .order('created_at', { ascending: false })
             .limit(50);
 
-        // Awaiting-answer first, then the rest by recency.
-        const rows = (orders || []).slice().sort((a, b) => {
+        // CONTACT IS RELEASED ON CONFIRM, NOT BEFORE.
+        //
+        // The same rule an accepted enquiry follows for the host: while a
+        // request is only held, the provider decides on the date, the price and
+        // the note — not on the guest's phone number. The moment they confirm
+        // and the card is captured, they are doing the job, so they get what
+        // they need to do it: name, phone and email. An unanswered or declined
+        // order carries no contact out of this route at all.
+        const rows = (orders || []).map((o) => {
+            const released = o.status === 'confirmed';
+            return {
+                ...o,
+                guest_phone: released ? o.guest_phone : null,
+                guest_email: released ? o.guest_email : null,
+            };
+        }).sort((a, b) => {
+            // Awaiting-answer first, then the rest by recency.
             const aWaiting = a.status === 'authorised' ? 0 : 1;
             const bWaiting = b.status === 'authorised' ? 0 : 1;
             return aWaiting - bWaiting;

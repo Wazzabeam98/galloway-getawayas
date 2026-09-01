@@ -18,6 +18,9 @@ interface Order {
     guests: number | null;
     price: number;
     guest_name: string | null;
+    // Released only once the provider confirms — the route sends null until then.
+    guest_phone: string | null;
+    guest_email: string | null;
     note: string | null;
     expires_at: string | null;
 }
@@ -78,7 +81,13 @@ export default function ProviderExperienceDashboard(props: { providerId: string 
         setBusy(null);
     }
 
-    async function answer(orderId: string, decision: 'confirm' | 'decline') {
+    async function answer(orderId: string, decision: 'confirm' | 'decline' | 'refund') {
+        // A refund gives the guest their money back — worth a beat before it
+        // happens by accident.
+        if (decision === 'refund' && typeof window !== 'undefined'
+            && !window.confirm('Refund this booking in full? The guest gets their money back and this can’t be undone.')) {
+            return;
+        }
         setBusy(orderId);
         setError(null);
         try {
@@ -98,7 +107,8 @@ export default function ProviderExperienceDashboard(props: { providerId: string 
 
     const live = payouts && payouts.payouts_enabled;
     const waiting = orders.filter((o) => o.status === 'authorised');
-    const rest = orders.filter((o) => o.status !== 'authorised');
+    const confirmed = orders.filter((o) => o.status === 'confirmed');
+    const other = orders.filter((o) => o.status !== 'authorised' && o.status !== 'confirmed');
 
     return (
         <div className="mt-5 space-y-5">
@@ -165,11 +175,58 @@ export default function ProviderExperienceDashboard(props: { providerId: string 
                 </div>
             )}
 
-            {rest.length > 0 && (
+            {/* Confirmed — the bookings that are actually happening, with the
+                contact released so the provider can arrange them. */}
+            {confirmed.length > 0 && (
+                <div>
+                    <p className="font-semibold text-gray-900">Coming up</p>
+                    <div className="mt-3 space-y-3">
+                        {confirmed.map((o) => (
+                            <div key={o.id} className="rounded-xl border border-emerald-200 bg-emerald-50/40 p-4">
+                                <div className="text-sm font-medium text-gray-900">
+                                    {o.service_date}
+                                    {o.guests ? ' · ' + o.guests + ' guest' + (o.guests === 1 ? '' : 's') : ''}
+                                    {' · £' + o.price.toFixed(2)}
+                                </div>
+                                {o.guest_name ? <div className="mt-0.5 text-sm text-gray-700">For {o.guest_name}</div> : null}
+                                {o.note ? <p className="mt-1 text-sm text-gray-600 whitespace-pre-line">{o.note}</p> : null}
+
+                                {(o.guest_phone || o.guest_email) ? (
+                                    <div className="mt-2 flex flex-wrap gap-2">
+                                        {o.guest_phone ? (
+                                            <a href={'tel:' + o.guest_phone} className="rounded-md border border-gray-300 bg-white px-3 py-1.5 text-sm font-medium text-gray-800 hover:border-gray-400">
+                                                Call {o.guest_phone}
+                                            </a>
+                                        ) : null}
+                                        {o.guest_email ? (
+                                            <a href={'mailto:' + o.guest_email} className="rounded-md border border-gray-300 bg-white px-3 py-1.5 text-sm font-medium text-gray-800 hover:border-gray-400">
+                                                Email
+                                            </a>
+                                        ) : null}
+                                    </div>
+                                ) : null}
+
+                                <div className="mt-3">
+                                    <button
+                                        type="button"
+                                        disabled={busy === o.id}
+                                        onClick={() => answer(o.id, 'refund')}
+                                        className="text-xs font-medium text-gray-500 underline hover:text-gray-700 disabled:opacity-60"
+                                    >
+                                        {busy === o.id ? 'Refunding…' : 'Cancel and refund the guest'}
+                                    </button>
+                                </div>
+                            </div>
+                        ))}
+                    </div>
+                </div>
+            )}
+
+            {other.length > 0 && (
                 <div>
                     <p className="text-sm font-medium text-gray-500">Earlier</p>
                     <ul className="mt-2 space-y-1 text-sm text-gray-500">
-                        {rest.map((o) => (
+                        {other.map((o) => (
                             <li key={o.id}>
                                 {o.service_date} · £{o.price.toFixed(2)} · {STATUS_WORD[o.status] || o.status}
                             </li>
