@@ -44,6 +44,18 @@ test('over once checkout day itself has passed', () => {
     assert.equal(liveForGuestCard({ status: 'confirmed', check_out: '2026-07-01' }, nextDay), false);
 });
 
+// The trips list files a booking under "Past trips" when it is over, and over
+// is the exact negative of liveForGuestCard. So this is also the test for the
+// trips split: a stay checking out today, viewed on the last morning, must not
+// be filed as past while the home card still says "You're there now".
+test('trips split: a checkout-today booking is not "over" on the last morning', () => {
+    const lastMorning = new Date('2026-07-01T09:00:00+01:00');
+    const isOver = (b: { status: string; check_out: string }) => !liveForGuestCard(b, lastMorning);
+    assert.equal(isOver({ status: 'confirmed', check_out: '2026-07-01' }), false, 'still upcoming');
+    assert.equal(isOver({ status: 'confirmed', check_out: '2026-06-30' }), true, 'yesterday is past');
+    assert.equal(isOver({ status: 'cancelled', check_out: '2026-08-01' }), true, 'cancelled is past');
+});
+
 test('a confirmed stay yet to start is live', () => {
     const now = new Date('2026-09-02T10:00:00+01:00');
     assert.equal(liveForGuestCard({ status: 'confirmed', check_out: '2026-09-20' }, now), true);

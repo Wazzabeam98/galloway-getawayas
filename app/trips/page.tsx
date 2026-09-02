@@ -13,7 +13,7 @@ import { getImageUrl, capitializeFirst, displayName } from '@/lib/utils';
 import Link from 'next/link';
 import { cancellationPosition } from '@/lib/cancellationView';
 import { ukLongDate, londonDayKey } from '@/lib/dayKey';
-import { upcomingUntilCheckout } from '@/lib/bookingWindows';
+import { upcomingUntilCheckout, liveForGuestCard } from '@/lib/bookingWindows';
 import GuestExperiences from '@/components/GuestExperiences';
 
 interface Booking {
@@ -239,10 +239,14 @@ export default function TripsPage() {
     // down, and not already over. Everything else is history, including a
     // booking cancelled for dates that have not arrived yet — those dates are
     // gone and it is not a trip any more.
-    const isOver = (b: Booking) =>
-        b.status === 'cancelled'
-        || b.status === 'declined'
-        || new Date(b.check_out) < today;
+    //
+    // "Over" is the exact negative of liveForGuestCard, the same test the home
+    // card uses, so the two screens agree. It used to be `new Date(check_out) <
+    // today` — an instant compare, where check-out's UTC midnight is 01:00 BST,
+    // so a stay checking out today was filed under "Past trips" from 01:00 on
+    // the last morning while the home card still said "You're there now". The
+    // London calendar day keeps it upcoming through the whole checkout day.
+    const isOver = (b: Booking) => !liveForGuestCard(b, today);
 
     // Nearest first at the top, so the next stay is the first thing read.
     const upcoming = bookings
@@ -270,7 +274,10 @@ export default function TripsPage() {
     // function rather than inline in a single map.
     const renderTrip = (b: Booking) => {
         const listing = listingMap[b.listing_id];
-        const isCompleted = b.status === 'confirmed' && new Date(b.check_out) < today;
+        // Completed drives the review prompt, so it uses the same London-day
+        // "over" test — a stay is not "completed" while the guest is still on it
+        // on checkout day.
+        const isCompleted = b.status === 'confirmed' && isOver(b);
         const alreadyReviewed = reviewedBookingIds.has(b.id);
 
         const upcomingConfirmed = upcomingUntilCheckout(b, today);
