@@ -9,6 +9,7 @@ import {
     fillPlaceholders,
     needsLockboxCode,
     usesLockboxCode,
+    checkInFallbackBody,
 } from '@/lib/scheduledMessages';
 import type { BookingLike } from '@/lib/scheduledMessages';
 import { resolveTemplate } from '@/lib/messageTemplates';
@@ -41,6 +42,147 @@ function formatDate(value: string): string {
         parseInt(parts[2], 10)
     );
     return d.toLocaleDateString('en-GB', { weekday: 'long', day: 'numeric', month: 'long' });
+}
+
+// THE FLOOR: the guest gets the address and arrival time whether or not the
+// host ever wrote a check-in template.
+//
+// The template loop is driven by templates, so a host who wrote nothing is
+// invisible to it — their booking is never loaded — and the guest arrives with
+// no address and no idea how to get in. That is the "family outside a locked
+// door on a Friday night" this exists to stop. So this runs INDEPENDENTLY, and
+// is called at every exit of the run (including the two early ones for "no
+// templates" and "no bookings" — which is exactly the case it must cover).
+//
+// It sweeps confirmed stays arriving in the next three days and, for any whose
+// host has no usable check-in template covering that listing (or whose template
+// is held back for a door code that is not set), sends the practical minimum as
+// a message in the guest's own thread. Idempotent under its own template_type,
+// so it sends once and never lands on top of a host's own message. Bounded to a
+// three-day horizon, so it stays a small query.
+async function checkInFallbackPass(
+    admin: any,
+    now: Date,
+    live: ScopedTemplate[]
+): Promise<{ sent: number; skipped: number; failed: number }> {
+    const counts = { sent: 0, skipped: 0, failed: 0 };
+    try {
+        const dayKey = (d: Date) => d.toISOString().split('T')[0];
+        const todayKey = dayKey(now);
+        const horizonKey = dayKey(new Date(now.getTime() + 3 * 86400000));
+
+        const { data: arriving } = await admin
+            .from('bookings')
+            .select('id, host_id, guest_id, listing_id, check_in, check_out, status')
+            .eq('status', 'confirmed')
+            .gte('check_in', todayKey)
+            .lte('check_in', horizonKey);
+
+        const fb = arriving || [];
+        if (fb.length === 0) return counts;
+
+        const fbListingIds = Array.from(new Set(fb.map((b: any) => b.listing_id)));
+        const fbGuestIds = Array.from(new Set(fb.map((b: any) => b.guest_id)));
+
+        const { data: fbListings } = await admin
+            .from('listings')
+            .select('id, title, location, check_in_time, check_out_time, check_in_method')
+            .in('id', fbListingIds);
+        const fbListingById: Record<string, any> = {};
+        (fbListings || []).forEach((l: any) => { fbListingById[l.id] = l; });
+
+        const { data: fbGuests } = await admin
+            .from('profiles')
+            .select('id, full_name, preferred_name, show_full_name')
+            .in('id', fbGuestIds);
+        const fbGuestById: Record<string, any> = {};
+        (fbGuests || []).forEach((g: any) => { fbGuestById[g.id] = g; });
+
+        // Door codes, service-role only, same as the main loop. A self-check-in
+        // fallback carries the code when the host set one.
+        const { data: fbCodes } = await admin
+            .from('listing_access_codes')
+            .select('listing_id, code')
+            .in('listing_id', fbListingIds);
+        const fbCodeByListing: Record<string, string> = {};
+        (fbCodes || []).forEach((c: any) => { fbCodeByListing[c.listing_id] = c.code; });
+
+        for (const booking of fb) {
+            const listing = fbListingById[booking.listing_id];
+            if (!listing) continue;
+
+            // Does the host already cover this listing with a real check-in
+            // template that can actually send? If so, leave it to the loop
+            // above. A template that needs a door code the listing does not
+            // have is NOT covered — it is held back, and the guest would
+            // otherwise get nothing.
+            const mine = live.filter((t) => t.user_id === booking.host_id);
+            const code = fbCodeByListing[booking.listing_id] || null;
+            const tmpl = resolveTemplate(mine, 'checkin_details', booking.listing_id);
+            const covered = !!tmpl && !needsLockboxCode(tmpl.body, code);
+            if (covered) continue;
+
+            const { error: claimError } = await admin
+                .from('sent_scheduled_messages')
+                .insert({ booking_id: booking.id, template_type: 'checkin_fallback' });
+
+            if (claimError) {
+                if (String((claimError as any).code) !== '23505') {
+                    await logError(
+                        'scheduled-messages: could not claim checkin_fallback for booking ' + booking.id,
+                        claimError,
+                        { path: '/api/cron/scheduled-messages' }
+                    );
+                    counts.failed++;
+                } else {
+                    counts.skipped++;
+                }
+                continue;
+            }
+
+            const guest = fbGuestById[booking.guest_id];
+            const firstName = displayName(guest, 'there').split(' ')[0] || 'there';
+            const body = checkInFallbackBody({
+                firstName,
+                listing,
+                checkIn: formatDate(booking.check_in),
+                code,
+            });
+
+            const { error: messageError } = await admin.from('messages').insert({
+                booking_id: booking.id,
+                sender_id: booking.host_id,
+                recipient_id: booking.guest_id,
+                body,
+            });
+
+            if (messageError) {
+                await admin
+                    .from('sent_scheduled_messages')
+                    .delete()
+                    .eq('booking_id', booking.id)
+                    .eq('template_type', 'checkin_fallback');
+                await logError(
+                    'scheduled-messages: claimed but could not send checkin_fallback for booking ' + booking.id,
+                    messageError,
+                    { path: '/api/cron/scheduled-messages' }
+                );
+                counts.failed++;
+                continue;
+            }
+
+            counts.sent++;
+        }
+    } catch (fallbackErr: any) {
+        // The floor failing must not fail the whole run — the host-authored
+        // messages above have already gone.
+        await logError(
+            'scheduled-messages: the check-in fallback pass failed',
+            fallbackErr,
+            { path: '/api/cron/scheduled-messages' }
+        );
+    }
+    return counts;
 }
 
 export async function GET(request: Request) {
@@ -83,7 +225,10 @@ export async function GET(request: Request) {
 
         const usable = (templates || []).filter((t: any) => hasRealContent(t.body));
         if (usable.length === 0) {
-            return NextResponse.json({ ok: true, sent: 0, skipped: 0, failed: 0 });
+            // No host templates at all — but the check-in floor still runs, and
+            // this is the commonest case it exists for.
+            const fb = await checkInFallbackPass(admin, now, []);
+            return NextResponse.json({ ok: true, sent: fb.sent, skipped: fb.skipped, failed: fb.failed });
         }
 
         // Which listings each template is scoped to. No rows means the
@@ -197,7 +342,10 @@ export async function GET(request: Request) {
         });
 
         if (bookings.length === 0) {
-            return NextResponse.json({ ok: true, sent: 0, skipped: 0, failed: 0 });
+            // No template-anchored sends due — the floor still sweeps every
+            // arriving stay, including those whose host has no template.
+            const fb = await checkInFallbackPass(admin, now, live);
+            return NextResponse.json({ ok: true, sent: fb.sent, skipped: fb.skipped, failed: fb.failed });
         }
 
         const listingIds = Array.from(new Set(bookings.map((b: BookingLike) => b.listing_id)));
@@ -339,7 +487,13 @@ export async function GET(request: Request) {
             }
         }
 
-        return NextResponse.json({ ok: true, sent: sent, skipped: skipped, failed: failed });
+        const fb = await checkInFallbackPass(admin, now, live);
+        return NextResponse.json({
+            ok: true,
+            sent: sent + fb.sent,
+            skipped: skipped + fb.skipped,
+            failed: failed + fb.failed,
+        });
     } catch (err: any) {
         await logError(
             'scheduled-messages: ' + ((err && err.message) || 'failed'),
