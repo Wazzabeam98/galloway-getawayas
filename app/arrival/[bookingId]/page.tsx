@@ -65,15 +65,21 @@ export default async function ArrivalPage({ params }: { params: { bookingId: str
             .eq('id', booking.listing_id).maybeSingle(),
         admin.from('profiles').select('full_name, preferred_name, show_full_name, phone').eq('id', booking.host_id).maybeSingle(),
         admin.from('listing_arrival').select('arrival_directions, parking_info, wifi_name, wifi_password, what3words').eq('listing_id', booking.listing_id).maybeSingle(),
+        // Inside the window we fetch the code itself; outside it we fetch only
+        // listing_id, so the page can SAY a way in exists without the value ever
+        // leaving the table. Selecting 'code' here — even to test existence —
+        // would pull the secret into this request; we deliberately don't.
         codeReady
             ? admin.from('listing_access_codes').select('code').eq('listing_id', booking.listing_id).maybeSingle()
-            : Promise.resolve({ data: null } as any),
+            : admin.from('listing_access_codes').select('listing_id').eq('listing_id', booking.listing_id).maybeSingle(),
     ]);
     if (!listing) redirect('/trips');
 
     const l: any = listing;
     const a: any = arrival || {};
-    const doorCode: string | null = (access && (access as any).code) || null;
+    const doorCode: string | null = codeReady ? ((access && (access as any).code) || null) : null;
+    // A code is on file, whether or not we've fetched its value yet.
+    const hasCode = !!access;
     const hasCoords = l.latitude != null && l.longitude != null && !(l.latitude === 0 && l.longitude === 0);
     const addressLines = [l.street_address, [l.postcode, l.location].filter(Boolean).join(', ')].filter(Boolean);
     const addressString = [l.street_address, l.postcode, l.location].filter(Boolean).join(', ');
@@ -152,11 +158,13 @@ export default async function ArrivalPage({ params }: { params: { bookingId: str
                     </div>
                 )}
 
-                {/* Getting in */}
-                {doorCode && (
+                {/* Getting in — shows once a code is on file. The value itself only
+                    lands in the page within the three-day window; before that the
+                    guest gets the reassurance without the secret. */}
+                {(doorCode || hasCode) && (
                     <div className="mt-3 rounded-2xl border border-emerald-200 bg-emerald-50 p-4">
                         <Label icon={<KeyRound className="h-3.5 w-3.5" />} text="Getting in" tone="emerald" />
-                        {codeReady ? (
+                        {codeReady && doorCode ? (
                             <>
                                 <div className="mt-1.5 text-2xl font-semibold tracking-[0.15em] text-stone-900">{doorCode}</div>
                                 <p className="mt-0.5 text-xs text-emerald-700">Shown because your check-in is close</p>
