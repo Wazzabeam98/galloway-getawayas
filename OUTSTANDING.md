@@ -310,6 +310,42 @@ say so). Folding order-thread unread into the global `/messages` inbox — and i
 needs-reply nudge — is deferred to whoever does the unified-inbox pass. Until
 then, order-thread unread is surfaced only on the order itself.
 
+> **Correction, 2 September 2026.** The paragraph above says `messages` has no
+> `order_id`. It does — see the drift entry directly below. Order messaging was
+> half-built straight into the database and never migrated, so the doc reasoned
+> from the migration history and the migration history was wrong.
+
+### The schema drifted from the migrations, and the ledger did not catch it
+
+Walking the guest journey on 2 September turned up a live feature that exists in
+**no migration**. `messages` has an `order_id` column, its `messages_one_thread`
+check is the three-way `booking + enquiry + order = 1` (not the two-way the
+migrations define), there is a `messages_order_created_idx`, and two "order
+participants" RLS policies — all present on **both test and production**, none
+of it in `supabase/migrations`. It was applied to the databases by hand.
+
+That is the exact failure the ledger and the deploy gate were built to stop —
+"the schema a fresh database gets is the schema production runs" — and it
+happened before either existed. A `supabase db reset` today would produce a
+database that cannot store an order message and whose `messages` constraint
+disagrees with production. It is not only the order feature: the base
+`Participants can send / view messages on their booking` policies are **also**
+in no migration, so even plain booking messaging would be missing from a fresh
+build.
+
+It surfaced as a real bug — the un-migrated order policy read `service_orders`,
+which `authenticated` cannot, and that refused **every** booking-thread message
+insert (see the messaging fix in this PR). Fixing it meant adopting the
+order-messaging shape into a migration
+(`20260902103004_order_message_policy_stops_reading_service_orders_directly.sql`,
+applied to production and recorded in the ledger on 2 September), which closes
+the order half. **What remains:** reconcile the rest — dump production's schema,
+diff it against a database built from `supabase/migrations` alone, and either
+backfill `schema_migrations` for what was applied by hand or write catch-up
+migrations for it. Until that is done the ledger's count is honest about files,
+not about schema, and "74 migrations, all applied" does not mean "a fresh
+database matches production".
+
 ### The test project has no SMTP of its own
 
 **Production is fine** — it has custom SMTP through Resend, settled on
@@ -488,9 +524,9 @@ towns, by the other session, and every one is deliberately held.
 
 ---
 
-# Two traps worth knowing, both of which cost time this week
+# Three traps worth knowing, all of which cost time this week
 
-Neither is a defect. Both made working things look broken.
+None is a defect. All made working things look broken — or nearly shipped a break.
 
 - **`cmd = 'DELETE'` is not how you find a missing delete policy.** A `FOR ALL`
   policy covers DELETE and does not match that filter. It produced eleven
@@ -500,6 +536,19 @@ Neither is a defect. Both made working things look broken.
   existed and a working component tested as broken. Clear `.next`, restart,
   re-test before believing a UI bug. This is the sibling of the RSC-payload
   trap now written up in `MAINTENANCE.md`.
+- **The migration ledger tracks whether a migration RAN, not whether two of them
+  DISAGREE.** On 2 September the two sessions wrote conflicting `order participants`
+  policies on `messages` — one reading `service_orders` inline (which refuses every
+  booking-message insert), one through a SECURITY DEFINER function. Both were
+  clean, both were recorded, `--status` said "nothing outstanding, nothing edited"
+  on both projects. Only the apply ORDER saved production (the fix landed six
+  minutes after the break), and a fresh in-order rebuild would have re-broken it —
+  invisibly, because nothing compares two migrations' effects. Corrected by
+  `20260902222847`, which sorts after both so every order converges on the fix.
+  What would catch it next time: a check that no two migrations touch the same
+  policy/constraint/column with different definitions — a *content* diff across
+  the folder, not the ledger's ran/not-ran. Third same-file collision between the
+  two sessions this week; the first two conflicted visibly (git), this one did not.
 
 ---
 

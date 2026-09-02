@@ -11,7 +11,7 @@ import { toast } from 'react-toastify';
 import { Minus, Plus } from 'lucide-react';
 import { notify } from '@/lib/notify';
 import { freeCancelUntil, formatUk, cancellationSummary } from '@/lib/cancellation';
-import { quoteBooking } from '@/lib/pricing';
+import { quoteBooking, dateKey } from '@/lib/pricing';
 
 interface Props {
     listingId: string;
@@ -367,8 +367,8 @@ export default function BookingWidget({
                 listing_id: listingId,
                 guest_id: session.user.id,
                 host_id: hostId,
-                check_in: dateRange.startDate.toISOString().split('T')[0],
-                check_out: dateRange.endDate.toISOString().split('T')[0],
+                check_in: dateKey(dateRange.startDate),
+                check_out: dateKey(dateRange.endDate),
                 guests: totalGuests,
                 adults,
                 children,
