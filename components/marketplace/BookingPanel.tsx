@@ -242,9 +242,13 @@ export default function BookingPanel({ bookingId, checkIn, checkOut, provider }:
                     onChange={(e) => setNote(e.target.value.slice(0, 500))}
                     rows={2}
                     maxLength={500}
-                    placeholder={provider.isFood
-                        ? 'Anything else — e.g. “it’s mum’s 60th, could you pipe a message”.'
-                        : 'e.g. “we’re on the top floor, the buzzer doesn’t work” — or a special request.'}
+                    placeholder={provider.shape === 'made_to_order'
+                        // A made-to-order thing isn't a party: it has a size, a
+                        // message, and collection or delivery — not a headcount.
+                        ? 'e.g. collection Saturday morning, or drop-off at the cottage; and a message to write on it.'
+                        : provider.isFood
+                            ? 'Anything else — e.g. “it’s mum’s 60th, could you pipe a message”.'
+                            : 'e.g. “we’re on the top floor, the buzzer doesn’t work” — or a special request.'}
                     className="mt-1 block w-full resize-y rounded-lg border border-slate-300 px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-emerald-600"
                 />
             </label>

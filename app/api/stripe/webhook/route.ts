@@ -368,7 +368,7 @@ export async function POST(request: Request) {
                                         + '.</p>'
                                         + (slotOrder.price != null
                                             ? '<p>You paid £' + Number(slotOrder.price).toFixed(2) + '.</p>' : '')
-                                        + button(SITE_URL + '/trips', 'View your trip'),
+                                        + button(SITE_URL + '/experiences/order/' + slotOrder.id, 'View your booking'),
                                         'You’re receiving this because you booked an experience on Galloway Getaways.'
                                     )
                                 );
@@ -564,13 +564,14 @@ export async function POST(request: Request) {
                                 + '<p>Their card is held, not charged. Confirm within 48 hours to '
                                 + 'take the booking; if you can’t make it, decline and the hold is '
                                 + 'released.</p>'
-                                // Their dashboard, where the request is waiting
-                                // to confirm or decline. The old link carried
-                                // ?section=orders, which nothing reads, so it
-                                // dropped the chef on the trade picker — the
-                                // first link a provider ever clicks, dead. A
-                                // guest provider's dashboard now lives here.
-                                + button(SITE_URL + '/services/dashboard', 'View the request'),
+                                // Their dashboard, deep-linked to THIS request by
+                                // its id — the dashboard row carries a matching
+                                // anchor and highlights on arrival. The old link
+                                // carried ?section=orders, which nothing read, so
+                                // it dropped the chef on the trade picker; then a
+                                // bare /services/dashboard landed them on the whole
+                                // inbox. This lands on the request itself.
+                                + button(SITE_URL + '/services/dashboard#order-' + order.id, 'View the request'),
                                 'You’re receiving this because you offer experiences on Galloway Getaways.'
                             )
                         );

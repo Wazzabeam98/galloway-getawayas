@@ -195,8 +195,11 @@ export default async function OrderPage({ params, searchParams }: { params: { or
                                 <div className="flex gap-3">
                                     <CalendarDays className="mt-0.5 h-5 w-5 flex-none text-slate-400" />
                                     <div>
-                                        <dt className="text-xs font-semibold uppercase tracking-wide text-slate-500">When</dt>
-                                        <dd className="text-sm text-slate-800">{longWhen(order.service_date, order.service_time)}</dd>
+                                        {/* A date means different things by shape: an
+                                            appointment for a chef, a deadline for a
+                                            baker, a timed session for a slot. */}
+                                        <dt className="text-xs font-semibold uppercase tracking-wide text-slate-500">{order.shape === 'made_to_order' ? 'Ready for' : 'When'}</dt>
+                                        <dd className="text-sm text-slate-800">{longWhen(order.service_date, isSlot ? order.service_time : null)}</dd>
                                     </div>
                                 </div>
                                 <div className="flex gap-3">

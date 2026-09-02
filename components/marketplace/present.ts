@@ -60,6 +60,35 @@ export function nextSessionLabel(p: MpProvider): string {
         + (more > 0 ? '  ·  ' + (more + 1) + ' times' : '');
 }
 
+/**
+ * How an experience's date reads, framed by shape — because a date does not mean
+ * the same thing to a chef and a baker:
+ *   slot          — a date AND a time you turn up to: "Sat 14 Sep at 2pm"
+ *   comes_to_you  — an appointment on the day (the hour is arranged after): "Sat 14 Sep"
+ *   made_to_order — a deadline, not an event: "Ready for Sat 14 Sep"
+ */
+export function whenLabel(shape: string, dateKey: string, time: string | null): string {
+    const d = dateLabel(String(dateKey).slice(0, 10));
+    if (shape === 'slot') return time ? d + ' at ' + timeLabel(String(time).slice(0, 5)) : d;
+    if (shape === 'made_to_order') return 'Ready for ' + d;
+    return d;
+}
+
+/** The label above the date, per shape. "Ready for" already carries the date. */
+export function whenHeading(shape: string): string {
+    return shape === 'made_to_order' ? 'Ready for' : 'When';
+}
+
+/**
+ * Does a headcount — "N guests", the cottage party — mean anything for this
+ * shape? A private chef cooks for the party, so it does. A baker makes a cake of
+ * a size for a date and nobody attends, so "2 guests" is nonsense and is dropped.
+ * A slot counts seats booked (its own quantity), not the cottage party.
+ */
+export function partyMatters(shape: string): boolean {
+    return shape === 'comes_to_you';
+}
+
 /** The cancellation policy in plain words, shown before the guest commits. */
 export function cancellationSentence(shape: string, hours: number, who: string): string {
     const h = Math.max(0, Number(hours) || 0);

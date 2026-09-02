@@ -3,6 +3,7 @@
 import { useCallback, useEffect, useState } from 'react';
 import { MessageCircle } from 'lucide-react';
 import { unitMultiplies, unitNoun, unitLabel } from '@/lib/serviceOrders';
+import { whenLabel, partyMatters } from '@/components/marketplace/present';
 import OrderThread from '@/components/marketplace/OrderThread';
 
 // What an approved guest-trade provider does after approval: set up payouts,
@@ -17,7 +18,11 @@ import OrderThread from '@/components/marketplace/OrderThread';
 interface Order {
     id: string;
     status: string;
+    // The booking shape, so the date and the headcount read correctly: an
+    // appointment for a chef, a deadline for a baker, a timed session for a slot.
+    shape: string;
     service_date: string;
+    service_time: string | null;
     guests: number | null;
     price: number;
     item_name: string | null;
@@ -168,11 +173,14 @@ export default function ProviderExperienceDashboard(props: { providerId: string 
                     <p className="font-semibold text-gray-900">Requests to answer</p>
                     <div className="mt-3 space-y-3">
                         {waiting.map((o) => (
-                            <div key={o.id} className="rounded-xl border border-gray-200 p-4">
+                            // Anchored by id so the "View the request" email link
+                            // (/services/dashboard#order-<id>) lands on this row and
+                            // the :target highlight rings it — not the whole inbox.
+                            <div key={o.id} id={'order-' + o.id} className="scroll-mt-24 rounded-xl border border-gray-200 p-4 target:ring-2 target:ring-emerald-500 target:ring-offset-2">
                                 {o.item_name ? <div className="text-sm font-semibold text-gray-900">{o.item_name}</div> : null}
                                 <div className="text-sm text-gray-600">
-                                    {o.service_date}
-                                    {o.guests ? ' · ' + o.guests + ' guest' + (o.guests === 1 ? '' : 's') : ''}
+                                    {whenLabel(o.shape, o.service_date, o.service_time)}
+                                    {partyMatters(o.shape) && o.guests ? ' · ' + o.guests + ' guest' + (o.guests === 1 ? '' : 's') : ''}
                                     {' · £' + o.price.toFixed(2)}
                                 </div>
                                 {countLine(o) ? <div className="text-sm font-medium text-gray-700">{countLine(o)}</div> : null}
@@ -226,8 +234,8 @@ export default function ProviderExperienceDashboard(props: { providerId: string 
                             <div key={o.id} className="rounded-xl border border-emerald-200 bg-emerald-50/40 p-4">
                                 {o.item_name ? <div className="text-sm font-semibold text-gray-900">{o.item_name}</div> : null}
                                 <div className="text-sm text-gray-600">
-                                    {o.service_date}
-                                    {o.guests ? ' · ' + o.guests + ' guest' + (o.guests === 1 ? '' : 's') : ''}
+                                    {whenLabel(o.shape, o.service_date, o.service_time)}
+                                    {partyMatters(o.shape) && o.guests ? ' · ' + o.guests + ' guest' + (o.guests === 1 ? '' : 's') : ''}
                                     {' · £' + o.price.toFixed(2)}
                                 </div>
                                 {countLine(o) ? <div className="text-sm font-medium text-gray-700">{countLine(o)}</div> : null}
@@ -313,7 +321,7 @@ export default function ProviderExperienceDashboard(props: { providerId: string 
                     <ul className="mt-2 space-y-1 text-sm text-gray-500">
                         {other.map((o) => (
                             <li key={o.id}>
-                                {o.service_date} · £{o.price.toFixed(2)} · {STATUS_WORD[o.status] || o.status}
+                                {whenLabel(o.shape, o.service_date, o.service_time)} · £{o.price.toFixed(2)} · {STATUS_WORD[o.status] || o.status}
                             </li>
                         ))}
                     </ul>
