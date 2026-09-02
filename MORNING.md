@@ -4,28 +4,39 @@ Branch: **`overnight/guest-experiences`** (off `trips-card-polish`, which alread
 carries PR #98). Nothing merged to master, nothing deployed to production, no
 production migration. Everything below is on the preview.
 
-**Preview URL:** _(filled in once the deploy is green — see the end)_
+**Preview URL:** https://galloway-getawayas-git-overnight-g-06ee0a-wazzabeam98s-projects.vercel.app
+_(the stable branch alias — it keeps working across rebuilds. A preview off
+`overnight/guest-experiences`, pointed at the **test** database and **test**
+Stripe, so nothing here touches production. I enabled `GUEST_EXPERIENCES_OPEN`
+for this one branch's preview only, so the marketplace is walkable; production's
+gate is untouched. If you want it off, delete that env var in the Vercel project
+settings — it's scoped to this branch.)_
+
 **Sign-ins** (all password `market-demo-2026`):
-- **Guest:** `morag@gallowaymarket.test` — has a cottage booking near Kirkcudbright (19–26 Sep) with experiences to browse and book.
-- **Provider:** `sauna@gallowaymarket.test` (a slot — the diary dashboard), or any of `bakehouse@`, `hamper@`, `chef@`, `photographer@`, `swim@`, `whisky@`, `yoga@` `@gallowaymarket.test`.
-- **Host:** _(see the URL list — the cottage owner login)_
+- **Guest:** `morag@gallowaymarket.test` — a cottage booking near Kirkcudbright (19–26 Sep) with experiences booked and browsable. She's also the **host** of that cottage: use **"Switch to hosting"** (top bar) for the host side.
+- **Providers:** `sauna@gallowaymarket.test` (a slot — the diary dashboard), `chef@` (comes-to-you), `bakehouse@` / `hamper@` (made-for-a-date), plus `whisky@`, `swim@`, `yoga@`, `lens@` — all `@gallowaymarket.test`.
 
 ---
 
 ## Walk this (one line each)
 
-_(URL list filled in with the preview host once deployed. The paths:)_
+Base = the preview URL above. Sign in as Morag first (or as a provider where noted).
 
 | Path | What you're looking at |
 |---|---|
 | `/business` | The front door — two cards, redrawn. Tradesman vs guest experiences. |
-| `/services/join?trade=guest` | The guest sign-up. Pick a category → answer one plain question → the fields adapt (a menu for a chef, a schedule for a sauna). This is the big one. |
-| `/experiences/<Morag's booking>` | The marketplace as Morag sees it — slate, headshots, "New here"/booked counts, shape cues. |
-| `/experiences/<booking>/<provider>` | A provider listing page. On a phone, the fixed "Book · £X" bar. |
-| `/experiences/order/<order>?booked=1` | The new post-booking confirmation (what happens next + add-to-calendar). |
-| `/experiences/requested?p=<provider>` | The "request sent — held, not charged" moment for a chef/baker. |
-| `/trips` and `/arrival/<booking>` | The rebuilt check-in/checkout rail (was two big boxes). |
-| `/services/dashboard` (as a provider) | The chef's inbox — the email now deep-links to the exact request. |
+| `/services/join?trade=guest` | The guest sign-up. Pick a category → answer one plain question → the fields adapt (a menu for a chef, a schedule for a sauna). **This is the big one.** Try "Wellness & spa" for the schedule editor, "Private chef" for the menu + food field. |
+| `/experiences/d7e2a30d-6aa9-4519-96fb-ee638d26d520` | The marketplace as Morag sees it — slate, headshots, booked-counts, shape cues. |
+| `/experiences/d7e2a30d-6aa9-4519-96fb-ee638d26d520/4cad4cdb-1047-43dc-a21a-7f2877ab43b2` | The sauna's listing page. Shrink the window to a phone width for the fixed "Book · £X" bar. |
+| `/trips` | The rebuilt check-in/checkout rail, and Morag's booked experiences. |
+| `/arrival/d7e2a30d-6aa9-4519-96fb-ee638d26d520` | "Getting there" — the same rail, open-in-place. |
+| `/experiences/requested?p=4cad4cdb-1047-43dc-a21a-7f2877ab43b2` | The "request sent — held, not charged" confirmation moment. |
+| `/services/dashboard` **(sign in as `sauna@`)** | A slot provider's diary; **`chef@`** shows the request inbox. |
+
+To see the **booked confirmation** (`/experiences/order/<id>?booked=1`) with its
+add-to-calendar: open any of Morag's booked experiences from `/trips` and add
+`?booked=1`, or just book a slot for real on the preview (test Stripe) and Stripe
+returns you there.
 
 ---
 
