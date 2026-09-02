@@ -42,6 +42,12 @@ export interface MpProvider {
     // Made-to-order only: notice needed, in days — gates the earliest bookable date.
     lead_time_days: number;
     hero: string | null;
+    // The only honest trust signal we can show today: how many confirmed
+    // bookings this provider has taken through the site. Zero reads as "New
+    // here" on the card rather than as nothing — a stranger booking a chef into
+    // their cottage deserves to know which it is. (There are no provider reviews
+    // yet; when there are, they lead and this becomes the secondary line.)
+    bookingsCount: number;
 }
 
 export interface Marketplace {
@@ -93,7 +99,7 @@ export async function loadMarketplace(
     const ids = (rows || []).map((r: any) => r.id);
     if (!ids.length) return { open: true, stay: staySpan(booking), listing: { id: listing.id, location: listing.location }, providers: [] };
 
-    const [{ data: areas }, { data: itemRows }, { data: avail }, { data: blocks }, { data: sessRows }] = await Promise.all([
+    const [{ data: areas }, { data: itemRows }, { data: avail }, { data: blocks }, { data: sessRows }, { data: orderRows }] = await Promise.all([
         admin.from('service_areas').select('provider_id, centre_lat, centre_lng, radius_miles').in('provider_id', ids),
         admin.from('service_provider_items').select('id, provider_id, name, description, price, unit, image, sort_order, created_at')
             .in('provider_id', ids).eq('active', true).gt('price', 0)
@@ -101,6 +107,10 @@ export async function loadMarketplace(
         admin.from('slot_availability').select('provider_id, day_of_week, open_time, close_time').in('provider_id', ids),
         admin.from('slot_blocks').select('provider_id, blocked_date').in('provider_id', ids),
         admin.from('slot_sessions').select('provider_id, session_date, session_time, capacity, seats_taken').in('provider_id', ids),
+        // Confirmed bookings taken, for the trust count. Only 'confirmed' counts:
+        // a held request that was never answered, or one that was cancelled or
+        // refunded, is not a booking someone completed with this provider.
+        admin.from('service_orders').select('provider_id, status').in('provider_id', ids).eq('status', 'confirmed'),
     ]);
 
     const by = <T,>(list: any[], key: string) => {
@@ -110,6 +120,8 @@ export async function loadMarketplace(
     };
     const areasBy = by<any>(areas, 'provider_id');
     const itemsBy = by<any>(itemRows, 'provider_id');
+    const bookingsCountBy: Record<string, number> = {};
+    for (const o of orderRows || []) bookingsCountBy[o.provider_id] = (bookingsCountBy[o.provider_id] || 0) + 1;
     const availBy = by<any>(avail, 'provider_id');
     const blocksBy = by<any>(blocks, 'provider_id');
     const sessBy = by<any>(sessRows, 'provider_id');
@@ -168,6 +180,7 @@ export async function loadMarketplace(
             cancellation_window_hours: Number(p.cancellation_window_hours) || 48,
             lead_time_days: Number(p.lead_time_days) || 0,
             hero: (items.find((i: MpItem) => i.image) || {}).image || null,
+            bookingsCount: bookingsCountBy[p.id] || 0,
         });
     }
 

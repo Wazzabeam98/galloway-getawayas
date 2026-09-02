@@ -28,7 +28,7 @@ const STATUS: Record<string, { label: string; tone: 'ok' | 'wait' | 'over' }> = 
 const PILL: Record<string, string> = {
     ok: 'bg-emerald-100 text-emerald-800',
     wait: 'bg-amber-100 text-amber-800',
-    over: 'bg-stone-200 text-stone-600',
+    over: 'bg-slate-200 text-slate-600',
 };
 
 function longWhen(dateStr: string, timeStr: string | null): string {
@@ -90,9 +90,9 @@ export default async function OrderPage({ params }: { params: { orderId: string 
     const isSlot = order.shape === 'slot';
 
     return (
-        <div className="min-h-screen bg-stone-50">
+        <div className="min-h-screen bg-slate-50">
             <div className="mx-auto max-w-5xl px-4 sm:px-6 py-6">
-                <Link href="/trips" className="inline-flex items-center gap-1.5 text-sm font-medium text-stone-500 hover:text-stone-800">
+                <Link href="/trips" className="inline-flex items-center gap-1.5 text-sm font-medium text-slate-500 hover:text-slate-800">
                     <ArrowLeft className="h-4 w-4" /> Your trips
                 </Link>
 
@@ -100,7 +100,7 @@ export default async function OrderPage({ params }: { params: { orderId: string 
                 <div className="mt-4 flex items-start justify-between gap-3">
                     <div className="min-w-0">
                         <p className="text-xs font-semibold uppercase tracking-[0.14em] text-emerald-700">{who}</p>
-                        <h1 className="mt-1 text-2xl sm:text-3xl font-semibold tracking-tight text-stone-900">{order.item_name || 'Experience'}</h1>
+                        <h1 className="mt-1 text-2xl sm:text-3xl font-semibold tracking-tight text-slate-900">{order.item_name || 'Experience'}</h1>
                     </div>
                     <span className={`inline-flex flex-none items-center gap-1 rounded-full px-2.5 py-1 text-[11px] font-semibold ${PILL[meta.tone]}`}>
                         {meta.tone === 'ok' && <CheckCircle2 className="h-3 w-3" />}
@@ -113,24 +113,24 @@ export default async function OrderPage({ params }: { params: { orderId: string 
                 <div className="mt-5 grid grid-cols-1 gap-5 lg:grid-cols-3">
                     {/* Main column — the detail, the allergy the guest gave, and the thread */}
                     <div className="space-y-5 lg:col-span-2">
-                        <div className="rounded-2xl bg-white p-5 shadow-sm ring-1 ring-stone-200/80">
+                        <div className="rounded-2xl bg-white p-5 shadow-sm ring-1 ring-slate-200/80">
                             <dl className="space-y-4">
                                 <div className="flex gap-3">
-                                    <CalendarDays className="mt-0.5 h-5 w-5 flex-none text-stone-400" />
+                                    <CalendarDays className="mt-0.5 h-5 w-5 flex-none text-slate-400" />
                                     <div>
-                                        <dt className="text-xs font-semibold uppercase tracking-wide text-stone-500">When</dt>
-                                        <dd className="text-sm text-stone-800">{longWhen(order.service_date, order.service_time)}</dd>
+                                        <dt className="text-xs font-semibold uppercase tracking-wide text-slate-500">When</dt>
+                                        <dd className="text-sm text-slate-800">{longWhen(order.service_date, order.service_time)}</dd>
                                     </div>
                                 </div>
                                 <div className="flex gap-3">
-                                    <MapPin className="mt-0.5 h-5 w-5 flex-none text-stone-400" />
+                                    <MapPin className="mt-0.5 h-5 w-5 flex-none text-slate-400" />
                                     <div>
-                                        <dt className="text-xs font-semibold uppercase tracking-wide text-stone-500">Where</dt>
-                                        <dd className="text-sm text-stone-800">
+                                        <dt className="text-xs font-semibold uppercase tracking-wide text-slate-500">Where</dt>
+                                        <dd className="text-sm text-slate-800">
                                             {comesToCottage ? (
-                                                <>Comes to your cottage{listing && listing.title ? ' — ' + listing.title : ''}{cottageAddress ? <span className="block text-stone-500">{cottageAddress}</span> : null}</>
+                                                <>Comes to your cottage{listing && listing.title ? ' — ' + listing.title : ''}{cottageAddress ? <span className="block text-slate-500">{cottageAddress}</span> : null}</>
                                             ) : isSlot ? (
-                                                <>You go to {who}{prov && prov.based_line ? <span className="block text-stone-500">{prov.based_line}</span> : <span className="block text-stone-500">Message them below for the exact address and directions.</span>}</>
+                                                <>You go to {who}{prov && prov.based_line ? <span className="block text-slate-500">{prov.based_line}</span> : <span className="block text-slate-500">Message them below for the exact address and directions.</span>}</>
                                             ) : (
                                                 <>{who} will arrange collection or delivery with you — message them below.</>
                                             )}
@@ -139,10 +139,10 @@ export default async function OrderPage({ params }: { params: { orderId: string 
                                 </div>
                                 {(order.item_description || (prov && prov.description)) && (
                                     <div className="flex gap-3">
-                                        <Info className="mt-0.5 h-5 w-5 flex-none text-stone-400" />
+                                        <Info className="mt-0.5 h-5 w-5 flex-none text-slate-400" />
                                         <div>
-                                            <dt className="text-xs font-semibold uppercase tracking-wide text-stone-500">Details</dt>
-                                            <dd className="whitespace-pre-line text-sm text-stone-700">{order.item_description || (prov && prov.description)}</dd>
+                                            <dt className="text-xs font-semibold uppercase tracking-wide text-slate-500">Details</dt>
+                                            <dd className="whitespace-pre-line text-sm text-slate-700">{order.item_description || (prov && prov.description)}</dd>
                                         </div>
                                     </div>
                                 )}
@@ -169,8 +169,8 @@ export default async function OrderPage({ params }: { params: { orderId: string 
                         {/* Messages — the thread lives here, on the booking. */}
                         {live && (
                             <div id="order-messages" className="scroll-mt-6">
-                                <h2 className="text-sm font-semibold text-stone-900">Messages with {who}</h2>
-                                <p className="mt-0.5 text-xs text-stone-500">Agree the details — allergies, timing, what to bring, how to get there.</p>
+                                <h2 className="text-sm font-semibold text-slate-900">Messages with {who}</h2>
+                                <p className="mt-0.5 text-xs text-slate-500">Agree the details — allergies, timing, what to bring, how to get there.</p>
                                 <OrderThread orderId={order.id} />
                             </div>
                         )}
@@ -178,12 +178,12 @@ export default async function OrderPage({ params }: { params: { orderId: string 
 
                     {/* Summary column — price, policy, cancel. Sticky on desktop. */}
                     <div className="lg:col-span-1">
-                        <div className="rounded-2xl bg-white p-5 shadow-sm ring-1 ring-stone-200/80 lg:sticky lg:top-6">
+                        <div className="rounded-2xl bg-white p-5 shadow-sm ring-1 ring-slate-200/80 lg:sticky lg:top-6">
                             <div className="flex items-center justify-between">
-                                <span className="text-sm text-stone-500">{charged ? 'Paid' : 'Held, not charged'}</span>
-                                <span className="text-xl font-semibold text-stone-900">£{Number(order.price).toFixed(2)}</span>
+                                <span className="text-sm text-slate-500">{charged ? 'Paid' : 'Held, not charged'}</span>
+                                <span className="text-xl font-semibold text-slate-900">£{Number(order.price).toFixed(2)}</span>
                             </div>
-                            <p className="mt-3 border-t border-stone-200 pt-3 text-xs leading-relaxed text-stone-500">
+                            <p className="mt-3 border-t border-slate-200 pt-3 text-xs leading-relaxed text-slate-500">
                                 {cancellationSentence(order.shape, windowHours, who)}
                             </p>
                             {live && (
