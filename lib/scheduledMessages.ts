@@ -13,6 +13,7 @@
 // edge cases in it than it looks: British Summer Time, a run that was missed,
 // and a message whose moment has simply passed.
 
+
 export interface Template {
     user_id: string;
     template_type: string;
@@ -210,4 +211,81 @@ export function fillPlaceholders(
         .split('{check_in}').join(values.checkIn)
         .split('{check_out}').join(values.checkOut)
         .split(LOCKBOX_TOKEN).join(String(values.lockboxCode || ''));
+}
+
+// The floor a guest gets when their host never wrote a check-in template: the
+// address, the arrival time, and how to get in. Plain, factual, and sent in
+// the host's thread — nothing here is anything a host would not have said.
+//
+// The door code is included ONLY for a self-check-in method the host set up
+// with a code. A host who chose "lockbox" and typed a code intends the guest
+// to let themselves in with it; withholding it is the lockout this is meant to
+// prevent. For a greeted check-in, or a self-check-in with no code set yet, it
+// says who will be in touch instead, so the guest chases it in advance rather
+// than at the door.
+export function checkInFallbackBody(args: {
+    firstName: string;
+    listing: {
+        title?: string | null;
+        location?: string | null;
+        check_in_time?: string | null;
+        check_out_time?: string | null;
+        check_in_method?: string | null;
+    };
+    checkIn: string;
+    code?: string | null;
+}): string {
+    const { firstName, listing, checkIn, code } = args;
+    const title = listing.title || 'your stay';
+    // A local time formatter, deliberately not imported: this module is loaded
+    // by tests that resolve no path aliases, so it stays free of cross-lib
+    // imports. Mirrors lib/utils formatTime for the HH:MM(:SS) values a listing
+    // stores — 15:00 -> "3pm", 11:00 -> "11am", noon and midnight by name.
+    const fmtTime = (value: string | null | undefined): string => {
+        if (!value) return '';
+        const parts = String(value).split(':');
+        const hour = Number(parts[0]);
+        const minute = Number(parts[1] || 0);
+        if (isNaN(hour) || isNaN(minute)) return '';
+        if (hour === 0 && minute === 0) return 'midnight';
+        if (hour === 12 && minute === 0) return 'noon';
+        const suffix = hour < 12 ? 'am' : 'pm';
+        let display = hour % 12;
+        if (display === 0) display = 12;
+        return minute === 0 ? display + suffix : display + '.' + String(minute).padStart(2, '0') + suffix;
+    };
+    const arrival = fmtTime(listing.check_in_time) || '3pm';
+    const method = listing.check_in_method || '';
+    const selfServe = ['Lockbox', 'Smart lock', 'Keypad'].indexOf(method) !== -1;
+
+    let entry: string;
+    if (selfServe && code) {
+        const where = method === 'Lockbox'
+            ? 'There is a key safe by the door'
+            : 'The door has a keypad';
+        entry = where + ' — the code is ' + code + '.';
+    } else if (selfServe) {
+        entry = "You'll let yourself in — I'll send the code before you arrive.";
+    } else if (method === 'Host greets you') {
+        entry = "I'll meet you at the property to let you in.";
+    } else if (method === 'Keys collected nearby') {
+        entry = "Keys are collected from a nearby address — I'll confirm exactly where.";
+    } else if (method === 'Building staff') {
+        entry = 'The building staff will let you in.';
+    } else {
+        entry = "I'll confirm exactly how to get in before you arrive.";
+    }
+
+    const lines = [
+        'Hi ' + firstName + ", you're booked into " + title + ' from ' + checkIn
+            + '. Here are the practical details for getting in:',
+        '',
+        'Address: ' + (listing.location || '— I’ll send this before you arrive'),
+        'Arrival: any time after ' + arrival
+            + (fmtTime(listing.check_out_time) ? '. Check-out is by ' + fmtTime(listing.check_out_time) : ''),
+        'Getting in: ' + entry,
+        '',
+        "If anything's unclear, just reply here before you set off and I'll sort it. Looking forward to having you.",
+    ];
+    return lines.join('\n');
 }
