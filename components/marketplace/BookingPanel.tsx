@@ -1,14 +1,31 @@
 'use client';
 
 import { useMemo, useState } from 'react';
+import { Calendar } from 'react-date-range';
+import 'react-date-range/dist/styles.css';
+import 'react-date-range/dist/theme/default.css';
 import { unitMultiplies, orderTotal, MAX_ORDER_QUANTITY } from '@/lib/serviceOrders';
 import { itemPriceLabel, unitPhrase, dateLabel, timeLabel } from '@/components/marketplace/present';
 
 interface PanelItem { id: string; name: string; description: string | null; price: number; unit: string; image: string | null; }
 interface PanelSession { date: string; time: string; capacity: number; seatsLeft: number; }
 interface PanelProvider {
-    id: string; business_name: string; who: string; shape: string;
+    id: string; business_name: string; who: string; shape: string; isFood: boolean;
     items: PanelItem[]; sessions: PanelSession[]; leadTimeDays: number;
+}
+
+// Between a yyyy-mm-dd key and a local Date at midnight. Constructing from the
+// parts (not new Date(key), which parses as UTC) keeps the calendar day the guest
+// clicks and the key we send to the server the same, in any timezone.
+function keyToDate(key: string): Date {
+    const [y, m, d] = key.split('-').map(Number);
+    return new Date(y, (m || 1) - 1, d || 1);
+}
+function dateToKey(dt: Date): string {
+    const y = dt.getFullYear();
+    const m = String(dt.getMonth() + 1).padStart(2, '0');
+    const d = String(dt.getDate()).padStart(2, '0');
+    return `${y}-${m}-${d}`;
 }
 
 // yyyy-mm-dd for (today + days), UTC.
@@ -32,6 +49,8 @@ export default function BookingPanel({ bookingId, checkIn, checkOut, provider }:
     const [qty, setQty] = useState<number>(1);
     const [date, setDate] = useState<string>('');
     const [session, setSession] = useState<PanelSession | null>(null);
+    const [allergy, setAllergy] = useState<string>('');
+    const [note, setNote] = useState<string>('');
     const [busy, setBusy] = useState(false);
     const [error, setError] = useState<string | null>(null);
 
@@ -60,9 +79,11 @@ export default function BookingPanel({ bookingId, checkIn, checkOut, provider }:
         setBusy(true);
         try {
             const url = isSlot ? '/api/services/slots/book' : '/api/services/order';
+            const trimmedNote = note.trim();
+            const trimmedAllergy = provider.isFood ? allergy.trim() : '';
             const body = isSlot
-                ? { providerId: provider.id, bookingId, sessionDate: session!.date, sessionTime: session!.time, quantity }
-                : { itemId: item.id, bookingId, serviceDate: date, quantity };
+                ? { providerId: provider.id, bookingId, sessionDate: session!.date, sessionTime: session!.time, quantity, note: trimmedNote, allergy: trimmedAllergy }
+                : { itemId: item.id, bookingId, serviceDate: date, quantity, note: trimmedNote, allergy: trimmedAllergy };
             const res = await fetch(url, {
                 method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body),
             });
@@ -152,18 +173,72 @@ export default function BookingPanel({ bookingId, checkIn, checkOut, provider }:
                 </label>
             )}
 
-            {/* Date — request shapes */}
+            {/* Date — request shapes. A real calendar, matching the cottage
+                booking: the dates inside the stay are live, everything else is
+                greyed. minDate/maxDate do the greying; the same yyyy-mm-dd the
+                server re-validates is what a click produces. */}
             {!isSlot && (
-                <label className="mt-4 block">
+                <div className="mt-4">
                     <span className="text-xs font-semibold uppercase tracking-wide text-stone-500">Date during your stay</span>
-                    <input type="date" min={minDate} max={maxDate} value={date}
-                        onChange={(e) => setDate(e.target.value)}
-                        className="mt-1 block w-full rounded-lg border border-stone-300 px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-emerald-600" />
+                    <div className="airbnb-compact-calendar mt-1.5 overflow-hidden rounded-xl border border-stone-200">
+                        <Calendar
+                            date={date ? keyToDate(date) : undefined}
+                            onChange={(d: Date) => setDate(dateToKey(d))}
+                            minDate={keyToDate(minDate)}
+                            maxDate={keyToDate(maxDate)}
+                            shownDate={keyToDate(minDate)}
+                            color="#047857"
+                            months={1}
+                            showMonthAndYearPickers={false}
+                            weekdayDisplayFormat="EEEEE"
+                        />
+                    </div>
                     {provider.shape === 'made_to_order' && provider.leadTimeDays > 0 ? (
                         <span className="mt-1 block text-xs text-stone-400">{provider.who} needs {provider.leadTimeDays} day{provider.leadTimeDays === 1 ? '' : 's'} notice.</span>
                     ) : null}
+                </div>
+            )}
+
+            {/* For a food business, allergies get their own field — safety
+                information a cook must not skim past, kept separate so it routes
+                on its own (its own line in the email, its own badge). */}
+            {provider.isFood && (
+                <label className="mt-4 block">
+                    <span className="text-xs font-semibold uppercase tracking-wide text-rose-700">
+                        Allergies &amp; dietary needs
+                        <span className="ml-1 font-normal normal-case tracking-normal text-stone-400">(optional)</span>
+                    </span>
+                    <textarea
+                        value={allergy}
+                        onChange={(e) => setAllergy(e.target.value.slice(0, 500))}
+                        rows={2}
+                        maxLength={500}
+                        placeholder="e.g. one coeliac, one severe nut allergy"
+                        className="mt-1 block w-full resize-y rounded-lg border border-rose-300 px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-rose-500"
+                    />
+                    <span className="mt-1 block text-xs text-stone-400">
+                        {provider.who} sees this {isSlot ? 'with your booking' : 'before they confirm'}. Name any allergy — they’ll be in touch if they can’t safely cater for it.
+                    </span>
                 </label>
             )}
+
+            {/* The general note, on every shape — access, timing, a request. */}
+            <label className="mt-4 block">
+                <span className="text-xs font-semibold uppercase tracking-wide text-stone-500">
+                    Anything {provider.who} should know?
+                    <span className="ml-1 font-normal normal-case tracking-normal text-stone-400">(optional)</span>
+                </span>
+                <textarea
+                    value={note}
+                    onChange={(e) => setNote(e.target.value.slice(0, 500))}
+                    rows={2}
+                    maxLength={500}
+                    placeholder={provider.isFood
+                        ? 'Anything else — e.g. “it’s mum’s 60th, could you pipe a message”.'
+                        : 'e.g. “we’re on the top floor, the buzzer doesn’t work” — or a special request.'}
+                    className="mt-1 block w-full resize-y rounded-lg border border-stone-300 px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-emerald-600"
+                />
+            </label>
 
             {/* Total, spelled out when it multiplies */}
             {item && multiplies && (

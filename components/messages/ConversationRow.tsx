@@ -2,7 +2,7 @@
 
 import { useEffect, useRef, useState } from 'react';
 import { getImageUrl, capitializeFirst } from '@/lib/utils';
-import { Archive, ArchiveRestore, Check, Mail, MoreHorizontal, Star } from 'lucide-react';
+import { Archive, ArchiveRestore, Check, Mail, MoreHorizontal, Star, Sparkles, Wrench } from 'lucide-react';
 
 // One row in the inbox, with its own actions menu.
 //
@@ -98,6 +98,10 @@ export default function ConversationRow(props: {
     };
 
     const startPress = () => {
+        // Star / archive / mark-unread exist only on booking threads (they live in
+        // conversation_prefs, which the other kinds have no row in). No menu, and
+        // no long-press to raise one, on an enquiry or order row.
+        if (!c.manageable) return;
         cancelPress();
         openedByPress.current = false;
         pressTimer.current = setTimeout(() => {
@@ -199,14 +203,18 @@ export default function ConversationRow(props: {
                             : 'hover:bg-slate-50')
                 }
             >
-                <div className="w-12 h-12 rounded-xl bg-slate-200 overflow-hidden flex-shrink-0">
-                    {c.listing && c.listing.images && c.listing.images[0] && (
+                <div className="w-12 h-12 rounded-xl bg-slate-200 overflow-hidden flex-shrink-0 flex items-center justify-center">
+                    {c.listing && c.listing.images && c.listing.images[0] ? (
                         <img
                             src={getImageUrl(c.listing.images[0])}
                             alt=""
                             className="w-full h-full object-cover"
                         />
-                    )}
+                    ) : c.kind === 'order' ? (
+                        <Sparkles className="w-5 h-5 text-slate-400" />
+                    ) : c.kind === 'enquiry' ? (
+                        <Wrench className="w-5 h-5 text-slate-400" />
+                    ) : null}
                 </div>
 
                 <div className="min-w-0 flex-1">
@@ -235,13 +243,17 @@ export default function ConversationRow(props: {
                         <span
                             className={
                                 'text-[10px] font-semibold px-1.5 py-0.5 rounded ' +
-                                (stageStyles[c.stage] || stageStyles.past)
+                                (c.kind === 'order' ? 'bg-emerald-100 text-emerald-800'
+                                    : c.kind === 'enquiry' ? 'bg-sky-100 text-sky-800'
+                                        : (stageStyles[c.stage] || stageStyles.past))
                             }
                         >
-                            {stageWords[c.stage] || 'Past'}
+                            {c.kind === 'order' ? 'Experience'
+                                : c.kind === 'enquiry' ? 'Job'
+                                    : (stageWords[c.stage] || 'Past')}
                         </span>
                         <span className="text-xs text-slate-500 truncate">
-                            {(c.listing && c.listing.title) || 'Listing'}
+                            {c.subtitle || (c.listing && c.listing.title) || ''}
                         </span>
                     </div>
 
@@ -262,7 +274,7 @@ export default function ConversationRow(props: {
             {/* A sibling of the row rather than a child of it. A button inside
                 a button is not allowed, and browsers deal with it by throwing
                 the inner one out of the element entirely. */}
-            <button
+            {c.manageable && <button
                 type="button"
                 onClick={() => setMenuOpen(!menuOpen)}
                 aria-label={'Actions for the conversation with ' + capitializeFirst(c.otherName)}
@@ -279,9 +291,9 @@ export default function ConversationRow(props: {
                 }
             >
                 <MoreHorizontal className="w-4 h-4" />
-            </button>
+            </button>}
 
-            {menuOpen && (
+            {c.manageable && menuOpen && (
                 <>
                     {/* Desktop: a dropdown hanging off the dots. */}
                     <div

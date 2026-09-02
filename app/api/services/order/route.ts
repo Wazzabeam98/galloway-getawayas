@@ -59,6 +59,10 @@ export async function POST(request: Request) {
         const bookingId: string = body && body.bookingId;
         const serviceDate: string = body && body.serviceDate;
         const note: string = (body && body.note ? String(body.note) : '').slice(0, 500);
+        // A food order's stated allergy/dietary need. Its own field, not folded
+        // into note, so it can be routed on its own — flagged in the email and
+        // shown as its own badge — and so "no allergy" reads as a real answer.
+        const allergy: string = (body && body.allergy ? String(body.allergy) : '').slice(0, 500);
 
         if (!itemId || !bookingId || !serviceDate) {
             return NextResponse.json({ ok: false, error: 'Missing details' }, { status: 400 });
@@ -221,6 +225,7 @@ export async function POST(request: Request) {
                 guests: String(booking.guests ?? ''),
                 commission_rate: String(pricing.commissionRate),
                 note: note,
+                allergy: allergy,
                 // The chosen item, snapshotted onto the order via the webhook.
                 item_id: item.id,
                 item_name: itemName,

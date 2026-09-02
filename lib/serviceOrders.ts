@@ -97,6 +97,20 @@ export function assignableMccLabel(code: string): string {
     return found ? found.label : String(code || '');
 }
 
+// The food codes — a private chef (5811), a bakery/cake maker (5462), a
+// grocer/hamper (5411) and a prepared-meals kitchen (5812). We single these
+// out so a guest ordering food is asked about allergies specifically: it is
+// safety information a cook needs, and a generic "anything else?" box invites
+// people to leave it out.
+export const FOOD_MCCS = new Set(['5811', '5462', '5411', '5812']);
+
+export function isFoodProvider(
+    provider: { trade?: string | null; stripe_mcc?: string | null } | null | undefined
+): boolean {
+    const code = mccForProvider(provider);
+    return !!code && FOOD_MCCS.has(code);
+}
+
 // What Stripe is told the account sells, alongside the MCC. There are no fixed
 // per-trade descriptions any more; a guest provider's is set at review beside
 // the code (stripe_product_description) and read by stripeProfileForProvider.
@@ -303,18 +317,24 @@ export function orderTotal(unitPrice: number, quantity: number): number {
 //   confirmed   provider said yes; the hold was captured; money taken.
 //   declined    provider said no; the hold released. No money moved.
 //   expired     provider did not answer in the window; the hold released.
-//   cancelled   guest pulled it before the provider answered; hold released.
+//   cancelled   guest pulled it. From 'authorised' the hold is released (no
+//               money moved). From 'confirmed' it is the WALK-AWAY: the guest
+//               cancels inside the no-refund window, forfeits what they paid,
+//               the provider keeps it and gets the date back. No Stripe act, and
+//               the money stays exactly where it is.
 //   refunded    confirmed, then money returned under the provider's policy.
 //
-// Every transition here corresponds to a real Stripe act — a capture, a
-// cancel, a refund — and the route performs the Stripe act BEFORE writing the
-// new status, so a status can never claim money moved when it did not.
+// Most transitions here correspond to a real Stripe act — a capture, a cancel, a
+// refund — performed BEFORE the new status is written, so a status can never
+// claim money moved when it did not. The ONE exception is confirmed→cancelled
+// (the walk-away above): it moves no money by design, and stores a cancel_ack so
+// the guest's forfeit is on the record.
 export type OrderStatus =
     | 'authorised' | 'confirmed' | 'declined' | 'expired' | 'cancelled' | 'refunded';
 
 const TRANSITIONS: Record<OrderStatus, OrderStatus[]> = {
     authorised: ['confirmed', 'declined', 'expired', 'cancelled'],
-    confirmed: ['refunded'],
+    confirmed: ['refunded', 'cancelled'],
     declined: [],
     expired: [],
     cancelled: [],

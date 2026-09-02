@@ -1,22 +1,18 @@
-// The nudge that tells a host somebody is waiting on them.
+// The nudge that tells someone a reply is waiting on them.
 //
-// It went silent on 31 August 2026 and these are the two assertions that would
-// have caught it. Messages became polymorphic that afternoon — a message now
-// hangs off either a booking or an enquiry — and this route is keyed on the
-// booking from end to end: it groups by booking_id, looks the bookings up, and
-// reads conversation_prefs and sent_reply_nudges by booking_id.
+// The failure this guards, from 31 August 2026: a message with booking_id null
+// (a job thread, and later an order thread) collapsed into a single bucket keyed
+// "null"; the null travelled into `.in('id', bookingIds)`; Postgres answered
+// `invalid input syntax for type uuid: "null"`; the lookup returned no rows; and
+// every message — booking ones included — fell through the "no booking" skip.
+// ok:true, emailed:0 — indistinguishable from a quiet hour.
 //
-// A job-thread message has booking_id null. Every one of them collapsed into a
-// single bucket keyed "null"; once the newest of those was older than the
-// waiting threshold, the null travelled into `.in('id', bookingIds)`; Postgres
-// answered `invalid input syntax for type uuid: "null"`; the lookup returned
-// no rows; and every message — booking ones included — fell through the
-// "no booking" skip. The route reported ok:true with emailed:0, which is
-// exactly what a quiet hour looks like.
-//
-// Proven before it was fixed: with one legitimate 13-hour-old booking message
-// and one 13-hour-old job message on the test database, the run went from
-// {waiting:1, emailed:1} to {waiting:2, emailed:0, skipped:2}.
+// The unified-inbox pass (2 September 2026) removed the booking_id-null filter so
+// the nudge chases all three kinds. The protection MOVED rather than went away:
+// the run now PARTITIONS by kind — the booking pipeline runs on booking rows
+// only, so every id it hands to `.in()` is a real booking id, and the enquiry
+// and order kinds are chased down their own paths. This file guards the moved
+// protection: a null booking_id must still never reach `.in('id', …)`.
 
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
@@ -71,18 +67,36 @@ test('an unauthorised call is refused', async () => {
     assert.equal(res.status, 401);
 });
 
-// THE ONE THAT MATTERS. The exclusion has to be asked of the database, because
-// the database is what does the filtering — a message with no booking must
-// never reach the grouping, where its null becomes a bucket key and then an
-// argument to `.in()`.
-test('the run asks the database for booking messages only', async () => {
+// THE ONE THAT MATTERS. The messages query now returns every kind (no filter),
+// and a null booking_id must never reach `.in('id', …)`. Fed one booking message
+// and one order message (booking_id null), the run must hand the bookings lookup
+// the real id ONLY — never the null.
+test('a null booking_id never reaches the bookings lookup', async () => {
     let messageOps: any[] = [];
+    let bookingInArgs: any = null;
+    const old = '2020-01-01T00:00:00.000Z';
 
     const { client } = fakeSupabase({
         messages: (state: any) => {
             messageOps = state.ops;
-            return { data: [], error: null };
+            return {
+                data: [
+                    { id: 'm1', booking_id: 'b1', enquiry_id: null, order_id: null, sender_id: 'g', recipient_id: 'someone-else', body: 'x', created_at: old },
+                    { id: 'm2', booking_id: null, enquiry_id: null, order_id: 'o1', sender_id: 'p', recipient_id: 'guest', body: 'x', created_at: old },
+                ],
+                error: null,
+            };
         },
+        bookings: (state: any) => {
+            const inOp = state.ops.find((o: any) => o.op === 'in' && o.args[0] === 'id');
+            if (inOp) bookingInArgs = inOp.args[1];
+            return { data: [{ id: 'b1', host_id: 'host', guest_id: 'g', listing_id: 'l1', check_in: '2020-01-01', check_out: '2020-01-02', status: 'confirmed' }], error: null };
+        },
+        // Empty everywhere else the run reads, so it reaches the lookup and stops.
+        listings: { data: [], error: null },
+        conversation_prefs: { data: [], error: null },
+        sent_reply_nudges: { data: [], error: null },
+        service_orders: { data: [], error: null },
     });
 
     const { route } = loadRoute(client);
@@ -90,10 +104,11 @@ test('the run asks the database for booking messages only', async () => {
 
     const excluded = messageOps.some((o: any) =>
         o.op === 'not' && o.args[0] === 'booking_id' && o.args[1] === 'is' && o.args[2] === null);
+    assert.equal(excluded, false, 'the filter is gone — the query now returns every kind');
 
-    assert.equal(excluded, true,
-        'the messages query must exclude booking_id null, or job threads collapse '
-        + 'into one bucket and put a null into .in()');
+    assert.ok(bookingInArgs, 'the bookings lookup ran');
+    assert.equal(bookingInArgs.includes(null), false, 'a null booking_id must never reach .in(id)');
+    assert.deepEqual(bookingInArgs, ['b1'], 'only real booking ids reach the bookings lookup');
 });
 
 // The silence was the expensive half. Both queries used to drop their error on

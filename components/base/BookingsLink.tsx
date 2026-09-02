@@ -24,7 +24,7 @@ export default function BookingsLink({
 
     if (onlyWhenWaiting && pending === 0) return null;
 
-    return (
+    const link = (
         <Link href="/dashboard/bookings" className={'flex items-center gap-2 ' + (className || '')}>
             <span>Bookings</span>
             {pending > 0 && (
@@ -34,4 +34,14 @@ export default function BookingsLink({
             )}
         </Link>
     );
+
+    // In onlyWhenWaiting mode this owns its own <li>, so when it returns null
+    // above there is no empty menu row left behind. (A styled <li> wrapping a
+    // null child is what put an invisible, hover-highlighting, do-nothing item
+    // in the travel menu between Messages and Account settings.) In the host
+    // menu it renders the bare Link and NavMenu supplies the <li>.
+    if (onlyWhenWaiting) {
+        return <li className="hover:bg-slate-200 rounded-md p-2 cursor-pointer">{link}</li>;
+    }
+    return link;
 }

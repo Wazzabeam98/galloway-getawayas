@@ -4,6 +4,7 @@ import { cookies } from 'next/headers';
 import { NextResponse } from 'next/server';
 import { isLiveToGuests, mccForProvider, guestExperiencesOpen, normaliseUnit } from '@/lib/serviceOrders';
 import { pointForListing, coversPoint, guestCategory } from '@/lib/serviceProviders';
+import { guestMayCancelFree } from '@/lib/serviceSlots';
 import { getImageUrl } from '@/lib/utils';
 
 export const dynamic = 'force-dynamic';
@@ -166,18 +167,46 @@ export async function GET(request: Request) {
         if (bookingId) {
             const { data: mine } = await admin
                 .from('service_orders')
-                .select('id, status, service_date, price, item_name, provider_business_name')
+                .select('id, status, shape, service_date, service_time, price, item_name, provider_business_name, provider_id')
                 .eq('booking_id', bookingId)
                 .eq('guest_id', user.id)
                 .order('created_at', { ascending: false });
-            orders = (mine || []).map((o) => ({
-                id: o.id,
-                status: o.status,
-                service_date: o.service_date,
-                price: Number(o.price),
-                item_name: o.item_name,
-                provider_business_name: o.provider_business_name,
-            }));
+
+            // The provider windows, so the trip page can tell the guest the exact
+            // refund BEFORE they confirm a cancel — the same guestMayCancelFree the
+            // cancel route runs, so the figure shown and the figure given agree.
+            const provIds = Array.from(new Set((mine || []).map((o) => o.provider_id).filter(Boolean)));
+            const windowById: Record<string, number> = {};
+            if (provIds.length) {
+                const { data: provs } = await admin
+                    .from('service_providers').select('id, cancellation_window_hours').in('id', provIds);
+                (provs || []).forEach((p) => { windowById[p.id] = Number(p.cancellation_window_hours) || 48; });
+            }
+            const now = new Date();
+
+            orders = (mine || []).map((o) => {
+                const charged = o.status === 'confirmed';
+                const free = charged
+                    ? guestMayCancelFree(o.shape, String(o.service_date), o.service_time || null, windowById[o.provider_id] || 48, now)
+                    : false;
+                return {
+                    id: o.id,
+                    status: o.status,
+                    shape: o.shape,
+                    service_date: o.service_date,
+                    service_time: o.service_time,
+                    price: Number(o.price),
+                    item_name: o.item_name,
+                    provider_business_name: o.provider_business_name,
+                    // Cancellation facts, computed here so the dialog states the
+                    // real outcome: charged = money captured; free = a full refund
+                    // is still automatic; refundNow = what comes back if they
+                    // cancel this instant.
+                    charged,
+                    free,
+                    refundNow: charged ? (free ? Number(o.price) : 0) : 0,
+                };
+            });
         }
 
         return NextResponse.json({ ok: true, open: true, stay, providers, orders });

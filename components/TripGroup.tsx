@@ -125,7 +125,7 @@ export default function TripGroup({ bookingId }: { bookingId: string }) {
                 <button
                     type="button"
                     onClick={() => setOpen(true)}
-                    className="inline-flex items-center gap-1.5 text-xs font-semibold text-slate-500 underline hover:text-slate-800"
+                    className="inline-flex items-center gap-1.5 rounded-lg border border-slate-300 bg-white px-3 py-1.5 text-xs font-semibold text-slate-700 transition hover:border-slate-400"
                 >
                     <UserPlus className="w-3.5 h-3.5" />
                     {people.length > 0 ? 'Add someone else' : 'Add the people coming with you'}

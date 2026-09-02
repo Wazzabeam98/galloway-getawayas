@@ -105,6 +105,20 @@ grant all on table public.slot_availability to anon, authenticated, service_role
 grant all on table public.slot_blocks to anon, authenticated, service_role;
 grant all on table public.slot_sessions to anon, authenticated, service_role;
 
+-- Defence in depth: RLS decides who writes; the grants shouldn't also say yes.
+-- The guest reads run under the service role and the provider edits under
+-- authenticated, so anon needs no write on any of these. Strip every write and
+-- DDL-ish privilege from anon, and the DDL-ish ones from authenticated (no
+-- policy needs them). SELECT is left as it is. This matters most for
+-- slot_sessions: the day it gets a guest-facing INSERT policy, a standing anon
+-- INSERT grant would turn any slip in that policy into a public write.
+revoke insert, update, delete, truncate, references, trigger
+    on table public.slot_availability, public.slot_blocks, public.slot_sessions
+    from anon;
+revoke truncate, references, trigger
+    on table public.slot_availability, public.slot_blocks, public.slot_sessions
+    from authenticated;
+
 drop policy if exists "owners manage their own availability" on public.slot_availability;
 create policy "owners manage their own availability" on public.slot_availability
     using (exists (select 1 from public.service_providers p

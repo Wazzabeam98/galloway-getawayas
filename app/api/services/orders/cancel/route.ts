@@ -5,6 +5,7 @@ import { NextResponse } from 'next/server';
 import { stripeRequest } from '@/lib/stripe';
 import { canTransition } from '@/lib/serviceOrders';
 import { guestMayCancelFree, shapeOf } from '@/lib/serviceSlots';
+import { sendEmail, emailLayout, escapeHtml, button, SITE_URL } from '@/lib/email';
 import { logError } from '@/lib/logError';
 
 export const dynamic = 'force-dynamic';
@@ -35,13 +36,18 @@ export async function POST(request: Request) {
 
         const body = await request.json().catch(() => ({}));
         const orderId: string = body && body.orderId;
+        // How to cancel a CONFIRMED order that is inside the no-refund window:
+        //   'refund'  — the default; only honoured when a full refund is still due.
+        //   'ask'     — ask the provider to refund; the order stays confirmed.
+        //   'forfeit' — the walk-away: cancel with no refund, on the record.
+        const mode: string = (body && body.mode) || 'refund';
         if (!orderId) return NextResponse.json({ ok: false, error: 'Missing order' }, { status: 400 });
 
         const admin = adminClient();
 
         const { data: order } = await admin
             .from('service_orders')
-            .select('id, guest_id, provider_id, status, shape, service_date, service_time, quantity, slot_session_id, stripe_payment_intent_id, provider_business_name')
+            .select('id, guest_id, provider_id, status, shape, service_date, service_time, quantity, price, slot_session_id, stripe_payment_intent_id, provider_business_name')
             .eq('id', orderId)
             .maybeSingle();
 
@@ -80,35 +86,102 @@ export async function POST(request: Request) {
             return NextResponse.json({ ok: true, status: 'cancelled' });
         }
 
-        // --- a confirmed booking: a refund, under the shape-aware policy ---
+        // --- a confirmed booking ------------------------------------------
         if (order.status === 'confirmed') {
             if (!order.stripe_payment_intent_id) return NextResponse.json({ ok: false, error: 'Nothing to cancel.' }, { status: 400 });
-            if (!canTransition('confirmed', 'refunded')) {
-                return NextResponse.json({ ok: false, error: 'That can’t be cancelled.' }, { status: 409 });
-            }
 
-            // The provider's window (not yet snapshotted onto the order — the
-            // cancellation-tiers work does that; for now read it live).
             const { data: prov } = await admin
-                .from('service_providers').select('cancellation_window_hours').eq('id', order.provider_id).maybeSingle();
+                .from('service_providers')
+                .select('cancellation_window_hours, business_name, contact_email, owner_id')
+                .eq('id', order.provider_id).maybeSingle();
             const windowHours = Number(prov && prov.cancellation_window_hours) || 48;
+            const business = order.provider_business_name || (prov && prov.business_name) || 'the provider';
+            const free = guestMayCancelFree(shape, String(order.service_date), order.service_time || null, windowHours, now);
 
-            if (!guestMayCancelFree(shape, String(order.service_date), order.service_time || null, windowHours, now)) {
-                const withinMsg = shape === 'slot'
-                    ? 'That’s inside the cancellation window for this time, so it’s ' + (order.provider_business_name || 'the provider') + '’s to decide — message them and they can still refund you.'
-                    : 'That’s inside the cancellation window, so it’s ' + (order.provider_business_name || 'the provider') + '’s to decide — message them and they can still refund you.';
-                return NextResponse.json({ ok: false, error: withinMsg }, { status: 409 });
+            // BEFORE THE CUTOFF: a full refund, automatic. mode is irrelevant here.
+            if (free) {
+                if (!canTransition('confirmed', 'refunded')) {
+                    return NextResponse.json({ ok: false, error: 'That can’t be cancelled.' }, { status: 409 });
+                }
+                await stripeRequest('POST', '/refunds',
+                    { payment_intent: order.stripe_payment_intent_id, refund_application_fee: 'true', reverse_transfer: 'true' },
+                    'refund-' + order.id);
+                const { data: refunded } = await admin.from('service_orders')
+                    .update({ status: 'refunded', cancelled_at: now.toISOString() })
+                    .eq('id', order.id).eq('status', 'confirmed').select('id');
+                if (refunded && refunded.length) await releaseSeat();   // a slot's time reopens
+                return NextResponse.json({ ok: true, status: 'refunded' });
             }
 
-            await stripeRequest('POST', '/refunds',
-                { payment_intent: order.stripe_payment_intent_id, refund_application_fee: 'true', reverse_transfer: 'true' },
-                'refund-' + order.id);
-            const { data: refunded } = await admin.from('service_orders')
-                .update({ status: 'refunded', cancelled_at: now.toISOString() })
-                .eq('id', order.id).eq('status', 'confirmed').select('id');
-            if (refunded && refunded.length) await releaseSeat();   // a slot's time reopens
+            // INSIDE THE WINDOW: no automatic refund. Two doors, plus the old block
+            // as a safety net for a stray 'refund'.
 
-            return NextResponse.json({ ok: true, status: 'refunded' });
+            // ASK FIRST: stamp the request, put it on the order thread so the reply
+            // lands where the guest will look, and nudge the provider. The order
+            // stays 'confirmed' — nothing is cancelled until the provider acts.
+            if (mode === 'ask') {
+                await admin.from('service_orders')
+                    .update({ cancellation_requested_at: now.toISOString() })
+                    .eq('id', order.id).eq('status', 'confirmed');
+                if (prov && prov.owner_id) {
+                    await admin.from('messages').insert({
+                        order_id: order.id, sender_id: user.id, recipient_id: prov.owner_id,
+                        body: 'I’m no longer able to make this booking and would like to cancel — is a refund possible?',
+                    });
+                }
+                try {
+                    if (prov && prov.contact_email) {
+                        await sendEmail(prov.contact_email, 'A guest has asked to cancel', emailLayout(
+                            '<p>A guest has asked to cancel their booking for '
+                            + escapeHtml(String(order.service_date))
+                            + ' and would like a refund. It’s inside your cancellation window, so the choice is yours — refund them from your dashboard, or reply.</p>'
+                            + button(SITE_URL + '/services/dashboard', 'Open your bookings'),
+                            'You’re receiving this because you offer experiences on Galloway Getaways.'));
+                    }
+                } catch (mailErr) { console.error('[services/orders/cancel] ask notify', mailErr); }
+                return NextResponse.json({ ok: true, status: 'confirmed', requested: true });
+            }
+
+            // WALK AWAY: cancel with no refund. The provider keeps the payment and
+            // gets the date back; no Stripe act, because the money stays put. Store
+            // exactly what the guest was shown, as the record if it is ever disputed.
+            if (mode === 'forfeit') {
+                if (!canTransition('confirmed', 'cancelled')) {
+                    return NextResponse.json({ ok: false, error: 'That can’t be cancelled.' }, { status: 409 });
+                }
+                const price = Number(order.price) || 0;
+                const ack = {
+                    amount: price,
+                    currency: 'gbp',
+                    refunded: 0,
+                    shown: 'Cancelling now won’t get your money back. Inside ' + business
+                        + '’s cancellation window, the £' + price.toFixed(2)
+                        + ' paid is not refunded. Guest chose to cancel anyway.',
+                    at: now.toISOString(),
+                    status_before: 'confirmed',
+                };
+                const { data: done } = await admin.from('service_orders')
+                    .update({ status: 'cancelled', cancelled_at: now.toISOString(), cancel_ack: ack })
+                    .eq('id', order.id).eq('status', 'confirmed').select('id');
+                if (done && done.length) await releaseSeat();   // the date/seat reopens; provider keeps the money
+                try {
+                    if (prov && prov.contact_email) {
+                        await sendEmail(prov.contact_email, 'A guest cancelled — you keep the payment', emailLayout(
+                            '<p>A guest has cancelled their booking for '
+                            + escapeHtml(String(order.service_date))
+                            + '. It was inside your cancellation window, so no refund was due — the payment stays yours, and the date is free again.</p>'
+                            + button(SITE_URL + '/services/dashboard', 'Open your bookings'),
+                            'You’re receiving this because you offer experiences on Galloway Getaways.'));
+                    }
+                } catch (mailErr) { console.error('[services/orders/cancel] forfeit notify', mailErr); }
+                return NextResponse.json({ ok: true, status: 'cancelled', refunded: 0 });
+            }
+
+            // A 'refund' while inside the window — the new UI never sends this, but
+            // keep a clear answer rather than a silent refusal.
+            const withinMsg = 'That’s inside the cancellation window, so a refund is '
+                + business + '’s to decide — ask them, or cancel without a refund.';
+            return NextResponse.json({ ok: false, error: withinMsg }, { status: 409 });
         }
 
         return NextResponse.json({ ok: false, error: 'That booking has already ended.' }, { status: 409 });

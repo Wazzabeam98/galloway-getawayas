@@ -237,6 +237,15 @@ to look for it.
    same email as a guest waiting on a host, and the existing one says "guest"
    throughout.
 
+**Updated 2 September 2026: there are now TWO booking_id-null kinds, not one.**
+The guest order thread (3b below) shipped `order_id` on `messages`, so both
+filters above exclude order threads as well as enquiry threads, and both comments
+now say so in the code. The three tasks are unchanged in shape but each must
+account for order threads too: the badge (1) and needs-reply (2) filters cover
+both, and the nudge (3) needs a *third* wording — a guest chasing a baker about
+an order is not a host chasing a tradesman about a job. All of it is still one
+pass; order threads did not make it a different job, only a slightly wider one.
+
 **Why they are one job and not three.** Doing any of them alone puts back a bug
 that was live today:
 
@@ -282,11 +291,24 @@ nothing.
 The cause is in the data model: `messages` is keyed on `booking_id` XOR
 `enquiry_id`, and a guest order is neither — `service_orders` has no thread and
 `messages` has no `order_id`. So this is not a UI gap to paper over; it needs a
-thread the order can own. Whoever builds it should look at the unified-inbox
-work above in the same pass — job threads and order threads are the same missing
-shape (a message with no `booking_id`), and the badge and needs-reply filters
-already exclude exactly that. Flagged in the overnight report and again on
-2 September 2026; recorded here on Liam's instruction rather than built.
+thread the order can own.
+
+**Being built on the `guest-marketplace` branch (2 September 2026), NOT yet
+merged or on production.** `messages` now takes an `order_id` (the XOR constraint
+is now "exactly one of booking / enquiry / order"), with its own participant RLS,
+an `/api/messages/order/[orderId]` route and an inline thread on the guest's
+`/trips` order row and the provider dashboard. A dedicated `allergy` column and a
+food-provider `dietary_note` came in the same block. Migrations
+`20260902210000_order_messages_and_allergy.sql` and
+`20260902213000_provider_dietary_note.sql` are applied to **test only** and join
+the merge gate for production.
+
+**What is NOT done, and is the same job as the unified inbox above:** order
+threads are the third `booking_id`-null shape, so the badge and needs-reply
+filters exclude them exactly as they exclude enquiry threads (both comments now
+say so). Folding order-thread unread into the global `/messages` inbox — and its
+needs-reply nudge — is deferred to whoever does the unified-inbox pass. Until
+then, order-thread unread is surfaced only on the order itself.
 
 ### The test project has no SMTP of its own
 

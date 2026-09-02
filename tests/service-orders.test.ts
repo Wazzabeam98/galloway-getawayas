@@ -184,10 +184,13 @@ test('an ended order is ended', () => {
     }
 });
 
-test('a confirmed order cannot be re-confirmed or quietly cancelled', () => {
+test('a confirmed order cannot be re-confirmed; cancelling it is the recorded walk-away', () => {
     assert.equal(canTransition('confirmed', 'confirmed'), false);
-    assert.equal(canTransition('confirmed', 'cancelled'), false,
-        'once captured, unwinding is a refund with a policy, not a cancel');
+    // The walk-away, added deliberately (was refused): a guest inside the
+    // no-refund window may cancel and forfeit what they paid. The money stays
+    // with the provider — no Stripe act — and the cancel writes a cancel_ack
+    // record. Distinct from a refund (confirmed→refunded, above).
+    assert.equal(canTransition('confirmed', 'cancelled'), true);
 });
 
 test('the three no-money endings are named as a set', () => {

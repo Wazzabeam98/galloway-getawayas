@@ -114,6 +114,26 @@ export default async function ListingPage(
                             </div>
                         )}
 
+                        {/* Allergies & dietary — food only. Silence is the failure
+                            mode: a guest reading nothing assumes it's fine. So when
+                            the provider hasn't said, the listing says THAT, plainly,
+                            and points the guest at the allergy field. */}
+                        {p.isFood && (
+                            <div className="mt-8 rounded-2xl border border-stone-200 bg-white p-4">
+                                <h3 className="text-sm font-semibold text-stone-900">Allergies &amp; dietary</h3>
+                                {p.dietary_note ? (
+                                    <p className="mt-1 whitespace-pre-line text-sm leading-relaxed text-stone-600">{p.dietary_note}</p>
+                                ) : (
+                                    <p className="mt-1 text-sm leading-relaxed text-stone-500">
+                                        {who} hasn’t said what they can cater for. Add any allergy or dietary need when
+                                        you book{p.shape === 'slot'
+                                            ? ' — they’ll see it with your booking.'
+                                            : ' and they’ll confirm if they can cater for it.'}
+                                    </p>
+                                )}
+                            </div>
+                        )}
+
                         <div className="mt-8 rounded-2xl border border-stone-200 bg-white p-4">
                             <h3 className="text-sm font-semibold text-stone-900">Cancellation</h3>
                             <p className="mt-1 text-sm leading-relaxed text-stone-600">
@@ -133,6 +153,7 @@ export default async function ListingPage(
                                 business_name: p.business_name,
                                 who,
                                 shape: p.shape,
+                                isFood: p.isFood,
                                 items: p.items,
                                 sessions: p.sessions,
                                 leadTimeDays: p.lead_time_days,

@@ -90,10 +90,14 @@ export async function GET(request: Request) {
     // inbox learns about job threads, and removing it without handling the
     // null puts the silence back for everybody. See "The unified inbox has two
     // placeholders waiting for it" in OUTSTANDING.md.
+    //
+    // AS OF 2 SEPTEMBER 2026 order threads (a guest experience order) are a third
+    // booking_id-null shape this excludes. Same rule: whoever lifts this filter
+    // must handle a null booking_id AND give order threads their own nudge wording
+    // (a guest chasing a baker is not a host chasing a tradesman).
     const { data: recent, error: recentError } = await admin
         .from('messages')
-        .select('id, booking_id, sender_id, recipient_id, body, created_at')
-        .not('booking_id', 'is', null)
+        .select('id, booking_id, enquiry_id, order_id, sender_id, recipient_id, body, created_at')
         .gte('created_at', oldest)
         .order('created_at', { ascending: false });
 
@@ -109,18 +113,33 @@ export async function GET(request: Request) {
         );
     }
 
-    const newestByBooking: Record<string, any> = {};
+    // A message now hangs off ONE of three things. Group by that thread, never by
+    // booking_id alone — a null booking_id must never become a bucket key and then
+    // an argument to .in(), which is the exact failure the tripwire test guards.
+    const threadKey = (m: any) =>
+        m.booking_id ? 'booking:' + m.booking_id
+            : m.enquiry_id ? 'enquiry:' + m.enquiry_id
+                : m.order_id ? 'order:' + m.order_id : '';
+
+    const newestByThread: Record<string, any> = {};
     (recent || []).forEach((m: any) => {
-        if (!newestByBooking[m.booking_id]) newestByBooking[m.booking_id] = m;
+        const k = threadKey(m);
+        if (k && !newestByThread[k]) newestByThread[k] = m;
     });
 
-    // Waiting: the last word was the guest's, and it has been there long
+    // Waiting: the last word was the other side's, and it has been there long
     // enough. recipient_id is who owes the answer.
-    const waiting = Object.keys(newestByBooking)
-        .map((id) => newestByBooking[id])
+    const waitingAll = Object.keys(newestByThread)
+        .map((k) => newestByThread[k])
         .filter((m: any) => m.created_at <= waitingSince);
 
-    if (waiting.length === 0) {
+    // The booking pipeline below is unchanged and runs on booking threads ONLY —
+    // so every id it hands to .in() is a real booking id, never a null. The other
+    // two kinds are chased separately, further down.
+    const waiting = waitingAll.filter((m: any) => !!m.booking_id);
+    const otherWaiting = waitingAll.filter((m: any) => !m.booking_id);
+
+    if (waitingAll.length === 0) {
         return NextResponse.json({ ok: true, waiting: 0, emailed: 0, skipped: 0 });
     }
 
@@ -331,12 +350,119 @@ export async function GET(request: Request) {
         }
     }
 
+    // --- job (enquiry) and experience-order threads --------------------------
+    // Chased separately from bookings, with their own wording — "a guest chasing a
+    // baker is not a host chasing a tradesman". Dedup on thread_key (bookings use
+    // booking_id). Each kind is gathered by its own id column, so no null ever
+    // reaches an .in() of ids.
+    let otherEmailed = 0;
+    if (otherWaiting.length > 0) {
+        const enquiryIds = otherWaiting.filter((m: any) => m.enquiry_id).map((m: any) => m.enquiry_id);
+        const orderIds = otherWaiting.filter((m: any) => m.order_id).map((m: any) => m.order_id);
+
+        const [{ data: enqRows }, { data: ordRows }] = await Promise.all([
+            enquiryIds.length
+                ? admin.from('service_enquiries').select('id, reference, summary, business_name, host_id').in('id', enquiryIds)
+                : Promise.resolve({ data: [] } as any),
+            orderIds.length
+                ? admin.from('service_orders').select('id, item_name, service_date, provider_business_name, guest_id').in('id', orderIds)
+                : Promise.resolve({ data: [] } as any),
+        ]);
+        const enqById: Record<string, any> = {}; (enqRows || []).forEach((e: any) => { enqById[e.id] = e; });
+        const ordById: Record<string, any> = {}; (ordRows || []).forEach((o: any) => { ordById[o.id] = o; });
+
+        const keys = otherWaiting.map(threadKey).filter(Boolean);
+        const { data: otherNudges } = keys.length
+            ? await admin.from('sent_reply_nudges').select('user_id, thread_key, sent_at').in('thread_key', keys)
+            : { data: [] };
+        const otherNudgeMap: Record<string, any> = {};
+        (otherNudges || []).forEach((n: any) => { otherNudgeMap[n.user_id + ':' + n.thread_key] = n; });
+
+        type Item = { userId: string; threadKey: string; messageId: string; created_at: string; heading: string; line: string; providerSide: boolean };
+        const items: Item[] = [];
+        for (const m of otherWaiting) {
+            const k = threadKey(m);
+            const userId = m.recipient_id;   // the last word was TO them, so they owe the reply
+            if (!userId) { skipped++; continue; }
+            const seen = otherNudgeMap[userId + ':' + k];
+            if (seen && new Date(seen.sent_at).getTime() > now - QUIET_HOURS * 3600000) { skipped++; continue; }
+
+            let heading = ''; let line = ''; let providerSide = false;
+            if (m.enquiry_id) {
+                const e = enqById[m.enquiry_id]; if (!e) { skipped++; continue; }
+                const isHost = userId === e.host_id;
+                providerSide = !isHost;
+                heading = isHost ? 'A tradesman is waiting on your reply' : 'A customer is waiting on your reply';
+                line = escapeHtml(String(e.reference || '')) + (e.summary ? ' — ' + escapeHtml(e.summary) : '');
+            } else if (m.order_id) {
+                const o = ordById[m.order_id]; if (!o) { skipped++; continue; }
+                const isGuest = userId === o.guest_id;
+                providerSide = !isGuest;
+                heading = isGuest
+                    ? escapeHtml(o.provider_business_name || 'A provider') + ' is waiting on your reply'
+                    : 'A guest is waiting on your reply';
+                line = escapeHtml(o.item_name || 'An experience') + (o.service_date ? ' — ' + escapeHtml(String(o.service_date)) : '');
+            } else { skipped++; continue; }
+
+            items.push({ userId, threadKey: k, messageId: m.id, created_at: m.created_at, heading, line, providerSide });
+        }
+
+        const byUser: Record<string, Item[]> = {};
+        items.forEach((it) => { (byUser[it.userId] = byUser[it.userId] || []).push(it); });
+
+        for (const userId of Object.keys(byUser)) {
+            const list = byUser[userId];
+            try {
+                const { data: settings } = await admin.from('notification_preferences')
+                    .select('new_message, unsubscribe_token').eq('user_id', userId).maybeSingle();
+                if (settings && settings.new_message === false) { skipped += list.length; continue; }
+                const { data: userRes } = await admin.auth.admin.getUserById(userId);
+                const to = (userRes && userRes.user && userRes.user.email) || '';
+                if (!to) { skipped += list.length; continue; }
+
+                const rowsHtml = list.map((it) =>
+                    '<div style="margin:0 0 14px 0;padding:14px 16px;background-color:#f9fafb;border-left:3px solid #b45309;border-radius:6px;">' +
+                    '<div style="font-size:13px;color:#6b7280;">' + it.line + ' &middot; ' + waitedFor(it.created_at, new Date(now)) + '</div>' +
+                    '<div style="margin-top:6px;font-size:15px;color:#374151;">' + it.heading + '</div></div>'
+                ).join('');
+                const heading = list.length === 1 ? list[0].heading : list.length + ' replies are waiting on you';
+                // A provider reads their threads on /services/messages, everyone
+                // else on /messages. Send them where they can actually open it.
+                const anyCustomer = list.some((it) => !it.providerSide);
+                const html = emailLayout(
+                    '<h1 style="margin:0 0 16px 0;font-size:22px;font-weight:700;color:#111827;">' + heading + '</h1>' +
+                    '<p style="margin:0 0 18px 0;">' + (list.length === 1 ? 'This has' : 'These have') + ' been waiting over ' + WAITING_HOURS + ' hours.</p>' +
+                    rowsHtml +
+                    button(SITE_URL + (anyCustomer ? '/messages' : '/services/messages'), 'Open your messages'),
+                    "You're receiving this because message alerts are switched on in your notification settings.",
+                    settings && settings.unsubscribe_token
+                        ? SITE_URL + '/unsubscribe?token=' + settings.unsubscribe_token + '&type=new_message'
+                        : undefined
+                );
+                const subject = heading + ' — Galloway Getaways';
+                if (preview) { previews.push({ to, subject, html }); otherEmailed += list.length; continue; }
+                const delivered = await sendEmail(to, subject, html);
+                if (!delivered) { skipped += list.length; continue; }
+                for (const it of list) {
+                    await admin.from('sent_reply_nudges').upsert(
+                        { user_id: userId, thread_key: it.threadKey, message_id: it.messageId, sent_at: new Date().toISOString() },
+                        { onConflict: 'user_id,thread_key' }
+                    );
+                }
+                otherEmailed += list.length;
+            } catch (err: any) {
+                console.error('[needs-reply] other user', userId, err && err.message);
+                skipped += list.length;
+            }
+        }
+    }
+
     return NextResponse.json({
         ok: true,
         preview: preview,
-        waiting: waiting.length,
+        waiting: waitingAll.length,
         people: Object.keys(perPerson).length,
-        emailed: emailed,
+        emailed: emailed + otherEmailed,
         skipped: skipped,
         ...(preview ? { emails: previews } : {}),
     });

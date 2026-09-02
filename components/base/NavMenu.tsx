@@ -151,11 +151,11 @@ const NavMenu = ({
                                     <li className={itemClass}>
                                         <MessagesLink />
                                     </li>
-                                    {isHost && (
-                                        <li className={itemClass}>
-                                            <BookingsLink onlyWhenWaiting />
-                                        </li>
-                                    )}
+                                    {/* Renders its own <li> only when something is
+                                        waiting — wrapping it in a <li> here left an
+                                        empty, hoverable phantom row the rest of the
+                                        time. */}
+                                    {isHost && <BookingsLink onlyWhenWaiting />}
                                 </>
                             )}
 

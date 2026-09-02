@@ -1,17 +1,17 @@
 // What the Messages badge counts.
 //
-// It must count exactly what the Messages page can show, and on 31 August 2026
-// it stopped doing so. Messages became polymorphic that afternoon — a message
-// hangs off either a booking or an enquiry — and unreadFor filters only on
-// recipient_id and read_at. So a job-thread message started incrementing the
-// badge, while the unified inbox is keyed on bookings
-// (api/messages/threads/route.ts drives from bookings.map(b => b.id)) and
-// surfacing job threads there was explicitly deferred.
+// It must count exactly what the person can open. Between 31 August and the
+// unified-inbox pass (2 September 2026) that meant BOOKING threads only, because
+// the Messages page could not open the enquiry or order kinds — a badge pointing
+// at a thread the page can't show teaches people to ignore the badge. That
+// filter was a placeholder, guarded by this test so it could not be removed
+// alone.
 //
-// The result is a badge pointing at a page that cannot account for it. Job
-// threads already carry their own unread badge where they live — on the host's
-// enquiries list and the tradesman's Upcoming work — so the fix is to make
-// this count only what it can send somebody to, not to widen the inbox.
+// The unified inbox landed all three kinds: /messages (guests + hosts) carries
+// booking, host-enquiry and guest-order threads, and /services/messages carries
+// the provider's enquiry and order threads. Every unread message is now openable
+// somewhere the person can reach, so the badge counts all of it — the filter is
+// gone, and this test now guards that it stays gone.
 
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
@@ -22,7 +22,7 @@ installAliases();
 // eslint-disable-next-line @typescript-eslint/no-var-requires
 const { unreadFor } = require('../lib/badgeCounts');
 
-test('the badge counts booking messages only', async () => {
+test('the badge counts every thread kind, not booking threads only', async () => {
     let ops: any[] = [];
 
     const { client } = fakeSupabase({
@@ -37,8 +37,8 @@ test('the badge counts booking messages only', async () => {
     const excluded = ops.some((o: any) =>
         o.op === 'not' && o.args[0] === 'booking_id' && o.args[1] === 'is' && o.args[2] === null);
 
-    assert.equal(excluded, true,
-        'a job-thread message must not raise a badge on a page that cannot show it');
+    assert.equal(excluded, false,
+        'the unified inbox can open all three kinds, so none is filtered out of the badge');
 });
 
 test('it still only counts what is addressed to this person and unopened', async () => {

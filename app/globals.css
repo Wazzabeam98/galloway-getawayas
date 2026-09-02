@@ -265,6 +265,20 @@
   background: #047857;
 }
 
+/* Single-date picker (the experiences booking panel). react-date-range's
+   Calendar marks the chosen day with .rdrSelected, which the range rules above
+   never touch — so on its own it renders white-on-white and reads as unselected.
+   Fill it emerald with a white number, matching the cottage range edges. Scoped
+   to the compact calendar so the cottage's range picker is unaffected. */
+.airbnb-compact-calendar .rdrSelected {
+  background: #047857 !important;
+  border-radius: 1.042em !important;
+}
+
+.airbnb-compact-calendar .rdrSelected ~ .rdrDayNumber span {
+  color: #fff !important;
+}
+
 /* One month on narrower screens, so the popover never overflows. */
 @media (max-width: 860px) {
   .airbnb-compact-calendar .rdrMonth:nth-of-type(2) {

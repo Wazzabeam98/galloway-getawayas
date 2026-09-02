@@ -1,7 +1,9 @@
 'use client';
 
 import { useCallback, useEffect, useState } from 'react';
+import { MessageCircle } from 'lucide-react';
 import { unitMultiplies, unitNoun, unitLabel } from '@/lib/serviceOrders';
+import OrderThread from '@/components/marketplace/OrderThread';
 
 // What an approved guest-trade provider does after approval: set up payouts,
 // and answer the requests that come in.
@@ -32,6 +34,9 @@ interface Order {
     // address; a provider has to get there.
     listing: { id: string; title: string; address: string | null; image: string | null } | null;
     note: string | null;
+    // A food order's stated allergy, shown louder than the note — a cook must
+    // not miss it. Null (not empty) when the guest stated none.
+    allergy: string | null;
     expires_at: string | null;
 }
 
@@ -63,6 +68,7 @@ export default function ProviderExperienceDashboard(props: { providerId: string 
     const [orders, setOrders] = useState<Order[]>([]);
     const [busy, setBusy] = useState<string | null>(null);
     const [error, setError] = useState<string | null>(null);
+    const [openThread, setOpenThread] = useState<string | null>(null);
 
     const loadPayouts = useCallback(async () => {
         try {
@@ -171,8 +177,19 @@ export default function ProviderExperienceDashboard(props: { providerId: string 
                                 </div>
                                 {countLine(o) ? <div className="text-sm font-medium text-gray-700">{countLine(o)}</div> : null}
                                 {o.guest_name ? <div className="text-sm text-gray-500">For {o.guest_name}</div> : null}
-                                {o.note ? <p className="mt-1 text-sm text-gray-600 whitespace-pre-line">{o.note}</p> : null}
-                                <p className="mt-1 text-xs text-gray-400">
+                                {o.allergy ? (
+                                    <div className="mt-2 rounded-lg border-2 border-rose-400 bg-rose-50 px-3 py-2">
+                                        <div className="text-xs font-bold uppercase tracking-wide text-rose-800">⚠ Allergy / dietary need</div>
+                                        <p className="mt-0.5 text-sm font-medium text-rose-950 whitespace-pre-line">{o.allergy}</p>
+                                    </div>
+                                ) : null}
+                                {o.note ? (
+                                    <div className="mt-2 rounded-lg border border-amber-300 bg-amber-50 px-3 py-2">
+                                        <div className="text-xs font-semibold uppercase tracking-wide text-amber-900">From the guest</div>
+                                        <p className="mt-0.5 text-sm text-amber-950 whitespace-pre-line">{o.note}</p>
+                                    </div>
+                                ) : null}
+                                <p className="mt-2 text-xs text-gray-400">
                                     Their card is held, not charged. Confirming takes the payment.
                                 </p>
                                 <div className="mt-3 flex gap-2">
@@ -215,7 +232,18 @@ export default function ProviderExperienceDashboard(props: { providerId: string 
                                 </div>
                                 {countLine(o) ? <div className="text-sm font-medium text-gray-700">{countLine(o)}</div> : null}
                                 {o.guest_name ? <div className="mt-0.5 text-sm text-gray-700">For {o.guest_name}</div> : null}
-                                {o.note ? <p className="mt-1 text-sm text-gray-600 whitespace-pre-line">{o.note}</p> : null}
+                                {o.allergy ? (
+                                    <div className="mt-2 rounded-lg border-2 border-rose-400 bg-rose-50 px-3 py-2">
+                                        <div className="text-xs font-bold uppercase tracking-wide text-rose-800">⚠ Allergy / dietary need</div>
+                                        <p className="mt-0.5 text-sm font-medium text-rose-950 whitespace-pre-line">{o.allergy}</p>
+                                    </div>
+                                ) : null}
+                                {o.note ? (
+                                    <div className="mt-2 rounded-lg border border-amber-300 bg-amber-50 px-3 py-2">
+                                        <div className="text-xs font-semibold uppercase tracking-wide text-amber-900">From the guest</div>
+                                        <p className="mt-0.5 text-sm text-amber-950 whitespace-pre-line">{o.note}</p>
+                                    </div>
+                                ) : null}
 
                                 {/* The cottage — photo, name, exact address, link.
                                     Released on confirm, because they have to get
@@ -247,6 +275,21 @@ export default function ProviderExperienceDashboard(props: { providerId: string 
                                         ) : null}
                                     </div>
                                 ) : null}
+
+                                {/* The thread — the written channel that a
+                                    confirmed order never had. The phone/email
+                                    above stay; this is for settling the allergy or
+                                    the timing in a place both can see. */}
+                                <div className="mt-2">
+                                    <button
+                                        type="button"
+                                        onClick={() => setOpenThread(openThread === o.id ? null : o.id)}
+                                        className="inline-flex items-center gap-1.5 rounded-md border border-gray-300 bg-white px-3 py-1.5 text-sm font-medium text-gray-800 hover:border-gray-400"
+                                    >
+                                        <MessageCircle className="h-4 w-4" /> {openThread === o.id ? 'Hide messages' : 'Message guest'}
+                                    </button>
+                                    {openThread === o.id ? <OrderThread orderId={o.id} /> : null}
+                                </div>
 
                                 <div className="mt-3">
                                     <button

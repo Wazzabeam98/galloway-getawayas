@@ -6,7 +6,7 @@
 // priced item, and covering the cottage — with shape and, for a slot provider,
 // the bookable sessions inside the stay folded in.
 
-import { isLiveToGuests, mccForProvider, normaliseUnit } from '@/lib/serviceOrders';
+import { isLiveToGuests, mccForProvider, isFoodProvider, normaliseUnit } from '@/lib/serviceOrders';
 import { pointForListing, coversPoint, guestCategory } from '@/lib/serviceProviders';
 import { shapeOf, generateSessions, sessionCapacity, seatsLeft } from '@/lib/serviceSlots';
 import { getImageUrl } from '@/lib/utils';
@@ -24,6 +24,12 @@ export interface MpProvider {
     based_line: string | null;
     headshot: string | null;
     category: string;
+    // A food business (chef, baker, hamper, prepared meals) — the booking
+    // panel asks these for allergies specifically.
+    isFood: boolean;
+    // What a food business can cater for, in their own words; null when they
+    // haven't said, which the listing shows plainly rather than staying silent.
+    dietary_note: string | null;
     description: string | null;
     shape: string;
     priceFrom: number;
@@ -82,7 +88,7 @@ export async function loadMarketplace(
 
     const { data: rows } = await admin
         .from('service_providers')
-        .select('id, business_name, provider_name, based_line, headshot, trade, custom_label, stripe_mcc, description, status, stripe_payouts_enabled, shape, slot_length_minutes, slot_capacity, cancellation_window_hours, lead_time_days')
+        .select('id, business_name, provider_name, based_line, headshot, trade, custom_label, stripe_mcc, description, status, stripe_payouts_enabled, shape, slot_length_minutes, slot_capacity, cancellation_window_hours, lead_time_days, dietary_note')
         .eq('audience', 'guest').eq('status', 'approved').eq('stripe_payouts_enabled', true);
 
     const ids = (rows || []).map((r: any) => r.id);
@@ -153,6 +159,8 @@ export async function loadMarketplace(
             based_line: p.based_line,
             headshot: p.headshot ? getImageUrl(p.headshot) : null,
             category: guestCategory(p),
+            isFood: isFoodProvider(p),
+            dietary_note: p.dietary_note || null,
             description: p.description,
             shape,
             priceFrom: Math.min(...items.map((i: MpItem) => i.price)),

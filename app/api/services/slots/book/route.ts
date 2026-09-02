@@ -43,6 +43,9 @@ export async function POST(request: Request) {
         const sessionTime: string = body && body.sessionTime;      // "HH:MM"
         const requestedQuantity: unknown = body && body.quantity;
         const note: string = (body && body.note ? String(body.note) : '').slice(0, 500);
+        // The allergy field, separate from note — see the order route. A slot
+        // auto-confirms, so this is the guest's one chance to state it up front.
+        const allergy: string = (body && body.allergy ? String(body.allergy) : '').slice(0, 500);
 
         if (!providerId || !bookingId || !sessionDate || !sessionTime) {
             return NextResponse.json({ ok: false, error: 'Missing details' }, { status: 400 });
@@ -196,6 +199,7 @@ export async function POST(request: Request) {
                 item_description: item.description || '',
                 provider_business_name: business,
                 note: note || null,
+                allergy: allergy || null,
                 expires_at: new Date(Date.now() + SLOT_HOLD_MINUTES * 60 * 1000).toISOString(),
                 created_at: nowIso,
             })

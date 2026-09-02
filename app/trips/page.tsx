@@ -6,6 +6,7 @@ import { useEffect, useState } from 'react';
 import { createClientComponentClient } from '@supabase/auth-helpers-nextjs';
 import Logo from '@/components/base/Logo';
 import LoginModel from '@/components/auth/LoginModel';
+import { MessageCircle, Navigation } from 'lucide-react';
 import { getImageUrl, capitializeFirst, displayName, formatTime } from '@/lib/utils';
 import Link from 'next/link';
 import { refundDue } from '@/lib/cancellation';
@@ -297,9 +298,16 @@ export default function TripsPage() {
                     </span>
                 </div>
 
-                <Link href={`/messages/${b.id}`} className="text-xs font-semibold text-slate-500 underline hover:text-slate-800 mt-3 inline-block">
-                    Message host
-                </Link>
+                <div className="mt-3 flex flex-wrap items-center gap-2">
+                    {b.status === 'confirmed' && new Date(b.check_out) >= today && (
+                        <Link href={`/arrival/${b.id}`} className="inline-flex items-center gap-1.5 rounded-lg bg-slate-900 px-3 py-1.5 text-xs font-semibold text-white transition hover:bg-slate-800">
+                            <Navigation className="h-3.5 w-3.5" /> Getting there
+                        </Link>
+                    )}
+                    <Link href={`/messages/${b.id}`} className="inline-flex items-center gap-1.5 rounded-lg border border-slate-300 bg-white px-3 py-1.5 text-xs font-semibold text-slate-700 transition hover:border-slate-400">
+                        <MessageCircle className="h-3.5 w-3.5" /> Message host
+                    </Link>
+                </div>
 
                 {b.sharedWithMe ? (
                     <p className="text-xs text-slate-400 mt-3">

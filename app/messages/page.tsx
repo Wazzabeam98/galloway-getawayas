@@ -12,6 +12,20 @@ import { publicArea } from '@/lib/places';
 import { toast } from 'react-toastify';
 import { Search, Inbox, Send, Zap, Phone, ExternalLink, ChevronLeft, Info } from 'lucide-react';
 
+// A conversation's identity is now "kind:id" — booking, enquiry or order — so the
+// one inbox can carry all three. This splits it back apart for routing.
+function splitKey(key: string | null): { kind: 'booking' | 'enquiry' | 'order'; id: string } {
+    if (!key) return { kind: 'booking', id: '' };
+    const i = key.indexOf(':');
+    if (i < 0) return { kind: 'booking', id: key };   // legacy bare bookingId
+    return { kind: key.slice(0, i) as any, id: key.slice(i + 1) };
+}
+const THREAD_GET: Record<string, (id: string) => string> = {
+    booking: (id) => '/api/messages/threads/' + id,
+    enquiry: (id) => '/api/messages/enquiry/' + id,
+    order: (id) => '/api/messages/order/' + id,
+};
+
 export default function MessagesInboxPage() {
     const supabase = createClientComponentClient();
 
@@ -142,7 +156,7 @@ export default function MessagesInboxPage() {
                     // for one by name is them choosing it, so it is exempt.
                     skipMarkRead.current = true;
                 }
-                setActiveId(first.bookingId);
+                setActiveId(first.key);
             }
 
             setLoading(false);
@@ -158,9 +172,10 @@ export default function MessagesInboxPage() {
         setThreadLoading(true);
         setThreadError('');
 
+        const { kind, id } = splitKey(activeId);
         const load = async () => {
             try {
-                const res = await fetch('/api/messages/threads/' + activeId);
+                const res = await fetch(THREAD_GET[kind](id));
 
                 // A failure that looks identical to "nothing selected" is
                 // impossible to diagnose, so say what actually happened.
@@ -196,14 +211,19 @@ export default function MessagesInboxPage() {
                     skipMarkRead.current = false;
                 } else {
                     // Opening it clears the unread flags, here and in the list.
-                    fetch('/api/messages/mark-read', {
-                        method: 'POST',
-                        headers: { 'Content-Type': 'application/json' },
-                        body: JSON.stringify({ bookingId: activeId }),
-                    }).catch(() => {});
+                    // Booking threads have an explicit mark-read; enquiry and order
+                    // threads are stamped read by their own GET above, so those
+                    // just need the optimistic list update.
+                    if (kind === 'booking') {
+                        fetch('/api/messages/mark-read', {
+                            method: 'POST',
+                            headers: { 'Content-Type': 'application/json' },
+                            body: JSON.stringify({ bookingId: id }),
+                        }).catch(() => {});
+                    }
 
                     setConversations((prev) =>
-                        prev.map((c) => (c.bookingId === activeId ? { ...c, unread: 0 } : c))
+                        prev.map((c) => (c.key === activeId ? { ...c, unread: 0 } : c))
                     );
                 }
             } catch (err: any) {
@@ -225,6 +245,7 @@ export default function MessagesInboxPage() {
     useEffect(() => {
         if (!activeId) return;
 
+        const { kind, id } = splitKey(activeId);
         const channel = supabase
             .channel('thread-' + activeId)
             .on(
@@ -233,7 +254,7 @@ export default function MessagesInboxPage() {
                     event: 'INSERT',
                     schema: 'public',
                     table: 'messages',
-                    filter: 'booking_id=eq.' + activeId,
+                    filter: kind + '_id=eq.' + id,
                 },
                 (payload: any) => {
                     setThread((prev: any) => {
@@ -377,7 +398,7 @@ export default function MessagesInboxPage() {
             { archived: !!c.archived }
         );
 
-        if (!c.archived && activeId === c.bookingId) {
+        if (!c.archived && activeId === c.key) {
             // Do not leave a conversation open in the middle pane that has
             // just left the list on the left.
             setActiveId(null);
@@ -425,7 +446,7 @@ export default function MessagesInboxPage() {
 
         // Opening a conversation marks it read, so leaving this one open would
         // undo the action the moment anything reloaded it.
-        if (activeId === c.bookingId) {
+        if (activeId === c.key) {
             setActiveId(null);
             setThread(null);
             setMobileOpen(false);
@@ -436,27 +457,50 @@ export default function MessagesInboxPage() {
         const outgoing = text.trim();
         if (!outgoing || !thread || sending) return;
 
+        const { kind, id } = splitKey(activeId);
         setSending(true);
 
-        const { error } = await supabase.from('messages').insert({
-            booking_id: activeId,
-            sender_id: session.user.id,
-            recipient_id: thread.other.id,
-            body: outgoing,
-        });
-
-        setSending(false);
-
-        if (error) {
-            toast.error(error.message, { theme: 'colored' });
-            return;
+        if (kind === 'booking') {
+            const { error } = await supabase.from('messages').insert({
+                booking_id: id,
+                sender_id: session.user.id,
+                recipient_id: thread.other.id,
+                body: outgoing,
+            });
+            setSending(false);
+            if (error) {
+                toast.error(error.message, { theme: 'colored' });
+                return;
+            }
+            // Email the other person, if they have message alerts on — the route
+            // decides that, this just asks.
+            notify('new_message', id, outgoing);
+        } else {
+            // Enquiry and order threads send through their own route, which owns
+            // the insert, the recipient and the new-message email.
+            try {
+                const res = await fetch(THREAD_GET[kind](id), {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ body: outgoing }),
+                });
+                const d = await res.json();
+                setSending(false);
+                if (!d || !d.ok) {
+                    toast.error((d && d.error) || 'Could not send.', { theme: 'colored' });
+                    return;
+                }
+                // Reflect it now; the realtime channel dedupes if it also fires.
+                if (d.message) {
+                    setThread((prev: any) => prev && !prev.messages.some((m: any) => m.id === d.message.id)
+                        ? { ...prev, messages: prev.messages.concat(d.message) } : prev);
+                }
+            } catch {
+                setSending(false);
+                toast.error('Could not send.', { theme: 'colored' });
+                return;
+            }
         }
-
-        // Email the other person, if they have message alerts switched on —
-        // the route decides that, this just asks. It was only ever sent from
-        // the old single-conversation page, so a reply written here reached
-        // nobody's inbox until they next looked at the site.
-        notify('new_message', activeId as string, outgoing);
 
         setText('');
         setShowQuick(false);
@@ -465,7 +509,7 @@ export default function MessagesInboxPage() {
         // needs-reply flag don't lie until the next load.
         setConversations((prev) =>
             prev.map((c) =>
-                c.bookingId === activeId
+                c.key === activeId
                     ? {
                         ...c,
                         needsReply: false,
@@ -498,7 +542,7 @@ export default function MessagesInboxPage() {
     // The row in the list for whatever is open, which is where needsReply
     // lives — it is worked out per person when the list is built.
     const activeConversation = conversations.filter(
-        (c) => c.bookingId === activeId
+        (c) => c.key === activeId
     )[0] || null;
 
     // Offered under the last message rather than buried in the row menu,
@@ -575,12 +619,12 @@ export default function MessagesInboxPage() {
                 ) : (
                     shown.map((c) => (
                         <ConversationRow
-                            key={c.bookingId}
+                            key={c.key}
                             conversation={c}
-                            active={activeId === c.bookingId}
+                            active={activeId === c.key}
                             showActive
                             busy={!!busy[c.bookingId]}
-                            onOpen={() => setActiveId(c.bookingId)}
+                            onOpen={() => setActiveId(c.key)}
                             onNoReplyNeeded={() => markNoReplyNeeded(c.bookingId)}
                             onStar={() => toggleStar(c)}
                             onArchive={() => toggleArchive(c)}
@@ -1000,11 +1044,11 @@ export default function MessagesInboxPage() {
                         ) : (
                             shown.map((c) => (
                                 <ConversationRow
-                                    key={c.bookingId}
+                                    key={c.key}
                                     conversation={c}
                                     busy={!!busy[c.bookingId]}
                                     onOpen={() => {
-                                        setActiveId(c.bookingId);
+                                        setActiveId(c.key);
                                         setMobileOpen(true);
                                         setShowDetails(false);
                                     }}

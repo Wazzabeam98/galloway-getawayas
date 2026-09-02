@@ -2,30 +2,57 @@
 
 import { useCallback, useEffect, useState } from 'react';
 import Link from 'next/link';
+import { CheckCircle2, Clock3, XCircle, ArrowRight, ChevronRight } from 'lucide-react';
 
 // The trip page's window into the marketplace: a way IN, and the guest's own
-// bookings shown back. The browsing and the booking themselves live on their own
-// pages now (/experiences/[bookingId]) — this stays a summary, not a shop, so a
-// trip card doesn't try to be a marketplace.
+// experience bookings shown back — grouped the way a guest reads them, each a
+// link to the booking's own page (where the details, the thread and the cancel
+// live). No floating message box on the list any more; a booking is a page.
 
 interface Order {
     id: string;
     status: string;
     service_date: string;
+    service_time: string | null;
     price: number;
     item_name: string | null;
     provider_business_name: string | null;
 }
 
-const ORDER_WORD: Record<string, string> = {
-    holding: 'Holding your place…',
-    authorised: 'Awaiting their answer',
-    confirmed: 'Confirmed',
-    declined: 'They couldn’t make it',
-    expired: 'No answer in time',
-    cancelled: 'Cancelled',
-    refunded: 'Refunded',
+type Tone = 'ok' | 'wait' | 'over';
+
+// One label per status, written so a guest knows which is which at a glance.
+const STATUS: Record<string, { label: string; group: 'happening' | 'waiting' | 'over'; tone: Tone }> = {
+    confirmed: { label: 'Confirmed', group: 'happening', tone: 'ok' },
+    authorised: { label: 'Waiting to be confirmed', group: 'waiting', tone: 'wait' },
+    holding: { label: 'Holding your place…', group: 'waiting', tone: 'wait' },
+    declined: { label: 'Provider couldn’t make it', group: 'over', tone: 'over' },
+    expired: { label: 'Expired · no reply', group: 'over', tone: 'over' },
+    cancelled: { label: 'You cancelled', group: 'over', tone: 'over' },
+    refunded: { label: 'Cancelled · refunded', group: 'over', tone: 'over' },
 };
+
+const PILL: Record<Tone, string> = {
+    ok: 'bg-emerald-100 text-emerald-800',
+    wait: 'bg-amber-100 text-amber-800',
+    over: 'bg-slate-100 text-slate-500',
+};
+
+const GROUPS: { key: 'happening' | 'waiting' | 'over'; title: string }[] = [
+    { key: 'happening', title: 'Booked for your stay' },
+    { key: 'waiting', title: 'Waiting on the provider' },
+    { key: 'over', title: 'Earlier' },
+];
+
+function whenLabel(dateStr: string, timeStr: string | null): string {
+    const d = new Date(dateStr + 'T00:00:00');
+    const day = isNaN(d.getTime())
+        ? dateStr
+        : d.toLocaleDateString('en-GB', { weekday: 'short', day: 'numeric', month: 'short' });
+    if (!timeStr) return day;
+    const t = timeStr.length >= 5 ? timeStr.slice(0, 5) : timeStr;
+    return day + ' · ' + t;
+}
 
 export default function GuestExperiences(props: {
     bookingId: string;
@@ -39,9 +66,6 @@ export default function GuestExperiences(props: {
     const [orders, setOrders] = useState<Order[]>([]);
     const [loaded, setLoaded] = useState(false);
     const [open, setOpen] = useState(true);
-    const [busy, setBusy] = useState<string | null>(null);
-    const [error, setError] = useState<string | null>(null);
-    const [note, setNote] = useState<string | null>(null);
 
     const load = useCallback(() => {
         return fetch('/api/services/experiences?booking=' + encodeURIComponent(bookingId))
@@ -57,30 +81,15 @@ export default function GuestExperiences(props: {
 
     useEffect(() => { load(); }, [load]);
 
-    async function cancel(order: Order) {
-        setBusy(order.id); setError(null); setNote(null);
-        try {
-            const res = await fetch('/api/services/orders/cancel', {
-                method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ orderId: order.id }),
-            });
-            const d = await res.json();
-            if (d && d.ok) {
-                setNote(d.status === 'refunded' ? 'Cancelled and refunded in full.' : 'Cancelled.');
-                await load();
-            } else setError((d && d.error) || 'Could not cancel that.');
-        } catch { setError('Could not cancel that.'); }
-        setBusy(null);
-    }
-
     if (!loaded) return null;
 
     if (!open) {
         return (
-            <section className="mt-8 rounded-lg border border-dashed border-gray-300 p-5">
-                <h3 className="text-lg font-semibold text-gray-900">Coming soon to your stay</h3>
-                <p className="mt-1 text-sm text-gray-500">
-                    Experiences you’ll be able to book for your dates — a chef, a cake, a sauna, a
-                    guided walk. We’re lining up local businesses now.
+            <section className="mt-8 rounded-2xl border border-dashed border-slate-300 p-5">
+                <h3 className="text-lg font-semibold text-slate-900">Experiences, coming soon to your stay</h3>
+                <p className="mt-1 text-sm text-slate-500">
+                    Local experiences you’ll be able to book for your dates — a chef, a cake, a sauna, a
+                    guided walk. We’re lining up businesses now.
                 </p>
             </section>
         );
@@ -88,7 +97,9 @@ export default function GuestExperiences(props: {
 
     if (providerCount === 0 && orders.length === 0) return null;
 
-    const canCancel = (s: string) => s === 'authorised' || s === 'confirmed' || s === 'holding';
+    const grouped = GROUPS
+        .map((g) => ({ ...g, rows: orders.filter((o) => (STATUS[o.status]?.group || 'over') === g.key) }))
+        .filter((g) => g.rows.length > 0);
 
     return (
         <section className="mt-8">
@@ -98,44 +109,50 @@ export default function GuestExperiences(props: {
                     className="group flex items-center justify-between gap-4 rounded-2xl border border-emerald-200 bg-emerald-50/50 p-5 transition hover:border-emerald-300 hover:bg-emerald-50"
                 >
                     <div>
-                        <h3 className="text-lg font-semibold text-gray-900">Make more of your stay{town ? ' near ' + town : ''}</h3>
-                        <p className="mt-1 text-sm text-gray-600">
-                            Chefs, bakers, saunas and guides you can book for your dates.
-                        </p>
+                        <h3 className="text-lg font-semibold text-slate-900">Book an experience for your stay{town ? ' near ' + town : ''}</h3>
+                        <p className="mt-1 text-sm text-slate-600">Chefs, bakers, saunas and guided walks — local businesses you can book for your dates.</p>
                     </div>
-                    <span className="whitespace-nowrap text-sm font-semibold text-emerald-700 group-hover:translate-x-0.5 transition">Browse →</span>
+                    <span className="inline-flex items-center gap-1 whitespace-nowrap text-sm font-semibold text-emerald-700 transition group-hover:translate-x-0.5">
+                        Browse <ArrowRight className="h-4 w-4" />
+                    </span>
                 </Link>
             )}
 
             {orders.length > 0 && (
-                <div className="mt-4 rounded-lg border border-gray-200 bg-gray-50 p-4">
-                    <div className="text-sm font-semibold text-gray-900">Your experiences</div>
-                    <ul className="mt-2 divide-y divide-gray-200">
-                        {orders.map((o) => (
-                            <li key={o.id} className="flex flex-wrap items-center justify-between gap-x-3 gap-y-1 py-2">
-                                <div className="min-w-0">
-                                    <div className="text-sm font-medium text-gray-900 break-words">
-                                        {o.item_name || 'Experience'}{o.provider_business_name ? ' · ' + o.provider_business_name : ''}
-                                    </div>
-                                    <div className="text-xs text-gray-500">
-                                        {o.service_date} · £{o.price.toFixed(2)} · {ORDER_WORD[o.status] || o.status}
-                                    </div>
-                                </div>
-                                {canCancel(o.status) && (
-                                    <button type="button" disabled={busy === o.id} onClick={() => cancel(o)}
-                                        className="text-xs font-medium text-gray-500 underline hover:text-gray-800 disabled:opacity-60">
-                                        {busy === o.id ? '…' : 'Cancel'}
-                                    </button>
-                                )}
-                            </li>
-                        ))}
-                    </ul>
-                    <p className="mt-2 text-[11px] leading-snug text-gray-400">
-                        Cancel a held request any time. A confirmed booking is refunded in full up to the
-                        provider’s cancellation window.
-                    </p>
-                    {note ? <p className="mt-1 text-xs text-emerald-700">{note}</p> : null}
-                    {error ? <p className="mt-1 text-xs text-red-600">{error}</p> : null}
+                <div className="mt-4 space-y-5">
+                    {grouped.map((g) => (
+                        <div key={g.key}>
+                            <h4 className="mb-2 text-xs font-semibold uppercase tracking-wide text-slate-400">{g.title}</h4>
+                            <div className="space-y-2">
+                                {g.rows.map((o) => {
+                                    const meta = STATUS[o.status] || { label: o.status, tone: 'over' as Tone };
+                                    return (
+                                        <Link
+                                            key={o.id}
+                                            href={`/experiences/order/${o.id}`}
+                                            className={`flex items-center gap-3 rounded-xl border p-3.5 transition ${meta.tone === 'over' ? 'border-slate-200 bg-slate-50/60 hover:border-slate-300' : 'border-slate-200 bg-white hover:border-emerald-300 hover:shadow-sm'}`}
+                                        >
+                                            <div className="min-w-0 flex-1">
+                                                <div className={`text-sm font-semibold ${meta.tone === 'over' ? 'text-slate-500' : 'text-slate-900'} break-words`}>
+                                                    {o.item_name || 'Experience'}
+                                                </div>
+                                                <div className="text-xs text-slate-500">
+                                                    {o.provider_business_name ? o.provider_business_name + ' · ' : ''}{whenLabel(o.service_date, o.service_time)} · £{o.price.toFixed(2)}
+                                                </div>
+                                            </div>
+                                            <span className={`inline-flex flex-none items-center gap-1 rounded-full px-2.5 py-1 text-[11px] font-semibold ${PILL[meta.tone]}`}>
+                                                {meta.tone === 'ok' && <CheckCircle2 className="h-3 w-3" />}
+                                                {meta.tone === 'wait' && <Clock3 className="h-3 w-3" />}
+                                                {meta.tone === 'over' && <XCircle className="h-3 w-3" />}
+                                                {meta.label}
+                                            </span>
+                                            <ChevronRight className="h-4 w-4 flex-none text-slate-300" />
+                                        </Link>
+                                    );
+                                })}
+                            </div>
+                        </div>
+                    ))}
                 </div>
             )}
         </section>

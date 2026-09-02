@@ -227,6 +227,7 @@ function ApplicationForm() {
     // listing. All optional.
     const [providerName, setProviderName] = useState('');
     const [basedLine, setBasedLine] = useState('');
+    const [dietaryNote, setDietaryNote] = useState('');
     const [headshot, setHeadshot] = useState<string | null>(null);
     const [uploadingHeadshot, setUploadingHeadshot] = useState(false);
     // Keyed by extra. Price stays a string for the same reason band prices
@@ -336,7 +337,7 @@ function ApplicationForm() {
                 // it is inherited from another one they hold.
                 const { data: existing } = await supabase
                     .from('service_providers')
-                    .select('id, business_name, trade, description, sms_opt_out, audience, photos, logo, status, review_note, callout_fee, hourly_rate, callout_waived, does_gas, does_oil, kind, pricing_choice, billable_hourly_rate, covered_bands, provider_name, based_line, headshot')
+                    .select('id, business_name, trade, description, sms_opt_out, audience, photos, logo, status, review_note, callout_fee, hourly_rate, callout_waived, does_gas, does_oil, kind, pricing_choice, billable_hourly_rate, covered_bands, provider_name, based_line, headshot, dietary_note')
                     .eq('owner_id', session.user.id)
                     .eq('trade', tradeFromUrl)
                     .maybeSingle();
@@ -399,6 +400,7 @@ function ApplicationForm() {
 
                     setProviderName((existing as any).provider_name || '');
                     setBasedLine((existing as any).based_line || '');
+                    setDietaryNote((existing as any).dietary_note || '');
                     setHeadshot((existing as any).headshot || null);
 
                     // The numbers only. Whether one has been checked is not
@@ -594,6 +596,7 @@ function ApplicationForm() {
             if (Array.isArray(d.items) && d.items.length) setItems(d.items);
             if (d.providerName) setProviderName(d.providerName);
             if (d.basedLine) setBasedLine(d.basedLine);
+            if (d.dietaryNote) setDietaryNote(d.dietaryNote);
             if (d.headshot) setHeadshot(d.headshot);
 
             // Whether there is anything in here worth calling kept work.
@@ -697,7 +700,7 @@ function ApplicationForm() {
                     photos, logo, buildingType, panes,
                     // The guest-trade fields: the price, and who they are. The
                     // headshot is a storage path like the photos.
-                    items, providerName, basedLine, headshot,
+                    items, providerName, basedLine, headshot, dietaryNote,
                 })
             );
         } catch (err) {
@@ -1423,6 +1426,7 @@ function ApplicationForm() {
             // person. Null for a host trade, where a logo and a trade say enough.
             provider_name: audienceForTrade(trade) === 'guest' ? (providerName.trim() || null) : null,
             based_line: audienceForTrade(trade) === 'guest' ? (basedLine.trim() || null) : null,
+            dietary_note: audienceForTrade(trade) === 'guest' ? (dietaryNote.trim() || null) : null,
             headshot: audienceForTrade(trade) === 'guest' ? headshot : null,
             photos,
             logo,
@@ -1685,6 +1689,7 @@ function ApplicationForm() {
             // person. Null for a host trade, where a logo and a trade say enough.
             provider_name: audienceForTrade(trade) === 'guest' ? (providerName.trim() || null) : null,
             based_line: audienceForTrade(trade) === 'guest' ? (basedLine.trim() || null) : null,
+            dietary_note: audienceForTrade(trade) === 'guest' ? (dietaryNote.trim() || null) : null,
             headshot: audienceForTrade(trade) === 'guest' ? headshot : null,
             photos,
             logo,
@@ -2601,6 +2606,18 @@ function ApplicationForm() {
                         placeholder="Kirkcudbright · cooking since 2019"
                         className="w-full md:max-w-md rounded-xl border border-slate-300 px-4 py-3 mb-4 focus:outline-none focus:ring-2 focus:ring-emerald-700"
                     />
+
+                    <label className="block text-sm font-semibold text-slate-900 mb-1.5">If you serve food: what can you cater for?</label>
+                    <textarea
+                        value={dietaryNote}
+                        onChange={(e) => setDietaryNote(e.target.value)}
+                        rows={2}
+                        placeholder="e.g. can do gluten-free and dairy-free with a day’s notice; not a nut-free kitchen"
+                        className="w-full md:max-w-md rounded-xl border border-slate-300 px-4 py-3 mb-1.5 focus:outline-none focus:ring-2 focus:ring-emerald-700"
+                    />
+                    <p className="text-xs text-slate-500 mb-4">
+                        Shown on your listing. Leave it blank and the listing tells guests you haven’t said — so they know to ask before booking.
+                    </p>
 
                     <label className="block text-sm font-semibold text-slate-900 mb-1.5">A photo of you</label>
                     <div className="flex items-center gap-3">

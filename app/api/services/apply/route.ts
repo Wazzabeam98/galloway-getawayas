@@ -73,6 +73,9 @@ const PROVIDER_COLUMNS = [
     // first-time applicant (who posts here, having no session yet) keeps them;
     // without this they were silently dropped for anyone applying fresh.
     'provider_name', 'based_line', 'headshot',
+    // What a food business can cater for, in their own words. Shown on the
+    // listing; empty reads as "hasn't said" there rather than as "fine".
+    'dietary_note',
 ];
 
 const AREA_COLUMNS = ['label', 'centre_lat', 'centre_lng', 'radius_miles'];

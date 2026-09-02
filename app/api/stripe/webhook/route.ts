@@ -251,6 +251,34 @@ export async function POST(request: Request) {
             const bookingId = (cs.metadata && cs.metadata.booking_id) || cs.client_reference_id;
             const kind = (cs.metadata && cs.metadata.kind) || 'full';
 
+            // A guest's note (allergies, access, a request), rendered as a
+            // bordered amber block so it can't be skimmed past in the email.
+            // Empty note → empty string, so it simply drops out of the body.
+            const noteCallout = (n: unknown): string => {
+                const text = n ? String(n).trim() : '';
+                if (!text) return '';
+                return '<div style="margin:16px 0;padding:12px 14px;border:1px solid #f59e0b;'
+                    + 'border-radius:10px;background:#fffbeb">'
+                    + '<div style="font-size:12px;font-weight:600;text-transform:uppercase;'
+                    + 'letter-spacing:0.04em;color:#92400e">From the guest</div>'
+                    + '<div style="margin-top:4px;color:#451a03;white-space:pre-line">'
+                    + escapeHtml(text) + '</div></div>';
+            };
+
+            // The allergy, louder than a note — red, and it leads the email. It is
+            // safety information a cook must not skim past, so it gets its own block
+            // rather than sitting inside the general note.
+            const allergyCallout = (a: unknown): string => {
+                const text = a ? String(a).trim() : '';
+                if (!text) return '';
+                return '<div style="margin:0 0 16px;padding:12px 14px;border:2px solid #e11d48;'
+                    + 'border-radius:10px;background:#fff1f2">'
+                    + '<div style="font-size:12px;font-weight:700;text-transform:uppercase;'
+                    + 'letter-spacing:0.04em;color:#9f1239">⚠ Allergy / dietary need</div>'
+                    + '<div style="margin-top:4px;color:#4c0519;white-space:pre-line">'
+                    + escapeHtml(text) + '</div></div>';
+            };
+
             // A SLOT BOOKING WAS PAID.
             //
             // The seat was already claimed when the guest started Checkout, and a
@@ -264,17 +292,89 @@ export async function POST(request: Request) {
                 const orderId = cs.metadata && cs.metadata.order_id;
                 const slotPi = (cs.payment_intent as string) || null;
                 if (orderId) {
-                    const { error: slotConfErr } = await admin
+                    const { data: slotRows, error: slotConfErr } = await admin
                         .from('service_orders')
                         .update({ status: 'confirmed', stripe_payment_intent_id: slotPi })
                         .eq('id', orderId)
-                        .eq('status', 'holding');
+                        .eq('status', 'holding')
+                        .select('id, provider_id, service_date, service_time, item_name, quantity, price, note, allergy');
                     if (slotConfErr) {
                         console.error('[webhook] slot-order confirm', orderId, slotConfErr.message);
                     }
-                    // TODO(marketplace next phase): email the provider the new
-                    // booking (the diary notification) and the guest their
-                    // confirmation.
+
+                    // Both notifications for a slot booking. It books instantly
+                    // with no provider gate, so both sides only otherwise learn of
+                    // it by opening a page. Best-effort and only on the FIRST
+                    // confirm: the update returns a row only while the order was
+                    // still 'holding', so a redelivered event updates nothing and
+                    // sends nothing twice. A mail failure never touches the money.
+                    const slotOrder = slotRows && slotRows[0];
+                    if (slotOrder) {
+                        const time = slotOrder.service_time ? String(slotOrder.service_time).slice(0, 5) : '';
+                        const qty = Number(slotOrder.quantity) || 1;
+                        const { data: prov } = await admin
+                            .from('service_providers')
+                            .select('business_name, contact_email')
+                            .eq('id', slotOrder.provider_id)
+                            .maybeSingle();
+                        const business = (prov && prov.business_name) || 'your experience';
+
+                        // The provider's diary notification — this is the push that
+                        // makes a slot note (an allergy included) actually reach them.
+                        try {
+                            if (prov && prov.contact_email) {
+                                await sendEmail(
+                                    prov.contact_email,
+                                    slotOrder.allergy
+                                        ? 'A new booking — allergy noted, please read'
+                                        : (slotOrder.note ? 'A new booking — please read the guest’s note' : 'A new booking'),
+                                    emailLayout(
+                                        allergyCallout(slotOrder.allergy)
+                                        + '<p>A guest has booked '
+                                        + escapeHtml(slotOrder.item_name || business)
+                                        + ' for ' + escapeHtml(String(slotOrder.service_date))
+                                        + (time ? ' at ' + escapeHtml(time) : '')
+                                        + (qty > 1 ? ' · ' + qty + ' places' : '')
+                                        + '.</p>'
+                                        + noteCallout(slotOrder.note)
+                                        + button(SITE_URL + '/services/dashboard', 'View your bookings'),
+                                        'You’re receiving this because you offer experiences on Galloway Getaways.'
+                                    )
+                                );
+                            }
+                        } catch (mailErr) {
+                            console.error('[stripe/webhook] slot provider notify failed', mailErr);
+                        }
+
+                        // The guest's receipt. A slot is paid on the spot, so unlike
+                        // a request shape (told on confirm) the guest otherwise pays
+                        // and hears nothing. Email is the one that reaches them off
+                        // the site.
+                        try {
+                            const guestEmail = (cs.customer_details && cs.customer_details.email) || cs.customer_email || null;
+                            if (guestEmail) {
+                                await sendEmail(
+                                    guestEmail,
+                                    'Your booking is confirmed',
+                                    emailLayout(
+                                        '<p>You’re booked'
+                                        + (slotOrder.item_name ? ' for ' + escapeHtml(slotOrder.item_name) : '')
+                                        + ' with ' + escapeHtml(business)
+                                        + ' on ' + escapeHtml(String(slotOrder.service_date))
+                                        + (time ? ' at ' + escapeHtml(time) : '')
+                                        + (qty > 1 ? ', for ' + qty + ' places' : '')
+                                        + '.</p>'
+                                        + (slotOrder.price != null
+                                            ? '<p>You paid £' + Number(slotOrder.price).toFixed(2) + '.</p>' : '')
+                                        + button(SITE_URL + '/trips', 'View your trip'),
+                                        'You’re receiving this because you booked an experience on Galloway Getaways.'
+                                    )
+                                );
+                            }
+                        } catch (mailErr) {
+                            console.error('[stripe/webhook] slot guest receipt failed', mailErr);
+                        }
+                    }
                 }
             }
 
@@ -381,6 +481,7 @@ export async function POST(request: Request) {
                         guest_phone: guest ? guest.phone : null,
                         guest_email: (guest && guest.email) || cs.customer_details?.email || null,
                         note: md.note || null,
+                        allergy: md.allergy || null,
                         provider_business_name: prov ? prov.business_name : null,
                         // The item the guest picked, snapshotted so editing or
                         // removing it later never rewrites this order. item_id is
@@ -445,11 +546,19 @@ export async function POST(request: Request) {
                     if (prov && prov.contact_email && order) {
                         await sendEmail(
                             prov.contact_email,
-                            'A guest would like to book you',
+                            md.allergy
+                                ? 'A guest would like to book you — allergy noted, please read'
+                                : (md.note ? 'A guest would like to book you — please read their note' : 'A guest would like to book you'),
                             emailLayout(
-                                '<p>A guest staying nearby has asked to book '
+                                allergyCallout(md.allergy)
+                                + '<p>A guest staying nearby has asked to book '
                                 + escapeHtml(prov.business_name || 'your experience')
-                                + ' for ' + escapeHtml(String(md.service_date)) + '.</p>'
+                                + (md.item_name ? ' — ' + escapeHtml(String(md.item_name)) : '')
+                                + ' for ' + escapeHtml(String(md.service_date))
+                                + (Number.isFinite(guestsNum as number) && (guestsNum as number) > 0
+                                    ? ' · ' + guestsNum + ' guest' + (guestsNum === 1 ? '' : 's') : '')
+                                + '.</p>'
+                                + noteCallout(md.note)
                                 + '<p>Their card is held, not charged. Confirm within 48 hours to '
                                 + 'take the booking; if you can’t make it, decline and the hold is '
                                 + 'released.</p>'
