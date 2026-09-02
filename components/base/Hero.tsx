@@ -707,8 +707,19 @@ export default function Hero() {
 
           {/* WHEN */}
           <div
+            role="button"
+            tabIndex={0}
+            aria-haspopup="dialog"
+            aria-expanded={activePopover === 'when'}
+            aria-label={`When: ${whenSummary}`}
             onClick={() => setActivePopover('when')}
-            className={`flex-grow px-6 py-2.5 text-left rounded-full transition cursor-pointer ${
+            onKeyDown={(e) => {
+              if (e.key === 'Enter' || e.key === ' ') {
+                e.preventDefault();
+                setActivePopover(activePopover === 'when' ? null : 'when');
+              }
+            }}
+            className={`flex-grow px-6 py-2.5 text-left rounded-full transition cursor-pointer focus:outline-none focus-visible:ring-2 focus-visible:ring-emerald-600 ${
               activePopover === 'when' ? 'bg-white shadow-md' : 'hover:bg-stone-100'
             }`}
           >
@@ -728,8 +739,19 @@ export default function Hero() {
 
           {/* WHO */}
           <div
+            role="button"
+            tabIndex={0}
+            aria-haspopup="dialog"
+            aria-expanded={activePopover === 'who'}
+            aria-label={`Who: ${guestSummary}`}
             onClick={() => setActivePopover('who')}
-            className={`flex-grow px-6 py-2.5 text-left rounded-full transition cursor-pointer ${
+            onKeyDown={(e) => {
+              if (e.key === 'Enter' || e.key === ' ') {
+                e.preventDefault();
+                setActivePopover(activePopover === 'who' ? null : 'who');
+              }
+            }}
+            className={`flex-grow px-6 py-2.5 text-left rounded-full transition cursor-pointer focus:outline-none focus-visible:ring-2 focus-visible:ring-emerald-600 ${
               activePopover === 'who' ? 'bg-white shadow-md' : 'hover:bg-stone-100'
             }`}
           >

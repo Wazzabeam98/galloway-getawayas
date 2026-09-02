@@ -260,6 +260,7 @@ const FindHome = async ({ params }: { params: { id: string } }) => {
     let hostName = 'Host';
     let hostAvatar: string | null = null;
     let hostSinceYear: number | null = null;
+    let hostBio: string | null = null;
     // Stripe has been through this host's identity documents. It is a check on
     // the person, not on the property, and the badge below says so.
     //
@@ -280,11 +281,12 @@ const FindHome = async ({ params }: { params: { id: string } }) => {
     if (home?.host_id) {
         const { data: hostProfile } = await supabase
             .from('profiles')
-            .select('full_name, preferred_name, show_full_name, avatar_url, created_at')
+            .select('full_name, preferred_name, show_full_name, avatar_url, created_at, host_bio')
             .eq('id', home.host_id)
             .single();
         hostName = displayName(hostProfile, 'Host');
         hostAvatar = hostProfile?.avatar_url || null;
+        hostBio = (hostProfile?.host_bio || '').trim() || null;
         // When they joined — the tenure line a guest looks for on a page
         // asking them to book direct with a person. Year only; the exact date
         // is neither here nor there and a year reads as trust, not surveillance.
@@ -600,6 +602,12 @@ const FindHome = async ({ params }: { params: { id: string } }) => {
                                 </div>
                             </div>
                         </div>
+
+                        {hostBio && (
+                            <p className='mt-4 text-slate-600 whitespace-pre-line'>
+                                {hostBio}
+                            </p>
+                        )}
 
                         {(home.check_in_time || home.check_out_time) && (
                             <div className='mt-8 pt-8 lg:mt-5 lg:pt-5 border-t'>

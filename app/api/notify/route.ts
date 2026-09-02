@@ -1,5 +1,4 @@
 import { displayName, formatTime } from '@/lib/utils';
-import { round2 } from '@/lib/hostDebt';
 // =====================================================================
 // GALLOWAY GETAWAYS — notification sender
 // WHERE THIS GOES: GitHub → app/api/notify/route.ts   (NEW FILE)
@@ -23,6 +22,7 @@ import {
     detailRows,
     SITE_URL,
 } from '@/lib/email';
+import { guestBookedEmail } from '@/lib/bookingEmails';
 
 export const dynamic = 'force-dynamic';
 
@@ -201,15 +201,35 @@ export async function POST(request: Request) {
             }
 
             const to = await emailFor(admin, booking.guest_id);
-            const guestFirst = escapeHtml(await ownFirstNameFor(admin, booking.guest_id, 'there'));
+            const guestFirstRaw = await ownFirstNameFor(admin, booking.guest_id, 'there');
+            const guestFirst = escapeHtml(guestFirstRaw);
+
+            // The confirmation itself is built in one shared place so the copy
+            // a host's acceptance sends and the copy an Instant-Book webhook
+            // sends are the same email and cannot drift. See lib/bookingEmails.
+            if (booking.status === 'confirmed') {
+                const mail = guestBookedEmail({
+                    guestFirst: guestFirstRaw,
+                    listingTitle: (listing && listing.title) || 'your listing',
+                    checkIn: booking.check_in,
+                    checkOut: booking.check_out,
+                    arrivalLine: arrivalLine,
+                    guests: booking.guests || 1,
+                    total: Number(booking.total_price || 0),
+                    amountPaid: Number(booking.amount_paid || 0),
+                    amountRefunded: Number(booking.amount_refunded || 0),
+                    balanceAmount: Number(booking.balance_amount || 0),
+                    balanceDueDate: booking.balance_due_date || null,
+                    freeCancelUntil: booking.free_cancel_until || null,
+                });
+                await sendEmail(to, mail.subject, mail.html);
+                return NextResponse.json({ ok: true });
+            }
 
             let heading = '';
             let intro = '';
 
-            if (booking.status === 'confirmed') {
-                heading = "You're booked";
-                intro = 'Good news &mdash; your stay at ' + listingTitle + ' is confirmed. Your host will be in touch with the check-in details before you arrive.';
-            } else if (booking.status === 'declined') {
+            if (booking.status === 'declined') {
                 heading = 'Your booking request wasn&rsquo;t accepted';
                 intro = 'Unfortunately the host can&rsquo;t take your booking at ' + listingTitle + ' for these dates. Nothing has been charged, and there are other places to stay across Dumfries &amp; Galloway.';
             } else if (booking.status === 'cancelled') {
@@ -219,55 +239,10 @@ export async function POST(request: Request) {
                 return NextResponse.json({ ok: true, skipped: 'no email for this status' });
             }
 
-            // The three questions a guest asks in the ten minutes after
-            // paying: when does the rest come out, how long can I change my
-            // mind, and what do I get back if I do. All three were on the
-            // confirmation page and in none of the email, which is the thing
-            // they keep.
-            //
-            // Every figure is read off the booking as stored, not recalculated
-            // here. free_cancel_until and balance_due_date were stamped by the
-            // checkout route when the guest agreed to them, and this email is
-            // quoting the agreement back — working them out again would let
-            // the email and the booking drift apart.
-            const paidSoFar = round2(
-                Number(booking.amount_paid || 0) - Number(booking.amount_refunded || 0)
-            );
-            const balanceLeft = round2(Number(booking.balance_amount || 0));
-
-            const moneyRows = booking.status === 'confirmed'
-                ? [
-                    ...(paidSoFar > 0
-                        ? [{ label: 'Paid so far', value: '&pound;' + paidSoFar.toFixed(2) }]
-                        : []),
-                    ...(balanceLeft > 0
-                        ? [{
-                            label: 'Still to pay',
-                            value: '&pound;' + balanceLeft.toFixed(2)
-                                + (booking.balance_due_date
-                                    ? ', taken from the same card on '
-                                        + escapeHtml(formatDate(booking.balance_due_date))
-                                    : ', due before you arrive')
-                                + '. You can pay it sooner from your trips page.',
-                        }]
-                        : [{ label: 'Still to pay', value: 'Nothing &mdash; your stay is paid in full.' }]),
-                    ...(booking.free_cancel_until
-                        ? [{
-                            label: 'Free cancellation',
-                            value: 'Cancel by ' + escapeHtml(formatDate(booking.free_cancel_until))
-                                + ' and you get back everything you have paid'
-                                + (paidSoFar > 0 ? ' — &pound;' + paidSoFar.toFixed(2) + ' today' : '')
-                                + '. After that a share is kept, depending on how close to your stay it is.',
-                        }]
-                        : [{
-                            label: 'Cancelling',
-                            value: 'These dates are outside the free-cancellation window, so a'
-                                + ' cancellation now would not be refunded in full. Get in touch'
-                                + ' if something changes and we will see what we can do.',
-                        }]),
-                ]
-                : [];
-
+            // Declined and cancelled carry no money rows — a declined booking
+            // was never charged, and a host cancellation is followed by its own
+            // refund email. The confirmed case, with the paid / still-to-pay /
+            // free-cancellation figures, is handled by guestBookedEmail above.
             const html = emailLayout(
                 '<h1 style="margin:0 0 16px 0;font-size:22px;font-weight:700;color:#111827;">' + heading + '</h1>' +
                 '<p style="margin:0;">Hi ' + guestFirst + ' &mdash; ' + intro + '</p>' +
@@ -277,7 +252,6 @@ export async function POST(request: Request) {
                     ...(arrivalLine ? [{ label: 'Times', value: escapeHtml(arrivalLine + '.') }] : []),
                     { label: 'Guests', value: String(booking.guests || 1) },
                     { label: 'Total', value: '&pound;' + Number(booking.total_price || 0).toFixed(2) },
-                    ...moneyRows,
                 ]) +
                 button(SITE_URL + '/trips', 'View your trip'),
                 "You're receiving this because you have a booking with Galloway Getaways. Booking emails can't be switched off."
