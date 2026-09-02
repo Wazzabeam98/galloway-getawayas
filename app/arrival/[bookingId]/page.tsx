@@ -51,16 +51,23 @@ export default async function ArrivalPage({ params }: { params: { bookingId: str
     }
     if (!allowed) redirect('/trips');
 
-    // The listing's public-safe fields, the arrival secrets (own grant-less
-    // table), and the door code (its existing secure home) — all read here under
-    // the service role, only after the booking check above.
+    // The door code is only shown as arrival nears, so it is only FETCHED then —
+    // outside the window it never enters this page's data, let alone the rendered
+    // response. codeReady is computed before the reads for exactly that reason.
+    const until = daysUntil(booking.check_in);
+    const codeReady = until <= 3;
+
+    // The listing's public-safe fields and the arrival secrets (own grant-less
+    // table) are read under the service role, only after the booking check above.
     const [{ data: listing }, { data: host }, { data: arrival }, { data: access }] = await Promise.all([
         admin.from('listings')
             .select('title, location, street_address, postcode, latitude, longitude, check_in_time, check_in_end_time, check_out_time')
             .eq('id', booking.listing_id).maybeSingle(),
         admin.from('profiles').select('full_name, preferred_name, show_full_name, phone').eq('id', booking.host_id).maybeSingle(),
         admin.from('listing_arrival').select('arrival_directions, parking_info, wifi_name, wifi_password, what3words').eq('listing_id', booking.listing_id).maybeSingle(),
-        admin.from('listing_access_codes').select('code').eq('listing_id', booking.listing_id).maybeSingle(),
+        codeReady
+            ? admin.from('listing_access_codes').select('code').eq('listing_id', booking.listing_id).maybeSingle()
+            : Promise.resolve({ data: null } as any),
     ]);
     if (!listing) redirect('/trips');
 
@@ -78,14 +85,11 @@ export default async function ArrivalPage({ params }: { params: { bookingId: str
         ? 'https://www.google.com/maps/dir/?api=1&destination=' + dest
         : null;
 
-    const until = daysUntil(booking.check_in);
     const started = new Date(booking.check_out) >= new Date() && until <= 0;
     const countdown = until > 1 ? `Your stay starts ${dayName(booking.check_in)} · in ${until} days`
         : until === 1 ? `Your stay starts ${dayName(booking.check_in)} · tomorrow`
             : started ? 'You’re staying now' : null;
 
-    // The code is sensitive — shown only as arrival nears, not sitting open for weeks.
-    const codeReady = until <= 3;
     const hostName = displayName(host, 'your host');
     const hostPhone = host && (host as any).phone;
 

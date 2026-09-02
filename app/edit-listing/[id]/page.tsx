@@ -5,6 +5,7 @@ import { createClientComponentClient } from '@supabase/auth-helpers-nextjs';
 import { useRouter, useParams } from 'next/navigation';
 import Logo from '@/components/base/Logo';
 import LockboxCode from '@/components/LockboxCode';
+import ArrivalEditor from '@/components/ArrivalEditor';
 import LoginModel from '@/components/auth/LoginModel';
 import { categories } from '@/config/categories';
 import Env from '@/config/Env';
@@ -734,6 +735,19 @@ export default function EditListing() {
                                         it is not part of this form's Save. */}
                                     {listingId && (
                                         <LockboxCode listingId={listingId} method={checkInMethod} />
+                                    )}
+
+                                    {/* The rest of the way in — the last bit of the
+                                        journey, parking, wifi, what3words. Saved on
+                                        its own secure route (like the code above),
+                                        never on this form's Save, and none of it
+                                        gates publishing. */}
+                                    {listingId && (
+                                        <div className="mt-8 border-t border-slate-200 pt-6">
+                                            <h3 className="font-semibold text-slate-900 mb-1">Arrival details</h3>
+                                            <p className="text-sm text-slate-500 mb-4">The way to the door and the way in, shown to a guest on their Getting-there screen.</p>
+                                            <ArrivalEditor listingId={listingId} />
+                                        </div>
                                     )}
                                 </section>
 
