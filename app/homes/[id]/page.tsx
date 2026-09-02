@@ -184,8 +184,13 @@ export async function generateMetadata({ params }: { params: { id: string } }): 
     const kind = describePlace(home.privacy_type, home.property_type).toLowerCase();
 
     // Built to match how people actually search: type of place, town, then
-    // the detail that narrows it down.
-    const title = `${home.title} | Self Catering in ${town}`;
+    // the detail that narrows it down. The host's title is clamped for the tag
+    // so a legacy or pasted-in over-long title cannot produce a 200-character
+    // browser tab — the input caps new ones, this covers the rest.
+    const clampedTitle = home.title && home.title.length > 70
+        ? home.title.slice(0, 67).trimEnd() + '…'
+        : home.title;
+    const title = `${clampedTitle} | Self Catering in ${town}`;
 
     const amenities: string[] = home.amenities || [];
     const highlights: string[] = [];
@@ -254,6 +259,7 @@ const FindHome = async ({ params }: { params: { id: string } }) => {
 
     let hostName = 'Host';
     let hostAvatar: string | null = null;
+    let hostSinceYear: number | null = null;
     // Stripe has been through this host's identity documents. It is a check on
     // the person, not on the property, and the badge below says so.
     //
@@ -274,11 +280,18 @@ const FindHome = async ({ params }: { params: { id: string } }) => {
     if (home?.host_id) {
         const { data: hostProfile } = await supabase
             .from('profiles')
-            .select('full_name, preferred_name, show_full_name, avatar_url')
+            .select('full_name, preferred_name, show_full_name, avatar_url, created_at')
             .eq('id', home.host_id)
             .single();
         hostName = displayName(hostProfile, 'Host');
         hostAvatar = hostProfile?.avatar_url || null;
+        // When they joined — the tenure line a guest looks for on a page
+        // asking them to book direct with a person. Year only; the exact date
+        // is neither here nor there and a year reads as trust, not surveillance.
+        if (hostProfile?.created_at) {
+            const y = new Date(hostProfile.created_at).getFullYear();
+            if (!isNaN(y)) hostSinceYear = y;
+        }
 
         const { data: payoutFlag } = await adminClient()
             .from('profiles')
@@ -574,11 +587,17 @@ const FindHome = async ({ params }: { params: { id: string } }) => {
                                         Stripe has confirmed {hostFirstName}&apos;s identity.
                                     </div>
                                 )}
-                                {reviews && reviews.length > 0 && (
-                                    <div className='text-sm text-slate-500'>
-                                        {reviews.length} review{reviews.length > 1 ? 's' : ''} from guests
-                                    </div>
-                                )}
+                                <div className='text-sm text-slate-500 flex items-center gap-x-2 flex-wrap'>
+                                    {hostSinceYear && (
+                                        <span>Hosting since {hostSinceYear}</span>
+                                    )}
+                                    {hostSinceYear && reviews && reviews.length > 0 && (
+                                        <span aria-hidden='true'>·</span>
+                                    )}
+                                    {reviews && reviews.length > 0 && (
+                                        <span>{reviews.length} review{reviews.length > 1 ? 's' : ''} from guests</span>
+                                    )}
+                                </div>
                             </div>
                         </div>
 
