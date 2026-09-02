@@ -3,6 +3,7 @@
 import { useCallback, useEffect, useState } from 'react';
 import { getImageUrl } from '@/lib/utils';
 import { unitMultiplies, unitLabel, quantityQuestion, orderTotal, MAX_ORDER_QUANTITY } from '@/lib/serviceOrders';
+import { dateKey } from '@/lib/pricing';
 
 // What a guest sees on a stay they have already paid for: the local guest
 // experiences near their cottage they can book for their dates.
@@ -72,7 +73,10 @@ const ORDER_WORD: Record<string, string> = {
 function lastNight(checkOut: string): string {
     const d = new Date(checkOut + 'T00:00:00');
     d.setDate(d.getDate() - 1);
-    return d.toISOString().split('T')[0];
+    // Local components, not toISOString — the same UTC round-trip that shifted
+    // booking check-in a day earlier in BST applies here too. dateKey is the
+    // one the server already keys nights with (lib/pricing).
+    return dateKey(d);
 }
 
 export default function GuestExperiences(props: {
