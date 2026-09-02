@@ -1,14 +1,18 @@
 import { adminClient } from '@/lib/supabaseAdmin';
 import { listingIdsFor } from '@/lib/access';
+import { upcomingUntilArrival } from '@/lib/bookingWindows';
 import ArrivalNudgeCard from '@/components/ArrivalNudgeCard';
 
 // One nudge, never four. A host with several cottages must not be nagged about
 // each — that turns the nudge off for good — so this shows only the SOONEST
 // upcoming arrival at a listing they can edit whose "last bit" is still empty.
 //
-// "Upcoming booking" is the trips page's own test, not a second one: a confirmed
-// booking that has not ended. pending_payment is not a booking, so status must be
-// 'confirmed'. Ordered by check-in, soonest first.
+// "Upcoming" here is NOT the trips page's window, and deliberately so: a nudge
+// to write arrival directions is worth showing only BEFORE the guest arrives,
+// so it uses upcomingUntilArrival (closes at check-in), while the trips page
+// uses upcomingUntilCheckout (closes when the stay ends). Both live in
+// lib/bookingWindows so the difference is named rather than accidental.
+// pending_payment is not a booking, so status must be 'confirmed'.
 //
 // Dismissal is derived, like an archived conversation: a dismissal holds until a
 // newer booking arrives for that listing (one created after the dismissal), then
@@ -21,16 +25,19 @@ export default async function ArrivalNudge({ userId }: { userId: string }) {
     if (!editable.length) return null;
 
     const todayKey = new Date().toISOString().slice(0, 10);
-    const { data: bookings } = await admin
+    const { data: rows } = await admin
         .from('bookings')
-        .select('id, listing_id, check_in, created_at')
+        .select('id, listing_id, check_in, created_at, status')
         .in('listing_id', editable)
         .eq('status', 'confirmed')
-        .gte('check_in', todayKey)
         .order('check_in', { ascending: true });
-    if (!bookings || !bookings.length) return null;
 
-    const listingIds = Array.from(new Set(bookings.map((b: any) => b.listing_id)));
+    // The "before arrival" window is the shared predicate's to decide, not a
+    // query clause duplicating it — soonest first is preserved by the order above.
+    const upcoming = (rows || []).filter((b: any) => upcomingUntilArrival(b, todayKey));
+    if (!upcoming.length) return null;
+
+    const listingIds = Array.from(new Set(upcoming.map((b: any) => b.listing_id)));
 
     // Which listings already have the "last bit" filled — those never nudge.
     const { data: arrivals } = await admin
@@ -51,11 +58,11 @@ export default async function ArrivalNudge({ userId }: { userId: string }) {
         const d = dismissedAt[listingId];
         if (!d) return false;
         const dm = new Date(d).getTime();
-        const hasNewer = bookings.some((b: any) => b.listing_id === listingId && new Date(b.created_at).getTime() > dm);
+        const hasNewer = upcoming.some((b: any) => b.listing_id === listingId && new Date(b.created_at).getTime() > dm);
         return !hasNewer;
     };
 
-    const candidate = bookings.find((b: any) => !filled.has(b.listing_id) && !suppressed(b.listing_id));
+    const candidate = upcoming.find((b: any) => !filled.has(b.listing_id) && !suppressed(b.listing_id));
     if (!candidate) return null;
 
     const { data: listing } = await admin.from('listings').select('title').eq('id', candidate.listing_id).maybeSingle();

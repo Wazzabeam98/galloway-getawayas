@@ -50,6 +50,7 @@
     "app/api/cron/needs-reply/route.ts",
     "app/api/services/enquiries/respond-date/route.ts",
     "app/api/services/enquiries/refresh/route.ts",
-    "app/api/trips/route.ts"
+    "app/api/trips/route.ts",
+    "app/api/listings/arrival/route.ts"
   ]
 }

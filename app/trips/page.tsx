@@ -11,6 +11,7 @@ import CopyField from '@/components/arrival/CopyField';
 import { getImageUrl, capitializeFirst, displayName, formatTime } from '@/lib/utils';
 import Link from 'next/link';
 import { refundDue } from '@/lib/cancellation';
+import { upcomingUntilCheckout } from '@/lib/bookingWindows';
 import GuestExperiences from '@/components/GuestExperiences';
 
 interface Booking {
@@ -270,7 +271,7 @@ export default function TripsPage() {
         const isCompleted = b.status === 'confirmed' && new Date(b.check_out) < today;
         const alreadyReviewed = reviewedBookingIds.has(b.id);
 
-        const upcomingConfirmed = b.status === 'confirmed' && new Date(b.check_out) >= today;
+        const upcomingConfirmed = upcomingUntilCheckout(b, today);
         const arr = b.arrival || null;
         const homeHref = `/homes/${b.listing_id}`;
         const mapsUrl = arr && (arr.addressString || (arr.lat != null && arr.lng != null))

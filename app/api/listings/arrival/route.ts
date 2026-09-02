@@ -49,11 +49,17 @@ export async function POST(request: Request) {
         const g = await gate(listingId);
         if (g.error) return g.error;
 
-        // Only the whitelisted fields, each independently optional; empty saves as
-        // null, so a host who fills in parking alone can save exactly that.
+        // Only the whitelisted fields, and only the ones the caller actually
+        // SENT. A key that is absent from the body is left untouched; a key that
+        // is present writes its value (empty string clears it to null). This is
+        // a partial update on purpose: the editor sends one field at a time when
+        // its GET failed or raced, and a full-replace would blank the wifi
+        // password the caller never meant to touch — silently, with nothing in
+        // the log. So absence means "leave alone", never "set to null".
         const row: any = { listing_id: listingId, updated_at: new Date().toISOString() };
         for (const f of FIELDS) {
-            const v = body && typeof body[f] === 'string' ? body[f].trim().slice(0, 2000) : '';
+            if (!(f in body)) continue;
+            const v = typeof body[f] === 'string' ? body[f].trim().slice(0, 2000) : '';
             row[f] = v || null;
         }
 

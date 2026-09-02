@@ -20,17 +20,31 @@ export default function ArrivalEditor({ listingId }: { listingId: string }) {
     const [saving, setSaving] = useState(false);
     const [saved, setSaved] = useState(false);
     const [error, setError] = useState('');
+    // What the GET returned, so save can send ONLY the fields the host actually
+    // changed. If the GET fails or races, this stays empty and the host's one
+    // typed field is all that gets sent — the untouched wifi password is never
+    // in the body, so the partial-update route cannot blank it.
+    const EMPTY = { arrival_directions: '', parking_info: '', wifi_name: '', wifi_password: '', what3words: '' };
+    const [base, setBase] = useState<Record<string, string>>(EMPTY);
 
     useEffect(() => {
         fetch('/api/listings/arrival?listing=' + encodeURIComponent(listingId))
             .then((r) => r.json())
             .then((d) => {
                 const a = (d && d.arrival) || {};
-                setDirs(a.arrival_directions || '');
-                setParking(a.parking_info || '');
-                setWifiName(a.wifi_name || '');
-                setWifiPw(a.wifi_password || '');
-                setW3w(a.what3words || '');
+                const vals = {
+                    arrival_directions: a.arrival_directions || '',
+                    parking_info: a.parking_info || '',
+                    wifi_name: a.wifi_name || '',
+                    wifi_password: a.wifi_password || '',
+                    what3words: a.what3words || '',
+                };
+                setDirs(vals.arrival_directions);
+                setParking(vals.parking_info);
+                setWifiName(vals.wifi_name);
+                setWifiPw(vals.wifi_password);
+                setW3w(vals.what3words);
+                setBase(vals);
                 setLoaded(true);
             })
             .catch(() => setLoaded(true));
@@ -39,20 +53,26 @@ export default function ArrivalEditor({ listingId }: { listingId: string }) {
     async function save() {
         setSaving(true); setError(''); setSaved(false);
         try {
+            // Only what changed against what we loaded. An untouched field is
+            // never sent, so it is never overwritten — see `base` above.
+            const current: Record<string, string> = {
+                arrival_directions: dirs,
+                parking_info: parking,
+                wifi_name: wifiName,
+                wifi_password: wifiPw,
+                what3words: w3w,
+            };
+            const payload: any = { listingId };
+            for (const k of Object.keys(current)) {
+                if (current[k] !== (base[k] ?? '')) payload[k] = current[k];
+            }
             const res = await fetch('/api/listings/arrival', {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({
-                    listingId,
-                    arrival_directions: dirs,
-                    parking_info: parking,
-                    wifi_name: wifiName,
-                    wifi_password: wifiPw,
-                    what3words: w3w,
-                }),
+                body: JSON.stringify(payload),
             });
             const d = await res.json();
-            if (d && d.ok) { setSaved(true); setTimeout(() => setSaved(false), 2000); }
+            if (d && d.ok) { setBase(current); setSaved(true); setTimeout(() => setSaved(false), 2000); }
             else setError((d && d.error) || 'Could not save.');
         } catch { setError('Could not save.'); }
         setSaving(false);
