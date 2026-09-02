@@ -9,6 +9,7 @@ import { toast } from 'react-toastify';
 import {
     Sparkles, Wrench, Trees, Droplet, ChefHat, Cake, ShoppingBasket, Trash2,
     Plus, X, ChevronLeft, ChevronRight, Check, Zap, Hammer, Paintbrush, Home,
+    ImagePlus,
 } from 'lucide-react';
 import { TradeTile, TradeTileGrid, TRADE_ICONS, GROUP_ICONS } from '@/components/services/TradeTiles';
 import { compressImage } from '@/lib/compressImage';
@@ -64,6 +65,9 @@ import {
     groupByKey,
     bandsFor,
     REVIEW_WITHIN_HOURS,
+    GUEST_CATEGORIES,
+    guestCategoryByKey,
+    guestCategoryIsFood,
 } from '@/lib/serviceProviders';
 import {
     stepsFor,
@@ -230,6 +234,33 @@ function ApplicationForm() {
     const [dietaryNote, setDietaryNote] = useState('');
     const [headshot, setHeadshot] = useState<string | null>(null);
     const [uploadingHeadshot, setUploadingHeadshot] = useState(false);
+
+    // --- Guest experience: category, shape, and the shape's own fields -------
+    //
+    // A guest is still the one trade 'guest'; these describe WHAT kind of thing
+    // they offer and HOW a guest gets it. All are a starting point the owner
+    // confirms at review — nothing here goes live on its own. The words "shape",
+    // "unit" and "capacity kind" never reach the applicant; they answer plain
+    // questions and these are inferred. See GUEST-EXPERIENCES-MARKETPLACE.md §10.
+    //
+    // `guestCategory` is the picked category key (lib/serviceProviders
+    // GUEST_CATEGORIES); it pre-fills custom_label and gates the food question.
+    const [guestCategory, setGuestCategory] = useState('');
+    // 'comes_to_you' | 'made_to_order' | 'slot'. Pre-selected from the category,
+    // confirmed by the plain "how do guests get it?" question, final say at review.
+    const [shape, setShape] = useState('');
+    // Made-to-order only: notice needed, in days ("how much notice do you need?").
+    const [leadTimeDays, setLeadTimeDays] = useState('');
+    // Slot only. `slotPrivate` is the private/shared answer (null until asked):
+    // private → the whole session for one group (capacity 1, flat price); shared
+    // → several people join (a "how many fit?" capacity, per-person price).
+    const [slotPrivate, setSlotPrivate] = useState<boolean | null>(null);
+    const [slotCapacity, setSlotCapacity] = useState('');
+    const [slotLength, setSlotLength] = useState('');
+    // The weekly opening hours — one row per open period. day is 0..6 (0=Sunday).
+    const [schedule, setSchedule] = useState<Array<{ day: number; open: string; close: string }>>([]);
+    // Dates taken off (block-a-date), as 'yyyy-mm-dd' keys.
+    const [blockedDates, setBlockedDates] = useState<string[]>([]);
     // Keyed by extra. Price stays a string for the same reason band prices
     // do — a half-typed number should not be coerced mid-keystroke.
     const [extras, setExtras] = useState<Record<string, { offered: boolean; price: string; notes: string }>>({});
@@ -337,7 +368,7 @@ function ApplicationForm() {
                 // it is inherited from another one they hold.
                 const { data: existing } = await supabase
                     .from('service_providers')
-                    .select('id, business_name, trade, description, sms_opt_out, audience, photos, logo, status, review_note, callout_fee, hourly_rate, callout_waived, does_gas, does_oil, kind, pricing_choice, billable_hourly_rate, covered_bands, provider_name, based_line, headshot, dietary_note')
+                    .select('id, business_name, trade, description, sms_opt_out, audience, photos, logo, status, review_note, callout_fee, hourly_rate, callout_waived, does_gas, does_oil, kind, pricing_choice, billable_hourly_rate, covered_bands, provider_name, based_line, headshot, dietary_note, custom_label, shape, lead_time_days, slot_length_minutes, slot_capacity')
                     .eq('owner_id', session.user.id)
                     .eq('trade', tradeFromUrl)
                     .maybeSingle();
@@ -402,6 +433,48 @@ function ApplicationForm() {
                     setBasedLine((existing as any).based_line || '');
                     setDietaryNote((existing as any).dietary_note || '');
                     setHeadshot((existing as any).headshot || null);
+
+                    // The guest shape and its own fields, so a returning provider
+                    // edits what they set rather than a blank form. The category
+                    // key is not stored (the owner-facing custom_label is the
+                    // word); reverse-map it best-effort so the food question and
+                    // the picker skip behave, and fall back to a non-empty marker
+                    // so the picker is not shown again to somebody who has a row.
+                    const ex = existing as any;
+                    if (ex.shape) setShape(ex.shape);
+                    if (ex.lead_time_days) setLeadTimeDays(String(ex.lead_time_days));
+                    if (ex.slot_length_minutes) setSlotLength(String(ex.slot_length_minutes));
+                    if (ex.slot_capacity !== null && ex.slot_capacity !== undefined) {
+                        setSlotCapacity(String(ex.slot_capacity));
+                        setSlotPrivate(Number(ex.slot_capacity) <= 1);
+                    }
+                    if (audienceForTrade(existing.trade || tradeFromUrl) === 'guest') {
+                        const byLabel = GUEST_CATEGORIES.filter((c) => c.label && c.label === ex.custom_label)[0];
+                        // A real match restores the category; otherwise a sentinel
+                        // ('other') marks "already past the picker" without claiming
+                        // a food category it isn't.
+                        setGuestCategory(byLabel ? byLabel.key : 'other');
+                    }
+
+                    // A slot's weekly hours and days off.
+                    const { data: avail } = await supabase
+                        .from('slot_availability')
+                        .select('day_of_week, open_time, close_time')
+                        .eq('provider_id', existing.id)
+                        .order('day_of_week', { ascending: true });
+                    if (avail && avail.length) {
+                        setSchedule(avail.map((r: any) => ({
+                            day: r.day_of_week,
+                            open: String(r.open_time || '').slice(0, 5),
+                            close: String(r.close_time || '').slice(0, 5),
+                        })));
+                    }
+                    const { data: blks } = await supabase
+                        .from('slot_blocks')
+                        .select('blocked_date')
+                        .eq('provider_id', existing.id)
+                        .order('blocked_date', { ascending: true });
+                    if (blks && blks.length) setBlockedDates(blks.map((b: any) => b.blocked_date));
 
                     // The numbers only. Whether one has been checked is not
                     // read here and not shown here — it is not theirs to see
@@ -509,11 +582,17 @@ function ApplicationForm() {
         // lived here as a dependency array, and a dependency array is a bad
         // place to keep a rule that decides whether somebody can tell their
         // application was sent. `null` means leave them where they are.
-        const opening = openingStep({ hydrated, restored, lodged, trade: tradeFromUrl });
+        // A guest with no category yet has not answered step one (the category
+        // grid is their picker), even though ?trade=guest is already set. By the
+        // time this runs on hydrate, restoreDraft has already put back any saved
+        // category, so this reads the real answer.
+        const guestNeedsCategory = audienceForTrade(tradeFromUrl) === 'guest' && !guestCategory && !providerId;
+        const openState = { hydrated, restored, lodged, trade: tradeFromUrl, guestNeedsCategory };
+        const opening = openingStep(openState);
         if (opening === null) return;
 
         setStep(opening);
-        setVisited(openingVisited({ hydrated, restored, lodged, trade: tradeFromUrl }) || []);
+        setVisited(openingVisited(openState) || []);
         // eslint-disable-next-line react-hooks/exhaustive-deps
     }, [hydrated, restored, lodged, tradeFromUrl]);
 
@@ -598,6 +677,17 @@ function ApplicationForm() {
             if (d.basedLine) setBasedLine(d.basedLine);
             if (d.dietaryNote) setDietaryNote(d.dietaryNote);
             if (d.headshot) setHeadshot(d.headshot);
+            // The category, shape and its fields. Set before the filledIn check
+            // so a guest who picked a category but typed nothing still lands past
+            // the picker rather than being asked to choose it again.
+            if (d.guestCategory) setGuestCategory(d.guestCategory);
+            if (d.shape) setShape(d.shape);
+            if (d.leadTimeDays) setLeadTimeDays(d.leadTimeDays);
+            if (d.slotPrivate !== undefined && d.slotPrivate !== null) setSlotPrivate(d.slotPrivate === true);
+            if (d.slotCapacity) setSlotCapacity(d.slotCapacity);
+            if (d.slotLength) setSlotLength(d.slotLength);
+            if (Array.isArray(d.schedule)) setSchedule(d.schedule);
+            if (Array.isArray(d.blockedDates)) setBlockedDates(d.blockedDates);
 
             // Whether there is anything in here worth calling kept work.
             //
@@ -629,7 +719,13 @@ function ApplicationForm() {
                 (Array.isArray(d.areas) && d.areas.length) ||
                 (d.prices && Object.keys(d.prices).length) ||
                 (d.extras && Object.keys(d.extras).length) ||
-                (d.registrations && Object.keys(d.registrations).length)
+                (d.registrations && Object.keys(d.registrations).length) ||
+                // A guest who has picked a category or set up a schedule has made
+                // real progress, even with the text fields still blank.
+                (d.guestCategory || '') ||
+                (Array.isArray(d.items) && d.items.length) ||
+                (Array.isArray(d.schedule) && d.schedule.length) ||
+                (d.providerName || '').trim()
             );
 
             if (!filledIn) return;
@@ -701,6 +797,9 @@ function ApplicationForm() {
                     // The guest-trade fields: the price, and who they are. The
                     // headshot is a storage path like the photos.
                     items, providerName, basedLine, headshot, dietaryNote,
+                    // The category, the inferred shape and its own fields.
+                    guestCategory, shape, leadTimeDays,
+                    slotPrivate, slotCapacity, slotLength, schedule, blockedDates,
                 })
             );
         } catch (err) {
@@ -714,6 +813,8 @@ function ApplicationForm() {
         doesGas, doesOil, registrations, calloutWaived, skills,
         photos, logo, buildingType, panes,
         items, providerName, basedLine, headshot,
+        guestCategory, shape, leadTimeDays,
+        slotPrivate, slotCapacity, slotLength, schedule, blockedDates,
     ]);
 
     // Which registration boxes this application shows at all. An electrician
@@ -1141,6 +1242,23 @@ function ApplicationForm() {
         scrollPanelToTop();
     };
 
+    // A guest's version of step one. The trade is already 'guest'; this records
+    // the category (a starting point, confirmed at review) and pre-selects the
+    // booking shape it usually is, so the next step opens on the right question
+    // rather than asking it cold. The provider still confirms the shape, and the
+    // owner has the final say on both — nothing here is binding.
+    const chooseGuestCategory = (key: string) => {
+        setGuestCategory(key);
+        const cat = guestCategoryByKey(key);
+        if (cat && cat.shape) setShape(cat.shape);
+        // Changing category can change which shape applies, so a food category
+        // swapped for a non-food one must not keep a dietary note nobody sees;
+        // leave what they typed, it is only shown when a food category is set.
+        markVisited('trade');
+        setStep('business');
+        scrollPanelToTop();
+    };
+
 
     // One row per circle. The town carries the coordinates, so a tradesperson
     // picks a place and a distance rather than a latitude.
@@ -1412,8 +1530,50 @@ function ApplicationForm() {
     // Same shapes, same rules, one definition. `owner_id` is deliberately not
     // here: the browser knows it, the route decides it, and neither should be
     // taking the other's word for it.
+    // The guest-experience columns, shared by both write paths so they can't
+    // drift. All are a starting point the owner confirms at review:
+    //   - custom_label: the picked category's guest-facing word. Seeded only
+    //     while the row is not yet approved, so the owner's confirmed label at
+    //     review is never overwritten by a later applicant edit. "Something else"
+    //     seeds nothing, so approval still gates on the owner giving it a word.
+    //   - shape + exclusive_per_date: the inferred booking shape (comes_to_you
+    //     folds to exclusive_per_date, kept in sync per the slot_shape migration).
+    //   - lead_time_days / slot_length_minutes / slot_capacity: the shape's own
+    //     numbers; null / 0 for the shapes they don't apply to.
+    const guestProviderFields = (): any => {
+        if (audienceForTrade(trade) !== 'guest') return {};
+        const cat = guestCategoryByKey(guestCategory);
+        const isSlot = shape === 'slot';
+        const isMTO = shape === 'made_to_order';
+        const num = (v: string, min: number) => {
+            const n = Math.floor(Number(String(v || '').trim()));
+            return String(v || '').trim() !== '' && Number.isFinite(n) ? Math.max(min, n) : null;
+        };
+        return {
+            ...(cat && cat.label && status !== 'approved' ? { custom_label: cat.label } : {}),
+            shape: shape || 'made_to_order',
+            exclusive_per_date: shape === 'comes_to_you',
+            lead_time_days: isMTO ? (num(leadTimeDays, 0) ?? 0) : 0,
+            slot_length_minutes: isSlot ? num(slotLength, 15) : null,
+            slot_capacity: isSlot ? (slotPrivate === false ? num(slotCapacity, 1) : 1) : null,
+        };
+    };
+
+    // The weekly opening hours and days off, as child rows for the slot tables.
+    // Only meaningful for a slot; empty for every other shape.
+    const guestScheduleRows = () => {
+        if (audienceForTrade(trade) !== 'guest' || shape !== 'slot') return { availability: [], blocks: [] };
+        return {
+            availability: schedule
+                .filter((r) => r.open && r.close)
+                .map((r) => ({ day_of_week: r.day, open_time: r.open, close_time: r.close })),
+            blocks: blockedDates.map((d) => ({ blocked_date: d })),
+        };
+    };
+
     const applicationRows = (now: Date) => {
         const provider: any = {
+            ...guestProviderFields(),
             business_name: businessName.trim(),
             trade,
             description: description.trim(),
@@ -1498,19 +1658,22 @@ function ApplicationForm() {
         // The menu, for a guest trade. Only rows with a name and a real price;
         // everyone names their items now, so a nameless row is an empty one and
         // drops out, and a half-filled form does not create a phantom item.
+        const slotUnit = slotPrivate === false ? 'person' : 'flat';
         const items_ = audienceForTrade(trade) === 'guest'
             ? items
                 .map((it, i) => ({
                     name: String(it.name || '').trim(),
                     description: String(it.description || '').trim() || null,
                     price: String(it.price || '').trim() !== '' ? Number(it.price) : null,
-                    unit: String(it.unit || 'flat'),
+                    unit: shape === 'slot' ? slotUnit : String(it.unit || 'flat'),
                     image: it.image || null,
                     sort_order: i,
                     active: true,
                 }))
                 .filter((r) => r.name && r.price !== null && Number(r.price) > 0)
             : [];
+
+        const { availability, blocks } = guestScheduleRows();
 
         return {
             provider,
@@ -1520,6 +1683,8 @@ function ApplicationForm() {
             areas: areas_,
             items: items_,
             skills: hasSkills ? skills : [],
+            slotAvailability: availability,
+            slotBlocks: blocks,
         };
     };
 
@@ -1676,6 +1841,7 @@ function ApplicationForm() {
         const now = new Date();
 
         const payload: any = {
+            ...guestProviderFields(),
             owner_id: active.user.id,
             business_name: businessName.trim(),
             trade,
@@ -1924,6 +2090,23 @@ function ApplicationForm() {
             await supabase.from('service_areas').insert(rows);
         }
 
+        // The slot schedule — the weekly opening hours and the days off. Replaced
+        // wholesale like the areas: a handful of rows, and the provider owns them
+        // under RLS (the slot_shape migration's "owners manage their own"
+        // policies). Only a slot has them; for any other shape the delete clears
+        // any left behind by a shape the provider changed away from.
+        if (audienceForTrade(trade) === 'guest') {
+            const { availability, blocks } = guestScheduleRows();
+            await supabase.from('slot_availability').delete().eq('provider_id', id);
+            if (availability.length) {
+                await supabase.from('slot_availability').insert(availability.map((a) => ({ ...a, provider_id: id })));
+            }
+            await supabase.from('slot_blocks').delete().eq('provider_id', id);
+            if (blocks.length) {
+                await supabase.from('slot_blocks').insert(blocks.map((b) => ({ ...b, provider_id: id })));
+            }
+        }
+
         // The menu — UPSERTED BY ID, not deleted and re-inserted. A guest trade
         // only; a host trade never has items. An item now carries a photo, and
         // delete-then-insert would give every row a new id on every save and
@@ -1933,6 +2116,10 @@ function ApplicationForm() {
         // deleted. The order snapshots what it was for, so none of this touches
         // a placed order. Empty rows (no name or no price) are dropped.
         if (audienceForTrade(trade) === 'guest') {
+            // A slot's single offering has no unit picker: private is a flat
+            // price for the session, shared is per person. Derived here so the
+            // one place a unit is stored agrees with the private/shared answer.
+            const slotUnit = slotPrivate === false ? 'person' : 'flat';
             const valid = items
                 .map((it, i) => ({
                     id: it.id,
@@ -1940,7 +2127,7 @@ function ApplicationForm() {
                     name: String(it.name || '').trim(),
                     description: String(it.description || '').trim() || null,
                     price: String(it.price || '').trim() !== '' ? Number(it.price) : null,
-                    unit: String(it.unit || 'flat'),
+                    unit: shape === 'slot' ? slotUnit : String(it.unit || 'flat'),
                     image: it.image || null,
                     sort_order: i,
                     active: true,
@@ -2066,7 +2253,14 @@ function ApplicationForm() {
            phone that means the way forward is always under your thumb and
            never below the fold. */
         <div className="fixed inset-0 z-[60] flex md:items-center md:justify-center md:p-6 bg-white md:bg-slate-900/40">
-            <div className="flex flex-col w-full h-full bg-white md:h-auto md:max-h-[90vh] md:w-full md:max-w-3xl md:rounded-2xl md:shadow-xl overflow-hidden">
+            {/* The business step carries the most, and a guest's carries three
+                groups — so it gets a wider modal on desktop to lay them out in
+                two columns. Every other step, and the whole of a phone, is
+                unchanged. */}
+            <div className={
+                'flex flex-col w-full h-full bg-white md:h-auto md:max-h-[90vh] md:w-full md:rounded-2xl md:shadow-xl overflow-hidden '
+                + (step === 'business' && audienceForTrade(trade) === 'guest' ? 'md:max-w-4xl' : 'md:max-w-3xl')
+            }>
 
                 {/* ---- header: where they are, and the way out ---- */}
                 <div className="shrink-0 border-b border-slate-200 px-4 sm:px-6 pt-4 pb-3">
@@ -2256,6 +2450,39 @@ function ApplicationForm() {
                 would make a plumber's flow six steps and a cleaner's four for
                 no reason a person would recognise. */}
             {onStep('trade') && (() => {
+                // A guest picks a category, not a trade. Same grid of tiles the
+                // tradesman gets, "Something else" last — but these seed a
+                // starting category the owner confirms, and never a trade of
+                // their own. Branching here on the audience is also what deletes
+                // the old bug where the guest picker showed the tradesman trades
+                // under a "Guest experience" header: the guest never reaches the
+                // host pickerEntries below.
+                if (audienceForTrade(trade) === 'guest') {
+                    return (
+                        <div>
+                            <p className="text-sm text-slate-600 mb-5">
+                                Pick the one that fits best — it is a starting point, and we may adjust it
+                                when we review you. If nothing fits, choose <span className="font-medium text-slate-700">Something&nbsp;else</span>.
+                            </p>
+                            <TradeTileGrid>
+                                {GUEST_CATEGORIES.map((c) => (
+                                    <TradeTile
+                                        key={c.key}
+                                        tradeKey={c.icon}
+                                        label={c.label || 'Something else'}
+                                        hint={c.hint}
+                                        onClick={() => chooseGuestCategory(c.key)}
+                                    />
+                                ))}
+                            </TradeTileGrid>
+                            <p className="text-xs text-slate-500 mt-6">
+                                A guest can book you once we have approved you and you have connected Stripe
+                                for payouts — not the moment you sign up.
+                            </p>
+                        </div>
+                    );
+                }
+
                 const groupMeta = openGroup ? groupByKey(openGroup) : null;
 
                 if (groupMeta) {
@@ -2370,7 +2597,38 @@ function ApplicationForm() {
             })()}
 
             <fieldset disabled={locked} className={locked ? 'opacity-70' : ''}>
-                {onStep('business') && (
+                {onStep('business') && audienceForTrade(trade) === 'guest' ? (
+                    // Guest identity group: the business name and the person's name
+                    // sit together — a guest is choosing a person as much as a
+                    // business — two columns on desktop, stacked on a phone.
+                    <section className="mb-8">
+                        <div className="grid gap-4 sm:grid-cols-2 md:max-w-2xl">
+                            <div>
+                                <label className="block text-sm font-semibold text-slate-900 mb-1.5">Business name</label>
+                                <input
+                                    type="text"
+                                    value={businessName}
+                                    onChange={(e) => setBusinessName(e.target.value)}
+                                    placeholder="Solway Suppers"
+                                    className="w-full rounded-xl border border-slate-300 px-3.5 py-3 focus:outline-none focus:ring-2 focus:ring-emerald-700"
+                                />
+                                {problemFor('business_name') && (
+                                    <p data-problem className="text-sm text-rose-700 mt-1.5">{problemFor('business_name')!.message}</p>
+                                )}
+                            </div>
+                            <div>
+                                <label className="block text-sm font-semibold text-slate-900 mb-1.5">Your name</label>
+                                <input
+                                    type="text"
+                                    value={providerName}
+                                    onChange={(e) => setProviderName(e.target.value)}
+                                    placeholder="Rosa"
+                                    className="w-full rounded-xl border border-slate-300 px-3.5 py-3 focus:outline-none focus:ring-2 focus:ring-emerald-700"
+                                />
+                            </div>
+                        </div>
+                    </section>
+                ) : onStep('business') && (
                     <section className="mb-8">
                         <label className="block text-sm font-semibold text-slate-900 mb-1.5">Business name</label>
                         <input
@@ -2466,6 +2724,48 @@ function ApplicationForm() {
                 </section>
                 )}
 
+                {/* HOW A GUEST GETS IT — the one plain question that decides the
+                    booking shape (GUEST-EXPERIENCES-MARKETPLACE.md §10). It never
+                    shows the words "shape", "unit" or "capacity"; the category has
+                    already pre-selected an answer, the provider confirms it, and
+                    the owner has the final say at review. Everything below adapts
+                    to it: a menu for the two request shapes, a session schedule
+                    for a slot. */}
+                {onStep('business') && audienceForTrade(trade) === 'guest' && (
+                <section className="mb-8">
+                    <h2 className="text-sm font-semibold text-slate-900 mb-1">How do guests get what you offer?</h2>
+                    <p className="text-sm text-slate-500 mb-3">
+                        This decides what a guest sees when they book. Pick the one that is true most of the time.
+                    </p>
+                    <div className="grid gap-3 sm:grid-cols-3">
+                        {[
+                            { v: 'comes_to_you', t: 'I come to them', d: 'At the cottage — a private chef, a massage' },
+                            { v: 'made_to_order', t: 'I make it for a date', d: 'They collect it or I drop it off — cakes, hampers' },
+                            { v: 'slot', t: 'They come to me', d: 'Sessions people book into — a sauna, a class, a tasting' },
+                        ].map((o) => {
+                            const on = shape === o.v;
+                            return (
+                                <button
+                                    key={o.v}
+                                    type="button"
+                                    onClick={() => setShape(o.v)}
+                                    aria-pressed={on}
+                                    className={
+                                        'flex flex-col rounded-2xl border p-4 text-left transition '
+                                        + (on
+                                            ? 'border-emerald-600 bg-emerald-50 ring-1 ring-emerald-600'
+                                            : 'border-slate-300 hover:border-emerald-400')
+                                    }
+                                >
+                                    <span className="font-semibold text-slate-900">{o.t}</span>
+                                    <span className="mt-1 text-xs leading-snug text-slate-500">{o.d}</span>
+                                </button>
+                            );
+                        })}
+                    </div>
+                </section>
+                )}
+
                 {/* WHAT THEY OFFER, AND FOR HOW MUCH.
                     One model for everyone now — no preset trade to frame it by.
                     Everyone names each thing a guest can book and its price: a
@@ -2475,9 +2775,15 @@ function ApplicationForm() {
                     with no priced item is simply not live to guests. A one-item
                     menu renders as a single price on the card, so the chef's
                     "one thing, one price" reads exactly as it should. */}
-                {onStep('business') && audienceForTrade(trade) === 'guest' && (() => {
+                {onStep('business') && audienceForTrade(trade) === 'guest' && shape && (() => {
+                    // A slot is one session offering, not a menu — a sauna owner
+                    // sells "the sauna", not a list. So a slot shows a single row
+                    // with no "add another", and its price unit is read off the
+                    // private/shared answer below rather than picked here. The two
+                    // request shapes keep the full menu with a per-item unit.
+                    const isSlot = shape === 'slot';
                     const blank = { id: undefined as string | undefined, name: '', description: '', price: '', unit: 'flat', image: null as string | null };
-                    const rows = items.length ? items : [blank];
+                    const rows = isSlot ? [items[0] || blank] : (items.length ? items : [blank]);
                     const setRow = (i: number, field: 'name' | 'description' | 'price' | 'unit', val: string) =>
                         setItems(rows.map((r, j) => (j === i ? { ...r, [field]: val } : r)));
                     const addRow = () => setItems([...rows, { ...blank }]);
@@ -2490,38 +2796,42 @@ function ApplicationForm() {
                         hour: 'Per hour', ticket: 'Per ticket', item: 'Per item',
                     };
 
-                    const namePh = 'What you’re offering';
-                    const descPh = 'A short line about it';
+                    const namePh = isSlot ? 'e.g. Lochside sauna session' : 'What you’re offering';
                     return (
                         <section className="mb-8">
-                            <h2 className="text-sm font-semibold text-slate-900 mb-1">What you offer</h2>
+                            <h2 className="text-sm font-semibold text-slate-900 mb-1">
+                                {isSlot ? 'What people book' : 'What you offer'}
+                            </h2>
                             <p className="text-sm text-slate-500 mb-3">
-                                Name each thing a guest can book, with a photo and a price. One is
-                                plenty — a set dinner, say — or list as many as you like: a cake, a box
-                                of cupcakes, a tray bake. Choose how each is priced: a set price, or per
-                                person, night, hour, ticket or item — a guest booking six at a per-person
-                                price pays for six. You can edit or remove any of them later.
+                                {isSlot
+                                    ? 'Your session — a name, a photo and a price. How it is priced comes from the private-or-shared question below.'
+                                    : 'Name each thing a guest can book, with a photo and a price. One is plenty — a set dinner, say — or list as many as you like: a cake, a box of cupcakes, a tray bake. A guest booking six at a per-person price pays for six. You can edit or remove any of them later.'}
                             </p>
                             <div className="space-y-3">
                                 {rows.map((it, i) => (
                                     <div key={it.id || i} className="rounded-xl border border-slate-200 p-3">
                                         <div className="flex items-start gap-3">
-                                            {/* The item's own photo. A square well that
-                                                shows the picture once it is on, so the
-                                                cake and its price sit together. */}
-                                            <label className="relative flex-none w-16 h-16 rounded-lg border border-dashed border-slate-300 overflow-hidden cursor-pointer hover:border-slate-400 bg-slate-50 flex items-center justify-center text-center">
+                                            {/* The item's own photo — the picture the
+                                                card sells on, so it is sized like the
+                                                thing it is, not a thumbnail beside the
+                                                fields. It shows the photo once it's on. */}
+                                            <label className="relative flex-none w-24 h-24 rounded-xl border-2 border-dashed border-slate-300 overflow-hidden cursor-pointer hover:border-emerald-400 bg-slate-50 flex flex-col items-center justify-center gap-1 text-center">
                                                 {it.image ? (
                                                     <img src={getImageUrl(it.image)} alt="" className="w-full h-full object-cover" />
                                                 ) : (
-                                                    <span className="text-[10px] leading-tight text-slate-500 px-1">
-                                                        {uploadingItem === i ? '…' : 'Add photo'}
-                                                    </span>
+                                                    <>
+                                                        <ImagePlus className="w-6 h-6 text-slate-400" strokeWidth={1.5} />
+                                                        <span className="text-[11px] leading-tight text-slate-500 px-1">
+                                                            {uploadingItem === i ? 'Uploading…' : 'Add photo'}
+                                                        </span>
+                                                    </>
                                                 )}
                                                 <input type="file" accept="image/*" className="sr-only"
                                                     onChange={(e) => uploadItemPhoto(i, e)} />
                                             </label>
 
                                             <div className="min-w-0 flex-1">
+                                                <label className="block text-xs font-medium text-slate-500 mb-1">{isSlot ? 'Session name' : 'Name'}</label>
                                                 <div className="flex items-start gap-2">
                                                     <input
                                                         type="text" value={it.name}
@@ -2529,14 +2839,15 @@ function ApplicationForm() {
                                                         placeholder={namePh}
                                                         className="flex-1 min-w-0 rounded-lg border border-slate-300 px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-emerald-700"
                                                     />
-                                                    {rows.length > 1 && (
+                                                    {!isSlot && rows.length > 1 && (
                                                         <button type="button" onClick={() => removeRow(i)} aria-label="Remove item"
                                                             className="mt-1 rounded-md p-1 text-slate-400 hover:text-slate-700">
                                                             <X className="w-4 h-4" />
                                                         </button>
                                                     )}
                                                 </div>
-                                                <div className="mt-2 flex items-center gap-2">
+                                                <label className="block text-xs font-medium text-slate-500 mt-2 mb-1">Price</label>
+                                                <div className="flex items-center gap-2">
                                                     <span className="text-slate-500 text-sm">£</span>
                                                     <input
                                                         type="number" min="0" step="0.01" inputMode="decimal" value={it.price}
@@ -2544,32 +2855,176 @@ function ApplicationForm() {
                                                         placeholder="45"
                                                         className="w-24 rounded-lg border border-slate-300 px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-emerald-700"
                                                     />
-                                                    <select
-                                                        value={it.unit || 'flat'}
-                                                        onChange={(e) => setRow(i, 'unit', e.target.value)}
-                                                        aria-label="How this is priced"
-                                                        className="flex-1 min-w-0 rounded-lg border border-slate-300 px-2 py-2 text-sm bg-white focus:outline-none focus:ring-2 focus:ring-emerald-700"
-                                                    >
-                                                        {ORDER_UNITS.map((u) => (
-                                                            <option key={u} value={u}>{UNIT_WORD[u]}</option>
-                                                        ))}
-                                                    </select>
+                                                    {isSlot ? (
+                                                        <span className="text-xs text-slate-500">
+                                                            {slotPrivate === false ? 'per person' : slotPrivate === true ? 'for the session' : ''}
+                                                        </span>
+                                                    ) : (
+                                                        <select
+                                                            value={it.unit || 'flat'}
+                                                            onChange={(e) => setRow(i, 'unit', e.target.value)}
+                                                            aria-label="How this is priced"
+                                                            className="flex-1 min-w-0 rounded-lg border border-slate-300 px-2 py-2 text-sm bg-white focus:outline-none focus:ring-2 focus:ring-emerald-700"
+                                                        >
+                                                            {ORDER_UNITS.map((u) => (
+                                                                <option key={u} value={u}>{UNIT_WORD[u]}</option>
+                                                            ))}
+                                                        </select>
+                                                    )}
                                                 </div>
                                             </div>
                                         </div>
+                                        <label className="block text-xs font-medium text-slate-500 mt-3 mb-1">Description</label>
                                         <input
                                             type="text" value={it.description}
                                             onChange={(e) => setRow(i, 'description', e.target.value)}
-                                            placeholder={descPh}
-                                            className="mt-2 w-full rounded-lg border border-slate-300 px-3 py-2 text-sm text-slate-600 focus:outline-none focus:ring-2 focus:ring-emerald-700"
+                                            placeholder={isSlot ? 'What to expect, what to bring' : 'A short line about it'}
+                                            className="w-full rounded-lg border border-slate-300 px-3 py-2 text-sm text-slate-600 focus:outline-none focus:ring-2 focus:ring-emerald-700"
                                         />
                                     </div>
                                 ))}
                             </div>
-                            <button type="button" onClick={addRow}
-                                className="mt-3 inline-flex items-center gap-2 rounded-xl border-2 border-dashed border-slate-300 px-4 py-2.5 text-sm text-slate-600 hover:border-slate-400">
-                                <Plus className="w-4 h-4" /> Add another
-                            </button>
+                            {!isSlot && (
+                                <button type="button" onClick={addRow}
+                                    className="mt-3 inline-flex items-center gap-2 rounded-xl border-2 border-dashed border-slate-300 px-4 py-2.5 text-sm text-slate-600 hover:border-slate-400">
+                                    <Plus className="w-4 h-4" /> Add another
+                                </button>
+                            )}
+                        </section>
+                    );
+                })()}
+
+                {/* MADE-TO-ORDER adds one field: the notice needed. It is the same
+                    fact as the made-to-order cancellation cutoff, so it is asked
+                    once, here. Gated on the shape, not worded as a condition. */}
+                {onStep('business') && audienceForTrade(trade) === 'guest' && shape === 'made_to_order' && (
+                <section className="mb-8">
+                    <label className="block text-sm font-semibold text-slate-900 mb-1.5">How much notice do you need?</label>
+                    <p className="text-sm text-slate-500 mb-3">
+                        So a guest can’t pick a date sooner than you can make it. A cake that needs three
+                        days won’t be offered for tomorrow.
+                    </p>
+                    <div className="flex items-center gap-2">
+                        <input
+                            type="number" min="0" step="1" inputMode="numeric" value={leadTimeDays}
+                            onChange={(e) => setLeadTimeDays(e.target.value)}
+                            placeholder="2"
+                            className="w-24 rounded-lg border border-slate-300 px-3 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-emerald-700"
+                        />
+                        <span className="text-sm text-slate-600">days’ notice</span>
+                    </div>
+                </section>
+                )}
+
+                {/* SLOT: the private/shared answer (which sets the price unit and
+                    the capacity), the session length, and the weekly opening hours
+                    — the schedule editor a sauna owner needs and never had. §7/§10. */}
+                {onStep('business') && audienceForTrade(trade) === 'guest' && shape === 'slot' && (() => {
+                    const DAYS = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
+                    const dayOpen = (d: number) => schedule.some((r) => r.day === d);
+                    const toggleDay = (d: number) => {
+                        if (dayOpen(d)) setSchedule(schedule.filter((r) => r.day !== d));
+                        else setSchedule([...schedule, { day: d, open: '10:00', close: '18:00' }].sort((a, b) => a.day - b.day));
+                    };
+                    const setTime = (d: number, field: 'open' | 'close', val: string) =>
+                        setSchedule(schedule.map((r) => (r.day === d ? { ...r, [field]: val } : r)));
+                    const addBlock = (val: string) => {
+                        if (val && blockedDates.indexOf(val) === -1) setBlockedDates([...blockedDates, val].sort());
+                    };
+                    const removeBlock = (val: string) => setBlockedDates(blockedDates.filter((b) => b !== val));
+                    return (
+                        <section className="mb-8">
+                            <h2 className="text-sm font-semibold text-slate-900 mb-1">When are you open?</h2>
+                            <p className="text-sm text-slate-500 mb-4">
+                                Set your regular week once. Guests staying nearby book the times that fall
+                                inside their stay; you can take a day off any time.
+                            </p>
+
+                            {/* Private or shared — sets the price unit and capacity. */}
+                            <div className="mb-5">
+                                <label className="block text-sm font-semibold text-slate-900 mb-1.5">Who is a session for?</label>
+                                <div className="grid gap-3 sm:grid-cols-2">
+                                    {[
+                                        { v: true, t: 'One group at a time', d: 'The whole thing is theirs — a private sauna. One booking fills it.' },
+                                        { v: false, t: 'Several people join', d: 'A class or a walk. Priced per person, up to a number you set.' },
+                                    ].map((o) => {
+                                        const on = slotPrivate === o.v;
+                                        return (
+                                            <button key={String(o.v)} type="button" onClick={() => setSlotPrivate(o.v)} aria-pressed={on}
+                                                className={'flex flex-col rounded-2xl border p-4 text-left transition ' + (on ? 'border-emerald-600 bg-emerald-50 ring-1 ring-emerald-600' : 'border-slate-300 hover:border-emerald-400')}>
+                                                <span className="font-semibold text-slate-900">{o.t}</span>
+                                                <span className="mt-1 text-xs leading-snug text-slate-500">{o.d}</span>
+                                            </button>
+                                        );
+                                    })}
+                                </div>
+                            </div>
+
+                            <div className="grid gap-4 sm:grid-cols-2 mb-5">
+                                {slotPrivate === false && (
+                                    <div>
+                                        <label className="block text-sm font-semibold text-slate-900 mb-1.5">How many fit?</label>
+                                        <input type="number" min="1" step="1" inputMode="numeric" value={slotCapacity}
+                                            onChange={(e) => setSlotCapacity(e.target.value)} placeholder="8"
+                                            className="w-full rounded-lg border border-slate-300 px-3 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-emerald-700" />
+                                    </div>
+                                )}
+                                <div>
+                                    <label className="block text-sm font-semibold text-slate-900 mb-1.5">How long is each session?</label>
+                                    <div className="flex items-center gap-2">
+                                        <input type="number" min="15" step="15" inputMode="numeric" value={slotLength}
+                                            onChange={(e) => setSlotLength(e.target.value)} placeholder="60"
+                                            className="w-24 rounded-lg border border-slate-300 px-3 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-emerald-700" />
+                                        <span className="text-sm text-slate-600">minutes</span>
+                                    </div>
+                                </div>
+                            </div>
+
+                            {/* The weekly hours — a day toggles open, and shows an
+                                open/close time when it is. */}
+                            <label className="block text-sm font-semibold text-slate-900 mb-2">Which days, and what hours?</label>
+                            <div className="space-y-2">
+                                {DAYS.map((label, d) => {
+                                    const row = schedule.find((r) => r.day === d);
+                                    return (
+                                        <div key={d} className="flex items-center gap-3 rounded-xl border border-slate-200 px-3 py-2">
+                                            <button type="button" onClick={() => toggleDay(d)} aria-pressed={!!row}
+                                                className={'flex-none w-16 rounded-lg px-2 py-1.5 text-sm font-semibold transition ' + (row ? 'bg-emerald-700 text-white' : 'bg-slate-100 text-slate-500 hover:bg-slate-200')}>
+                                                {label}
+                                            </button>
+                                            {row ? (
+                                                <div className="flex items-center gap-2 text-sm text-slate-700">
+                                                    <input type="time" value={row.open} onChange={(e) => setTime(d, 'open', e.target.value)}
+                                                        className="rounded-lg border border-slate-300 px-2 py-1.5 focus:outline-none focus:ring-2 focus:ring-emerald-700" />
+                                                    <span className="text-slate-400">to</span>
+                                                    <input type="time" value={row.close} onChange={(e) => setTime(d, 'close', e.target.value)}
+                                                        className="rounded-lg border border-slate-300 px-2 py-1.5 focus:outline-none focus:ring-2 focus:ring-emerald-700" />
+                                                </div>
+                                            ) : (
+                                                <span className="text-sm text-slate-400">Closed</span>
+                                            )}
+                                        </div>
+                                    );
+                                })}
+                            </div>
+
+                            {/* Block a date — the one exception the v1 schedule allows. */}
+                            <div className="mt-5">
+                                <label className="block text-sm font-semibold text-slate-900 mb-1.5">Days off</label>
+                                <div className="flex flex-wrap items-center gap-2">
+                                    {blockedDates.map((b) => (
+                                        <span key={b} className="inline-flex items-center gap-1.5 rounded-full bg-slate-100 px-3 py-1 text-xs font-medium text-slate-700">
+                                            {b}
+                                            <button type="button" onClick={() => removeBlock(b)} aria-label={'Remove ' + b} className="text-slate-400 hover:text-slate-700">
+                                                <X className="w-3 h-3" />
+                                            </button>
+                                        </span>
+                                    ))}
+                                    <input type="date" onChange={(e) => { addBlock(e.target.value); e.target.value = ''; }}
+                                        className="rounded-lg border border-slate-300 px-2 py-1.5 text-sm text-slate-600 focus:outline-none focus:ring-2 focus:ring-emerald-700" />
+                                </div>
+                                <p className="mt-1.5 text-xs text-slate-500">Add a holiday or a day you’re away. You can do this any time later, too.</p>
+                            </div>
                         </section>
                     );
                 })()}
@@ -2589,16 +3044,10 @@ function ApplicationForm() {
                         where you tell them who that is. All optional.
                     </p>
 
-                    <label className="block text-sm font-semibold text-slate-900 mb-1.5">Your name</label>
-                    <input
-                        type="text"
-                        value={providerName}
-                        onChange={(e) => setProviderName(e.target.value)}
-                        placeholder="Rosa"
-                        className="w-full md:max-w-md rounded-xl border border-slate-300 px-4 py-3 mb-4 focus:outline-none focus:ring-2 focus:ring-emerald-700"
-                    />
-
-                    <label className="block text-sm font-semibold text-slate-900 mb-1.5">A short line under your name</label>
+                    {/* "Your name" now sits with the business name up in the
+                        identity group — a guest is choosing a person as much as a
+                        business, so the two names belong together. */}
+                    <label className="block text-sm font-semibold text-slate-900 mb-1.5">A short line about you</label>
                     <input
                         type="text"
                         value={basedLine}
@@ -2607,17 +3056,26 @@ function ApplicationForm() {
                         className="w-full md:max-w-md rounded-xl border border-slate-300 px-4 py-3 mb-4 focus:outline-none focus:ring-2 focus:ring-emerald-700"
                     />
 
-                    <label className="block text-sm font-semibold text-slate-900 mb-1.5">If you serve food: what can you cater for?</label>
-                    <textarea
-                        value={dietaryNote}
-                        onChange={(e) => setDietaryNote(e.target.value)}
-                        rows={2}
-                        placeholder="e.g. can do gluten-free and dairy-free with a day’s notice; not a nut-free kitchen"
-                        className="w-full md:max-w-md rounded-xl border border-slate-300 px-4 py-3 mb-1.5 focus:outline-none focus:ring-2 focus:ring-emerald-700"
-                    />
-                    <p className="text-xs text-slate-500 mb-4">
-                        Shown on your listing. Leave it blank and the listing tells guests you haven’t said — so they know to ask before booking.
-                    </p>
+                    {/* The food question is now conditional in its LOGIC, not just
+                        its wording: it only shows for a food category. A sauna or a
+                        photographer never sees it. (The marketplace's own food test
+                        is the Stripe MCC assigned at review; at sign-up the category
+                        is the signal, and it is the right one.) */}
+                    {(guestCategoryIsFood(guestCategory) || dietaryNote.trim() !== '') && (
+                        <>
+                            <label className="block text-sm font-semibold text-slate-900 mb-1.5">What can you cater for?</label>
+                            <textarea
+                                value={dietaryNote}
+                                onChange={(e) => setDietaryNote(e.target.value)}
+                                rows={2}
+                                placeholder="e.g. can do gluten-free and dairy-free with a day’s notice; not a nut-free kitchen"
+                                className="w-full md:max-w-md rounded-xl border border-slate-300 px-4 py-3 mb-1.5 focus:outline-none focus:ring-2 focus:ring-emerald-700"
+                            />
+                            <p className="text-xs text-slate-500 mb-4">
+                                Shown on your listing. Leave it blank and the listing tells guests you haven’t said — so they know to ask before booking.
+                            </p>
+                        </>
+                    )}
 
                     <label className="block text-sm font-semibold text-slate-900 mb-1.5">A photo of you</label>
                     <div className="flex items-center gap-3">

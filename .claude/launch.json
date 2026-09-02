@@ -2,37 +2,10 @@
   "version": "0.0.1",
   "configurations": [
     {
-      "name": "galloway-dev",
+      "name": "gg-dev-3100",
       "runtimeExecutable": "/Users/liamworrall/.local/node/bin/npm",
-      "runtimeArgs": [
-        "run",
-        "dev"
-      ],
-      "port": 3000
-    },
-    {
-      "name": "galloway-audit",
-      "runtimeExecutable": "/Users/liamworrall/.local/node/bin/npm",
-      "runtimeArgs": [
-        "run",
-        "dev",
-        "--",
-        "-p",
-        "3010"
-      ],
-      "port": 3010
-    },
-    {
-      "name": "galloway-prod",
-      "runtimeExecutable": "/Users/liamworrall/.local/node/bin/npm",
-      "runtimeArgs": [
-        "run",
-        "start",
-        "--",
-        "-p",
-        "3011"
-      ],
-      "port": 3011
+      "runtimeArgs": ["run", "dev", "--", "--port", "3100"],
+      "port": 3100
     }
   ]
 }

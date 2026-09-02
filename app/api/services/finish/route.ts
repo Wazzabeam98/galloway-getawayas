@@ -153,6 +153,14 @@ export async function POST(req: Request) {
         const items = (payload.items || []).map((it: any) => ({ ...it, provider_id: id }));
         if (items.length) await admin.from('service_provider_items').insert(items);
 
+        // A slot's weekly opening hours and days off. Stamped with provider_id
+        // here like the other children; only a slot has them.
+        const availability = (payload.slotAvailability || []).map((a: any) => ({ ...a, provider_id: id }));
+        if (availability.length) await admin.from('slot_availability').insert(availability);
+
+        const blocks = (payload.slotBlocks || []).map((b: any) => ({ ...b, provider_id: id }));
+        if (blocks.length) await admin.from('slot_blocks').insert(blocks);
+
         // Registrations carry no verified columns from here — only an admin
         // decision writes those, and a fresh application has had none.
         const regs = (payload.registrations || []).map((r: any) => ({

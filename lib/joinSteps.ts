@@ -258,6 +258,10 @@ export interface OpeningState {
     lodged: boolean;
     // The trade from the URL. Empty means step one has not been answered.
     trade: string;
+    // A guest arrives with trade='guest' already in the URL, but the category is
+    // the guest's version of step one and is not yet answered. When true, open on
+    // the picker (the category grid) rather than skipping it as an answered trade.
+    guestNeedsCategory?: boolean;
 }
 
 export function openingStep(state: OpeningState): StepKey | null {
@@ -269,6 +273,10 @@ export function openingStep(state: OpeningState): StepKey | null {
     if (state.lodged) return 'finish';
 
     if (state.restored) return null;
+
+    // A guest whose trade is set but whose category is not has still not
+    // answered step one — the category grid is their picker. Send them to it.
+    if (state.guestNeedsCategory) return 'trade';
 
     // A trade in the URL means step one is already answered — they came back
     // through a link, or they have a saved record — so opening on the picker
