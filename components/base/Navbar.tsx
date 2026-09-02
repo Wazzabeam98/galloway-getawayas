@@ -1,4 +1,5 @@
 import NavMenu from '@/components/base/NavMenu';
+import { londonDayKey } from '@/lib/dayKey';
 import { createServerComponentClient } from "@supabase/auth-helpers-nextjs";
 import { cookies } from "next/headers";
 import Link from 'next/link';
@@ -49,7 +50,7 @@ const Navbar = async () => {
         // is one. Same rule the passport page itself uses — a confirmed
         // booking whose check-out has been and gone — so the menu link never
         // leads to a blank page.
-        const today = new Date().toISOString().split('T')[0];
+        const today = londonDayKey();
         const { count: stays } = await supabase
             .from('bookings')
             .select('id', { count: 'exact', head: true })

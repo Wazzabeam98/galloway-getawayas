@@ -3,6 +3,8 @@ import { createClient } from '@supabase/supabase-js';
 import Link from 'next/link';
 import { notFound } from 'next/navigation';
 import { formatUk } from '@/lib/cancellation';
+import { cancellationPosition } from '@/lib/cancellationView';
+import { ukLongDate } from '@/lib/dayKey';
 import { publicArea } from '@/lib/places';
 
 export const dynamic = 'force-dynamic';
@@ -24,7 +26,7 @@ export default async function BookingConfirmed({ params }: { params: { id: strin
 
     const { data: booking } = await admin
         .from('bookings')
-        .select('id, listing_id, check_in, check_out, guests, total_price, status, payment_status, amount_paid, balance_amount, balance_due_date, free_cancel_until')
+        .select('id, listing_id, check_in, check_out, guests, total_price, status, payment_status, amount_paid, balance_amount, balance_due_date')
         .eq('id', params.id)
         .maybeSingle();
 
@@ -32,7 +34,7 @@ export default async function BookingConfirmed({ params }: { params: { id: strin
 
     const { data: listing } = await admin
         .from('listings')
-        .select('title, location, check_in_time, check_in_end_time, check_out_time')
+        .select('title, location, check_in_time, check_in_end_time, check_out_time, cancellation_policy')
         .eq('id', booking.listing_id)
         .maybeSingle();
 
@@ -134,16 +136,27 @@ export default async function BookingConfirmed({ params }: { params: { id: strin
                     )}
                 </div>
 
-                {booking.free_cancel_until && (
-                    <div className="border-t pt-4">
-                        <div className="text-xs uppercase tracking-wide text-slate-400 mb-1">
-                            Free cancellation
+                {(() => {
+                    // Worked out live from the dates and the stamped policy, by
+                    // the same function the trips and home cards read — never a
+                    // stored date, which drifted a day under BST and would show
+                    // a different deadline here than on the card.
+                    const cancel = cancellationPosition({
+                        checkIn: booking.check_in,
+                        policy: listing && listing.cancellation_policy,
+                    });
+                    if (cancel.kind !== 'free' || !cancel.freeUntilKey) return null;
+                    return (
+                        <div className="border-t pt-4">
+                            <div className="text-xs uppercase tracking-wide text-slate-400 mb-1">
+                                Free cancellation
+                            </div>
+                            <div className="text-slate-800">
+                                Until {ukLongDate(cancel.freeUntilKey)}
+                            </div>
                         </div>
-                        <div className="text-slate-800">
-                            Until {formatUk(new Date(booking.free_cancel_until))}
-                        </div>
-                    </div>
-                )}
+                    );
+                })()}
             </div>
 
             <div className="mt-8 text-center space-y-3">

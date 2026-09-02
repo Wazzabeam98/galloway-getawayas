@@ -1,6 +1,7 @@
 import { adminClient } from '@/lib/supabaseAdmin';
 import { NextResponse } from 'next/server';
 import { stripeRequest } from '@/lib/stripe';
+import { londonDayKey, shiftDayKey } from '@/lib/dayKey';
 import { DEFAULT_COMMISSION_PERCENT, netOfFee, feeAmount } from '@/lib/fees';
 import { sendEmail, emailLayout, escapeHtml, formatDate, button, SITE_URL } from '@/lib/email';
 import { logError } from '@/lib/logError';
@@ -66,10 +67,11 @@ export async function GET(request: Request) {
     const admin = adminClient();
 
     // A stay pays out the day after check-in, so anything checking in
-    // yesterday or earlier is due.
-    const cutoff = new Date();
-    cutoff.setDate(cutoff.getDate() - 1);
-    const cutoffDate = cutoff.toISOString().split('T')[0];
+    // yesterday or earlier is due. "Yesterday" is a London calendar day, taken
+    // off today's London day key — not `new Date(); setDate(-1); toISOString()`,
+    // which names the wrong day between midnight and 01:00 BST. This job runs
+    // late morning today; a London day key keeps it correct wherever it is moved.
+    const cutoffDate = shiftDayKey(londonDayKey(), -1);
 
     // A refund before check-in leaves the stay confirmed but moves the
     // payment to 'partially_refunded', so matching on 'paid' alone meant the

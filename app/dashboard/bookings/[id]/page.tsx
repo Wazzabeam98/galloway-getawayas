@@ -8,7 +8,8 @@ import { adminClient } from "@/lib/supabaseAdmin";
 import { checkListing } from "@/lib/access";
 import { displayName, getImageUrl, formatTime } from "@/lib/utils";
 import { rateFor, netOfFee } from "@/lib/fees";
-import { formatUk, refundDue, policyOf, freeCancelDateOrNull } from "@/lib/cancellation";
+import { formatUk, refundDue, policyOf, freeCancelUntilKey } from "@/lib/cancellation";
+import { londonDayKey } from "@/lib/dayKey";
 import { contactNumberVisible, stayHasEnded, stayHasStarted } from "@/lib/stayWindow";
 import { outstandingDebts, outstandingOf, debtAgainstStays, debtReason, round2 } from "@/lib/hostDebt";
 import { dateFromKey } from "@/lib/pricing";
@@ -176,14 +177,13 @@ export default async function BookingDetail({ params }: { params: { id: string }
         owedElsewhere = round2(owedTotal - deductionHere);
     }
 
-    // free_cancel_until is stamped by the checkout route, so it is null on
-    // anything that did not come through it — and a null there means 'not
-    // recorded', not 'the window has closed'. Work it out from the policy in
-    // that case rather than telling a host their guest has lost a right they
-    // still have.
-    const freeCancelDisplay = booking.free_cancel_until
-        ? dateFromKey(booking.free_cancel_until)
-        : freeCancelDateOrNull(booking.check_in, listing?.cancellation_policy);
+    // Worked out live from the policy, never from the stored free_cancel_until
+    // column — nothing writes that any more, and old rows drifted a day early
+    // under BST. null once the free window has passed; inclusive of the last
+    // free day, so a host is not told their guest has lost a right they still
+    // have that very day.
+    const freeKey = freeCancelUntilKey(booking.check_in, listing?.cancellation_policy);
+    const freeCancelDisplay = londonDayKey() <= freeKey ? dateFromKey(freeKey) : null;
 
     // A guest cancelling right now would get this much back, under the
     // policy on the listing. Worth knowing before asking them to.

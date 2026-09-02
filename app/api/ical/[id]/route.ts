@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { createClient } from '@supabase/supabase-js';
+import { blockedRuns } from '@/lib/icalRuns';
 
 export const dynamic = 'force-dynamic';
 
@@ -71,49 +72,19 @@ export async function GET(req: NextRequest, { params }: { params: { id: string }
 
     // Runs of blocked days are joined into one entry each. A fortnight held
     // back would otherwise arrive in someone's calendar as fourteen separate
-    // items.
-    const days = (blocks || [])
-        .map((row: any) => String(row.date).split('T')[0])
-        .sort();
-
-    let runStart: string | null = null;
-    let runEnd: string | null = null;
-
-    const pushRun = () => {
-        if (!runStart || !runEnd) return;
-        const after = new Date(runEnd);
-        after.setDate(after.getDate() + 1);
-
+    // items. The run boundaries are calendar-day arithmetic (lib/icalRuns), so
+    // the exclusive DTEND survives both DST transitions rather than dropping the
+    // spring-forward night.
+    blockedRuns((blocks || []).map((row: any) => row.date)).forEach((run) => {
         lines.push(
             'BEGIN:VEVENT',
-            'UID:blocked-' + runStart + '-' + params.id + '@gallowaygetaways.co.uk',
-            'DTSTART;VALUE=DATE:' + icalDate(runStart),
-            'DTEND;VALUE=DATE:' + icalDate(after.toISOString().split('T')[0]),
+            'UID:blocked-' + run.start + '-' + params.id + '@gallowaygetaways.co.uk',
+            'DTSTART;VALUE=DATE:' + icalDate(run.start),
+            'DTEND;VALUE=DATE:' + icalDate(run.endExclusive),
             'SUMMARY:Unavailable',
             'END:VEVENT'
         );
-    };
-
-    days.forEach((day: string) => {
-        if (!runStart) {
-            runStart = day;
-            runEnd = day;
-            return;
-        }
-
-        const expected = new Date(runEnd as string);
-        expected.setDate(expected.getDate() + 1);
-
-        if (day === expected.toISOString().split('T')[0]) {
-            runEnd = day;
-        } else {
-            pushRun();
-            runStart = day;
-            runEnd = day;
-        }
     });
-
-    pushRun();
 
     lines.push('END:VCALENDAR');
 

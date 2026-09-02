@@ -1,6 +1,7 @@
 import { adminClient } from '@/lib/supabaseAdmin';
 import { NextResponse } from 'next/server';
 import { logError } from '@/lib/logError';
+import { londonDayKey, shiftDayKey } from '@/lib/dayKey';
 import { displayName } from '@/lib/utils';
 import {
     timingFor,
@@ -67,9 +68,8 @@ async function checkInFallbackPass(
 ): Promise<{ sent: number; skipped: number; failed: number }> {
     const counts = { sent: 0, skipped: 0, failed: 0 };
     try {
-        const dayKey = (d: Date) => d.toISOString().split('T')[0];
-        const todayKey = dayKey(now);
-        const horizonKey = dayKey(new Date(now.getTime() + 3 * 86400000));
+        const todayKey = londonDayKey(now);
+        const horizonKey = shiftDayKey(todayKey, 3);
 
         const { data: arriving } = await admin
             .from('bookings')
@@ -269,8 +269,8 @@ export async function GET(request: Request) {
         // Stays that are actually happening. A window either side keeps the
         // query small without cutting off a template anchored a fortnight out
         // or one that trails a check-out.
-        const from = new Date(now.getTime() - 40 * 86400000).toISOString().split('T')[0];
-        const to = new Date(now.getTime() + 40 * 86400000).toISOString().split('T')[0];
+        const from = shiftDayKey(londonDayKey(now), -40);
+        const to = shiftDayKey(londonDayKey(now), 40);
 
         const hostIds = Array.from(new Set(live.map((t) => t.user_id)));
         const COLUMNS = 'id, host_id, guest_id, listing_id, check_in, check_out, status, confirmed_at';

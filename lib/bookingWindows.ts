@@ -13,14 +13,19 @@
 //
 // Same word, two windows, on purpose. Keep them apart.
 
-// Upcoming until checkout: confirmed and not yet ended. `now` is an instant,
-// matching the trips page's own check that a stay is over only once checkout
-// has actually passed.
+import { londonDayKey, daysBetweenKeys } from './dayKey';
+
+// Upcoming until checkout: confirmed and not yet ended. Compared on the London
+// CALENDAR day, not on the instant — the guest is on the stay for the whole of
+// checkout day, until they leave that morning. The old `new Date(check_out) >=
+// now` treated the stay as over from the instant of check_out's UTC midnight,
+// which under BST is 01:00 on checkout morning: the card would vanish while the
+// guest was still in the cottage, possibly opening it to check the checkout time.
 export function upcomingUntilCheckout(
     b: { status: string; check_out: string },
     now: Date,
 ): boolean {
-    return b.status === 'confirmed' && new Date(b.check_out) >= now;
+    return b.status === 'confirmed' && londonDayKey(now) <= String(b.check_out).slice(0, 10);
 }
 
 // Upcoming until arrival: confirmed and not yet arrived. `todayKey` is a
@@ -48,7 +53,9 @@ export function liveForGuestCard(
     now: Date,
 ): boolean {
     if (b.status === 'confirmed') return upcomingUntilCheckout(b, now);
-    if (b.status === 'pending') return new Date(b.check_out) >= now;
+    // A pending request counts by the same calendar-day rule as a confirmed
+    // stay — stale only once checkout day itself has passed.
+    if (b.status === 'pending') return londonDayKey(now) <= String(b.check_out).slice(0, 10);
     return false;
 }
 
@@ -74,28 +81,11 @@ export interface StayCountdown {
     daysUntilCheckIn: number;
 }
 
-// Local calendar-day key for an instant — built from the parts, NOT via
-// toISOString, which is the drift that started all this.
-function localDayKey(d: Date): string {
-    const y = d.getFullYear();
-    const m = String(d.getMonth() + 1).padStart(2, '0');
-    const day = String(d.getDate()).padStart(2, '0');
-    return `${y}-${m}-${day}`;
-}
-
-// Whole days between two yyyy-mm-dd keys, read as plain calendar dates so a
-// clock-change night still counts as one day.
-function daysBetweenKeys(fromKey: string, toKey: string): number {
-    const [fy, fm, fd] = fromKey.split('-').map(Number);
-    const [ty, tm, td] = toKey.split('-').map(Number);
-    return Math.round((Date.UTC(ty, tm - 1, td) - Date.UTC(fy, fm - 1, fd)) / 86400000);
-}
-
 export function stayCountdown(
     b: { check_in: string; check_out: string },
     now: Date,
 ): StayCountdown {
-    const todayKey = localDayKey(now);
+    const todayKey = londonDayKey(now);
     const checkInKey = String(b.check_in).slice(0, 10);
     const checkOutKey = String(b.check_out).slice(0, 10);
 

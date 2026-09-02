@@ -146,7 +146,12 @@ test('a booking paid in full says so rather than quoting a balance', async () =>
 });
 
 test('a booking past its free-cancellation window does not invent a deadline', async () => {
-    const { route, sent } = load({ ...base, free_cancel_until: null });
+    // The deadline is now computed live from the dates and policy, not read from
+    // a stored column, so "past the window" is expressed through the dates: a
+    // stay whose check-in has already gone by (Moderate → free until five days
+    // before, long past). The email must not invent a deadline; it says the
+    // plain thing instead.
+    const { route, sent } = load({ ...base, check_in: '2026-01-05', check_out: '2026-01-08' });
     await route.POST(call());
     const html = sent[0].html;
 

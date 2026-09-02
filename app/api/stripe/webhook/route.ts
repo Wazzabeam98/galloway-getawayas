@@ -9,6 +9,7 @@ import { displayName } from '@/lib/utils';
 import { requestedWhen } from '@/lib/serviceEnquiries';
 import { tradeLabel } from '@/lib/serviceProviders';
 import { guestBookedEmail, hostNewBookingEmail, arrivalLineFrom } from '@/lib/bookingEmails';
+import { cancellationPosition } from '@/lib/cancellationView';
 
 export const dynamic = 'force-dynamic';
 
@@ -618,7 +619,7 @@ export async function POST(request: Request) {
 
                 const { data: booking } = await admin
                     .from('bookings')
-                    .select('id, status, total_price, listing_id, amount_paid, amount_refunded, guests, balance_amount, balance_due_date, free_cancel_until, guest_id, check_in, check_out, host_id')
+                    .select('id, status, total_price, listing_id, amount_paid, amount_refunded, guests, balance_amount, balance_due_date, guest_id, check_in, check_out, host_id')
                     .eq('id', bookingId)
                     .maybeSingle();
 
@@ -733,7 +734,7 @@ export async function POST(request: Request) {
                 if (booking) {
                     const { data: listing } = await admin
                         .from('listings')
-                        .select('instant_book, title, check_in_time, check_in_end_time, check_out_time')
+                        .select('instant_book, title, check_in_time, check_in_end_time, check_out_time, cancellation_policy')
                         .eq('id', booking.listing_id)
                         .maybeSingle();
                     listingRow = listing || null;
@@ -1001,7 +1002,13 @@ export async function POST(request: Request) {
                                 amountRefunded: Number(booking.amount_refunded || 0),
                                 balanceAmount: Number(booking.balance_amount || 0),
                                 balanceDueDate: booking.balance_due_date || null,
-                                freeCancelUntil: booking.free_cancel_until || null,
+                                // Live from the stamped policy, the same deadline
+                                // the cards show — not a stored column that lands
+                                // a day early under BST.
+                                freeCancelUntil: cancellationPosition({
+                                    checkIn: booking.check_in,
+                                    policy: listingRow && listingRow.cancellation_policy,
+                                }).freeUntilKey,
                             });
                             await sendEmail(guestEmail, guestMail.subject, guestMail.html);
                         }

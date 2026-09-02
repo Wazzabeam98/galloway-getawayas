@@ -23,6 +23,7 @@ import {
     SITE_URL,
 } from '@/lib/email';
 import { guestBookedEmail } from '@/lib/bookingEmails';
+import { cancellationPosition } from '@/lib/cancellationView';
 
 export const dynamic = 'force-dynamic';
 
@@ -116,7 +117,7 @@ export async function POST(request: Request) {
 
         const { data: booking } = await admin
             .from('bookings')
-            .select('id, listing_id, guest_id, host_id, check_in, check_out, guests, total_price, status, amount_paid, amount_refunded, balance_amount, balance_due_date, free_cancel_until')
+            .select('id, listing_id, guest_id, host_id, check_in, check_out, guests, total_price, status, amount_paid, amount_refunded, balance_amount, balance_due_date')
             .eq('id', bookingId)
             .maybeSingle();
 
@@ -131,7 +132,7 @@ export async function POST(request: Request) {
 
         const { data: listing } = await admin
             .from('listings')
-            .select('title, check_in_time, check_in_end_time, check_out_time')
+            .select('title, check_in_time, check_in_end_time, check_out_time, cancellation_policy')
             .eq('id', booking.listing_id)
             .maybeSingle();
 
@@ -220,7 +221,13 @@ export async function POST(request: Request) {
                     amountRefunded: Number(booking.amount_refunded || 0),
                     balanceAmount: Number(booking.balance_amount || 0),
                     balanceDueDate: booking.balance_due_date || null,
-                    freeCancelUntil: booking.free_cancel_until || null,
+                    // Worked out live from the stamped policy, not read from a
+                    // stored column — one deadline, computed the same way as the
+                    // cards, and never a day early under BST.
+                    freeCancelUntil: cancellationPosition({
+                        checkIn: booking.check_in,
+                        policy: listing && listing.cancellation_policy,
+                    }).freeUntilKey,
                 });
                 await sendEmail(to, mail.subject, mail.html);
                 return NextResponse.json({ ok: true });

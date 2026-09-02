@@ -9,8 +9,8 @@ import Logo from '@/components/base/Logo';
 import LoginModel from '@/components/auth/LoginModel';
 import { getImageUrl, capitializeFirst, formatTime } from '@/lib/utils';
 import { publicArea } from '@/lib/places';
-import { formatUk } from '@/lib/cancellation';
 import { cancellationPosition } from '@/lib/cancellationView';
+import { ukLongDate } from '@/lib/dayKey';
 import { toast } from 'react-toastify';
 import { Search, Inbox, Send, Zap, Phone, ExternalLink, ChevronLeft, Info } from 'lucide-react';
 
@@ -924,8 +924,8 @@ export default function MessagesInboxPage() {
                                 <div className="flex justify-between gap-2">
                                     <span className="text-slate-500 flex-shrink-0">Cancellation</span>
                                     <span className="text-slate-600 text-right">
-                                        {pos.kind === 'free' && pos.freeUntil
-                                            ? 'free until ' + formatUk(pos.freeUntil)
+                                        {pos.kind === 'free' && pos.freeUntilKey
+                                            ? 'free until ' + ukLongDate(pos.freeUntilKey)
                                             : pos.kind === 'partial'
                                                 ? '50% refundable'
                                                 : 'non-refundable dates'}

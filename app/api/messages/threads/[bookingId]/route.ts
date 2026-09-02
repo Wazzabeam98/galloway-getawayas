@@ -76,7 +76,7 @@ export async function GET(
 
     const { data: listing } = await admin
         .from('listings')
-        .select('id, title, location, images, check_in_time, check_in_end_time, check_out_time, check_in_method')
+        .select('id, title, location, images, check_in_time, check_in_end_time, check_out_time, check_in_method, cancellation_policy')
         .eq('id', booking.listing_id)
         .maybeSingle();
 
@@ -144,8 +144,9 @@ export async function GET(
             pets: booking.pets,
             status: booking.status,
             created_at: booking.created_at,
-            free_cancel_until: booking.free_cancel_until,
-            cancellation_policy: booking.cancellation_policy,
+            // free_cancel_until is no longer sent: the pane computes the
+            // cancellation position live from check_in + the listing's policy.
+            cancellation_policy: listing && listing.cancellation_policy,
             total_price: showMoney ? booking.total_price : null,
             amount_paid: showMoney ? booking.amount_paid : null,
             balance_amount: showMoney ? booking.balance_amount : null,

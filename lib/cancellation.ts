@@ -3,6 +3,8 @@
 //
 // These mirror the wording shown in the listing editor.
 
+import { londonDayKey, shiftDayKey, ukLongDate } from './dayKey';
+
 export type PolicyKey = 'Flexible' | 'Moderate' | 'Limited' | 'Firm';
 
 interface PolicyRule {
@@ -24,12 +26,24 @@ export function policyOf(value: string | null | undefined): PolicyKey {
     return 'Moderate';
 }
 
-// The last date a guest can cancel and get everything back.
+// The last day (inclusive) a guest can cancel and get everything back, as a
+// 'yyyy-mm-dd' key. Worked out on the calendar parts of the check-in date and
+// shifted on the parts (lib/dayKey), never by flooring an instant — so it names
+// the same calendar day whatever zone the code runs in. The old version floored
+// to LOCAL midnight and was then stored through toISOString, which lands a day
+// early under BST (check-in 6 Oct, Moderate → 30 Sept when it should be 1 Oct).
+export function freeCancelUntilKey(checkIn: string | Date, policy: string | null | undefined): string {
+    const key = typeof checkIn === 'string'
+        ? String(checkIn).slice(0, 10)
+        // A picked Date (the booking widget) — its own calendar day, on the parts.
+        : `${checkIn.getFullYear()}-${String(checkIn.getMonth() + 1).padStart(2, '0')}-${String(checkIn.getDate()).padStart(2, '0')}`;
+    return shiftDayKey(key, -RULES[policyOf(policy)].fullRefundDaysBefore);
+}
+
+// The same day as a Date anchored at UTC midnight, so it stands for one calendar
+// day and nothing else. For callers that still compare or format a Date.
 export function freeCancelUntil(checkIn: string | Date, policy: string | null | undefined): Date {
-    const date = typeof checkIn === 'string' ? new Date(checkIn) : new Date(checkIn.getTime());
-    date.setDate(date.getDate() - RULES[policyOf(policy)].fullRefundDaysBefore);
-    date.setHours(0, 0, 0, 0);
-    return date;
+    return new Date(freeCancelUntilKey(checkIn, policy) + 'T00:00:00.000Z');
 }
 
 // What proportion of what they've paid comes back, cancelling today.
@@ -77,14 +91,17 @@ export function cancellationSummary(
     if (!checkIn) return null;
 
     const key = policyOf(policy);
-    const until = freeCancelUntil(checkIn, policy);
-    const today = on ? new Date(on.getTime()) : new Date();
-    today.setHours(0, 0, 0, 0);
+    const untilKey = freeCancelUntilKey(checkIn, policy);
+    const todayKey = londonDayKey(on || new Date());
 
-    if (until.getTime() > today.getTime()) {
+    // Inclusive: the last free day is itself still free — a full refund still
+    // applies on it (refundFraction returns 1 that day). The old strict `>`
+    // flipped the state to "partial" on that exact day, telling a guest that
+    // cancelling would cost them while it was still free.
+    if (todayKey <= untilKey) {
         return {
             kind: 'free',
-            headline: 'Free cancellation until ' + formatUk(until),
+            headline: 'Free cancellation until ' + ukLongDate(untilKey),
             detail: 'Cancel before then and you get everything back.',
         };
     }
@@ -120,16 +137,10 @@ export function cancellationSummary(
     };
 }
 
-// The date to store on the booking — null when the window has already passed.
-export function freeCancelDateOrNull(
-    checkIn: string | Date,
-    policy: string | null | undefined
-): Date | null {
-    const until = freeCancelUntil(checkIn, policy);
-    const today = new Date();
-    today.setHours(0, 0, 0, 0);
-    return until.getTime() > today.getTime() ? until : null;
-}
+// (freeCancelDateOrNull is gone. Nothing stores this date any more — the
+// checkout route used to, through toISOString, which is the drift this change
+// removes. Every surface now computes the deadline live from freeCancelUntilKey,
+// so there is one answer and it cannot be stale.)
 
 // ---------------------------------------------------------------------------
 // What actually comes back

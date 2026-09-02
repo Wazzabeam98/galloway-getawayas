@@ -1,6 +1,7 @@
 import { adminClient } from '@/lib/supabaseAdmin';
 import { listingIdsFor } from '@/lib/access';
 import { upcomingUntilArrival } from '@/lib/bookingWindows';
+import { londonDayKey } from '@/lib/dayKey';
 import ArrivalNudgeCard from '@/components/ArrivalNudgeCard';
 
 // One nudge, never four. A host with several cottages must not be nagged about
@@ -24,7 +25,7 @@ export default async function ArrivalNudge({ userId }: { userId: string }) {
     const editable = await listingIdsFor(userId, 'can_listing');
     if (!editable.length) return null;
 
-    const todayKey = new Date().toISOString().slice(0, 10);
+    const todayKey = londonDayKey();
     const { data: rows } = await admin
         .from('bookings')
         .select('id, listing_id, check_in, created_at, status')

@@ -4,7 +4,6 @@ import { cookies } from 'next/headers';
 import { NextResponse } from 'next/server';
 import { stripeRequest } from '@/lib/stripe';
 import { SITE_URL } from '@/lib/email';
-import { freeCancelDateOrNull } from '@/lib/cancellation';
 import { quoteBooking, totalsMatch, dateFromKey, dateKey } from '@/lib/pricing';
 import { blockedNightsFromEvents } from '@/lib/availability';
 import { rateFor } from '@/lib/fees';
@@ -247,10 +246,6 @@ export async function POST(request: Request) {
         const dueNow = useDeposit ? Math.round(total * DEPOSIT_FRACTION * 100) / 100 : total;
         const balance = Math.round((total - dueNow) * 100) / 100;
 
-        // null when the free-cancellation window has already closed for
-        // these dates, so nothing stores a date in the past.
-        const freeUntil = freeCancelDateOrNull(booking.check_in, listing && listing.cancellation_policy);
-
         // A deposit is only workable if the balance can be taken automatically
         // 30 days before check-in, and only a card can be charged that way.
         // Klarna and the wallets are one-off agreements for the amount shown,
@@ -336,7 +331,11 @@ export async function POST(request: Request) {
                 // turns into NaN the moment anything does arithmetic on it.
                 balance_amount: useDeposit ? balance : 0,
                 balance_due_date: useDeposit ? balanceDue.toISOString().split('T')[0] : null,
-                free_cancel_until: freeUntil ? freeUntil.toISOString().split('T')[0] : null,
+                // free_cancel_until is no longer stored: every surface computes
+                // the deadline live from check_in and the stamped policy, so
+                // there is one answer and it cannot drift a day early (the old
+                // toISOString store did, under BST) or fall out of step with the
+                // cards. The column stays, unwritten, so no migration is needed.
                 // Stamped on now and never changed. If the listing's rate is
                 // altered later, this booking's history stays true to what
                 // was actually agreed at the time.

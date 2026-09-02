@@ -13,6 +13,7 @@
 // edge cases in it than it looks: British Summer Time, a run that was missed,
 // and a message whose moment has simply passed.
 
+import { shiftDayKey } from './dayKey';
 
 export interface Template {
     user_id: string;
@@ -72,14 +73,7 @@ export function londonInstant(dateKey: string, hour: number, minute?: number): D
 }
 
 function addDays(dateKey: string, days: number): string {
-    const parts = String(dateKey).split('T')[0].split('-');
-    const d = new Date(Date.UTC(
-        parseInt(parts[0], 10),
-        parseInt(parts[1], 10) - 1,
-        parseInt(parts[2], 10)
-    ));
-    d.setUTCDate(d.getUTCDate() + days);
-    return d.toISOString().split('T')[0];
+    return shiftDayKey(String(dateKey).split('T')[0], days);
 }
 
 // 'HH:MM:SS' -> hours, defaulting the way the rest of the site does.

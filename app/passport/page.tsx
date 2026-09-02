@@ -1,6 +1,7 @@
 import { createServerComponentClient } from '@supabase/auth-helpers-nextjs';
 import { cookies } from 'next/headers';
 import Link from 'next/link';
+import { londonDayKey } from '@/lib/dayKey';
 import { redirect } from 'next/navigation';
 import { townOf, townKey } from '@/lib/places';
 import TownStamp from '@/components/stamps/TownStamp';
@@ -17,7 +18,7 @@ export default async function PassportPage() {
 
     if (!auth || !auth.session || !auth.session.user) redirect('/');
 
-    const today = new Date().toISOString().split('T')[0];
+    const today = londonDayKey();
 
     const { data: bookings } = await supabase
         .from('bookings')

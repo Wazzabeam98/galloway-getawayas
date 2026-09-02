@@ -1,4 +1,5 @@
 import { isArchived, needsReply } from '@/lib/conversations';
+import { londonDayKey } from '@/lib/dayKey';
 import { createRouteHandlerClient } from '@supabase/auth-helpers-nextjs';
 import { createClient } from '@supabase/supabase-js';
 import { cookies } from 'next/headers';
@@ -148,7 +149,7 @@ export async function GET() {
         prefMap[p.booking_id] = p;
     });
 
-    const todayKey = new Date().toISOString().split('T')[0];
+    const todayKey = londonDayKey();
 
     const conversations: any[] = bookings.map((b) => {
         const listing = listingMap[b.listing_id];

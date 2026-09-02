@@ -2,6 +2,7 @@ import { adminClient } from '@/lib/supabaseAdmin';
 import { NextResponse } from 'next/server';
 import { stripeRequest } from '@/lib/stripe';
 import { refundDue } from '@/lib/cancellation';
+import { londonDayKey } from '@/lib/dayKey';
 import { logError } from '@/lib/logError';
 import {
     sendEmail,
@@ -59,7 +60,12 @@ export async function GET(request: Request) {
     }
 
     const admin = adminClient();
-    const today = new Date().toISOString().split('T')[0];
+    // The London calendar day, so the run acts on the same day the guest and the
+    // balance_due_date column mean — not on whatever day `new Date().toISOString()`
+    // happens to name, which is a day behind between midnight and 01:00 BST. This
+    // job is scheduled for the morning today; giving it a London day key means it
+    // stays correct if it is ever moved to the late evening.
+    const today = londonDayKey();
 
     const { data: due } = await admin
         .from('bookings')

@@ -11,8 +11,8 @@ import CopyField from '@/components/arrival/CopyField';
 import CheckInOutTimes from '@/components/arrival/CheckInOutTimes';
 import { getImageUrl, capitializeFirst, displayName } from '@/lib/utils';
 import Link from 'next/link';
-import { formatUk } from '@/lib/cancellation';
 import { cancellationPosition } from '@/lib/cancellationView';
+import { ukLongDate, londonDayKey } from '@/lib/dayKey';
 import { upcomingUntilCheckout } from '@/lib/bookingWindows';
 import GuestExperiences from '@/components/GuestExperiences';
 
@@ -261,7 +261,7 @@ export default function TripsPage() {
     //
     // A trip somebody else booked and added you to earns no stamp, so it does
     // not unlock the link either.
-    const todayIso = today.toISOString().split('T')[0];
+    const todayIso = londonDayKey();
     const hasCompletedStay = bookings.some(
         (b) => !b.sharedWithMe && b.status === 'confirmed' && b.check_out < todayIso
     );
@@ -435,8 +435,8 @@ export default function TripsPage() {
                         // confirmed booking reads as something having gone wrong
                         // with the booking rather than a fact about the policy.
                         const position =
-                            cancel.kind === 'free' && cancel.freeUntil
-                                ? { emerald: true, text: 'Free to cancel until ' + formatUk(cancel.freeUntil) + '.' }
+                            cancel.kind === 'free' && cancel.freeUntilKey
+                                ? { emerald: true, text: 'Free to cancel until ' + ukLongDate(cancel.freeUntilKey) + '.' }
                                 : paidSoFar <= 0
                                     ? { emerald: false, text: 'You haven’t paid for this stay yet, so there’s nothing to lose by cancelling.' }
                                     : refund >= paidSoFar

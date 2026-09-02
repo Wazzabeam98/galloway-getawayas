@@ -31,6 +31,19 @@ test('a stay still under way is live until checkout', () => {
     assert.equal(liveForGuestCard({ status: 'confirmed', check_out: '2026-09-01' }, now), true);
 });
 
+test('E2: still live at 01:30 on checkout morning, while the guest is in the cottage', () => {
+    // 01:30 BST on checkout day. The old `new Date(check_out) >= now` went false
+    // at 01:00 (check_out's UTC midnight), so the card vanished mid-stay — just
+    // when a guest might open it to check the checkout time.
+    const morning = new Date('2026-07-01T01:30:00+01:00');
+    assert.equal(liveForGuestCard({ status: 'confirmed', check_out: '2026-07-01' }, morning), true);
+});
+
+test('over once checkout day itself has passed', () => {
+    const nextDay = new Date('2026-07-02T00:30:00+01:00');
+    assert.equal(liveForGuestCard({ status: 'confirmed', check_out: '2026-07-01' }, nextDay), false);
+});
+
 test('a confirmed stay yet to start is live', () => {
     const now = new Date('2026-09-02T10:00:00+01:00');
     assert.equal(liveForGuestCard({ status: 'confirmed', check_out: '2026-09-20' }, now), true);

@@ -1,5 +1,6 @@
 import { townOf, townKey } from '@/lib/places';
 import { adminClient } from '@/lib/supabaseAdmin';
+import { londonDayKey, shiftDayKey } from '@/lib/dayKey';
 import { NextResponse } from 'next/server';
 import {
     sendEmail,
@@ -27,9 +28,9 @@ export async function GET(request: Request) {
 
     // Stays that finished 2 to 10 days ago. Two days gives people time to
     // get home; ten leaves a few days of the 14 day window to act on it.
-    const today = new Date();
-    const from = new Date(today.getTime() - 10 * 86400000).toISOString().split('T')[0];
-    const to = new Date(today.getTime() - 2 * 86400000).toISOString().split('T')[0];
+    const today = londonDayKey();
+    const from = shiftDayKey(today, -10);
+    const to = shiftDayKey(today, -2);
 
     const { data: bookings } = await admin
         .from('bookings')

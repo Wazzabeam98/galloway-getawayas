@@ -10,6 +10,7 @@ import { isLiveToGuests, mccForProvider, isFoodProvider, normaliseUnit } from '@
 import { pointForListing, coversPoint, guestCategory } from '@/lib/serviceProviders';
 import { shapeOf, generateSessions, sessionCapacity, seatsLeft } from '@/lib/serviceSlots';
 import { getImageUrl } from '@/lib/utils';
+import { shiftDayKey } from '@/lib/dayKey';
 
 export interface MpItem {
     id: string; name: string; description: string | null; price: number; unit: string; image: string | null;
@@ -54,9 +55,7 @@ function staySpan(b: any) { return { check_in: b.check_in, check_out: b.check_ou
 
 // yyyy-mm-dd of the last night (check_out is the morning they leave).
 function lastNightKey(checkOut: string): string {
-    const d = new Date(checkOut + 'T00:00:00Z');
-    d.setUTCDate(d.getUTCDate() - 1);
-    return d.toISOString().slice(0, 10);
+    return shiftDayKey(String(checkOut).slice(0, 10), -1);
 }
 
 /**

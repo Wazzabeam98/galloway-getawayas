@@ -1,5 +1,6 @@
 import Link from 'next/link';
 import { adminClient } from '@/lib/supabaseAdmin';
+import { londonDayKey, shiftDayKey } from '@/lib/dayKey';
 import { createServerComponentClient } from '@supabase/auth-helpers-nextjs';
 import { cookies } from 'next/headers';
 import { accessibleListings } from '@/lib/access';
@@ -36,8 +37,8 @@ export default async function TemplateGapWarning() {
 
         const admin = adminClient();
 
-        const today = new Date().toISOString().split('T')[0];
-        const horizon = new Date(Date.now() + HORIZON_DAYS * 86400000).toISOString().split('T')[0];
+        const today = londonDayKey();
+        const horizon = shiftDayKey(today, HORIZON_DAYS);
 
         const { data: arriving } = await admin
             .from('bookings')
