@@ -6,11 +6,13 @@ import { useEffect, useState } from 'react';
 import { createClientComponentClient } from '@supabase/auth-helpers-nextjs';
 import Logo from '@/components/base/Logo';
 import LoginModel from '@/components/auth/LoginModel';
-import { MessageCircle, Navigation, MapPin, LogIn, LogOut, Grid3x3 } from 'lucide-react';
+import { MessageCircle, Navigation, MapPin, Grid3x3 } from 'lucide-react';
 import CopyField from '@/components/arrival/CopyField';
-import { getImageUrl, capitializeFirst, displayName, formatTime } from '@/lib/utils';
+import CheckInOutTimes from '@/components/arrival/CheckInOutTimes';
+import { getImageUrl, capitializeFirst, displayName } from '@/lib/utils';
 import Link from 'next/link';
-import { refundDue } from '@/lib/cancellation';
+import { formatUk } from '@/lib/cancellation';
+import { cancellationPosition } from '@/lib/cancellationView';
 import { upcomingUntilCheckout } from '@/lib/bookingWindows';
 import GuestExperiences from '@/components/GuestExperiences';
 
@@ -329,9 +331,15 @@ export default function TripsPage() {
                                     : <div className="text-sm text-slate-500">Ask your host for the address in the messages.</div>}
                             </div>
                         </div>
-                        <div className="mt-2 flex flex-wrap items-center gap-x-4 gap-y-1 text-sm text-slate-700">
-                            {formatTime(arr.checkInTime) && <span className="inline-flex items-center gap-1.5"><LogIn className="h-3.5 w-3.5 text-slate-400" /> from {formatTime(arr.checkInTime)}</span>}
-                            {formatTime(arr.checkOutTime) && <span className="inline-flex items-center gap-1.5"><LogOut className="h-3.5 w-3.5 text-slate-400" /> by {formatTime(arr.checkOutTime)}</span>}
+                        <div className="mt-3">
+                            <CheckInOutTimes
+                                surface="trips"
+                                mode="link"
+                                href={`/arrival/${b.id}`}
+                                checkInTime={arr.checkInTime}
+                                checkOutTime={arr.checkOutTime}
+                                checkInEndTime={arr.checkInEndTime}
+                            />
                         </div>
                         {(mapsUrl || arr.what3words) && (
                             <div className="mt-2.5 flex flex-wrap items-center gap-2">
@@ -401,20 +409,42 @@ export default function TripsPage() {
                     && b.status !== 'cancelled'
                     && b.status !== 'declined'
                     && new Date(b.check_in) > today && (() => {
-                    const paidSoFar = Number(b.amount_paid || 0) - Number(b.amount_refunded || 0);
-                    // The very function /api/bookings/cancel runs when this
-                    // button is pressed. It used to be the sum written out
-                    // again here, which is how a guest gets shown one figure
-                    // and refunded a different one.
-                    const refund = refundDue({
-                        amountPaid: Number(b.amount_paid || 0),
-                        alreadyRefunded: Number(b.amount_refunded || 0),
-                        cleaningFee: (b as any).cleaning_fee,
+                    // Where this cancellation stands, worked out once, by the
+                    // same function the Cancel screen, the home card and the
+                    // messages pane read — so no two of them can tell the guest
+                    // a different story. `amount` is exactly what
+                    // /api/bookings/cancel will refund when the button is
+                    // pressed; it used to be the sum written out again here,
+                    // which is how a guest gets shown one figure and refunded
+                    // another.
+                    const cancel = cancellationPosition({
                         checkIn: b.check_in,
                         policy: listing?.cancellation_policy,
+                        amountPaid: b.amount_paid,
+                        alreadyRefunded: b.amount_refunded,
+                        cleaningFee: (b as any).cleaning_fee,
+                        on: today,
                     });
+                    const paidSoFar = cancel.paidSoFar;
+                    const refund = cancel.amount;
 
                     if (confirmingId !== b.id) {
+                        // The position, under the Cancel link — a fact, not a
+                        // warning. Free reads in the emerald used for confirmed;
+                        // the paid-refund states are plain text, because red on a
+                        // confirmed booking reads as something having gone wrong
+                        // with the booking rather than a fact about the policy.
+                        const position =
+                            cancel.kind === 'free' && cancel.freeUntil
+                                ? { emerald: true, text: 'Free to cancel until ' + formatUk(cancel.freeUntil) + '.' }
+                                : paidSoFar <= 0
+                                    ? { emerald: false, text: 'You haven’t paid for this stay yet, so there’s nothing to lose by cancelling.' }
+                                    : refund >= paidSoFar
+                                        ? { emerald: false, text: 'You’d get your full £' + paidSoFar.toFixed(2) + ' back if you cancel.' }
+                                        : refund > 0
+                                            ? { emerald: false, text: '£' + refund.toFixed(2) + ' of the £' + paidSoFar.toFixed(2) + ' you’ve paid comes back if you cancel.' }
+                                            : { emerald: false, text: 'These dates are non-refundable — the £' + paidSoFar.toFixed(2) + ' you’ve paid stays with the host if you cancel.' };
+
                         return (
                             <div className="mt-3">
                                 <button
@@ -424,6 +454,9 @@ export default function TripsPage() {
                                 >
                                     Cancel booking
                                 </button>
+                                <p className={'text-xs mt-1 ' + (position.emerald ? 'text-emerald-700' : 'text-slate-500')}>
+                                    {position.text}
+                                </p>
                             </div>
                         );
                     }

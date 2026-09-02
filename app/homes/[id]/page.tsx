@@ -13,6 +13,7 @@ import PhotoGallery from '@/components/PhotoGallery';
 import HostReplyBox from '@/components/HostReplyBox';
 import ReviewsSummary from '@/components/ReviewsSummary';
 import { hasPublicScore, MIN_PUBLIC_REVIEWS } from '@/lib/reviews';
+import { checkInMethodTitle, checkInBlurb } from '@/lib/checkInMethods';
 import { townKey } from '@/lib/places';
 import { areaForTownKey, hasCopy } from '@/config/areas';
 import PropertyMap from '@/components/PropertyMap';
@@ -66,18 +67,10 @@ function propertyHighlights(home: any): { title: string; detail: string; icon: a
     const out: { title: string; detail: string; icon: any }[] = [];
 
     // How guests get in — worth showing high up, it's one of the first
-    // things people want to know.
-    const CHECKIN_BLURBS: Record<string, string> = {
-        'Lockbox': 'Check yourself in with the lockbox.',
-        'Smart lock': 'Let yourself in with a smart lock code.',
-        'Keypad': 'Let yourself in using the door keypad.',
-        'Host greets you': 'Your host will meet you at the property.',
-        'Keys collected nearby': 'Keys are collected from a nearby address.',
-        'Building staff': 'Building staff will let you in.',
-    };
-
+    // things people want to know. The title and the one-line blurb are shared
+    // with the Getting-there screen (lib/checkInMethods), so a guest meets the
+    // same words in both places; only which icon draws which stays here.
     if (home && home.check_in_method) {
-        const selfServe = ['Lockbox', 'Smart lock', 'Keypad'].indexOf(home.check_in_method) !== -1;
         const methodIcons: Record<string, any> = {
             'Lockbox': KeyRound,
             'Smart lock': KeyRound,
@@ -87,8 +80,8 @@ function propertyHighlights(home: any): { title: string; detail: string; icon: a
             'Building staff': DoorOpen,
         };
         out.push({
-            title: selfServe ? 'Self check-in' : home.check_in_method,
-            detail: CHECKIN_BLURBS[home.check_in_method] || '',
+            title: checkInMethodTitle(home.check_in_method),
+            detail: checkInBlurb(home.check_in_method),
             icon: methodIcons[home.check_in_method] || KeyRound,
         });
     }

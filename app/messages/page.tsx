@@ -9,6 +9,8 @@ import Logo from '@/components/base/Logo';
 import LoginModel from '@/components/auth/LoginModel';
 import { getImageUrl, capitializeFirst, formatTime } from '@/lib/utils';
 import { publicArea } from '@/lib/places';
+import { formatUk } from '@/lib/cancellation';
+import { cancellationPosition } from '@/lib/cancellationView';
 import { toast } from 'react-toastify';
 import { Search, Inbox, Send, Zap, Phone, ExternalLink, ChevronLeft, Info } from 'lucide-react';
 
@@ -905,15 +907,32 @@ export default function MessagesInboxPage() {
                             </span>
                         </div>
                     )}
-                    {thread.booking.free_cancel_until && (
-                        <div className="flex justify-between gap-2">
-                            <span className="text-slate-500 flex-shrink-0">Free cancellation</span>
-                            <span className="text-slate-600 text-right">
-                                until{' '}
-                                {new Date(thread.booking.free_cancel_until).toLocaleDateString('en-GB')}
-                            </span>
-                        </div>
-                    )}
+                    {/* The cancellation position, stated as a fact, worked out by
+                        the same function the guest's Cancel screen and home card
+                        read — never the stored free-cancel date on its own, which
+                        goes on reading "free until Friday" after Friday. Shown
+                        only while the stay could still be called off. */}
+                    {thread.booking.status !== 'cancelled'
+                        && thread.booking.status !== 'declined'
+                        && new Date(thread.booking.check_in) > new Date()
+                        && (() => {
+                            const pos = cancellationPosition({
+                                checkIn: thread.booking.check_in,
+                                policy: thread.booking.cancellation_policy,
+                            });
+                            return (
+                                <div className="flex justify-between gap-2">
+                                    <span className="text-slate-500 flex-shrink-0">Cancellation</span>
+                                    <span className="text-slate-600 text-right">
+                                        {pos.kind === 'free' && pos.freeUntil
+                                            ? 'free until ' + formatUk(pos.freeUntil)
+                                            : pos.kind === 'partial'
+                                                ? '50% refundable'
+                                                : 'non-refundable dates'}
+                                    </span>
+                                </div>
+                            );
+                        })()}
                 </div>
             )}
 
