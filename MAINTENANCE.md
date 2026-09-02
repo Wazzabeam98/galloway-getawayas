@@ -343,6 +343,57 @@ tests and the build, and warns if `migrate.mjs --status` shows anything
 outstanding. `--no-verify` skips it for a work-in-progress branch and never for
 master.
 
+## The deploy-time migration gate
+
+checked: 2026-09-02
+
+**The one gate that sits across both routes to production.** CI holds no
+database credentials on purpose, and the pre-push hook checks *test* and is
+skipped entirely by the GitHub web-editor path — so nothing stopped a branch
+carrying a migration from reaching production with the code ahead of the schema.
+Three times in a week. Every route to production, local push or web edit, ends
+in a Vercel production build, so that is where the gate lives.
+
+`scripts/check-migrations-applied.mjs` runs as the first step of `npm run build`
+(`"build": "node scripts/check-migrations-applied.mjs && next build"`). On a
+**Vercel production build** it reads production's `schema_migrations` and refuses
+to build if any migration file in the repo is not applied there. Everywhere else
+— preview, CI, local — it exits 0 immediately.
+
+**It fails open by design.** The only non-zero exit is "a migration is provably
+outstanding on production". Not a production deploy, not configured, cannot reach
+the database, any unexpected error — all exit 0. A gate that blocks because it is
+broken is worse than no gate, and would block the unrelated hotfix it was never
+meant to touch.
+
+**The 11pm escape hatch:** `[skip-migration-gate]` in the commit message ships
+the deploy anyway, warning loudly. Same spirit as the admin-merge rule in
+`CLAUDE.md` — being able to ship when you have to beats a gate people route
+around.
+
+### What it reads with, and how to recreate it
+
+A dedicated read-only Postgres role on **production**, `migration_gate`, that can
+read `public.schema_migrations` and nothing else — verified it cannot read
+`profiles`/`bookings` or write the ledger. `schema_migrations` has RLS on with no
+policies (so `anon`/`authenticated` see nothing; `postgres` bypasses), so the
+role needs an explicit read policy. Recreate with:
+
+```sql
+create role migration_gate with login password '<new-password>'
+  nosuperuser nocreatedb nocreaterole noinherit noreplication connection limit 3;
+grant usage on schema public to migration_gate;
+grant select on public.schema_migrations to migration_gate;
+create policy migration_gate_read on public.schema_migrations
+  for select to migration_gate using (true);
+```
+
+Its connection string goes in **Vercel → Settings → Environment Variables** as
+`MIGRATION_STATUS_DB_URL`, scoped to **Production only**, in the pooler form
+`postgresql://migration_gate.<project-ref>:<password>@<pooler-host>:5432/postgres`.
+Until that variable exists the gate is inert (it exits 0 and says so), which is
+why the branch that introduced it could merge before the variable was set.
+
 ## The target guard is CommonJS, and has to be
 
 checked: 2026-09-01
