@@ -8,6 +8,7 @@ import { expiryFrom } from '@/lib/serviceOrders';
 import { displayName } from '@/lib/utils';
 import { requestedWhen } from '@/lib/serviceEnquiries';
 import { tradeLabel } from '@/lib/serviceProviders';
+import { guestBookedEmail, hostNewBookingEmail, arrivalLineFrom } from '@/lib/bookingEmails';
 
 export const dynamic = 'force-dynamic';
 
@@ -617,7 +618,7 @@ export async function POST(request: Request) {
 
                 const { data: booking } = await admin
                     .from('bookings')
-                    .select('id, status, total_price, listing_id, amount_paid, guest_id, check_in, check_out, host_id')
+                    .select('id, status, total_price, listing_id, amount_paid, amount_refunded, guests, balance_amount, balance_due_date, free_cancel_until, guest_id, check_in, check_out, host_id')
                     .eq('id', bookingId)
                     .maybeSingle();
 
@@ -728,12 +729,14 @@ export async function POST(request: Request) {
                 // bookings go back to pending for the host to accept.
                 let nextStatus = 'pending';
                 let listingTitle = 'your stay';
+                let listingRow: any = null;
                 if (booking) {
                     const { data: listing } = await admin
                         .from('listings')
-                        .select('instant_book, title')
+                        .select('instant_book, title, check_in_time, check_in_end_time, check_out_time')
                         .eq('id', booking.listing_id)
                         .maybeSingle();
+                    listingRow = listing || null;
                     if (listing && listing.instant_book === true) nextStatus = 'confirmed';
                     listingTitle = (listing && listing.title) || listingTitle;
                 }
@@ -921,6 +924,97 @@ export async function POST(request: Request) {
                 // from lib/serviceEnquiries and is the same line the calendar and
                 // the emails already hold.
                 const firstDelivery = !(ledgerError && ledgerError.code === '23505');
+
+                // THE TWO EMAILS THAT HAD NO HOME.
+                //
+                // The host is told a booking has come in — 'New booking' for
+                // Instant Book, 'New booking request' for one they must accept.
+                // Nothing called notify('booking_created'), so until now the
+                // host learned of a booking only by opening the dashboard.
+                //
+                // And an Instant-Book guest is told they're booked. The
+                // "You're booked" email is otherwise sent only when a host
+                // clicks accept; an Instant-Book stay confirms itself here with
+                // no click, so its guest — promised an email by /booking-confirmed
+                // — was never sent one. A request-flow guest still gets their
+                // confirmation from the host's acceptance, so is skipped here.
+                //
+                // Gated on firstDelivery so a redelivered paid event does not
+                // send either twice. Best-effort: the money has landed and the
+                // stay is live whether or not these send.
+                if (firstDelivery && booking && booking.host_id) {
+                    try {
+                        const [{ data: hostUser }, { data: guestUser }] = await Promise.all([
+                            admin.auth.admin.getUserById(booking.host_id),
+                            admin.auth.admin.getUserById(booking.guest_id),
+                        ]);
+                        const hostEmail = (hostUser && hostUser.user && hostUser.user.email) || '';
+                        const guestEmail = (guestUser && guestUser.user && guestUser.user.email) || '';
+
+                        const { data: names } = await admin
+                            .from('profiles')
+                            .select('id, full_name, preferred_name, show_full_name')
+                            .in('id', [booking.host_id, booking.guest_id]);
+                        const byId: Record<string, any> = {};
+                        (names || []).forEach((p: any) => { byId[p.id] = p; });
+                        const hostProfile = byId[booking.host_id] || {};
+                        const guestProfile = byId[booking.guest_id] || {};
+
+                        // The host greeted by their own name; the guest named to
+                        // the host through the privacy switch.
+                        const hostFirst = ((hostProfile.preferred_name || hostProfile.full_name || 'there')
+                            .trim().split(' ')[0]) || 'there';
+                        const guestFirst = (displayName(guestProfile, 'A guest').split(' ')[0]) || 'A guest';
+                        const instant = nextStatus === 'confirmed';
+
+                        const hostMail = hostNewBookingEmail({
+                            hostFirst,
+                            guestFirst,
+                            listingTitle,
+                            checkIn: booking.check_in,
+                            checkOut: booking.check_out,
+                            guests: booking.guests || 1,
+                            total: Number(booking.total_price || 0),
+                            instant,
+                            bookingId: booking.id,
+                        });
+                        if (hostEmail) await sendEmail(hostEmail, hostMail.subject, hostMail.html);
+
+                        // Only the Instant-Book guest — a request-flow guest is
+                        // told when the host accepts, and telling them now would
+                        // say "You're booked" while it is still pending.
+                        if (instant && guestEmail) {
+                            // The guest greeted by their own name, which does not
+                            // consult the privacy switch — it is their own name in
+                            // their own inbox.
+                            const guestOwnFirst = ((guestProfile.preferred_name || guestProfile.full_name || 'there')
+                                .trim().split(' ')[0]) || 'there';
+                            const guestMail = guestBookedEmail({
+                                guestFirst: guestOwnFirst,
+                                listingTitle,
+                                checkIn: booking.check_in,
+                                checkOut: booking.check_out,
+                                arrivalLine: arrivalLineFrom(listingRow || {}),
+                                guests: booking.guests || 1,
+                                total: Number(booking.total_price || 0),
+                                amountPaid: Number(booking.amount_paid || amount || 0),
+                                amountRefunded: Number(booking.amount_refunded || 0),
+                                balanceAmount: Number(booking.balance_amount || 0),
+                                balanceDueDate: booking.balance_due_date || null,
+                                freeCancelUntil: booking.free_cancel_until || null,
+                            });
+                            await sendEmail(guestEmail, guestMail.subject, guestMail.html);
+                        }
+                    } catch (err) {
+                        // A booking notification that fails must never affect the
+                        // booking: the money has landed and the stay is live.
+                        await logError(
+                            '[webhook] a booking was paid but the host/guest notification could not be sent',
+                            err,
+                            { path: 'stripe/webhook', userId: (booking && booking.guest_id) || undefined }
+                        );
+                    }
+                }
 
                 if (
                     firstDelivery && booking

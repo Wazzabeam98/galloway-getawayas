@@ -136,6 +136,11 @@ export default function AccountSettings() {
     const [avatarUrl, setAvatarUrl] = useState<string | null>(null);
     const [uploadingAvatar, setUploadingAvatar] = useState(false);
 
+    // --- Host bio: the line about them shown on their listings ---
+    const [hostBio, setHostBio] = useState('');
+    const [savedBio, setSavedBio] = useState('');
+    const [savingBio, setSavingBio] = useState(false);
+
     // --- Messaging state ---
     interface QuickReply { id: string; title: string; body: string }
     const [quickReplies, setQuickReplies] = useState<QuickReply[]>([]);
@@ -198,6 +203,18 @@ export default function AccountSettings() {
                     });
                     setShowFullName(profileData.show_full_name !== false);
                     setAvatarUrl(profileData.avatar_url || null);
+                }
+
+                // host_bio lives on profiles (public-readable), not on the
+                // private view, so it is read on its own.
+                const { data: bioRow } = await supabase
+                    .from('profiles')
+                    .select('host_bio')
+                    .eq('id', session.user.id)
+                    .maybeSingle();
+                if (bioRow) {
+                    setHostBio(bioRow.host_bio || '');
+                    setSavedBio(bioRow.host_bio || '');
                 }
 
                 // Scheduled messages load themselves, in
@@ -264,6 +281,25 @@ export default function AccountSettings() {
 
         setProfile((prev) => ({ ...prev, [field.key]: draftValue }));
         setEditingField(null);
+        router.refresh();
+    };
+
+    const saveBio = async () => {
+        if (!session?.user) return;
+        setSavingBio(true);
+        const value = hostBio.trim().slice(0, 500);
+        const { error } = await supabase
+            .from('profiles')
+            .update({ host_bio: value || null })
+            .eq('id', session.user.id);
+        setSavingBio(false);
+        if (error) {
+            toast.error(error.message, { theme: 'colored' });
+            return;
+        }
+        setSavedBio(value);
+        setHostBio(value);
+        toast.success('Saved. This shows on your listings.', { theme: 'colored' });
         router.refresh();
     };
 
@@ -707,6 +743,34 @@ export default function AccountSettings() {
                                             </button>
                                         )}
                                     </div>
+                                </div>
+                            </div>
+
+                            <div className="border rounded-2xl p-5">
+                                <div className="font-semibold text-slate-900 text-sm mb-1">About you</div>
+                                <p className="text-xs text-slate-500 mb-3">
+                                    A line or two shown on your listings, under your name. Guests booking direct
+                                    want to know who they&apos;re dealing with — that you&apos;re local, that you
+                                    answer the phone. Keep it short and human.
+                                </p>
+                                <textarea
+                                    value={hostBio}
+                                    onChange={(e) => setHostBio(e.target.value)}
+                                    maxLength={500}
+                                    rows={4}
+                                    placeholder="e.g. We live just up the road in Kirkcudbright and have let this cottage for years. Message any time — we usually reply within the hour."
+                                    className="w-full p-3 border rounded-xl text-sm"
+                                />
+                                <div className="flex items-center justify-between mt-2">
+                                    <span className="text-xs text-slate-400">{hostBio.length}/500</span>
+                                    <button
+                                        type="button"
+                                        onClick={saveBio}
+                                        disabled={savingBio || hostBio.trim() === savedBio.trim()}
+                                        className="px-4 py-2 text-sm font-semibold rounded-lg bg-slate-900 hover:bg-black text-white disabled:opacity-40"
+                                    >
+                                        {savingBio ? 'Saving…' : 'Save'}
+                                    </button>
                                 </div>
                             </div>
 

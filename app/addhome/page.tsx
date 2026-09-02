@@ -1102,6 +1102,10 @@ export default function AddHome() {
                                 value={title}
                                 onChange={(e) => setTitle(e.target.value)}
                                 placeholder="e.g. Cosy stone cottage near the coast"
+                                // A title is a headline, not a paragraph. Left
+                                // uncapped it becomes a wall of text in the page
+                                // <h1> and browser tab; 80 is roomy for a real one.
+                                maxLength={80}
                                 className="w-full p-4 border rounded-xl text-lg"
                             />
                         </div>
