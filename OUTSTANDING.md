@@ -26,6 +26,46 @@ entries that had been sitting in "blocked on you" — see below.
 
 ---
 
+## ⚠ CORRECTIONS — overnight 2→3 Sep 2026, second pass (read this first)
+
+The body below is dated **31 Aug** and is stale in both directions. Every claim
+here was re-verified on 2026-09-03 with the method stated; the full write-up with
+evidence is **`OVERNIGHT-REPORT-2026-09-03.md`**. How each was checked: "test" =
+request built and result read back on the test project; "master" = code read on
+master today; "prod (read-only)" = public anon key GET against production.
+
+- **NEW / HIGH — arrival & PII leak, and a payout-redirection WRITE.** Four
+  readers released host PII / door code / address on a *planted* unpaid booking;
+  and `authenticated` could `UPDATE` a host's `stripe_account_id` through
+  `profile_private`. **Fixed in PR #99** (`fix/arrival-pii-entitlement`, not
+  merged); proven leak→refuse→legit on test (`audit-evidence/20`, `21`). Apply
+  its two migrations to prod, then merge. NEW since this list was written.
+- **NEW — `listings` leaks to any signed-in user.** `GRANT ALL ON listings TO
+  authenticated` was never column-scoped (fixed for anon only): any account reads
+  `street_address, ical_token, commission_rate` for any published listing.
+  `may_read_listing()` also trusts a `bookings` row on existence. NOT in PR #99;
+  scoped in the report §2–3. Verified: master; anon correctly refused on prod.
+- **CORRECTED — silent routes: 16 of 76, not "24".** Census 2026-09-03. The
+  money ones to fix (console.error only): `services/slots/schedule` (wipes a
+  provider's calendar silently), `services/slots/book`, `services/order`,
+  `services/orders`, `cron/ical-sync`, and three post-charge webhook email
+  catches. Report §7.
+- **CORRECTED — PR #45 (atomic host debt) is MERGED (31 Aug) and intact on
+  master.** Any note calling it pending is wrong. Function present, clamp at
+  zero present, exactly three writers, no direct writes left (verified master +
+  function on test). Still read `adjust_payout_balance` back on **prod** before
+  the first payout — that is assumed, not observed. Report §5.
+- **STILL TRUE — `full_name` ignores `show_full_name`.** Proven on prod
+  (read-only): anon reads both directors' legal names. Data-layer cost in report
+  §7. The six greeting sites the old note named are mostly own-name greetings
+  (fine); only `booking-guests:123` and `trip-invite:49` are real third-party
+  bypasses.
+- **STILL TRUE — storage has no owner-scoped upload paths** (verified on test).
+- **STILL TRUE — email failures now reach `error_log`, and it was PROVEN failing**
+  (`audit-evidence/22`), including the dispute notice (reported twice).
+
+---
+
 ## Closed since the third pass
 
 Nine, each verified where it actually runs rather than assumed from a green

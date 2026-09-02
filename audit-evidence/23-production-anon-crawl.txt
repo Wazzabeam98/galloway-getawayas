@@ -1,0 +1,48 @@
+Production anonymous-stranger crawl — 2026-09-03
+=================================================
+Method: the in-app JS browser loaded https://gallowaygetaways.co.uk signed-out;
+the PUBLIC anon key was read from the live JS bundle (chunk 8346-*.js) — it
+decodes to {ref: hviwjxigqivjfhmhpjiy, role: anon}, the production project. Prod
+Supabase is fronted by https://auth.gallowaygetaways.co.uk. Every request below
+is a GET with that public key — read-only, nothing written to production.
+Re-established tonight, not re-quoted from stale notes.
+
+PUBLIC PAGES a signed-out visitor reaches (from the homepage nav):
+  /  /addhome  /homes/[id]  /holiday-cottages/{kirkcudbright,castle-douglas,
+  gatehouse-of-fleet,dalbeattie}  /trips  /dashboard  /services/property
+  /business  /contact  /cancellation-policy  /terms  /privacy
+  - Homepage + listing pages are SERVER-rendered (service role); no client
+    Supabase call fires, so a page's source shows only what the server chose.
+  - A listing page to anon shows TOWN-level location + landmark distances, the
+    host's display name ("Hosted by Liam"), amenities — NO exact street address,
+    no postcode, no phone, no email. Location privacy holds at the page level.
+
+WHAT THE ANON KEY RETURNS FROM EVERY TABLE / VIEW (PostgREST, prod):
+  NOTE: a `select=*` returns 401 whenever anon lacks ANY column — a column
+  artefact, NOT proof the table is closed. Re-probed the important ones by column.
+
+  READABLE with real data to anon:
+    profiles  (select=id,full_name,preferred_name,show_full_name,avatar_url)  200
+        -> returns "Liam Worrall", "Jamie Clarke", ...  <== full_name LEAK, LIVE.
+           show_full_name is ignored at the data layer; the raw legal name of
+           every host and guest is enumerable by any anonymous visitor.
+    listings  (select=id,title,location)                                     200  (town-level, fine)
+    calendar_overrides  (all 24 rows)   listing_id,date,is_blocked,price_override,min_nights_override
+        -> every listing's per-date price overrides + blocked dates, enumerable. Minor info leak.
+    service_skills (52), service taxonomy tables                             200  (reference data, fine)
+
+  REFUSED to anon (401 — correct):
+    profiles email/phone/residential_address · profile_private ·
+    service_provider_own_contacts · bookings · booking_guests · listings
+    street_address/ical_token/commission_rate · listing_arrival ·
+    listing_access_codes · payments · payouts · disputes · error_log ·
+    service_orders · service_enquiries · service_providers · admin_actions ·
+    schema_migrations · rate_limit_hits · sent_scheduled_messages
+
+HEADLINE: the PRODUCTION ANON surface is tight — every PII / money / secret
+table refuses anon. The one live anonymous leak is profiles.full_name (both
+directors' legal names). calendar_overrides is a minor pricing/availability
+exposure. IMPORTANT: tonight's profile_private read+write holes and the
+listings-columns leak are for a SIGNED-IN (authenticated) account, a different
+role than anon — they are NOT reachable anonymously, but they ARE reachable by
+anyone who makes a free account.

@@ -1,0 +1,21 @@
+
+=== Prove email failure reaches error_log — TEST ===
+
+[email] Resend rejected the message: 401 {"statusCode":401,"name":"validation_error","message":"API key is invalid"}
+  sendEmail [balance ladder (72h)] returned false (false = it reported a failure)
+[email] Resend rejected the message: 401 {"statusCode":401,"name":"validation_error","message":"API key is invalid"}
+  sendEmail [payout notice] returned false (false = it reported a failure)
+[email] Resend rejected the message: 401 {"statusCode":401,"name":"validation_error","message":"API key is invalid"}
+  sendEmail [order email] returned false (false = it reported a failure)
+
+  error_log rows written by this run (path=lib/email):
+    • [email] Resend rejected a message to director+EMAILFAIL-1788383678650@gg-audit-nonexistent.co.uk
+        to=director+EMAILFAIL-1788383678650@gg-audit-nonexistent.co.uk | status=401 | subject="Your experience is booked — EMAILFAIL-1788383678650"
+    • [email] Resend rejected a message to director+EMAILFAIL-1788383678650@gg-audit-nonexistent.co.uk
+        to=director+EMAILFAIL-1788383678650@gg-audit-nonexistent.co.uk | status=401 | subject="You've been paid — EMAILFAIL-1788383678650"
+    • [email] Resend rejected a message to director+EMAILFAIL-1788383678650@gg-audit-nonexistent.co.uk
+        to=director+EMAILFAIL-1788383678650@gg-audit-nonexistent.co.uk | status=401 | subject="Your balance payment needs attention — EMAILFAIL-1788383678650"
+
+  ✓ PASS — 3/3 failures surfaced with recipient + subject + status (enough to chase which email, to whom).
+  (rows removed)
+
