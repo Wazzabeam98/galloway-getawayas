@@ -105,12 +105,15 @@ export default function CheckInOutTimes(props: Props) {
                 className="group grid grid-cols-2 gap-3 rounded-2xl outline-none focus-visible:ring-2 focus-visible:ring-emerald-600/60 focus-visible:ring-offset-2"
                 aria-label="Arrival and departure times — open Getting there"
             >
+                {/* No chevron on one box: the whole pair is a single link, and
+                    a chevron on checkout alone read as though only checkout was
+                    clickable. Both boxes lift together on hover instead, which
+                    is the pair responding as one thing. */}
                 <div className={`${BOX[surface]} p-3.5 transition group-hover:border-emerald-600/40 group-hover:shadow-md`}>
                     <BoxInner icon={arrivalIcon} label="Check-in" time={inTime} surface={surface} />
                 </div>
-                <div className={`relative ${BOX[surface]} p-3.5 transition group-hover:border-emerald-600/40 group-hover:shadow-md`}>
+                <div className={`${BOX[surface]} p-3.5 transition group-hover:border-emerald-600/40 group-hover:shadow-md`}>
                     <BoxInner icon={departIcon} label="Checkout" time={outTime} surface={surface} />
-                    <ChevronRight className="absolute right-2 top-1/2 h-4 w-4 -translate-y-1/2 text-stone-300 transition group-hover:text-emerald-700" />
                 </div>
             </Link>
         );

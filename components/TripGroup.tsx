@@ -96,7 +96,9 @@ export default function TripGroup({ bookingId }: { bookingId: string }) {
     if (loading) return null;
 
     return (
-        <div className="mt-4">
+        // mt-2 so the "Add the people" control sits with the secondary actions
+        // (Message host) as one group on the trip card, not adrift below them.
+        <div className="mt-2">
             {people.length > 0 && (
                 <div className="flex flex-wrap gap-2 mb-2">
                     {people.map((p) => (

@@ -6,15 +6,15 @@ import { useEffect, useState } from 'react';
 import { createClientComponentClient } from '@supabase/auth-helpers-nextjs';
 import Logo from '@/components/base/Logo';
 import LoginModel from '@/components/auth/LoginModel';
-import { MessageCircle, Navigation, MapPin, Grid3x3 } from 'lucide-react';
+import { MessageCircle, Navigation, MapPin, Grid3x3, ArrowLeft } from 'lucide-react';
 import CopyField from '@/components/arrival/CopyField';
 import CheckInOutTimes from '@/components/arrival/CheckInOutTimes';
+import ExperiencesTeaser from '@/components/ExperiencesTeaser';
 import { getImageUrl, capitializeFirst, displayName } from '@/lib/utils';
 import Link from 'next/link';
 import { cancellationPosition } from '@/lib/cancellationView';
 import { ukLongDate, londonDayKey } from '@/lib/dayKey';
-import { upcomingUntilCheckout, liveForGuestCard } from '@/lib/bookingWindows';
-import GuestExperiences from '@/components/GuestExperiences';
+import { upcomingUntilCheckout, liveForGuestCard, stayCountdown } from '@/lib/bookingWindows';
 
 interface Booking {
     id: string;
@@ -283,10 +283,19 @@ export default function TripsPage() {
         const upcomingConfirmed = upcomingUntilCheckout(b, today);
         const arr = b.arrival || null;
         const homeHref = `/homes/${b.listing_id}`;
-        const mapsUrl = arr && (arr.addressString || (arr.lat != null && arr.lng != null))
-            ? 'https://www.google.com/maps/dir/?api=1&destination='
-                + (arr.lat != null && arr.lng != null ? arr.lat + ',' + arr.lng : encodeURIComponent(arr.addressString))
-            : null;
+        // A quiet phase chip, only for the moments that are actually worth a
+        // word: they're on the stay, or it's today/tomorrow. Not a big
+        // countdown — that's the home card's job as a single hero; on a LIST of
+        // trips the date range already carries "when", and a "12 days to go" on
+        // every card would be noise. But "You're there now" on the last morning
+        // is the exact reassurance the trips-split fix is about, so it earns a
+        // place where it applies. Same stayCountdown module as the home card.
+        const phase = upcomingConfirmed ? stayCountdown(b, today).phase : null;
+        const phaseChip =
+            phase === 'during' ? 'You’re there now'
+                : phase === 'today' ? 'Arrives today'
+                    : phase === 'tomorrow' ? 'Arrives tomorrow'
+                        : null;
         const fmtDay = (s: string) => {
             const d = new Date(s);
             return isNaN(d.getTime()) ? s : d.toLocaleDateString('en-GB', { weekday: 'short', day: 'numeric', month: 'short' });
@@ -296,9 +305,11 @@ export default function TripsPage() {
             // Named so the link from the home page card lands on this trip
             // rather than at the top of a list of them.
             <div key={b.id} id={'trip-' + b.id} className="border rounded-2xl p-5 scroll-mt-6">
-              <div className="lg:grid lg:grid-cols-3 lg:gap-6">
-                {/* Left — the stay, its arrival details, its actions */}
-                <div className="lg:col-span-2">
+                {/* Single column: the right column existed only for the
+                    per-booking experiences panel, which is behind its flag and
+                    now teased once at the page level, so the card is full width
+                    rather than a wide half-empty two-up. When experiences launch,
+                    the per-booking panel returns as the right column. */}
                 <div className="flex items-start gap-4">
                     <Link href={homeHref} className="relative block w-16 h-16 rounded-xl overflow-hidden bg-slate-200 flex-shrink-0">
                         {listing?.images?.[0] && (
@@ -316,6 +327,13 @@ export default function TripsPage() {
                             </div>
                         ) : (
                             <div className="text-sm font-medium text-slate-700">£{b.total_price}</div>
+                        )}
+                        {phaseChip && (
+                            <div className="mt-1.5">
+                                <span className="inline-flex items-center rounded-full bg-emerald-50 px-2.5 py-0.5 text-xs font-medium text-emerald-800">
+                                    {phaseChip}
+                                </span>
+                            </div>
                         )}
                     </div>
                     <span className={`text-xs font-semibold px-3 py-1 rounded-full capitalize flex-shrink-0 ${statusStyles[b.status] || 'bg-slate-100 text-slate-600'}`}>
@@ -348,30 +366,38 @@ export default function TripsPage() {
                                 checkInEndTime={arr.checkInEndTime}
                             />
                         </div>
-                        {(mapsUrl || arr.what3words) && (
+                        {/* "Open in maps" is gone: it built a directions link
+                            from whatever address parts existed, so with only a
+                            town it sent the guest to the town centre — the exact
+                            wrong-place failure this screen exists to prevent. The
+                            card links straight through to Getting there, whose
+                            "Get directions" uses the real pin (or the full
+                            address), so there is one route to the journey and it
+                            is the correct one. */}
+                        {arr.what3words && (
                             <div className="mt-2.5 flex flex-wrap items-center gap-2">
-                                {mapsUrl && (
-                                    <a href={mapsUrl} target="_blank" rel="noreferrer" className="inline-flex items-center gap-1.5 rounded-lg border border-slate-300 bg-white px-3 py-1.5 text-xs font-semibold text-slate-700 transition hover:border-slate-400">
-                                        <Navigation className="h-3.5 w-3.5" /> Open in maps
-                                    </a>
-                                )}
-                                {arr.what3words && (
-                                    <span className="inline-flex items-center gap-1"><Grid3x3 className="h-3.5 w-3.5 text-emerald-700" /><CopyField value={arr.what3words} label={arr.what3words} /></span>
-                                )}
+                                <span className="inline-flex items-center gap-1"><Grid3x3 className="h-3.5 w-3.5 text-emerald-700" /><CopyField value={arr.what3words} label={arr.what3words} /></span>
                             </div>
                         )}
                     </div>
                 )}
 
-                <div className="mt-3 flex flex-wrap items-center gap-2">
+                {/* Actions, grouped by intent. Getting there is the primary and
+                    reads as such; Message host and Add-the-people are the
+                    secondary pair, same weight, together. Cancel is pulled out
+                    below a divider (further down), away from the invitation to
+                    add people, which is its opposite. */}
+                <div className="mt-4">
                     {upcomingConfirmed && (
-                        <Link href={`/arrival/${b.id}`} className="inline-flex items-center gap-1.5 rounded-lg bg-slate-900 px-3 py-1.5 text-xs font-semibold text-white transition hover:bg-slate-800">
-                            <Navigation className="h-3.5 w-3.5" /> Getting there
+                        <Link href={`/arrival/${b.id}`} className="inline-flex items-center gap-2 rounded-lg bg-slate-900 px-4 py-2.5 text-sm font-semibold text-white transition hover:bg-slate-800">
+                            <Navigation className="h-4 w-4" /> Getting there
                         </Link>
                     )}
-                    <Link href={`/messages/${b.id}`} className="inline-flex items-center gap-1.5 rounded-lg border border-slate-300 bg-white px-3 py-1.5 text-xs font-semibold text-slate-700 transition hover:border-slate-400">
-                        <MessageCircle className="h-3.5 w-3.5" /> Message host
-                    </Link>
+                    <div className={(upcomingConfirmed ? 'mt-2 ' : '') + 'flex flex-wrap items-center gap-2'}>
+                        <Link href={`/messages/${b.id}`} className="inline-flex items-center gap-1.5 rounded-lg border border-slate-300 bg-white px-3 py-1.5 text-xs font-semibold text-slate-700 transition hover:border-slate-400">
+                            <MessageCircle className="h-3.5 w-3.5" /> Message host
+                        </Link>
+                    </div>
                 </div>
 
                 {b.sharedWithMe ? (
@@ -453,7 +479,11 @@ export default function TripsPage() {
                                             : { emerald: false, text: 'These dates are non-refundable — the £' + paidSoFar.toFixed(2) + ' you’ve paid stays with the host if you cancel.' };
 
                         return (
-                            <div className="mt-3">
+                            // Set apart from the actions above by a divider —
+                            // cancelling is the opposite intention to "add the
+                            // people coming with you" and should not sit flush
+                            // against it.
+                            <div className="mt-5 border-t border-slate-100 pt-4">
                                 <button
                                     type="button"
                                     onClick={() => { setConfirmingId(b.id); setCancelError(''); }}
@@ -542,25 +572,21 @@ export default function TripsPage() {
                 {isCompleted && alreadyReviewed && (
                     <p className="text-xs text-slate-400 mt-3">You've reviewed this stay.</p>
                 )}
-                </div>
-
-                {/* Right — experiences to book and the ones already booked */}
-                <div className="lg:col-span-1 mt-6 lg:mt-0">
-                    {upcomingConfirmed && (
-                        <GuestExperiences
-                            bookingId={b.id}
-                            checkIn={b.check_in}
-                            checkOut={b.check_out}
-                        />
-                    )}
-                </div>
-              </div>
             </div>
         );
     };
 
     return (
         <div className="max-w-5xl mx-auto px-4 sm:px-6 py-10">
+            {/* Back to the home page, mirroring the "← Your trips" link at the
+                top of Getting there so the two screens match in direction and
+                styling. */}
+            <Link
+                href="/"
+                className="inline-flex items-center gap-1.5 text-sm font-medium text-slate-500 hover:text-slate-800 mb-4"
+            >
+                <ArrowLeft className="h-4 w-4" /> Home
+            </Link>
             <div className="flex items-baseline justify-between gap-4 flex-wrap mb-8">
                 <h1 className="text-2xl md:text-3xl font-bold text-slate-900">Your trips</h1>
                 {hasCompletedStay && (
@@ -599,6 +625,11 @@ export default function TripsPage() {
                             </div>
                         </div>
                     )}
+
+                    {/* The experiences teaser, once for the whole page rather
+                        than repeated in every card's right column. The flag it
+                        reads is global, so any booking id answers it. */}
+                    <ExperiencesTeaser bookingId={bookings[0].id} />
                 </>
             )}
         </div>
