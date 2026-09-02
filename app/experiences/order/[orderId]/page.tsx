@@ -4,6 +4,7 @@ import { ArrowLeft, CalendarDays, MapPin, Info, CheckCircle2, Clock3, XCircle, A
 import { createServerComponentClient } from '@supabase/auth-helpers-nextjs';
 import { cookies } from 'next/headers';
 import { adminClient } from '@/lib/supabaseAdmin';
+import { logError } from '@/lib/logError';
 import { guestMayCancelFree } from '@/lib/serviceSlots';
 import { cancellationSentence } from '@/components/marketplace/present';
 import OrderThread from '@/components/marketplace/OrderThread';
@@ -53,12 +54,28 @@ export default async function OrderPage({ params }: { params: { orderId: string 
         .maybeSingle();
     if (!order || order.guest_id !== user.id) redirect('/trips');
 
-    const [{ data: prov }, { data: listing }] = await Promise.all([
+    const [{ data: prov }, { data: listing, error: listingError }] = await Promise.all([
         admin.from('service_providers').select('business_name, provider_name, based_line, headshot, description, cancellation_window_hours').eq('id', order.provider_id).maybeSingle(),
         order.listing_id
-            ? admin.from('listings').select('id, title, address').eq('id', order.listing_id).maybeSingle()
-            : Promise.resolve({ data: null } as any),
+            // The cottage the experience is attached to. `address` is not a column
+            // on listings — the address is street_address + postcode + location —
+            // and selecting it returned a PostgREST error, nulling the whole row,
+            // so the "Comes to your cottage" line silently lost both name and
+            // address. Select the real columns and compose the address below.
+            ? admin.from('listings').select('id, title, street_address, postcode, location').eq('id', order.listing_id).maybeSingle()
+            : Promise.resolve({ data: null, error: null }),
     ]);
+    if (listingError) {
+        await logError('experiences/order: could not load the cottage', listingError, {
+            path: '/experiences/order/' + params.orderId,
+            userId: user.id,
+        });
+    }
+
+    // "12 Shore Road, DG7 1AB, Kirkcudbright" — the same order the trips page uses.
+    const cottageAddress = listing
+        ? [listing.street_address, listing.postcode, listing.location].filter(Boolean).join(', ')
+        : '';
 
     const who = order.provider_business_name || (prov && prov.business_name) || 'the provider';
     const windowHours = Number(prov && prov.cancellation_window_hours) || 48;
@@ -111,7 +128,7 @@ export default async function OrderPage({ params }: { params: { orderId: string 
                                         <dt className="text-xs font-semibold uppercase tracking-wide text-stone-500">Where</dt>
                                         <dd className="text-sm text-stone-800">
                                             {comesToCottage ? (
-                                                <>Comes to your cottage{listing && listing.title ? ' — ' + listing.title : ''}{listing && (listing as any).address ? <span className="block text-stone-500">{(listing as any).address}</span> : null}</>
+                                                <>Comes to your cottage{listing && listing.title ? ' — ' + listing.title : ''}{cottageAddress ? <span className="block text-stone-500">{cottageAddress}</span> : null}</>
                                             ) : isSlot ? (
                                                 <>You go to {who}{prov && prov.based_line ? <span className="block text-stone-500">{prov.based_line}</span> : <span className="block text-stone-500">Message them below for the exact address and directions.</span>}</>
                                             ) : (
