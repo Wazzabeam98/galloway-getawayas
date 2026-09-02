@@ -1,14 +1,16 @@
 import { redirect } from 'next/navigation';
 import Link from 'next/link';
 import {
-    ArrowLeft, MapPin, Navigation, KeyRound, LogIn, LogOut, CornerDownRight,
+    ArrowLeft, MapPin, Navigation, KeyRound, CornerDownRight,
     Car, Wifi, Phone, MessageCircle, Grid3x3, CloudOff,
 } from 'lucide-react';
 import { createServerComponentClient } from '@supabase/auth-helpers-nextjs';
 import { cookies } from 'next/headers';
 import { adminClient } from '@/lib/supabaseAdmin';
-import { displayName, formatTime } from '@/lib/utils';
+import { displayName } from '@/lib/utils';
+import { stayCountdown } from '@/lib/bookingWindows';
 import CopyField from '@/components/arrival/CopyField';
+import CheckInOutTimes from '@/components/arrival/CheckInOutTimes';
 
 export const dynamic = 'force-dynamic';
 
@@ -17,11 +19,6 @@ export const dynamic = 'force-dynamic';
 // and renders only when the host has filled it: a host who wrote nothing still
 // gives a real screen (address, times, call the host), never a shell of blanks.
 
-function daysUntil(dateStr: string): number {
-    const d = new Date(dateStr + 'T00:00:00');
-    const today = new Date(); today.setHours(0, 0, 0, 0);
-    return Math.round((d.getTime() - today.getTime()) / 86400000);
-}
 function dayName(dateStr: string): string {
     const d = new Date(dateStr + 'T00:00:00');
     return isNaN(d.getTime()) ? dateStr : d.toLocaleDateString('en-GB', { weekday: 'long' });
@@ -51,22 +48,38 @@ export default async function ArrivalPage({ params }: { params: { bookingId: str
     }
     if (!allowed) redirect('/trips');
 
-    // The listing's public-safe fields, the arrival secrets (own grant-less
-    // table), and the door code (its existing secure home) — all read here under
-    // the service role, only after the booking check above.
+    // The door code is only shown as arrival nears, so it is only FETCHED then —
+    // outside the window it never enters this page's data, let alone the rendered
+    // response. codeReady is computed before the reads for exactly that reason.
+    // The three-day reveal window is unchanged; the day count now comes from the
+    // shared module so this page stops keeping its own copy of the sum.
+    const now = new Date();
+    const { phase, daysUntilCheckIn } = stayCountdown(booking, now);
+    const codeReady = daysUntilCheckIn <= 3;
+
+    // The listing's public-safe fields and the arrival secrets (own grant-less
+    // table) are read under the service role, only after the booking check above.
     const [{ data: listing }, { data: host }, { data: arrival }, { data: access }] = await Promise.all([
         admin.from('listings')
-            .select('title, location, street_address, postcode, latitude, longitude, check_in_time, check_in_end_time, check_out_time')
+            .select('title, location, street_address, postcode, latitude, longitude, check_in_time, check_in_end_time, check_out_time, check_in_method')
             .eq('id', booking.listing_id).maybeSingle(),
         admin.from('profiles').select('full_name, preferred_name, show_full_name, phone').eq('id', booking.host_id).maybeSingle(),
         admin.from('listing_arrival').select('arrival_directions, parking_info, wifi_name, wifi_password, what3words').eq('listing_id', booking.listing_id).maybeSingle(),
-        admin.from('listing_access_codes').select('code').eq('listing_id', booking.listing_id).maybeSingle(),
+        // Inside the window we fetch the code itself; outside it we fetch only
+        // listing_id, so the page can SAY a way in exists without the value ever
+        // leaving the table. Selecting 'code' here — even to test existence —
+        // would pull the secret into this request; we deliberately don't.
+        codeReady
+            ? admin.from('listing_access_codes').select('code').eq('listing_id', booking.listing_id).maybeSingle()
+            : admin.from('listing_access_codes').select('listing_id').eq('listing_id', booking.listing_id).maybeSingle(),
     ]);
     if (!listing) redirect('/trips');
 
     const l: any = listing;
     const a: any = arrival || {};
-    const doorCode: string | null = (access && (access as any).code) || null;
+    const doorCode: string | null = codeReady ? ((access && (access as any).code) || null) : null;
+    // A code is on file, whether or not we've fetched its value yet.
+    const hasCode = !!access;
     const hasCoords = l.latitude != null && l.longitude != null && !(l.latitude === 0 && l.longitude === 0);
     const addressLines = [l.street_address, [l.postcode, l.location].filter(Boolean).join(', ')].filter(Boolean);
     const addressString = [l.street_address, l.postcode, l.location].filter(Boolean).join(', ');
@@ -78,14 +91,13 @@ export default async function ArrivalPage({ params }: { params: { bookingId: str
         ? 'https://www.google.com/maps/dir/?api=1&destination=' + dest
         : null;
 
-    const until = daysUntil(booking.check_in);
-    const started = new Date(booking.check_out) >= new Date() && until <= 0;
-    const countdown = until > 1 ? `Your stay starts ${dayName(booking.check_in)} · in ${until} days`
-        : until === 1 ? `Your stay starts ${dayName(booking.check_in)} · tomorrow`
-            : started ? 'You’re staying now' : null;
+    const countdown =
+        phase === 'before' ? `Your stay starts ${dayName(booking.check_in)} · in ${daysUntilCheckIn} days`
+            : phase === 'tomorrow' ? `Your stay starts ${dayName(booking.check_in)} · tomorrow`
+                : phase === 'today' ? 'Your stay starts today'
+                    : phase === 'during' ? 'You’re staying now'
+                        : null;
 
-    // The code is sensitive — shown only as arrival nears, not sitting open for weeks.
-    const codeReady = until <= 3;
     const hostName = displayName(host, 'your host');
     const hostPhone = host && (host as any).phone;
 
@@ -148,11 +160,13 @@ export default async function ArrivalPage({ params }: { params: { bookingId: str
                     </div>
                 )}
 
-                {/* Getting in */}
-                {doorCode && (
+                {/* Getting in — shows once a code is on file. The value itself only
+                    lands in the page within the three-day window; before that the
+                    guest gets the reassurance without the secret. */}
+                {(doorCode || hasCode) && (
                     <div className="mt-3 rounded-2xl border border-emerald-200 bg-emerald-50 p-4">
                         <Label icon={<KeyRound className="h-3.5 w-3.5" />} text="Getting in" tone="emerald" />
-                        {codeReady ? (
+                        {codeReady && doorCode ? (
                             <>
                                 <div className="mt-1.5 text-2xl font-semibold tracking-[0.15em] text-stone-900">{doorCode}</div>
                                 <p className="mt-0.5 text-xs text-emerald-700">Shown because your check-in is close</p>
@@ -163,21 +177,18 @@ export default async function ArrivalPage({ params }: { params: { bookingId: str
                     </div>
                 )}
 
-                {/* Check-in / checkout */}
-                <div className="mt-3 grid grid-cols-2 gap-3">
-                    <Section>
-                        <Label icon={<LogIn className="h-3.5 w-3.5" />} text="Check-in" />
-                        <div className="mt-1 text-base font-semibold text-stone-900">
-                            {formatTime(l.check_in_time) ? 'from ' + formatTime(l.check_in_time) : '—'}
-                        </div>
-                        {formatTime(l.check_in_end_time) && <div className="text-xs text-stone-500">until {formatTime(l.check_in_end_time)}</div>}
-                    </Section>
-                    <Section>
-                        <Label icon={<LogOut className="h-3.5 w-3.5" />} text="Checkout" />
-                        <div className="mt-1 text-base font-semibold text-stone-900">
-                            {formatTime(l.check_out_time) ? 'by ' + formatTime(l.check_out_time) : '—'}
-                        </div>
-                    </Section>
+                {/* Check-in / checkout — the same pair as the home and trips
+                    cards, but opening in place here: arrival to the full window
+                    and the self check-in method when the host set them. */}
+                <div className="mt-3">
+                    <CheckInOutTimes
+                        surface="arrival"
+                        mode="expand"
+                        checkInTime={l.check_in_time}
+                        checkOutTime={l.check_out_time}
+                        checkInEndTime={l.check_in_end_time}
+                        checkInMethod={l.check_in_method}
+                    />
                 </div>
 
                 {/* Parking + wifi, only if the host said */}

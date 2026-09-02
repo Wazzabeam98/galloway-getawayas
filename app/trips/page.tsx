@@ -6,10 +6,14 @@ import { useEffect, useState } from 'react';
 import { createClientComponentClient } from '@supabase/auth-helpers-nextjs';
 import Logo from '@/components/base/Logo';
 import LoginModel from '@/components/auth/LoginModel';
-import { MessageCircle, Navigation } from 'lucide-react';
-import { getImageUrl, capitializeFirst, displayName, formatTime } from '@/lib/utils';
+import { MessageCircle, Navigation, MapPin, Grid3x3 } from 'lucide-react';
+import CopyField from '@/components/arrival/CopyField';
+import CheckInOutTimes from '@/components/arrival/CheckInOutTimes';
+import { getImageUrl, capitializeFirst, displayName } from '@/lib/utils';
 import Link from 'next/link';
-import { refundDue } from '@/lib/cancellation';
+import { formatUk } from '@/lib/cancellation';
+import { cancellationPosition } from '@/lib/cancellationView';
+import { upcomingUntilCheckout } from '@/lib/bookingWindows';
 import GuestExperiences from '@/components/GuestExperiences';
 
 interface Booking {
@@ -28,6 +32,19 @@ interface Booking {
     // True when someone else booked it and added this person along.
     guests?: number | null;
     sharedWithMe?: boolean;
+    // Card-safe arrival essentials from /api/trips — address, times, the point
+    // for a map, what3words. Never the door code or wifi password; those are on
+    // the Getting-there page only.
+    arrival?: {
+        addressLines: string[];
+        addressString: string;
+        lat: number | null;
+        lng: number | null;
+        checkInTime: string | null;
+        checkInEndTime: string | null;
+        checkOutTime: string | null;
+        what3words: string | null;
+    } | null;
 }
 
 export default function TripsPage() {
@@ -256,35 +273,36 @@ export default function TripsPage() {
         const isCompleted = b.status === 'confirmed' && new Date(b.check_out) < today;
         const alreadyReviewed = reviewedBookingIds.has(b.id);
 
+        const upcomingConfirmed = upcomingUntilCheckout(b, today);
+        const arr = b.arrival || null;
+        const homeHref = `/homes/${b.listing_id}`;
+        const mapsUrl = arr && (arr.addressString || (arr.lat != null && arr.lng != null))
+            ? 'https://www.google.com/maps/dir/?api=1&destination='
+                + (arr.lat != null && arr.lng != null ? arr.lat + ',' + arr.lng : encodeURIComponent(arr.addressString))
+            : null;
+        const fmtDay = (s: string) => {
+            const d = new Date(s);
+            return isNaN(d.getTime()) ? s : d.toLocaleDateString('en-GB', { weekday: 'short', day: 'numeric', month: 'short' });
+        };
+
         return (
             // Named so the link from the home page card lands on this trip
             // rather than at the top of a list of them.
             <div key={b.id} id={'trip-' + b.id} className="border rounded-2xl p-5 scroll-mt-6">
-                <div className="flex items-center gap-4">
-                    <div className="relative w-16 h-16 rounded-xl overflow-hidden bg-slate-200 flex-shrink-0">
+              <div className="lg:grid lg:grid-cols-3 lg:gap-6">
+                {/* Left — the stay, its arrival details, its actions */}
+                <div className="lg:col-span-2">
+                <div className="flex items-start gap-4">
+                    <Link href={homeHref} className="relative block w-16 h-16 rounded-xl overflow-hidden bg-slate-200 flex-shrink-0">
                         {listing?.images?.[0] && (
                             <Image src={getImageUrl(listing.images[0])} alt={listing.title} fill sizes="64px" className="object-cover" />
                         )}
-                    </div>
-                    <div className="flex-1">
-                        <div className="font-semibold text-slate-900">{listing?.title || 'Listing'}</div>
+                    </Link>
+                    <div className="flex-1 min-w-0">
+                        <Link href={homeHref} className="font-semibold text-slate-900 hover:underline break-words">{listing?.title || 'Listing'}</Link>
                         <div className="text-sm text-slate-600">
-                            Hosted by {capitializeFirst(hostNames[b.host_id] || 'Host')} · {b.check_in} → {b.check_out}
+                            Hosted by {capitializeFirst(hostNames[b.host_id] || 'Host')} · {fmtDay(b.check_in)} – {fmtDay(b.check_out)}
                         </div>
-                        {(formatTime(listing?.check_in_time) || formatTime(listing?.check_out_time)) && (
-                            <div className="text-xs text-slate-500">
-                                {formatTime(listing?.check_in_time)
-                                    ? 'Arrive from ' + formatTime(listing?.check_in_time)
-                                        + (formatTime(listing?.check_in_end_time)
-                                            ? ' until ' + formatTime(listing?.check_in_end_time)
-                                            : '')
-                                    : ''}
-                                {formatTime(listing?.check_in_time) && formatTime(listing?.check_out_time) ? ' · ' : ''}
-                                {formatTime(listing?.check_out_time)
-                                    ? 'Leave by ' + formatTime(listing?.check_out_time)
-                                    : ''}
-                            </div>
-                        )}
                         {b.sharedWithMe ? (
                             <div className="text-sm text-slate-400">
                                 {b.guests ? b.guests + (b.guests === 1 ? ' guest' : ' guests') : 'Shared with you'}
@@ -298,8 +316,48 @@ export default function TripsPage() {
                     </span>
                 </div>
 
+                {/* Arrival essentials, on the card — address, times, and quick
+                    actions. The door code and wifi password are NOT here; they
+                    live on the Getting-there page only. */}
+                {upcomingConfirmed && arr && (
+                    <div className="mt-4 rounded-xl border border-slate-200 bg-slate-50/60 p-3.5">
+                        <div className="flex gap-2">
+                            <MapPin className="mt-0.5 h-4 w-4 flex-none text-slate-400" />
+                            <div className="min-w-0">
+                                {arr.addressLines.length
+                                    ? arr.addressLines.map((line, i) => (
+                                        <div key={i} className={i === 0 ? 'text-sm font-medium text-slate-900' : 'text-sm text-slate-600'}>{line}</div>
+                                    ))
+                                    : <div className="text-sm text-slate-500">Ask your host for the address in the messages.</div>}
+                            </div>
+                        </div>
+                        <div className="mt-3">
+                            <CheckInOutTimes
+                                surface="trips"
+                                mode="link"
+                                href={`/arrival/${b.id}`}
+                                checkInTime={arr.checkInTime}
+                                checkOutTime={arr.checkOutTime}
+                                checkInEndTime={arr.checkInEndTime}
+                            />
+                        </div>
+                        {(mapsUrl || arr.what3words) && (
+                            <div className="mt-2.5 flex flex-wrap items-center gap-2">
+                                {mapsUrl && (
+                                    <a href={mapsUrl} target="_blank" rel="noreferrer" className="inline-flex items-center gap-1.5 rounded-lg border border-slate-300 bg-white px-3 py-1.5 text-xs font-semibold text-slate-700 transition hover:border-slate-400">
+                                        <Navigation className="h-3.5 w-3.5" /> Open in maps
+                                    </a>
+                                )}
+                                {arr.what3words && (
+                                    <span className="inline-flex items-center gap-1"><Grid3x3 className="h-3.5 w-3.5 text-emerald-700" /><CopyField value={arr.what3words} label={arr.what3words} /></span>
+                                )}
+                            </div>
+                        )}
+                    </div>
+                )}
+
                 <div className="mt-3 flex flex-wrap items-center gap-2">
-                    {b.status === 'confirmed' && new Date(b.check_out) >= today && (
+                    {upcomingConfirmed && (
                         <Link href={`/arrival/${b.id}`} className="inline-flex items-center gap-1.5 rounded-lg bg-slate-900 px-3 py-1.5 text-xs font-semibold text-white transition hover:bg-slate-800">
                             <Navigation className="h-3.5 w-3.5" /> Getting there
                         </Link>
@@ -351,20 +409,42 @@ export default function TripsPage() {
                     && b.status !== 'cancelled'
                     && b.status !== 'declined'
                     && new Date(b.check_in) > today && (() => {
-                    const paidSoFar = Number(b.amount_paid || 0) - Number(b.amount_refunded || 0);
-                    // The very function /api/bookings/cancel runs when this
-                    // button is pressed. It used to be the sum written out
-                    // again here, which is how a guest gets shown one figure
-                    // and refunded a different one.
-                    const refund = refundDue({
-                        amountPaid: Number(b.amount_paid || 0),
-                        alreadyRefunded: Number(b.amount_refunded || 0),
-                        cleaningFee: (b as any).cleaning_fee,
+                    // Where this cancellation stands, worked out once, by the
+                    // same function the Cancel screen, the home card and the
+                    // messages pane read — so no two of them can tell the guest
+                    // a different story. `amount` is exactly what
+                    // /api/bookings/cancel will refund when the button is
+                    // pressed; it used to be the sum written out again here,
+                    // which is how a guest gets shown one figure and refunded
+                    // another.
+                    const cancel = cancellationPosition({
                         checkIn: b.check_in,
                         policy: listing?.cancellation_policy,
+                        amountPaid: b.amount_paid,
+                        alreadyRefunded: b.amount_refunded,
+                        cleaningFee: (b as any).cleaning_fee,
+                        on: today,
                     });
+                    const paidSoFar = cancel.paidSoFar;
+                    const refund = cancel.amount;
 
                     if (confirmingId !== b.id) {
+                        // The position, under the Cancel link — a fact, not a
+                        // warning. Free reads in the emerald used for confirmed;
+                        // the paid-refund states are plain text, because red on a
+                        // confirmed booking reads as something having gone wrong
+                        // with the booking rather than a fact about the policy.
+                        const position =
+                            cancel.kind === 'free' && cancel.freeUntil
+                                ? { emerald: true, text: 'Free to cancel until ' + formatUk(cancel.freeUntil) + '.' }
+                                : paidSoFar <= 0
+                                    ? { emerald: false, text: 'You haven’t paid for this stay yet, so there’s nothing to lose by cancelling.' }
+                                    : refund >= paidSoFar
+                                        ? { emerald: false, text: 'You’d get your full £' + paidSoFar.toFixed(2) + ' back if you cancel.' }
+                                        : refund > 0
+                                            ? { emerald: false, text: '£' + refund.toFixed(2) + ' of the £' + paidSoFar.toFixed(2) + ' you’ve paid comes back if you cancel.' }
+                                            : { emerald: false, text: 'These dates are non-refundable — the £' + paidSoFar.toFixed(2) + ' you’ve paid stays with the host if you cancel.' };
+
                         return (
                             <div className="mt-3">
                                 <button
@@ -374,6 +454,9 @@ export default function TripsPage() {
                                 >
                                     Cancel booking
                                 </button>
+                                <p className={'text-xs mt-1 ' + (position.emerald ? 'text-emerald-700' : 'text-slate-500')}>
+                                    {position.text}
+                                </p>
                             </div>
                         );
                     }
@@ -452,13 +535,19 @@ export default function TripsPage() {
                 {isCompleted && alreadyReviewed && (
                     <p className="text-xs text-slate-400 mt-3">You've reviewed this stay.</p>
                 )}
-                {b.status === 'confirmed' && new Date(b.check_out) >= today && (
-                    <GuestExperiences
-                        bookingId={b.id}
-                        checkIn={b.check_in}
-                        checkOut={b.check_out}
-                    />
-                )}
+                </div>
+
+                {/* Right — experiences to book and the ones already booked */}
+                <div className="lg:col-span-1 mt-6 lg:mt-0">
+                    {upcomingConfirmed && (
+                        <GuestExperiences
+                            bookingId={b.id}
+                            checkIn={b.check_in}
+                            checkOut={b.check_out}
+                        />
+                    )}
+                </div>
+              </div>
             </div>
         );
     };

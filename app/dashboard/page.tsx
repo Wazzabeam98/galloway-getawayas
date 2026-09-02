@@ -2,6 +2,7 @@ export const dynamic = "force-dynamic";
 
 import Toast from "@/components/base/Toast";
 import TemplateGapWarning from "@/components/TemplateGapWarning";
+import ArrivalNudge from "@/components/ArrivalNudge";
 import { createServerComponentClient } from "@supabase/auth-helpers-nextjs";
 import { cookies } from "next/headers";
 import { getImageUrl } from "@/lib/utils";
@@ -179,6 +180,9 @@ export default async function Dashboard() {
                 check-in message. The settings grid answers "is anything
                 missing"; this answers "is it about to matter". */}
             <TemplateGapWarning />
+            <div className="max-w-7xl mx-auto px-6 pt-6">
+                <ArrivalNudge userId={(user && user.user && user.user.id) || ''} />
+            </div>
             <div className="max-w-7xl mx-auto px-6 py-10">
                 {/* A host's second revenue line, made visible on the page
                     itself rather than left seven items down a menu. Kept to one

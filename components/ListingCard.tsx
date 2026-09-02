@@ -1,7 +1,6 @@
 import Link from 'next/link';
-import Image from 'next/image';
-import { Home, Star, PawPrint, Bath } from 'lucide-react';
-import { getImageUrl } from '@/lib/utils';
+import { Star, PawPrint, Bath } from 'lucide-react';
+import ListingImage from '@/components/ListingImage';
 import { cardBadges } from '@/lib/listingRules';
 import { publicArea } from '@/lib/places';
 import { hasPublicScore } from '@/lib/reviews';
@@ -50,22 +49,15 @@ export default function ListingCard({ listing }: { listing: CardListing }) {
     return (
         <Link href={`/homes/${listing.id}`} className="group flex flex-col space-y-2">
             <div className="w-full h-64 rounded-2xl overflow-hidden bg-stone-200 relative">
-                {listing.images && listing.images.length > 0 ? (
-                    <Image
-                        src={getImageUrl(listing.images[0])}
-                        alt={`${listing.title}, a self-catering holiday cottage in ${publicArea(listing.location)}`}
-                        fill
-                        // One card per row on a phone, two on a tablet, four on
-                        // a laptop — so the browser asks for a photo the size of
-                        // the card rather than whatever was uploaded.
-                        sizes="(max-width: 640px) 100vw, (max-width: 768px) 50vw, (max-width: 1024px) 33vw, 25vw"
-                        className="object-cover group-hover:scale-105 transition duration-300"
-                    />
-                ) : (
-                    <div className="flex items-center justify-center h-full text-stone-400">
-                        <Home className="w-10 h-10" />
-                    </div>
-                )}
+                <ListingImage
+                    images={listing.images}
+                    alt={`${listing.title}, a self-catering holiday cottage in ${publicArea(listing.location)}`}
+                    // One card per row on a phone, two on a tablet, four on
+                    // a laptop — so the browser asks for a photo the size of
+                    // the card rather than whatever was uploaded.
+                    sizes="(max-width: 640px) 100vw, (max-width: 768px) 50vw, (max-width: 1024px) 33vw, 25vw"
+                    className="object-cover group-hover:scale-105 transition duration-300"
+                />
 
                 {badges.length > 0 && (
                     // Wraps rather than overflowing: two pills and a narrow

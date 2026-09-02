@@ -85,7 +85,7 @@ export default function GuestExperiences(props: {
 
     if (!open) {
         return (
-            <section className="mt-8 rounded-2xl border border-dashed border-slate-300 p-5">
+            <section className="rounded-2xl border border-dashed border-slate-300 p-5">
                 <h3 className="text-lg font-semibold text-slate-900">Experiences, coming soon to your stay</h3>
                 <p className="mt-1 text-sm text-slate-500">
                     Local experiences you’ll be able to book for your dates — a chef, a cake, a sauna, a
@@ -102,7 +102,7 @@ export default function GuestExperiences(props: {
         .filter((g) => g.rows.length > 0);
 
     return (
-        <section className="mt-8">
+        <section>
             {providerCount > 0 && (
                 <Link
                     href={`/experiences/${bookingId}`}

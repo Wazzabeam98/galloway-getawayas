@@ -1,10 +1,12 @@
 import { createServerComponentClient } from '@supabase/auth-helpers-nextjs';
 import { cookies } from 'next/headers';
 import Link from 'next/link';
-import Image from 'next/image';
-import { getImageUrl, formatTime } from '@/lib/utils';
 import { formatUk } from '@/lib/cancellation';
+import { cancellationPosition } from '@/lib/cancellationView';
+import { liveForGuestCard, stayCountdown } from '@/lib/bookingWindows';
 import { publicArea } from '@/lib/places';
+import ListingImage from '@/components/ListingImage';
+import CheckInOutTimes from '@/components/arrival/CheckInOutTimes';
 import { MessageSquare, CalendarDays } from 'lucide-react';
 
 // Shown at the top of the home page to someone with a stay coming up. The
@@ -16,59 +18,66 @@ export default async function UpcomingTrip() {
 
     if (!auth || !auth.session || !auth.session.user) return null;
 
-    const today = new Date();
-    today.setHours(0, 0, 0, 0);
-    const todayKey = today.toISOString().split('T')[0];
+    const now = new Date();
 
+    // Candidates only: confirmed or pending, nearest first. Which one still
+    // counts as a trip is lib/bookingWindows' call, not this card's — it used to
+    // be a `check_out >= todayKey` filter here, where todayKey was local midnight
+    // run through toISOString, and that slips a day under BST: a stay that
+    // checked out yesterday survived the filter and showed as "-3 days to go".
     const { data: bookings } = await supabase
         .from('bookings')
-        .select('id, listing_id, check_in, check_out, status, guests, free_cancel_until')
+        .select('id, listing_id, check_in, check_out, status, guests, amount_paid, amount_refunded, cleaning_fee')
         .eq('guest_id', auth.session.user.id)
         .in('status', ['confirmed', 'pending'])
-        .gte('check_out', todayKey)
         .order('check_in', { ascending: true })
-        .limit(1);
+        .limit(10);
 
-    const booking = bookings && bookings[0];
+    const booking = (bookings || []).find((b) => liveForGuestCard(b, now));
     if (!booking) return null;
 
     const { data: listing } = await supabase
         .from('listings')
-        .select('id, title, location, images, check_in_time, check_in_end_time, check_out_time')
+        .select('id, title, location, images, check_in_time, check_in_end_time, check_out_time, cancellation_policy')
         .eq('id', booking.listing_id)
         .maybeSingle();
 
     if (!listing) return null;
 
-    const checkIn = new Date(booking.check_in);
-    checkIn.setHours(0, 0, 0, 0);
-    const checkOut = new Date(booking.check_out);
-    checkOut.setHours(0, 0, 0, 0);
+    const nights = Math.round(
+        (new Date(String(booking.check_out).slice(0, 10)).getTime()
+            - new Date(String(booking.check_in).slice(0, 10)).getTime()) / 86400000,
+    );
 
-    const days = Math.round((checkIn.getTime() - today.getTime()) / 86400000);
-    const nights = Math.round((checkOut.getTime() - checkIn.getTime()) / 86400000);
+    // The bit that does the work. Everything else on this card is detail. The
+    // phase comes from the shared module, so the copy can read like a person
+    // wrote it and never prints a negative day count.
+    const { phase, daysUntilCheckIn } = stayCountdown(booking, now);
+    const headline =
+        phase === 'during' ? 'You’re there now'
+            : phase === 'today' ? 'Arrives today'
+                : phase === 'tomorrow' ? 'Arrives tomorrow'
+                    : daysUntilCheckIn + ' days to go';
 
-    // Only worth showing while it's still true. Once the window has closed,
-    // saying so on the home page would be a poke rather than a reassurance.
-    const freeUntil = booking.free_cancel_until ? new Date(booking.free_cancel_until) : null;
-    if (freeUntil) freeUntil.setHours(0, 0, 0, 0);
-    const canStillCancelFree = !!freeUntil && freeUntil.getTime() >= today.getTime();
+    // One place works out the cancellation position now — the same one the
+    // Cancel screen and the messages pane read — so the card can never promise a
+    // free cancellation the cancel flow would charge for. Only worth showing
+    // while it is still free; once the window closes, saying so on the home page
+    // would be a poke rather than a reassurance.
+    const cancel = cancellationPosition({
+        checkIn: booking.check_in,
+        policy: listing.cancellation_policy,
+        amountPaid: booking.amount_paid,
+        alreadyRefunded: booking.amount_refunded,
+        cleaningFee: (booking as any).cleaning_fee,
+        on: now,
+    });
+    const freeUntil = cancel.kind === 'free' ? (cancel.freeUntil as Date) : null;
     const freeDaysLeft = freeUntil
-        ? Math.round((freeUntil.getTime() - today.getTime()) / 86400000)
+        ? Math.round((freeUntil.getTime() - new Date(now.getFullYear(), now.getMonth(), now.getDate()).getTime()) / 86400000)
         : 0;
-    const staying = days <= 0 && checkOut.getTime() > today.getTime();
 
-    // The bit that does the work. Everything else on this card is detail.
-    const headline = staying
-        ? 'You\u2019re there now'
-        : days === 0
-            ? 'Today\u2019s the day'
-            : days === 1
-                ? 'Tomorrow'
-                : days + ' days to go';
-
-    const image =
-        listing.images && listing.images.length > 0 ? getImageUrl(listing.images[0]) : null;
+    const homeHref = '/homes/' + booking.listing_id;
 
     return (
         <section className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 pt-14">
@@ -84,17 +93,22 @@ export default async function UpcomingTrip() {
             </div>
 
             <div className="rounded-3xl overflow-hidden border border-stone-200 bg-white flex flex-col md:flex-row">
-                {image && (
-                    <div className="relative md:w-2/5 lg:w-1/3 h-56 md:h-auto md:min-h-[20rem] flex-shrink-0">
-                        <Image
-                            src={image}
-                            alt={listing.title}
-                            fill
-                            sizes="(max-width: 768px) 100vw, 420px"
-                            className="object-cover"
-                        />
-                    </div>
-                )}
+                {/* The listing, shown the way Our Properties shows it and clickable
+                    through to the listing page — photo, title, place. The seed
+                    cottages have no photo, so ListingImage draws a composed empty
+                    state rather than a broken box. */}
+                <Link
+                    href={homeHref}
+                    className="group relative md:w-2/5 lg:w-1/3 h-56 md:h-auto md:min-h-[20rem] flex-shrink-0 block bg-stone-200"
+                >
+                    <ListingImage
+                        images={listing.images}
+                        alt={listing.title}
+                        sizes="(max-width: 768px) 100vw, 420px"
+                        className="object-cover transition duration-300 group-hover:scale-105"
+                        priority
+                    />
+                </Link>
 
                 <div className="p-8 md:p-10 flex-1 flex flex-col justify-center">
                     {/* The countdown is the reason anyone looks at this, so it
@@ -104,7 +118,9 @@ export default async function UpcomingTrip() {
                     </div>
 
                     <div className="mt-6 space-y-1">
-                        <div className="text-lg font-semibold text-stone-900">{listing.title}</div>
+                        <Link href={homeHref} className="text-lg font-semibold text-stone-900 hover:underline">
+                            {listing.title}
+                        </Link>
                         {listing.location && (
                             <div className="text-stone-500">{publicArea(listing.location)}</div>
                         )}
@@ -112,7 +128,7 @@ export default async function UpcomingTrip() {
 
                     <div className="mt-5 pt-5 border-t border-stone-100 text-stone-700">
                         <div className="font-medium">
-                            {formatUk(checkIn)} &rarr; {formatUk(checkOut)}
+                            {formatUk(new Date(booking.check_in))} &rarr; {formatUk(new Date(booking.check_out))}
                         </div>
                         <div className="text-sm text-stone-500 mt-1">
                             {nights} {nights === 1 ? 'night' : 'nights'}
@@ -120,22 +136,19 @@ export default async function UpcomingTrip() {
                                 ? ' · ' + booking.guests + (booking.guests === 1 ? ' guest' : ' guests')
                                 : ''}
                         </div>
-                        {/* Same sentence, and the same formatTime, as the listing
-                            page, /trips, the confirmation page and the email. */}
-                        {(formatTime(listing.check_in_time) || formatTime(listing.check_out_time)) && (
-                            <div className="text-sm text-stone-500 mt-1">
-                                {formatTime(listing.check_in_time)
-                                    ? 'Arrive from ' + formatTime(listing.check_in_time)
-                                        + (formatTime(listing.check_in_end_time)
-                                            ? ' until ' + formatTime(listing.check_in_end_time)
-                                            : '')
-                                        + '. '
-                                    : ''}
-                                {formatTime(listing.check_out_time)
-                                    ? 'Leave by ' + formatTime(listing.check_out_time) + '.'
-                                    : ''}
-                            </div>
-                        )}
+                    </div>
+
+                    {/* The times, as a matched pair, linking through to Getting
+                        there — the same component the trips card and Getting
+                        there itself use. */}
+                    <div className="mt-5">
+                        <CheckInOutTimes
+                            surface="home"
+                            mode="link"
+                            href={'/arrival/' + booking.id}
+                            checkInTime={listing.check_in_time}
+                            checkOutTime={listing.check_out_time}
+                        />
                     </div>
 
                     {/* A link, not a label. Somebody reading this line is
@@ -144,7 +157,7 @@ export default async function UpcomingTrip() {
                         away. It opens the same confirmation panel on /trips
                         that the Cancel booking link there opens — the one
                         place that says what the refund would actually be. */}
-                    {canStillCancelFree && (
+                    {freeUntil && (
                         <div className="mt-5 text-sm">
                             <Link
                                 href={'/trips?cancel=' + booking.id + '#trip-' + booking.id}
@@ -153,7 +166,7 @@ export default async function UpcomingTrip() {
                                     (freeDaysLeft <= 3 ? 'text-amber-700' : 'text-emerald-700')
                                 }
                             >
-                                Free cancellation until {formatUk(freeUntil as Date)}
+                                Free cancellation until {formatUk(freeUntil)}
                             </Link>
                             {freeDaysLeft <= 3 && (
                                 <span className="text-stone-500">
