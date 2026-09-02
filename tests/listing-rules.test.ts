@@ -177,9 +177,15 @@ test('a weekend price already over the ceiling does not lock the host out', () =
     );
 });
 
-test('a name or a street will do, but not the town alone', () => {
-    assert.equal(keys({ ...GOOD, street: '', propertyName: 'Rose Cottage' }).length, 0);
-    assert.ok(keys({ ...GOOD, street: '', propertyName: '', flat: '' }).includes('address'));
+test('the street address is required — a name no longer stands in for it', () => {
+    // Intent changed on purpose: you can't publish accommodation with no street
+    // address. "Rose Cottage" with no street used to satisfy the rule; it no
+    // longer does, because a name is not something a guest can find or a court
+    // can serve. The address still stays hidden from guests until they book.
+    assert.ok(keys({ ...GOOD, street: '', propertyName: 'Rose Cottage' }).includes('address'));
+    assert.ok(keys({ ...GOOD, street: '' }).includes('address'));
+    // A street present is enough for the address rule (postcode is its own rule).
+    assert.equal(keys({ ...GOOD, propertyName: '', flat: '' }).filter((k) => k === 'address').length, 0);
 });
 
 // --- Getting sent to the right page --------------------------------------
