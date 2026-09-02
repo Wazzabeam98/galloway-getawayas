@@ -234,6 +234,50 @@ export async function POST(request: Request) {
             })
             .eq('id', booking.id);
 
+        // THE GUEST'S OWN RECEIPT.
+        //
+        // When the HOST cancels, the guest is emailed. When the guest cancels
+        // themselves they saw a number on screen and nothing else — no record
+        // of a £1,200 stay going back to their card, nothing to point at if the
+        // refund is queried weeks later. So they get the same courtesy. Sent to
+        // their verified account email, not a field they can edit.
+        //
+        // Best-effort and reported: the cancellation and refund above have
+        // already happened, so a failed mail must never undo them.
+        try {
+            if (user.email) {
+                const { data: cx } = await admin
+                    .from('listings')
+                    .select('title')
+                    .eq('id', booking.listing_id)
+                    .maybeSingle();
+                const rawTitle = (cx && cx.title) || 'your stay';
+                const title = escapeHtml(rawTitle);
+                const refundLine = refundedNow > 0
+                    ? 'A refund of <strong>£' + refundedNow.toFixed(2)
+                        + '</strong> is on its way back to your card. It usually takes five to ten days to appear.'
+                    : 'Under the cancellation policy for these dates, no refund was due on what you had already paid.';
+
+                await sendEmail(
+                    user.email,
+                    'Your booking at ' + rawTitle + ' has been cancelled',
+                    emailLayout(
+                        '<p style="margin:0 0 16px;font-size:16px;">You have cancelled your stay at <strong>'
+                            + title + '</strong>. This is your confirmation.</p>'
+                        + '<p style="margin:0 0 16px;font-size:16px;">' + refundLine + '</p>'
+                        + '<p style="margin:0;font-size:16px;">We hope to welcome you to Dumfries &amp; Galloway another time.</p>',
+                        'You’re receiving this because you cancelled a booking with Galloway Getaways.'
+                    )
+                );
+            }
+        } catch (receiptErr: any) {
+            await logError(
+                '[bookings/cancel] the guest cancellation receipt could not be sent',
+                receiptErr,
+                { path: 'bookings/cancel', userId: user.id }
+            );
+        }
+
         // THE DINNER GOES WITH THE STAY.
         //
         // A guest cancelling their cottage was leaving any experience they had
