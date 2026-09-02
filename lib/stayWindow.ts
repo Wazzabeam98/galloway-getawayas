@@ -12,6 +12,7 @@
 // value against a timestamp.
 
 import { dateFromKey, dateKey } from '@/lib/pricing';
+import { bookingReleasesPrivateData } from '@/lib/bookingEntitlement';
 
 // 11am, the same figure the listing page falls back to when a host has not
 // set a check-out time.
@@ -74,9 +75,13 @@ export function contactNumberVisible(
     checkOutTime?: string | null,
     now?: Date
 ): boolean {
-    // Nobody is coming. Whatever the dates say, there is no arrival to help
-    // with and no reason to show the number.
-    if (booking.status === 'cancelled' || booking.status === 'declined') return false;
+    // Only a CONFIRMED stay has a real counterparty whose number is worth
+    // showing. This used to exclude just cancelled/declined, which let an
+    // unpaid pending_payment row (plantable by any account) and a
+    // not-yet-accepted pending request through — both would surface the
+    // counterparty's phone on a stay that is not real. Same rule as the arrival
+    // page, the trips card and profile_private, in one place now.
+    if (!bookingReleasesPrivateData(booking)) return false;
 
     // They have gone home.
     if (stayHasEnded(booking.check_out, checkOutTime, now)) return false;

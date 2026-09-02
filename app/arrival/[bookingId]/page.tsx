@@ -9,6 +9,7 @@ import { cookies } from 'next/headers';
 import { adminClient } from '@/lib/supabaseAdmin';
 import { displayName } from '@/lib/utils';
 import { stayCountdown } from '@/lib/bookingWindows';
+import { bookingReleasesPrivateData } from '@/lib/bookingEntitlement';
 import CopyField from '@/components/arrival/CopyField';
 import CheckInOutTimes from '@/components/arrival/CheckInOutTimes';
 
@@ -47,6 +48,15 @@ export default async function ArrivalPage({ params }: { params: { bookingId: str
         allowed = !!companion;
     }
     if (!allowed) redirect('/trips');
+
+    // Being ON the booking is not enough to see the way in. The booking must be
+    // a real, confirmed stay — an unpaid planted row (which any account can
+    // create for free) or a paid request the host has not yet accepted has no
+    // arrival details to give. This is the same rule profile_private and the
+    // trips card draw; the door-code time window below is a SECOND gate on top,
+    // not a substitute for this one. A non-confirmed booking lands back on
+    // /trips, where it shows its real state.
+    if (!bookingReleasesPrivateData(booking)) redirect('/trips');
 
     // The door code is only shown as arrival nears, so it is only FETCHED then —
     // outside the window it never enters this page's data, let alone the rendered

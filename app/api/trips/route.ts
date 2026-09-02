@@ -2,6 +2,7 @@ import { createRouteHandlerClient } from '@supabase/auth-helpers-nextjs';
 import { createClient } from '@supabase/supabase-js';
 import { cookies } from 'next/headers';
 import { NextResponse } from 'next/server';
+import { bookingReleasesPrivateData } from '@/lib/bookingEntitlement';
 
 export const dynamic = 'force-dynamic';
 
@@ -81,7 +82,16 @@ export async function GET() {
     // grant-less listing_arrival table. The DOOR CODE and WIFI PASSWORD are
     // deliberately NOT here: those stay on the full page only, never on a card a
     // guest might leave open on a train.
-    const listingIds = Array.from(new Set(trips.map((t) => t.listing_id).filter(Boolean)));
+    // Arrival essentials go only to trips that are CONFIRMED. The trips LIST
+    // above still carries every booking whatever its status — a guest must see
+    // their own pending and cancelled bookings — but the address/what3words
+    // attach is private data, so it is gated on the same rule as the arrival
+    // page and profile_private. A planted or unaccepted booking gets a card
+    // with no arrival block. We also read addresses only for confirmed trips,
+    // so an unentitled listing's address never even enters the server's memory.
+    const listingIds = Array.from(new Set(
+        trips.filter(bookingReleasesPrivateData).map((t) => t.listing_id).filter(Boolean)
+    ));
     if (listingIds.length) {
         const [{ data: ls }, { data: la }] = await Promise.all([
             admin.from('listings')
@@ -95,6 +105,11 @@ export async function GET() {
         (la || []).forEach((a: any) => { if (a.what3words) w3wBy[a.listing_id] = a.what3words; });
 
         trips.forEach((t) => {
+            // Guard here too, not only on the fetch list: a guest can hold a
+            // confirmed AND a pending booking on the SAME listing, so infoBy
+            // would carry that listing's address — the pending trip must still
+            // not receive it.
+            if (!bookingReleasesPrivateData(t)) return;
             const l = infoBy[t.listing_id];
             if (!l) return;
             const addressLines = [l.street_address, [l.postcode, l.location].filter(Boolean).join(', ')].filter(Boolean);
