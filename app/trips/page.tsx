@@ -361,6 +361,8 @@ export default function TripsPage() {
                                 surface="trips"
                                 mode="link"
                                 href={`/arrival/${b.id}`}
+                                checkInDate={b.check_in}
+                                checkOutDate={b.check_out}
                                 checkInTime={arr.checkInTime}
                                 checkOutTime={arr.checkOutTime}
                                 checkInEndTime={arr.checkInEndTime}

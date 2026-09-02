@@ -2,27 +2,35 @@
 
 import { useId, useState } from 'react';
 import Link from 'next/link';
-import { DoorOpen, DoorClosed, ChevronRight } from 'lucide-react';
+import { DoorOpen, DoorClosed, ChevronDown } from 'lucide-react';
 import { formatTime } from '@/lib/utils';
 import { checkInMethodTitle, checkInBlurb } from '@/lib/checkInMethods';
 
-// The check-in and checkout times, as a matched pair — one component, three
-// surfaces (home card, trips card, Getting there). Two boxes of equal width and
-// equal weight so neither reads as the more important; a door swinging open for
-// arrival and shut for departure, so the icon carries the meaning before the
-// label is read. They stay side by side at 375px on purpose: "3pm" and "11am"
-// are short enough to pair at a glance, and stacking would lose the pairing.
+// The check-in and checkout of a stay, as a vertical rail — one component, three
+// surfaces (home card, trips card, Getting there).
 //
-// On the home and trips cards the whole pair links through to Getting there
-// (mode="link"). On Getting there itself each box opens in place (mode="expand")
-// — arrival to the full window and the self-check-in method when the host set
-// them, checkout to any departure note. Everything is conditional: no end time,
-// no window; no method, no chip; nothing extra, no toggle — a host who filled in
-// nothing still gets two clean boxes with two times in them.
+// It used to be two large boxes carrying only a time, with the dates stranded up
+// in the card header. That is a lot of height for two short times, and it split
+// the two facts a guest pairs in their head — WHEN they arrive and WHEN they
+// leave — across two parts of the card. This is Airbnb's shape instead: a rail
+// down the left with the day and date at each end of the stay, joined by a line,
+// and a compact row beside each with the door icon, the label and the time. Half
+// the height, and it carries the dates the boxes never did.
+//
+// The door still swings open for arrival and shut for departure, the tint is the
+// site's emerald at a tenth, and the pairing survives 375px because each end is
+// one short line. On the home and trips cards the whole rail links to Getting
+// there (mode="link"); on Getting there itself each end opens in place
+// (mode="expand") — arrival to the full window and the self check-in method,
+// checkout to any departure note.
 
 interface Times {
     checkInTime: string | null | undefined;
     checkOutTime: string | null | undefined;
+    // The calendar days of the stay, so the rail can carry them. 'yyyy-mm-dd'
+    // (or an ISO string); absent just leaves the date line off that end.
+    checkInDate?: string | null;
+    checkOutDate?: string | null;
     checkInEndTime?: string | null;
     checkInMethod?: string | null;
     /** Host's own words for leaving. No column feeds this yet; the box simply
@@ -34,57 +42,52 @@ type Surface = 'home' | 'trips' | 'arrival';
 
 interface Props extends Times {
     surface: Surface;
-    // mode="link": the pair is a single link to `href`.
-    // mode="expand": each box with extra detail opens in place.
+    // mode="link": the whole rail is a single link to `href`.
+    // mode="expand": each end with extra detail opens in place.
     mode: 'link' | 'expand';
     href?: string;
 }
 
-// Per-surface chrome, so the pair sits inside whatever card surrounds it rather
-// than announcing itself as a different component.
-const BOX: Record<Surface, string> = {
-    home: 'rounded-2xl border border-stone-200 bg-white shadow-sm',
+const DAYS = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
+const MONTHS = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
+
+// "Fri 12 Sep" — read on the UTC parts so the day it names never drifts by zone.
+function dateLabel(key: string | null | undefined): string {
+    if (!key) return '';
+    const d = new Date(String(key).slice(0, 10) + 'T00:00:00Z');
+    if (isNaN(d.getTime())) return '';
+    return DAYS[d.getUTCDay()] + ' ' + d.getUTCDate() + ' ' + MONTHS[d.getUTCMonth()];
+}
+
+// Per-surface chrome, so the rail sits inside whatever card surrounds it.
+const CARD: Record<Surface, string> = {
+    home: 'rounded-2xl border border-slate-200 bg-white shadow-sm',
     trips: 'rounded-xl border border-slate-200 bg-white shadow-sm',
-    arrival: 'rounded-2xl bg-white shadow-sm ring-1 ring-stone-200/80',
-};
-const LABEL: Record<Surface, string> = {
-    home: 'text-stone-500',
-    trips: 'text-slate-500',
-    arrival: 'text-stone-500',
-};
-const TIME: Record<Surface, string> = {
-    home: 'text-stone-900',
-    trips: 'text-slate-900',
-    arrival: 'text-stone-900',
+    arrival: 'rounded-2xl bg-white shadow-sm ring-1 ring-slate-200/80',
 };
 
-function BoxInner({
-    icon,
-    label,
-    time,
-    surface,
-}: {
-    icon: any;
-    label: string;
-    time: string;
-    surface: Surface;
-}) {
+// The rail node: the door icon in an emerald circle, with the connecting line
+// dropping from it to the next node (unless it's the last).
+function Node({ icon, last }: { icon: any; last?: boolean }) {
     return (
-        <div className="flex items-start gap-3">
-            {/* The existing emerald, at a tenth, so the tint belongs to the site
-                rather than introducing a colour. */}
+        <div className="relative flex flex-col items-center self-stretch">
             <span className="flex h-9 w-9 flex-none items-center justify-center rounded-full bg-emerald-600/10 text-emerald-700">
                 {icon}
             </span>
+            {!last && <span className="mt-1 w-px flex-1 bg-emerald-600/25" aria-hidden />}
+        </div>
+    );
+}
+
+// The compact row beside a node: label + date on the left, time on the right.
+function RowHead({ label, date, time }: { label: string; date: string; time: string }) {
+    return (
+        <div className="flex flex-1 items-center justify-between gap-3">
             <div className="min-w-0">
-                <div className={`text-[11px] font-semibold uppercase tracking-wide ${LABEL[surface]}`}>
-                    {label}
-                </div>
-                {/* The time is the largest thing in the box. */}
-                <div className={`text-2xl font-semibold leading-tight ${TIME[surface]}`}>
-                    {time}
-                </div>
+                <div className="text-[11px] font-semibold uppercase tracking-wide text-slate-500">{label}</div>
+                {date ? <div className="text-sm font-medium leading-tight text-slate-900">{date}</div> : null}
             </div>
+            <div className="whitespace-nowrap text-lg font-semibold leading-none text-slate-900">{time}</div>
         </div>
     );
 }
@@ -93,128 +96,113 @@ export default function CheckInOutTimes(props: Props) {
     const { surface, mode, href } = props;
     const inTime = formatTime(props.checkInTime) || '—';
     const outTime = formatTime(props.checkOutTime) || '—';
+    const inDate = dateLabel(props.checkInDate);
+    const outDate = dateLabel(props.checkOutDate);
 
     const arrivalIcon = <DoorOpen className="h-5 w-5" strokeWidth={1.75} />;
     const departIcon = <DoorClosed className="h-5 w-5" strokeWidth={1.75} />;
 
-    // ---- link mode: the whole pair goes to Getting there --------------------
+    // ---- link mode: the whole rail goes to Getting there --------------------
     if (mode === 'link') {
         return (
             <Link
                 href={href || '#'}
-                className="group grid grid-cols-2 gap-3 rounded-2xl outline-none focus-visible:ring-2 focus-visible:ring-emerald-600/60 focus-visible:ring-offset-2"
-                aria-label="Arrival and departure times — open Getting there"
+                className={`group block ${CARD[surface]} p-4 outline-none transition hover:shadow-md hover:ring-emerald-600/30 focus-visible:ring-2 focus-visible:ring-emerald-600/60`}
+                aria-label="Arrival and departure — open Getting there"
             >
-                {/* No chevron on one box: the whole pair is a single link, and
-                    a chevron on checkout alone read as though only checkout was
-                    clickable. Both boxes lift together on hover instead, which
-                    is the pair responding as one thing. */}
-                <div className={`${BOX[surface]} p-3.5 transition group-hover:border-emerald-600/40 group-hover:shadow-md`}>
-                    <BoxInner icon={arrivalIcon} label="Check-in" time={inTime} surface={surface} />
+                <div className="flex items-stretch gap-3">
+                    <Node icon={arrivalIcon} />
+                    <div className="flex-1 pb-4">
+                        <RowHead label="Check-in" date={inDate} time={inTime} />
+                    </div>
                 </div>
-                <div className={`${BOX[surface]} p-3.5 transition group-hover:border-emerald-600/40 group-hover:shadow-md`}>
-                    <BoxInner icon={departIcon} label="Checkout" time={outTime} surface={surface} />
+                <div className="flex items-stretch gap-3">
+                    <Node icon={departIcon} last />
+                    <div className="flex-1">
+                        <RowHead label="Checkout" date={outDate} time={outTime} />
+                    </div>
                 </div>
             </Link>
         );
     }
 
-    // ---- expand mode: each box opens in place on Getting there --------------
+    // ---- expand mode: each end opens in place on Getting there --------------
     return (
-        <div className="grid grid-cols-2 gap-3">
-            <ExpandBox
-                surface={surface}
+        <div className={`${CARD[surface]} p-4`}>
+            <ExpandRow
                 icon={arrivalIcon}
                 label="Check-in"
+                date={inDate}
                 time={inTime}
                 detail={<ArrivalDetail checkInTime={props.checkInTime} checkInEndTime={props.checkInEndTime} checkInMethod={props.checkInMethod} />}
                 hasDetail={!!(formatTime(props.checkInEndTime) || props.checkInMethod)}
             />
-            <ExpandBox
-                surface={surface}
+            <ExpandRow
                 icon={departIcon}
                 label="Checkout"
+                date={outDate}
                 time={outTime}
-                detail={props.checkoutDetail ? <p className="whitespace-pre-line text-sm leading-relaxed text-stone-700">{props.checkoutDetail}</p> : null}
+                detail={props.checkoutDetail ? <p className="whitespace-pre-line text-sm leading-relaxed text-slate-700">{props.checkoutDetail}</p> : null}
                 hasDetail={!!props.checkoutDetail}
+                last
             />
         </div>
     );
 }
 
-function ExpandBox({
-    surface,
-    icon,
-    label,
-    time,
-    detail,
-    hasDetail,
+function ExpandRow({
+    icon, label, date, time, detail, hasDetail, last,
 }: {
-    surface: Surface;
-    icon: any;
-    label: string;
-    time: string;
-    detail: any;
-    hasDetail: boolean;
+    icon: any; label: string; date: string; time: string; detail: any; hasDetail: boolean; last?: boolean;
 }) {
     const [open, setOpen] = useState(false);
     const panelId = useId();
 
-    // No extra to show — a plain box, never a dead or disabled-looking control.
-    if (!hasDetail) {
-        return (
-            <div className={`${BOX[surface]} p-3.5`}>
-                <BoxInner icon={icon} label={label} time={time} surface={surface} />
-            </div>
-        );
-    }
+    const head = <RowHead label={label} date={date} time={time} />;
 
     return (
-        <div className={`${BOX[surface]} p-3.5`}>
-            <button
-                type="button"
-                onClick={() => setOpen((o) => !o)}
-                aria-expanded={open}
-                aria-controls={panelId}
-                className="block w-full rounded-lg text-left outline-none focus-visible:ring-2 focus-visible:ring-emerald-600/60"
-            >
-                <div className="flex items-start justify-between gap-2">
-                    <BoxInner icon={icon} label={label} time={time} surface={surface} />
-                    <ChevronRight
-                        className={`mt-1 h-4 w-4 flex-none text-stone-400 transition-transform motion-reduce:transition-none ${open ? 'rotate-90' : ''}`}
-                    />
-                </div>
-            </button>
-            {/* grid-rows 0fr→1fr is a height animation that collapses cleanly to
-                an instant toggle under prefers-reduced-motion. */}
-            <div
-                id={panelId}
-                className="grid transition-[grid-template-rows] duration-200 ease-out motion-reduce:transition-none"
-                style={{ gridTemplateRows: open ? '1fr' : '0fr' }}
-            >
-                <div className="overflow-hidden">
-                    <div className="pt-3">{detail}</div>
-                </div>
+        <div className="flex items-stretch gap-3">
+            <Node icon={icon} last={last} />
+            <div className={`flex-1 ${last ? '' : 'pb-4'}`}>
+                {hasDetail ? (
+                    <>
+                        <button
+                            type="button"
+                            onClick={() => setOpen((o) => !o)}
+                            aria-expanded={open}
+                            aria-controls={panelId}
+                            className="flex w-full items-center gap-2 rounded-lg text-left outline-none focus-visible:ring-2 focus-visible:ring-emerald-600/60"
+                        >
+                            {head}
+                            <ChevronDown className={`h-4 w-4 flex-none text-slate-400 transition-transform motion-reduce:transition-none ${open ? 'rotate-180' : ''}`} />
+                        </button>
+                        <div
+                            id={panelId}
+                            className="grid transition-[grid-template-rows] duration-200 ease-out motion-reduce:transition-none"
+                            style={{ gridTemplateRows: open ? '1fr' : '0fr' }}
+                        >
+                            <div className="overflow-hidden">
+                                <div className="pt-3">{detail}</div>
+                            </div>
+                        </div>
+                    </>
+                ) : head}
             </div>
         </div>
     );
 }
 
 function ArrivalDetail({
-    checkInTime,
-    checkInEndTime,
-    checkInMethod,
+    checkInTime, checkInEndTime, checkInMethod,
 }: {
-    checkInTime: string | null | undefined;
-    checkInEndTime?: string | null;
-    checkInMethod?: string | null;
+    checkInTime: string | null | undefined; checkInEndTime?: string | null; checkInMethod?: string | null;
 }) {
     const from = formatTime(checkInTime);
     const end = formatTime(checkInEndTime);
     return (
         <div className="space-y-2.5">
             {end && (
-                <p className="text-sm leading-relaxed text-stone-700">
+                <p className="text-sm leading-relaxed text-slate-700">
                     Arrive any time from {from || 'check-in'} until {end}.
                 </p>
             )}

@@ -147,6 +147,8 @@ export default async function UpcomingTrip() {
                             surface="home"
                             mode="link"
                             href={'/arrival/' + booking.id}
+                            checkInDate={booking.check_in}
+                            checkOutDate={booking.check_out}
                             checkInTime={listing.check_in_time}
                             checkOutTime={listing.check_out_time}
                         />

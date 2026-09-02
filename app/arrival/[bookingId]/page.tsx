@@ -194,6 +194,8 @@ export default async function ArrivalPage({ params }: { params: { bookingId: str
                     <CheckInOutTimes
                         surface="arrival"
                         mode="expand"
+                        checkInDate={booking.check_in}
+                        checkOutDate={booking.check_out}
                         checkInTime={l.check_in_time}
                         checkOutTime={l.check_out_time}
                         checkInEndTime={l.check_in_end_time}
