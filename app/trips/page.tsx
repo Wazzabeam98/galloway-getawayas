@@ -6,7 +6,8 @@ import { useEffect, useState } from 'react';
 import { createClientComponentClient } from '@supabase/auth-helpers-nextjs';
 import Logo from '@/components/base/Logo';
 import LoginModel from '@/components/auth/LoginModel';
-import { MessageCircle, Navigation } from 'lucide-react';
+import { MessageCircle, Navigation, MapPin, LogIn, LogOut, Grid3x3 } from 'lucide-react';
+import CopyField from '@/components/arrival/CopyField';
 import { getImageUrl, capitializeFirst, displayName, formatTime } from '@/lib/utils';
 import Link from 'next/link';
 import { refundDue } from '@/lib/cancellation';
@@ -28,6 +29,19 @@ interface Booking {
     // True when someone else booked it and added this person along.
     guests?: number | null;
     sharedWithMe?: boolean;
+    // Card-safe arrival essentials from /api/trips — address, times, the point
+    // for a map, what3words. Never the door code or wifi password; those are on
+    // the Getting-there page only.
+    arrival?: {
+        addressLines: string[];
+        addressString: string;
+        lat: number | null;
+        lng: number | null;
+        checkInTime: string | null;
+        checkInEndTime: string | null;
+        checkOutTime: string | null;
+        what3words: string | null;
+    } | null;
 }
 
 export default function TripsPage() {
@@ -256,35 +270,36 @@ export default function TripsPage() {
         const isCompleted = b.status === 'confirmed' && new Date(b.check_out) < today;
         const alreadyReviewed = reviewedBookingIds.has(b.id);
 
+        const upcomingConfirmed = b.status === 'confirmed' && new Date(b.check_out) >= today;
+        const arr = b.arrival || null;
+        const homeHref = `/homes/${b.listing_id}`;
+        const mapsUrl = arr && (arr.addressString || (arr.lat != null && arr.lng != null))
+            ? 'https://www.google.com/maps/dir/?api=1&destination='
+                + (arr.lat != null && arr.lng != null ? arr.lat + ',' + arr.lng : encodeURIComponent(arr.addressString))
+            : null;
+        const fmtDay = (s: string) => {
+            const d = new Date(s);
+            return isNaN(d.getTime()) ? s : d.toLocaleDateString('en-GB', { weekday: 'short', day: 'numeric', month: 'short' });
+        };
+
         return (
             // Named so the link from the home page card lands on this trip
             // rather than at the top of a list of them.
             <div key={b.id} id={'trip-' + b.id} className="border rounded-2xl p-5 scroll-mt-6">
-                <div className="flex items-center gap-4">
-                    <div className="relative w-16 h-16 rounded-xl overflow-hidden bg-slate-200 flex-shrink-0">
+              <div className="lg:grid lg:grid-cols-3 lg:gap-6">
+                {/* Left — the stay, its arrival details, its actions */}
+                <div className="lg:col-span-2">
+                <div className="flex items-start gap-4">
+                    <Link href={homeHref} className="relative block w-16 h-16 rounded-xl overflow-hidden bg-slate-200 flex-shrink-0">
                         {listing?.images?.[0] && (
                             <Image src={getImageUrl(listing.images[0])} alt={listing.title} fill sizes="64px" className="object-cover" />
                         )}
-                    </div>
-                    <div className="flex-1">
-                        <div className="font-semibold text-slate-900">{listing?.title || 'Listing'}</div>
+                    </Link>
+                    <div className="flex-1 min-w-0">
+                        <Link href={homeHref} className="font-semibold text-slate-900 hover:underline break-words">{listing?.title || 'Listing'}</Link>
                         <div className="text-sm text-slate-600">
-                            Hosted by {capitializeFirst(hostNames[b.host_id] || 'Host')} · {b.check_in} → {b.check_out}
+                            Hosted by {capitializeFirst(hostNames[b.host_id] || 'Host')} · {fmtDay(b.check_in)} – {fmtDay(b.check_out)}
                         </div>
-                        {(formatTime(listing?.check_in_time) || formatTime(listing?.check_out_time)) && (
-                            <div className="text-xs text-slate-500">
-                                {formatTime(listing?.check_in_time)
-                                    ? 'Arrive from ' + formatTime(listing?.check_in_time)
-                                        + (formatTime(listing?.check_in_end_time)
-                                            ? ' until ' + formatTime(listing?.check_in_end_time)
-                                            : '')
-                                    : ''}
-                                {formatTime(listing?.check_in_time) && formatTime(listing?.check_out_time) ? ' · ' : ''}
-                                {formatTime(listing?.check_out_time)
-                                    ? 'Leave by ' + formatTime(listing?.check_out_time)
-                                    : ''}
-                            </div>
-                        )}
                         {b.sharedWithMe ? (
                             <div className="text-sm text-slate-400">
                                 {b.guests ? b.guests + (b.guests === 1 ? ' guest' : ' guests') : 'Shared with you'}
@@ -298,8 +313,42 @@ export default function TripsPage() {
                     </span>
                 </div>
 
+                {/* Arrival essentials, on the card — address, times, and quick
+                    actions. The door code and wifi password are NOT here; they
+                    live on the Getting-there page only. */}
+                {upcomingConfirmed && arr && (
+                    <div className="mt-4 rounded-xl border border-slate-200 bg-slate-50/60 p-3.5">
+                        <div className="flex gap-2">
+                            <MapPin className="mt-0.5 h-4 w-4 flex-none text-slate-400" />
+                            <div className="min-w-0">
+                                {arr.addressLines.length
+                                    ? arr.addressLines.map((line, i) => (
+                                        <div key={i} className={i === 0 ? 'text-sm font-medium text-slate-900' : 'text-sm text-slate-600'}>{line}</div>
+                                    ))
+                                    : <div className="text-sm text-slate-500">Ask your host for the address in the messages.</div>}
+                            </div>
+                        </div>
+                        <div className="mt-2 flex flex-wrap items-center gap-x-4 gap-y-1 text-sm text-slate-700">
+                            {formatTime(arr.checkInTime) && <span className="inline-flex items-center gap-1.5"><LogIn className="h-3.5 w-3.5 text-slate-400" /> from {formatTime(arr.checkInTime)}</span>}
+                            {formatTime(arr.checkOutTime) && <span className="inline-flex items-center gap-1.5"><LogOut className="h-3.5 w-3.5 text-slate-400" /> by {formatTime(arr.checkOutTime)}</span>}
+                        </div>
+                        {(mapsUrl || arr.what3words) && (
+                            <div className="mt-2.5 flex flex-wrap items-center gap-2">
+                                {mapsUrl && (
+                                    <a href={mapsUrl} target="_blank" rel="noreferrer" className="inline-flex items-center gap-1.5 rounded-lg border border-slate-300 bg-white px-3 py-1.5 text-xs font-semibold text-slate-700 transition hover:border-slate-400">
+                                        <Navigation className="h-3.5 w-3.5" /> Open in maps
+                                    </a>
+                                )}
+                                {arr.what3words && (
+                                    <span className="inline-flex items-center gap-1"><Grid3x3 className="h-3.5 w-3.5 text-emerald-700" /><CopyField value={arr.what3words} label={arr.what3words} /></span>
+                                )}
+                            </div>
+                        )}
+                    </div>
+                )}
+
                 <div className="mt-3 flex flex-wrap items-center gap-2">
-                    {b.status === 'confirmed' && new Date(b.check_out) >= today && (
+                    {upcomingConfirmed && (
                         <Link href={`/arrival/${b.id}`} className="inline-flex items-center gap-1.5 rounded-lg bg-slate-900 px-3 py-1.5 text-xs font-semibold text-white transition hover:bg-slate-800">
                             <Navigation className="h-3.5 w-3.5" /> Getting there
                         </Link>
@@ -452,13 +501,19 @@ export default function TripsPage() {
                 {isCompleted && alreadyReviewed && (
                     <p className="text-xs text-slate-400 mt-3">You've reviewed this stay.</p>
                 )}
-                {b.status === 'confirmed' && new Date(b.check_out) >= today && (
-                    <GuestExperiences
-                        bookingId={b.id}
-                        checkIn={b.check_in}
-                        checkOut={b.check_out}
-                    />
-                )}
+                </div>
+
+                {/* Right — experiences to book and the ones already booked */}
+                <div className="lg:col-span-1 mt-6 lg:mt-0">
+                    {upcomingConfirmed && (
+                        <GuestExperiences
+                            bookingId={b.id}
+                            checkIn={b.check_in}
+                            checkOut={b.check_out}
+                        />
+                    )}
+                </div>
+              </div>
             </div>
         );
     };

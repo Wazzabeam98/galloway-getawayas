@@ -75,5 +75,41 @@ export async function GET() {
 
     trips.sort((a, b) => (a.check_in < b.check_in ? 1 : -1));
 
+    // Card-safe arrival essentials, per trip — the things a guest wants without
+    // opening the full Getting-there page: the address, the times, the point for
+    // a map, what3words. Read here (service role) because what3words lives in the
+    // grant-less listing_arrival table. The DOOR CODE and WIFI PASSWORD are
+    // deliberately NOT here: those stay on the full page only, never on a card a
+    // guest might leave open on a train.
+    const listingIds = Array.from(new Set(trips.map((t) => t.listing_id).filter(Boolean)));
+    if (listingIds.length) {
+        const [{ data: ls }, { data: la }] = await Promise.all([
+            admin.from('listings')
+                .select('id, street_address, postcode, location, latitude, longitude, check_in_time, check_in_end_time, check_out_time')
+                .in('id', listingIds),
+            admin.from('listing_arrival').select('listing_id, what3words').in('listing_id', listingIds),
+        ]);
+        const infoBy: Record<string, any> = {};
+        (ls || []).forEach((l: any) => { infoBy[l.id] = l; });
+        const w3wBy: Record<string, string> = {};
+        (la || []).forEach((a: any) => { if (a.what3words) w3wBy[a.listing_id] = a.what3words; });
+
+        trips.forEach((t) => {
+            const l = infoBy[t.listing_id];
+            if (!l) return;
+            const addressLines = [l.street_address, [l.postcode, l.location].filter(Boolean).join(', ')].filter(Boolean);
+            t.arrival = {
+                addressLines,
+                addressString: [l.street_address, l.postcode, l.location].filter(Boolean).join(', '),
+                lat: l.latitude,
+                lng: l.longitude,
+                checkInTime: l.check_in_time,
+                checkInEndTime: l.check_in_end_time,
+                checkOutTime: l.check_out_time,
+                what3words: w3wBy[t.listing_id] || null,
+            };
+        });
+    }
+
     return NextResponse.json({ trips: trips });
 }
