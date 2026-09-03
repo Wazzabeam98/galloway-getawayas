@@ -11,6 +11,8 @@ import CopyField from '@/components/arrival/CopyField';
 import CheckInOutTimes from '@/components/arrival/CheckInOutTimes';
 import CancelBookingConfirm from '@/components/CancelBookingConfirm';
 import ExperiencesTeaser from '@/components/ExperiencesTeaser';
+import GuestExperiences from '@/components/GuestExperiences';
+import { publicArea } from '@/lib/places';
 import { getImageUrl, capitializeFirst, displayName } from '@/lib/utils';
 import { checkInMethodTitle, checkInBlurb } from '@/lib/checkInMethods';
 import Link from 'next/link';
@@ -662,6 +664,22 @@ export default function TripsPage() {
                 })()}
                 {isCompleted && alreadyReviewed && (
                     <p className="text-xs text-slate-400 mt-3">You've reviewed this stay.</p>
+                )}
+
+                {/* The guest experiences for this stay — what's booked and a way
+                    to browse more. Per booking, but quiet when the marketplace is
+                    closed (the "coming soon" line is said once at page level) and
+                    quiet when there's nothing to show. */}
+                {upcomingConfirmed && (
+                    <div className="mt-5">
+                        <GuestExperiences
+                            bookingId={b.id}
+                            checkIn={b.check_in}
+                            checkOut={b.check_out}
+                            town={listing?.location ? publicArea(listing.location) : undefined}
+                            hideClosedTeaser
+                        />
+                    </div>
                 )}
             </div>
         );
