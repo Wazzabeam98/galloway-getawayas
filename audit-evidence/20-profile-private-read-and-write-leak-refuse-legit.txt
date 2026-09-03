@@ -1,0 +1,21 @@
+
+=== Proof: arrival/PII entitlement — TEST project yefoqcabuijcowoqewtc ===
+
+  · reset profile_private to pre-fix baseline (no status filter, writes granted)
+--- READ: profile_private counterparty branch ---
+  ✓ baseline (no booking): attacker reads NO host row  [[]]
+  ✓ attacker plants pending_payment booking via own JWT (RLS)  [HTTP 201]
+  ✓ LEAK (unfixed view): attacker reads host stripe/phone/payout  [[{"email":"host-arrentitle-1788382567039@gallowayseed.test","phone":"0777-SECRET-arrentitle-1788382567039","stripe_account_id":"acct_VICTIM_arrentitle-1788382567039","payout_balance_owed":123.45}]]
+  · applied 20260903010000 (counterparty must be confirmed)
+  ✓ REFUSE (fixed view): same planted booking, attacker reads NO host row  [[]]
+  ✓ LEGIT (fixed view): confirmed guest still reads host stripe+phone+payout  [[{"email":"host-arrentitle-1788382567039@gallowayseed.test","phone":"0777-SECRET-arrentitle-1788382567039","stripe_account_id":"acct_VICTIM_arrentitle-1788382567039","payout_balance_owed":123.45}]]
+
+--- WRITE: authenticated inherited UPDATE on profile_private (payout hijack) ---
+  ✓ LEAK (write): confirmed guest UPDATEs host stripe_account_id through view  [HTTP 200, now=acct_ATTACKER_HIJACK_arrentitle-1788382567039]
+  · applied 20260903010100 (browser views are read-only)
+  ✓ REFUSE (write): same UPDATE now blocked, host stripe unchanged  [HTTP 403, still=acct_VICTIM_arrentitle-1788382567039]
+  ✓ LEGIT still reads after write-revoke (SELECT intact)  [rows=1]
+
+--- teardown ---
+  done.
+

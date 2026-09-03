@@ -1,0 +1,43 @@
+End-to-end proof — arrival page + /api/trips — 2026-09-03
+==========================================================
+Method: fresh `next dev` on :3010 pointed at the TEST project, driven with REAL
+app session cookies minted through /auth/callback (sessionCircuitViaApp). A
+victim published listing carries real arrival secrets; an attacker with no
+relationship plants an unpaid pending_payment booking; a legit guest holds a
+confirmed one. Both check in tomorrow, so the arrival page's 3-day door-code
+window is open. The SAME prober (scripts/prove-arrival-routes-e2e.mjs) was run
+against the PRE-FIX code and then the FIXED code; the difference is the proof.
+
+-----------------------------------------------------------------------
+RUN 1 — PRE-FIX code (git HEAD versions of the two route files)
+-----------------------------------------------------------------------
+  [ATTACKER] planted pending_payment booking
+    /api/trips        HTTP 200
+    /api/trips (attacker): EXPOSED w3w,address,postcode
+    /arrival/[planted] HTTP 200
+    /arrival (attacker): EXPOSED doorcode,wifi,w3w,address,postcode      <-- LEAK
+  [LEGIT] confirmed booking
+    /api/trips (legit): EXPOSED w3w,address,postcode
+    /arrival (legit):   EXPOSED doorcode,wifi,w3w,address,postcode
+
+-----------------------------------------------------------------------
+RUN 2 — FIXED code (bookingReleasesPrivateData gate on both surfaces)
+-----------------------------------------------------------------------
+  [ATTACKER] planted pending_payment booking
+    /api/trips        HTTP 200
+    /api/trips (attacker): nothing                                       <-- REFUSED
+    /arrival/[planted] HTTP 307 -> /trips
+    /arrival (attacker): nothing                                         <-- REFUSED
+  [LEGIT] confirmed booking
+    /api/trips        HTTP 200
+    /api/trips (legit): EXPOSED w3w,address,postcode                     <-- LEGIT still works
+    /arrival/[confirmed] HTTP 200
+    /arrival (legit):   EXPOSED doorcode,wifi,w3w,address,postcode       <-- LEGIT still works
+
+CONCLUSION
+  Both app-route surfaces leaked to a free planted booking before the fix, refuse
+  it after, and a genuine confirmed guest still receives every arrival detail.
+  Combined with 20-profile-private-read-and-write-leak-refuse-legit.txt (the SQL
+  view surface, read AND the payout-hijack write) and the unit tests in
+  tests/booking-entitlement.test.ts (contactNumberVisible), all four surfaces of
+  the class are proven leak -> refuse -> legit.
