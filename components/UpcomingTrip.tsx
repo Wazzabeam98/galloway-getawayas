@@ -136,25 +136,23 @@ export default async function UpcomingTrip() {
 
             <div className="rounded-3xl overflow-hidden border border-stone-200 bg-white md:flex">
                 {/* Landscape photo ALONGSIDE the details on desktop, a banner
-                    above them on a phone. A landscape shot fills a half-width
-                    column at the page's full width far better than a banner over a
-                    narrow one; and half the card is wide enough that it never
-                    becomes the tall portrait sliver a wide photo used to be
-                    cropped to. */}
+                    above them on a phone. On desktop it's a slim quarter-width
+                    column so the trip details — the countdown and the rail — carry
+                    the card; the photo is a recognisable strip, not the headline. */}
                 <Link
                     href={homeHref}
-                    className="group relative block aspect-[4/3] w-full overflow-hidden bg-stone-200 md:aspect-auto md:w-1/2 md:min-h-[26rem]"
+                    className="group relative block aspect-[4/3] w-full overflow-hidden bg-stone-200 md:aspect-auto md:w-1/4 md:min-h-[26rem]"
                 >
                     <ListingImage
                         images={listing.images}
                         alt={listing.title}
-                        sizes="(max-width: 768px) 100vw, 50vw"
+                        sizes="(max-width: 768px) 100vw, 25vw"
                         className="object-cover transition duration-300 group-hover:scale-105"
                         priority
                     />
                 </Link>
 
-                <div className="p-8 md:p-10 md:w-1/2 md:flex md:flex-col md:justify-center">
+                <div className="p-8 md:p-10 md:w-3/4 md:flex md:flex-col md:justify-center">
                     {/* The countdown is the reason anyone looks at this, so it
                         gets the room. Everything else is supporting detail. */}
                     <div className="text-4xl md:text-5xl font-bold text-stone-900 tracking-tight">
