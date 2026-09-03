@@ -64,12 +64,20 @@ export default async function TripInvitePage({ params }: { params: { token: stri
                 <p className="text-slate-600 mb-8">
                     {listing?.title || 'The stay'} is in your trips.
                 </p>
-                <Link
-                    href="/trips"
-                    className="px-5 py-3 bg-emerald-700 hover:bg-emerald-800 text-white text-sm font-semibold rounded-xl inline-block"
-                >
-                    See your trips
-                </Link>
+                <div className="flex flex-wrap justify-center gap-2">
+                    <Link
+                        href="/trips"
+                        className="px-5 py-3 bg-emerald-700 hover:bg-emerald-800 text-white text-sm font-semibold rounded-xl inline-block"
+                    >
+                        See your trip
+                    </Link>
+                    <Link
+                        href="/"
+                        className="px-5 py-3 border border-slate-300 hover:border-slate-500 text-slate-800 text-sm font-semibold rounded-xl inline-block"
+                    >
+                        Explore more of Galloway
+                    </Link>
+                </div>
             </div>
         );
     }
@@ -98,10 +106,11 @@ export default async function TripInvitePage({ params }: { params: { token: stri
                 </div>
             </div>
 
-            <div className="border rounded-2xl p-5 mb-6">
+            <div className="border rounded-2xl p-5 mb-4">
                 <div className="text-sm font-semibold text-slate-900 mb-2">What you&apos;ll get</div>
                 <ul className="space-y-1.5 text-sm text-slate-700">
-                    <li>The address and how to get in</li>
+                    <li>The address, and directions to the door</li>
+                    <li>The way in — the door code and the wifi, close to arrival</li>
                     <li>The dates, and anything the host tells you</li>
                     <li>A way to message the host directly</li>
                 </ul>
@@ -112,6 +121,13 @@ export default async function TripInvitePage({ params }: { params: { token: stri
                     <li>Any way to change or cancel the booking</li>
                 </ul>
             </div>
+
+            {/* Up front, because getting the email wrong is the one way to get
+                stuck: the invite is bound to the address it was sent to. */}
+            <p className="mb-6 text-sm text-slate-500">
+                Sign in — or sign up — with the email address this invite was sent to. Any other
+                address won&apos;t match, and you won&apos;t be able to join.
+            </p>
 
             <AcceptTripInvite
                 token={params.token}

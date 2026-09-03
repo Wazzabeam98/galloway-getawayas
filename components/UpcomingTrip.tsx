@@ -12,6 +12,7 @@ import { publicArea } from '@/lib/places';
 import ListingImage from '@/components/ListingImage';
 import CheckInOutTimes from '@/components/arrival/CheckInOutTimes';
 import CopyField from '@/components/arrival/CopyField';
+import TripGroup from '@/components/TripGroup';
 import { MessageSquare, CalendarDays, Navigation, Grid3x3 } from 'lucide-react';
 
 // Shown at the top of the home page to someone with a stay coming up. The
@@ -165,6 +166,20 @@ export default async function UpcomingTrip() {
                                 : ''}
                         </div>
                     </div>
+
+                    {/* The group — the same control the trips card carries, so a
+                        guest who never leaves the home page can still add the
+                        people coming with them. */}
+                    {booking.status !== 'cancelled' && booking.status !== 'declined' && (
+                        <div className="mt-4">
+                            <TripGroup
+                                bookingId={booking.id}
+                                guests={booking.guests}
+                                cottage={listing.title}
+                                when={formatUk(new Date(booking.check_in)) + ' → ' + formatUk(new Date(booking.check_out))}
+                            />
+                        </div>
+                    )}
 
                     {/* The times, as a matched pair — times only, because the
                         date range and the nights already sit right above. The

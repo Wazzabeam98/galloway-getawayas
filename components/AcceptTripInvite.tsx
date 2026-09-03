@@ -1,13 +1,16 @@
 'use client';
 
 import { useState } from 'react';
-import { useRouter } from 'next/navigation';
 import Link from 'next/link';
 import { toast } from 'react-toastify';
+import LoginModel from '@/components/auth/LoginModel';
+import SignupModel from '@/components/auth/SignupModel';
 
 // Someone joining a trip is often doing it on a phone, from an email, having
-// never used the site before — so each of the three cases needs saying
-// plainly rather than the button quietly doing nothing.
+// never used the site before — so each case is said plainly, and crucially the
+// sign-in happens HERE. Password sign-in reloads this page and Google/sign-up
+// carry a return path (see SignupModel/GoogleButton), so a friend lands back on
+// the invite to accept, not on the home page wondering what happened.
 export default function AcceptTripInvite({
     token,
     inviteEmail,
@@ -17,8 +20,8 @@ export default function AcceptTripInvite({
     inviteEmail: string;
     signedInAs: string;
 }) {
-    const router = useRouter();
     const [working, setWorking] = useState(false);
+    const [done, setDone] = useState(false);
 
     const matches =
         signedInAs && signedInAs.toLowerCase() === (inviteEmail || '').toLowerCase();
@@ -34,8 +37,8 @@ export default function AcceptTripInvite({
             const data = await res.json();
 
             if (data && data.ok) {
-                toast.success('You\u2019re on the trip.', { theme: 'colored' });
-                router.push('/trips');
+                toast.success('You’re on the trip.', { theme: 'colored' });
+                setDone(true);
                 return;
             }
 
@@ -48,20 +51,48 @@ export default function AcceptTripInvite({
         setWorking(false);
     };
 
+    // Joined — give them somewhere obvious to go next rather than dropping them
+    // on a bare list. This is the warmest lead the site gets: a friend just
+    // brought them in.
+    if (done) {
+        return (
+            <div className="rounded-2xl border border-emerald-200 bg-emerald-50 p-5">
+                <p className="text-sm font-semibold text-emerald-900">You&apos;re on the trip.</p>
+                <p className="mt-1 text-sm text-emerald-800/90">
+                    It&apos;s in your trips, with the address, the way in and a line to the host.
+                </p>
+                <div className="mt-4 flex flex-wrap gap-2">
+                    <Link href="/trips" className="rounded-xl bg-emerald-700 px-5 py-3 text-sm font-semibold text-white hover:bg-emerald-800">
+                        See your trip
+                    </Link>
+                    <Link href="/" className="rounded-xl border border-emerald-300 bg-white px-5 py-3 text-sm font-semibold text-emerald-800 hover:border-emerald-500">
+                        Explore more of Galloway
+                    </Link>
+                </div>
+            </div>
+        );
+    }
+
     if (!signedInAs) {
         return (
             <div className="rounded-2xl border border-slate-200 bg-slate-50 p-5">
-                <p className="text-sm text-slate-700 mb-4">
-                    Sign in as <strong>{inviteEmail}</strong> to join this trip. If you haven&apos;t
-                    used Galloway Getaways before, create an account with that email address and
-                    come back to this page.
+                <p className="text-sm text-slate-700">
+                    Sign in as <strong>{inviteEmail}</strong> to join this trip.
                 </p>
-                <Link
-                    href="/"
-                    className="px-5 py-3 bg-emerald-700 hover:bg-emerald-800 text-white text-sm font-semibold rounded-xl inline-block"
-                >
-                    Sign in or sign up
-                </Link>
+                <p className="mt-1 text-sm text-slate-500">
+                    New to Galloway Getaways? Create an account with that same email address —
+                    <strong> {inviteEmail}</strong> — or the invitation won&apos;t match and you&apos;ll be
+                    stuck. You&apos;ll come straight back here to join.
+                </p>
+                {/* Rendered here so sign-in happens on the invite: a password
+                    sign-in reloads this page, and sign-up/Google carry a return
+                    path back to it. Both render as menu-item buttons (the site's
+                    auth convention), so a bordered list reads as two clean
+                    options. */}
+                <ul className="mt-4 divide-y divide-slate-100 overflow-hidden rounded-xl border border-slate-200 bg-white text-sm font-semibold text-slate-800">
+                    <LoginModel />
+                    <SignupModel />
+                </ul>
             </div>
         );
     }
@@ -88,7 +119,7 @@ export default function AcceptTripInvite({
             disabled={working}
             className="px-6 py-3 bg-emerald-700 hover:bg-emerald-800 text-white font-semibold rounded-xl disabled:opacity-50"
         >
-            {working ? 'Just a moment…' : 'Accept'}
+            {working ? 'Just a moment…' : 'Accept and join the trip'}
         </button>
     );
 }

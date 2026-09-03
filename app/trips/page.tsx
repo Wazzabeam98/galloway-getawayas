@@ -364,6 +364,18 @@ export default function TripsPage() {
                     </span>
                 </div>
 
+                {/* The group, right under the stay details — stacked avatars and
+                    the seats still to fill, so a group booking reads as one before
+                    anything is opened. Only the booker manages it. */}
+                {!b.sharedWithMe && b.status !== 'cancelled' && b.status !== 'declined' && (
+                    <TripGroup
+                        bookingId={b.id}
+                        guests={b.guests}
+                        cottage={listing?.title}
+                        when={fmtDay(b.check_in) + ' – ' + fmtDay(b.check_out)}
+                    />
+                )}
+
                 {/* The whole approach, on the card. This used to be a thin
                     summary that linked THROUGH to a near-identical "Getting there"
                     card; the two said the same thing twice. Everything non-secret
@@ -515,15 +527,11 @@ export default function TripsPage() {
                     </div>
                 )}
 
-                {b.sharedWithMe ? (
+                {b.sharedWithMe && (
                     <p className="text-xs text-slate-400 mt-3">
                         You were added to this trip. Whoever booked it looks after
                         the payment and any changes.
                     </p>
-                ) : (
-                    b.status !== 'cancelled'
-                        && b.status !== 'declined'
-                        && <TripGroup bookingId={b.id} />
                 )}
 
                 {!b.sharedWithMe && b.payment_status === 'deposit_paid'
