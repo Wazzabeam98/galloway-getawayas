@@ -4,21 +4,24 @@ import { useEffect, useState } from 'react';
 import { createPortal } from 'react-dom';
 import { createClientComponentClient } from '@supabase/auth-helpers-nextjs';
 import { toast } from 'react-toastify';
-import { UserPlus, X, User, Link2, Mail, MessageSquare, Check, RefreshCw, MoreHorizontal } from 'lucide-react';
+import { UserPlus, X, User, Link2, Mail, MessageSquare, Check } from 'lucide-react';
 import { getImageUrl, displayName } from '@/lib/utils';
 
 // The group coming on a trip, the way Airbnb shows it — the whole party the
 // moment the sheet opens, no adding first. You at the top, then one row for
-// every other place on the booking: people who've joined (name + photo), people
-// invited (their state), and the seats nobody has yet as grey "Guest"
-// silhouettes. Every unclaimed seat already carries its own link, minted when
-// the sheet opens (see /api/booking-guests action=ensure-seats), so "Invite
-// guests" at the foot just opens the share tiles.
+// every other place on the booking. A seat nobody has claimed is a grey "Guest"
+// with a Remove on the right and nothing else: copying a link does not make
+// anyone a guest, so an unclaimed seat looks the same whether or not its link
+// has gone out. Only when someone actually accepts does the row become their
+// name and photo.
+//
+// Every unclaimed seat still carries its own single-use link, minted when the
+// sheet opens (see /api/booking-guests action=ensure-seats). "Invite guests" at
+// the foot walks through the seats whose link has not gone out yet — that gate
+// still reads link_sent_at, we just no longer show it on the row.
 //
 // The link is SINGLE-USE: whoever opens an unclaimed link claims that one seat,
-// the link then dies, and it expires when the stay ends. A name or an email is
-// optional and lives on the seat's own row — a bound email keeps the link to
-// that address; a link gone to the wrong place is regenerated from the row.
+// the link then dies, and it expires when the stay ends.
 
 interface Companion {
     id: string;
@@ -38,7 +41,9 @@ interface Profile {
     show_full_name: boolean | null;
 }
 
-type SeatState = 'accepted' | 'invited' | 'unclaimed';
+// Three states are tracked internally — 'unshared' vs 'shared' drives the
+// invite gate at the foot — but the row only cares whether it is 'accepted'.
+type SeatState = 'accepted' | 'shared' | 'unshared';
 
 const PALETTE = ['bg-emerald-600', 'bg-sky-600', 'bg-amber-600', 'bg-rose-600', 'bg-violet-600', 'bg-teal-600'];
 
@@ -106,10 +111,6 @@ export default function TripGroup({
     const [mounted, setMounted] = useState(false);
     const [open, setOpen] = useState(false);
     const [copiedId, setCopiedId] = useState<string | null>(null);
-    const [busyId, setBusyId] = useState<string | null>(null);
-    const [manageId, setManageId] = useState<string | null>(null);
-    const [editName, setEditName] = useState('');
-    const [editEmail, setEditEmail] = useState('');
     const [shareOpen, setShareOpen] = useState(false);
 
     useEffect(() => { setMounted(true); }, []);
@@ -153,21 +154,18 @@ export default function TripGroup({
         await load();
     };
 
+    // Internal only. link_sent_at still separates a seat whose link has gone out
+    // ('shared') from one whose has not ('unshared') so the invite gate below
+    // knows what to hand out next — but neither shows on the row.
     const seatState = (p: Companion): SeatState =>
-        p.status === 'active' ? 'accepted' : p.link_sent_at ? 'invited' : 'unclaimed';
-    const hasIdentity = (p: Companion) => !!(p.name || p.email);
+        p.status === 'active' ? 'accepted' : p.link_sent_at ? 'shared' : 'unshared';
 
     const nameOf = (p: Companion) => {
-        const prof = p.user_id ? profiles[p.user_id] : undefined;
-        const st = seatState(p);
-        return (
-            (st === 'accepted' && prof && displayName(prof, '')) ||
-            p.name || p.email || (st === 'invited' ? 'Invited guest' : 'Guest')
-        );
-    };
-    const subOf = (p: Companion) => {
-        const st = seatState(p);
-        return st === 'accepted' ? 'On the trip' : st === 'invited' ? (p.email || 'Link shared') : 'Link ready to share';
+        if (seatState(p) === 'accepted') {
+            const prof = p.user_id ? profiles[p.user_id] : undefined;
+            return (prof && displayName(prof, '')) || p.name || p.email || 'Guest';
+        }
+        return 'Guest';
     };
 
     const linkFor = (p: Companion) =>
@@ -179,6 +177,8 @@ export default function TripGroup({
         return `Come to ${who}${bit} — I've added you to the trip. Join here: ${linkFor(p)}`;
     };
 
+    // Handing a link out marks the seat 'shared', which is what closes the gate
+    // on it — tracked, never shown.
     const markSent = (p: Companion) => {
         fetch('/api/booking-guests', {
             method: 'POST', headers: { 'Content-Type': 'application/json' },
@@ -211,67 +211,44 @@ export default function TripGroup({
     };
 
     const remove = async (p: Companion) => {
-        const label = nameOf(p);
-        if (!confirm('Take ' + label + ' off this trip? The seat opens up again and their link stops working.')) return;
+        const who = seatState(p) === 'accepted' ? nameOf(p) : 'this guest';
+        if (!confirm('Take ' + who + ' off this trip? The seat opens up again and their link stops working.')) return;
         const res = await fetch('/api/booking-guests', {
             method: 'POST', headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify({ action: 'remove', guestId: p.id }),
         });
         const data = await res.json();
-        if (data && data.ok) { setManageId(null); load(); } else toast.error('Could not do that.', { theme: 'colored' });
-    };
-
-    const regenerate = async (p: Companion) => {
-        if (!confirm('Make a new link for this seat? The old one stops working straight away.')) return;
-        setBusyId(p.id);
-        const res = await fetch('/api/booking-guests', {
-            method: 'POST', headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ action: 'regenerate', guestId: p.id }),
-        });
-        const data = await res.json();
-        setBusyId(null);
-        if (data && data.ok) { await load(); toast.success('New link ready — the old one is dead.', { theme: 'colored' }); }
-        else toast.error('Could not make a new link.', { theme: 'colored' });
-    };
-
-    const openManage = (p: Companion) => {
-        if (manageId === p.id) { setManageId(null); return; }
-        setEditName(p.name || ''); setEditEmail(p.email || ''); setManageId(p.id);
-    };
-    const saveLabel = async (p: Companion) => {
-        const res = await fetch('/api/booking-guests', {
-            method: 'POST', headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ action: 'label', guestId: p.id, name: editName.trim(), email: editEmail.trim() }),
-        });
-        const data = await res.json();
-        if (data && data.ok) { setManageId(null); await load(); toast.success('Saved.', { theme: 'colored' }); }
-        else toast.error((data && data.error) || 'Could not save.', { theme: 'colored' });
+        if (data && data.ok) { load(); } else toast.error('Could not do that.', { theme: 'colored' });
     };
 
     if (loading && !open) return null;
 
-    // Card summary numbers.
+    // Card summary numbers. A shared link does not count as anyone joining, so
+    // everyone who has not accepted is simply a seat "to fill".
     const going = people.filter((p) => seatState(p) === 'accepted').length;
-    const invitedN = people.filter((p) => seatState(p) === 'invited').length;
-    const openN = people.filter((p) => seatState(p) === 'unclaimed').length;
+    const toFill = people.length - going;
+    // Seats whose link has not gone out yet — what "Invite guests" hands out next.
+    const unsharedN = people.filter((p) => seatState(p) === 'unshared').length;
 
     // Before the sheet has ever been opened the seats aren't rows yet, so the
     // card still fills the stack from the party size.
     const party = guests && guests > 0 ? guests : null;
     const emptySeats = party ? Math.max(0, party - 1 - people.length) : 0;
     const nothingYet = people.length === 0 && emptySeats === 0;
+    const openLabelN = emptySeats || toFill;
 
-    const nextOpen = people.find((p) => seatState(p) === 'unclaimed') || null;
+    const nextUnshared = people.find((p) => seatState(p) === 'unshared') || null;
 
     const Avatar = ({ p, size = 'md' }: { p: Companion; size?: 'sm' | 'md' }) => {
-        const st = seatState(p);
+        // Only an accepted seat shows a real identity. Everything else is a grey
+        // silhouette, shared link or not.
+        if (seatState(p) !== 'accepted') return <EmptySeat size={size} />;
         const prof = p.user_id ? profiles[p.user_id] : undefined;
-        const photo = st === 'accepted' ? avatarSrc(prof && prof.avatar_url) : null;
+        const photo = avatarSrc(prof && prof.avatar_url);
         const dim = size === 'sm' ? 'h-9 w-9 text-xs' : 'h-10 w-10 text-sm';
-        if (st === 'unclaimed' || (st === 'invited' && !hasIdentity(p))) return <EmptySeat size={size} />;
         if (photo) return <img src={photo} alt="" className={'flex-none rounded-full object-cover ring-2 ring-white ' + dim} />;
         return (
-            <div className={'flex flex-none items-center justify-center rounded-full font-semibold text-white ring-2 ring-white ' + dim + ' ' + colorFor(p.email || nameOf(p)) + (st === 'accepted' ? '' : ' opacity-60')}>
+            <div className={'flex flex-none items-center justify-center rounded-full font-semibold text-white ring-2 ring-white ' + dim + ' ' + colorFor(p.email || nameOf(p))}>
                 {initials(nameOf(p))}
             </div>
         );
@@ -320,11 +297,9 @@ export default function TripGroup({
                     <div className="text-sm font-medium text-slate-900">
                         {nothingYet
                             ? 'Add the people coming with you'
-                            : going + invitedN === 0
-                                ? ((emptySeats || openN) === 1 ? '1 spot to fill' : (emptySeats || openN) + ' spots to fill')
-                                : 'You' + (going ? ' and ' + going + ' going' : '')
-                                    + (invitedN ? ' · ' + invitedN + ' invited' : '')
-                                    + ((emptySeats || openN) ? ' · ' + (emptySeats || openN) + ' to fill' : '')}
+                            : going === 0
+                                ? (openLabelN === 1 ? '1 spot to fill' : openLabelN + ' spots to fill')
+                                : 'You and ' + going + ' going' + (openLabelN ? ' · ' + openLabelN + ' to fill' : '')}
                     </div>
                     <div className="text-xs text-slate-500 group-hover:text-slate-700">
                         {nothingYet ? 'Share a link — no email needed.' : 'Manage the group'}
@@ -359,52 +334,19 @@ export default function TripGroup({
                                 <div className="py-6 text-center text-sm text-slate-400">Setting up the seats…</div>
                             )}
 
-                            {/* One row per other seat */}
-                            {people.map((p) => {
-                                const st = seatState(p);
-                                const canManage = st !== 'accepted';
-                                return (
-                                    <div key={p.id} className="rounded-xl border border-slate-200 p-3">
-                                        <div className="flex items-center gap-3">
-                                            <Avatar p={p} />
-                                            <div className="min-w-0 flex-1">
-                                                <div className="truncate text-sm font-medium text-slate-900">{nameOf(p)}</div>
-                                                <div className="truncate text-xs text-slate-400">{subOf(p)}</div>
-                                            </div>
-                                            {st === 'accepted' ? (
-                                                <span className="flex flex-none items-center gap-1 rounded-full bg-emerald-50 px-2.5 py-1 text-[11px] font-semibold text-emerald-700"><Check className="h-3 w-3" /> Accepted</span>
-                                            ) : st === 'invited' ? (
-                                                <span className="flex-none rounded-full bg-amber-50 px-2.5 py-1 text-[11px] font-semibold text-amber-700">Invited</span>
-                                            ) : (
-                                                <span className="flex-none rounded-full bg-slate-100 px-2.5 py-1 text-[11px] font-semibold text-slate-500">Open</span>
-                                            )}
-                                            {canManage && (
-                                                <button type="button" onClick={() => openManage(p)} title="Name, email or a new link" className="flex-none text-slate-300 hover:text-slate-700"><MoreHorizontal className="h-4 w-4" /></button>
-                                            )}
-                                            {st !== 'unclaimed' && (
-                                                <button type="button" onClick={() => remove(p)} title="Take them off this trip" className="flex-none text-slate-300 hover:text-red-600"><X className="h-4 w-4" /></button>
-                                            )}
-                                        </div>
-
-                                        {canManage && manageId === p.id && (
-                                            <div className="mt-3 space-y-2 border-t border-slate-100 pt-3">
-                                                <input type="text" value={editName} onChange={(e) => setEditName(e.target.value)} placeholder="Name this seat (optional)" className="w-full rounded-lg border p-2 text-sm" />
-                                                <input type="email" value={editEmail} onChange={(e) => setEditEmail(e.target.value)} placeholder="Bind to an email (optional)" className="w-full rounded-lg border p-2 text-sm" />
-                                                <div className="flex items-center gap-2">
-                                                    <button type="button" onClick={() => saveLabel(p)} className="rounded-lg bg-slate-900 px-3 py-1.5 text-xs font-semibold text-white hover:bg-slate-700">Save</button>
-                                                    <button type="button" onClick={() => copyLink(p)} className="inline-flex items-center gap-1.5 rounded-lg border border-slate-300 px-3 py-1.5 text-xs font-semibold text-slate-700 hover:border-slate-400">
-                                                        {copiedId === p.id ? <Check className="h-3.5 w-3.5 text-emerald-600" /> : <Link2 className="h-3.5 w-3.5" />} {copiedId === p.id ? 'Copied' : 'Copy link'}
-                                                    </button>
-                                                    <button type="button" onClick={() => regenerate(p)} disabled={busyId === p.id} className="ml-auto inline-flex items-center gap-1.5 text-[11px] font-medium text-slate-400 hover:text-slate-700 disabled:opacity-50">
-                                                        <RefreshCw className="h-3 w-3" /> {busyId === p.id ? 'Working…' : 'New link'}
-                                                    </button>
-                                                </div>
-                                                <p className="text-[11px] text-slate-400">A bound email means only that address can claim this seat. Leave it blank for a link anyone you send it to can use.</p>
-                                            </div>
-                                        )}
+                            {/* One row per other seat. A guest is a plain grey seat with
+                                Remove and nothing else; only an accepted seat carries a
+                                name and photo. Rows are not clickable — like Airbnb,
+                                tapping a guest does nothing. */}
+                            {people.map((p) => (
+                                <div key={p.id} className="flex items-center gap-3 rounded-xl border border-slate-200 p-3">
+                                    <Avatar p={p} />
+                                    <div className="min-w-0 flex-1">
+                                        <div className="truncate text-sm font-medium text-slate-900">{nameOf(p)}</div>
                                     </div>
-                                );
-                            })}
+                                    <button type="button" onClick={() => remove(p)} className="flex-none text-xs font-medium text-slate-400 hover:text-red-600">Remove</button>
+                                </div>
+                            ))}
 
                             {/* What a companion sees — plain, because it's expected */}
                             <div className="rounded-xl bg-slate-50 p-3.5">
@@ -417,25 +359,26 @@ export default function TripGroup({
                             </div>
                         </div>
 
-                        {/* Invite guests — the one share entry, at the foot */}
+                        {/* Invite guests — the one share entry, at the foot. It walks
+                            through the seats whose link has not gone out yet. */}
                         <div className="border-t border-slate-100 p-4">
-                            {shareOpen && nextOpen && (
+                            {shareOpen && nextUnshared && (
                                 <div className="mb-3">
                                     <div className="mb-2 text-xs font-medium text-slate-500">
-                                        Sharing a link for an open seat{openN > 1 ? ' · ' + openN + ' open' : ''}
+                                        Sharing a link for an open seat{unsharedN > 1 ? ' · ' + unsharedN + ' open' : ''}
                                     </div>
-                                    <ShareTiles p={nextOpen} />
+                                    <ShareTiles p={nextUnshared} />
                                 </div>
                             )}
-                            {shareOpen && !nextOpen && (
-                                <p className="mb-3 text-xs text-slate-500">Every seat has been invited. Re-share or make a new link from a seat above.</p>
+                            {shareOpen && !nextUnshared && (
+                                <p className="mb-3 text-xs text-slate-500">You've shared a link for every open seat.</p>
                             )}
                             <div className="flex items-center justify-between">
-                                <span className="text-xs text-slate-400">{openN ? (openN === 1 ? '1 open seat' : openN + ' open seats') : 'No open seats'}</span>
+                                <span className="text-xs text-slate-400">{toFill ? (toFill === 1 ? '1 seat to fill' : toFill + ' seats to fill') : 'Everyone\'s in'}</span>
                                 <button
                                     type="button"
                                     onClick={() => setShareOpen((v) => !v)}
-                                    disabled={!nextOpen && !shareOpen}
+                                    disabled={!nextUnshared && !shareOpen}
                                     className="inline-flex items-center gap-2 rounded-xl bg-emerald-700 px-4 py-2.5 text-sm font-semibold text-white transition hover:bg-emerald-800 disabled:opacity-50"
                                 >
                                     <UserPlus className="h-4 w-4" /> {shareOpen ? 'Done' : 'Invite guests'}
