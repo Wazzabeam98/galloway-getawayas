@@ -76,33 +76,55 @@ export async function GET() {
 
     trips.sort((a, b) => (a.check_in < b.check_in ? 1 : -1));
 
-    // Card-safe arrival essentials, per trip — the things a guest wants without
-    // opening the full Getting-there page: the address, the times, the point for
-    // a map, what3words. Read here (service role) because what3words lives in the
-    // grant-less listing_arrival table. The DOOR CODE and WIFI PASSWORD are
-    // deliberately NOT here: those stay on the full page only, never on a card a
-    // guest might leave open on a train.
-    // Arrival essentials go only to trips that are CONFIRMED. The trips LIST
-    // above still carries every booking whatever its status — a guest must see
-    // their own pending and cancelled bookings — but the address/what3words
-    // attach is private data, so it is gated on the same rule as the arrival
-    // page and profile_private. A planted or unaccepted booking gets a card
-    // with no arrival block. We also read addresses only for confirmed trips,
-    // so an unentitled listing's address never even enters the server's memory.
-    const listingIds = Array.from(new Set(
-        trips.filter(bookingReleasesPrivateData).map((t) => t.listing_id).filter(Boolean)
-    ));
+    // Card-safe arrival detail, per trip — everything the Getting-there page used
+    // to hold EXCEPT the two secrets: the address and a map point, the times,
+    // what3words, the host's "last bit" directions, parking, how you get in (the
+    // method, not the code), and the host's phone for the contact block. Read here
+    // (service role) because the approach fields live in the grant-less
+    // listing_arrival table.
+    //
+    // The DOOR CODE and the WIFI PASSWORD never leave the server here. We send
+    // only two booleans — hasCode, hasWifi — so the card can SAY there is a way in
+    // to reveal and link through, while the secrets themselves stay on the
+    // Getting-there page, revealed only in its own window. hasCode is read from
+    // listing_access_codes selecting listing_id ALONE, never `code`; hasWifi is
+    // derived from the wifi NAME, so the password is never even pulled.
+    //
+    // All of this is ENTITLEMENT-GATED (PR #99): the trips LIST carries every
+    // booking whatever its status — a guest must see their own pending and
+    // cancelled bookings — but the arrival detail is private data, so it attaches
+    // only to trips that are CONFIRMED, on the same bookingReleasesPrivateData
+    // rule as the arrival page and profile_private. We read listings and host
+    // phones only for entitled trips, so an unentitled stay's address or host
+    // number never even enters the server's memory. The per-trip guard below is a
+    // second layer, for a guest holding a confirmed AND a pending stay on one
+    // listing.
+    const entitled = trips.filter(bookingReleasesPrivateData);
+    const listingIds = Array.from(new Set(entitled.map((t) => t.listing_id).filter(Boolean)));
+    const hostIds = Array.from(new Set(entitled.map((t) => t.host_id).filter(Boolean)));
     if (listingIds.length) {
-        const [{ data: ls }, { data: la }] = await Promise.all([
+        const [{ data: ls }, { data: la }, { data: codes }, { data: hosts }] = await Promise.all([
             admin.from('listings')
-                .select('id, street_address, postcode, location, latitude, longitude, check_in_time, check_in_end_time, check_out_time')
+                .select('id, street_address, postcode, location, latitude, longitude, check_in_time, check_in_end_time, check_out_time, check_in_method')
                 .in('id', listingIds),
-            admin.from('listing_arrival').select('listing_id, what3words').in('listing_id', listingIds),
+            // wifi_name (not the password) tells us whether there is wifi to show;
+            // arrival_directions and parking_info are the host's own words and are
+            // not secret — they belong on the card now.
+            admin.from('listing_arrival').select('listing_id, what3words, arrival_directions, parking_info, wifi_name').in('listing_id', listingIds),
+            // Existence only — selecting the code would pull the secret into this
+            // request, which is exactly what this route promises never to do.
+            admin.from('listing_access_codes').select('listing_id').in('listing_id', listingIds),
+            hostIds.length
+                ? admin.from('profiles').select('id, phone').in('id', hostIds)
+                : Promise.resolve({ data: [] as any[] }),
         ]);
         const infoBy: Record<string, any> = {};
         (ls || []).forEach((l: any) => { infoBy[l.id] = l; });
-        const w3wBy: Record<string, string> = {};
-        (la || []).forEach((a: any) => { if (a.what3words) w3wBy[a.listing_id] = a.what3words; });
+        const arrBy: Record<string, any> = {};
+        (la || []).forEach((a: any) => { arrBy[a.listing_id] = a; });
+        const hasCodeFor = new Set((codes || []).map((c: any) => c.listing_id));
+        const phoneBy: Record<string, string | null> = {};
+        (hosts || []).forEach((h: any) => { phoneBy[h.id] = h.phone || null; });
 
         trips.forEach((t) => {
             // Guard here too, not only on the fetch list: a guest can hold a
@@ -112,6 +134,7 @@ export async function GET() {
             if (!bookingReleasesPrivateData(t)) return;
             const l = infoBy[t.listing_id];
             if (!l) return;
+            const av = arrBy[t.listing_id] || {};
             const addressLines = [l.street_address, [l.postcode, l.location].filter(Boolean).join(', ')].filter(Boolean);
             t.arrival = {
                 addressLines,
@@ -121,7 +144,14 @@ export async function GET() {
                 checkInTime: l.check_in_time,
                 checkInEndTime: l.check_in_end_time,
                 checkOutTime: l.check_out_time,
-                what3words: w3wBy[t.listing_id] || null,
+                what3words: av.what3words || null,
+                arrivalDirections: av.arrival_directions || null,
+                parking: av.parking_info || null,
+                checkInMethod: l.check_in_method || null,
+                // Booleans only — the values never reach the card.
+                hasCode: hasCodeFor.has(t.listing_id),
+                hasWifi: !!av.wifi_name,
+                hostPhone: phoneBy[t.host_id] || null,
             };
         });
     }

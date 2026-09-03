@@ -44,7 +44,10 @@ interface Props extends Times {
     surface: Surface;
     // mode="link": the whole rail is a single link to `href`.
     // mode="expand": each end with extra detail opens in place.
-    mode: 'link' | 'expand';
+    // mode="static": the rail just shows the two ends — no link, no toggle. The
+    //   trips card uses this now that everything the rail used to link THROUGH to
+    //   lives on the card itself, so the times are a fact to read, not a door.
+    mode: 'link' | 'expand' | 'static';
     href?: string;
 }
 
@@ -79,15 +82,20 @@ function Node({ icon, last }: { icon: any; last?: boolean }) {
     );
 }
 
-// The compact row beside a node: label + date on the left, time on the right.
+// The compact row beside a node. The label sits on top; the date and time read
+// as ONE line under it — "Fri 12 Sep · 3pm" — rather than the date hard left and
+// the time hard right. On a wide card those two ends stranded the pairing across
+// the whole width, so the eye had to travel from a date to its time; kept
+// together, the fact a guest holds in their head (arrive Friday at 3) reads at a
+// glance, and it still fits one line at 375px.
 function RowHead({ label, date, time }: { label: string; date: string; time: string }) {
     return (
-        <div className="flex flex-1 items-center justify-between gap-3">
-            <div className="min-w-0">
-                <div className="text-[11px] font-semibold uppercase tracking-wide text-slate-500">{label}</div>
-                {date ? <div className="text-sm font-medium leading-tight text-slate-900">{date}</div> : null}
+        <div className="min-w-0 flex-1">
+            <div className="text-[11px] font-semibold uppercase tracking-wide text-slate-500">{label}</div>
+            <div className="leading-tight text-slate-900">
+                {date ? <span className="text-sm text-slate-600">{date} · </span> : null}
+                <span className="text-base font-semibold">{time}</span>
             </div>
-            <div className="whitespace-nowrap text-lg font-semibold leading-none text-slate-900">{time}</div>
         </div>
     );
 }
@@ -123,6 +131,22 @@ export default function CheckInOutTimes(props: Props) {
                     </div>
                 </div>
             </Link>
+        );
+    }
+
+    // ---- static mode: the rail just shows the two ends, no link, no toggle --
+    if (mode === 'static') {
+        return (
+            <div className={`${CARD[surface]} p-4`}>
+                <div className="flex items-stretch gap-3">
+                    <Node icon={arrivalIcon} />
+                    <div className="flex-1 pb-4"><RowHead label="Check-in" date={inDate} time={inTime} /></div>
+                </div>
+                <div className="flex items-stretch gap-3">
+                    <Node icon={departIcon} last />
+                    <div className="flex-1"><RowHead label="Checkout" date={outDate} time={outTime} /></div>
+                </div>
+            </div>
         );
     }
 
