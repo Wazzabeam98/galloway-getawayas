@@ -3,6 +3,7 @@ import { createClient } from '@supabase/supabase-js';
 import { cookies } from 'next/headers';
 import { NextResponse } from 'next/server';
 import { bookingReleasesPrivateData } from '@/lib/bookingEntitlement';
+import { directionsUrl } from '@/lib/directions';
 
 export const dynamic = 'force-dynamic';
 
@@ -148,6 +149,13 @@ export async function GET() {
                 arrivalDirections: av.arrival_directions || null,
                 parking: av.parking_info || null,
                 checkInMethod: l.check_in_method || null,
+                // Built server-side by the shared rule: a pin, or a street
+                // address — never the town alone. null means no safe directions,
+                // so the card shows no Get-directions button.
+                directionsUrl: directionsUrl({
+                    latitude: l.latitude, longitude: l.longitude,
+                    streetAddress: l.street_address, postcode: l.postcode, location: l.location,
+                }),
                 // Booleans only — the values never reach the card.
                 hasCode: hasCodeFor.has(t.listing_id),
                 hasWifi: !!av.wifi_name,

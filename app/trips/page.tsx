@@ -50,6 +50,7 @@ interface Booking {
         arrivalDirections: string | null;
         parking: string | null;
         checkInMethod: string | null;
+        directionsUrl: string | null;
         hasCode: boolean;
         hasWifi: boolean;
         hostPhone: string | null;
@@ -294,15 +295,12 @@ export default function TripsPage() {
         const homeHref = `/homes/${b.listing_id}`;
         const hostName = capitializeFirst(hostNames[b.host_id] || 'your host');
 
-        // Directions point at the REAL pin, or the full address for the maps app
-        // to geocode — never a partial address, which with only a town would send
-        // the guest to the town centre. This is the same rule the Getting-there
-        // page used; it moves here with the button.
+        // Directions are built server-side by the shared rule (lib/directions):
+        // a real pin, or a STREET address — never the town alone, which would
+        // drive the guest to the town centre. null means no safe destination, so
+        // no button. hasCoords is only for the "no pin saved" note below.
         const hasCoords = !!arr && arr.lat != null && arr.lng != null && !(arr.lat === 0 && arr.lng === 0);
-        const directionsUrl = arr && (arr.addressString || hasCoords)
-            ? 'https://www.google.com/maps/dir/?api=1&destination='
-                + (hasCoords ? arr.lat + ',' + arr.lng : encodeURIComponent(arr.addressString))
-            : null;
+        const directionsUrl = arr?.directionsUrl || null;
         // A quiet phase chip, only for the moments that are actually worth a
         // word: they're on the stay, or it's today/tomorrow. Not a big
         // countdown — that's the home card's job as a single hero; on a LIST of
@@ -395,7 +393,7 @@ export default function TripsPage() {
                                     <CopyField value={arr.what3words} label="Copy" />
                                 </div>
                             )}
-                            {!hasCoords && arr.addressString && (
+                            {!hasCoords && directionsUrl && (
                                 <p className="mt-2 pl-6 text-xs text-slate-400">No pin saved for this cottage yet — directions use the address.</p>
                             )}
                             {(directionsUrl || arr.addressString) && (

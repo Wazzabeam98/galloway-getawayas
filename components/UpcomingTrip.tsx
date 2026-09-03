@@ -7,6 +7,7 @@ import { londonDayKey, daysBetweenKeys, ukLongDate } from '@/lib/dayKey';
 import { liveForGuestCard, stayCountdown } from '@/lib/bookingWindows';
 import { bookingReleasesPrivateData } from '@/lib/bookingEntitlement';
 import { adminClient } from '@/lib/supabaseAdmin';
+import { directionsUrl as buildDirectionsUrl } from '@/lib/directions';
 import { publicArea } from '@/lib/places';
 import ListingImage from '@/components/ListingImage';
 import CheckInOutTimes from '@/components/arrival/CheckInOutTimes';
@@ -64,12 +65,11 @@ export default async function UpcomingTrip() {
         ]);
         const p: any = place || {};
         what3words = (arr as any)?.what3words || null;
-        const hasCoords = p.latitude != null && p.longitude != null && !(p.latitude === 0 && p.longitude === 0);
-        const addressString = [p.street_address, p.postcode, p.location].filter(Boolean).join(', ');
-        if (hasCoords || addressString) {
-            const dest = hasCoords ? p.latitude + ',' + p.longitude : encodeURIComponent(addressString);
-            directionsUrl = 'https://www.google.com/maps/dir/?api=1&destination=' + dest;
-        }
+        // Shared rule: a pin, or a STREET address — never the town alone.
+        directionsUrl = buildDirectionsUrl({
+            latitude: p.latitude, longitude: p.longitude,
+            streetAddress: p.street_address, postcode: p.postcode, location: p.location,
+        });
     }
 
     const nights = Math.round(
