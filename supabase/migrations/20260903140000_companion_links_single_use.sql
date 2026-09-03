@@ -18,3 +18,10 @@ ALTER TABLE "public"."booking_guests" ADD COLUMN IF NOT EXISTS "link_sent_at" ti
 -- invite_token, user_id, accepted_at) and the booking's check_out date, so no
 -- further schema is needed. The unique-person index already excludes NULL
 -- emails, so multiple emailless seats on one booking are allowed.
+--
+-- No view and no column-level revoke here, so the two grant/PostgREST gotchas
+-- (a column revoke is a no-op under a table grant; a new view 404s until a
+-- reload) don't apply. The reload below is belt-and-braces so the nullable
+-- change and the new column show on the REST surface the moment this lands on
+-- production, rather than waiting on the DDL watcher.
+notify pgrst, 'reload schema';
