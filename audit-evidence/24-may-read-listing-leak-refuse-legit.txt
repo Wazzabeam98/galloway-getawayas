@@ -1,0 +1,14 @@
+
+=== Proof: may_read_listing — TEST yefoqcabuijcowoqewtc ===
+
+--- baseline (original may_read_listing) ---
+  ✓ LEAK: attacker with planted booking reads the DRAFT listing
+  · applied 20260903152233
+--- after fix ---
+  ✓ REFUSE: same planted booking reads NOTHING of the draft
+  ✓ LEGIT: confirmed guest still reads the HIDDEN listing (their trip)
+  ✓ PUBLISHED still world-readable (attacker reads it — unaffected)
+
+--- teardown ---
+  done.
+
