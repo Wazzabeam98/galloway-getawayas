@@ -3,6 +3,7 @@ import { cookies } from 'next/headers';
 import Link from 'next/link';
 import { formatUk } from '@/lib/cancellation';
 import { cancellationPosition } from '@/lib/cancellationView';
+import { londonDayKey, daysBetweenKeys, ukLongDate } from '@/lib/dayKey';
 import { liveForGuestCard, stayCountdown } from '@/lib/bookingWindows';
 import { publicArea } from '@/lib/places';
 import ListingImage from '@/components/ListingImage';
@@ -72,9 +73,9 @@ export default async function UpcomingTrip() {
         cleaningFee: (booking as any).cleaning_fee,
         on: now,
     });
-    const freeUntil = cancel.kind === 'free' ? (cancel.freeUntil as Date) : null;
-    const freeDaysLeft = freeUntil
-        ? Math.round((freeUntil.getTime() - new Date(now.getFullYear(), now.getMonth(), now.getDate()).getTime()) / 86400000)
+    const freeUntilKey = cancel.kind === 'free' ? cancel.freeUntilKey : null;
+    const freeDaysLeft = freeUntilKey
+        ? daysBetweenKeys(londonDayKey(now), freeUntilKey)
         : 0;
 
     const homeHref = '/homes/' + booking.listing_id;
@@ -157,7 +158,7 @@ export default async function UpcomingTrip() {
                         away. It opens the same confirmation panel on /trips
                         that the Cancel booking link there opens — the one
                         place that says what the refund would actually be. */}
-                    {freeUntil && (
+                    {freeUntilKey && (
                         <div className="mt-5 text-sm">
                             <Link
                                 href={'/trips?cancel=' + booking.id + '#trip-' + booking.id}
@@ -166,7 +167,7 @@ export default async function UpcomingTrip() {
                                     (freeDaysLeft <= 3 ? 'text-amber-700' : 'text-emerald-700')
                                 }
                             >
-                                Free cancellation until {formatUk(freeUntil)}
+                                Free cancellation until {ukLongDate(freeUntilKey)}
                             </Link>
                             {freeDaysLeft <= 3 && (
                                 <span className="text-stone-500">

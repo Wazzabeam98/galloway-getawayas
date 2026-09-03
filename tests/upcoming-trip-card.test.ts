@@ -31,6 +31,31 @@ test('a stay still under way is live until checkout', () => {
     assert.equal(liveForGuestCard({ status: 'confirmed', check_out: '2026-09-01' }, now), true);
 });
 
+test('E2: still live at 01:30 on checkout morning, while the guest is in the cottage', () => {
+    // 01:30 BST on checkout day. The old `new Date(check_out) >= now` went false
+    // at 01:00 (check_out's UTC midnight), so the card vanished mid-stay — just
+    // when a guest might open it to check the checkout time.
+    const morning = new Date('2026-07-01T01:30:00+01:00');
+    assert.equal(liveForGuestCard({ status: 'confirmed', check_out: '2026-07-01' }, morning), true);
+});
+
+test('over once checkout day itself has passed', () => {
+    const nextDay = new Date('2026-07-02T00:30:00+01:00');
+    assert.equal(liveForGuestCard({ status: 'confirmed', check_out: '2026-07-01' }, nextDay), false);
+});
+
+// The trips list files a booking under "Past trips" when it is over, and over
+// is the exact negative of liveForGuestCard. So this is also the test for the
+// trips split: a stay checking out today, viewed on the last morning, must not
+// be filed as past while the home card still says "You're there now".
+test('trips split: a checkout-today booking is not "over" on the last morning', () => {
+    const lastMorning = new Date('2026-07-01T09:00:00+01:00');
+    const isOver = (b: { status: string; check_out: string }) => !liveForGuestCard(b, lastMorning);
+    assert.equal(isOver({ status: 'confirmed', check_out: '2026-07-01' }), false, 'still upcoming');
+    assert.equal(isOver({ status: 'confirmed', check_out: '2026-06-30' }), true, 'yesterday is past');
+    assert.equal(isOver({ status: 'cancelled', check_out: '2026-08-01' }), true, 'cancelled is past');
+});
+
 test('a confirmed stay yet to start is live', () => {
     const now = new Date('2026-09-02T10:00:00+01:00');
     assert.equal(liveForGuestCard({ status: 'confirmed', check_out: '2026-09-20' }, now), true);

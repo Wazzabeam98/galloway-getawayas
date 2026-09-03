@@ -11,9 +11,9 @@ import CopyField from '@/components/arrival/CopyField';
 import CheckInOutTimes from '@/components/arrival/CheckInOutTimes';
 import { getImageUrl, capitializeFirst, displayName } from '@/lib/utils';
 import Link from 'next/link';
-import { formatUk } from '@/lib/cancellation';
 import { cancellationPosition } from '@/lib/cancellationView';
-import { upcomingUntilCheckout } from '@/lib/bookingWindows';
+import { ukLongDate, londonDayKey } from '@/lib/dayKey';
+import { upcomingUntilCheckout, liveForGuestCard } from '@/lib/bookingWindows';
 import GuestExperiences from '@/components/GuestExperiences';
 
 interface Booking {
@@ -239,10 +239,14 @@ export default function TripsPage() {
     // down, and not already over. Everything else is history, including a
     // booking cancelled for dates that have not arrived yet — those dates are
     // gone and it is not a trip any more.
-    const isOver = (b: Booking) =>
-        b.status === 'cancelled'
-        || b.status === 'declined'
-        || new Date(b.check_out) < today;
+    //
+    // "Over" is the exact negative of liveForGuestCard, the same test the home
+    // card uses, so the two screens agree. It used to be `new Date(check_out) <
+    // today` — an instant compare, where check-out's UTC midnight is 01:00 BST,
+    // so a stay checking out today was filed under "Past trips" from 01:00 on
+    // the last morning while the home card still said "You're there now". The
+    // London calendar day keeps it upcoming through the whole checkout day.
+    const isOver = (b: Booking) => !liveForGuestCard(b, today);
 
     // Nearest first at the top, so the next stay is the first thing read.
     const upcoming = bookings
@@ -261,7 +265,7 @@ export default function TripsPage() {
     //
     // A trip somebody else booked and added you to earns no stamp, so it does
     // not unlock the link either.
-    const todayIso = today.toISOString().split('T')[0];
+    const todayIso = londonDayKey();
     const hasCompletedStay = bookings.some(
         (b) => !b.sharedWithMe && b.status === 'confirmed' && b.check_out < todayIso
     );
@@ -270,7 +274,10 @@ export default function TripsPage() {
     // function rather than inline in a single map.
     const renderTrip = (b: Booking) => {
         const listing = listingMap[b.listing_id];
-        const isCompleted = b.status === 'confirmed' && new Date(b.check_out) < today;
+        // Completed drives the review prompt, so it uses the same London-day
+        // "over" test — a stay is not "completed" while the guest is still on it
+        // on checkout day.
+        const isCompleted = b.status === 'confirmed' && isOver(b);
         const alreadyReviewed = reviewedBookingIds.has(b.id);
 
         const upcomingConfirmed = upcomingUntilCheckout(b, today);
@@ -435,8 +442,8 @@ export default function TripsPage() {
                         // confirmed booking reads as something having gone wrong
                         // with the booking rather than a fact about the policy.
                         const position =
-                            cancel.kind === 'free' && cancel.freeUntil
-                                ? { emerald: true, text: 'Free to cancel until ' + formatUk(cancel.freeUntil) + '.' }
+                            cancel.kind === 'free' && cancel.freeUntilKey
+                                ? { emerald: true, text: 'Free to cancel until ' + ukLongDate(cancel.freeUntilKey) + '.' }
                                 : paidSoFar <= 0
                                     ? { emerald: false, text: 'You haven’t paid for this stay yet, so there’s nothing to lose by cancelling.' }
                                     : refund >= paidSoFar

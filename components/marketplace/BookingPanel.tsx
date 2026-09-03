@@ -6,6 +6,7 @@ import 'react-date-range/dist/styles.css';
 import 'react-date-range/dist/theme/default.css';
 import { unitMultiplies, orderTotal, MAX_ORDER_QUANTITY } from '@/lib/serviceOrders';
 import { itemPriceLabel, unitPhrase, dateLabel, timeLabel } from '@/components/marketplace/present';
+import { londonDayKey, shiftDayKey } from '@/lib/dayKey';
 
 interface PanelItem { id: string; name: string; description: string | null; price: number; unit: string; image: string | null; }
 interface PanelSession { date: string; time: string; capacity: number; seatsLeft: number; }
@@ -28,16 +29,12 @@ function dateToKey(dt: Date): string {
     return `${y}-${m}-${d}`;
 }
 
-// yyyy-mm-dd for (today + days), UTC.
+// yyyy-mm-dd for (today + days), on the London calendar via the shared helper.
 function dayKeyFromNow(days: number): string {
-    const d = new Date();
-    d.setUTCDate(d.getUTCDate() + days);
-    return d.toISOString().slice(0, 10);
+    return shiftDayKey(londonDayKey(), days);
 }
 function lastNight(checkOut: string): string {
-    const d = new Date(checkOut + 'T00:00:00Z');
-    d.setUTCDate(d.getUTCDate() - 1);
-    return d.toISOString().slice(0, 10);
+    return shiftDayKey(String(checkOut).slice(0, 10), -1);
 }
 function maxKey(a: string, b: string): string { return a > b ? a : b; }
 

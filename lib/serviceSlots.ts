@@ -6,6 +6,8 @@
 // UPDATE in the route (seats_taken <= capacity), because only the database can
 // make "check and take" one indivisible step. Everything around it is here.
 
+import { shiftDayKey } from './dayKey';
+
 export type Shape = 'made_to_order' | 'comes_to_you' | 'slot';
 
 export const SHAPES: Shape[] = ['made_to_order', 'comes_to_you', 'slot'];
@@ -69,9 +71,7 @@ function dowOf(dateKey: string): number {
 
 /** Step a yyyy-mm-dd forward by one day, staying a date-only key. */
 function nextDay(dateKey: string): string {
-    const d = new Date(dateKey + 'T00:00:00Z');
-    d.setUTCDate(d.getUTCDate() + 1);
-    return d.toISOString().slice(0, 10);
+    return shiftDayKey(dateKey, 1);
 }
 
 /**

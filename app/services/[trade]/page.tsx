@@ -2,6 +2,7 @@
 
 import { useEffect, useMemo, useState } from 'react';
 import { useRouter } from 'next/navigation';
+import { londonDayKey } from '@/lib/dayKey';
 import Link from 'next/link';
 import { createClientComponentClient } from '@supabase/auth-helpers-nextjs';
 import { ShieldCheck, MapPin, Clock } from 'lucide-react';
@@ -122,7 +123,7 @@ export default function TradeShopPage({ params }: { params: { trade: string } })
             const { data: { session } } = await supabase.auth.getSession();
             let target = '/homes';
             if (session?.user) {
-                const today = new Date().toISOString().split('T')[0];
+                const today = londonDayKey();
                 const { data: upcoming } = await supabase
                     .from('bookings')
                     .select('id')

@@ -1,5 +1,6 @@
 import { createServerComponentClient } from '@supabase/auth-helpers-nextjs';
 import { adminClient } from '@/lib/supabaseAdmin';
+import { londonDayKey } from '@/lib/dayKey';
 import { cookies } from 'next/headers';
 import { requireAdmin } from '@/lib/access';
 import Link from 'next/link';
@@ -80,7 +81,7 @@ export default async function AdminListings() {
         .from('bookings')
         .select('listing_id')
         .eq('status', 'confirmed')
-        .gte('check_out', new Date().toISOString().split('T')[0]);
+        .gte('check_out', londonDayKey());
 
     const liveCount: Record<string, number> = {};
     (live || []).forEach((b: any) => {

@@ -15,7 +15,8 @@
 
 // Relative, not '@/lib/cancellation': this module is executed by a unit test,
 // and the '@/' alias is a build-time path that Node cannot resolve at runtime.
-import { freeCancelUntil, refundFraction, refundDue } from './cancellation';
+import { freeCancelUntilKey, refundFraction, refundDue } from './cancellation';
+import { londonDayKey } from './dayKey';
 
 //   free    — the full-refund window is still open; `freeUntil` is its last day
 //   partial — inside a 50% band; `amount` is exactly what refundDue would pay
@@ -41,7 +42,14 @@ export interface CancellationPositionInput {
 
 export interface CancellationPosition {
     kind: 'free' | 'partial' | 'none';
-    /** The last day of the full-refund window; only set when kind is 'free'. */
+    /**
+     * The last free day as a 'yyyy-mm-dd' key; only set when kind is 'free'.
+     * Formatting from the key (lib/dayKey ukLongDate) is what keeps every
+     * surface printing the same day — a Date run through the runtime's zone is
+     * how the deadline drifted between the cards and the stored column.
+     */
+    freeUntilKey: string | null;
+    /** The same day as a UTC-midnight Date, for callers that want one. */
     freeUntil: Date | null;
     /** What refundDue would pay back right now. 0 when no money fields given. */
     amount: number;
@@ -54,9 +62,8 @@ function round2(value: number): number {
 }
 
 export function cancellationPosition(input: CancellationPositionInput): CancellationPosition {
-    const until = freeCancelUntil(input.checkIn, input.policy);
-    const today = input.on ? new Date(input.on.getTime()) : new Date();
-    today.setHours(0, 0, 0, 0);
+    const freeKey = freeCancelUntilKey(input.checkIn, input.policy);
+    const todayKey = londonDayKey(input.on || new Date());
 
     const paidSoFar = round2(Number(input.amountPaid || 0) - Number(input.alreadyRefunded || 0));
     const amount = refundDue({
@@ -68,13 +75,21 @@ export function cancellationPosition(input: CancellationPositionInput): Cancella
         on: input.on,
     });
 
-    if (until.getTime() > today.getTime()) {
-        return { kind: 'free', freeUntil: until, amount, paidSoFar };
+    // Inclusive: the last free day is still free (see cancellationSummary).
+    if (todayKey <= freeKey) {
+        return {
+            kind: 'free',
+            freeUntilKey: freeKey,
+            freeUntil: new Date(freeKey + 'T00:00:00.000Z'),
+            amount,
+            paidSoFar,
+        };
     }
 
     const fraction = refundFraction(input.checkIn, input.policy, input.on);
     return {
         kind: fraction >= 0.5 ? 'partial' : 'none',
+        freeUntilKey: null,
         freeUntil: null,
         amount,
         paidSoFar,

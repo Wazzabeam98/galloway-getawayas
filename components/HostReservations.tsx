@@ -1,4 +1,5 @@
 import { DEFAULT_COMMISSION_PERCENT, rateFor, netOfFee } from '@/lib/fees';
+import { londonDayKey } from '@/lib/dayKey';
 import { createServerComponentClient } from '@supabase/auth-helpers-nextjs';
 import { createClient } from '@supabase/supabase-js';
 import { cookies } from 'next/headers';
@@ -55,7 +56,7 @@ export default async function HostReservations() {
 
     const today = new Date();
     today.setHours(0, 0, 0, 0);
-    const todayKey = today.toISOString().split('T')[0];
+    const todayKey = londonDayKey();
 
     // Arrivals still to come, so this counts down to a check-in rather than
     // sitting on a stay that is already under way.

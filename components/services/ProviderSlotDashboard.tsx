@@ -2,6 +2,7 @@
 
 import { useCallback, useEffect, useState } from 'react';
 import { dateLabel, timeLabel } from '@/components/marketplace/present';
+import { londonDayKey } from '@/lib/dayKey';
 
 // A slot provider's home — a diary, not an inbox. There is nothing to confirm:
 // the booking already happened and the money is already taken. So this shows the
@@ -91,7 +92,7 @@ export default function ProviderSlotDashboard({ providerId }: { providerId: stri
     }
 
     const live = payouts && payouts.payouts_enabled;
-    const todayIso = new Date().toISOString().slice(0, 10);
+    const todayIso = londonDayKey();
     const confirmed = orders.filter((o) => o.status === 'confirmed' && o.service_date >= todayIso)
         .sort((a, b) => (a.service_date === b.service_date ? String(a.service_time).localeCompare(String(b.service_time)) : a.service_date.localeCompare(b.service_date)));
     const earlier = orders.filter((o) => !(o.status === 'confirmed' && o.service_date >= todayIso));
