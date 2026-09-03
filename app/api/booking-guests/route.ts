@@ -61,26 +61,20 @@ export async function POST(request: Request) {
             // The booker is one of the party; the rest are companion seats.
             const capacity = Math.max(0, ((booking.guests as number) || 1) - 1);
 
-            const { data: rows } = await admin
-                .from('booking_guests')
-                .select('id')
-                .eq('booking_id', bookingId)
-                .neq('status', 'removed');
-            const have = (rows || []).length;
-            const missing = Math.max(0, capacity - have);
-
-            if (missing > 0) {
-                const seats = Array.from({ length: missing }).map(() => ({
-                    booking_id: bookingId,
-                    email: null,
-                    name: null,
-                    user_id: null,
-                    invited_by: user.id,
-                }));
-                await admin.from('booking_guests').insert(seats);
+            // Atomic top-up in one statement, guarded by a partial unique index on
+            // (booking_id, seat_index): two devices — or two tabs — opening the
+            // sheet at once can no longer each insert the shortfall and double the
+            // seats. See 20260903174512_booking_seats_are_atomic.sql.
+            const { data: minted, error: seatErr } = await admin
+                .rpc('ensure_booking_seats', { p_booking: bookingId, p_inviter: user.id });
+            if (seatErr) {
+                await logError('booking-guests/ensure-seats: could not top up the party seats', seatErr, {
+                    path: 'api/booking-guests', userId: user.id,
+                });
+                return NextResponse.json({ ok: false, error: 'Could not set up the seats.' }, { status: 500 });
             }
 
-            return NextResponse.json({ ok: true, capacity, minted: missing });
+            return NextResponse.json({ ok: true, capacity, minted: minted ?? 0 });
         }
 
         // ---- Label or bind a seat (optional, on the seat's own row) --------

@@ -20,7 +20,7 @@ export default async function TripInvitePage({ params }: { params: { token: stri
 
     const { data: invite } = await admin
         .from('booking_guests')
-        .select('id, booking_id, email, status, invited_by, user_id')
+        .select('id, booking_id, email, status, invited_by, user_id, link_sent_at')
         .eq('invite_token', params.token)
         .maybeSingle();
 
@@ -41,6 +41,22 @@ export default async function TripInvitePage({ params }: { params: { token: stri
             <div className="max-w-lg mx-auto px-6 py-20 text-center">
                 <h1 className="text-2xl font-bold text-slate-900 mb-2">This invite has expired</h1>
                 <p className="text-slate-600 mb-8">The stay it was for has already ended.</p>
+                <Link href="/" className="px-5 py-3 bg-emerald-700 hover:bg-emerald-800 text-white text-sm font-semibold rounded-xl inline-block">
+                    Explore Galloway
+                </Link>
+            </div>
+        );
+    }
+
+    // A link that was minted when the sheet opened but never actually shared is
+    // inert — the guest shouldn't get an error, it just isn't ready to accept yet.
+    if (invite.status !== 'active' && !invite.link_sent_at && !invite.email) {
+        return (
+            <div className="max-w-lg mx-auto px-6 py-20 text-center">
+                <h1 className="text-2xl font-bold text-slate-900 mb-2">This invite isn&apos;t ready yet</h1>
+                <p className="text-slate-600 mb-8">
+                    Whoever booked hasn&apos;t sent this one out yet. Ask them to share your link, then open it again.
+                </p>
                 <Link href="/" className="px-5 py-3 bg-emerald-700 hover:bg-emerald-800 text-white text-sm font-semibold rounded-xl inline-block">
                     Explore Galloway
                 </Link>
