@@ -1,0 +1,10 @@
+
+=== Proof: payments/payouts are service-role only — TEST yefoqcabuijcowoqewtc ===
+
+  ✓ BEFORE: browser roles hold write grants on payments/payouts  [8 grants]
+  · applied 20260903181045
+  ✓ AFTER: no INSERT/UPDATE/DELETE for anon/authenticated on payments or payouts  [[]]
+  ✓ service role can STILL insert a payout (webhook/cron path unaffected)  [ok]
+
+  done.
+
