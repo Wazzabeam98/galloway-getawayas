@@ -3,12 +3,17 @@
 Every claim below is dated and says **how it was checked**, because OUTSTANDING.md
 has now misled three sessions by being stale in both directions. "Verified on
 test" means I built the request and read the result back off the test project
-(`yefoqcabuijcowoqewtc`) — this machine holds no production key, so production
-was never written to. "Read on master" means I read the code as it stands on
-master today. "Proven on prod (read-only)" means I used the **public** anon key
-from the live JS bundle to GET — never a write.
+(`yefoqcabuijcowoqewtc`). "Read on master" means I read the code as it stands on
+master today. "Proven on prod (read-only)" means either the **public** anon key
+from the live JS bundle (a signed-out stranger's GETs), or a **read-only SQL
+SELECT against the production database** via `scripts/migrate.mjs --target prod
+--sql` (which refuses any write without `--apply`). This machine has no way to
+**write** production — no service key, and the migrate runner blocks writes to
+prod — so production was only ever read. See §10 for the production checks added
+in the follow-up pass.
 
-Nothing was merged, nothing deployed, no production migration applied.
+Nothing was merged, nothing deployed, no production migration applied, nothing
+written to production.
 
 ---
 
@@ -373,3 +378,55 @@ reporting.
 - `23-*` production anonymous crawl
 Scripts: `scripts/prove-arrival-entitlement.mjs`,
 `scripts/prove-arrival-routes-e2e.mjs`, `scripts/prove-email-failure-surfaces.mjs`.
+
+---
+
+## 10 — Production checks (follow-up pass, read-only SQL against prod)
+
+All via `migrate.mjs --target prod --sql` (read-only; a write dies without
+`--apply`). Nothing written.
+
+### Was the planted-booking vector ever used? NO — looked, not assumed.
+Production has **5 bookings total**, and every one is the **admin's own account
+self-booking its own three listings** (`guest_id == host_id ==` the listing
+owner, `is_admin=true`, your hotmail address), all now `cancelled`/`unpaid` —
+your own testing. Definitive counts: **third-party bookings (`guest_id ≠
+host_id`) = 0**, forged-host rows (`host_id ≠` listing's real owner) = **0**,
+`pending_payment` sitting now = **0**, distinct guests ever = **1**. No stranger
+ever planted a booking, so the arrival-page / profile_private read path and the
+payout-hijack write path were never reachable in practice — both need a
+booking-relationship that has never existed on prod.
+
+### Has any host's stripe_account_id / payout_balance been altered? NO sign of it.
+Only **one** profile on prod carries a `stripe_account_id` — yours. It is a
+well-formed `acct_` (21 chars), and `charges_enabled / payouts_enabled /
+details_submitted / stripe_updated_at (2026-08-29)` are all internally
+consistent with a genuine onboarded Connect account — a value tampered through
+the write vector would not be, because those flags come from Stripe's webhook,
+which the vector cannot touch. `payout_balance_owed` = **£0.05** with **0**
+payout rows (a trivial test artefact); total owed across all hosts = £0.05.
+Nothing looks altered. *Definitive confirmation left to you (I have only the
+TEST Stripe key): list the platform's connected accounts and confirm that single
+`acct_` id is yours.*
+
+### Which live listings hold door codes, and what rotation touches.
+**3 of 5** published listings have a stored code (4 digits each) — read only the
+lengths, never the values: **"4 bedroom Townhouse, Kirkcudbright"**, **"Modern 3
+Bedroom, Kirkcudbright"**, **"Modern Cottage, with Hot Tub"** (all yours).
+Rotation impact:
+- The code lives in exactly one place, `listing_access_codes.code`, and the
+  table has **no browser grants** — it was never directly readable; the only
+  read path is the arrival page (service role), which needs a booking. Combined
+  with "0 third-party bookings", **no outsider ever actually reached a code** —
+  rotate as prudence (the capability was open), not in response to a known read.
+- Change it via the host access-code editor (`/api/listings/access-code`, service
+  role). The arrival page reads it **live**, so guests see the new code on next
+  load — no cache, no rebuild. The scheduled-message sender also reads it live at
+  send time, so future guests get the new one.
+- The one thing rotation cannot retract is an **already-sent** door-code message.
+  On prod all scheduled sends went to your own self-bookings (0 confirmed
+  third-party bookings), so nothing lingers with a real guest. And set the new
+  code on the **physical lock** to match.
+- A standing guard now protects the fix itself — `tests/planted-booking-guard.test.ts`
+  fails the suite if a future edit reopens the leak (static checks run in CI; a
+  live planted-booking assertion runs in the pre-push hook). Added to PR #99.
