@@ -46,6 +46,7 @@ async function wipeDemoListings() {
     const listings = await db.select('listings', '?select=id&title=like.' + encodeURIComponent(TAG + '%'));
     for (const l of listings) {
         await db.remove('bookings', '?listing_id=eq.' + l.id);
+        await db.remove('listing_arrival', '?listing_id=eq.' + l.id);
         await db.remove('listings', '?id=eq.' + l.id);
     }
 }
@@ -72,11 +73,29 @@ async function main() {
         host_id: hostId,
         title: TAG + ' — Harbour Cottage',
         location: 'Kirkcudbright, Dumfries and Galloway',
+        // A full street address AND a real pin, so the demo shows Get directions
+        // routing to the actual door — not the town centre, which is the
+        // wrong-place failure the arrival screen exists to prevent. Coordinates
+        // are Kirkcudbright harbour.
+        street_address: '2 Harbour Square',
+        postcode: 'DG6 4HY',
+        latitude: 54.8356,
+        longitude: -4.0533,
         price_per_night: 120, status: 'published', max_guests: 4, bedrooms: 2, beds: 2, bathrooms: 1,
         cancellation_policy: 'Moderate',
         check_in_time: '15:00:00', check_in_end_time: '18:00:00', check_out_time: '11:00:00',
         check_in_method: 'Smart lock',
         description: 'Preview demo listing for the London-day-keys PR.',
+    }]);
+
+    // Arrival essentials in the grant-less table, so the what3words chip shows on
+    // the cards and survives a --reset (wipeDemoListings clears this row via the
+    // listing FK, and this recreates it).
+    await db.insert('listing_arrival', [{
+        listing_id: listing.id,
+        what3words: '///harbour.candle.brave',
+        parking_info: 'Two spaces on the cobbles in front of the cottage.',
+        arrival_directions: 'Last house on the left before the harbour wall — the blue door.',
     }]);
 
     // B: checkout is TODAY (E2). A: last free day is TODAY (E1). C: a clean
