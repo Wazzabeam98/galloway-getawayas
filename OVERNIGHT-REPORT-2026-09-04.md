@@ -215,3 +215,69 @@ The code already anticipates the biggest one, which is worth crediting:
    not read prod tonight): **read `adjust_payout_balance` back on production**
    and **confirm the single `acct_…` connected account is yours** before the
    first real run. That is the last "assumed, not observed" on the money path.
+
+---
+
+## TASK 5 — Attacking the companion single-use invite branch — **RESULT: holds; one LOW-severity race (false-success, no over-seat)**
+
+The branch **is pushed and up to date with master** (`companion-single-use-links`,
+merge-base == master). Its migrations are applied on test (`ensure_booking_seats`,
+the `booking_guests_live_seat` partial unique index, nullable email — all
+present). I attacked the accept/seat routes two ways: (a) the **over-mint race**
+directly against the DB function, and (b) every accept-route branch replicated
+line-for-line from `app/api/booking-guests/accept/route.ts` and run against the
+test DB with the service client — which is exactly how the route runs (its only
+session-derived inputs are `user.id` / `user.email`). All proven on test
+2026-09-04, all seeded rows cleaned up.
+
+### The seat-count race — **CLOSED at the DB layer. Proven.**
+"Open the sheet on two devices at once and count the seats": I fired
+`ensure_booking_seats` **12× concurrently** on a 4-guest booking (capacity 3).
+Result: **exactly 3 live seats**, `seat_index [1,2,3]` — one call minted 3, the
+other eleven minted 0 (`ON CONFLICT DO NOTHING` against the partial unique
+index). No over-mint, whatever the timing. This is the fix in
+`20260903174512_booking_seats_are_atomic.sql` and it does what it says.
+
+### The accept-route attacks — all refused correctly
+
+| Attack | Result | Expected |
+|---|---|---|
+| Claim a shared link **twice** (same user) | `200 already:true` (idempotent) | ✅ |
+| Claim it as a **different** user | **`409` "already used"** | ✅ single-use |
+| Claim **after checkout** (checkout in 2020) | **`410` expired** | ✅ |
+| Claim a **revoked** (status `removed`) link | **`404`** | ✅ |
+| Claim an **old regenerated-away** token | **`404`** (token no longer exists) | ✅ |
+| Claim on a **cancelled** booking | **`404`** | ✅ |
+| Claim an **inert** (minted-but-never-shared, no email) link | **`409` notReady** | ✅ |
+
+### Removed companion loses the arrival page and the trip — **holds (code-verified)**
+`remove` sets `status='invited'`, `user_id=null`, clears name/email, and mints a
+fresh token. Both entitlement readers require `status='active'`:
+`/api/trips/route.ts:43` (`.eq('status','active')`) and
+`app/arrival/[bookingId]/page.tsx:48` (`.eq('user_id',user.id).eq('status','active')`).
+A removed companion matches neither, so the trip and the arrival page (address,
+door code, wifi) both disappear on the next load, and their old link is dead.
+
+### THE ONE FINDING — LOW severity — double-claim is a false-success race (TOCTOU)
+The accept route reads the seat, checks `status !== 'active'`, then does an
+**unconditional** `UPDATE … WHERE id = <seat>` — no `AND status <> 'active'`
+guard and no affected-row check. **Proven:** two distinct real users claiming
+one fresh link *concurrently* both received `200 ok:true`, yet the booking ended
+with **exactly one** active seat (owned by the race winner). So:
+- **No security impact:** capacity is intact (one token = one row = one seat),
+  there is no over-seat and no seat theft — the loser gains **no** active row and
+  therefore **no** access to the trip, arrival details, or anything else.
+- **The wart:** the losing user is told "you've joined" when they haven't. They
+  see nothing on next load and don't know why. Confusing, not dangerous.
+- **Fix (cheap):** make the claim conditional —
+  `UPDATE … WHERE id = :id AND status <> 'active'` and return `409` when zero
+  rows change; or claim inside a small `SECURITY DEFINER` function with a row
+  lock, the same shape as `ensure_booking_seats`. Minutes of work. Worth doing
+  before launch so two people sharing one link get an honest answer.
+
+### Note carried into Task 6
+Every correct refusal above is enforced in **route code**, not the database —
+the DB has no policy stopping a forged accept, only the route's service-role
+checks. That is fine *because* `booking_guests` writes already go through the
+route (the browser has no direct write path that matters here), which is exactly
+the shape Task 6 argues booking creation should also take.
