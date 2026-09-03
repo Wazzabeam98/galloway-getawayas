@@ -62,7 +62,7 @@ export default async function HostReservations() {
     // sitting on a stay that is already under way.
     const { data: bookings } = await admin
         .from('bookings')
-        .select('id, listing_id, guest_id, check_in, check_out, status, guests, total_price, commission_rate, amount_paid, amount_refunded, balance_due_date')
+        .select('id, listing_id, guest_id, check_in, check_out, status, payment_status, guests, total_price, commission_rate, amount_paid, amount_refunded, balance_due_date')
         .in('listing_id', allowed)
         .in('status', ['confirmed', 'pending'])
         .gte('check_in', todayKey)
