@@ -218,7 +218,7 @@ export default function ProviderDashboard(props: ProviderDashboardProps) {
                                 <div className="text-sm mt-0.5">
                                     {offPlatform
                                         ? 'When a host in your area asks for you, it lands here.'
-                                        : 'You&rsquo;ll appear to guests — and requests land here — once payouts are set up.'}
+                                        : 'You’ll appear to guests — and requests land here — once payouts are set up.'}
                                 </div>
                             </div>
                         ) : (
