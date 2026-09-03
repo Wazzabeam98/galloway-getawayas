@@ -4,7 +4,7 @@ import { useEffect, useState } from 'react';
 import { createPortal } from 'react-dom';
 import { createClientComponentClient } from '@supabase/auth-helpers-nextjs';
 import { toast } from 'react-toastify';
-import { UserPlus, X, User, Link2, Mail, MessageSquare, Check, RefreshCw } from 'lucide-react';
+import { UserPlus, X, User, Link2, Mail, MessageSquare, Check, RefreshCw, Share2, ChevronDown } from 'lucide-react';
 import { getImageUrl, displayName } from '@/lib/utils';
 
 // The group coming on a trip. On the card it reads the way Airbnb shows it —
@@ -146,6 +146,7 @@ export default function TripGroup({
     const [sending, setSending] = useState(false);
     const [copiedId, setCopiedId] = useState<string | null>(null);
     const [busyId, setBusyId] = useState<string | null>(null);
+    const [shareOpenId, setShareOpenId] = useState<string | null>(null);
 
     useEffect(() => { setMounted(true); }, []);
 
@@ -215,6 +216,7 @@ export default function TripGroup({
             const data = await res.json();
             if (data && data.ok) {
                 setEmail(''); setName('');
+                if (data.id) setShareOpenId(data.id);
                 await load();
                 toast.success('Added — now share their link below.', { theme: 'colored' });
             } else {
@@ -413,18 +415,31 @@ export default function TripGroup({
                                         </div>
 
                                         {!active && p.invite_token && (
-                                            <>
-                                                <ShareTiles p={p} />
+                                            <div className="mt-2.5">
                                                 <button
                                                     type="button"
-                                                    onClick={() => regenerate(p)}
-                                                    disabled={busyId === p.id}
-                                                    className="mt-2 inline-flex items-center gap-1.5 text-[11px] font-medium text-slate-400 hover:text-slate-700 disabled:opacity-50"
+                                                    onClick={() => setShareOpenId(shareOpenId === p.id ? null : p.id)}
+                                                    className="inline-flex items-center gap-1.5 rounded-lg border border-slate-300 bg-white px-3 py-1.5 text-xs font-semibold text-slate-700 transition hover:border-slate-400"
                                                 >
-                                                    <RefreshCw className="h-3 w-3" />
-                                                    {busyId === p.id ? 'Making a new link…' : 'Gone to the wrong place? New link'}
+                                                    <Share2 className="h-3.5 w-3.5" />
+                                                    {sent ? 'Share again' : 'Share link'}
+                                                    <ChevronDown className={'h-3.5 w-3.5 text-slate-400 transition ' + (shareOpenId === p.id ? 'rotate-180' : '')} />
                                                 </button>
-                                            </>
+                                                {shareOpenId === p.id && (
+                                                    <>
+                                                        <ShareTiles p={p} />
+                                                        <button
+                                                            type="button"
+                                                            onClick={() => regenerate(p)}
+                                                            disabled={busyId === p.id}
+                                                            className="mt-2 inline-flex items-center gap-1.5 text-[11px] font-medium text-slate-400 hover:text-slate-700 disabled:opacity-50"
+                                                        >
+                                                            <RefreshCw className="h-3 w-3" />
+                                                            {busyId === p.id ? 'Making a new link…' : 'Gone to the wrong place? New link'}
+                                                        </button>
+                                                    </>
+                                                )}
+                                            </div>
                                         )}
                                     </div>
                                 );
