@@ -1,0 +1,17 @@
+
+=== Proof: listings UPDATE allow-list — TEST yefoqcabuijcowoqewtc ===
+
+--- baseline (table-level SELECT + UPDATE) ---
+  ✓ LEAK: host PATCHes own commission_rate to 0  [HTTP 204]
+  · applied 20260903154419 + 20260903161233 (both listings-grants fixes)
+--- after fix: platform columns refused ---
+  ✓ REFUSE: host cannot set commission_rate  [HTTP 403]
+  ✓ REFUSE: host cannot set approved_at  [HTTP 403]
+  ✓ REFUSE: host cannot set rating_avg  [HTTP 403]
+--- after fix: EVERY editor field still saves ---
+  ✓ the full editor write PATCHes cleanly  [HTTP 204]
+  ✓ all 30 editor columns persisted
+
+--- teardown ---
+  done.
+
