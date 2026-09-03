@@ -122,7 +122,7 @@ export default async function UpcomingTrip() {
     const homeHref = '/homes/' + booking.listing_id;
 
     return (
-        <section className="max-w-3xl mx-auto px-4 sm:px-6 lg:px-8 pt-14">
+        <section className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 pt-14">
             <div className="mb-6 border-b border-stone-200 pb-4">
                 <h2 className="text-2xl md:text-3xl font-bold text-stone-900">
                     {booking.status === 'pending' ? 'Your booking request' : 'Your upcoming trip'}
@@ -134,26 +134,27 @@ export default async function UpcomingTrip() {
                 </p>
             </div>
 
-            <div className="rounded-3xl overflow-hidden border border-stone-200 bg-white">
-                {/* A landscape banner across the top. Real cottage photos are
-                    wide; the old tall left-hand column cropped a landscape shot to
-                    a portrait sliver. 3:2 is the proportion a listing photo
-                    actually is (the grid frames them landscape too), so the photo
-                    sits without a bad crop, and the content stacks beneath. */}
+            <div className="rounded-3xl overflow-hidden border border-stone-200 bg-white md:flex">
+                {/* Landscape photo ALONGSIDE the details on desktop, a banner
+                    above them on a phone. A landscape shot fills a half-width
+                    column at the page's full width far better than a banner over a
+                    narrow one; and half the card is wide enough that it never
+                    becomes the tall portrait sliver a wide photo used to be
+                    cropped to. */}
                 <Link
                     href={homeHref}
-                    className="group relative block aspect-[3/2] w-full overflow-hidden bg-stone-200"
+                    className="group relative block aspect-[4/3] w-full overflow-hidden bg-stone-200 md:aspect-auto md:w-1/2 md:min-h-[26rem]"
                 >
                     <ListingImage
                         images={listing.images}
                         alt={listing.title}
-                        sizes="(max-width: 768px) 100vw, 768px"
+                        sizes="(max-width: 768px) 100vw, 50vw"
                         className="object-cover transition duration-300 group-hover:scale-105"
                         priority
                     />
                 </Link>
 
-                <div className="p-8 md:p-10">
+                <div className="p-8 md:p-10 md:w-1/2 md:flex md:flex-col md:justify-center">
                     {/* The countdown is the reason anyone looks at this, so it
                         gets the room. Everything else is supporting detail. */}
                     <div className="text-4xl md:text-5xl font-bold text-stone-900 tracking-tight">
