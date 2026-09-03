@@ -281,3 +281,145 @@ the DB has no policy stopping a forged accept, only the route's service-role
 checks. That is fine *because* `booking_guests` writes already go through the
 route (the browser has no direct write path that matters here), which is exactly
 the shape Task 6 argues booking creation should also take.
+
+---
+
+## TASK 3 — The three carried items — **RE-CHECKED tonight, all three STILL TRUE**
+
+Not trusted from the list — each re-verified on test 2026-09-04.
+
+### 3a. `full_name` leaks via the anon API regardless of `show_full_name` — STILL TRUE
+**Proven on test:** anon has a column SELECT grant on `profiles.full_name` and
+the SELECT policy is `USING (true)` — **neither consults `show_full_name`**. I
+flipped one profile to `show_full_name = false` and read it back as anon:
+`[{"full_name":"Cara Nairn","show_full_name":false}]` (then restored). Last night
+this was proven on **production** for both directors' legal names; the mechanism
+is unchanged.
+- **Cost of the real fix:** a masking view `profiles_public` selecting
+  `case when show_full_name then full_name else null end`, `grant select` to
+  anon/authenticated, **revoke `full_name` from the raw table**, repoint the
+  client reads. Half a day plus a careful migration. Do the same `case` on
+  `profile_private`.
+- **What it breaks:** every client read of `profiles.full_name` must move to the
+  view or it starts returning `null`. The risk is a **missed** read showing a
+  blank name where a consenting host's name should appear — so the migration
+  needs a grep of all `full_name` reads first (~15 sites per last night). A
+  consenting host (`show_full_name = true`) still shows through the view, so
+  nothing legitimate is lost; the danger is purely an overlooked read.
+- **Cheap partial (does NOT close the raw-API read):** route the two remaining
+  third-party greeting bypasses (`app/api/booking-guests/route.ts`,
+  `app/trip-invite/[token]/page.tsx`) through `displayName` — ~30 min. Leaves the
+  raw `select=full_name` open, so it is a stopgap, not the fix.
+
+### 3b. Storage has no owner-scoped upload paths — STILL TRUE
+**Proven on test:** the `listings`-bucket INSERT policy is
+`WITH CHECK (bucket_id = 'listings')` — **no** `(storage.foldername(name))[1] =
+auth.uid()`. Any signed-in account can upload (image, ≤10 MB — the size/MIME caps
+from the earlier fix do hold) to **any** path in the bucket, including under
+another user's avatar prefix. No UPDATE/DELETE policy, so it's write-only:
+namespace pollution and storage cost, **not** overwrite or theft.
+- **Cost:** per-user path prefix in the uploader + an INSERT policy
+  `(storage.foldername(name))[1] = auth.uid()::text`, plus a one-off migration to
+  move existing flat-root objects under their owner. ~half a day.
+- **What it breaks:** any code that reads/writes an object by a **flat** path
+  (no owner prefix) breaks until repointed — the migration must rename existing
+  objects and every stored URL that references them, or old images 404. This is
+  the fiddly part, not the policy.
+
+### 3c. Silent guest-experience money routes — STILL TRUE (census 2026-09-04 on master)
+Re-counted on master. Worst first:
+- **`services/slots/schedule` — silent provider-calendar wipe. HIGHEST.**
+  `slot_availability.delete()` (`:77`) then `insert(rows)` (`:86`), **not in a
+  transaction**. If the insert throws, the delete has committed → the provider's
+  whole availability is gone; the catch (`:98`) returns a 500 with **no logError
+  and not even a console.error**. Separately, an empty `rows` runs the delete,
+  skips the insert, and returns **`ok:true`** — a silent wipe reported as
+  success. Same pattern for `slot_blocks` (`:90/:94`).
+  **Fix:** do both writes in one `SECURITY DEFINER` function (atomic), or
+  upsert-and-prune instead of delete-all; add `logError` to the catch. 1–2h.
+  **Breaks:** nothing — the RPC is a drop-in and the log is additive.
+- **`services/order`, `services/orders`, `services/slots/book`** — catch with
+  `console.error` only (1, 1, 2 occurrences; **0** `logError`). A broken provider
+  Stripe account fails a guest's checkout, or a thrown update leaves a seat
+  `holding`, and no `error_log` row is written — directors hear nothing.
+- **`cron/ical-sync`** — **0** console.error, **0** logError: a sync failure is
+  invisible → double-booking risk with no alert.
+- **Webhook post-charge notify catches** — `console.error` only at
+  `webhook:347` (slot provider notify), `:376` (slot guest receipt), `:578`
+  (service order notify). The guest **is charged**, then the provider is never
+  told to fulfil or the guest never gets a receipt, and nothing reaches
+  `error_log`. (The webhook logs 25 other failures through `logError` — these
+  specific post-charge email catches are the gaps.)
+  **Fix for all of these:** swap `console.error` → `logError` in the catch.
+  ~1–2h total, mechanical, breaks nothing.
+
+---
+
+## TASK 6 — Moving writes behind server routes: the shape, the estimate, the tables that stop needing browser grants
+
+This is the answer to "does this class of finding keep recurring". The class is:
+the browser holds a write grant, and a policy (or a hoped-for one) is doing a job
+a server route should do. I mapped **every** browser write grant on the schema
+and cross-referenced it against actual client-side writes. Two things fell out.
+
+### Finding A — SEVEN tables already have redundant browser write grants (free to revoke)
+For each of these, **zero** client-side writes exist — every write already goes
+through a service-role route or cron — yet the browser still holds INSERT/UPDATE
+(/DELETE). Revoking changes nothing except shrinking the attack surface:
+
+| Table | Written today by | Browser grant is… |
+|---|---|---|
+| `booking_guests` | `/api/booking-guests` (service role) | redundant — **companion writes are ALREADY behind a route** |
+| `slot_availability` | `/api/services/slots/schedule` + `/book` | redundant |
+| `slot_blocks` | same | redundant |
+| `slot_sessions` | seat sweep / book route | redundant |
+| `stripe_events` | the webhook only | redundant **and a smell** — the browser should never touch the webhook idempotency ledger |
+| `sent_reply_nudges` | crons | redundant |
+| `sent_review_reminders` | crons | redundant |
+
+None is a *live* hole today (RLS gates them — e.g. anon `INSERT stripe_events`
+returns **401 / 42501 RLS violation**, proven), but they are exactly the dead
+weight that becomes a hole the day someone adds a permissive policy. **One
+migration revoking these seven costs ~1 hour and answers "companion writes" on
+its own** — they need nothing built, only the leftover grant removed.
+*(Confirm against today's write-side sweep so this isn't duplicated.)*
+
+### Finding B — booking creation is the one genuine browser-write money path
+`bookings` has `authenticated INSERT` on 12 columns + `UPDATE(confirmed_at,
+status)`, and `components/BookingWidget.tsx:366` still inserts the
+`pending_payment` row client-side; host accept/decline updates `status` from
+`BookingActions.tsx`. This is the primitive every reader in Task 1 and every
+planted-booking finding has had to defend against individually.
+
+**The shape (not to build tonight):**
+- `POST /api/bookings/start` — validate dates are free + listing bookable, create
+  the `pending_payment` row **under the service role**, return its id;
+  `BookingWidget` calls it instead of inserting. (`lib/pricing.ts` stays the sole
+  price authority — the route calls it.)
+- `POST /api/bookings/decide` — host accept/decline, moving the
+  `UPDATE(confirmed_at,status)` server-side; `BookingActions` calls it.
+- Then **revoke** `authenticated INSERT(12 cols)` and `UPDATE(confirmed_at,
+  status)` on `bookings`, and drop the "guests create their own bookings" policy.
+- One more small write to fold in: `sent_scheduled_messages` has a lone
+  client-side insert at `BookingActions.tsx:197` — move it into the same
+  server action, then revoke that grant too.
+
+**Estimate:** two small routes + one grant/policy migration + the widget/actions
+changes + a money-path test pass (booking → checkout → webhook → confirm). ~1 day,
+the bulk of it re-running the payment scenarios to prove nothing regressed.
+
+### Which tables end up off the browser write surface
+**Free (Finding A):** `booking_guests`, `slot_availability`, `slot_blocks`,
+`slot_sessions`, `stripe_events`, `sent_reply_nudges`, `sent_review_reminders`.
+**With the ~1-day route work (Finding B):** `bookings`, `sent_scheduled_messages`.
+That is **nine** tables — including the whole booking + companion + slot core —
+that no longer trust a browser grant. What legitimately *stays* browser-writable
+is the self-scoped tier (personal prefs, host self-management, messages), each
+gated `user_id = auth.uid()`; those are lower blast-radius and can wait.
+
+**Does this stop the recurrence?** Largely yes for the money/relationship core:
+once `bookings` and `booking_guests` can't be written from the browser, the
+"any account can forge a booking relationship" primitive — the root of the
+planted-booking class — is gone, and future readers stop needing to re-derive
+`status='confirmed'` defences one surface at a time. The self-scoped tier keeps
+its grants, so the class isn't *eliminated*, but its dangerous half is.
