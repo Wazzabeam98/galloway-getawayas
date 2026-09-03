@@ -1,8 +1,13 @@
 // A few booked experiences on top of the marketplace seed, so the morning demo
 // shows non-zero trust counts and Morag has bookings to open (the order page,
-// the confirmation banner). TEST ONLY. Run AFTER seed-marketplace.mjs:
-//   node scripts/_demo-orders.mjs         # create
-//   node scripts/_demo-orders.mjs --reset # remove just these
+// the confirmation banner). TEST ONLY. Run AFTER seed-marketplace.mjs.
+//
+// IDEMPOTENT — safe to re-run as a reset. It clears its own previous demo
+// orders before making new ones (so running twice does not pile up), and it
+// RESTORES Morag's booking to confirmed if it has been cancelled — which is how
+// you get the demo back after clicking Cancel on the stay. Reset it yourself:
+//   node scripts/_demo-orders.mjs         # restore: un-cancel + fresh orders
+//   node scripts/_demo-orders.mjs --reset # remove just these orders
 import { loadEnv, assertTestEnvironment, supabaseClient } from './seed-lib.mjs';
 
 const env = loadEnv('.env.local');
@@ -22,7 +27,7 @@ async function run() {
     const guestId = await findGuest();
     if (!guestId) { console.error('No Morag — run seed-marketplace first.'); process.exit(1); }
 
-    const bookings = await db.select('bookings', '?guest_id=eq.' + guestId + '&select=id,listing_id,check_in,check_out&order=check_in.asc');
+    const bookings = await db.select('bookings', '?guest_id=eq.' + guestId + '&select=id,listing_id,check_in,check_out,status&order=check_in.asc');
     const booking = (bookings || [])[0];
     if (!booking) { console.error('Morag has no booking — run seed-marketplace first.'); process.exit(1); }
 
@@ -31,6 +36,20 @@ async function run() {
         console.log('removed demo orders');
         return;
     }
+
+    // Restore an accidentally-cancelled demo stay: the whole point is Morag has
+    // a CONFIRMED upcoming booking to open. Clearing the cancel fields as well
+    // so it reads as a clean confirmed booking, not a cancelled-then-reopened one.
+    if (booking.status !== 'confirmed') {
+        await db.update('bookings', '?id=eq.' + booking.id, {
+            status: 'confirmed', cancelled_at: null, cancelled_by_user: null, cancelled_by_role: null,
+        });
+        console.log('restored booking ' + booking.id + ' to confirmed (was ' + booking.status + ')');
+    }
+
+    // Idempotent: clear this script's own previous orders before making new
+    // ones, so a re-run is a reset rather than a pile-up.
+    await db.remove('service_orders', '?guest_id=eq.' + guestId + '&note=like.' + encodeURIComponent(NOTE_TAG + '%'));
 
     // Approved guest providers with a priced item, a handful of them.
     const provs = await db.select('service_providers',

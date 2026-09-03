@@ -90,7 +90,7 @@ export default function AcceptTripInvite({
                     auth convention), so a bordered list reads as two clean
                     options. */}
                 <ul className="mt-4 divide-y divide-slate-100 overflow-hidden rounded-xl border border-slate-200 bg-white text-sm font-semibold text-slate-800">
-                    <LoginModel />
+                    <LoginModel next={'/trip-invite/' + token} />
                     <SignupModel />
                 </ul>
             </div>
