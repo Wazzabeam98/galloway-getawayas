@@ -4,7 +4,7 @@ import { useEffect, useState } from 'react';
 import { createPortal } from 'react-dom';
 import { createClientComponentClient } from '@supabase/auth-helpers-nextjs';
 import { toast } from 'react-toastify';
-import { UserPlus, X, User, Link2, Mail, MessageSquare, Check } from 'lucide-react';
+import { UserPlus, X, User, Link2, Mail, MessageSquare, Check, RefreshCw } from 'lucide-react';
 import { getImageUrl, displayName } from '@/lib/utils';
 
 // The group coming on a trip, the way Airbnb shows it — the whole party the
@@ -112,6 +112,8 @@ export default function TripGroup({
     const [open, setOpen] = useState(false);
     const [copiedId, setCopiedId] = useState<string | null>(null);
     const [shareOpen, setShareOpen] = useState(false);
+    const [shareId, setShareId] = useState<string | null>(null);
+    const [busyId, setBusyId] = useState<string | null>(null);
 
     useEffect(() => { setMounted(true); }, []);
 
@@ -208,6 +210,23 @@ export default function TripGroup({
             window.location.href = 'mailto:?subject=' + subject + '&body=' + encodeURIComponent(shareText(p));
             markSent(p);
         }
+    };
+
+    // A new link — the exception, not re-share. copyLink and ShareTiles all act
+    // on the seat's EXISTING invite_token, so re-sharing never changes the link;
+    // this is only for when the booker explicitly wants a fresh one (a leaked
+    // link), and it invalidates the old.
+    const regenerate = async (p: Companion) => {
+        if (!confirm('Make a NEW link for this seat? The current link stops working — only do this if the old one leaked.')) return;
+        setBusyId(p.id);
+        try {
+            const res = await fetch('/api/booking-guests', {
+                method: 'POST', headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ action: 'regenerate', guestId: p.id }),
+            });
+            const data = await res.json();
+            if (data && data.ok) { await load(); } else toast.error('Could not make a new link.', { theme: 'colored' });
+        } finally { setBusyId(null); }
     };
 
     const remove = async (p: Companion) => {
@@ -338,15 +357,37 @@ export default function TripGroup({
                                 Remove and nothing else; only an accepted seat carries a
                                 name and photo. Rows are not clickable — like Airbnb,
                                 tapping a guest does nothing. */}
-                            {people.map((p) => (
-                                <div key={p.id} className="flex items-center gap-3 rounded-xl border border-slate-200 p-3">
-                                    <Avatar p={p} />
-                                    <div className="min-w-0 flex-1">
-                                        <div className="truncate text-sm font-medium text-slate-900">{nameOf(p)}</div>
+                            {people.map((p) => {
+                                const accepted = seatState(p) === 'accepted';
+                                const sharing = shareId === p.id;
+                                return (
+                                    <div key={p.id} className="rounded-xl border border-slate-200 p-3">
+                                        <div className="flex items-center gap-3">
+                                            <Avatar p={p} />
+                                            <div className="min-w-0 flex-1">
+                                                <div className="truncate text-sm font-medium text-slate-900">{nameOf(p)}</div>
+                                            </div>
+                                            {/* Re-share sends the SAME link again — the message got lost,
+                                                the link didn't. Small, so the row stays clean. */}
+                                            {!accepted && (
+                                                <button type="button" onClick={() => setShareId(sharing ? null : p.id)} className="flex-none text-xs font-medium text-slate-400 hover:text-slate-700">
+                                                    {sharing ? 'Close' : 'Re-share'}
+                                                </button>
+                                            )}
+                                            <button type="button" onClick={() => remove(p)} className="flex-none text-xs font-medium text-slate-400 hover:text-red-600">Remove</button>
+                                        </div>
+                                        {!accepted && sharing && (
+                                            <div className="mt-3 border-t border-slate-100 pt-3">
+                                                <p className="mb-2 text-xs text-slate-500">Send the same link again:</p>
+                                                <ShareTiles p={p} />
+                                                <button type="button" onClick={() => regenerate(p)} disabled={busyId === p.id} className="mt-2 inline-flex items-center gap-1.5 text-[11px] font-medium text-slate-400 hover:text-slate-700 disabled:opacity-50">
+                                                    <RefreshCw className="h-3 w-3" /> {busyId === p.id ? 'Making a new link…' : 'Make a new link instead'}
+                                                </button>
+                                            </div>
+                                        )}
                                     </div>
-                                    <button type="button" onClick={() => remove(p)} className="flex-none text-xs font-medium text-slate-400 hover:text-red-600">Remove</button>
-                                </div>
-                            ))}
+                                );
+                            })}
 
                             {/* What a companion sees — plain, because it's expected */}
                             <div className="rounded-xl bg-slate-50 p-3.5">
