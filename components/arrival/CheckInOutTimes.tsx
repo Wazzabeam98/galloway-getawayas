@@ -1,6 +1,6 @@
 'use client';
 
-import { useId, useState } from 'react';
+import { useId, useState, type ReactNode } from 'react';
 import Link from 'next/link';
 import { DoorOpen, DoorClosed, ChevronDown } from 'lucide-react';
 import { formatTime } from '@/lib/utils';
@@ -48,8 +48,16 @@ interface Props extends Times {
     // mode="static": the rail just shows the two ends — no link, no toggle. The
     //   trips card uses this now that everything the rail used to link THROUGH to
     //   lives on the card itself, so the times are a fact to read, not a door.
-    mode: 'link' | 'expand' | 'static';
+    // mode="split": times only (no dates) on the left rail, with `aside` filling
+    //   the right half — the home hero uses this to put Get directions and
+    //   what3words beside the times instead of leaving the box half-empty and
+    //   repeating the date range that already sits above it. Two columns on wide
+    //   screens; stacked below lg, never squeezed.
+    mode: 'link' | 'expand' | 'static' | 'split';
     href?: string;
+    // Right-hand content for split mode. Optional: with none, split is just the
+    // times-only rail (e.g. a pending stay, which is not entitled to the address).
+    aside?: ReactNode;
 }
 
 const DAYS = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
@@ -132,6 +140,35 @@ export default function CheckInOutTimes(props: Props) {
                     </div>
                 </div>
             </Link>
+        );
+    }
+
+    // ---- split mode: times-only rail on the left, `aside` on the right ------
+    if (mode === 'split') {
+        const rail = (
+            <div className="min-w-0">
+                <div className="flex items-stretch gap-3">
+                    <Node icon={arrivalIcon} />
+                    <div className="flex-1 pb-4"><RowHead label="Check-in" date="" time={inTime} /></div>
+                </div>
+                <div className="flex items-stretch gap-3">
+                    <Node icon={departIcon} last />
+                    <div className="flex-1"><RowHead label="Checkout" date="" time={outTime} /></div>
+                </div>
+            </div>
+        );
+        return (
+            <div className={`${CARD[surface]} p-4`}>
+                {props.aside ? (
+                    // Two columns only where there's room (lg+); below that they
+                    // stack — a squeezed two-up at 375px is worse than a clean
+                    // stack, and the times still lead.
+                    <div className="grid gap-4 lg:grid-cols-2 lg:gap-6">
+                        {rail}
+                        <div className="lg:border-l lg:border-slate-100 lg:pl-6">{props.aside}</div>
+                    </div>
+                ) : rail}
+            </div>
         );
     }
 

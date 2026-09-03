@@ -5,10 +5,13 @@ import { formatUk } from '@/lib/cancellation';
 import { cancellationPosition } from '@/lib/cancellationView';
 import { londonDayKey, daysBetweenKeys, ukLongDate } from '@/lib/dayKey';
 import { liveForGuestCard, stayCountdown } from '@/lib/bookingWindows';
+import { bookingReleasesPrivateData } from '@/lib/bookingEntitlement';
+import { adminClient } from '@/lib/supabaseAdmin';
 import { publicArea } from '@/lib/places';
 import ListingImage from '@/components/ListingImage';
 import CheckInOutTimes from '@/components/arrival/CheckInOutTimes';
-import { MessageSquare, CalendarDays } from 'lucide-react';
+import CopyField from '@/components/arrival/CopyField';
+import { MessageSquare, CalendarDays, Navigation, Grid3x3 } from 'lucide-react';
 
 // Shown at the top of the home page to someone with a stay coming up. The
 // point is that a guest logging in six weeks before their holiday sees their
@@ -44,6 +47,30 @@ export default async function UpcomingTrip() {
         .maybeSingle();
 
     if (!listing) return null;
+
+    // Arrival essentials for the times box — the address behind Get directions
+    // and the what3words — but ONLY for a CONFIRMED stay. A pending request is
+    // not entitled to private location data (the same bookingReleasesPrivateData
+    // rule as /api/trips and the arrival page), so its card shows the times
+    // alone. Read under the service role because what3words lives in the
+    // grant-less listing_arrival table.
+    let directionsUrl: string | null = null;
+    let what3words: string | null = null;
+    if (bookingReleasesPrivateData(booking)) {
+        const admin = adminClient();
+        const [{ data: place }, { data: arr }] = await Promise.all([
+            admin.from('listings').select('street_address, postcode, location, latitude, longitude').eq('id', booking.listing_id).maybeSingle(),
+            admin.from('listing_arrival').select('what3words').eq('listing_id', booking.listing_id).maybeSingle(),
+        ]);
+        const p: any = place || {};
+        what3words = (arr as any)?.what3words || null;
+        const hasCoords = p.latitude != null && p.longitude != null && !(p.latitude === 0 && p.longitude === 0);
+        const addressString = [p.street_address, p.postcode, p.location].filter(Boolean).join(', ');
+        if (hasCoords || addressString) {
+            const dest = hasCoords ? p.latitude + ',' + p.longitude : encodeURIComponent(addressString);
+            directionsUrl = 'https://www.google.com/maps/dir/?api=1&destination=' + dest;
+        }
+    }
 
     const nights = Math.round(
         (new Date(String(booking.check_out).slice(0, 10)).getTime()
@@ -139,20 +166,35 @@ export default async function UpcomingTrip() {
                         </div>
                     </div>
 
-                    {/* The times, as a matched pair, linking through to the trip
-                        card — where the whole approach now lives. It used to point
-                        at /arrival, but that page is the secrets screen now: a
-                        guest with no door code would have landed somewhere
-                        near-empty. The trip card always has something to show. */}
+                    {/* The times, as a matched pair — times only, because the
+                        date range and the nights already sit right above. The
+                        freed right half carries the one thing this card didn't
+                        have: Get directions and the what3words, the essentials a
+                        guest wants at a glance on the morning they set off. Two
+                        columns on wide screens; stacked below lg. */}
                     <div className="mt-5">
                         <CheckInOutTimes
                             surface="home"
-                            mode="link"
-                            href={'/trips#trip-' + booking.id}
-                            checkInDate={booking.check_in}
-                            checkOutDate={booking.check_out}
+                            mode="split"
                             checkInTime={listing.check_in_time}
                             checkOutTime={listing.check_out_time}
+                            aside={(directionsUrl || what3words) ? (
+                                <div className="flex h-full flex-col justify-center gap-2.5">
+                                    {directionsUrl && (
+                                        <a href={directionsUrl} target="_blank" rel="noreferrer"
+                                            className="inline-flex items-center justify-center gap-2 rounded-lg bg-stone-900 px-3 py-2.5 text-sm font-semibold text-white transition hover:bg-stone-800">
+                                            <Navigation className="h-4 w-4" /> Get directions
+                                        </a>
+                                    )}
+                                    {what3words && (
+                                        <div className="flex items-center gap-2">
+                                            <Grid3x3 className="h-4 w-4 flex-none text-emerald-700" />
+                                            <span className="min-w-0 truncate text-sm text-emerald-700">{what3words}</span>
+                                            <CopyField value={what3words} label="Copy" />
+                                        </div>
+                                    )}
+                                </div>
+                            ) : null}
                         />
                     </div>
 
