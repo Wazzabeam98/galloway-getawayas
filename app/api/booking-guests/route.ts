@@ -39,20 +39,23 @@ export async function POST(request: Request) {
         const action: string = (body && body.action) || 'invite';
         const admin = adminClient();
 
-        // ---- Invite someone along -----------------------------------------
+        // ---- Add someone along --------------------------------------------
+        // Name and email are both optional now. Adding someone mints a seat and
+        // a single-use link; the booker shares it however they like. An email,
+        // when given, keeps binding the link to that address (see accept route).
         if (action === 'invite') {
             const bookingId: string = body.bookingId;
             const email: string = ((body.email || '') as string).trim().toLowerCase();
             const name: string = ((body.name || '') as string).trim();
 
-            if (!bookingId || !email) {
+            if (!bookingId) {
                 return NextResponse.json(
-                    { ok: false, error: 'Enter their email address.' },
+                    { ok: false, error: 'Which booking?' },
                     { status: 400 }
                 );
             }
 
-            if (!/^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(email)) {
+            if (email && !/^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(email)) {
                 return NextResponse.json(
                     { ok: false, error: 'That doesn\u2019t look like an email address.' },
                     { status: 400 }
@@ -71,24 +74,23 @@ export async function POST(request: Request) {
                 );
             }
 
-            if (email === (user.email || '').toLowerCase()) {
+            if (email && email === (user.email || '').toLowerCase()) {
                 return NextResponse.json(
                     { ok: false, error: 'You booked it, so you\u2019re already on it.' },
                     { status: 400 }
                 );
             }
 
-            const { data: existingProfile } = await admin
-                .from('profiles')
-                .select('id')
-                .ilike('email', email)
-                .maybeSingle();
+            // Only pre-match a profile when we actually have an address to match.
+            const { data: existingProfile } = email
+                ? await admin.from('profiles').select('id').ilike('email', email).maybeSingle()
+                : { data: null };
 
             const { data: created, error } = await admin
                 .from('booking_guests')
                 .insert({
                     booking_id: bookingId,
-                    email: email,
+                    email: email || null,
                     name: name || null,
                     user_id: (existingProfile && existingProfile.id) || null,
                     invited_by: user.id,
@@ -107,16 +109,74 @@ export async function POST(request: Request) {
                 );
             }
 
-            // The row (and its token) come back; the booker chooses how to deliver
-            // the link \u2014 copy it, email it, Messages or WhatsApp \u2014 so we no longer
-            // force an email here. Email is one channel among four now, sent on
-            // demand by action=email below.
             return NextResponse.json({
                 ok: true,
                 id: created.id,
                 token: created.invite_token,
                 link: SITE_URL + '/trip-invite/' + created.invite_token,
             });
+        }
+
+        // ---- Regenerate a link (revoke in place) ---------------------------
+        // A link that's gone to the wrong place, or one that's gone cold: mint a
+        // fresh token on the SAME seat. The old link dies instantly (its token
+        // no longer exists), and anyone who'd already accepted on the old link
+        // is dropped back to invited. The seat, the name and any email are kept.
+        if (action === 'regenerate') {
+            const guestRowId: string = body.guestId;
+            const { data: row } = await admin
+                .from('booking_guests')
+                .select('id, booking_id')
+                .eq('id', guestRowId)
+                .maybeSingle();
+            if (!row) {
+                return NextResponse.json({ ok: false, error: 'Not found' }, { status: 404 });
+            }
+            const booking = await bookedBy(admin, row.booking_id, user.id);
+            if (!booking) {
+                return NextResponse.json({ ok: false, error: 'Not your booking' }, { status: 403 });
+            }
+
+            const freshToken = crypto.randomUUID();
+            await admin
+                .from('booking_guests')
+                .update({
+                    invite_token: freshToken,
+                    status: 'invited',
+                    accepted_at: null,
+                    link_sent_at: null,
+                })
+                .eq('id', guestRowId);
+
+            return NextResponse.json({
+                ok: true,
+                token: freshToken,
+                link: SITE_URL + '/trip-invite/' + freshToken,
+            });
+        }
+
+        // ---- Mark a link as sent -------------------------------------------
+        // Stamped when the booker actually shares a link, so the sheet can show
+        // "waiting to send" until it's gone out, then "invited".
+        if (action === 'mark-sent') {
+            const guestRowId: string = body.guestId;
+            const { data: row } = await admin
+                .from('booking_guests')
+                .select('id, booking_id')
+                .eq('id', guestRowId)
+                .maybeSingle();
+            if (!row) {
+                return NextResponse.json({ ok: false, error: 'Not found' }, { status: 404 });
+            }
+            const booking = await bookedBy(admin, row.booking_id, user.id);
+            if (!booking) {
+                return NextResponse.json({ ok: false, error: 'Not your booking' }, { status: 403 });
+            }
+            await admin
+                .from('booking_guests')
+                .update({ link_sent_at: new Date().toISOString() })
+                .eq('id', guestRowId);
+            return NextResponse.json({ ok: true });
         }
 
         // ---- Send (or resend) the branded invite email for one companion ----
@@ -163,6 +223,11 @@ export async function POST(request: Request) {
                     'You\u2019re receiving this because someone added you to their trip.'
                 )
             );
+
+            await admin
+                .from('booking_guests')
+                .update({ link_sent_at: new Date().toISOString() })
+                .eq('id', row.id);
 
             return NextResponse.json({ ok: true });
         }

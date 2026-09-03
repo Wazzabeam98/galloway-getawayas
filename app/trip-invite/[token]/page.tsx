@@ -20,7 +20,7 @@ export default async function TripInvitePage({ params }: { params: { token: stri
 
     const { data: invite } = await admin
         .from('booking_guests')
-        .select('id, booking_id, email, status, invited_by')
+        .select('id, booking_id, email, status, invited_by, user_id')
         .eq('invite_token', params.token)
         .maybeSingle();
 
@@ -33,6 +33,20 @@ export default async function TripInvitePage({ params }: { params: { token: stri
         .maybeSingle();
 
     if (!booking) notFound();
+
+    // The link dies when the stay ends.
+    const expired = String(booking.check_out) < new Date().toISOString().slice(0, 10);
+    if (expired && invite.status !== 'active') {
+        return (
+            <div className="max-w-lg mx-auto px-6 py-20 text-center">
+                <h1 className="text-2xl font-bold text-slate-900 mb-2">This invite has expired</h1>
+                <p className="text-slate-600 mb-8">The stay it was for has already ended.</p>
+                <Link href="/" className="px-5 py-3 bg-emerald-700 hover:bg-emerald-800 text-white text-sm font-semibold rounded-xl inline-block">
+                    Explore Galloway
+                </Link>
+            </div>
+        );
+    }
 
     const { data: listing } = await admin
         .from('listings')
@@ -51,6 +65,7 @@ export default async function TripInvitePage({ params }: { params: { token: stri
     const supabase = createServerComponentClient({ cookies });
     const { data: auth } = await supabase.auth.getSession();
     const signedInAs = (auth && auth.session && auth.session.user && auth.session.user.email) || '';
+    const signedInId = (auth && auth.session && auth.session.user && auth.session.user.id) || '';
 
     const image =
         listing && listing.images && listing.images.length > 0
@@ -58,26 +73,43 @@ export default async function TripInvitePage({ params }: { params: { token: stri
             : null;
 
     if (invite.status === 'active') {
+        // Single-use: if the person looking at it is the one who claimed it,
+        // welcome them back to their trip. Anyone else is holding a dead link.
+        const isClaimer = signedInId && invite.user_id === signedInId;
+        if (isClaimer) {
+            return (
+                <div className="max-w-lg mx-auto px-6 py-20 text-center">
+                    <h1 className="text-2xl font-bold text-slate-900 mb-2">You&apos;re on this trip</h1>
+                    <p className="text-slate-600 mb-8">
+                        {listing?.title || 'The stay'} is in your trips.
+                    </p>
+                    <div className="flex flex-wrap justify-center gap-2">
+                        <Link
+                            href="/trips"
+                            className="px-5 py-3 bg-emerald-700 hover:bg-emerald-800 text-white text-sm font-semibold rounded-xl inline-block"
+                        >
+                            See your trip
+                        </Link>
+                        <Link
+                            href="/"
+                            className="px-5 py-3 border border-slate-300 hover:border-slate-500 text-slate-800 text-sm font-semibold rounded-xl inline-block"
+                        >
+                            Explore more of Galloway
+                        </Link>
+                    </div>
+                </div>
+            );
+        }
         return (
             <div className="max-w-lg mx-auto px-6 py-20 text-center">
-                <h1 className="text-2xl font-bold text-slate-900 mb-2">You&apos;re on this trip</h1>
+                <h1 className="text-2xl font-bold text-slate-900 mb-2">This link has already been used</h1>
                 <p className="text-slate-600 mb-8">
-                    {listing?.title || 'The stay'} is in your trips.
+                    Someone has already joined this trip with it. If that wasn&apos;t you, ask
+                    whoever invited you to send a fresh link.
                 </p>
-                <div className="flex flex-wrap justify-center gap-2">
-                    <Link
-                        href="/trips"
-                        className="px-5 py-3 bg-emerald-700 hover:bg-emerald-800 text-white text-sm font-semibold rounded-xl inline-block"
-                    >
-                        See your trip
-                    </Link>
-                    <Link
-                        href="/"
-                        className="px-5 py-3 border border-slate-300 hover:border-slate-500 text-slate-800 text-sm font-semibold rounded-xl inline-block"
-                    >
-                        Explore more of Galloway
-                    </Link>
-                </div>
+                <Link href="/" className="px-5 py-3 bg-emerald-700 hover:bg-emerald-800 text-white text-sm font-semibold rounded-xl inline-block">
+                    Explore Galloway
+                </Link>
             </div>
         );
     }
@@ -122,16 +154,23 @@ export default async function TripInvitePage({ params }: { params: { token: stri
                 </ul>
             </div>
 
-            {/* Up front, because getting the email wrong is the one way to get
-                stuck: the invite is bound to the address it was sent to. */}
-            <p className="mb-6 text-sm text-slate-500">
-                Sign in — or sign up — with the email address this invite was sent to. Any other
-                address won&apos;t match, and you won&apos;t be able to join.
-            </p>
+            {/* Only when the booker bound this link to an address is getting the
+                email right something the joiner has to think about. A plain
+                share link (no email) lets whoever opens it join. */}
+            {invite.email ? (
+                <p className="mb-6 text-sm text-slate-500">
+                    This invite is for <strong>{invite.email}</strong> — sign in, or sign up, with
+                    that address to join.
+                </p>
+            ) : (
+                <p className="mb-6 text-sm text-slate-500">
+                    Sign in, or create a free account, to join the trip.
+                </p>
+            )}
 
             <AcceptTripInvite
                 token={params.token}
-                inviteEmail={invite.email}
+                inviteEmail={invite.email || ''}
                 signedInAs={signedInAs}
             />
         </div>

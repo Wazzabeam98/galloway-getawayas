@@ -4,28 +4,38 @@ import { useEffect, useState } from 'react';
 import { createPortal } from 'react-dom';
 import { createClientComponentClient } from '@supabase/auth-helpers-nextjs';
 import { toast } from 'react-toastify';
-import { UserPlus, X, User, Link2, Mail, MessageCircle, Check } from 'lucide-react';
+import { UserPlus, X, User, Link2, Mail, MessageSquare, Check, RefreshCw } from 'lucide-react';
+import { getImageUrl, displayName } from '@/lib/utils';
+
+// The group coming on a trip. On the card it reads the way Airbnb shows it —
+// stacked avatars under the stay details — so a group booking looks like one
+// before you open anything. Opening it gives the booker a sheet that goes past
+// Airbnb's static list: every seat carries its real state (accepted, invited,
+// or waiting to send), accepted people show their profile photo, and a link
+// that's gone to the wrong place is regenerated in place rather than deleted.
+//
+// The invite is a SINGLE-USE link (see /api/booking-guests + accept): whoever
+// opens an unclaimed link claims that one seat, the link then dies, and it
+// expires when the stay ends. An email is optional — give one and the link
+// stays bound to it; leave it out and it's a share-anywhere link.
 
 interface Companion {
     id: string;
-    email: string;
+    email: string | null;
     name: string | null;
     status: string;
     user_id: string | null;
     invite_token: string | null;
+    link_sent_at: string | null;
 }
 
-// The group coming on a trip, shown on the card the way Airbnb shows it — stacked
-// avatars under the stay details, so a group booking looks like a group booking
-// before you open anything. Accepted companions carry their initials; the seats
-// nobody has claimed yet are grey silhouettes, so an empty seat reads as
-// something to fill. Opening it gives the booker a sheet to add people and share
-// each person's link four ways.
-//
-// The invite is bound to an email (see /api/booking-guests): the link only lets
-// the person it was sent to in, because the trip reveals the address, the door
-// code and the wifi. So a "share" is a per-person link delivered however suits —
-// copied, emailed, texted or WhatsApp'd — not one open link for a group chat.
+interface Profile {
+    id: string;
+    avatar_url: string | null;
+    full_name: string | null;
+    preferred_name: string | null;
+    show_full_name: boolean | null;
+}
 
 const PALETTE = ['bg-emerald-600', 'bg-sky-600', 'bg-amber-600', 'bg-rose-600', 'bg-violet-600', 'bg-teal-600'];
 
@@ -45,15 +55,41 @@ function colorFor(seed: string): string {
     return PALETTE[h % PALETTE.length];
 }
 
-function Avatar({ person }: { person: Companion }) {
-    const label = person.name || person.email;
-    const pending = person.status !== 'active';
+function avatarSrc(url: string | null | undefined): string | null {
+    if (!url) return null;
+    return /^https?:\/\//.test(url) ? url : getImageUrl(url);
+}
+
+// A companion's avatar: their photo once they've joined and have one, otherwise
+// coloured initials. Not-yet-joined seats read as muted.
+function Avatar({
+    person,
+    profile,
+    size = 'md',
+}: {
+    person: Companion;
+    profile?: Profile;
+    size?: 'sm' | 'md';
+}) {
+    const active = person.status === 'active';
+    const label = (profile && displayName(profile, '')) || person.name || person.email || 'Guest';
+    const photo = active ? avatarSrc(profile && profile.avatar_url) : null;
+    const dim = size === 'sm' ? 'h-9 w-9 text-xs' : 'h-10 w-10 text-sm';
+
+    if (photo) {
+        return (
+            <img
+                src={photo}
+                alt=""
+                className={'flex-none rounded-full object-cover ring-2 ring-white ' + dim}
+            />
+        );
+    }
     return (
         <div
-            title={label + (pending ? ' — invited' : '')}
             className={
-                'flex h-9 w-9 flex-none items-center justify-center rounded-full text-xs font-semibold text-white ring-2 ring-white ' +
-                colorFor(person.email || label) + (pending ? ' opacity-60' : '')
+                'flex flex-none items-center justify-center rounded-full font-semibold text-white ring-2 ring-white ' +
+                dim + ' ' + colorFor(person.email || label) + (active ? '' : ' opacity-60')
             }
         >
             {initials(label)}
@@ -61,14 +97,30 @@ function Avatar({ person }: { person: Companion }) {
     );
 }
 
-function EmptySeat() {
+function EmptySeat({ size = 'md' }: { size?: 'sm' | 'md' }) {
+    const dim = size === 'sm' ? 'h-9 w-9' : 'h-10 w-10';
     return (
-        <div
-            title="Guest — a spot to fill"
-            className="flex h-9 w-9 flex-none items-center justify-center rounded-full bg-slate-200 text-slate-400 ring-2 ring-white"
-        >
+        <div className={'flex flex-none items-center justify-center rounded-full bg-slate-200 text-slate-400 ring-2 ring-white ' + dim}>
             <User className="h-4 w-4" />
         </div>
+    );
+}
+
+// Brand marks lucide doesn't carry, kept tiny and monochrome so the five share
+// tiles read as one set.
+function WhatsAppIcon({ className }: { className?: string }) {
+    return (
+        <svg viewBox="0 0 24 24" fill="currentColor" className={className} aria-hidden="true">
+            <path d="M12.04 2C6.58 2 2.13 6.45 2.13 11.91c0 1.75.46 3.45 1.32 4.95L2 22l5.25-1.38a9.9 9.9 0 0 0 4.79 1.22h.01c5.46 0 9.9-4.45 9.9-9.91 0-2.65-1.03-5.14-2.9-7.01A9.82 9.82 0 0 0 12.04 2Zm0 18.15h-.01a8.2 8.2 0 0 1-4.18-1.15l-.3-.18-3.11.82.83-3.04-.2-.31a8.19 8.19 0 0 1-1.26-4.38c0-4.54 3.7-8.24 8.24-8.24 2.2 0 4.27.86 5.82 2.42a8.18 8.18 0 0 1 2.41 5.83c0 4.54-3.7 8.23-8.24 8.23Zm4.52-6.16c-.25-.12-1.47-.72-1.69-.81-.23-.08-.39-.12-.56.13-.16.25-.64.8-.79.97-.14.16-.29.19-.54.06-.25-.12-1.05-.39-1.99-1.23-.74-.66-1.23-1.47-1.38-1.72-.14-.25-.02-.38.11-.51.11-.11.25-.29.37-.43.13-.14.17-.25.25-.41.08-.16.04-.31-.02-.43-.06-.12-.56-1.34-.76-1.84-.2-.48-.4-.42-.56-.43l-.48-.01c-.16 0-.43.06-.65.31-.22.25-.86.84-.86 2.05 0 1.21.88 2.38 1 2.54.12.16 1.73 2.64 4.19 3.7.59.25 1.04.4 1.4.52.59.19 1.12.16 1.54.1.47-.07 1.47-.6 1.68-1.18.21-.58.21-1.07.14-1.18-.06-.1-.22-.16-.47-.28Z" />
+        </svg>
+    );
+}
+
+function MessengerIcon({ className }: { className?: string }) {
+    return (
+        <svg viewBox="0 0 24 24" fill="currentColor" className={className} aria-hidden="true">
+            <path d="M12 2C6.36 2 2 6.13 2 11.7c0 2.91 1.19 5.44 3.14 7.19.16.14.26.35.27.57l.05 1.78c.02.57.6.94 1.12.71l1.99-.88c.17-.07.36-.09.54-.04 1.03.28 2.13.44 3.28.44 5.64 0 10-4.13 10-9.7C22.79 6.13 17.64 2 12 2Zm6 7.46-2.93 4.65c-.47.74-1.47.92-2.17.4l-2.33-1.75a.6.6 0 0 0-.72 0l-3.15 2.39c-.42.32-.97-.18-.69-.63l2.93-4.65c.47-.74 1.47-.92 2.17-.4l2.33 1.75c.21.16.51.16.72 0l3.15-2.39c.42-.32.97.18.69.63Z" />
+        </svg>
     );
 }
 
@@ -85,6 +137,7 @@ export default function TripGroup({
 }) {
     const supabase = createClientComponentClient();
     const [people, setPeople] = useState<Companion[]>([]);
+    const [profiles, setProfiles] = useState<Record<string, Profile>>({});
     const [loading, setLoading] = useState(true);
     const [mounted, setMounted] = useState(false);
     const [open, setOpen] = useState(false);
@@ -92,17 +145,33 @@ export default function TripGroup({
     const [name, setName] = useState('');
     const [sending, setSending] = useState(false);
     const [copiedId, setCopiedId] = useState<string | null>(null);
+    const [busyId, setBusyId] = useState<string | null>(null);
 
     useEffect(() => { setMounted(true); }, []);
 
     const load = async () => {
         const { data } = await supabase
             .from('booking_guests')
-            .select('id, email, name, status, user_id, invite_token')
+            .select('id, email, name, status, user_id, invite_token, link_sent_at')
             .eq('booking_id', bookingId)
             .neq('status', 'removed')
             .order('invited_at');
-        setPeople(data || []);
+        const rows = (data as Companion[]) || [];
+        setPeople(rows);
+
+        // Photos and real names for people who've actually joined.
+        const ids = rows.filter((p) => p.user_id).map((p) => p.user_id as string);
+        if (ids.length) {
+            const { data: profRows } = await supabase
+                .from('profiles')
+                .select('id, avatar_url, full_name, preferred_name, show_full_name')
+                .in('id', ids);
+            const map: Record<string, Profile> = {};
+            (profRows as Profile[] | null)?.forEach((p) => { map[p.id] = p; });
+            setProfiles(map);
+        } else {
+            setProfiles({});
+        }
         setLoading(false);
     };
     useEffect(() => { load(); }, [bookingId]);
@@ -114,17 +183,29 @@ export default function TripGroup({
     const going = people.filter((p) => p.status === 'active').length;
     const invited = people.filter((p) => p.status !== 'active').length;
 
+    const nameOf = (p: Companion) => {
+        const prof = p.user_id ? profiles[p.user_id] : undefined;
+        return (prof && displayName(prof, '')) || p.name || p.email || 'Guest';
+    };
+
     const linkFor = (p: Companion) =>
         (typeof window !== 'undefined' ? window.location.origin : '') + '/trip-invite/' + (p.invite_token || '');
 
     const shareText = (p: Companion) => {
         const who = cottage ? cottage : 'the cottage';
         const bit = when ? ', ' + when : '';
-        return `Come to ${who}${bit} — I've added you to the trip. Join here (sign in with ${p.email}): ${linkFor(p)}`;
+        return `Come to ${who}${bit} — I've added you to the trip. Join here: ${linkFor(p)}`;
     };
 
-    const invite = async () => {
-        if (!email.trim()) { toast.error('Enter their email address.', { theme: 'colored' }); return; }
+    const markSent = (p: Companion) => {
+        // Fire and forget — the row moving to "invited" isn't worth blocking a share on.
+        fetch('/api/booking-guests', {
+            method: 'POST', headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ action: 'mark-sent', guestId: p.id }),
+        }).then(() => load()).catch(() => {});
+    };
+
+    const add = async () => {
         setSending(true);
         try {
             const res = await fetch('/api/booking-guests', {
@@ -135,7 +216,7 @@ export default function TripGroup({
             if (data && data.ok) {
                 setEmail(''); setName('');
                 await load();
-                toast.success('Added — now send them the link below.', { theme: 'colored' });
+                toast.success('Added — now share their link below.', { theme: 'colored' });
             } else {
                 toast.error((data && data.error) || 'Could not add them.', { theme: 'colored' });
             }
@@ -144,7 +225,7 @@ export default function TripGroup({
     };
 
     const remove = async (p: Companion) => {
-        if (!confirm('Take ' + (p.name || p.email) + ' off this trip?')) return;
+        if (!confirm('Take ' + nameOf(p) + ' off this trip?')) return;
         const res = await fetch('/api/booking-guests', {
             method: 'POST', headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify({ action: 'remove', guestId: p.id }),
@@ -153,31 +234,82 @@ export default function TripGroup({
         if (data && data.ok) load(); else toast.error('Could not do that.', { theme: 'colored' });
     };
 
+    const regenerate = async (p: Companion) => {
+        if (!confirm('Make a new link for ' + nameOf(p) + '? The old one stops working straight away.')) return;
+        setBusyId(p.id);
+        const res = await fetch('/api/booking-guests', {
+            method: 'POST', headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ action: 'regenerate', guestId: p.id }),
+        });
+        const data = await res.json();
+        setBusyId(null);
+        if (data && data.ok) {
+            await load();
+            toast.success('New link ready — the old one is dead.', { theme: 'colored' });
+        } else {
+            toast.error('Could not make a new link.', { theme: 'colored' });
+        }
+    };
+
     const copyLink = async (p: Companion) => {
         try {
             await navigator.clipboard.writeText(linkFor(p));
             setCopiedId(p.id); setTimeout(() => setCopiedId(null), 1500);
+            markSent(p);
         } catch { toast.error('Could not copy the link.', { theme: 'colored' }); }
     };
 
     const emailInvite = async (p: Companion) => {
-        const res = await fetch('/api/booking-guests', {
-            method: 'POST', headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ action: 'email', guestId: p.id }),
-        });
-        const data = await res.json();
-        if (data && data.ok) toast.success('Email sent to ' + p.email + '.', { theme: 'colored' });
-        else toast.error('Could not send the email.', { theme: 'colored' });
+        // A row with an address gets our branded email; a plain link opens the
+        // user's mail composer with the link in it.
+        if (p.email) {
+            const res = await fetch('/api/booking-guests', {
+                method: 'POST', headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ action: 'email', guestId: p.id }),
+            });
+            const data = await res.json();
+            if (data && data.ok) { toast.success('Emailed to ' + p.email + '.', { theme: 'colored' }); load(); }
+            else toast.error('Could not send the email.', { theme: 'colored' });
+        } else {
+            const subject = encodeURIComponent('Join my trip' + (cottage ? ' to ' + cottage : ''));
+            window.location.href = 'mailto:?subject=' + subject + '&body=' + encodeURIComponent(shareText(p));
+            markSent(p);
+        }
     };
 
     if (loading) return null;
 
     const nothingYet = people.length === 0 && emptySeats === 0;
 
-    // The stacked row under the stay details. Even with nobody added, an invite
-    // affordance shows so the booker can start.
     const shown = people.slice(0, 5);
     const overflow = people.length - shown.length;
+
+    // The five share tiles, shown under any seat that hasn't joined yet. Equal
+    // weight, so no single channel is the "right" one — copy, email, or any of
+    // the messengers.
+    const ShareTiles = ({ p }: { p: Companion }) => {
+        const tile = 'flex flex-col items-center justify-center gap-1 rounded-xl border border-slate-200 bg-white py-2 text-[11px] font-medium text-slate-700 transition hover:border-slate-400 hover:bg-slate-50';
+        return (
+            <div className="mt-3 grid grid-cols-5 gap-1.5">
+                <button type="button" onClick={() => copyLink(p)} className={tile}>
+                    {copiedId === p.id ? <Check className="h-4 w-4 text-emerald-600" /> : <Link2 className="h-4 w-4" />}
+                    {copiedId === p.id ? 'Copied' : 'Copy'}
+                </button>
+                <button type="button" onClick={() => emailInvite(p)} className={tile}>
+                    <Mail className="h-4 w-4" /> Email
+                </button>
+                <a href={'sms:?&body=' + encodeURIComponent(shareText(p))} onClick={() => markSent(p)} className={tile}>
+                    <MessageSquare className="h-4 w-4" /> Messages
+                </a>
+                <a href={'https://wa.me/?text=' + encodeURIComponent(shareText(p))} target="_blank" rel="noreferrer" onClick={() => markSent(p)} className={tile}>
+                    <WhatsAppIcon className="h-4 w-4" /> WhatsApp
+                </a>
+                <a href={'fb-messenger://share/?link=' + encodeURIComponent(linkFor(p))} onClick={() => markSent(p)} className={tile}>
+                    <MessengerIcon className="h-4 w-4" /> Messenger
+                </a>
+            </div>
+        );
+    };
 
     return (
         <div className="mt-3">
@@ -192,9 +324,9 @@ export default function TripGroup({
                         You
                     </div>
                     <div className="flex -space-x-2 pl-1">
-                        {shown.map((p) => <Avatar key={p.id} person={p} />)}
+                        {shown.map((p) => <Avatar key={p.id} person={p} profile={p.user_id ? profiles[p.user_id] : undefined} size="sm" />)}
                         {Array.from({ length: Math.min(emptySeats, overflow > 0 ? 0 : 6 - shown.length) }).map((_, i) => (
-                            <EmptySeat key={'e' + i} />
+                            <EmptySeat key={'e' + i} size="sm" />
                         ))}
                         {overflow > 0 && (
                             <div className="flex h-9 w-9 flex-none items-center justify-center rounded-full bg-slate-100 text-xs font-semibold text-slate-600 ring-2 ring-white">
@@ -214,7 +346,7 @@ export default function TripGroup({
                                     + (emptySeats ? ' · ' + emptySeats + ' to fill' : '')}
                     </div>
                     <div className="text-xs text-slate-500 group-hover:text-slate-700">
-                        {nothingYet ? 'They get the address, door code and wifi — not the price.' : 'Manage the group'}
+                        {nothingYet ? 'Share a link — no email needed.' : 'Manage the group'}
                     </div>
                 </div>
                 <UserPlus className="h-4 w-4 flex-none text-slate-400 group-hover:text-slate-700" />
@@ -223,7 +355,7 @@ export default function TripGroup({
             {open && mounted && createPortal(
                 <div className="fixed inset-0 z-50 flex items-end justify-center bg-black/50 px-0 sm:items-center sm:px-4" onClick={() => setOpen(false)}>
                     <div
-                        className="max-h-[90vh] w-full max-w-md overflow-y-auto rounded-t-2xl bg-white p-5 shadow-xl sm:rounded-2xl"
+                        className="max-h-[92vh] w-full max-w-md overflow-y-auto rounded-t-2xl bg-white p-5 shadow-xl sm:rounded-2xl"
                         onClick={(e) => e.stopPropagation()}
                     >
                         <div className="mb-1 flex items-center justify-between">
@@ -231,53 +363,72 @@ export default function TripGroup({
                             <button type="button" onClick={() => setOpen(false)} className="text-slate-400 hover:text-slate-700"><X className="h-5 w-5" /></button>
                         </div>
                         <p className="mb-4 text-sm text-slate-500">
-                            Add the people coming with you. Each gets their own link — copy it, email it,
-                            or send it on Messages or WhatsApp.
+                            {going + invited === 0
+                                ? 'Add the people coming with you and share each one a link.'
+                                : [
+                                    going ? going + ' joined' : null,
+                                    invited ? invited + ' invited' : null,
+                                    emptySeats ? emptySeats + (emptySeats === 1 ? ' spot left' : ' spots left') : null,
+                                ].filter(Boolean).join(' · ')}
                         </p>
 
                         {/* Who's on it */}
                         <div className="space-y-2">
                             <div className="flex items-center gap-3 rounded-xl border border-slate-200 p-3">
-                                <div className="flex h-9 w-9 flex-none items-center justify-center rounded-full bg-slate-900 text-[11px] font-semibold text-white">You</div>
+                                <div className="flex h-10 w-10 flex-none items-center justify-center rounded-full bg-slate-900 text-xs font-semibold text-white">You</div>
                                 <div className="min-w-0 flex-1">
                                     <div className="text-sm font-medium text-slate-900">You</div>
-                                    <div className="text-xs text-slate-500">You booked this stay</div>
+                                    <div className="text-xs text-slate-500">Booked this stay</div>
                                 </div>
+                                <span className="flex-none rounded-full bg-slate-100 px-2.5 py-1 text-[11px] font-semibold text-slate-600">Booker</span>
                             </div>
 
-                            {people.map((p) => (
-                                <div key={p.id} className="rounded-xl border border-slate-200 p-3">
-                                    <div className="flex items-center gap-3">
-                                        <Avatar person={p} />
-                                        <div className="min-w-0 flex-1">
-                                            <div className="truncate text-sm font-medium text-slate-900">{p.name || p.email}</div>
-                                            <div className="text-xs">
-                                                {p.status === 'active'
-                                                    ? <span className="text-emerald-700">Going</span>
-                                                    : <span className="text-amber-700">Invited — not joined yet</span>}
-                                                {p.name && <span className="text-slate-400"> · {p.email}</span>}
+                            {people.map((p) => {
+                                const active = p.status === 'active';
+                                const sent = !!p.link_sent_at;
+                                return (
+                                    <div key={p.id} className="rounded-xl border border-slate-200 p-3">
+                                        <div className="flex items-center gap-3">
+                                            <Avatar person={p} profile={p.user_id ? profiles[p.user_id] : undefined} />
+                                            <div className="min-w-0 flex-1">
+                                                <div className="truncate text-sm font-medium text-slate-900">{nameOf(p)}</div>
+                                                <div className="truncate text-xs text-slate-400">
+                                                    {active
+                                                        ? 'On the trip'
+                                                        : p.email
+                                                            ? p.email
+                                                            : sent ? 'Link shared' : 'Link ready to share'}
+                                                </div>
                                             </div>
+                                            {active ? (
+                                                <span className="flex flex-none items-center gap-1 rounded-full bg-emerald-50 px-2.5 py-1 text-[11px] font-semibold text-emerald-700">
+                                                    <Check className="h-3 w-3" /> Accepted
+                                                </span>
+                                            ) : sent ? (
+                                                <span className="flex-none rounded-full bg-amber-50 px-2.5 py-1 text-[11px] font-semibold text-amber-700">Invited</span>
+                                            ) : (
+                                                <span className="flex-none rounded-full bg-slate-100 px-2.5 py-1 text-[11px] font-semibold text-slate-500">Waiting</span>
+                                            )}
+                                            <button type="button" onClick={() => remove(p)} title="Take them off this trip" className="flex-none text-slate-300 hover:text-red-600"><X className="h-4 w-4" /></button>
                                         </div>
-                                        <button type="button" onClick={() => remove(p)} title="Take them off this trip" className="flex-none text-slate-400 hover:text-red-600"><X className="h-4 w-4" /></button>
+
+                                        {!active && p.invite_token && (
+                                            <>
+                                                <ShareTiles p={p} />
+                                                <button
+                                                    type="button"
+                                                    onClick={() => regenerate(p)}
+                                                    disabled={busyId === p.id}
+                                                    className="mt-2 inline-flex items-center gap-1.5 text-[11px] font-medium text-slate-400 hover:text-slate-700 disabled:opacity-50"
+                                                >
+                                                    <RefreshCw className="h-3 w-3" />
+                                                    {busyId === p.id ? 'Making a new link…' : 'Gone to the wrong place? New link'}
+                                                </button>
+                                            </>
+                                        )}
                                     </div>
-                                    {p.status !== 'active' && p.invite_token && (
-                                        <div className="mt-2.5 grid grid-cols-2 gap-2">
-                                            <button type="button" onClick={() => copyLink(p)} className="inline-flex items-center justify-center gap-1.5 rounded-lg border border-slate-300 bg-white px-3 py-2 text-xs font-semibold text-slate-700 transition hover:border-slate-400">
-                                                {copiedId === p.id ? <Check className="h-3.5 w-3.5 text-emerald-600" /> : <Link2 className="h-3.5 w-3.5" />} {copiedId === p.id ? 'Copied' : 'Copy link'}
-                                            </button>
-                                            <button type="button" onClick={() => emailInvite(p)} className="inline-flex items-center justify-center gap-1.5 rounded-lg border border-slate-300 bg-white px-3 py-2 text-xs font-semibold text-slate-700 transition hover:border-slate-400">
-                                                <Mail className="h-3.5 w-3.5" /> Email
-                                            </button>
-                                            <a href={'sms:?&body=' + encodeURIComponent(shareText(p))} className="inline-flex items-center justify-center gap-1.5 rounded-lg border border-slate-300 bg-white px-3 py-2 text-xs font-semibold text-slate-700 transition hover:border-slate-400">
-                                                <MessageCircle className="h-3.5 w-3.5" /> Messages
-                                            </a>
-                                            <a href={'https://wa.me/?text=' + encodeURIComponent(shareText(p))} target="_blank" rel="noreferrer" className="inline-flex items-center justify-center gap-1.5 rounded-lg border border-slate-300 bg-white px-3 py-2 text-xs font-semibold text-slate-700 transition hover:border-slate-400">
-                                                <MessageCircle className="h-3.5 w-3.5" /> WhatsApp
-                                            </a>
-                                        </div>
-                                    )}
-                                </div>
-                            ))}
+                                );
+                            })}
 
                             {emptySeats > 0 && (
                                 <div className="flex items-center gap-3 rounded-xl border border-dashed border-slate-200 p-3 text-slate-400">
@@ -287,35 +438,28 @@ export default function TripGroup({
                             )}
                         </div>
 
-                        {/* Add someone */}
+                        {/* Add someone — name and email both optional */}
                         <div className="mt-4 rounded-xl bg-slate-50 p-3">
-                            <div className="text-sm font-semibold text-slate-900 mb-2">Add someone</div>
+                            <div className="mb-2 text-sm font-semibold text-slate-900">Add someone</div>
                             <div className="space-y-2">
                                 <input type="text" value={name} onChange={(e) => setName(e.target.value)} placeholder="Their name (optional)" className="w-full rounded-lg border p-2.5 text-sm" />
-                                <input type="email" value={email} onChange={(e) => setEmail(e.target.value)} placeholder="their@email.com" className="w-full rounded-lg border p-2.5 text-sm" />
-                                <button type="button" onClick={invite} disabled={sending} className="w-full rounded-lg bg-emerald-700 px-4 py-2 text-sm font-semibold text-white hover:bg-emerald-800 disabled:opacity-50">
-                                    {sending ? 'Adding…' : 'Add to the trip'}
+                                <input type="email" value={email} onChange={(e) => setEmail(e.target.value)} placeholder="Their email (optional)" className="w-full rounded-lg border p-2.5 text-sm" />
+                                <button type="button" onClick={add} disabled={sending} className="w-full rounded-lg bg-emerald-700 px-4 py-2 text-sm font-semibold text-white hover:bg-emerald-800 disabled:opacity-50">
+                                    {sending ? 'Adding…' : 'Add & get a link'}
                                 </button>
                                 <p className="text-[11px] text-slate-500">
-                                    The link only works for the email you enter — they sign in with it to join.
+                                    No email needed — you'll get a link to share. Add one and the link stays bound to it.
                                 </p>
                             </div>
                         </div>
 
-                        {/* What they'll see — plainly, because it includes the secrets */}
-                        <div className="mt-4 rounded-xl border border-slate-200 p-3">
-                            <div className="text-sm font-semibold text-slate-900 mb-1.5">What they'll be able to see</div>
-                            <ul className="space-y-1 text-sm text-slate-700">
-                                <li>Where the cottage is, and directions to the door</li>
-                                <li>Check-in and checkout times, parking and arrival notes</li>
-                                <li><strong>The door code and the wifi password</strong>, close to arrival</li>
-                                <li>The host's number, and a way to message them</li>
-                            </ul>
-                            <p className="mt-2 text-sm text-slate-500">
-                                They won't see what you paid, and can't change or cancel the booking.
-                            </p>
-                            <p className="mt-2 text-xs text-amber-700">
-                                Anyone you add can reach the door code and wifi — add people you'd hand a key to.
+                        {/* What a companion sees — plain, because it's expected, not a hazard */}
+                        <div className="mt-4 rounded-xl bg-slate-50 p-3.5">
+                            <div className="mb-1 text-xs font-semibold uppercase tracking-wide text-slate-500">What a companion sees</div>
+                            <p className="text-sm text-slate-600">
+                                The address and directions, check-in times and arrival notes, and — close to
+                                arrival — the door code and wifi, plus a way to message the host. Not the price,
+                                and they can't change or cancel the booking.
                             </p>
                         </div>
                     </div>
