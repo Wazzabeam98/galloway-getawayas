@@ -9,6 +9,7 @@ import LoginModel from '@/components/auth/LoginModel';
 import { MessageCircle, Navigation, MapPin, Grid3x3, ArrowLeft, CornerDownRight, Car, KeyRound, Phone, CloudOff } from 'lucide-react';
 import CopyField from '@/components/arrival/CopyField';
 import CheckInOutTimes from '@/components/arrival/CheckInOutTimes';
+import CancelBookingConfirm from '@/components/CancelBookingConfirm';
 import ExperiencesTeaser from '@/components/ExperiencesTeaser';
 import { getImageUrl, capitializeFirst, displayName } from '@/lib/utils';
 import { checkInMethodTitle, checkInBlurb } from '@/lib/checkInMethods';
@@ -70,38 +71,10 @@ export default function TripsPage() {
     const [ordersByBooking, setOrdersByBooking] = useState<Record<string, { item_name: string; service_date: string }[]>>({});
     const [payingId, setPayingId] = useState<string | null>(null);
     const [payError, setPayError] = useState('');
+    // Which booking's cancel confirm is open. The confirm itself — the refund
+    // figure, the experiences it names, the call to the cancel route — lives in
+    // CancelBookingConfirm, shared with the home card.
     const [confirmingId, setConfirmingId] = useState<string | null>(null);
-    const [cancellingId, setCancellingId] = useState<string | null>(null);
-    const [cancelError, setCancelError] = useState('');
-
-    const cancelBooking = async (bookingId: string) => {
-        setCancelError('');
-        setCancellingId(bookingId);
-        try {
-            const res = await fetch('/api/bookings/cancel', {
-                method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({ bookingId: bookingId }),
-            });
-            const data = await res.json();
-
-            if (data && data.ok) {
-                setBookings((prev) =>
-                    prev.map((b) =>
-                        b.id === bookingId
-                            ? { ...b, status: 'cancelled', balance_amount: 0 }
-                            : b
-                    )
-                );
-                setConfirmingId(null);
-            } else {
-                setCancelError((data && data.error) || 'Could not cancel. Please try again.');
-            }
-        } catch (err) {
-            setCancelError('Could not cancel. Please try again.');
-        }
-        setCancellingId(null);
-    };
 
     // Sends the guest to Stripe to settle what's left on a booking. Reached
     // either from the button below or from the link in a payment reminder
@@ -627,7 +600,7 @@ export default function TripsPage() {
                             <div className="mt-5 border-t border-slate-100 pt-4">
                                 <button
                                     type="button"
-                                    onClick={() => { setConfirmingId(b.id); setCancelError(''); }}
+                                    onClick={() => setConfirmingId(b.id)}
                                     className="text-xs font-semibold text-slate-500 underline hover:text-slate-800"
                                 >
                                     Cancel booking
@@ -640,61 +613,21 @@ export default function TripsPage() {
                     }
 
                     return (
-                        <div className="mt-4 rounded-xl border border-slate-200 bg-slate-50 p-4">
-                            <div className="text-sm font-semibold text-slate-900">
-                                Cancel this booking?
-                            </div>
-                            <p className={'text-sm mt-1 ' + (cancel.kind === 'free' ? 'text-emerald-700' : costs ? 'text-red-700' : 'text-slate-600')}>
-                                {paidSoFar <= 0
-                                    ? 'You haven’t paid anything for this stay, so there’s nothing to refund.'
-                                    : refund >= paidSoFar
-                                        ? 'You’ll get your full £' + paidSoFar.toFixed(2) + ' back to your card, usually within five to ten days.'
-                                    : refund > 0
-                                        ? 'You’ll get £' + refund.toFixed(2) + ' of the £' + paidSoFar.toFixed(2) + ' you’ve paid back to your card, usually within five to ten days.'
-                                        : 'These dates are inside the non-refundable period for this place, so no refund is due on the £' + paidSoFar.toFixed(2) + ' you’ve paid.'}
-                            </p>
-
-                            {/* Name the experiences that go with the stay — a
-                                cancelled cottage cancels these too, and a guest
-                                should see exactly what they're calling off. */}
-                            {orders.length > 0 && (
-                                <div className="mt-3 rounded-lg border border-amber-200 bg-amber-50 p-3">
-                                    <div className="text-xs font-semibold text-amber-900">
-                                        This also cancels the {orders.length === 1 ? 'experience' : 'experiences'} you’ve booked:
-                                    </div>
-                                    <ul className="mt-1 space-y-0.5 text-sm text-amber-950">
-                                        {orders.map((o, i) => (
-                                            <li key={i}>{o.item_name || 'Experience'}{o.service_date ? ' — ' + fmtDay(o.service_date) : ''}</li>
-                                        ))}
-                                    </ul>
-                                </div>
-                            )}
-
-                            <p className="text-xs text-slate-500 mt-2">
-                                The dates will be released for someone else, and this can’t be undone.
-                            </p>
-
-                            {cancelError && (
-                                <p className="text-xs text-red-600 mt-2">{cancelError}</p>
-                            )}
-
-                            <div className="mt-3 flex items-center gap-2">
-                                <button
-                                    type="button"
-                                    onClick={() => cancelBooking(b.id)}
-                                    disabled={cancellingId === b.id}
-                                    className="px-4 py-2 bg-red-700 hover:bg-red-800 text-white text-sm font-semibold rounded-xl transition disabled:opacity-50"
-                                >
-                                    {cancellingId === b.id ? 'Cancelling…' : 'Yes, cancel it'}
-                                </button>
-                                <button
-                                    type="button"
-                                    onClick={() => setConfirmingId(null)}
-                                    className="px-4 py-2 text-sm font-semibold text-slate-600 hover:text-slate-900"
-                                >
-                                    Keep my booking
-                                </button>
-                            </div>
+                        <div className="mt-4">
+                            <CancelBookingConfirm
+                                bookingId={b.id}
+                                checkIn={b.check_in}
+                                policy={listing?.cancellation_policy}
+                                amountPaid={b.amount_paid}
+                                amountRefunded={b.amount_refunded}
+                                cleaningFee={(b as any).cleaning_fee}
+                                orders={orders}
+                                onKeep={() => setConfirmingId(null)}
+                                onCancelled={() => {
+                                    setBookings((prev) => prev.map((x) => x.id === b.id ? { ...x, status: 'cancelled', balance_amount: 0 } : x));
+                                    setConfirmingId(null);
+                                }}
+                            />
                         </div>
                     );
                 })()}

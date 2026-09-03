@@ -3,7 +3,7 @@ import { cookies } from 'next/headers';
 import Link from 'next/link';
 import { formatUk } from '@/lib/cancellation';
 import { cancellationPosition } from '@/lib/cancellationView';
-import { londonDayKey, daysBetweenKeys, ukLongDate } from '@/lib/dayKey';
+import { londonDayKey, daysBetweenKeys } from '@/lib/dayKey';
 import { liveForGuestCard, stayCountdown } from '@/lib/bookingWindows';
 import { bookingReleasesPrivateData } from '@/lib/bookingEntitlement';
 import { adminClient } from '@/lib/supabaseAdmin';
@@ -13,6 +13,8 @@ import ListingImage from '@/components/ListingImage';
 import CheckInOutTimes from '@/components/arrival/CheckInOutTimes';
 import CopyField from '@/components/arrival/CopyField';
 import TripGroup from '@/components/TripGroup';
+import HomeCancelPanel from '@/components/HomeCancelPanel';
+import GuestExperiences from '@/components/GuestExperiences';
 import { MessageSquare, CalendarDays, Navigation, Grid3x3 } from 'lucide-react';
 
 // Shown at the top of the home page to someone with a stay coming up. The
@@ -49,6 +51,17 @@ export default async function UpcomingTrip() {
         .maybeSingle();
 
     if (!listing) return null;
+
+    // The guest's own confirmed experiences for this stay, so the in-place cancel
+    // confirm can name what a stay-cancel takes with it (the same list the trips
+    // card shows). Their own rows, read under RLS.
+    const { data: myOrders } = await supabase
+        .from('service_orders')
+        .select('item_name, service_date')
+        .eq('booking_id', booking.id)
+        .eq('guest_id', auth.session.user.id)
+        .eq('status', 'confirmed');
+    const cancelOrders = (myOrders || []).map((o: any) => ({ item_name: o.item_name, service_date: o.service_date }));
 
     // Arrival essentials for the times box — the address behind Get directions
     // and the what3words — but ONLY for a CONFIRMED stay. A pending request is
@@ -109,7 +122,7 @@ export default async function UpcomingTrip() {
     const homeHref = '/homes/' + booking.listing_id;
 
     return (
-        <section className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 pt-14">
+        <section className="max-w-3xl mx-auto px-4 sm:px-6 lg:px-8 pt-14">
             <div className="mb-6 border-b border-stone-200 pb-4">
                 <h2 className="text-2xl md:text-3xl font-bold text-stone-900">
                     {booking.status === 'pending' ? 'Your booking request' : 'Your upcoming trip'}
@@ -121,25 +134,26 @@ export default async function UpcomingTrip() {
                 </p>
             </div>
 
-            <div className="rounded-3xl overflow-hidden border border-stone-200 bg-white flex flex-col md:flex-row">
-                {/* The listing, shown the way Our Properties shows it and clickable
-                    through to the listing page — photo, title, place. The seed
-                    cottages have no photo, so ListingImage draws a composed empty
-                    state rather than a broken box. */}
+            <div className="rounded-3xl overflow-hidden border border-stone-200 bg-white">
+                {/* A landscape banner across the top. Real cottage photos are
+                    wide; the old tall left-hand column cropped a landscape shot to
+                    a portrait sliver. 3:2 is the proportion a listing photo
+                    actually is (the grid frames them landscape too), so the photo
+                    sits without a bad crop, and the content stacks beneath. */}
                 <Link
                     href={homeHref}
-                    className="group relative md:w-2/5 lg:w-1/3 h-56 md:h-auto md:min-h-[20rem] flex-shrink-0 block bg-stone-200"
+                    className="group relative block aspect-[3/2] w-full overflow-hidden bg-stone-200"
                 >
                     <ListingImage
                         images={listing.images}
                         alt={listing.title}
-                        sizes="(max-width: 768px) 100vw, 420px"
+                        sizes="(max-width: 768px) 100vw, 768px"
                         className="object-cover transition duration-300 group-hover:scale-105"
                         priority
                     />
                 </Link>
 
-                <div className="p-8 md:p-10 flex-1 flex flex-col justify-center">
+                <div className="p-8 md:p-10">
                     {/* The countdown is the reason anyone looks at this, so it
                         gets the room. Everything else is supporting detail. */}
                     <div className="text-4xl md:text-5xl font-bold text-stone-900 tracking-tight">
@@ -213,36 +227,22 @@ export default async function UpcomingTrip() {
                         />
                     </div>
 
-                    {/* A reassurance, and a jump to the trip — NOT a cancel
-                        button. It used to link to /trips?cancel=, which
-                        auto-opened the confirm panel and dropped the guest on the
-                        red button: an informational-looking line that started a
-                        cancellation. It now lands on the trip card with the panel
-                        CLOSED, so pressing "Cancel booking" there is the
-                        deliberate act; and it reads as a fact ("Free to cancel
-                        until…"), not an instruction. */}
+                    {/* "Free to cancel until [date]" reads as a fact; pressing it
+                        opens the confirm IN PLACE here — the same component the
+                        trips card uses — rather than navigating to /trips. Two
+                        steps, one page. */}
                     {freeUntilKey && (
-                        <div className="mt-5 text-sm">
-                            <Link
-                                href={'/trips#trip-' + booking.id}
-                                className={
-                                    'underline underline-offset-2 hover:no-underline ' +
-                                    (freeDaysLeft <= 3 ? 'text-amber-700' : 'text-emerald-700')
-                                }
-                            >
-                                Free to cancel until {ukLongDate(freeUntilKey)}
-                            </Link>
-                            {freeDaysLeft <= 3 && (
-                                <span className="text-stone-500">
-                                    {' '}&middot;{' '}
-                                    {freeDaysLeft === 0
-                                        ? 'last day'
-                                        : freeDaysLeft === 1
-                                            ? '1 day left'
-                                            : freeDaysLeft + ' days left'}
-                                </span>
-                            )}
-                        </div>
+                        <HomeCancelPanel
+                            bookingId={booking.id}
+                            checkIn={booking.check_in}
+                            policy={listing.cancellation_policy}
+                            amountPaid={booking.amount_paid}
+                            amountRefunded={booking.amount_refunded}
+                            cleaningFee={(booking as any).cleaning_fee}
+                            orders={cancelOrders}
+                            freeUntilKey={freeUntilKey}
+                            freeDaysLeft={freeDaysLeft}
+                        />
                     )}
 
                     <div className="flex flex-wrap gap-3 mt-8">
@@ -263,6 +263,22 @@ export default async function UpcomingTrip() {
                     </div>
                 </div>
             </div>
+
+            {/* The guest experiences, below the trip — what's booked for the stay
+                and a way into browsing more, the same panel the trips page carries,
+                so the home page no longer has to send a guest to /trips to find
+                any of it. It shows its own "coming soon" when the marketplace is
+                closed, and nothing when there's neither a booking nor a provider. */}
+            {booking.status !== 'cancelled' && booking.status !== 'declined' && (
+                <div className="mt-8">
+                    <GuestExperiences
+                        bookingId={booking.id}
+                        checkIn={booking.check_in}
+                        checkOut={booking.check_out}
+                        town={publicArea(listing.location)}
+                    />
+                </div>
+            )}
         </section>
     );
 }
