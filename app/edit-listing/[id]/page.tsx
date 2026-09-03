@@ -255,7 +255,11 @@ export default function EditListing() {
             }
 
             const { data: listing, error } = await supabase
-                .from('listings')
+                // listing_private: the owner/active-co-host view. The sensitive
+                // columns (street_address, coords, ical_token, commission_rate)
+                // are revoked from the base table for the browser role and read
+                // here instead — see 20260903154419.
+                .from('listing_private')
                 .select('*')
                 .eq('id', listingId)
                 .single();

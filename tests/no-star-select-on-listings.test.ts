@@ -34,21 +34,18 @@ const path = require('path');
 const ROOT = path.resolve(__dirname, '..', '..');
 
 /**
- * Files allowed to ask listings for every column.
- *
- * Every one of these runs only for a signed-in owner or co-host of the listing
- * it is reading — the row policy holds them to their own, their co-hosted ones
- * and ones they have booked — and `authenticated` still holds the table grant.
- * None of them renders for a stranger.
+ * Files allowed to ask `listings` for every column. EMPTY, and it has to stay
+ * empty: since 20260903154419, `authenticated` no longer holds a table grant on
+ * `listings` either — it has a named safe-column allow-list, and the sensitive
+ * columns (street_address, coords, ical_token, commission_rate) are owner-only
+ * through `listing_private`. So a `select('*')` on `listings` is now refused for
+ * a signed-in user just as it is for a stranger. The three host screens that
+ * used to star-select `listings` (the wizard, the editor, account settings) now
+ * star-select `listing_private` instead, which IS still a whole-row grant and is
+ * fine. Add a file here only if `authenticated` regains a table grant on
+ * `listings` — which it should not.
  */
-const SIGNED_IN_ONLY: Record<string, string> = {
-    'app/addhome/page.tsx':
-        'the wizard. A host building or reopening their own draft.',
-    'app/edit-listing/[id]/page.tsx':
-        'the editor. Guarded to the host or a co-host with can_listing.',
-    'app/account/page.tsx':
-        'account settings. Reads only the signed-in host’s own listings.',
-};
+const SIGNED_IN_ONLY: Record<string, string> = {};
 
 function sourceFiles(dir: string, out: string[] = []): string[] {
     for (const entry of fs.readdirSync(path.join(ROOT, dir), { withFileTypes: true })) {
@@ -117,9 +114,9 @@ test('no anon-reachable query asks listings for every column', () => {
         offenders, [],
         'These read listings with a star and are not on the signed-in-only list:\n  '
         + offenders.join('\n  ')
-        + '\n\nanon has no table grant on listings, so a star is refused for a signed-out'
-        + '\nvisitor and the page renders as "couldn’t be found". Name the columns, or'
-        + '\nadd the file to SIGNED_IN_ONLY with the reason it can never run for a stranger.'
+        + '\n\nNeither anon nor authenticated holds a table grant on listings, so a star'
+        + '\nis refused for everyone and the page renders as "couldn’t be found". Name the'
+        + '\nsafe columns, or read the owner’s own row through listing_private (whole-row).'
     );
 });
 

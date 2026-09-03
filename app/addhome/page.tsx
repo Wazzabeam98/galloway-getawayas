@@ -199,7 +199,11 @@ export default function AddHome() {
             const resumeId = searchParams?.get('draft');
             if (resumeId && session?.user) {
                 const { data: draft } = await supabase
-                    .from('listings')
+                    // listing_private: the owner's view — the sensitive columns
+                    // (street_address, coords, ical_token, commission_rate) are
+                    // revoked from the base table for the browser role and only
+                    // returned here, for your own listings.
+                    .from('listing_private')
                     .select('*')
                     .eq('id', resumeId)
                     .eq('host_id', session.user.id)
