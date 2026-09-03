@@ -43,8 +43,53 @@ mirror.
 
 # Findings, worst first
 
-*(Sections are filled as each task completes; see the task ledger at the end for
-what was checked tonight vs. carried forward.)*
+Ranked across all seven tasks. "tonight" = built and read back on test this run;
+"carried" = from last night, re-checked where noted; "prod-open" = needs a live
+prod read this session could not do.
+
+1. **🔴 HIGH — deleting a guest account cascade-destroys paid bookings and
+   strands the money.** PROVEN tonight. `bookings.guest_id → CASCADE`,
+   `payments.booking_id → SET NULL`: a confirmed £500 stay vanished and left an
+   orphaned succeeded payment, silently. Latent until a GDPR-erasure flow ships —
+   which launch needs. Settle this design before wiring "delete my account".
+   (Task 7)
+2. **🟠 the money must-do before the first payout** — read `adjust_payout_balance`
+   back on **prod** and confirm the one `acct_…` is yours. Assumed, not observed;
+   I could not read prod tonight. (Task 2, carried)
+3. **🟠 `full_name` leaks to anon regardless of `show_full_name`** — both
+   directors' legal names on prod. Re-proven flag-independent on test tonight.
+   (Task 3, carried + re-proven)
+4. **🟠 silent money routes** — `services/slots/schedule` can wipe a provider's
+   whole calendar with no log (non-atomic delete-then-insert); `services/order`,
+   `/orders`, `/slots/book`, `cron/ical-sync`, and three webhook post-charge
+   notify catches log to `console.error` only. Re-censused tonight. (Task 3)
+5. **🟠 host calendar block not enforced against a booking insert** — the
+   exclusion constraint only covers `confirmed`, not `calendar_overrides`. (Task 7)
+6. **🟠 free-cancel deadline judged at processing time, not click time** — a
+   23:55 cancel computed after midnight can lose the full refund. (Task 7)
+7. **🟠 webhook that never arrives → guest charged, booking cancelled, no
+   auto-refund** — Stripe retries make it rare; needs reconciliation + alerting.
+   (Task 7)
+8. **🟡 storage has no owner-scoped upload paths** — any account uploads anywhere
+   in the listings bucket (write-only). Re-proven on test. (Task 3, carried)
+9. **🟡 companion double-claim TOCTOU** — two racers both told "joined", one seat,
+   no over-capacity or access leak. Proven tonight. (Task 5)
+10. **🟡 seven redundant browser write grants** (incl. `stripe_events`,
+    `booking_guests`, `slot_*`) — dead weight, RLS-protected today, free to
+    revoke. Found tonight. (Task 6)
+11. **🟡 two crons stranger-callable but time-guarded** — proven they can't cancel
+    or publish early; revoke EXECUTE anyway. Proven tonight. (Task 4)
+12. **🟡 provider declined/suspended after a paid order** — order-refund on
+    decline unconfirmed. (Task 7)
+
+**Clean results worth stating plainly:** the guest-experience **read** surface is
+tight — no provider contact, guest order, payment, payout state, or other host's
+enquiry reaches a stranger (Task 1, proven tonight). The **payout engine** is
+intact after seven merges — clamp, three writers, drift warning all verified
+(Task 2). The **companion invite branch** holds against every attack tried, bar
+the low-sev race (Task 5). Most **unhappy paths** are already handled — slot
+last-seat CAS, split-card refunds, tied-experience cancellation, webhook
+dedupe, tab-close (Task 7).
 
 ---
 
@@ -423,3 +468,147 @@ once `bookings` and `booking_guests` can't be written from the browser, the
 planted-booking class — is gone, and future readers stop needing to re-derive
 `status='confirmed'` defences one surface at a time. The self-scoped tier keeps
 its grants, so the class isn't *eliminated*, but its dangerous half is.
+
+---
+
+## TASK 7 — Unhappy-path scenarios — one HIGH data-loss finding, three medium seams, the rest handled
+
+Each scenario below says **how I checked it** (proven on test / read on master),
+what actually happens, whether anyone finds out, and where money or access lands.
+Ranked worst-first across the whole set.
+
+### 🔴 HIGH — Deleting a guest account destroys paid bookings and strands the money. PROVEN.
+**Proven on test 2026-09-04.** `bookings.guest_id → profiles ON DELETE CASCADE`
+(and `host_id` too), while `payments.booking_id`/`payouts.booking_id` are
+`ON DELETE SET NULL`. I created a guest with a **confirmed, £500-paid, upcoming**
+booking and a payment row, then deleted the profile:
+- the booking was **cascade-deleted (GONE)**;
+- the payment row **survived but orphaned**: `booking_id: null`, amount 500,
+  status `succeeded` — £500 taken, tied to no booking;
+- HTTP **204**, no error, no notification.
+
+**Where the money lands:** the host's payout cron reads `bookings`; the booking
+is gone, so the host is **never paid** for a stay they may still honour, and the
+guest (account deleted) **can't be refunded**. The £500 sits at the platform,
+disconnected. Reviews and companions cascade-delete too; a booking that has a
+`dispute` or `service_order` would instead make the delete **fail** with an
+opaque FK error (`NO ACTION`).
+
+**Would anyone find out?** No. Silent by construction.
+
+**Why it matters now:** no self-delete flow ships today (the privacy/account
+pages only *mention* erasure), but GDPR right-to-erasure is a launch requirement.
+The moment someone wires "delete my account" to `auth.admin.deleteUser` or a
+profile delete, it will silently shred paid bookings and strand money. **Fix:**
+erasure must be a controlled process — refuse (or block) while a future confirmed
+booking or unsettled payout exists; settle/refund money first; then anonymise
+rather than cascade-delete (flip these FKs to `RESTRICT`/`SET NULL` + a scrub of
+PII columns). This is a design item to settle **before** an erasure flow, not
+after.
+
+### 🟠 MEDIUM — Host calendar block is not enforced against a booking insert (scenario 7). Read on master.
+The date-exclusion constraint is `EXCLUDE … WHERE status = 'confirmed'` — it only
+knows about **confirmed bookings**, not `calendar_overrides` blocks. So if a host
+blocks a date *after* the guest's availability check but *before* the guest
+confirms, nothing at the DB layer stops the booking: the guest confirms a stay on
+a date the host just blocked. The host ends up with a confirmed booking they
+meant to keep free. **Would anyone find out?** The host, when they see the booking
+on a blocked date — no alert. **Fix:** re-check `calendar_overrides` in the
+booking-start/confirm path, or fold blocks into the exclusion set. Medium — it
+needs the host to act in a narrow window, and the damage is a stay they didn't
+want, not lost money.
+
+### 🟠 MEDIUM — Free-cancel deadline is judged at processing time, not click time (scenario 1). Read on master.
+`lib/cancellation.ts` evaluates the free-cancel cutoff with `today = new Date()`
+at the moment the refund is computed (`:129`), against `freeCancelUntil(check_in,
+policy)`. A guest who cancels at **23:55 on the last free day** but whose request
+is processed a few seconds after midnight is judged **past** the deadline and can
+lose the full refund — no grace, evaluated server-side at calc time. **Would
+anyone find out?** The guest, via a smaller-than-expected refund; no one else.
+**Fix:** stamp the cancel-request time when the guest submits and evaluate the
+policy against *that*, not against `new Date()` at refund time. Medium — it only
+bites at the exact boundary, but when it does it's real money and reads as unfair.
+
+### 🟠 MEDIUM — Webhook that never arrives → guest charged, booking cancelled, no auto-refund (scenario 10). Read on master.
+If the webhook never succeeds within Stripe's retry window, the booking stays
+`pending_payment`/`unpaid`, `expire_unpaid_bookings` cancels it after 1h, and
+**nothing refunds the guest** — the expiry cron only cancels. Guest charged, no
+stay, no refund, and because the webhook never ran there's no `error_log` row
+either. **Mitigations that make this rare:** Stripe retries webhooks for ~3 days,
+and a late-but-successful delivery *does* recover (see scenario 12); the classic
+"signing-secret mismatch" is a local-dev problem, not prod. So this needs a
+*persistent* prod webhook outage to bite — low probability, high impact. **Fix/guard:** a reconciliation check (Stripe charges with no confirmed booking)
+and alerting on webhook delivery failures. Rank: medium, because the safety net is
+Stripe's retry rather than anything in the app.
+
+### 🟡 LOW–MEDIUM — Provider declined/suspended after a guest ordered (scenario 17). Read on master — needs confirmation.
+`service_orders.provider_id → service_providers NO ACTION`, and I did not find an
+order-refund step in the provider-decline path. Declining usually happens at
+application review (before any orders exist), but **suspending an already-approved
+provider** after a paid order would leave the guest's order live with no
+provider. Worth confirming the admin decline/suspend flow cancels + refunds open
+orders. Medium-low (narrow trigger).
+
+### ✅ Handled — checked and sound
+| Scenario | How checked | Outcome |
+|---|---|---|
+| **Two guests, last slot seat** (6) | read master | **Safe** — `slots/book` claims via **compare-and-swap** on `seats_taken` (`:149–151`); the loser's swap fails, nobody is charged for a seat they couldn't have. |
+| **Refund a deposit booking, deposit + balance on different cards** (4) | read master | **Safe** — `lib/refundSpread.ts` spreads the refund across both PaymentIntents (the exact "refund > charge amount" bug is already fixed); each card refunds its own charge. |
+| **Payout runs while a clawback lands, and reverse** (5) | verified Task 2 | **Safe** — `adjust_payout_balance` is a single-statement read-modify-write with `greatest(0,…)`; concurrent moves serialise, drift warning catches double-recovery. |
+| **Webhook arrives twice** (11) | read master | **Safe** — unique `stripe_events.event_id` insert → returns `{duplicate:true}`, handler skipped. |
+| **Webhook an hour late, after the booking expired** (12) | read master | **Mostly safe** — the confirm has no status guard so it *un-cancels* the booking, but if the dates were re-taken the exclusion constraint fires `23P01` → refund path. Money safe; a guest may get a confusing "expired then confirmed" sequence. |
+| **Guest closes the tab between paying and confirming** (13) | read master | **Safe** — the webhook is server-side; the booking confirms and the email sends regardless of the tab. |
+| **Host cancels a stay whose experience is tomorrow / already happened** (3) | read master | **Safe** — `bookings/cancel` (`:298–311`) cancels `authorised` and refunds `confirmed` tied orders and emails **both** sides; a past (settled) experience is correctly left alone. |
+| **Two sessions accept one invite link within a second** (9) | proven Task 5 | **Safe-ish** — one seat, capacity intact; the loser gets a false "joined" but no access. Low-sev TOCTOU (Task 5). |
+| **Booker removes a companion as they open the arrival page** (8) | proven Task 5 | **Low** — worst case one already-rendered page shows the code; the next load fails (readers require `status='active'`, remove clears it). |
+| **Guest books, cancels, rebooks the same dates** (16) | read master | **Safe** — the exclusion constraint only covers `confirmed`, so a cancelled booking frees the dates for a rebook. |
+| **Email fails on confirmation / door-code message** (14) | carried from last night §8 | **Logged** — both reach `error_log` (proven last night); the guest can still read the live code on the arrival page. Someone must watch `/admin/errors`. |
+| **Host changes the door code the day a guest arrives** (15) | carried from last night §10 | **Low** — arrival page reads the code live (guest sees the new one); an already-sent door-code message keeps the old one — set the physical lock to match. |
+| **Listing hidden while a confirmed booking exists** (18) | read master | **Low** — arrival/trip read via the service role by booking id, not via the public listing policy, so the confirmed guest keeps address/code access; the listing just stops being publicly bookable. |
+
+### Scenario I flag as not-fully-settled tonight
+- **Guest cancels while the balance-charge cron is mid-run on the same booking**
+  (2). Both paths touch the booking and move money; the balance job claims an
+  `attempting` row and the ledger-first ordering guards double-counting, but a
+  cancel landing *inside* the charge is a genuine interleaving I could not drive
+  end-to-end here (it needs the balance cron and a Stripe charge in flight
+  together). The pieces that would make it safe are present (idempotent ledger,
+  `attempting` claim); **worth one scripted end-to-end run before launch** rather
+  than trusting the read. Ranked: unknown, lean-medium.
+
+---
+
+## Task ledger — checked tonight vs carried forward
+
+Because OUTSTANDING.md has misled three sessions by being stale in both
+directions, here is exactly what this run touched.
+
+| Task | What I did tonight | Method | New vs carried |
+|---|---|---|---|
+| 1 — read sweep | Swept every `service_*`/`slot_*` table + 3 views as anon and as an ordinary signed-in account; pinned each refusal to grant vs policy; seeded another host's enquiry to prove the filter | **proven on test** + master migration files | **NEW** — first table-by-table read sweep since 28 Aug |
+| 2 — payout engine | Re-verified clamp, three writers, no direct writes, drift warning host id, per-booking failure handling; listed live-only differences | read on master + function on test | mostly **carried**, re-verified on today's master |
+| 3 — carried items | Re-proved `full_name` leak (flag-independent), storage path gap, silent-route census incl. the schedule-wipe hazard | **proven on test** + master | **carried, re-checked** — all three still true |
+| 4 — two crons | Fired both as anon; proved fresh booking survives, in-window review stays unpublished | **proven on test** | **NEW** |
+| 5 — companion branch | 12× concurrent over-mint race; all six accept-route attacks; the double-claim race with two real users | **proven on test** (route logic replicated) | **NEW** (branch pushed & rebased) |
+| 6 — server-route scope | Mapped every browser write grant; found 7 redundant + booking-creation path; shape + estimate | **proven on test** + client-write grep | **NEW** analysis |
+| 7 — unhappy paths | 19 scenarios: proved the account-deletion cascade; read/reasoned the rest, ranked | **1 proven on test**, rest read on master | **NEW** |
+
+### What I could NOT check tonight, and why
+- **Any live production value.** `migrate.mjs --target prod --sql` (read-only) is
+  refused by this session's command classifier. Every prod claim here is carried
+  from last night or inferred from master migration files. This is a harness
+  limit, **not** a "prod is protected" result. The prod-open items: (a) confirm
+  the service-table revokes are applied on prod; (b) read `adjust_payout_balance`
+  back on prod; (c) confirm the single `acct_…`.
+- **Scenario 2** (cancel during the balance cron) end-to-end — needs the balance
+  cron and a Stripe charge in flight together; the safety pieces are present but
+  I did not drive the interleave.
+- **Live HTTP** against the running app for Task 5 — I replicated the accept
+  route's decision logic against the DB (faithful, since the route does all its
+  work via the service client); a live HTTP re-test is the final confirmation.
+
+### Test-project housekeeping
+This run created throwaway test accounts (`sweep-stranger@`, `sweep-otherhost@`,
+`personb@`, `delete-me-0904@` — the last deleted at end) and seeded/cleaned
+bookings, seats, reviews, and one enquiry on the **test** project only. All
+seeded rows were deleted; the accounts are harmless test users.
