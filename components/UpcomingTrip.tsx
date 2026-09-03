@@ -134,14 +134,14 @@ export default async function UpcomingTrip() {
                 </p>
             </div>
 
-            <div className="rounded-3xl overflow-hidden border border-stone-200 bg-white md:flex">
+            <div className="rounded-3xl overflow-hidden border border-stone-200 bg-white md:flex md:items-start">
                 {/* Landscape photo ALONGSIDE the details on desktop, a banner
                     above them on a phone. On desktop it's a slim quarter-width
                     column so the trip details — the countdown and the rail — carry
                     the card; the photo is a recognisable strip, not the headline. */}
                 <Link
                     href={homeHref}
-                    className="group relative block aspect-[4/3] w-full overflow-hidden bg-stone-200 md:aspect-auto md:w-1/4 md:min-h-[26rem]"
+                    className="group relative block aspect-[4/3] w-full overflow-hidden bg-stone-200 md:aspect-square md:w-1/4"
                 >
                     <ListingImage
                         images={listing.images}
