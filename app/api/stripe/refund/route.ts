@@ -7,6 +7,7 @@ import { refundDue } from '@/lib/cancellation';
 import { clawBackPayout } from '@/lib/clawback';
 import { logError } from '@/lib/logError';
 import { issueRefunds } from '@/lib/refundSpread';
+import { cancelStayExperienceOrders } from '@/lib/experienceCancel';
 
 export const dynamic = 'force-dynamic';
 
@@ -267,6 +268,18 @@ export async function POST(request: Request) {
                 },
                 { status: 500 }
             );
+        }
+
+        // The stay is off, so its experiences go too — the same failure the
+        // guest cancel already handles, which this route used to skip: a host
+        // could cancel a stay and leave the guest paying for a dinner and the
+        // provider driving to an empty cottage. The SHARED cascade
+        // (lib/experienceCancel) refunds each confirmed order, hands back any
+        // slot seat, and tells both sides. Only a host cancelling a stay that was
+        // actually CONFIRMED — a declined request never had confirmed experiences
+        // against it. Best-effort: the guest's stay refund has already gone back.
+        if (isHost && reason === 'cancelled' && booking.status === 'confirmed') {
+            await cancelStayExperienceOrders(admin, booking.id);
         }
 
         // One ledger row per refund actually issued, naming the charge it came

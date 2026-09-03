@@ -6,58 +6,12 @@ import { issueRefunds } from '@/lib/refundSpread';
 import { refundDue } from '@/lib/cancellation';
 import { logError } from '@/lib/logError';
 import { sendEmail, emailLayout, escapeHtml } from '@/lib/email';
-import { stripeRequest } from '@/lib/stripe';
+import { cancelStayExperienceOrders } from '@/lib/experienceCancel';
 
 export const dynamic = 'force-dynamic';
 
 function round2(value: number): number {
     return Math.round(value * 100) / 100;
-}
-
-// When a cancelled stay refunds a confirmed experience, tell both sides — the
-// guest that their dinner went back with the stay, and the provider that a
-// booking they were counting on is off and the money reversed, so it is not a
-// silent debit from their balance days later. Best-effort; a failed mail is
-// logged, not thrown.
-async function tellAboutStayCancel(admin: any, order: any): Promise<void> {
-    const who = escapeHtml(order.provider_business_name || 'your experience');
-    const date = escapeHtml(String(order.service_date || ''));
-    const amount = '£' + Number(order.price || 0).toFixed(2);
-
-    if (order.guest_email) {
-        try {
-            await sendEmail(
-                String(order.guest_email),
-                'Your ' + (order.provider_business_name || 'experience') + ' booking was cancelled with your stay',
-                emailLayout(
-                    '<p style="margin:0 0 16px;font-size:16px;">Because you cancelled your stay, your booking with <strong>'
-                    + who + '</strong> for <strong>' + date + '</strong> has been cancelled too and refunded '
-                    + escapeHtml(amount) + ' in full.</p>',
-                    'You’re receiving this because you booked an experience through Galloway Getaways.'
-                )
-            );
-        } catch (e: any) { await logError('bookings-cancel-guest-order-email', { order: order.id, message: String(e && e.message) }); }
-    }
-
-    try {
-        const { data: prov } = await admin
-            .from('service_providers')
-            .select('contact_email')
-            .eq('id', order.provider_id)
-            .maybeSingle();
-        if (prov && prov.contact_email) {
-            await sendEmail(
-                String(prov.contact_email),
-                'A booking was cancelled: ' + date,
-                emailLayout(
-                    '<p style="margin:0 0 16px;font-size:16px;">The guest booked with you for <strong>' + date
-                    + '</strong> has cancelled their stay, so this booking is off. They have been refunded '
-                    + escapeHtml(amount) + ' in full, and that amount has been reversed from your account.</p>',
-                    'You’re receiving this because you offer experiences on Galloway Getaways.'
-                )
-            );
-        }
-    } catch (e: any) { await logError('bookings-cancel-provider-order-email', { order: order.id, message: String(e && e.message) }); }
 }
 
 export async function POST(request: Request) {
@@ -282,61 +236,12 @@ export async function POST(request: Request) {
         //
         // A guest cancelling their cottage was leaving any experience they had
         // booked for it standing — a held card, or a captured £180, for a dinner
-        // at a cottage they will not be in. That is the "still owing for a
-        // dinner" the guest should never have to have a conversation about. So
-        // the same cancel handles the orders on this booking:
-        //   authorised — release the hold, nothing was taken.
-        //   confirmed  — refund in full (reverse the fee and the transfer). The
-        //                stay is off, so the dinner cannot happen; the guest is
-        //                not left paying for it, and the provider is told.
-        // Best-effort and reported, never fatal: the stay refund above has
-        // already succeeded, so a hiccup here must not fail the cancellation —
-        // the expiry sweep still releases an untaken hold as a backstop. Keys
-        // match the order routes, so this is idempotent with a direct cancel.
-        try {
-            const { data: liveOrders } = await admin
-                .from('service_orders')
-                .select('id, status, stripe_payment_intent_id, guest_email, service_date, price, provider_id, provider_business_name, slot_session_id, quantity')
-                .eq('booking_id', booking.id)
-                .in('status', ['authorised', 'confirmed']);
-
-            // Give a slot's seat back — a confirmed slot order held a seat on its
-            // session, and a refund that leaves seats_taken up reads as full to
-            // the next guest. The request shapes (comes_to_you, made_to_order)
-            // carry no slot_session_id, so this is a no-op for them. Same key
-            // shape as the order routes, so it is idempotent with a direct cancel.
-            const releaseSeat = async (o: any) => {
-                if (!o.slot_session_id) return;
-                const { data: s } = await admin.from('slot_sessions').select('seats_taken').eq('id', o.slot_session_id).maybeSingle();
-                if (s) {
-                    await admin.from('slot_sessions')
-                        .update({ seats_taken: Math.max(0, s.seats_taken - (o.quantity || 1)) })
-                        .eq('id', o.slot_session_id);
-                }
-            };
-
-            for (const o of liveOrders || []) {
-                try {
-                    if (!o.stripe_payment_intent_id) continue;
-                    if (o.status === 'authorised') {
-                        await stripeRequest('POST', '/payment_intents/' + o.stripe_payment_intent_id + '/cancel', undefined, 'cancel-' + o.id);
-                        await admin.from('service_orders').update({ status: 'cancelled', cancelled_at: new Date().toISOString() }).eq('id', o.id).eq('status', 'authorised');
-                    } else {
-                        await stripeRequest('POST', '/refunds', { payment_intent: o.stripe_payment_intent_id, refund_application_fee: 'true', reverse_transfer: 'true' }, 'refund-' + o.id);
-                        const { data: moved } = await admin.from('service_orders').update({ status: 'refunded', cancelled_at: new Date().toISOString() }).eq('id', o.id).eq('status', 'confirmed').select('id');
-                        // Only release the seat when this call is the one that
-                        // moved the order off 'confirmed' — so a retry or a race
-                        // with a direct cancel cannot double-decrement.
-                        if (moved && moved.length) await releaseSeat(o);
-                        await tellAboutStayCancel(admin, o);
-                    }
-                } catch (orderErr: any) {
-                    await logError('[bookings/cancel] could not settle a service order on a cancelled stay', orderErr, { path: 'bookings/cancel' });
-                }
-            }
-        } catch (cascadeErr: any) {
-            await logError('[bookings/cancel] could not read service orders for a cancelled stay', cascadeErr, { path: 'bookings/cancel' });
-        }
+        // at a cottage they will not be in. The one cascade below refunds each
+        // confirmed order, hands back any slot seat, and tells the guest and the
+        // provider — and it is shared with the HOST cancel route now, so the two
+        // can't drift. Best-effort: the stay refund above has already succeeded,
+        // so a hiccup here must not fail the cancellation.
+        await cancelStayExperienceOrders(admin, booking.id);
 
         // What actually went back, not what was due. They are the same on the
         // ordinary path and they are not when a charge refuses, and this is
