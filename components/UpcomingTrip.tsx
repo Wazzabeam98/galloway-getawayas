@@ -139,14 +139,16 @@ export default async function UpcomingTrip() {
                         </div>
                     </div>
 
-                    {/* The times, as a matched pair, linking through to Getting
-                        there — the same component the trips card and Getting
-                        there itself use. */}
+                    {/* The times, as a matched pair, linking through to the trip
+                        card — where the whole approach now lives. It used to point
+                        at /arrival, but that page is the secrets screen now: a
+                        guest with no door code would have landed somewhere
+                        near-empty. The trip card always has something to show. */}
                     <div className="mt-5">
                         <CheckInOutTimes
                             surface="home"
                             mode="link"
-                            href={'/arrival/' + booking.id}
+                            href={'/trips#trip-' + booking.id}
                             checkInDate={booking.check_in}
                             checkOutDate={booking.check_out}
                             checkInTime={listing.check_in_time}

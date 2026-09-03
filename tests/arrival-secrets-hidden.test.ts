@@ -13,6 +13,14 @@
 // given a listing_arrival row that HOLDS the wifi password, the response carries
 // neither it nor a door code, and hasWifi is a plain boolean.
 //
+// A DELIBERATE CHANGE, not a loosening: this test used to assert the "last bit"
+// arrival_directions ABSENT too, back when the card was a thin summary and the
+// full approach lived on Getting there. When the card absorbed the approach, we
+// decided those directions are the host's own words for finding the door — a
+// description, not a credential — and reclassified them as card-safe. The line
+// on them below now asserts them PRESENT on purpose. The credentials (door code,
+// wifi password) were never reclassified and never will be.
+//
 // PROVE IT FAILS FIRST: widen the response builder in app/api/trips/route.ts to
 // spread the row — e.g. `t.arrival = { ...l, ...arrivalRow }` — and this test goes
 // red on the wifi password. That is the point of it.
@@ -73,6 +81,10 @@ test('the trip card API returns no door code and no wifi password, even when the
     // host's own "last bit" directions and parking, which are not secrets.
     assert.equal(json.includes('///harbour.candle.brave'), true, 'what3words is card-safe and should be present');
     assert.equal(json.includes('Mill Road'), true, 'the address is card-safe and should be present');
-    assert.equal(json.includes(DIRECTIONS), true, 'the host’s last-bit directions are card-safe and belong on the card');
+    // Deliberately PRESENT (see the header): the last-bit directions were once
+    // asserted absent; reclassifying them as the host's words, not a credential,
+    // was a decision, so flipping this line back to `false` should be a decision
+    // too, not a reflex.
+    assert.equal(json.includes(DIRECTIONS), true, 'the host’s last-bit directions are card-safe and belong on the card — a deliberate reclassification, not a leak');
     assert.equal(trip.arrival.parking, 'gravel', 'parking is the host’s own words, card-safe');
 });

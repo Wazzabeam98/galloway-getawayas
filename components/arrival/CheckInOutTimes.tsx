@@ -18,11 +18,12 @@ import { checkInMethodTitle, checkInBlurb } from '@/lib/checkInMethods';
 // the height, and it carries the dates the boxes never did.
 //
 // The door still swings open for arrival and shut for departure, the tint is the
-// site's emerald at a tenth, and the pairing survives 375px because each end is
-// one short line. On the home and trips cards the whole rail links to Getting
-// there (mode="link"); on Getting there itself each end opens in place
-// (mode="expand") — arrival to the full window and the self check-in method,
-// checkout to any departure note.
+// site's emerald at a tenth, and each end pairs its date and time on one line, so
+// the pairing survives 375px. Three modes: the home hero links the whole rail to
+// the trip card (mode="link"); the trip card shows it plainly, since the times
+// are a fact there rather than a door (mode="static"); and mode="expand" opens
+// each end in place — arrival to the full window and the self check-in method —
+// kept for a surface that wants it (Getting there no longer carries the rail).
 
 interface Times {
     checkInTime: string | null | undefined;
@@ -116,7 +117,7 @@ export default function CheckInOutTimes(props: Props) {
             <Link
                 href={href || '#'}
                 className={`group block ${CARD[surface]} p-4 outline-none transition hover:shadow-md hover:ring-emerald-600/30 focus-visible:ring-2 focus-visible:ring-emerald-600/60`}
-                aria-label="Arrival and departure — open Getting there"
+                aria-label="Arrival and departure — open your trip"
             >
                 <div className="flex items-stretch gap-3">
                     <Node icon={arrivalIcon} />
