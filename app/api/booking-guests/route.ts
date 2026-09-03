@@ -107,24 +107,43 @@ export async function POST(request: Request) {
                 );
             }
 
+            // The row (and its token) come back; the booker chooses how to deliver
+            // the link \u2014 copy it, email it, Messages or WhatsApp \u2014 so we no longer
+            // force an email here. Email is one channel among four now, sent on
+            // demand by action=email below.
+            return NextResponse.json({
+                ok: true,
+                id: created.id,
+                token: created.invite_token,
+                link: SITE_URL + '/trip-invite/' + created.invite_token,
+            });
+        }
+
+        // ---- Send (or resend) the branded invite email for one companion ----
+        if (action === 'email') {
+            const guestRowId: string = body.guestId;
+            const { data: row } = await admin
+                .from('booking_guests')
+                .select('id, booking_id, email, name, invite_token, status')
+                .eq('id', guestRowId)
+                .maybeSingle();
+            if (!row || row.status === 'removed') {
+                return NextResponse.json({ ok: false, error: 'Not found' }, { status: 404 });
+            }
+            const booking = await bookedBy(admin, row.booking_id, user.id);
+            if (!booking) {
+                return NextResponse.json({ ok: false, error: 'Not your booking' }, { status: 403 });
+            }
+
             const { data: listing } = await admin
-                .from('listings')
-                .select('title, location')
-                .eq('id', booking.listing_id)
-                .maybeSingle();
-
+                .from('listings').select('title').eq('id', booking.listing_id).maybeSingle();
             const { data: bookerProfile } = await admin
-                .from('profiles')
-                .select('full_name, preferred_name')
-                .eq('id', user.id)
-                .maybeSingle();
-
+                .from('profiles').select('full_name, preferred_name').eq('id', user.id).maybeSingle();
             const bookerName =
-                (bookerProfile && (bookerProfile.preferred_name || bookerProfile.full_name)) ||
-                'Someone';
+                (bookerProfile && (bookerProfile.preferred_name || bookerProfile.full_name)) || 'Someone';
 
             await sendEmail(
-                email,
+                row.email,
                 bookerName + ' has added you to a trip',
                 emailLayout(
                     '<p style="margin:0 0 16px;font-size:16px;"><strong>'
@@ -136,16 +155,16 @@ export async function POST(request: Request) {
                         + ' to '
                         + formatUk(new Date(booking.check_out))
                         + '.</p>'
-                        + '<p style="margin:0 0 16px;font-size:16px;">Accept and you\u2019ll be able to see where you\u2019re going, when, how to get in, and message the host directly if you need anything.</p>'
-                        + '<p style="margin:0 0 16px;font-size:14px;color:#6b7280;">You won\u2019t be able to change or cancel the booking, and you won\u2019t see what was paid \u2014 that stays with '
-                        + escapeHtml(bookerName)
-                        + '.</p>'
-                        + button(SITE_URL + '/trip-invite/' + created.invite_token, 'See the trip'),
+                        + '<p style="margin:0 0 16px;font-size:16px;">Accept and you\u2019ll be able to see where you\u2019re going, when, how to get in (the door code and wifi), and message the host directly if you need anything.</p>'
+                        + '<p style="margin:0 0 16px;font-size:14px;color:#6b7280;">Sign in with <strong>'
+                        + escapeHtml(row.email)
+                        + '</strong> \u2014 the address this was sent to \u2014 to accept. You won\u2019t be able to change or cancel the booking, and you won\u2019t see what was paid.</p>'
+                        + button(SITE_URL + '/trip-invite/' + row.invite_token, 'See the trip'),
                     'You\u2019re receiving this because someone added you to their trip.'
                 )
             );
 
-            return NextResponse.json({ ok: true, id: created.id });
+            return NextResponse.json({ ok: true });
         }
 
         // ---- Take someone off it -------------------------------------------

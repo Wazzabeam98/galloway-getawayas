@@ -296,9 +296,24 @@ export async function POST(request: Request) {
         try {
             const { data: liveOrders } = await admin
                 .from('service_orders')
-                .select('id, status, stripe_payment_intent_id, guest_email, service_date, price, provider_id, provider_business_name')
+                .select('id, status, stripe_payment_intent_id, guest_email, service_date, price, provider_id, provider_business_name, slot_session_id, quantity')
                 .eq('booking_id', booking.id)
                 .in('status', ['authorised', 'confirmed']);
+
+            // Give a slot's seat back — a confirmed slot order held a seat on its
+            // session, and a refund that leaves seats_taken up reads as full to
+            // the next guest. The request shapes (comes_to_you, made_to_order)
+            // carry no slot_session_id, so this is a no-op for them. Same key
+            // shape as the order routes, so it is idempotent with a direct cancel.
+            const releaseSeat = async (o: any) => {
+                if (!o.slot_session_id) return;
+                const { data: s } = await admin.from('slot_sessions').select('seats_taken').eq('id', o.slot_session_id).maybeSingle();
+                if (s) {
+                    await admin.from('slot_sessions')
+                        .update({ seats_taken: Math.max(0, s.seats_taken - (o.quantity || 1)) })
+                        .eq('id', o.slot_session_id);
+                }
+            };
 
             for (const o of liveOrders || []) {
                 try {
@@ -308,7 +323,11 @@ export async function POST(request: Request) {
                         await admin.from('service_orders').update({ status: 'cancelled', cancelled_at: new Date().toISOString() }).eq('id', o.id).eq('status', 'authorised');
                     } else {
                         await stripeRequest('POST', '/refunds', { payment_intent: o.stripe_payment_intent_id, refund_application_fee: 'true', reverse_transfer: 'true' }, 'refund-' + o.id);
-                        await admin.from('service_orders').update({ status: 'refunded', cancelled_at: new Date().toISOString() }).eq('id', o.id).eq('status', 'confirmed');
+                        const { data: moved } = await admin.from('service_orders').update({ status: 'refunded', cancelled_at: new Date().toISOString() }).eq('id', o.id).eq('status', 'confirmed').select('id');
+                        // Only release the seat when this call is the one that
+                        // moved the order off 'confirmed' — so a retry or a race
+                        // with a direct cancel cannot double-decrement.
+                        if (moved && moved.length) await releaseSeat(o);
                         await tellAboutStayCancel(admin, o);
                     }
                 } catch (orderErr: any) {

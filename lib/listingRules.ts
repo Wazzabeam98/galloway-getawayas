@@ -127,12 +127,15 @@ export const PUBLISH_RULES: Rule[] = [
         failed: (l) => !text(l.propertyType),
     },
     {
-        // A rural cottage may have a name and no street, so either will do —
-        // what is not allowed is nothing but the town.
+        // A real street address has to exist before a place can be published —
+        // you can't list accommodation that doesn't. It stays hidden from guests
+        // until they book (that walling is elsewhere); this only requires it to
+        // be there. A property name no longer stands in for it: "The Old Manse"
+        // with no street is not something a guest can find or a court can serve.
         key: 'address',
         step: 3,
-        message: 'Please add a street address or a property name, so guests can find the place.',
-        failed: (l) => !text(l.street) && !text(l.propertyName) && !text(l.flat),
+        message: 'Please add the street address, so guests can find the place once they’ve booked.',
+        failed: (l) => !text(l.street),
     },
     {
         key: 'town',

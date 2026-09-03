@@ -213,7 +213,10 @@ export async function POST(request: Request) {
                     booking_id: booking.id,
                 },
             },
-            success_url: SITE_URL + '/trips?experience=requested',
+            // A real "request sent" moment — held-not-charged, what happens next
+            // — instead of a banner on /trips. The order row is written by the
+            // webhook, so this page confirms the act and needs only the provider.
+            success_url: SITE_URL + '/experiences/requested?p=' + provider.id,
             cancel_url: SITE_URL + '/trips?experience=cancelled',
             metadata: {
                 kind: 'service_order',

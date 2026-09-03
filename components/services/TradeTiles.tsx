@@ -2,6 +2,7 @@ import Link from 'next/link';
 import {
     Sparkles, Wrench, Trees, Droplet, ChefHat, Cake, ShoppingBasket,
     Store, Trash2, Zap, Hammer, Home, Paintbrush, ShowerHead,
+    Gift, Wine, Compass, Sailboat, Flower2, Palette,
 } from 'lucide-react';
 
 // One tile, used by both places that offer a trade.
@@ -34,6 +35,14 @@ export const TRADE_ICONS: Record<string, any> = {
     chef: ChefHat,
     cake: Cake,
     basket: ShoppingBasket,
+    // Guest-experience categories (lib/serviceProviders GUEST_CATEGORIES). The
+    // grid a guest provider starts from, the same tile geometry as the trades.
+    hamper: Gift,
+    tasting: Wine,
+    outdoors: Compass,
+    water: Sailboat,
+    wellness: Flower2,
+    crafts: Palette,
     // "Something else" — a storefront stands in for a business we have not named.
     other: Store,
     bin: Trash2,

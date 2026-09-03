@@ -55,6 +55,8 @@ interface Body {
     prices?: any[];
     items?: any[];
     skills?: string[];
+    slotAvailability?: any[];
+    slotBlocks?: any[];
 }
 
 // Whitelists, not blacklists. Anything the browser sends that is not named here
@@ -76,9 +78,20 @@ const PROVIDER_COLUMNS = [
     // What a food business can cater for, in their own words. Shown on the
     // listing; empty reads as "hasn't said" there rather than as "fine".
     'dietary_note',
+    // The category the applicant picked and the booking shape it implies — all a
+    // STARTING POINT the owner confirms at review. Whitelisted because none of
+    // them grant live status: an applicant is not visible to guests until the
+    // owner approves them and they connect Stripe, and the owner re-checks the
+    // category, MCC and shape then. custom_label seeds the guest-facing word;
+    // shape + exclusive_per_date the booking shape; the rest its own config.
+    'custom_label', 'shape', 'exclusive_per_date',
+    'lead_time_days', 'slot_length_minutes', 'slot_capacity',
 ];
 
 const AREA_COLUMNS = ['label', 'centre_lat', 'centre_lng', 'radius_miles'];
+// A slot's weekly opening hours and days off. provider_id is stamped at /finish.
+const AVAILABILITY_COLUMNS = ['day_of_week', 'open_time', 'close_time'];
+const BLOCK_COLUMNS = ['blocked_date'];
 const EXTRA_COLUMNS = ['extra_key', 'offered', 'price', 'notes'];
 const PRICE_COLUMNS = ['band_key', 'price', 'typical_hours'];
 // A guest trade's menu — one item for a chef, many for a baker. Whitelisted like
@@ -214,6 +227,8 @@ export async function POST(req: Request) {
                         number: String(r.number || '').trim(),
                     })).filter((r: any) => r.scheme && r.number),
                     skills: (body.skills || []).map((l: any) => String(l || '').trim()).filter(Boolean),
+                    slotAvailability: (body.slotAvailability || []).map((a: any) => pick(a, AVAILABILITY_COLUMNS)),
+                    slotBlocks: (body.slotBlocks || []).map((b: any) => pick(b, BLOCK_COLUMNS)),
                 },
                 token_hash: hash,
             })

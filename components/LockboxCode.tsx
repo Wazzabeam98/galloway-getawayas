@@ -159,9 +159,23 @@ export default function LockboxCode({
                 </p>
             )}
 
+            {/* Why the field beats typing the code into a message by hand. A code
+                that lives here is read live on each guest's arrival screen, so
+                changing it updates everyone at once; a code typed into a message
+                is frozen the moment it sends. */}
+            <div className="mt-3 rounded-lg border border-emerald-200 bg-emerald-50 p-3">
+                <p className="text-xs text-emerald-900">
+                    <span className="font-semibold">Keep the code here, not in a message.</span> A code
+                    in this field shows on each guest&apos;s arrival screen, so if you change the
+                    lock, every guest sees the new code the moment you save it. A code typed straight
+                    into a message can&apos;t be taken back — change the lock and that guest is left
+                    with the old one in their thread, and nothing tells them it&apos;s wrong.
+                </p>
+            </div>
+
             <p className="text-xs text-slate-400 mt-2">
-                Change it between guests. Once sent, the code stays in that guest&apos;s message
-                thread and they can look it up later.
+                Change it between guests whenever you like — the arrival screen always shows the
+                current one.
             </p>
         </div>
     );

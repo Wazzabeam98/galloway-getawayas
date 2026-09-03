@@ -98,11 +98,13 @@ const SignupModel = () => {
                     // session, so a guest who confirmed their address arrived
                     // signed out and assumed it had not worked.
                     //
-                    // The ?next= is redundant (the callback defaults to / anyway)
-                    // but it means every link this site sends already carries a
-                    // query string, so all the email templates can append with a
-                    // single & and none of them is a special case.
-                    emailRedirectTo: `${window.location.origin}/auth/callback?next=/`,
+                    // ?next= returns them to wherever they signed up — the same
+                    // instinct as the Google button. It matters most for a friend
+                    // who signs up FROM a trip invite: without it the confirmation
+                    // link drops them on the home page with no idea what just
+                    // happened; with it they land back on the invite to accept.
+                    // safeNext in the callback keeps it to our own paths.
+                    emailRedirectTo: `${window.location.origin}/auth/callback?next=${encodeURIComponent(window.location.pathname + window.location.search)}`,
                 },
             });
 
@@ -171,7 +173,7 @@ const SignupModel = () => {
             // somewhere different from the first, which is a fine way to spend
             // an afternoon wondering why only one of them works.
             options: {
-                emailRedirectTo: `${window.location.origin}/auth/callback?next=/`,
+                emailRedirectTo: `${window.location.origin}/auth/callback?next=${encodeURIComponent(window.location.pathname + window.location.search)}`,
             },
         });
 

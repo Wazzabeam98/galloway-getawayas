@@ -62,6 +62,67 @@ export const HOST_TRADES = [
 // a trade. See GUEST-EXPERIENCES-ONE-FORM.md.
 export const GUEST_TRADES = ['guest'] as const;
 
+// ---------------------------------------------------------------------------
+// GUEST CATEGORIES — the picker a guest provider starts from.
+//
+// A guest is still one trade ('guest'); the category is not a trade and does not
+// go live on its own. But a blank "describe your business" is a worse front door
+// than the tradesman's grid of trades, so a guest picks the category that fits —
+// the same shape of choice, a grid of tiles with "Something else" last. What
+// they pick is a STARTING POINT: it pre-fills `custom_label` (the guest-facing
+// word) so the review panel opens on a sensible answer, and the owner still
+// confirms or changes it beside the MCC and the shape flag. It is never binding.
+//
+// Two other things each category carries, because both were going to be asked
+// anyway and the category already implies them:
+//   - `food`  — does this trade cater food? Drives the "what can you cater for?"
+//     question, which only makes sense for a food business. (The marketplace's
+//     own food test is a Stripe MCC, assigned at review; at sign-up the category
+//     is the only signal we have, and it is the right one.)
+//   - `shape` — the booking shape a business like this usually is, used only to
+//     pre-select the plain "how do guests get it?" question on the next step.
+//     A hint, never the answer: the provider confirms it and the owner has the
+//     final say. `null` (Something else) pre-selects nothing.
+//
+// The set is chosen for Dumfries & Galloway specifically — a rural coast-and-
+// forest region: food and drink producers, a private-chef/baking scene, guided
+// outdoors (hills, dark skies, wild swimming, fishing), watersports on the
+// Solway, wellness, and the Kirkcudbright arts-town craft trade. See the note in
+// OVERNIGHT-BUILD.md for why these nine.
+export interface GuestCategory {
+    key: string;
+    label: string;   // pre-fills custom_label; shown to guests until the owner changes it
+    hint: string;    // the supporting line under the tile
+    icon: string;    // a TRADE_ICONS key (components/services/TradeTiles)
+    food: boolean;   // gates the "what can you cater for?" question
+    shape: 'comes_to_you' | 'made_to_order' | 'slot' | null;  // pre-selects the shape question
+}
+
+export const GUEST_CATEGORIES: GuestCategory[] = [
+    { key: 'chef', label: 'Private chef & catering', hint: 'Dinners cooked at the cottage, grazing tables', icon: 'chef', food: true, shape: 'comes_to_you' },
+    { key: 'baking', label: 'Cakes & baking', hint: 'Celebration cakes, tray bakes, fresh bread', icon: 'cake', food: true, shape: 'made_to_order' },
+    { key: 'hampers', label: 'Hampers & local produce', hint: 'Welcome hampers, fresh fish, veg boxes', icon: 'hamper', food: true, shape: 'made_to_order' },
+    { key: 'tastings', label: 'Drinks & tastings', hint: 'Whisky, gin and wine tastings', icon: 'tasting', food: true, shape: 'slot' },
+    { key: 'outdoors', label: 'Guided outdoors', hint: 'Walks, wild swimming, fishing, foraging, dark skies', icon: 'outdoors', food: false, shape: 'slot' },
+    { key: 'water', label: 'On the water', hint: 'Kayaking, paddleboarding, boat trips', icon: 'water', food: false, shape: 'slot' },
+    { key: 'wellness', label: 'Wellness & spa', hint: 'Massage, sauna, yoga', icon: 'wellness', food: false, shape: 'slot' },
+    { key: 'crafts', label: 'Arts & crafts', hint: 'Pottery, painting, make-your-own workshops', icon: 'crafts', food: false, shape: 'slot' },
+    // Always last, always the storefront icon, like the tradesman "Something
+    // else": the generic template that covers whatever the eight above don't.
+    { key: 'other', label: '', hint: 'Anything else a guest would book for their stay', icon: 'other', food: false, shape: null },
+];
+
+export function guestCategoryByKey(key: string | null | undefined): GuestCategory | null {
+    return GUEST_CATEGORIES.filter((c) => c.key === String(key || ''))[0] || null;
+}
+
+// Does the picked category cater food? Unknown / unpicked / "other" → false, so
+// the food question stays hidden until a food category is actually chosen.
+export function guestCategoryIsFood(key: string | null | undefined): boolean {
+    const c = guestCategoryByKey(key);
+    return !!(c && c.food);
+}
+
 // A heading on the picker, not a thing anybody is.
 //
 // Six trades would swamp a page that otherwise has four entries on it, and

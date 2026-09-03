@@ -3,12 +3,19 @@ import { cookies } from 'next/headers';
 import Link from 'next/link';
 import { formatUk } from '@/lib/cancellation';
 import { cancellationPosition } from '@/lib/cancellationView';
-import { londonDayKey, daysBetweenKeys, ukLongDate } from '@/lib/dayKey';
+import { londonDayKey, daysBetweenKeys } from '@/lib/dayKey';
 import { liveForGuestCard, stayCountdown } from '@/lib/bookingWindows';
+import { bookingReleasesPrivateData } from '@/lib/bookingEntitlement';
+import { adminClient } from '@/lib/supabaseAdmin';
+import { directionsUrl as buildDirectionsUrl } from '@/lib/directions';
 import { publicArea } from '@/lib/places';
 import ListingImage from '@/components/ListingImage';
 import CheckInOutTimes from '@/components/arrival/CheckInOutTimes';
-import { MessageSquare, CalendarDays } from 'lucide-react';
+import CopyField from '@/components/arrival/CopyField';
+import TripGroup from '@/components/TripGroup';
+import HomeCancelPanel from '@/components/HomeCancelPanel';
+import GuestExperiences from '@/components/GuestExperiences';
+import { MessageSquare, CalendarDays, Navigation, Grid3x3 } from 'lucide-react';
 
 // Shown at the top of the home page to someone with a stay coming up. The
 // point is that a guest logging in six weeks before their holiday sees their
@@ -44,6 +51,40 @@ export default async function UpcomingTrip() {
         .maybeSingle();
 
     if (!listing) return null;
+
+    // The guest's own confirmed experiences for this stay, so the in-place cancel
+    // confirm can name what a stay-cancel takes with it (the same list the trips
+    // card shows). Their own rows, read under RLS.
+    const { data: myOrders } = await supabase
+        .from('service_orders')
+        .select('item_name, service_date')
+        .eq('booking_id', booking.id)
+        .eq('guest_id', auth.session.user.id)
+        .eq('status', 'confirmed');
+    const cancelOrders = (myOrders || []).map((o: any) => ({ item_name: o.item_name, service_date: o.service_date }));
+
+    // Arrival essentials for the times box — the address behind Get directions
+    // and the what3words — but ONLY for a CONFIRMED stay. A pending request is
+    // not entitled to private location data (the same bookingReleasesPrivateData
+    // rule as /api/trips and the arrival page), so its card shows the times
+    // alone. Read under the service role because what3words lives in the
+    // grant-less listing_arrival table.
+    let directionsUrl: string | null = null;
+    let what3words: string | null = null;
+    if (bookingReleasesPrivateData(booking)) {
+        const admin = adminClient();
+        const [{ data: place }, { data: arr }] = await Promise.all([
+            admin.from('listings').select('street_address, postcode, location, latitude, longitude').eq('id', booking.listing_id).maybeSingle(),
+            admin.from('listing_arrival').select('what3words').eq('listing_id', booking.listing_id).maybeSingle(),
+        ]);
+        const p: any = place || {};
+        what3words = (arr as any)?.what3words || null;
+        // Shared rule: a pin, or a STREET address — never the town alone.
+        directionsUrl = buildDirectionsUrl({
+            latitude: p.latitude, longitude: p.longitude,
+            streetAddress: p.street_address, postcode: p.postcode, location: p.location,
+        });
+    }
 
     const nights = Math.round(
         (new Date(String(booking.check_out).slice(0, 10)).getTime()
@@ -93,25 +134,27 @@ export default async function UpcomingTrip() {
                 </p>
             </div>
 
-            <div className="rounded-3xl overflow-hidden border border-stone-200 bg-white flex flex-col md:flex-row">
-                {/* The listing, shown the way Our Properties shows it and clickable
-                    through to the listing page — photo, title, place. The seed
-                    cottages have no photo, so ListingImage draws a composed empty
-                    state rather than a broken box. */}
+            <div className="rounded-3xl overflow-hidden border border-stone-200 bg-white md:flex">
+                {/* Landscape photo ALONGSIDE the details on desktop, a banner
+                    above them on a phone. A landscape shot fills a half-width
+                    column at the page's full width far better than a banner over a
+                    narrow one; and half the card is wide enough that it never
+                    becomes the tall portrait sliver a wide photo used to be
+                    cropped to. */}
                 <Link
                     href={homeHref}
-                    className="group relative md:w-2/5 lg:w-1/3 h-56 md:h-auto md:min-h-[20rem] flex-shrink-0 block bg-stone-200"
+                    className="group relative block aspect-[4/3] w-full overflow-hidden bg-stone-200 md:aspect-auto md:w-1/2 md:min-h-[26rem]"
                 >
                     <ListingImage
                         images={listing.images}
                         alt={listing.title}
-                        sizes="(max-width: 768px) 100vw, 420px"
+                        sizes="(max-width: 768px) 100vw, 50vw"
                         className="object-cover transition duration-300 group-hover:scale-105"
                         priority
                     />
                 </Link>
 
-                <div className="p-8 md:p-10 flex-1 flex flex-col justify-center">
+                <div className="p-8 md:p-10 md:w-1/2 md:flex md:flex-col md:justify-center">
                     {/* The countdown is the reason anyone looks at this, so it
                         gets the room. Everything else is supporting detail. */}
                     <div className="text-4xl md:text-5xl font-bold text-stone-900 tracking-tight">
@@ -139,47 +182,68 @@ export default async function UpcomingTrip() {
                         </div>
                     </div>
 
-                    {/* The times, as a matched pair, linking through to Getting
-                        there — the same component the trips card and Getting
-                        there itself use. */}
+                    {/* The group — the same control the trips card carries, so a
+                        guest who never leaves the home page can still add the
+                        people coming with them. */}
+                    {booking.status !== 'cancelled' && booking.status !== 'declined' && (
+                        <div className="mt-4">
+                            <TripGroup
+                                bookingId={booking.id}
+                                guests={booking.guests}
+                                cottage={listing.title}
+                                when={formatUk(new Date(booking.check_in)) + ' → ' + formatUk(new Date(booking.check_out))}
+                            />
+                        </div>
+                    )}
+
+                    {/* The times, as a matched pair — times only, because the
+                        date range and the nights already sit right above. The
+                        freed right half carries the one thing this card didn't
+                        have: Get directions and the what3words, the essentials a
+                        guest wants at a glance on the morning they set off. Two
+                        columns on wide screens; stacked below lg. */}
                     <div className="mt-5">
                         <CheckInOutTimes
                             surface="home"
-                            mode="link"
-                            href={'/arrival/' + booking.id}
+                            mode="split"
                             checkInTime={listing.check_in_time}
                             checkOutTime={listing.check_out_time}
+                            aside={(directionsUrl || what3words) ? (
+                                <div className="flex h-full flex-col justify-center gap-2.5">
+                                    {directionsUrl && (
+                                        <a href={directionsUrl} target="_blank" rel="noreferrer"
+                                            className="inline-flex items-center justify-center gap-2 rounded-lg bg-stone-900 px-3 py-2.5 text-sm font-semibold text-white transition hover:bg-stone-800">
+                                            <Navigation className="h-4 w-4" /> Get directions
+                                        </a>
+                                    )}
+                                    {what3words && (
+                                        <div className="flex items-center gap-2">
+                                            <Grid3x3 className="h-4 w-4 flex-none text-emerald-700" />
+                                            <span className="min-w-0 truncate text-sm text-emerald-700">{what3words}</span>
+                                            <CopyField value={what3words} label="Copy" />
+                                        </div>
+                                    )}
+                                </div>
+                            ) : null}
                         />
                     </div>
 
-                    {/* A link, not a label. Somebody reading this line is
-                        usually reading it because they are wondering whether
-                        to cancel, and the answer to that was three screens
-                        away. It opens the same confirmation panel on /trips
-                        that the Cancel booking link there opens — the one
-                        place that says what the refund would actually be. */}
+                    {/* "Free to cancel until [date]" reads as a fact; pressing it
+                        opens the confirm IN PLACE here — the same component the
+                        trips card uses — rather than navigating to /trips. Two
+                        steps, one page. */}
                     {freeUntilKey && (
-                        <div className="mt-5 text-sm">
-                            <Link
-                                href={'/trips?cancel=' + booking.id + '#trip-' + booking.id}
-                                className={
-                                    'underline underline-offset-2 hover:no-underline ' +
-                                    (freeDaysLeft <= 3 ? 'text-amber-700' : 'text-emerald-700')
-                                }
-                            >
-                                Free cancellation until {ukLongDate(freeUntilKey)}
-                            </Link>
-                            {freeDaysLeft <= 3 && (
-                                <span className="text-stone-500">
-                                    {' '}&middot;{' '}
-                                    {freeDaysLeft === 0
-                                        ? 'last day'
-                                        : freeDaysLeft === 1
-                                            ? '1 day left'
-                                            : freeDaysLeft + ' days left'}
-                                </span>
-                            )}
-                        </div>
+                        <HomeCancelPanel
+                            bookingId={booking.id}
+                            checkIn={booking.check_in}
+                            policy={listing.cancellation_policy}
+                            amountPaid={booking.amount_paid}
+                            amountRefunded={booking.amount_refunded}
+                            cleaningFee={(booking as any).cleaning_fee}
+                            orders={cancelOrders}
+                            freeUntilKey={freeUntilKey}
+                            freeDaysLeft={freeDaysLeft}
+                        />
                     )}
 
                     <div className="flex flex-wrap gap-3 mt-8">
@@ -200,6 +264,22 @@ export default async function UpcomingTrip() {
                     </div>
                 </div>
             </div>
+
+            {/* The guest experiences, below the trip — what's booked for the stay
+                and a way into browsing more, the same panel the trips page carries,
+                so the home page no longer has to send a guest to /trips to find
+                any of it. It shows its own "coming soon" when the marketplace is
+                closed, and nothing when there's neither a booking nor a provider. */}
+            {booking.status !== 'cancelled' && booking.status !== 'declined' && (
+                <div className="mt-8">
+                    <GuestExperiences
+                        bookingId={booking.id}
+                        checkIn={booking.check_in}
+                        checkOut={booking.check_out}
+                        town={publicArea(listing.location)}
+                    />
+                </div>
+            )}
         </section>
     );
 }

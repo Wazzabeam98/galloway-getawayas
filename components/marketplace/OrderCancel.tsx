@@ -47,7 +47,7 @@ export default function OrderCancel({
     if (view === 'closed') {
         return (
             <button type="button" onClick={() => { setView('open'); setError(''); }}
-                className="text-sm font-medium text-stone-500 underline underline-offset-2 hover:text-stone-800">
+                className="text-sm font-medium text-slate-500 underline underline-offset-2 hover:text-slate-800">
                 Cancel this booking
             </button>
         );
@@ -67,7 +67,7 @@ export default function OrderCancel({
                         className="inline-flex items-center gap-1.5 rounded-lg bg-red-700 px-3.5 py-2 text-sm font-semibold text-white hover:bg-red-800 disabled:opacity-50">
                         {busy ? <Loader2 className="h-4 w-4 animate-spin" /> : null} Yes, cancel and forfeit £{price.toFixed(2)}
                     </button>
-                    <button type="button" onClick={() => setView('open')} className="px-3 py-2 text-sm font-semibold text-stone-600 hover:text-stone-900">Go back</button>
+                    <button type="button" onClick={() => setView('open')} className="px-3 py-2 text-sm font-semibold text-slate-600 hover:text-slate-900">Go back</button>
                 </div>
                 {error ? <p className="mt-2 text-xs text-red-600">{error}</p> : null}
             </div>
@@ -76,25 +76,25 @@ export default function OrderCancel({
 
     // view === 'open' — the outcome panel, three shapes by what a cancel means now.
     return (
-        <div className="rounded-xl border border-stone-200 bg-white p-4">
+        <div className="rounded-xl border border-slate-200 bg-white p-4">
             {!charged ? (
                 <>
-                    <div className="text-sm font-semibold text-stone-900">Withdraw this request?</div>
-                    <p className="mt-1 text-sm text-stone-600">
+                    <div className="text-sm font-semibold text-slate-900">Withdraw this request?</div>
+                    <p className="mt-1 text-sm text-slate-600">
                         Nothing has been charged{status === 'holding' ? ' — your place is only being held' : ''}, so there’s nothing to refund. This just takes it back.
                     </p>
                     <div className="mt-3 flex items-center gap-2">
                         <button type="button" disabled={busy} onClick={() => act('refund')}
-                            className="inline-flex items-center gap-1.5 rounded-lg bg-stone-800 px-3.5 py-2 text-sm font-semibold text-white hover:bg-stone-900 disabled:opacity-50">
+                            className="inline-flex items-center gap-1.5 rounded-lg bg-slate-800 px-3.5 py-2 text-sm font-semibold text-white hover:bg-slate-900 disabled:opacity-50">
                             {busy ? <Loader2 className="h-4 w-4 animate-spin" /> : null} Yes, withdraw it
                         </button>
-                        <button type="button" onClick={() => setView('closed')} className="px-3 py-2 text-sm font-semibold text-stone-600 hover:text-stone-900">Keep it</button>
+                        <button type="button" onClick={() => setView('closed')} className="px-3 py-2 text-sm font-semibold text-slate-600 hover:text-slate-900">Keep it</button>
                     </div>
                 </>
             ) : free ? (
                 <>
-                    <div className="text-sm font-semibold text-stone-900">Cancel and get your money back?</div>
-                    <p className="mt-1 text-sm text-stone-600">
+                    <div className="text-sm font-semibold text-slate-900">Cancel and get your money back?</div>
+                    <p className="mt-1 text-sm text-slate-600">
                         You’ll get your full <span className="font-semibold">£{price.toFixed(2)}</span> back to your card. Refunds usually land in five to ten days, and {providerName}’s time reopens.
                     </p>
                     <div className="mt-3 flex items-center gap-2">
@@ -102,13 +102,13 @@ export default function OrderCancel({
                             className="inline-flex items-center gap-1.5 rounded-lg bg-red-700 px-3.5 py-2 text-sm font-semibold text-white hover:bg-red-800 disabled:opacity-50">
                             {busy ? <Loader2 className="h-4 w-4 animate-spin" /> : null} Cancel &amp; refund £{price.toFixed(2)}
                         </button>
-                        <button type="button" onClick={() => setView('closed')} className="px-3 py-2 text-sm font-semibold text-stone-600 hover:text-stone-900">Keep booking</button>
+                        <button type="button" onClick={() => setView('closed')} className="px-3 py-2 text-sm font-semibold text-slate-600 hover:text-slate-900">Keep booking</button>
                     </div>
                 </>
             ) : (
                 <>
-                    <div className="text-sm font-semibold text-stone-900">Cancelling now won’t get your money back</div>
-                    <p className="mt-1 text-sm text-stone-600">
+                    <div className="text-sm font-semibold text-slate-900">Cancelling now won’t get your money back</div>
+                    <p className="mt-1 text-sm text-slate-600">
                         You’re inside {providerName}’s cancellation window, so the <span className="font-semibold">£{price.toFixed(2)}</span> you paid isn’t refunded automatically. You can ask {providerName} to refund you — or cancel anyway and forfeit it.
                     </p>
                     <div className="mt-3 flex flex-wrap items-center gap-2">
@@ -120,7 +120,7 @@ export default function OrderCancel({
                             className="rounded-lg px-3 py-2 text-sm font-medium text-red-700 hover:text-red-900">
                             Cancel anyway — no refund
                         </button>
-                        <button type="button" onClick={() => setView('closed')} className="px-3 py-2 text-sm font-semibold text-stone-600 hover:text-stone-900">Keep booking</button>
+                        <button type="button" onClick={() => setView('closed')} className="px-3 py-2 text-sm font-semibold text-slate-600 hover:text-slate-900">Keep booking</button>
                     </div>
                 </>
             )}

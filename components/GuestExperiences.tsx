@@ -59,8 +59,12 @@ export default function GuestExperiences(props: {
     checkIn: string;
     checkOut: string;
     town?: string | null;
+    // When several of these render on one page (the trips list, one per booking),
+    // the "coming soon" closed state should be said ONCE at page level, not
+    // repeated per card. Set this and a closed marketplace renders nothing here.
+    hideClosedTeaser?: boolean;
 }) {
-    const { bookingId, town } = props;
+    const { bookingId, town, hideClosedTeaser } = props;
 
     const [providerCount, setProviderCount] = useState(0);
     const [orders, setOrders] = useState<Order[]>([]);
@@ -84,6 +88,8 @@ export default function GuestExperiences(props: {
     if (!loaded) return null;
 
     if (!open) {
+        // Said once at page level instead — see hideClosedTeaser.
+        if (hideClosedTeaser) return null;
         return (
             <section className="rounded-2xl border border-dashed border-slate-300 p-5">
                 <h3 className="text-lg font-semibold text-slate-900">Experiences, coming soon to your stay</h3>

@@ -6,15 +6,19 @@ import { useEffect, useState } from 'react';
 import { createClientComponentClient } from '@supabase/auth-helpers-nextjs';
 import Logo from '@/components/base/Logo';
 import LoginModel from '@/components/auth/LoginModel';
-import { MessageCircle, Navigation, MapPin, Grid3x3 } from 'lucide-react';
+import { MessageCircle, Navigation, MapPin, Grid3x3, ArrowLeft, CornerDownRight, Car, KeyRound, Phone, CloudOff } from 'lucide-react';
 import CopyField from '@/components/arrival/CopyField';
 import CheckInOutTimes from '@/components/arrival/CheckInOutTimes';
+import CancelBookingConfirm from '@/components/CancelBookingConfirm';
+import ExperiencesTeaser from '@/components/ExperiencesTeaser';
+import GuestExperiences from '@/components/GuestExperiences';
+import { publicArea } from '@/lib/places';
 import { getImageUrl, capitializeFirst, displayName } from '@/lib/utils';
+import { checkInMethodTitle, checkInBlurb } from '@/lib/checkInMethods';
 import Link from 'next/link';
 import { cancellationPosition } from '@/lib/cancellationView';
 import { ukLongDate, londonDayKey } from '@/lib/dayKey';
-import { upcomingUntilCheckout, liveForGuestCard } from '@/lib/bookingWindows';
-import GuestExperiences from '@/components/GuestExperiences';
+import { upcomingUntilCheckout, liveForGuestCard, stayCountdown } from '@/lib/bookingWindows';
 
 interface Booking {
     id: string;
@@ -32,9 +36,11 @@ interface Booking {
     // True when someone else booked it and added this person along.
     guests?: number | null;
     sharedWithMe?: boolean;
-    // Card-safe arrival essentials from /api/trips — address, times, the point
-    // for a map, what3words. Never the door code or wifi password; those are on
-    // the Getting-there page only.
+    // Card-safe arrival detail from /api/trips — the whole approach now lives on
+    // the card: address and map point, times, what3words, the host's "last bit"
+    // directions, parking, how you get in (the method, not the code) and the
+    // host's phone. The door code and wifi password never come down: hasCode and
+    // hasWifi are booleans that say a secret exists to reveal on Getting-there.
     arrival?: {
         addressLines: string[];
         addressString: string;
@@ -44,6 +50,13 @@ interface Booking {
         checkInEndTime: string | null;
         checkOutTime: string | null;
         what3words: string | null;
+        arrivalDirections: string | null;
+        parking: string | null;
+        checkInMethod: string | null;
+        directionsUrl: string | null;
+        hasCode: boolean;
+        hasWifi: boolean;
+        hostPhone: string | null;
     } | null;
 }
 
@@ -55,40 +68,15 @@ export default function TripsPage() {
     const [listingMap, setListingMap] = useState<Record<string, any>>({});
     const [hostNames, setHostNames] = useState<Record<string, string>>({});
     const [reviewedBookingIds, setReviewedBookingIds] = useState<Set<string>>(new Set());
+    // The guest's confirmed experiences, per booking, so the cancel dialog can
+    // name what the stay-cancel cascade will also cancel.
+    const [ordersByBooking, setOrdersByBooking] = useState<Record<string, { item_name: string; service_date: string }[]>>({});
     const [payingId, setPayingId] = useState<string | null>(null);
     const [payError, setPayError] = useState('');
+    // Which booking's cancel confirm is open. The confirm itself — the refund
+    // figure, the experiences it names, the call to the cancel route — lives in
+    // CancelBookingConfirm, shared with the home card.
     const [confirmingId, setConfirmingId] = useState<string | null>(null);
-    const [cancellingId, setCancellingId] = useState<string | null>(null);
-    const [cancelError, setCancelError] = useState('');
-
-    const cancelBooking = async (bookingId: string) => {
-        setCancelError('');
-        setCancellingId(bookingId);
-        try {
-            const res = await fetch('/api/bookings/cancel', {
-                method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({ bookingId: bookingId }),
-            });
-            const data = await res.json();
-
-            if (data && data.ok) {
-                setBookings((prev) =>
-                    prev.map((b) =>
-                        b.id === bookingId
-                            ? { ...b, status: 'cancelled', balance_amount: 0 }
-                            : b
-                    )
-                );
-                setConfirmingId(null);
-            } else {
-                setCancelError((data && data.error) || 'Could not cancel. Please try again.');
-            }
-        } catch (err) {
-            setCancelError('Could not cancel. Please try again.');
-        }
-        setCancellingId(null);
-    };
 
     // Sends the guest to Stripe to settle what's left on a booking. Reached
     // either from the button below or from the link in a payment reminder
@@ -146,6 +134,22 @@ export default function TripsPage() {
                 setListingMap(map);
             }
 
+            // The guest's confirmed experiences, grouped by booking — so the
+            // cancel dialog can name what would be cancelled alongside the stay.
+            const { data: myOrders } = await supabase
+                .from('service_orders')
+                .select('booking_id, item_name, service_date, status')
+                .eq('guest_id', session.user.id)
+                .eq('status', 'confirmed');
+            const byBooking: Record<string, { item_name: string; service_date: string }[]> = {};
+            (myOrders || []).forEach((o) => {
+                if (!o.booking_id) return;
+                (byBooking[o.booking_id] = byBooking[o.booking_id] || []).push({
+                    item_name: o.item_name, service_date: o.service_date,
+                });
+            });
+            setOrdersByBooking(byBooking);
+
             // Arrived from a payment reminder email — go straight to Stripe.
             if (typeof window !== 'undefined') {
                 const params = new URLSearchParams(window.location.search);
@@ -156,23 +160,13 @@ export default function TripsPage() {
                     payBalance(target.id);
                 }
 
-                // Arrived from the free-cancellation line on the home page
-                // card. Open the confirmation panel for that booking rather
-                // than making them find it again, but open the panel only —
-                // nothing is cancelled until they press the button in it.
-                const toCancel = params.get('cancel');
-                const cancelTarget = (bookingRows || []).filter(function (b) {
-                    return b.id === toCancel;
-                })[0];
-
-                if (
-                    cancelTarget
-                    && !cancelTarget.sharedWithMe
-                    && cancelTarget.status !== 'cancelled'
-                    && cancelTarget.status !== 'declined'
-                ) {
-                    setConfirmingId(cancelTarget.id);
-                }
+                // Note: we deliberately do NOT auto-open the cancel panel from a
+                // ?cancel= parameter any more. The home card's free-cancel line
+                // used to deep-link into a pre-opened panel, so a guest arrived
+                // on top of the red "Yes, cancel it" button — one click from a
+                // line that read like information. The home card now lands on
+                // #trip-<id> with the panel closed; pressing "Cancel booking"
+                // here is the deliberate act that opens it.
             }
 
             const hostIds = Array.from(new Set((bookingRows || []).map((b) => b.host_id)));
@@ -283,10 +277,32 @@ export default function TripsPage() {
         const upcomingConfirmed = upcomingUntilCheckout(b, today);
         const arr = b.arrival || null;
         const homeHref = `/homes/${b.listing_id}`;
-        const mapsUrl = arr && (arr.addressString || (arr.lat != null && arr.lng != null))
-            ? 'https://www.google.com/maps/dir/?api=1&destination='
-                + (arr.lat != null && arr.lng != null ? arr.lat + ',' + arr.lng : encodeURIComponent(arr.addressString))
-            : null;
+        const hostName = capitializeFirst(hostNames[b.host_id] || 'your host');
+
+        // Directions are built server-side by the shared rule (lib/directions):
+        // a real pin, or a STREET address — never the town alone, which would
+        // drive the guest to the town centre. null means no safe destination, so
+        // no button. hasCoords is only for the "no pin saved" note below.
+        const hasCoords = !!arr && arr.lat != null && arr.lng != null && !(arr.lat === 0 && arr.lng === 0);
+        const directionsUrl = arr?.directionsUrl || null;
+        // A quiet phase chip, only for the moments that are actually worth a
+        // word: they're on the stay, or it's today/tomorrow. Not a big
+        // countdown — that's the home card's job as a single hero; on a LIST of
+        // trips the date range already carries "when", and a "12 days to go" on
+        // every card would be noise. But "You're there now" on the last morning
+        // is the exact reassurance the trips-split fix is about, so it earns a
+        // place where it applies. Same stayCountdown module as the home card.
+        const countdown = upcomingConfirmed ? stayCountdown(b, today) : null;
+        const phase = countdown?.phase ?? null;
+        // The three-day reveal window — the same span the Getting-there page shows
+        // the door code in. Inside it, the card links through to the way in;
+        // outside it there is nothing yet to reveal and no link.
+        const withinWindow = !!countdown && countdown.daysUntilCheckIn <= 3;
+        const phaseChip =
+            phase === 'during' ? 'You’re there now'
+                : phase === 'today' ? 'Arrives today'
+                    : phase === 'tomorrow' ? 'Arrives tomorrow'
+                        : null;
         const fmtDay = (s: string) => {
             const d = new Date(s);
             return isNaN(d.getTime()) ? s : d.toLocaleDateString('en-GB', { weekday: 'short', day: 'numeric', month: 'short' });
@@ -296,9 +312,11 @@ export default function TripsPage() {
             // Named so the link from the home page card lands on this trip
             // rather than at the top of a list of them.
             <div key={b.id} id={'trip-' + b.id} className="border rounded-2xl p-5 scroll-mt-6">
-              <div className="lg:grid lg:grid-cols-3 lg:gap-6">
-                {/* Left — the stay, its arrival details, its actions */}
-                <div className="lg:col-span-2">
+                {/* Single column: the right column existed only for the
+                    per-booking experiences panel, which is behind its flag and
+                    now teased once at the page level, so the card is full width
+                    rather than a wide half-empty two-up. When experiences launch,
+                    the per-booking panel returns as the right column. */}
                 <div className="flex items-start gap-4">
                     <Link href={homeHref} className="relative block w-16 h-16 rounded-xl overflow-hidden bg-slate-200 flex-shrink-0">
                         {listing?.images?.[0] && (
@@ -317,72 +335,187 @@ export default function TripsPage() {
                         ) : (
                             <div className="text-sm font-medium text-slate-700">£{b.total_price}</div>
                         )}
+                        {phaseChip && (
+                            <div className="mt-1.5">
+                                <span className="inline-flex items-center rounded-full bg-emerald-50 px-2.5 py-0.5 text-xs font-medium text-emerald-800">
+                                    {phaseChip}
+                                </span>
+                            </div>
+                        )}
                     </div>
                     <span className={`text-xs font-semibold px-3 py-1 rounded-full capitalize flex-shrink-0 ${statusStyles[b.status] || 'bg-slate-100 text-slate-600'}`}>
                         {b.status}
                     </span>
                 </div>
 
-                {/* Arrival essentials, on the card — address, times, and quick
-                    actions. The door code and wifi password are NOT here; they
-                    live on the Getting-there page only. */}
+                {/* The group, right under the stay details — stacked avatars and
+                    the seats still to fill, so a group booking reads as one before
+                    anything is opened. Only the booker manages it. */}
+                {!b.sharedWithMe && b.status !== 'cancelled' && b.status !== 'declined' && (
+                    <TripGroup
+                        bookingId={b.id}
+                        guests={b.guests}
+                        cottage={listing?.title}
+                        when={fmtDay(b.check_in) + ' – ' + fmtDay(b.check_out)}
+                    />
+                )}
+
+                {/* The whole approach, on the card. This used to be a thin
+                    summary that linked THROUGH to a near-identical "Getting there"
+                    card; the two said the same thing twice. Everything non-secret
+                    now lives here — where, the last bit, the times, how you get
+                    in, parking, the contact block, the offline promise — and
+                    "Getting there" is reduced to the two things that must not sit
+                    on a card a guest might leave open on a train: the door code
+                    and the wifi password, revealed only in their own window. */}
                 {upcomingConfirmed && arr && (
-                    <div className="mt-4 rounded-xl border border-slate-200 bg-slate-50/60 p-3.5">
-                        <div className="flex gap-2">
-                            <MapPin className="mt-0.5 h-4 w-4 flex-none text-slate-400" />
-                            <div className="min-w-0">
-                                {arr.addressLines.length
-                                    ? arr.addressLines.map((line, i) => (
-                                        <div key={i} className={i === 0 ? 'text-sm font-medium text-slate-900' : 'text-sm text-slate-600'}>{line}</div>
-                                    ))
-                                    : <div className="text-sm text-slate-500">Ask your host for the address in the messages.</div>}
+                    <div className="mt-4 space-y-3 rounded-xl border border-slate-200 bg-slate-50/60 p-3.5">
+                        {/* Where, and how to get there */}
+                        <div>
+                            <div className="flex gap-2">
+                                <MapPin className="mt-0.5 h-4 w-4 flex-none text-slate-400" />
+                                <div className="min-w-0">
+                                    {arr.addressLines.length
+                                        ? arr.addressLines.map((line, i) => (
+                                            <div key={i} className={i === 0 ? 'text-sm font-medium text-slate-900' : 'text-sm text-slate-600'}>{line}</div>
+                                        ))
+                                        : <div className="text-sm text-slate-500">Ask {hostName} for the address in the messages.</div>}
+                                </div>
                             </div>
+                            {arr.what3words && (
+                                <div className="mt-2 flex items-center gap-2 pl-6">
+                                    <Grid3x3 className="h-3.5 w-3.5 flex-none text-emerald-700" />
+                                    <span className="text-sm text-emerald-700">{arr.what3words}</span>
+                                    <CopyField value={arr.what3words} label="Copy" />
+                                </div>
+                            )}
+                            {!hasCoords && directionsUrl && (
+                                <p className="mt-2 pl-6 text-xs text-slate-400">No pin saved for this cottage yet — directions use the address.</p>
+                            )}
+                            {(directionsUrl || arr.addressString) && (
+                                <div className="mt-2.5 grid grid-cols-2 gap-2">
+                                    {directionsUrl && (
+                                        <a href={directionsUrl} target="_blank" rel="noreferrer"
+                                            className="inline-flex items-center justify-center gap-2 rounded-lg bg-slate-900 px-3 py-2 text-xs font-semibold text-white transition hover:bg-slate-800">
+                                            <Navigation className="h-3.5 w-3.5" /> Get directions
+                                        </a>
+                                    )}
+                                    {arr.addressString && <CopyField value={arr.addressString} label="Copy address" />}
+                                </div>
+                            )}
                         </div>
-                        <div className="mt-3">
-                            <CheckInOutTimes
-                                surface="trips"
-                                mode="link"
-                                href={`/arrival/${b.id}`}
-                                checkInTime={arr.checkInTime}
-                                checkOutTime={arr.checkOutTime}
-                                checkInEndTime={arr.checkInEndTime}
-                            />
-                        </div>
-                        {(mapsUrl || arr.what3words) && (
-                            <div className="mt-2.5 flex flex-wrap items-center gap-2">
-                                {mapsUrl && (
-                                    <a href={mapsUrl} target="_blank" rel="noreferrer" className="inline-flex items-center gap-1.5 rounded-lg border border-slate-300 bg-white px-3 py-1.5 text-xs font-semibold text-slate-700 transition hover:border-slate-400">
-                                        <Navigation className="h-3.5 w-3.5" /> Open in maps
-                                    </a>
-                                )}
-                                {arr.what3words && (
-                                    <span className="inline-flex items-center gap-1"><Grid3x3 className="h-3.5 w-3.5 text-emerald-700" /><CopyField value={arr.what3words} label={arr.what3words} /></span>
-                                )}
+
+                        {/* The last bit — the host's own words for what sat-nav gets wrong */}
+                        {arr.arrivalDirections && (
+                            <div className="rounded-lg border border-amber-200 bg-amber-50 p-3">
+                                <div className="flex items-center gap-1.5 text-[11px] font-semibold uppercase tracking-wide text-amber-700">
+                                    <CornerDownRight className="h-3.5 w-3.5" /> The last bit
+                                </div>
+                                <p className="mt-1 whitespace-pre-line text-sm leading-relaxed text-amber-950">{arr.arrivalDirections}</p>
                             </div>
                         )}
+
+                        {/* Check-in / checkout — a fact to read, not a door. Each
+                            end pairs its date with its time on one line now. */}
+                        <CheckInOutTimes
+                            surface="trips"
+                            mode="static"
+                            checkInDate={b.check_in}
+                            checkOutDate={b.check_out}
+                            checkInTime={arr.checkInTime}
+                            checkOutTime={arr.checkOutTime}
+                            checkInEndTime={arr.checkInEndTime}
+                        />
+
+                        {/* Getting in — the SIGNAL, never the secret. Inside the
+                            window, if there is a code, it says so and links to
+                            Getting there where the code lives. With no code but a
+                            check-in method (not a secret — it is on the listing),
+                            it shows the method plainly. With neither, it points at
+                            the host rather than going quiet. */}
+                        <div className="rounded-lg border border-slate-200 bg-white p-3">
+                            <div className="flex items-center gap-1.5 text-[11px] font-semibold uppercase tracking-wide text-slate-500">
+                                <KeyRound className="h-3.5 w-3.5" /> Getting in
+                            </div>
+                            {withinWindow && arr.hasCode ? (
+                                <p className="mt-1 text-sm font-medium text-emerald-800">
+                                    Your way in is ready.{' '}
+                                    <span className="font-normal text-emerald-700">
+                                        {arr.hasWifi ? 'Your door code and wifi are on the arrival screen.' : 'Your door code is on the arrival screen.'}
+                                    </span>
+                                </p>
+                            ) : arr.hasCode ? (
+                                <p className="mt-1 text-sm text-slate-500">Your way in appears here a few days before you arrive.</p>
+                            ) : arr.checkInMethod ? (
+                                <div className="mt-1">
+                                    <div className="text-sm font-medium text-slate-900">{checkInMethodTitle(arr.checkInMethod)}</div>
+                                    {checkInBlurb(arr.checkInMethod) && <div className="text-sm text-slate-600">{checkInBlurb(arr.checkInMethod)}</div>}
+                                </div>
+                            ) : (
+                                <p className="mt-1 text-sm text-slate-500">{hostName} will let you know how to get in — send a message if you&apos;re not sure.</p>
+                            )}
+                            {withinWindow && (arr.hasCode || arr.hasWifi) && (
+                                <Link href={`/arrival/${b.id}`} className="mt-2.5 inline-flex items-center gap-2 rounded-lg bg-slate-900 px-3 py-2 text-xs font-semibold text-white transition hover:bg-slate-800">
+                                    <Navigation className="h-3.5 w-3.5" /> Getting there
+                                </Link>
+                            )}
+                        </div>
+
+                        {/* Parking, only if the host said */}
+                        {arr.parking && (
+                            <div className="rounded-lg border border-slate-200 bg-white p-3">
+                                <div className="flex items-center gap-1.5 text-[11px] font-semibold uppercase tracking-wide text-slate-500">
+                                    <Car className="h-3.5 w-3.5" /> Parking
+                                </div>
+                                <p className="mt-1 whitespace-pre-line text-sm text-slate-700">{arr.parking}</p>
+                            </div>
+                        )}
+
+                        {/* Need a hand — the contact block, the moment you're
+                            stuck outside. Call the host if there's a number, or
+                            message either way. */}
+                        <div className="rounded-lg border border-slate-200 bg-white p-3">
+                            <div className="flex items-center gap-1.5 text-[11px] font-semibold uppercase tracking-wide text-slate-500">
+                                <Phone className="h-3.5 w-3.5" /> Need a hand? Ask {hostName}
+                            </div>
+                            <div className="mt-2 grid grid-cols-2 gap-2">
+                                {arr.hostPhone ? (
+                                    <a href={'tel:' + arr.hostPhone} className="inline-flex items-center justify-center gap-2 rounded-lg bg-emerald-700 px-3 py-2 text-xs font-semibold text-white transition hover:bg-emerald-800">
+                                        <Phone className="h-3.5 w-3.5" /> Call
+                                    </a>
+                                ) : <span />}
+                                <Link href={`/messages/${b.id}`} className="inline-flex items-center justify-center gap-2 rounded-lg border border-slate-300 bg-white px-3 py-2 text-xs font-semibold text-slate-700 transition hover:border-slate-400">
+                                    <MessageCircle className="h-3.5 w-3.5" /> Message
+                                </Link>
+                            </div>
+                        </div>
+
+                        {/* The offline promise moves here with the arrival detail:
+                            this is now the screen a guest opens before setting off
+                            down a track with no signal. */}
+                        <p className="flex items-center justify-center gap-1.5 pt-0.5 text-center text-[11px] text-slate-400">
+                            <CloudOff className="h-3.5 w-3.5" /> Signal&apos;s patchy out here — open this before you set off and it stays put.
+                        </p>
                     </div>
                 )}
 
-                <div className="mt-3 flex flex-wrap items-center gap-2">
-                    {upcomingConfirmed && (
-                        <Link href={`/arrival/${b.id}`} className="inline-flex items-center gap-1.5 rounded-lg bg-slate-900 px-3 py-1.5 text-xs font-semibold text-white transition hover:bg-slate-800">
-                            <Navigation className="h-3.5 w-3.5" /> Getting there
+                {/* Message host stays a plain action for bookings with no arrival
+                    detail on show — a pending request, a past stay. For an
+                    upcoming confirmed stay the contact block above already carries
+                    it (with Call), so it is not repeated. */}
+                {!upcomingConfirmed && (
+                    <div className="mt-4 flex flex-wrap items-center gap-2">
+                        <Link href={`/messages/${b.id}`} className="inline-flex items-center gap-1.5 rounded-lg border border-slate-300 bg-white px-3 py-1.5 text-xs font-semibold text-slate-700 transition hover:border-slate-400">
+                            <MessageCircle className="h-3.5 w-3.5" /> Message host
                         </Link>
-                    )}
-                    <Link href={`/messages/${b.id}`} className="inline-flex items-center gap-1.5 rounded-lg border border-slate-300 bg-white px-3 py-1.5 text-xs font-semibold text-slate-700 transition hover:border-slate-400">
-                        <MessageCircle className="h-3.5 w-3.5" /> Message host
-                    </Link>
-                </div>
+                    </div>
+                )}
 
-                {b.sharedWithMe ? (
+                {b.sharedWithMe && (
                     <p className="text-xs text-slate-400 mt-3">
                         You were added to this trip. Whoever booked it looks after
                         the payment and any changes.
                     </p>
-                ) : (
-                    b.status !== 'cancelled'
-                        && b.status !== 'declined'
-                        && <TripGroup bookingId={b.id} />
                 )}
 
                 {!b.sharedWithMe && b.payment_status === 'deposit_paid'
@@ -435,78 +568,68 @@ export default function TripsPage() {
                     const paidSoFar = cancel.paidSoFar;
                     const refund = cancel.amount;
 
+                    // Whether cancelling actually costs the guest money — the rule
+                    // that drives the colour: green when it's free or fully
+                    // refunded, red only when they'd lose something.
+                    const costs = paidSoFar > 0 && refund < paidSoFar;
+                    const orders = ordersByBooking[b.id] || [];
+
                     if (confirmingId !== b.id) {
-                        // The position, under the Cancel link — a fact, not a
-                        // warning. Free reads in the emerald used for confirmed;
-                        // the paid-refund states are plain text, because red on a
-                        // confirmed booking reads as something having gone wrong
-                        // with the booking rather than a fact about the policy.
-                        const position =
+                        // The position, under the Cancel link — a fact. Three
+                        // states: green for the free window, red when cancelling
+                        // would cost money, plain slate when there's simply
+                        // nothing to lose (nothing paid, or a full refund).
+                        const tone =
+                            cancel.kind === 'free' ? 'text-emerald-700'
+                                : costs ? 'text-red-700'
+                                    : 'text-slate-500';
+                        const text =
                             cancel.kind === 'free' && cancel.freeUntilKey
-                                ? { emerald: true, text: 'Free to cancel until ' + ukLongDate(cancel.freeUntilKey) + '.' }
+                                ? 'Free to cancel until ' + ukLongDate(cancel.freeUntilKey) + '.'
                                 : paidSoFar <= 0
-                                    ? { emerald: false, text: 'You haven’t paid for this stay yet, so there’s nothing to lose by cancelling.' }
+                                    ? 'You haven’t paid for this stay yet, so there’s nothing to lose by cancelling.'
                                     : refund >= paidSoFar
-                                        ? { emerald: false, text: 'You’d get your full £' + paidSoFar.toFixed(2) + ' back if you cancel.' }
+                                        ? 'You’d get your full £' + paidSoFar.toFixed(2) + ' back if you cancel.'
                                         : refund > 0
-                                            ? { emerald: false, text: '£' + refund.toFixed(2) + ' of the £' + paidSoFar.toFixed(2) + ' you’ve paid comes back if you cancel.' }
-                                            : { emerald: false, text: 'These dates are non-refundable — the £' + paidSoFar.toFixed(2) + ' you’ve paid stays with the host if you cancel.' };
+                                            ? '£' + refund.toFixed(2) + ' of the £' + paidSoFar.toFixed(2) + ' you’ve paid comes back — the rest stays with the host.'
+                                            : 'Non-refundable — the £' + paidSoFar.toFixed(2) + ' you’ve paid stays with the host if you cancel.';
 
                         return (
-                            <div className="mt-3">
+                            // Set apart from the actions above by a divider —
+                            // cancelling is the opposite intention to "add the
+                            // people coming with you" and should not sit flush
+                            // against it.
+                            <div className="mt-5 border-t border-slate-100 pt-4">
                                 <button
                                     type="button"
-                                    onClick={() => { setConfirmingId(b.id); setCancelError(''); }}
+                                    onClick={() => setConfirmingId(b.id)}
                                     className="text-xs font-semibold text-slate-500 underline hover:text-slate-800"
                                 >
                                     Cancel booking
                                 </button>
-                                <p className={'text-xs mt-1 ' + (position.emerald ? 'text-emerald-700' : 'text-slate-500')}>
-                                    {position.text}
+                                <p className={'text-xs mt-1 ' + tone}>
+                                    {text}
                                 </p>
                             </div>
                         );
                     }
 
                     return (
-                        <div className="mt-4 rounded-xl border border-slate-200 bg-slate-50 p-4">
-                            <div className="text-sm font-semibold text-slate-900">
-                                Cancel this booking?
-                            </div>
-                            <p className="text-sm text-slate-600 mt-1">
-                                {paidSoFar <= 0
-                                    ? 'You haven’t paid anything for this stay, so there’s nothing to refund.'
-                                    : refund >= paidSoFar
-                                        ? 'You’ll get your full £' + paidSoFar.toFixed(2) + ' back to your card, usually within five to ten days.'
-                                    : refund > 0
-                                        ? 'You’ll get £' + refund.toFixed(2) + ' of the £' + paidSoFar.toFixed(2) + ' you’ve paid back to your card, usually within five to ten days.'
-                                        : 'These dates are inside the non-refundable period for this place, so no refund is due on the £' + paidSoFar.toFixed(2) + ' you’ve paid.'}
-                            </p>
-                            <p className="text-xs text-slate-500 mt-2">
-                                The dates will be released for someone else, and this can’t be undone.
-                            </p>
-
-                            {cancelError && (
-                                <p className="text-xs text-red-600 mt-2">{cancelError}</p>
-                            )}
-
-                            <div className="mt-3 flex items-center gap-2">
-                                <button
-                                    type="button"
-                                    onClick={() => cancelBooking(b.id)}
-                                    disabled={cancellingId === b.id}
-                                    className="px-4 py-2 bg-red-700 hover:bg-red-800 text-white text-sm font-semibold rounded-xl transition disabled:opacity-50"
-                                >
-                                    {cancellingId === b.id ? 'Cancelling…' : 'Yes, cancel it'}
-                                </button>
-                                <button
-                                    type="button"
-                                    onClick={() => setConfirmingId(null)}
-                                    className="px-4 py-2 text-sm font-semibold text-slate-600 hover:text-slate-900"
-                                >
-                                    Keep my booking
-                                </button>
-                            </div>
+                        <div className="mt-4">
+                            <CancelBookingConfirm
+                                bookingId={b.id}
+                                checkIn={b.check_in}
+                                policy={listing?.cancellation_policy}
+                                amountPaid={b.amount_paid}
+                                amountRefunded={b.amount_refunded}
+                                cleaningFee={(b as any).cleaning_fee}
+                                orders={orders}
+                                onKeep={() => setConfirmingId(null)}
+                                onCancelled={() => {
+                                    setBookings((prev) => prev.map((x) => x.id === b.id ? { ...x, status: 'cancelled', balance_amount: 0 } : x));
+                                    setConfirmingId(null);
+                                }}
+                            />
                         </div>
                     );
                 })()}
@@ -542,25 +665,37 @@ export default function TripsPage() {
                 {isCompleted && alreadyReviewed && (
                     <p className="text-xs text-slate-400 mt-3">You've reviewed this stay.</p>
                 )}
-                </div>
 
-                {/* Right — experiences to book and the ones already booked */}
-                <div className="lg:col-span-1 mt-6 lg:mt-0">
-                    {upcomingConfirmed && (
+                {/* The guest experiences for this stay — what's booked and a way
+                    to browse more. Per booking, but quiet when the marketplace is
+                    closed (the "coming soon" line is said once at page level) and
+                    quiet when there's nothing to show. */}
+                {upcomingConfirmed && (
+                    <div className="mt-5">
                         <GuestExperiences
                             bookingId={b.id}
                             checkIn={b.check_in}
                             checkOut={b.check_out}
+                            town={listing?.location ? publicArea(listing.location) : undefined}
+                            hideClosedTeaser
                         />
-                    )}
-                </div>
-              </div>
+                    </div>
+                )}
             </div>
         );
     };
 
     return (
         <div className="max-w-5xl mx-auto px-4 sm:px-6 py-10">
+            {/* Back to the home page, mirroring the "← Your trips" link at the
+                top of Getting there so the two screens match in direction and
+                styling. */}
+            <Link
+                href="/"
+                className="inline-flex items-center gap-1.5 text-sm font-medium text-slate-500 hover:text-slate-800 mb-4"
+            >
+                <ArrowLeft className="h-4 w-4" /> Home
+            </Link>
             <div className="flex items-baseline justify-between gap-4 flex-wrap mb-8">
                 <h1 className="text-2xl md:text-3xl font-bold text-slate-900">Your trips</h1>
                 {hasCompletedStay && (
@@ -599,6 +734,11 @@ export default function TripsPage() {
                             </div>
                         </div>
                     )}
+
+                    {/* The experiences teaser, once for the whole page rather
+                        than repeated in every card's right column. The flag it
+                        reads is global, so any booking id answers it. */}
+                    <ExperiencesTeaser bookingId={bookings[0].id} />
                 </>
             )}
         </div>

@@ -174,7 +174,7 @@ async function cleanup() {
     const g = await findUser('morag@' + DOMAIN);
     if (g) {
         const ls = await db.select('listings', '?host_id=eq.' + g.id + '&select=id');
-        for (const l of ls || []) { await db.remove('service_orders', '?listing_id=eq.' + l.id).catch(() => {}); await db.remove('bookings', '?listing_id=eq.' + l.id).catch(() => {}); }
+        for (const l of ls || []) { await db.remove('service_orders', '?listing_id=eq.' + l.id).catch(() => {}); await db.remove('bookings', '?listing_id=eq.' + l.id).catch(() => {}); await db.remove('listing_arrival', '?listing_id=eq.' + l.id).catch(() => {}); }
         await db.remove('bookings', '?guest_id=eq.' + g.id).catch(() => {});
         await db.remove('listings', '?host_id=eq.' + g.id).catch(() => {});
         await db.auth('DELETE', '/admin/users/' + g.id).catch(() => {});
@@ -207,8 +207,20 @@ async function run() {
         ...tmplL, id: undefined, created_at: undefined, updated_at: undefined,
         // Generated columns can't be written — the DB derives them.
         approx_latitude: undefined, approx_longitude: undefined,
-        host_id: guest.id, title: 'MARKETPLACE DEMO — Harbour Cottage', location: 'Harbour Cottage, Castlebank, Kirkcudbright, DG6 4JG',
+        host_id: guest.id, title: 'MARKETPLACE DEMO — Harbour Cottage',
+        // A street address + postcode + town (not the whole address stuffed into
+        // `location`), so the card reads a real address and, with the pin below,
+        // Get directions routes to the door rather than the town centre.
+        street_address: 'Castlebank', postcode: 'DG6 4JG', location: 'Kirkcudbright',
         latitude: LAT, longitude: LNG, status: 'published', images: [heroCottage], ical_token: crypto.randomUUID(),
+    }]);
+    // Arrival essentials for Morag's cottage, so the what3words chip shows on her
+    // trips/home card and survives a reset (cleanup clears this row too).
+    await db.insert('listing_arrival', [{
+        listing_id: listing.id,
+        what3words: '///harbour.candle.brave',
+        parking_info: 'Two spaces on the cobbles in front of the cottage.',
+        arrival_directions: 'Last house on the left before the harbour wall — the blue door.',
     }]);
     const [tmplB] = await db.select('bookings', '?select=*&limit=1');
     const [booking] = await db.insert('bookings', [{

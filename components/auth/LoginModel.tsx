@@ -6,7 +6,7 @@ import { createClientComponentClient } from '@supabase/auth-helpers-nextjs';
 import { supabaseEmailFlow } from '@/lib/supabaseEmailFlow';
 import GoogleButton from './GoogleButton';
 
-const LoginModel = () => {
+const LoginModel = ({ next }: { next?: string } = {}) => {
     const [isOpen, setIsOpen] = useState(false);
     // The overlay is rendered into document.body rather than where this
     // component sits. See the comment above the portal below.
@@ -28,6 +28,15 @@ const LoginModel = () => {
         });
         if (error) {
             setError(error.message);
+            return;
+        }
+
+        // An explicit return path wins over every default landing. Someone who
+        // signed in FROM a trip invite must come back to it — even if their
+        // account also runs an approved service business, which would otherwise
+        // send them to the dashboard and strand the invite.
+        if (next) {
+            window.location.href = next;
             return;
         }
 

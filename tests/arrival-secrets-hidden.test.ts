@@ -1,10 +1,25 @@
-// The trip card must never carry an arrival secret.
+// The trip card must never carry an arrival SECRET.
 //
-// /api/trips feeds the trip card. It reads listing_arrival (which holds the wifi
-// password and the approach directions) to put the CARD-SAFE fields on the card —
-// the address, times, a map point, what3words — and nothing else. The door code
-// it never reads at all. This guards that: given a listing_arrival row that HOLDS
-// the wifi password, the response must contain neither it nor a door code.
+// /api/trips feeds the trip card, which now holds the whole approach — the
+// address, times, a map point, what3words, the host's "last bit" directions and
+// parking. Those are card-safe: they are the host's own words for finding the
+// door, not a credential, so they belong on the card and this test expects them
+// there.
+//
+// The two secrets are the door CODE and the wifi PASSWORD. Those stay on the
+// Getting-there page, revealed only in its window. The route sends two booleans
+// in their place — hasCode / hasWifi — so the card can say a way in exists and
+// link through, WITHOUT the value ever reaching the browser. This guards that:
+// given a listing_arrival row that HOLDS the wifi password, the response carries
+// neither it nor a door code, and hasWifi is a plain boolean.
+//
+// A DELIBERATE CHANGE, not a loosening: this test used to assert the "last bit"
+// arrival_directions ABSENT too, back when the card was a thin summary and the
+// full approach lived on Getting there. When the card absorbed the approach, we
+// decided those directions are the host's own words for finding the door — a
+// description, not a credential — and reclassified them as card-safe. The line
+// on them below now asserts them PRESENT on purpose. The credentials (door code,
+// wifi password) were never reclassified and never will be.
 //
 // PROVE IT FAILS FIRST: widen the response builder in app/api/trips/route.ts to
 // spread the row — e.g. `t.arrival = { ...l, ...arrivalRow }` — and this test goes
@@ -49,13 +64,27 @@ test('the trip card API returns no door code and no wifi password, even when the
     const res: any = await route.GET();
     const json = JSON.stringify(res.body);
 
+    // The two secrets, and any trace of them, are absent.
     assert.equal(json.includes(WIFI_PW), false, 'the wifi password must not appear anywhere in the trip card response');
     assert.equal(json.includes('wifi_password'), false, 'the response must not even carry a wifi_password key');
-    assert.equal(json.includes(DIRECTIONS), false, 'the approach directions must not appear either');
     assert.equal(/"(door_code|code|access_code)"/.test(json), false, 'no door-code field of any name');
 
-    // And it DOES carry the card-safe things, so this is a real narrowing, not an
-    // empty object.
+    // In their place, plain booleans: the row holds a wifi name, so hasWifi is
+    // true — but that is a yes/no, not the password. No code row here, so hasCode
+    // is false.
+    const trip = res.body.trips[0];
+    assert.equal(trip.arrival.hasWifi, true, 'hasWifi is the yes/no the card links on');
+    assert.equal(trip.arrival.hasCode, false, 'no code on file, so hasCode is false');
+    assert.equal(typeof trip.arrival.hasWifi, 'boolean', 'hasWifi is a boolean, never a value');
+
+    // And it DOES carry the card-safe approach — what3words, the address, and the
+    // host's own "last bit" directions and parking, which are not secrets.
     assert.equal(json.includes('///harbour.candle.brave'), true, 'what3words is card-safe and should be present');
     assert.equal(json.includes('Mill Road'), true, 'the address is card-safe and should be present');
+    // Deliberately PRESENT (see the header): the last-bit directions were once
+    // asserted absent; reclassifying them as the host's words, not a credential,
+    // was a decision, so flipping this line back to `false` should be a decision
+    // too, not a reflex.
+    assert.equal(json.includes(DIRECTIONS), true, 'the host’s last-bit directions are card-safe and belong on the card — a deliberate reclassification, not a leak');
+    assert.equal(trip.arrival.parking, 'gravel', 'parking is the host’s own words, card-safe');
 });

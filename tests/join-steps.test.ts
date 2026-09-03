@@ -445,3 +445,23 @@ test('what counts as seen matches where they land', () => {
     const seen = openingVisited({ hydrated: true, restored: false, lodged: true, trade: 'joiner' });
     assert.equal(Array.isArray(seen) && seen.indexOf('finish') !== -1, true);
 });
+
+test('a guest with no category yet opens on the picker, not the business step', () => {
+    // The trade ('guest') is already in the URL, but the category is the guest's
+    // version of step one and has not been answered.
+    assert.equal(
+        openingStep({ hydrated: true, restored: false, lodged: false, trade: 'guest', guestNeedsCategory: true }),
+        'trade',
+    );
+    // Once a category is picked (or a returning provider is loaded), the flag is
+    // false and they go on to the business step like anyone with an answered step one.
+    assert.equal(
+        openingStep({ hydrated: true, restored: false, lodged: false, trade: 'guest', guestNeedsCategory: false }),
+        'business',
+    );
+    // The picker is what they have seen when they land there.
+    assert.deepEqual(
+        openingVisited({ hydrated: true, restored: false, lodged: false, trade: 'guest', guestNeedsCategory: true }),
+        [],
+    );
+});

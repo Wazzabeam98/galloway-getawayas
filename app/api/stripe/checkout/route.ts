@@ -5,6 +5,8 @@ import { NextResponse } from 'next/server';
 import { stripeRequest } from '@/lib/stripe';
 import { SITE_URL } from '@/lib/email';
 import { quoteBooking, totalsMatch, dateFromKey, dateKey } from '@/lib/pricing';
+import { balanceDueKey } from '@/lib/balanceDue';
+import { londonDayKey } from '@/lib/dayKey';
 import { blockedNightsFromEvents } from '@/lib/availability';
 import { rateFor } from '@/lib/fees';
 import { logError } from '@/lib/logError';
@@ -12,7 +14,6 @@ import { logError } from '@/lib/logError';
 export const dynamic = 'force-dynamic';
 
 const DEPOSIT_FRACTION = 0.25;
-const BALANCE_DAYS_BEFORE_CHECKIN = 30;
 
 // How long a guest who has reached the Stripe page holds the dates for.
 //
@@ -237,10 +238,11 @@ export async function POST(request: Request) {
         const total = quote.total;
 
         // A deposit only makes sense while there's time to collect the
-        // balance. Inside the balance window it's the full amount.
-        const balanceDue = new Date(booking.check_in);
-        balanceDue.setDate(balanceDue.getDate() - BALANCE_DAYS_BEFORE_CHECKIN);
-        const depositAllowed = balanceDue.getTime() > Date.now();
+        // balance. Inside the balance window it's the full amount. The due day
+        // is worked out on the calendar parts (lib/balanceDue), so it names the
+        // same day in every zone — not a day early under BST.
+        const balanceDueDate = balanceDueKey(booking.check_in);
+        const depositAllowed = balanceDueDate > londonDayKey();
 
         const useDeposit = plan === 'deposit' && depositAllowed;
         const dueNow = useDeposit ? Math.round(total * DEPOSIT_FRACTION * 100) / 100 : total;
@@ -330,7 +332,7 @@ export async function POST(request: Request) {
                 // has to be able to say so — a null reads as 'unknown' and
                 // turns into NaN the moment anything does arithmetic on it.
                 balance_amount: useDeposit ? balance : 0,
-                balance_due_date: useDeposit ? balanceDue.toISOString().split('T')[0] : null,
+                balance_due_date: useDeposit ? balanceDueDate : null,
                 // free_cancel_until is no longer stored: every surface computes
                 // the deadline live from check_in and the stamped policy, so
                 // there is one answer and it cannot drift a day early (the old

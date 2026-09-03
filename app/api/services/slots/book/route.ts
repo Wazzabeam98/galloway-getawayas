@@ -237,7 +237,9 @@ export async function POST(request: Request) {
                     description: 'Galloway experience — ' + business + ' · ' + itemName,
                     metadata: { kind: 'slot_order', order_id: order.id, provider_id: provider.id, booking_id: booking.id },
                 },
-                success_url: SITE_URL + '/trips?experience=booked',
+                // Land on the booking itself — a real confirmation with what
+                // happens next and an add-to-calendar — not a banner on /trips.
+                success_url: SITE_URL + '/experiences/order/' + order.id + '?booked=1',
                 cancel_url: SITE_URL + '/trips?experience=cancelled',
                 // Give up on the Checkout at the hold's edge, so an abandoned one
                 // stops being payable at the same moment the seat is released.

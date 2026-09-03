@@ -4,6 +4,7 @@ import { ArrowLeft, CalendarDays, MapPin, Info, CheckCircle2, Clock3, XCircle, A
 import { createServerComponentClient } from '@supabase/auth-helpers-nextjs';
 import { cookies } from 'next/headers';
 import { adminClient } from '@/lib/supabaseAdmin';
+import { logError } from '@/lib/logError';
 import { guestMayCancelFree } from '@/lib/serviceSlots';
 import { cancellationSentence } from '@/components/marketplace/present';
 import OrderThread from '@/components/marketplace/OrderThread';
@@ -27,7 +28,7 @@ const STATUS: Record<string, { label: string; tone: 'ok' | 'wait' | 'over' }> = 
 const PILL: Record<string, string> = {
     ok: 'bg-emerald-100 text-emerald-800',
     wait: 'bg-amber-100 text-amber-800',
-    over: 'bg-stone-200 text-stone-600',
+    over: 'bg-slate-200 text-slate-600',
 };
 
 function longWhen(dateStr: string, timeStr: string | null): string {
@@ -40,7 +41,37 @@ function longWhen(dateStr: string, timeStr: string | null): string {
     return day + ' at ' + h12 + (m ? ':' + String(m).padStart(2, '0') : '') + ampm;
 }
 
-export default async function OrderPage({ params }: { params: { orderId: string } }) {
+// An .ics the guest can drop into their calendar. A slot has a real time, so it
+// is a timed event; a made-to-order/comes-to-you booking is a date, so it is an
+// all-day event. Floating local time (no Z) is what a guest expects — 2pm is 2pm
+// wherever their phone is. Returned as a data: URL so a plain <a download> saves
+// it with no round trip.
+function calendarHref(opts: { title: string; date: string; time: string | null; where: string; details: string; durationMin: number }): string {
+    const d = opts.date.replace(/-/g, '');
+    const pad = (n: number) => String(n).padStart(2, '0');
+    let dtStart: string, dtEnd: string;
+    if (opts.time) {
+        const [h, m] = opts.time.split(':').map(Number);
+        dtStart = `DTSTART:${d}T${pad(h)}${pad(m)}00`;
+        const end = h * 60 + m + (opts.durationMin || 60);
+        dtEnd = `DTEND:${d}T${pad(Math.floor(end / 60) % 24)}${pad(end % 60)}00`;
+    } else {
+        const [y, mo, da] = opts.date.split('-').map(Number);
+        const next = new Date(Date.UTC(y, mo - 1, da + 1));
+        dtStart = `DTSTART;VALUE=DATE:${d}`;
+        dtEnd = `DTEND;VALUE=DATE:${next.getUTCFullYear()}${pad(next.getUTCMonth() + 1)}${pad(next.getUTCDate())}`;
+    }
+    const esc = (s: string) => String(s || '').replace(/([,;\\])/g, '\\$1').replace(/\n/g, '\\n');
+    const ics = [
+        'BEGIN:VCALENDAR', 'VERSION:2.0', 'PRODID:-//Galloway Getaways//Experiences//EN',
+        'BEGIN:VEVENT', `UID:${d}-${Math.random().toString(36).slice(2)}@gallowaygetaways.co.uk`,
+        dtStart, dtEnd, `SUMMARY:${esc(opts.title)}`, `LOCATION:${esc(opts.where)}`, `DESCRIPTION:${esc(opts.details)}`,
+        'END:VEVENT', 'END:VCALENDAR',
+    ].join('\r\n');
+    return 'data:text/calendar;charset=utf-8,' + encodeURIComponent(ics);
+}
+
+export default async function OrderPage({ params, searchParams }: { params: { orderId: string }; searchParams: { booked?: string } }) {
     const supabase = createServerComponentClient({ cookies });
     const { data: { user } } = await supabase.auth.getUser();
     if (!user) redirect('/trips');
@@ -53,12 +84,28 @@ export default async function OrderPage({ params }: { params: { orderId: string 
         .maybeSingle();
     if (!order || order.guest_id !== user.id) redirect('/trips');
 
-    const [{ data: prov }, { data: listing }] = await Promise.all([
-        admin.from('service_providers').select('business_name, provider_name, based_line, headshot, description, cancellation_window_hours').eq('id', order.provider_id).maybeSingle(),
+    const [{ data: prov }, { data: listing, error: listingError }] = await Promise.all([
+        admin.from('service_providers').select('business_name, provider_name, based_line, headshot, description, cancellation_window_hours, slot_length_minutes').eq('id', order.provider_id).maybeSingle(),
         order.listing_id
-            ? admin.from('listings').select('id, title, address').eq('id', order.listing_id).maybeSingle()
-            : Promise.resolve({ data: null } as any),
+            // The cottage the experience is attached to. `address` is not a column
+            // on listings — the address is street_address + postcode + location —
+            // and selecting it returned a PostgREST error, nulling the whole row,
+            // so the "Comes to your cottage" line silently lost both name and
+            // address. Select the real columns and compose the address below.
+            ? admin.from('listings').select('id, title, street_address, postcode, location').eq('id', order.listing_id).maybeSingle()
+            : Promise.resolve({ data: null, error: null }),
     ]);
+    if (listingError) {
+        await logError('experiences/order: could not load the cottage', listingError, {
+            path: '/experiences/order/' + params.orderId,
+            userId: user.id,
+        });
+    }
+
+    // "12 Shore Road, DG7 1AB, Kirkcudbright" — the same order the trips page uses.
+    const cottageAddress = listing
+        ? [listing.street_address, listing.postcode, listing.location].filter(Boolean).join(', ')
+        : '';
 
     const who = order.provider_business_name || (prov && prov.business_name) || 'the provider';
     const windowHours = Number(prov && prov.cancellation_window_hours) || 48;
@@ -73,9 +120,9 @@ export default async function OrderPage({ params }: { params: { orderId: string 
     const isSlot = order.shape === 'slot';
 
     return (
-        <div className="min-h-screen bg-stone-50">
+        <div className="min-h-screen bg-slate-50">
             <div className="mx-auto max-w-5xl px-4 sm:px-6 py-6">
-                <Link href="/trips" className="inline-flex items-center gap-1.5 text-sm font-medium text-stone-500 hover:text-stone-800">
+                <Link href="/trips" className="inline-flex items-center gap-1.5 text-sm font-medium text-slate-500 hover:text-slate-800">
                     <ArrowLeft className="h-4 w-4" /> Your trips
                 </Link>
 
@@ -83,7 +130,7 @@ export default async function OrderPage({ params }: { params: { orderId: string 
                 <div className="mt-4 flex items-start justify-between gap-3">
                     <div className="min-w-0">
                         <p className="text-xs font-semibold uppercase tracking-[0.14em] text-emerald-700">{who}</p>
-                        <h1 className="mt-1 text-2xl sm:text-3xl font-semibold tracking-tight text-stone-900">{order.item_name || 'Experience'}</h1>
+                        <h1 className="mt-1 text-2xl sm:text-3xl font-semibold tracking-tight text-slate-900">{order.item_name || 'Experience'}</h1>
                     </div>
                     <span className={`inline-flex flex-none items-center gap-1 rounded-full px-2.5 py-1 text-[11px] font-semibold ${PILL[meta.tone]}`}>
                         {meta.tone === 'ok' && <CheckCircle2 className="h-3 w-3" />}
@@ -93,27 +140,77 @@ export default async function OrderPage({ params }: { params: { orderId: string 
                     </span>
                 </div>
 
+                {/* The post-booking moment. A slot is paid and confirmed the
+                    instant they land here (or 'holding' for the second the webhook
+                    takes), so it says so plainly, tells them what happens next, and
+                    hands them an add-to-calendar — instead of dropping them on a
+                    banner and a list. Only on the arrival from Stripe (?booked=1). */}
+                {searchParams.booked && (order.status === 'confirmed' || order.status === 'holding') && (
+                    <div className="mt-5 overflow-hidden rounded-2xl border border-emerald-200 bg-emerald-50">
+                        <div className="flex items-start gap-3 p-5">
+                            <CheckCircle2 className="mt-0.5 h-6 w-6 flex-none text-emerald-600" />
+                            <div className="min-w-0">
+                                <h2 className="text-lg font-semibold text-emerald-900">
+                                    {order.status === 'confirmed' ? 'You’re booked' : 'Payment received'}
+                                </h2>
+                                <p className="mt-1 text-sm leading-relaxed text-emerald-800">
+                                    {order.status === 'confirmed'
+                                        ? `You’ve paid £${Number(order.price).toFixed(2)} to ${who}. A receipt is on its way to your inbox.`
+                                        : `We’re just confirming your place with ${who} — this takes a moment and your receipt will follow by email.`}
+                                </p>
+                                <ol className="mt-3 space-y-1.5 text-sm text-emerald-800">
+                                    <li className="flex gap-2"><span className="font-semibold">1.</span> Check your email for the receipt and the details.</li>
+                                    <li className="flex gap-2"><span className="font-semibold">2.</span> {comesToCottage ? `${who} will come to your cottage at the agreed time.` : isSlot ? `Turn up at the time you booked — the address is below.` : `${who} will be in touch about collection or delivery.`}</li>
+                                    <li className="flex gap-2"><span className="font-semibold">3.</span> Anything to sort? Message {who} below.</li>
+                                </ol>
+                                <div className="mt-4 flex flex-wrap gap-2">
+                                    <a
+                                        href={calendarHref({
+                                            title: (order.item_name || 'Experience') + ' — ' + who,
+                                            date: String(order.service_date).slice(0, 10),
+                                            time: order.service_time || null,
+                                            where: isSlot ? (prov?.based_line || who) : (cottageAddress || 'Your cottage'),
+                                            details: (order.item_description || '') + (order.note ? '\n\nYour note: ' + order.note : ''),
+                                            durationMin: Number(prov?.slot_length_minutes) || 60,
+                                        })}
+                                        download={`${(order.item_name || 'experience').toLowerCase().replace(/[^a-z0-9]+/g, '-')}.ics`}
+                                        className="inline-flex items-center gap-1.5 rounded-lg bg-white px-3.5 py-2 text-sm font-semibold text-emerald-800 ring-1 ring-emerald-600/20 hover:bg-emerald-50"
+                                    >
+                                        <CalendarDays className="h-4 w-4" /> Add to calendar
+                                    </a>
+                                    <a href="#order-messages" className="inline-flex items-center gap-1.5 rounded-lg px-3.5 py-2 text-sm font-semibold text-emerald-800 hover:bg-white/60">
+                                        Message {who}
+                                    </a>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                )}
+
                 <div className="mt-5 grid grid-cols-1 gap-5 lg:grid-cols-3">
                     {/* Main column — the detail, the allergy the guest gave, and the thread */}
                     <div className="space-y-5 lg:col-span-2">
-                        <div className="rounded-2xl bg-white p-5 shadow-sm ring-1 ring-stone-200/80">
+                        <div className="rounded-2xl bg-white p-5 shadow-sm ring-1 ring-slate-200/80">
                             <dl className="space-y-4">
                                 <div className="flex gap-3">
-                                    <CalendarDays className="mt-0.5 h-5 w-5 flex-none text-stone-400" />
+                                    <CalendarDays className="mt-0.5 h-5 w-5 flex-none text-slate-400" />
                                     <div>
-                                        <dt className="text-xs font-semibold uppercase tracking-wide text-stone-500">When</dt>
-                                        <dd className="text-sm text-stone-800">{longWhen(order.service_date, order.service_time)}</dd>
+                                        {/* A date means different things by shape: an
+                                            appointment for a chef, a deadline for a
+                                            baker, a timed session for a slot. */}
+                                        <dt className="text-xs font-semibold uppercase tracking-wide text-slate-500">{order.shape === 'made_to_order' ? 'Ready for' : 'When'}</dt>
+                                        <dd className="text-sm text-slate-800">{longWhen(order.service_date, isSlot ? order.service_time : null)}</dd>
                                     </div>
                                 </div>
                                 <div className="flex gap-3">
-                                    <MapPin className="mt-0.5 h-5 w-5 flex-none text-stone-400" />
+                                    <MapPin className="mt-0.5 h-5 w-5 flex-none text-slate-400" />
                                     <div>
-                                        <dt className="text-xs font-semibold uppercase tracking-wide text-stone-500">Where</dt>
-                                        <dd className="text-sm text-stone-800">
+                                        <dt className="text-xs font-semibold uppercase tracking-wide text-slate-500">Where</dt>
+                                        <dd className="text-sm text-slate-800">
                                             {comesToCottage ? (
-                                                <>Comes to your cottage{listing && listing.title ? ' — ' + listing.title : ''}{listing && (listing as any).address ? <span className="block text-stone-500">{(listing as any).address}</span> : null}</>
+                                                <>Comes to your cottage{listing && listing.title ? ' — ' + listing.title : ''}{cottageAddress ? <span className="block text-slate-500">{cottageAddress}</span> : null}</>
                                             ) : isSlot ? (
-                                                <>You go to {who}{prov && prov.based_line ? <span className="block text-stone-500">{prov.based_line}</span> : <span className="block text-stone-500">Message them below for the exact address and directions.</span>}</>
+                                                <>You go to {who}{prov && prov.based_line ? <span className="block text-slate-500">{prov.based_line}</span> : <span className="block text-slate-500">Message them below for the exact address and directions.</span>}</>
                                             ) : (
                                                 <>{who} will arrange collection or delivery with you — message them below.</>
                                             )}
@@ -122,10 +219,10 @@ export default async function OrderPage({ params }: { params: { orderId: string 
                                 </div>
                                 {(order.item_description || (prov && prov.description)) && (
                                     <div className="flex gap-3">
-                                        <Info className="mt-0.5 h-5 w-5 flex-none text-stone-400" />
+                                        <Info className="mt-0.5 h-5 w-5 flex-none text-slate-400" />
                                         <div>
-                                            <dt className="text-xs font-semibold uppercase tracking-wide text-stone-500">Details</dt>
-                                            <dd className="whitespace-pre-line text-sm text-stone-700">{order.item_description || (prov && prov.description)}</dd>
+                                            <dt className="text-xs font-semibold uppercase tracking-wide text-slate-500">Details</dt>
+                                            <dd className="whitespace-pre-line text-sm text-slate-700">{order.item_description || (prov && prov.description)}</dd>
                                         </div>
                                     </div>
                                 )}
@@ -152,8 +249,8 @@ export default async function OrderPage({ params }: { params: { orderId: string 
                         {/* Messages — the thread lives here, on the booking. */}
                         {live && (
                             <div id="order-messages" className="scroll-mt-6">
-                                <h2 className="text-sm font-semibold text-stone-900">Messages with {who}</h2>
-                                <p className="mt-0.5 text-xs text-stone-500">Agree the details — allergies, timing, what to bring, how to get there.</p>
+                                <h2 className="text-sm font-semibold text-slate-900">Messages with {who}</h2>
+                                <p className="mt-0.5 text-xs text-slate-500">Agree the details — allergies, timing, what to bring, how to get there.</p>
                                 <OrderThread orderId={order.id} />
                             </div>
                         )}
@@ -161,12 +258,12 @@ export default async function OrderPage({ params }: { params: { orderId: string 
 
                     {/* Summary column — price, policy, cancel. Sticky on desktop. */}
                     <div className="lg:col-span-1">
-                        <div className="rounded-2xl bg-white p-5 shadow-sm ring-1 ring-stone-200/80 lg:sticky lg:top-6">
+                        <div className="rounded-2xl bg-white p-5 shadow-sm ring-1 ring-slate-200/80 lg:sticky lg:top-6">
                             <div className="flex items-center justify-between">
-                                <span className="text-sm text-stone-500">{charged ? 'Paid' : 'Held, not charged'}</span>
-                                <span className="text-xl font-semibold text-stone-900">£{Number(order.price).toFixed(2)}</span>
+                                <span className="text-sm text-slate-500">{charged ? 'Paid' : 'Held, not charged'}</span>
+                                <span className="text-xl font-semibold text-slate-900">£{Number(order.price).toFixed(2)}</span>
                             </div>
-                            <p className="mt-3 border-t border-stone-200 pt-3 text-xs leading-relaxed text-stone-500">
+                            <p className="mt-3 border-t border-slate-200 pt-3 text-xs leading-relaxed text-slate-500">
                                 {cancellationSentence(order.shape, windowHours, who)}
                             </p>
                             {live && (
