@@ -36,7 +36,7 @@ export async function POST(request: Request) {
 
         const { data: invite } = await admin
             .from('booking_guests')
-            .select('id, booking_id, email, status, user_id')
+            .select('id, booking_id, email, status, user_id, link_sent_at')
             .eq('invite_token', token)
             .maybeSingle();
 
@@ -81,6 +81,19 @@ export async function POST(request: Request) {
             }
             return NextResponse.json(
                 { ok: false, error: 'This link has already been used to join the trip.' },
+                { status: 409 }
+            );
+        }
+
+        // A minted-but-never-shared seat is INERT: its link cannot be claimed
+        // until the booker actually hands it out (link_sent_at) or binds it to an
+        // email. Opening the sheet mints the links, but they arm only when shared
+        // — which closes the window where a link that was created but never sent
+        // could be used. This is a "not ready yet" state, not a failure; the
+        // invite page shows it gently.
+        if (!invite.link_sent_at && !invite.email) {
+            return NextResponse.json(
+                { ok: false, notReady: true, error: 'This invite isn’t ready yet — ask whoever booked to send you the link.' },
                 { status: 409 }
             );
         }

@@ -1,0 +1,11 @@
+
+=== Proof: atomic party seats — TEST yefoqcabuijcowoqewtc ===
+
+  ✓ two concurrent ensure-seats give exactly 3 live seats (capacity), not 6  [rpc returned 0/3, live=3]
+  ✓ the three seats have distinct ordinals 1..3  [1,2,3]
+  ✓ re-opening the sheet mints nothing new (still 3)
+  ✓ removing a seat frees its ordinal; the next top-up refills to 3  [1,2,3]
+
+--- teardown ---
+  done.
+
