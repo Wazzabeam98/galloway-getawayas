@@ -1,0 +1,14 @@
+
+=== Proof: entitlement requires PAID — TEST yefoqcabuijcowoqewtc ===
+
+--- baseline (view requires status=confirmed only) ---
+  ✓ LEAK: confirmed-but-UNPAID guest reads the host PII  [[{"email":"host-erp-1788444032726@gallowayseed.test","phone":"HOSTPHONE-erp-1788444032726"}]]
+  · applied 20260903171533 (must be paid)
+--- after fix ---
+  ✓ REFUSE: confirmed-but-UNPAID guest reads nothing  [[]]
+  ✓ LEGIT: confirmed + PAID guest still reads host PII
+  ✓ LEGIT: confirmed + DEPOSIT_PAID guest still reads host PII (not locked out)
+
+--- teardown ---
+  done.
+

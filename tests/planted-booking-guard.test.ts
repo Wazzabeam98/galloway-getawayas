@@ -28,17 +28,16 @@ const read = (rel: string) => fs.readFileSync(path.join(ROOT, rel), 'utf8');
 
 // ---------------------------------------------------------------- STATIC layer
 
-test('the profile_private counterparty branch still requires a confirmed booking', () => {
-    const file = 'supabase/migrations/20260903011742_profile_private_counterparty_must_be_confirmed.sql';
+test('the profile_private counterparty branch still requires a confirmed AND paid booking', () => {
+    // The latest profile_private (re)definition — must gate the counterparty
+    // branch on confirmed AND paid. status alone is not enough (a host can
+    // self-confirm an unpaid booking on their own listing).
+    const file = 'supabase/migrations/20260903171533_profile_private_counterparty_must_be_paid.sql';
     const sql = read(file).replace(/\s+/g, ' ');
-    // The counterparty EXISTS(...) subquery must be gated on confirmed. Written
-    // to survive quoting/whitespace variants.
-    assert.match(
-        sql,
-        /b\."?status"?\s*=\s*'confirmed'/,
-        file + ' no longer filters the counterparty booking on status=confirmed — '
-        + 'the host-PII leak is reopened at the database. Do not widen this branch.'
-    );
+    assert.match(sql, /b\."?status"?\s*=\s*'confirmed'/,
+        file + ' no longer filters the counterparty booking on status=confirmed — the host-PII leak is reopened.');
+    assert.match(sql, /b\."?payment_status"?\s+in\s*\(\s*'paid'\s*,\s*'deposit_paid'\s*\)/,
+        file + ' no longer requires the counterparty booking to be PAID — a host-self-confirmed unpaid booking leaks PII again.');
 });
 
 test('every arrival/PII reader still routes through the single entitlement', () => {

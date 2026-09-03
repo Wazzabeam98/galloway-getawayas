@@ -38,7 +38,7 @@ test('the trip card API returns no door code and no wifi password, even when the
     const DIRECTIONS = 'turn at the red postbox, park by the blue door';
 
     const { client } = fakeSupabase({
-        bookings: { data: [{ id: 'b1', listing_id: 'L1', guest_id: 'G', host_id: 'H', check_in: '2026-09-20', check_out: '2026-09-25', status: 'confirmed', total_price: 500 }], error: null },
+        bookings: { data: [{ id: 'b1', listing_id: 'L1', guest_id: 'G', host_id: 'H', check_in: '2026-09-20', check_out: '2026-09-25', status: 'confirmed', payment_status: 'paid', total_price: 500 }], error: null },
         booking_guests: { data: [], error: null },
         listings: { data: [{ id: 'L1', street_address: 'Mill Road', postcode: 'DG6 4XT', location: 'Kirkcudbright', latitude: 54.83, longitude: -4.05, check_in_time: '15:00', check_out_time: '11:00' }], error: null },
         // The row HOLDS the secrets. The route must not carry them out.

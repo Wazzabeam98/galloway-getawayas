@@ -46,7 +46,7 @@ export async function GET() {
     const { data: shared } = sharedIds.length
         ? await admin
             .from('bookings')
-            .select('id, listing_id, host_id, guest_id, check_in, check_out, guests, status')
+            .select('id, listing_id, host_id, guest_id, check_in, check_out, guests, status, payment_status')
             .in('id', sharedIds)
             .order('check_in', { ascending: false })
         : { data: [] };

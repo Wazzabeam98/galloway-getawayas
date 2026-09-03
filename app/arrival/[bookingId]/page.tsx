@@ -33,7 +33,7 @@ export default async function ArrivalPage({ params }: { params: { bookingId: str
     const admin = adminClient();
     const { data: booking } = await admin
         .from('bookings')
-        .select('id, guest_id, host_id, listing_id, check_in, check_out, status')
+        .select('id, guest_id, host_id, listing_id, check_in, check_out, status, payment_status')
         .eq('id', params.bookingId)
         .maybeSingle();
     if (!booking) redirect('/trips');
