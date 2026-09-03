@@ -213,22 +213,24 @@ export default async function UpcomingTrip() {
                         />
                     </div>
 
-                    {/* A link, not a label. Somebody reading this line is
-                        usually reading it because they are wondering whether
-                        to cancel, and the answer to that was three screens
-                        away. It opens the same confirmation panel on /trips
-                        that the Cancel booking link there opens — the one
-                        place that says what the refund would actually be. */}
+                    {/* A reassurance, and a jump to the trip — NOT a cancel
+                        button. It used to link to /trips?cancel=, which
+                        auto-opened the confirm panel and dropped the guest on the
+                        red button: an informational-looking line that started a
+                        cancellation. It now lands on the trip card with the panel
+                        CLOSED, so pressing "Cancel booking" there is the
+                        deliberate act; and it reads as a fact ("Free to cancel
+                        until…"), not an instruction. */}
                     {freeUntilKey && (
                         <div className="mt-5 text-sm">
                             <Link
-                                href={'/trips?cancel=' + booking.id + '#trip-' + booking.id}
+                                href={'/trips#trip-' + booking.id}
                                 className={
                                     'underline underline-offset-2 hover:no-underline ' +
                                     (freeDaysLeft <= 3 ? 'text-amber-700' : 'text-emerald-700')
                                 }
                             >
-                                Free cancellation until {ukLongDate(freeUntilKey)}
+                                Free to cancel until {ukLongDate(freeUntilKey)}
                             </Link>
                             {freeDaysLeft <= 3 && (
                                 <span className="text-stone-500">

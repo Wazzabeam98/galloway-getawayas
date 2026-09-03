@@ -65,6 +65,9 @@ export default function TripsPage() {
     const [listingMap, setListingMap] = useState<Record<string, any>>({});
     const [hostNames, setHostNames] = useState<Record<string, string>>({});
     const [reviewedBookingIds, setReviewedBookingIds] = useState<Set<string>>(new Set());
+    // The guest's confirmed experiences, per booking, so the cancel dialog can
+    // name what the stay-cancel cascade will also cancel.
+    const [ordersByBooking, setOrdersByBooking] = useState<Record<string, { item_name: string; service_date: string }[]>>({});
     const [payingId, setPayingId] = useState<string | null>(null);
     const [payError, setPayError] = useState('');
     const [confirmingId, setConfirmingId] = useState<string | null>(null);
@@ -156,6 +159,22 @@ export default function TripsPage() {
                 setListingMap(map);
             }
 
+            // The guest's confirmed experiences, grouped by booking — so the
+            // cancel dialog can name what would be cancelled alongside the stay.
+            const { data: myOrders } = await supabase
+                .from('service_orders')
+                .select('booking_id, item_name, service_date, status')
+                .eq('guest_id', session.user.id)
+                .eq('status', 'confirmed');
+            const byBooking: Record<string, { item_name: string; service_date: string }[]> = {};
+            (myOrders || []).forEach((o) => {
+                if (!o.booking_id) return;
+                (byBooking[o.booking_id] = byBooking[o.booking_id] || []).push({
+                    item_name: o.item_name, service_date: o.service_date,
+                });
+            });
+            setOrdersByBooking(byBooking);
+
             // Arrived from a payment reminder email — go straight to Stripe.
             if (typeof window !== 'undefined') {
                 const params = new URLSearchParams(window.location.search);
@@ -166,23 +185,13 @@ export default function TripsPage() {
                     payBalance(target.id);
                 }
 
-                // Arrived from the free-cancellation line on the home page
-                // card. Open the confirmation panel for that booking rather
-                // than making them find it again, but open the panel only —
-                // nothing is cancelled until they press the button in it.
-                const toCancel = params.get('cancel');
-                const cancelTarget = (bookingRows || []).filter(function (b) {
-                    return b.id === toCancel;
-                })[0];
-
-                if (
-                    cancelTarget
-                    && !cancelTarget.sharedWithMe
-                    && cancelTarget.status !== 'cancelled'
-                    && cancelTarget.status !== 'declined'
-                ) {
-                    setConfirmingId(cancelTarget.id);
-                }
+                // Note: we deliberately do NOT auto-open the cancel panel from a
+                // ?cancel= parameter any more. The home card's free-cancel line
+                // used to deep-link into a pre-opened panel, so a guest arrived
+                // on top of the red "Yes, cancel it" button — one click from a
+                // line that read like information. The home card now lands on
+                // #trip-<id> with the panel closed; pressing "Cancel booking"
+                // here is the deliberate act that opens it.
             }
 
             const hostIds = Array.from(new Set((bookingRows || []).map((b) => b.host_id)));
@@ -584,22 +593,31 @@ export default function TripsPage() {
                     const paidSoFar = cancel.paidSoFar;
                     const refund = cancel.amount;
 
+                    // Whether cancelling actually costs the guest money — the rule
+                    // that drives the colour: green when it's free or fully
+                    // refunded, red only when they'd lose something.
+                    const costs = paidSoFar > 0 && refund < paidSoFar;
+                    const orders = ordersByBooking[b.id] || [];
+
                     if (confirmingId !== b.id) {
-                        // The position, under the Cancel link — a fact, not a
-                        // warning. Free reads in the emerald used for confirmed;
-                        // the paid-refund states are plain text, because red on a
-                        // confirmed booking reads as something having gone wrong
-                        // with the booking rather than a fact about the policy.
-                        const position =
+                        // The position, under the Cancel link — a fact. Three
+                        // states: green for the free window, red when cancelling
+                        // would cost money, plain slate when there's simply
+                        // nothing to lose (nothing paid, or a full refund).
+                        const tone =
+                            cancel.kind === 'free' ? 'text-emerald-700'
+                                : costs ? 'text-red-700'
+                                    : 'text-slate-500';
+                        const text =
                             cancel.kind === 'free' && cancel.freeUntilKey
-                                ? { emerald: true, text: 'Free to cancel until ' + ukLongDate(cancel.freeUntilKey) + '.' }
+                                ? 'Free to cancel until ' + ukLongDate(cancel.freeUntilKey) + '.'
                                 : paidSoFar <= 0
-                                    ? { emerald: false, text: 'You haven’t paid for this stay yet, so there’s nothing to lose by cancelling.' }
+                                    ? 'You haven’t paid for this stay yet, so there’s nothing to lose by cancelling.'
                                     : refund >= paidSoFar
-                                        ? { emerald: false, text: 'You’d get your full £' + paidSoFar.toFixed(2) + ' back if you cancel.' }
+                                        ? 'You’d get your full £' + paidSoFar.toFixed(2) + ' back if you cancel.'
                                         : refund > 0
-                                            ? { emerald: false, text: '£' + refund.toFixed(2) + ' of the £' + paidSoFar.toFixed(2) + ' you’ve paid comes back if you cancel.' }
-                                            : { emerald: false, text: 'These dates are non-refundable — the £' + paidSoFar.toFixed(2) + ' you’ve paid stays with the host if you cancel.' };
+                                            ? '£' + refund.toFixed(2) + ' of the £' + paidSoFar.toFixed(2) + ' you’ve paid comes back — the rest stays with the host.'
+                                            : 'Non-refundable — the £' + paidSoFar.toFixed(2) + ' you’ve paid stays with the host if you cancel.';
 
                         return (
                             // Set apart from the actions above by a divider —
@@ -614,8 +632,8 @@ export default function TripsPage() {
                                 >
                                     Cancel booking
                                 </button>
-                                <p className={'text-xs mt-1 ' + (position.emerald ? 'text-emerald-700' : 'text-slate-500')}>
-                                    {position.text}
+                                <p className={'text-xs mt-1 ' + tone}>
+                                    {text}
                                 </p>
                             </div>
                         );
@@ -626,7 +644,7 @@ export default function TripsPage() {
                             <div className="text-sm font-semibold text-slate-900">
                                 Cancel this booking?
                             </div>
-                            <p className="text-sm text-slate-600 mt-1">
+                            <p className={'text-sm mt-1 ' + (cancel.kind === 'free' ? 'text-emerald-700' : costs ? 'text-red-700' : 'text-slate-600')}>
                                 {paidSoFar <= 0
                                     ? 'You haven’t paid anything for this stay, so there’s nothing to refund.'
                                     : refund >= paidSoFar
@@ -635,6 +653,23 @@ export default function TripsPage() {
                                         ? 'You’ll get £' + refund.toFixed(2) + ' of the £' + paidSoFar.toFixed(2) + ' you’ve paid back to your card, usually within five to ten days.'
                                         : 'These dates are inside the non-refundable period for this place, so no refund is due on the £' + paidSoFar.toFixed(2) + ' you’ve paid.'}
                             </p>
+
+                            {/* Name the experiences that go with the stay — a
+                                cancelled cottage cancels these too, and a guest
+                                should see exactly what they're calling off. */}
+                            {orders.length > 0 && (
+                                <div className="mt-3 rounded-lg border border-amber-200 bg-amber-50 p-3">
+                                    <div className="text-xs font-semibold text-amber-900">
+                                        This also cancels the {orders.length === 1 ? 'experience' : 'experiences'} you’ve booked:
+                                    </div>
+                                    <ul className="mt-1 space-y-0.5 text-sm text-amber-950">
+                                        {orders.map((o, i) => (
+                                            <li key={i}>{o.item_name || 'Experience'}{o.service_date ? ' — ' + fmtDay(o.service_date) : ''}</li>
+                                        ))}
+                                    </ul>
+                                </div>
+                            )}
+
                             <p className="text-xs text-slate-500 mt-2">
                                 The dates will be released for someone else, and this can’t be undone.
                             </p>
