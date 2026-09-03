@@ -53,33 +53,38 @@ prod read this session could not do.
    orphaned succeeded payment, silently. Latent until a GDPR-erasure flow ships —
    which launch needs. Settle this design before wiring "delete my account".
    (Task 7)
-2. **🟠 the money must-do before the first payout** — read `adjust_payout_balance`
+2. **🔴 HIGH — `listings` sensitive columns leak to ANY signed-in account on
+   master/prod** — `street_address`, **`ical_token`** (the calendar-export
+   secret), and `commission_rate` for any published listing. The fix exists but
+   is **unmerged** and only applied to test (drift trap — see the dedicated
+   section). Live on prod. (Follow-up, confirmed tonight against master migrations)
+3. **🟠 the money must-do before the first payout** — read `adjust_payout_balance`
    back on **prod** and confirm the one `acct_…` is yours. Assumed, not observed;
    I could not read prod tonight. (Task 2, carried)
-3. **🟠 `full_name` leaks to anon regardless of `show_full_name`** — both
+4. **🟠 `full_name` leaks to anon regardless of `show_full_name`** — both
    directors' legal names on prod. Re-proven flag-independent on test tonight.
    (Task 3, carried + re-proven)
-4. **🟠 silent money routes** — `services/slots/schedule` can wipe a provider's
+5. **🟠 silent money routes** — `services/slots/schedule` can wipe a provider's
    whole calendar with no log (non-atomic delete-then-insert); `services/order`,
    `/orders`, `/slots/book`, `cron/ical-sync`, and three webhook post-charge
    notify catches log to `console.error` only. Re-censused tonight. (Task 3)
-5. **🟠 host calendar block not enforced against a booking insert** — the
+6. **🟠 host calendar block not enforced against a booking insert** — the
    exclusion constraint only covers `confirmed`, not `calendar_overrides`. (Task 7)
-6. **🟠 free-cancel deadline judged at processing time, not click time** — a
+7. **🟠 free-cancel deadline judged at processing time, not click time** — a
    23:55 cancel computed after midnight can lose the full refund. (Task 7)
-7. **🟠 webhook that never arrives → guest charged, booking cancelled, no
+8. **🟠 webhook that never arrives → guest charged, booking cancelled, no
    auto-refund** — Stripe retries make it rare; needs reconciliation + alerting.
    (Task 7)
-8. **🟡 storage has no owner-scoped upload paths** — any account uploads anywhere
+9. **🟡 storage has no owner-scoped upload paths** — any account uploads anywhere
    in the listings bucket (write-only). Re-proven on test. (Task 3, carried)
-9. **🟡 companion double-claim TOCTOU** — two racers both told "joined", one seat,
-   no over-capacity or access leak. Proven tonight. (Task 5)
-10. **🟡 seven redundant browser write grants** (incl. `stripe_events`,
+10. **🟡 companion double-claim TOCTOU** — two racers both told "joined", one seat,
+    no over-capacity or access leak. Proven tonight. (Task 5)
+11. **🟡 seven redundant browser write grants** (incl. `stripe_events`,
     `booking_guests`, `slot_*`) — dead weight, RLS-protected today, free to
     revoke. Found tonight. (Task 6)
-11. **🟡 two crons stranger-callable but time-guarded** — proven they can't cancel
+12. **🟡 two crons stranger-callable but time-guarded** — proven they can't cancel
     or publish early; revoke EXECUTE anyway. Proven tonight. (Task 4)
-12. **🟡 provider declined/suspended after a paid order** — order-refund on
+13. **🟡 provider declined/suspended after a paid order** — order-refund on
     decline unconfirmed. (Task 7)
 
 **Clean results worth stating plainly:** the guest-experience **read** surface is
@@ -90,6 +95,51 @@ intact after seven merges — clamp, three writers, drift warning all verified
 the low-sev race (Task 5). Most **unhappy paths** are already handled — slot
 last-seat CAS, split-card refunds, tied-experience cancellation, webhook
 dedupe, tab-close (Task 7).
+
+---
+
+## FOLLOW-UP (after the seven tasks) — the `listings` authenticated leak is STILL OPEN on master/prod, and test is lying about it
+
+Last night's §3.1 flagged this; tonight I pinned down exactly where it stands, and
+it is **the clearest example this project has of why test cannot be trusted as a
+mirror.**
+
+**The leak:** on master, `listings` grants table-level `SELECT` to
+`authenticated` (never column-scoped), so any signed-in account can read
+`street_address`, `postcode`, exact `latitude/longitude`, **`ical_token`** (the
+private calendar-export secret — subscribe to it and you see every one of that
+listing's booked date ranges), and `commission_rate` (a commercial term) for any
+published listing. This defeats the location-privacy feature entirely for anyone
+who makes a free account.
+
+**Proof it's still open on master (not a live prod read — that's blocked):**
+`20260828224500_listing_location_privacy.sql` column-scoped **anon only** and says
+so in its own words — line 99: *"`authenticated` is untouched."* It is the only
+master migration that touches listings SELECT grants (besides an unrelated
+templates one). So master `authenticated` still holds the full-column grant.
+
+**Why a naive test check says it's FIXED (the trap):** on the test project the
+authenticated stranger gets **403** on those columns, because the fix — migrations
+`20260903154419_listing_private_columns.sql` ("sensitive columns are owner-only,
+via `listing_private`") and `20260903161233_listings_update_is_an_allow_list.sql`
+— **has been applied to test**. But those migrations live on the **unmerged**
+branch `fix/listings-column-privacy` (`git branch --merged master` does **not**
+list it). So: **fix built, applied to test, NOT on master, NOT merged, and
+therefore almost certainly NOT on prod.** Anyone who checks only test concludes,
+wrongly, that this is closed.
+
+**What to do:** merge `fix/listings-column-privacy` (after reading it) and apply
+its two migrations to prod; then read the `listings` grants back on prod and
+confirm `authenticated` no longer holds `street_address`/`ical_token`/
+`commission_rate`. Until then, treat it as a live authenticated-read leak of exact
+address + a calendar secret. **Cost:** the fix is already written; this is a
+merge + a prod migration + a read-back, not new work.
+
+**Wider lesson for future sweeps:** the same drift means my Task 1 result must be
+read the way I wrote it — *service-table walls confirmed in master migration
+files, not just on test*. Had I trusted test alone for `listings`, I'd have
+cleared a live prod leak. Every grant claim in this report is anchored to a master
+migration for exactly this reason.
 
 ---
 
