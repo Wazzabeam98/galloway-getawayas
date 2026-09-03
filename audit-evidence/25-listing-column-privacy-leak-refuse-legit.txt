@@ -1,0 +1,16 @@
+
+=== Proof: listings column privacy — TEST yefoqcabuijcowoqewtc ===
+
+--- baseline (table-level SELECT granted to authenticated) ---
+  ✓ LEAK read: a stranger reads another host's street_address/ical_token/commission_rate  [[{"street_address":"1 Secret Lane lcp-1788440481725","ical_token":"1257e38e-6e04-4fd1-a567-e9e868bd6efa","commission_rate":15}]]
+  · (separate finding) host lowered own commission_rate to 0  [HTTP 200] — fix scoped separately
+  · applied 20260903154419
+--- after fix ---
+  ✓ REFUSE read: stranger selecting sensitive cols is refused  [HTTP 403]
+  ✓ LEGIT: owner reads own street_address/ical_token/commission via listing_private  [[{"street_address":"1 Secret Lane lcp-1788440481725","ical_token":"1257e38e-6e04-4fd1-a567-e9e868bd6efa","commission_rate":15}]]
+  ✓ LEGIT: stranger reads nothing from listing_private  [[]]
+  ✓ LEGIT: safe columns (title/location) still world-visible on published listing
+
+--- teardown ---
+  done.
+

@@ -145,7 +145,9 @@ export default function TradeShopPage({ params }: { params: { trade: string } })
 
             if (session?.user) {
                 const { data: mine } = await supabase
-                    .from('listings')
+                    // listing_private: your own listings — latitude/longitude are
+                    // revoked from the base table for the browser role.
+                    .from('listing_private')
                     .select('id, title, location, bedrooms, latitude, longitude')
                     .eq('host_id', session.user.id)
                     .order('created_at', { ascending: true });

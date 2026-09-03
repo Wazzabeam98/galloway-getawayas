@@ -515,7 +515,9 @@ export default function AccountSettings() {
             const uid = session.user.id;
 
             const profileRes = await supabase.from('profiles').select('*').eq('id', uid).single();
-            const listingsRes = await supabase.from('listings').select('*').eq('host_id', uid);
+            // listing_private: your own listings with their sensitive columns,
+            // which are revoked from the base table for the browser role.
+            const listingsRes = await supabase.from('listing_private').select('*').eq('host_id', uid);
             const guestBookingsRes = await supabase.from('bookings').select('*').eq('guest_id', uid);
             const hostBookingsRes = await supabase.from('bookings').select('*').eq('host_id', uid);
             const reviewsWrittenRes = await supabase.from('reviews').select('*').eq('reviewer_id', uid);
