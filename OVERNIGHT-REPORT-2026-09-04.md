@@ -35,9 +35,21 @@ request" limit, not a "prod is protected" result.
 
 **Second limit worth stating:** the test project has last night's PR #99
 migrations applied (`profile_private` / `service_provider_own_contacts` are
-already read-only there). So test has **drifted ahead** of master and prod on
-those two views. I account for this per-finding rather than trusting test as a
-mirror.
+already read-only there). I account for this per-finding rather than trusting test
+as a mirror.
+
+> **⚠ RE-BASELINE (added after the user pointed it out).** My first pass ran
+> against a **stale local `master`** (`e8903a3`, PR #97) — I had not `git fetch`ed,
+> and `origin/master` had advanced eight commits with seven migrations applied to
+> prod overnight (#98, #99, #100, #101, #102, #103, #104, #105). I have since
+> fetched, **rebased this report onto `origin/master` (`8090788`)**, and
+> re-checked every finding the new commits could touch:
+> - **Listings authenticated leak → CLOSED** by #102 (was reported HIGH; retracted — see the corrected follow-up section).
+> - **`may_read_listing` planted-booking trust → CLOSED** by #101.
+> - **Account-deletion cascade (Task 7) → STANDS.** No new migration alters a `bookings` FK / `ON DELETE` rule; #100 is code-only.
+> - **`full_name` anon leak (Task 3) → STANDS.** New migrations touch it only inside the `profile_private` view; the raw-table anon grant is unchanged.
+> - **Seven redundant browser write grants (Task 6) → STAND.** None revoked by the new migrations (#104 revoked *payments/payouts*, which were already walled and not in my seven).
+> - **Payout engine (Task 2), read sweep (Task 1), companion attacks (Task 5) → unaffected** (anchored to old migrations present in both trees / to test behaviour).
 
 ---
 
@@ -53,11 +65,16 @@ prod read this session could not do.
    orphaned succeeded payment, silently. Latent until a GDPR-erasure flow ships —
    which launch needs. Settle this design before wiring "delete my account".
    (Task 7)
-2. **🔴 HIGH — `listings` sensitive columns leak to ANY signed-in account on
-   master/prod** — `street_address`, **`ical_token`** (the calendar-export
-   secret), and `commission_rate` for any published listing. The fix exists but
-   is **unmerged** and only applied to test (drift trap — see the dedicated
-   section). Live on prod. (Follow-up, confirmed tonight against master migrations)
+2. **✅ RETRACTED — `listings` authenticated-read leak is CLOSED.** I first
+   reported this HIGH; it does **not** stand. My local checkout (`e8903a3`, #97)
+   predated PR #102, which merged and deployed last night. On **current master**,
+   `20260903154419_listing_private_columns.sql` revokes table SELECT from
+   `authenticated` and grants back an allow-list excluding all six sensitive
+   columns (`street_address`, `ical_token`, `commission_rate`, …), with a
+   read-only `listing_private` view for owners. **My error was reasoning about
+   master from a stale local tree without fetching origin** — see the corrected
+   follow-up section. Left in the list, struck, because the correction is the
+   useful part.
 3. **🟠 the money must-do before the first payout** — read `adjust_payout_balance`
    back on **prod** and confirm the one `acct_…` is yours. Assumed, not observed;
    I could not read prod tonight. (Task 2, carried)
@@ -98,48 +115,47 @@ dedupe, tab-close (Task 7).
 
 ---
 
-## FOLLOW-UP (after the seven tasks) — the `listings` authenticated leak is STILL OPEN on master/prod, and test is lying about it
+## FOLLOW-UP — CORRECTED: the `listings` authenticated leak is CLOSED, and here is the mistake I made
 
-Last night's §3.1 flagged this; tonight I pinned down exactly where it stands, and
-it is **the clearest example this project has of why test cannot be trusted as a
-mirror.**
+**I got this one wrong the first time, and the way I got it wrong matters more
+than the finding.** In the first pass I compared the **test** project against my
+**local** `master` and concluded master/prod still leaked. Both halves of that
+comparison were bad: I never `git fetch`ed, so my local `master` was `e8903a3`
+(PR #97) — eight commits and seven migrations behind `origin/master`.
 
-**The leak:** on master, `listings` grants table-level `SELECT` to
-`authenticated` (never column-scoped), so any signed-in account can read
-`street_address`, `postcode`, exact `latitude/longitude`, **`ical_token`** (the
-private calendar-export secret — subscribe to it and you see every one of that
-listing's booked date ranges), and `commission_rate` (a commercial term) for any
-published listing. This defeats the location-privacy feature entirely for anyone
-who makes a free account.
+**On current `origin/master` (`8090788`), the leak is fixed.** PR #102 landed
+last night as `20260903154419_listing_private_columns.sql`:
+- `revoke select on "public"."listings" from "authenticated"`, then
+  `grant select (<allow-list>) …` where the allow-list **excludes**
+  `street_address`, `postcode`, exact `latitude`/`longitude`, `ical_token`, and
+  `commission_rate`;
+- the sensitive columns move behind `listing_private`, a `SECURITY DEFINER`
+  view granted `SELECT`-only to `authenticated` (writes revoked);
+- a companion migration `20260903161233_listings_update_is_an_allow_list.sql`
+  also closes the table-level `UPDATE` that let a host PATCH their own
+  `commission_rate` to 0.
 
-**Proof it's still open on master (not a live prod read — that's blocked):**
-`20260828224500_listing_location_privacy.sql` column-scoped **anon only** and says
-so in its own words — line 99: *"`authenticated` is untouched."* It is the only
-master migration that touches listings SELECT grants (besides an unrelated
-templates one). So master `authenticated` still holds the full-column grant.
+The user confirms PR #102 (with #98, #100, #101, #103, #104, #105) merged and its
+migrations were applied to prod last night. So this is **closed on master and
+prod**. The reason a test check showed `403` was not "test lying" — test simply
+had the same fix master already had; **my local tree was the stale one.**
 
-**Why a naive test check says it's FIXED (the trap):** on the test project the
-authenticated stranger gets **403** on those columns, because the fix — migrations
-`20260903154419_listing_private_columns.sql` ("sensitive columns are owner-only,
-via `listing_private`") and `20260903161233_listings_update_is_an_allow_list.sql`
-— **has been applied to test**. But those migrations live on the **unmerged**
-branch `fix/listings-column-privacy` (`git branch --merged master` does **not**
-list it). So: **fix built, applied to test, NOT on master, NOT merged, and
-therefore almost certainly NOT on prod.** Anyone who checks only test concludes,
-wrongly, that this is closed.
+**The real lesson (correcting my own memory):** `git fetch` and reason about
+`origin/master`, not a local checkout, before making any claim about what is live
+— this repo gains commits mid-session from the work-laptop/web-editor flow
+(CLAUDE.md says so explicitly). The separate "test can hold unmerged fix
+migrations" trap is real too, but it is **not** what happened here; here I simply
+hadn't fetched. Every other grant claim in this report was re-checked against
+`origin/master` after fetching (see the re-baseline note at the top) and the ones
+that stand, stand on current master.
 
-**What to do:** merge `fix/listings-column-privacy` (after reading it) and apply
-its two migrations to prod; then read the `listings` grants back on prod and
-confirm `authenticated` no longer holds `street_address`/`ical_token`/
-`commission_rate`. Until then, treat it as a live authenticated-read leak of exact
-address + a calendar secret. **Cost:** the fix is already written; this is a
-merge + a prod migration + a read-back, not new work.
-
-**Wider lesson for future sweeps:** the same drift means my Task 1 result must be
-read the way I wrote it — *service-table walls confirmed in master migration
-files, not just on test*. Had I trusted test alone for `listings`, I'd have
-cleared a live prod leak. Every grant claim in this report is anchored to a master
-migration for exactly this reason.
+**Two related fixes that also landed and change last night's carried context:**
+- **#101** (`may_read_listing_ignores_planted_bookings`) closes last night's
+  §3.2 — `may_read_listing()` no longer trusts a planted booking / revoked
+  co-host. That carried item is now **done** on master.
+- **#99 + #103** (`profile_private` counterparty must be **confirmed**, then
+  **paid**) are merged — so the Task 1 note that these were "applied to test
+  only" is outdated: they are on master now too.
 
 ---
 
@@ -555,6 +571,88 @@ booking or unsettled payout exists; settle/refund money first; then anonymise
 rather than cascade-delete (flip these FKs to `RESTRICT`/`SET NULL` + a scrub of
 PII columns). This is a design item to settle **before** an erasure flow, not
 after.
+
+### ⇢ ERASURE DESIGN SCOPE — what must be settled before anyone writes a "delete my account" button
+
+A decision document, not a build. It exists because the cascade above turns a
+lawful erasure request into silent data destruction + stranded money. The legal
+lines below need the **same solicitor review the host terms are already waiting
+on** (CLAUDE.md §4) — I'm scoping the shape, not giving legal advice.
+
+#### The principle: erasure here means **anonymise + retain**, not delete
+The privacy policy already promises to keep **booking and payment records for six
+years**. That promise is also a legal obligation — UK tax law requires ~6 years
+of financial records, and UK GDPR **Art 17(3)(b)/(e)** switch *off* the right to
+erasure for exactly that: data you must keep to meet a legal obligation, or to
+establish/defend legal claims (a chargeback can arrive months later). So the
+right answer to "delete me" is almost never `DELETE`. It is: **strip the
+identity, keep the record, restrict processing** (Art 18) on what remains.
+
+#### What should happen to a guest with a PAID, UPCOMING stay who asks to be deleted
+Deletion cannot run while there is an **active contract and unsettled money**.
+The flow should be, in order:
+1. **Refuse the immediate hard-delete**; explain that a live booking and its
+   financial record are retained. Offer the real choice: *cancel the upcoming
+   stay* (which runs the normal cancellation → **refund** per policy, and settles
+   any host-payout implication) — money resolved *before* identity is touched,
+   the same "move the money first" rule the rest of the codebase follows.
+2. Once no upcoming confirmed stay and no unsettled payout/refund remains,
+   **anonymise** the account: scrub the direct identifiers, keep the rows.
+3. If the guest won't cancel, the booking stands until it completes; erasure of
+   the *contact* data can proceed, but the *booking/payment* record is retained
+   (lawful under 17(3)). Never let "delete me" silently cancel a stay the host is
+   expecting, and never let it strand the guest's money.
+
+#### Retain vs erase — the matrix
+| Keep for 6 years (retain, restrict processing) | Erase / anonymise on request |
+|---|---|
+| `bookings` (dates, listing, amounts, status, cancellation) | guest `full_name`, `email`, `phone`, `avatar_url`, address |
+| `payments` / `payouts` (amounts, Stripe ids, status) | marketing/notification prefs, free-text (`welcome_message`, notes) |
+| `disputes`, invoices, tax-relevant totals | messages content (arguable — confirm with solicitor) |
+| a **pseudonymous** guest reference so the above stay internally consistent | login ability (disable the auth user) |
+
+#### The schema changes (instead of cascading)
+1. **Kill the destructive FKs.** `bookings.guest_id → profiles ON DELETE CASCADE`
+   and `host_id → CASCADE` must become **`RESTRICT`** (or `NO ACTION`), so a
+   profile can't be deleted out from under live records. Same review for
+   `booking_guests.user_id → CASCADE` and `reviews.*_id → CASCADE`.
+2. **Stop severing the money trail.** `payments.booking_id` / `payouts.booking_id`
+   are `ON DELETE SET NULL` — that orphans the financial record from its booking.
+   With bookings no longer deletable this never fires, but the intent should flip
+   to *preserve the link*.
+3. **Anonymise-in-place, don't delete the row.** Keep the `profiles` row so every
+   FK stays valid; scrub the PII columns and stamp `anonymised_at`. Replace
+   name/email/phone with a tombstone ("Former guest"). Disable the `auth.users`
+   login separately (ban/deactivate) — do **not** call `auth.admin.deleteUser`,
+   which is what triggers the cascade in the first place.
+4. **Do it in one server-side routine** (service role), which: blocks on an
+   upcoming confirmed stay or unsettled payout; scrubs PII; writes an audit row;
+   is idempotent. The browser never deletes an account directly.
+
+#### The gotcha that a naive scrub misses — denormalised PII copies
+Scrubbing `profiles` alone is **not enough**. PII is snapshotted onto other rows
+and would survive:
+- `service_orders.guest_name / guest_email / guest_phone`
+- `booking_guests.name / email` (companions)
+- `service_enquiries.host_name / host_email / host_phone` (host's own, for host erasure)
+
+The erasure routine has to scrub these snapshot columns too, or the anonymisation
+is cosmetic. (This is the seam-between-features pattern — the PII the profile
+scrub can't see.)
+
+#### Open questions for the solicitor (the ones that change the design)
+- Confirm the 6-year retention basis and that it covers booking **and** payment
+  records (it underpins the whole "retain not delete" stance).
+- Are guest **messages** retained (dispute evidence) or erased?
+- Host erasure vs guest erasure differ — a host with listings/payouts has more
+  retained; scope separately.
+- Whether disabling login + anonymising satisfies the request, or a hard delete
+  of the *contact* fields specifically is required.
+
+**Bottom line:** settle "anonymise + retain, money resolved first, PII scrubbed
+everywhere including the snapshots, profile row never hard-deleted" — then the FK
+changes and the routine follow from it. Do this before the delete button exists,
+because the button is trivial and the cascade behind it is not.
 
 ### 🟠 MEDIUM — Host calendar block is not enforced against a booking insert (scenario 7). Read on master.
 The date-exclusion constraint is `EXCLUDE … WHERE status = 'confirmed'` — it only
