@@ -6,9 +6,9 @@ import { houseRulesView, type HouseRulesInput } from '@/lib/houseRules';
 
 // One renderer for the house rules, shared by the trip card and the listing
 // page so a guest reads the same words before and after booking. Airbnb's shape:
-// a short list of the rules that are set, then "Show more" opening the full set
-// with the check-in/checkout times and any additional rules. Renders nothing at
-// all for a listing whose host never engaged with House rules.
+// a short list of the rules, then "Show more" opening the full set with the
+// check-in/checkout times and any additional rules. Every listing has house
+// rules (sensible defaults apply), so this always renders.
 export default function HouseRules({
     listing,
     variant = 'card',
@@ -18,7 +18,6 @@ export default function HouseRules({
 }) {
     const v = houseRulesView(listing);
     const [open, setOpen] = useState(false);
-    if (!v.configured) return null;
 
     const PREVIEW = 3;
     const preview = v.rules.slice(0, PREVIEW);

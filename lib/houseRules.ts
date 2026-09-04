@@ -2,14 +2,13 @@
 // turned into one view the trip card and the listing page both render, so a
 // guest reads the same words before and after booking.
 //
-// A wrinkle worth knowing: events/smoking/commercial-photography are
-// NOT NULL DEFAULT false booleans (set by an X/✓ toggle), so the database has
-// no "unset" for them — every listing technically says "no" to all three. To
-// avoid papering a brand-new, untouched listing with a wall of default "No …"
-// lines, `configured` treats the host as having engaged with House rules only
-// when there's a real signal: an allowance granted, quiet hours on, additional
-// text written, a check-in-until set, or a non-default check-in/checkout time.
-// When `configured` is false the surfaces render nothing.
+// Every listing has house rules by design. Sensible defaults apply even to a
+// host who never opens the House rules screen: no events, no smoking, no
+// commercial photography, and quiet hours 10pm–7am. These come from the column
+// defaults (the three booleans default false = "no …"; quiet_hours_enabled
+// defaults true — see the migration), so a guest sees them like any other rule,
+// and the host can change any of them in the editor. Presented as the listing's
+// house rules, not as law — no claim about council or nationwide noise rules.
 
 import { formatTime } from './utils';
 
@@ -31,7 +30,6 @@ export interface HouseRulesInput {
 export interface HouseRule { label: string; allowed: boolean; neutral?: boolean; }
 
 export interface HouseRulesView {
-    configured: boolean;
     rules: HouseRule[];
     checkInFrom: string;
     checkInUntil: string | null;
@@ -53,9 +51,6 @@ export function houseRulesView(l: HouseRulesInput | null | undefined): HouseRule
     const inUntil = x.check_in_end_time || null;
     const outBy = x.check_out_time || DEFAULT_OUT;
 
-    const nonDefaultTimes = inFrom !== DEFAULT_IN || outBy !== DEFAULT_OUT || !!inUntil;
-    const configured = events || smoking || photo || quiet || !!additional || nonDefaultTimes;
-
     const rules: HouseRule[] = [
         { label: events ? 'Events and parties allowed' : 'No events or parties', allowed: events },
         { label: smoking ? 'Smoking, vaping and e-cigarettes allowed' : 'No smoking, vaping or e-cigarettes', allowed: smoking },
@@ -70,7 +65,6 @@ export function houseRulesView(l: HouseRulesInput | null | undefined): HouseRule
     }
 
     return {
-        configured,
         rules,
         checkInFrom: formatTime(inFrom),
         checkInUntil: inUntil ? formatTime(inUntil) : null,
