@@ -1,0 +1,14 @@
+import { loadEnv, assertTestEnvironment, sessionCookieViaApp } from './seed-lib.mjs';
+import { LOCAL_URL } from './target.cjs';
+const env = loadEnv(); assertTestEnvironment(env);
+const SITE = process.env.SITE || LOCAL_URL;
+const ME = 'liamworrall18@hotmail.com';
+const BOOKING = process.argv[2];
+const cookie = await sessionCookieViaApp(env, ME, SITE);
+const res = await fetch(SITE + '/experiences/' + BOOKING, { headers: { Cookie: cookie }, redirect: 'manual' });
+const html = await res.text();
+const cards = (html.match(/Verified business/g) || []).length;
+console.log('GET /experiences/' + BOOKING.slice(0, 8) + '…  status ' + res.status + (res.status >= 300 && res.status < 400 ? ' -> ' + res.headers.get('location') : ''));
+console.log('"Verified business" badges on page :', cards);
+console.log('provider cards present             :', /experiences\/[^/]+\/[0-9a-f-]{36}/.test(html) ? 'yes' : 'no');
+console.log('old "New here"/"booked" tag gone   :', !/New here|\d+ booked/.test(html) ? 'yes' : 'STILL PRESENT');

@@ -2057,15 +2057,39 @@ export function approvalBlockers(
     return registrationBlockers(provider, rows, today).concat(categoryBlockers(provider));
 }
 
+// Short, guest-facing category words keyed by the Stripe MCC assigned at review.
+// The MCC is a HARD gate for a provider to appear at all (mccForProvider must be
+// truthy), so every visible provider has one — which makes it a reliable
+// fallback when the free-text custom_label was left blank at review. Without
+// this, every uncategorised provider read "Local experience", so a chef, a
+// sauna and a whisky tasting looked identical on the shop.
+const GUEST_MCC_LABEL: Record<string, string> = {
+    '5811': 'Private chef',
+    '5812': 'Prepared meals',
+    '5462': 'Bakery',
+    '5411': 'Local produce',
+    '7299': 'Wellbeing',
+    '7997': 'Activity',
+    '7911': 'Class',
+    '7333': 'Photography',
+    '7230': 'Hair & beauty',
+    '5992': 'Florist',
+    '7392': 'Guided experience',
+    '7999': 'Activity',
+};
+
 // The word a guest reads above a provider on the shop and the trip page.
 //
-// Always the word the owner typed when they assigned the category — there are
-// no fixed guest trades any more, so there is no trade label to fall back to.
-// A neutral "Local experience" covers the case a guest provider somehow reaches
-// a guest with no label, which the payout gate should prevent, because the word
-// is assigned in the same act as the code the gate requires.
-export function guestCategory(provider: { trade?: string | null; custom_label?: string | null }): string {
-    return String(provider.custom_label || '').trim() || 'Local experience';
+// The word the owner typed at review wins (custom_label). If it was left blank,
+// fall back to the category the MCC implies — the code the payout gate already
+// requires — so the card never reads a bland "Local experience" for want of a
+// hand-typed word. Only a provider with neither (which the gate should prevent)
+// gets the neutral label.
+export function guestCategory(provider: { trade?: string | null; custom_label?: string | null; stripe_mcc?: string | null }): string {
+    const label = String(provider.custom_label || '').trim();
+    if (label) return label;
+    const byMcc = GUEST_MCC_LABEL[String(provider.stripe_mcc || '').trim()];
+    return byMcc || 'Local experience';
 }
 
 // What the provider is told while filling the form in. Deliberately narrower
