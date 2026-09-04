@@ -197,6 +197,13 @@ async function makeAccount(email, person) {
 async function run() {
     await cleanup();
 
+    // `--reset` just clears the demo (providers, Stripe accounts, Morag, cottage)
+    // and stops — nothing is rebuilt.
+    if (process.argv.includes('--reset')) {
+        console.log('Marketplace demo removed.');
+        return;
+    }
+
     // The browsing guest, a cottage, and a week-long booking so slots have days.
     console.log('creating the browsing guest and cottage…');
     const guest = await ensureUser('morag@' + DOMAIN, 'Morag Kerr');
