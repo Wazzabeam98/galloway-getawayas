@@ -6,7 +6,7 @@ import { useEffect, useState } from 'react';
 import { createClientComponentClient } from '@supabase/auth-helpers-nextjs';
 import Logo from '@/components/base/Logo';
 import LoginModel from '@/components/auth/LoginModel';
-import { MessageCircle, MapPin, ArrowLeft, ArrowRight, CornerDownRight, Car, KeyRound, Phone, CloudOff, XCircle, ShieldCheck, LifeBuoy, Heart } from 'lucide-react';
+import { MessageCircle, MapPin, ArrowLeft, ArrowRight, CornerDownRight, Car, KeyRound, Phone, CloudOff, XCircle, ShieldCheck, LifeBuoy } from 'lucide-react';
 import CopyField from '@/components/arrival/CopyField';
 import DirectionsPicker from '@/components/arrival/DirectionsPicker';
 import PropertyMap from '@/components/PropertyMap';
@@ -70,16 +70,6 @@ interface Booking {
         hostAvatar: string | null;
         hostBio: string | null;
     } | null;
-}
-
-// Marks content on the card that is not backed by real data yet, so a reviewer
-// (and a real guest, on this preview) can tell at a glance what's a placeholder.
-function PlaceholderTag() {
-    return (
-        <span className="inline-flex items-center rounded-full bg-amber-100 px-2 py-0.5 align-middle text-[10px] font-semibold uppercase tracking-wide text-amber-800">
-            Placeholder
-        </span>
-    );
 }
 
 export default function TripsPage() {
@@ -354,7 +344,7 @@ export default function TripsPage() {
                     now teased once at the page level, so the card is full width
                     rather than a wide half-empty two-up. When experiences launch,
                     the per-booking panel returns as the right column. */}
-                <div className="flex items-start gap-4">
+                <div className="flex flex-wrap items-start gap-4">
                     <Link href={homeHref} className="relative block w-16 h-16 rounded-xl overflow-hidden bg-slate-200 flex-shrink-0">
                         {listing?.images?.[0] && (
                             <Image src={getImageUrl(listing.images[0])} alt={listing.title} fill sizes="64px" className="object-cover" />
@@ -363,19 +353,37 @@ export default function TripsPage() {
                     <div className="flex-1 min-w-0">
                         <Link href={homeHref} className="font-semibold text-slate-900 hover:underline break-words">{listing?.title || 'Listing'}</Link>
                         <div className="text-sm text-slate-600 mt-0.5">
-                            Hosted by {capitializeFirst(hostNames[b.host_id] || 'Host')} · {fmtDay(b.check_in)} – {fmtDay(b.check_out)}
+                            Hosted by {hostFirstName} · {fmtDay(b.check_in)} – {fmtDay(b.check_out)}
                         </div>
-                        {phaseChip && (
-                            <div className="mt-2">
+                        {/* Status on the LEFT now, with the phase chip; the top-right
+                            is the host's Call + Message. */}
+                        <div className="mt-2 flex flex-wrap items-center gap-2">
+                            <span className={`inline-flex items-center rounded-full px-3 py-1 text-xs font-semibold capitalize ${statusStyles[b.status] || 'bg-slate-100 text-slate-600'}`}>
+                                {b.status}
+                            </span>
+                            {phaseChip && (
                                 <span className="inline-flex items-center rounded-full bg-emerald-50 px-2.5 py-0.5 text-xs font-medium text-emerald-800">
                                     {phaseChip}
                                 </span>
-                            </div>
-                        )}
+                            )}
+                        </div>
                     </div>
-                    <span className={`text-xs font-semibold px-3 py-1 rounded-full capitalize flex-shrink-0 ${statusStyles[b.status] || 'bg-slate-100 text-slate-600'}`}>
-                        {b.status}
-                    </span>
+                    {/* Contact the host — moved up here, beside the host line, and the
+                        standalone "Your host" block below is gone (merged in). */}
+                    {upcomingConfirmed && arr && (
+                        // Full-width on their own line on a phone (so the title
+                        // keeps its width); beside the host line on desktop.
+                        <div className="flex w-full items-center gap-2 sm:w-auto">
+                            {arr.hostPhone && (
+                                <a href={'tel:' + arr.hostPhone} className="inline-flex flex-1 items-center justify-center gap-1.5 rounded-lg bg-emerald-700 px-3 py-2 text-xs font-semibold text-white transition hover:bg-emerald-800 sm:flex-none">
+                                    <Phone className="h-3.5 w-3.5" /> Call
+                                </a>
+                            )}
+                            <Link href={`/messages/${b.id}`} className="inline-flex flex-1 items-center justify-center gap-1.5 rounded-lg border border-slate-300 bg-white px-3 py-2 text-xs font-semibold text-slate-700 transition hover:border-slate-400 sm:flex-none">
+                                <MessageCircle className="h-3.5 w-3.5" /> Message
+                            </Link>
+                        </div>
+                    )}
                 </div>
 
                 {/* Trip facts — Who's coming leads, as its own labelled section
@@ -451,40 +459,6 @@ export default function TripsPage() {
                         </div>
                     )}
                 </div>
-
-                {/* Host — the human centre of the card: photo, name, their own
-                    words, and Message + Call together. Booking direct with the
-                    owner is the whole pitch, so this leads with the person rather
-                    than a grey "Hosted by" line. Name is privacy-resolved on the
-                    client; photo and bio come from the host's profile. */}
-                {upcomingConfirmed && arr && (
-                    <div className="mt-8 rounded-2xl border border-slate-200 p-6 sm:p-7">
-                        <div className="flex items-center gap-4">
-                            {arr.hostAvatar ? (
-                                // eslint-disable-next-line @next/next/no-img-element
-                                <img src={getImageUrl(arr.hostAvatar)} alt={hostFirstName} className="h-14 w-14 flex-none rounded-full object-cover" />
-                            ) : (
-                                <div className="flex h-14 w-14 flex-none items-center justify-center rounded-full bg-emerald-100 text-lg font-semibold text-emerald-800">
-                                    {hostFirstName.slice(0, 1).toUpperCase()}
-                                </div>
-                            )}
-                            <div className="min-w-0 flex-1">
-                                <div className="text-[11px] font-semibold uppercase tracking-wide text-slate-500">Your host</div>
-                                <div className="mt-0.5 text-base font-semibold text-slate-900">{hostFirstName}</div>
-                            </div>
-                        </div>
-                        <div className="mt-5 grid grid-cols-2 gap-2">
-                            {arr.hostPhone ? (
-                                <a href={'tel:' + arr.hostPhone} className="inline-flex items-center justify-center gap-2 rounded-lg bg-emerald-700 px-3 py-2.5 text-sm font-semibold text-white transition hover:bg-emerald-800">
-                                    <Phone className="h-4 w-4" /> Call
-                                </a>
-                            ) : <span />}
-                            <Link href={`/messages/${b.id}`} className="inline-flex items-center justify-center gap-2 rounded-lg border border-slate-300 bg-white px-3 py-2.5 text-sm font-semibold text-slate-700 transition hover:border-slate-400">
-                                <MessageCircle className="h-4 w-4" /> Message
-                            </Link>
-                        </div>
-                    </div>
-                )}
 
                 {/* The group, right under the stay details — stacked avatars and
                     the seats still to fill, so a group booking reads as one before
@@ -642,8 +616,8 @@ export default function TripsPage() {
                             <LifeBuoy className="h-3.5 w-3.5" /> If something&apos;s not right
                         </div>
                         <p className="mt-2 text-sm leading-relaxed text-slate-600">
-                            Locked out, a boiler that won&apos;t fire, a lost key at 9pm — {hostFirstName} is local and usually quickest to reach (their number&apos;s in the host details above). If you can&apos;t get hold of them, we&apos;ll step in: email{' '}
-                            <a href="mailto:support@gallowaygetaways.co.uk" className="font-semibold text-emerald-700 hover:text-emerald-800">support@gallowaygetaways.co.uk</a> and a real person here will help.
+                            If something isn&apos;t right and {hostFirstName} can&apos;t help, contact{' '}
+                            <a href="mailto:support@gallowaygetaways.co.uk" className="font-semibold text-emerald-700 hover:text-emerald-800">support@gallowaygetaways.co.uk</a>.
                         </p>
                     </div>
                 )}
@@ -798,32 +772,6 @@ export default function TripsPage() {
                         </div>
                     );
                 })()}
-
-                {/* Coming back — a guest who had a good week is the cheapest
-                    booking we'll ever get, so the card should ask for the next
-                    one. Real: the Book again link to the listing. Placeholder:
-                    the returning-guest offer. */}
-                {!b.sharedWithMe && (
-                    <div className="mt-8 rounded-2xl border border-emerald-200 bg-emerald-50/50 p-6 sm:p-7">
-                        <div className="flex items-center gap-2">
-                            <div className="flex items-center gap-1.5 text-[11px] font-semibold uppercase tracking-wide text-emerald-700">
-                                <Heart className="h-3.5 w-3.5" /> Coming back
-                            </div>
-                            <PlaceholderTag />
-                        </div>
-                        <p className="mt-2 text-sm leading-relaxed text-emerald-900">
-                            Had a good week? Book {listing?.title || 'this place'} again direct and skip the fees — returning guests get [10% off] their next stay.
-                        </p>
-                        <div className="mt-3">
-                            <Link href={homeHref} className="inline-flex items-center gap-2 rounded-lg bg-emerald-700 px-4 py-2 text-sm font-semibold text-white transition hover:bg-emerald-800">
-                                Book again <ArrowRight className="h-4 w-4" />
-                            </Link>
-                        </div>
-                        <p className="mt-2 text-xs text-emerald-700/70">
-                            The offer is placeholder. To make it real: a host-set returning-guest discount (e.g. <span className="font-mono">listings.returning_guest_discount</span>) or a personal rebook code, applied at checkout.
-                        </p>
-                    </div>
-                )}
 
                 {isCompleted && !alreadyReviewed && (() => {
                     // Reviews close 14 days after check-out.
