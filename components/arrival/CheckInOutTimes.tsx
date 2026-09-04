@@ -143,17 +143,18 @@ export default function CheckInOutTimes(props: Props) {
         );
     }
 
-    // ---- split mode: times-only rail on the left, `aside` on the right ------
+    // ---- split mode: the rail on the left (each end its date · time, the way
+    // Getting there pairs them), `aside` on the right --------------------------
     if (mode === 'split') {
         const rail = (
             <div className="min-w-0">
                 <div className="flex items-stretch gap-3">
                     <Node icon={arrivalIcon} />
-                    <div className="flex-1 pb-4"><RowHead label="Check-in" date="" time={inTime} /></div>
+                    <div className="flex-1 pb-4"><RowHead label="Check-in" date={inDate} time={inTime} /></div>
                 </div>
                 <div className="flex items-stretch gap-3">
                     <Node icon={departIcon} last />
-                    <div className="flex-1"><RowHead label="Checkout" date="" time={outTime} /></div>
+                    <div className="flex-1"><RowHead label="Checkout" date={outDate} time={outTime} /></div>
                 </div>
             </div>
         );

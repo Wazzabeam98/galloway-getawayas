@@ -20,7 +20,7 @@ import { MessageSquare, CalendarDays, Navigation, Grid3x3 } from 'lucide-react';
 // Shown at the top of the home page to someone with a stay coming up. The
 // point is that a guest logging in six weeks before their holiday sees their
 // holiday, not a search box they've already used.
-export default async function UpcomingTrip({ layout = 'wrap' }: { layout?: 'wrap' | 'cols' }) {
+export default async function UpcomingTrip() {
     const supabase = createServerComponentClient({ cookies });
     const { data: auth } = await supabase.auth.getSession();
 
@@ -180,6 +180,8 @@ export default async function UpcomingTrip({ layout = 'wrap' }: { layout?: 'wrap
             <CheckInOutTimes
                 surface="home"
                 mode="split"
+                checkInDate={booking.check_in}
+                checkOutDate={booking.check_out}
                 checkInTime={listing.check_in_time}
                 checkOutTime={listing.check_out_time}
                 aside={(directionsUrl || what3words) ? (
@@ -230,42 +232,26 @@ export default async function UpcomingTrip({ layout = 'wrap' }: { layout?: 'wrap
         </div>
     );
 
-    // VERSION ONE — wrap. Photo floats top-left; the headline and stay details
-    // sit beside it, then the group row, rail, cancel and actions clear below it
-    // and take the full card width. Nothing sits in an empty column.
-    const cardWrap = (
+    // Photo top-left, and the details beside it: headline, stay details, then the
+    // group row directly under them — so the column beside the square photo is
+    // filled rather than left hanging under the image. The rail and the actions
+    // run full width below both.
+    const card = (
         <div className="rounded-3xl border border-stone-200 bg-white p-6 md:p-8">
-            <div className="mb-6 w-full md:float-left md:mb-6 md:mr-8 md:w-1/3">
-                {photoEl}
+            <div className="md:flex md:items-start md:gap-8">
+                <div className="mb-6 md:mb-0 md:w-1/4 md:flex-none">
+                    {photoEl}
+                </div>
+                <div className="md:min-w-0 md:flex-1">
+                    {headlineEl}
+                    {stayDetailsEl}
+                    {groupEl}
+                </div>
             </div>
-            {headlineEl}
-            {stayDetailsEl}
-            <div className="md:clear-left">
-                {groupEl}
+            <div>
                 {railEl}
                 {cancelEl}
                 {actionsEl}
-            </div>
-        </div>
-    );
-
-    // VERSION TWO — columns. Headline across the top, then two columns: photo and
-    // the stay details on the left; the group row, rail, directions and actions
-    // on the right, so both columns end at roughly the same height.
-    const cardCols = (
-        <div className="rounded-3xl border border-stone-200 bg-white p-6 md:p-8">
-            {headlineEl}
-            <div className="mt-6 md:grid md:grid-cols-2 md:gap-8 md:items-stretch">
-                <div>
-                    {photoEl}
-                    {stayDetailsEl}
-                </div>
-                <div className="mt-8 md:mt-0 md:flex md:flex-col md:justify-center">
-                    {groupEl}
-                    {railEl}
-                    {cancelEl}
-                    {actionsEl}
-                </div>
             </div>
         </div>
     );
@@ -283,7 +269,7 @@ export default async function UpcomingTrip({ layout = 'wrap' }: { layout?: 'wrap
                 </p>
             </div>
 
-            {layout === 'cols' ? cardCols : cardWrap}
+            {card}
 
             {/* The guest experiences, below the trip — what's booked for the stay
                 and a way into browsing more, the same panel the trips page carries,

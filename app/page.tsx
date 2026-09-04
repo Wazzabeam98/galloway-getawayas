@@ -228,7 +228,7 @@ export default async function HomePage({
             {/* Someone with a stay coming up sees it before anything else. Returns
           nothing at all for a signed-out visitor or a guest with no booking.
           In hosting mode the same slot shows the next arrivals instead. */}
-            {mode === 'host' ? <HostReservations /> : <UpcomingTrip layout={readParam(searchParams.card) === 'cols' ? 'cols' : 'wrap'} />}
+            {mode === 'host' ? <HostReservations /> : <UpcomingTrip />}
 
             <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-16">
                 {/* Section Heading */}
