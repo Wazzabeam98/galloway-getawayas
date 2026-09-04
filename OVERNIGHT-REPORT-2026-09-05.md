@@ -126,3 +126,63 @@ the three `quiet_hours_*` columns; no other column is written, and the ALTER onl
 changes the default. Test confirms the column default is now `true`. (I could not
 read prod, but the migration text is deterministic and its safety is in the
 `WHERE`/`coalesce`, which I proved on test.)
+
+---
+
+## 🟠 MEDIUM — `migrate.mjs --record` is an honest design with a footgun the automation doesn't catch
+
+**Read on master + ledger read on test 2026-09-05.**
+
+### Intended or footgun? Both — intended, with real mitigations, but a genuine footgun.
+`--record` **exists on purpose**: two sessions edit this repo and only one goes
+through the runner, so a migration applied by hand (Supabase SQL editor, or a
+work-laptop branch) leaves the schema changed and the ledger silent, and
+`--status` then cries "OUTSTANDING" forever — a warning that's always wrong gets
+ignored, which is the exact failure the ledger was built to prevent (it bit on
+1 Sept). So `--record` writes a ledger row **without running or checking the
+SQL**. It is honest about that: the row is `backfilled = true`, `checksum = null`,
+a `--note` is **required**, and `--status` prints these under **"ASSUMED, NOT
+OBSERVED"**.
+
+### The footgun: nothing automated reacts to an assumption, so a wrong `--record` is silent.
+- `--record` writes **ledger presence without verifying** → the file leaves the
+  OUTSTANDING set.
+- `--status` **exits non-zero only on OUTSTANDING or EDITED** (`migrate.mjs:584`)
+  — an assumption exits **0** (clean).
+- The pre-push hook is a **note, not a refusal** anyway (`exit 0`), and its `sed`
+  extracts only the `OUTSTANDING` and `EDITED SINCE` sections — **never the
+  ASSUMED section**.
+- **Net:** if someone `--record`s a migration that was *not* actually applied,
+  it is not OUTSTANDING, not surfaced by the hook, and exits clean. The schema
+  silently diverges from the code. The **only** thing that catches it is a human
+  running `--status` and reading the ASSUMED section — i.e. the manual read-back
+  that caught it today. A migration that widens a check constraint, adds a
+  `revoke`, or moves money-touching logic could be "recorded" and never run, and
+  no gate would notice.
+
+### Is anything else in the ledger an assumption rather than an observation? YES — most of it.
+On test: **73 of 99 rows (74%) are assumptions** (`backfilled=true`,
+`checksum=null`). Almost all carry the 1 Sept note *"production and test compared
+and identical across 4,334 schema facts"* — a reasonable bulk assertion, but an
+assertion: it says prod==test at a moment, not that each file's SQL was observed
+to run. And `checksum=null` means `--status` **cannot detect if any of those 73
+files is later EDITED** — there's no stored hash to compare. So three-quarters of
+the ledger is both unverified and undriftable-by-tool.
+
+### What would make a recorded-but-unapplied migration impossible to mistake for a real one
+1. **Verify at record time — the high-value one.** Require `--record` to run a
+   read-only predicate proving the change is present, and refuse to record if it
+   fails (e.g. `--check "select to_regclass('public.foo') is not null"`). The
+   notes already *describe* the check ("index present, column present") — have
+   the tool actually run it. That converts the assertion into an observation.
+2. **Make the gate honour assumptions.** At minimum, add `/ASSUMED, NOT OBSERVED/`
+   to the pre-push hook's `sed` so assumed rows are surfaced; better, have
+   `--status` exit non-zero (or a distinct code) for an assumption that has no
+   verification predicate, so CI/pre-push can react.
+3. **Backfill checksums where the file is in the repo**, or add a `verified_at`
+   column set by a reconciliation pass that re-runs each assumed row's predicate
+   against the live schema — so the 73 stop being permanently uncheckable.
+
+Rank: MEDIUM — not a live security hole, but this is precisely the silent
+code-vs-schema divergence that produces a money bug (a revoke or constraint that
+"landed" only in the ledger). It nearly did today; the read-back saved it.
