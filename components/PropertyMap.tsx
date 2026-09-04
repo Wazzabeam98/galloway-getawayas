@@ -11,13 +11,21 @@ export default function PropertyMap({
     latitude,
     longitude,
     area,
+    variant = 'full',
 }: {
     latitude: number;
     longitude: number;
     area?: string;
+    // 'full' is the listing-page block (heading, big frame, a house marker on
+    // the approximate spot). 'card' is a small, chromeless AREA map for the
+    // trip card: no marker at all and zoomed out to a town scale, so it reads
+    // as "roughly here" — a sense of place, not navigation (Get directions does
+    // that) and never a pin on the door.
+    variant?: 'full' | 'card';
 }) {
     const containerRef = useRef<HTMLDivElement>(null);
     const mapRef = useRef<any>(null);
+    const isCard = variant === 'card';
 
     // A fixed offset derived from the coordinates themselves, so the same
     // property always shows the same spot rather than shifting on every
@@ -74,8 +82,11 @@ export default function PropertyMap({
 
             const map = L.map(containerRef.current, {
                 center: [pinLat, pinLon],
-                zoom: 16,
+                // Town scale for the card so no single building is picked out;
+                // street scale for the full listing block with its marker.
+                zoom: isCard ? 13 : 16,
                 scrollWheelZoom: false,
+                zoomControl: !isCard,
             });
             mapRef.current = map;
 
@@ -110,7 +121,11 @@ export default function PropertyMap({
                 iconAnchor: [24, 24],
             });
 
-            L.marker([pinLat, pinLon], { icon, interactive: false }).addTo(map);
+            // The card variant shows the area alone — no marker, so nothing
+            // points at the actual door.
+            if (!isCard) {
+                L.marker([pinLat, pinLon], { icon, interactive: false }).addTo(map);
+            }
         };
 
         build();
@@ -123,6 +138,17 @@ export default function PropertyMap({
             }
         };
     }, [pinLat, pinLon]);
+
+    if (isCard) {
+        return (
+            <div className="mt-2.5 overflow-hidden rounded-lg border border-slate-200">
+                <div ref={containerRef} className="h-36 w-full bg-slate-100 z-0" />
+                <div className="bg-white px-3 py-1.5 text-[11px] text-slate-500">
+                    {area ? area + ' — the area, not the exact spot' : 'The area, not the exact spot'}
+                </div>
+            </div>
+        );
+    }
 
     return (
         <div className="mt-8 pt-8 border-t">

@@ -47,7 +47,7 @@ export async function GET() {
     const { data: shared } = sharedIds.length
         ? await admin
             .from('bookings')
-            .select('id, listing_id, host_id, guest_id, check_in, check_out, guests, status, payment_status')
+            .select('id, listing_id, host_id, guest_id, check_in, check_out, guests, adults, children, pets, status, payment_status')
             .in('id', sharedIds)
             .order('check_in', { ascending: false })
         : { data: [] };
@@ -68,6 +68,11 @@ export async function GET() {
             check_in: b.check_in,
             check_out: b.check_out,
             guests: b.guests,
+            // The party split is composition, not money — safe to carry so a
+            // shared trip shows "3 adults · 1 child" like the booker's own view.
+            adults: b.adults,
+            children: b.children,
+            pets: b.pets,
             status: b.status,
             // Deliberately absent: total_price, amount_paid, balance_amount,
             // payment_status, and everything else about the money.
