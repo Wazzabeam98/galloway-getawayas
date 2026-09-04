@@ -41,27 +41,34 @@ Ranked across everything tonight. "tonight" = built/ran and read back on test;
    trail; `reviews.*/messages.* → CASCADE` erase reputation and dispute evidence.
    Same "anonymise + retain" fix, but the FK change-list is bigger. Extends last
    night; add "host-side too" to the parked solicitor item. (tonight)
-2. **🟠 MEDIUM — `migrate.mjs --record` footgun.** It writes ledger-presence
+2. **🟠 MEDIUM — LIVE REGRESSION: #111 × #113 lock an invited companion out of
+   arrival.** `/api/trips` strips `payment_status` from shared trips, so the card's
+   entitlement check fails and a companion gets **no address, no directions, no
+   "Getting in", and no link to the door-code screen** — the whole app's only
+   `/arrival` link sits behind that gate. The invite feature that shipped today
+   can't deliver what its email promises. Fails closed (no leak), but broken now.
+   (tonight)
+3. **🟠 MEDIUM — `migrate.mjs --record` footgun.** It writes ledger-presence
    without checking, and **no automated gate reacts** (status exits 0 on an
    assumption; the pre-push hook is a note that greps only OUTSTANDING/EDITED).
    **74% of the ledger (73/99) is assumption, not observation** and
    checksum-null (undriftable). A wrongly-recorded money migration would be
    silent — a read-back caught today's. (tonight)
-3. **🟠 MEDIUM — `full_name` leaks to anon regardless of `show_full_name`.**
+4. **🟠 MEDIUM — `full_name` leaks to anon regardless of `show_full_name`.**
    Re-proven on test with the flag off. (carried)
-4. **🟠 MEDIUM — silent money routes** (`slots/schedule` unlogged calendar-wipe;
+5. **🟠 MEDIUM — silent money routes** (`slots/schedule` unlogged calendar-wipe;
    `order(s)`, `slots/book`, `ical-sync`, webhook notify catches → `console.error`
    only). Untouched today. (carried)
-5. **🟠 MEDIUM — free-cancel deadline judged at processing time, not click time.**
+6. **🟠 MEDIUM — free-cancel deadline judged at processing time, not click time.**
    Untouched today. (carried)
-6. **🟠 MEDIUM — webhook that never arrives → guest charged, cancelled, no
+7. **🟠 MEDIUM — webhook that never arrives → guest charged, cancelled, no
    auto-refund.** Stripe retries usually save it; needs reconciliation. (carried)
-7. **🟡 LOW — storage has no owner-scoped upload paths.** Re-proven on test. (carried)
-8. **🟡 LOW — companion double-claim TOCTOU shipped (#111).** The unguarded claim
+8. **🟡 LOW — storage has no owner-scoped upload paths.** Re-proven on test. (carried)
+9. **🟡 LOW — companion double-claim TOCTOU shipped (#111).** The unguarded claim
    UPDATE is now live; false-success only, no over-capacity/access. (tonight)
-9. **🟡 LOW — demo data half-removed on test.** The `@gallowaymarket.test` seed is
-   gone, but other-domain demo providers + 2 live Stripe test accounts persist.
-   Test only. (tonight)
+10. **🟡 LOW — demo data half-removed on test.** The `@gallowaymarket.test` seed is
+    gone, but other-domain demo providers + 2 live Stripe test accounts persist.
+    Test only. (tonight)
 
 **Clean / proven-good tonight:**
 - **The arrival-secret wall HOLDS after six merges, and is stronger** — door code
@@ -129,6 +136,37 @@ made it stricter.
   arrival block; no separate unauthenticated fetch.
 - **Verified-business badge (#108) — reviewed, low.** A display badge on approved
   providers; noted, not deep-audited (not money/PII path).
+
+### 🟠 MEDIUM — #111 (invites) × #113 (arrival-on-card) interact badly: an invited companion is locked out of arrival in the UI. (found tonight, read on master)
+Each PR is fine alone; together they break the companion feature that shipped
+today. The chain:
+1. `/api/trips` strips money from a **shared** (companion) trip — correct for
+   amounts — but it strips **`payment_status` too** (`route.ts:76–77`, "deliberately
+   absent"), keeping only `status`.
+2. The card decides arrival with `bookingReleasesPrivateData`, which is
+   `status==='confirmed' && payment_status ∈ {paid, deposit_paid}`. With
+   `payment_status` **undefined**, it returns **false for every companion trip**,
+   so `arr` (the card-safe arrival block) is **never attached** (`trips/page.tsx:293`).
+3. The card gates the arrival block, the **"Getting in"** section, and the
+   host-contact actions on `arr` (`:374`, `:486`). And **line 505 —
+   `href={/arrival/${b.id}}` — is the ONLY link to `/arrival` in the whole app**,
+   and it sits *inside* that `arr` block.
+
+**Net:** a guest who accepts an invite sees a card with the listing, the dates,
+and "Shared with you" — and **no address, no directions, no what3words, no
+"Getting in", and no link to the door-code screen anywhere**. The invite email
+promises "see where you're going… how to get in (the door code and wifi)"; the UI
+now delivers none of it to the invitee. The `/arrival` page itself still gates on
+`booking_guests active` (a companion would be allowed *if they could reach it*),
+but nothing links them there.
+
+**Not a security hole** — it fails **closed** (companions see less, the door code
+is never exposed). It's a **functional regression of a feature that shipped
+today**, and exactly the kind isolated review misses. **Fix:** carry
+`payment_status` on shared trips (it's an entitlement signal — `paid`/`unpaid` —
+not a money amount, so it doesn't reveal what the booker paid), or compute
+entitlement server-side before stripping and attach the (secret-free) card-safe
+arrival to entitled shared trips. Keep the amounts stripped.
 - **Companion single-use invite (#111) — the TOCTOU I flagged shipped.** The
   merged `booking-guests/accept/route.ts` still does the claim as an
   **unconditional** `UPDATE … WHERE id = :id` (`:118–123`), no `status` guard.
