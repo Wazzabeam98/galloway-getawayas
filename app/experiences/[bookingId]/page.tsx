@@ -6,6 +6,7 @@ import { adminClient } from '@/lib/supabaseAdmin';
 import { guestExperiencesOpen } from '@/lib/serviceOrders';
 import { loadMarketplace, MpProvider } from '@/lib/experiencesData';
 import { shapeCue } from '@/lib/serviceSlots';
+import { BadgeCheck } from 'lucide-react';
 import { townFromLocation, fromPriceLabel, nextSessionLabel } from '@/components/marketplace/present';
 
 export const dynamic = 'force-dynamic';
@@ -89,9 +90,9 @@ function Card({ bookingId, p }: { bookingId: string; p: MpProvider }) {
                 <p className="text-[11px] font-semibold uppercase tracking-[0.12em] text-emerald-700">{p.category}</p>
                 <h2 className="mt-1 text-lg font-semibold leading-snug text-slate-900">{p.business_name}</h2>
 
-                {/* Who you're booking, and the only honest trust signal we have:
-                    how many bookings they've taken, or an "New here" tag rather
-                    than an empty space that reads as "nobody has tried this". */}
+                {/* Who you're booking, and a "Verified business" tag — every
+                    provider here is admin-approved, which is the honest trust
+                    signal on a marketplace too young for a bookings count. */}
                 <div className="mt-2 flex items-center gap-2">
                     {p.headshot ? (
                         // eslint-disable-next-line @next/next/no-img-element
@@ -104,7 +105,7 @@ function Card({ bookingId, p }: { bookingId: string; p: MpProvider }) {
                     <span className="min-w-0 truncate text-xs text-slate-500">
                         {p.provider_name && p.provider_name.trim() ? p.provider_name : p.based_line || 'Local provider'}
                     </span>
-                    <TrustBadge count={p.bookingsCount} />
+                    <VerifiedBadge />
                 </div>
 
                 {p.description ? (
@@ -128,19 +129,16 @@ function Card({ bookingId, p }: { bookingId: string; p: MpProvider }) {
     );
 }
 
-// The trust tag. No stars yet — there are no provider reviews — so this is the
-// honest version: a count of bookings taken, or "New here" when there are none.
-function TrustBadge({ count }: { count: number }) {
-    if (count > 0) {
-        return (
-            <span className="ml-auto flex-none rounded-full bg-emerald-50 px-2 py-0.5 text-[11px] font-semibold text-emerald-700 ring-1 ring-emerald-600/15">
-                {count} booked
-            </span>
-        );
-    }
+// The trust tag a young marketplace can honestly show. No stars (there are no
+// provider reviews) and no bookings count — a count reads "0"/"New here" and
+// loses more than it gives before there is volume. Every provider a guest sees
+// here has been through admin approval (loadMarketplace surfaces only
+// status='approved'), so "Verified business" is true of all of them and says
+// the one thing a guest wants to know: someone checked.
+function VerifiedBadge() {
     return (
-        <span className="ml-auto flex-none rounded-full bg-slate-100 px-2 py-0.5 text-[11px] font-semibold text-slate-500">
-            New here
+        <span className="ml-auto flex-none inline-flex items-center gap-1 rounded-full bg-emerald-50 px-2 py-0.5 text-[11px] font-semibold text-emerald-700 ring-1 ring-emerald-600/15">
+            <BadgeCheck className="h-3.5 w-3.5" aria-hidden="true" /> Verified business
         </span>
     );
 }
