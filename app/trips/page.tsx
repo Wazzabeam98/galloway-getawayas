@@ -655,9 +655,10 @@ export default function TripsPage() {
 
                 {/* Rules and instructions — the house rules, same source and
                     wording as the listing page (shared HouseRules component).
-                    CONFIRMED reservations only: a pending or unpaid booking does
-                    not render them. */}
-                {listing && b.status === 'confirmed'
+                    Confirmed, paid AND still upcoming: a pending/unpaid booking
+                    doesn't render them, and neither does a stay that's already
+                    over (upcomingConfirmed is confirmed && not-past). */}
+                {listing && upcomingConfirmed
                     && (b.payment_status === 'paid' || b.payment_status === 'deposit_paid')
                     && <HouseRules listing={listing} />}
 
