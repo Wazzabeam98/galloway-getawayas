@@ -5,7 +5,7 @@ import { createClient } from '@supabase/supabase-js';
 import { cookies } from 'next/headers';
 import { NextResponse } from 'next/server';
 import { listingIdsFor } from '@/lib/access';
-import { displayName } from '@/lib/utils';
+import { firstName } from '@/lib/utils';
 
 export const dynamic = 'force-dynamic';
 
@@ -105,7 +105,7 @@ export async function GET() {
 
     const nameMap: Record<string, string> = {};
     (profiles || []).forEach((p: any) => {
-        nameMap[p.id] = displayName(p, 'Guest');
+        nameMap[p.id] = firstName(p, 'Guest');
     });
 
     const { data: lastMessages } = bookings.length

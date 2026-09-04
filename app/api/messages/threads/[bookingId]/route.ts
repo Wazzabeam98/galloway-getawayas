@@ -4,7 +4,7 @@ import { cookies } from 'next/headers';
 import { NextRequest, NextResponse } from 'next/server';
 import { checkListing } from '@/lib/access';
 import { contactNumberVisible } from '@/lib/stayWindow';
-import { displayName } from '@/lib/utils';
+import { firstName } from '@/lib/utils';
 
 export const dynamic = 'force-dynamic';
 
@@ -126,7 +126,7 @@ export async function GET(
         canSeePhone: phoneAllowed,
         other: {
             id: otherId,
-            name: displayName(otherProfile, isGuest ? 'Host' : 'Guest'),
+            name: firstName(otherProfile, isGuest ? 'Host' : 'Guest'),
             phone: phoneNow ? phoneOnFile : null,
             // 'early' — there is a number, but it is not close enough to
             // arrival. 'closed' — the booking is cancelled or was declined.

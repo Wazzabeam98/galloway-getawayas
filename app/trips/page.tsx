@@ -6,9 +6,11 @@ import { useEffect, useState } from 'react';
 import { createClientComponentClient } from '@supabase/auth-helpers-nextjs';
 import Logo from '@/components/base/Logo';
 import LoginModel from '@/components/auth/LoginModel';
-import { MessageCircle, Navigation, MapPin, ArrowLeft, CornerDownRight, Car, KeyRound, Phone, CloudOff } from 'lucide-react';
+import { MessageCircle, MapPin, ArrowLeft, ArrowRight, CornerDownRight, Car, KeyRound, Phone, CloudOff, XCircle, ShieldCheck, LifeBuoy } from 'lucide-react';
 import CopyField from '@/components/arrival/CopyField';
 import DirectionsPicker from '@/components/arrival/DirectionsPicker';
+import PropertyMap from '@/components/PropertyMap';
+import { partyLabel, confirmationNumber, cancellationWords } from '@/lib/bookingDisplay';
 import CheckInOutTimes from '@/components/arrival/CheckInOutTimes';
 import CancelBookingConfirm from '@/components/CancelBookingConfirm';
 import ExperiencesTeaser from '@/components/ExperiencesTeaser';
@@ -36,6 +38,12 @@ interface Booking {
     amount_refunded: number | null;
     // True when someone else booked it and added this person along.
     guests?: number | null;
+    // The party split, written at checkout and carried through /api/trips. Used
+    // only for display ("3 adults · 1 child · 1 pet"); falls back to the guests
+    // total where an older row has none.
+    adults?: number | null;
+    children?: number | null;
+    pets?: number | null;
     sharedWithMe?: boolean;
     // Card-safe arrival detail from /api/trips — the whole approach now lives on
     // the card: address and map point, times, what3words, the host's "last bit"
@@ -59,6 +67,8 @@ interface Booking {
         hasCode: boolean;
         hasWifi: boolean;
         hostPhone: string | null;
+        hostAvatar: string | null;
+        hostBio: string | null;
     } | null;
 }
 
@@ -79,6 +89,8 @@ export default function TripsPage() {
     // figure, the experiences it names, the call to the cancel route — lives in
     // CancelBookingConfirm, shared with the home card.
     const [confirmingId, setConfirmingId] = useState<string | null>(null);
+    // Which bookings have their payment breakdown expanded (under the Total).
+    const [openBreakdown, setOpenBreakdown] = useState<Record<string, boolean>>({});
 
     // Sends the guest to Stripe to settle what's left on a booking. Reached
     // either from the button below or from the link in a payment reminder
@@ -129,7 +141,7 @@ export default function TripsPage() {
             if (listingIds.length) {
                 const { data: listings } = await supabase
                     .from('listings')
-                    .select('id, title, images, cancellation_policy, check_in_time, check_in_end_time, check_out_time')
+                    .select('id, title, images, location, cancellation_policy, check_in_time, check_in_end_time, check_out_time')
                     .in('id', listingIds);
                 const map: Record<string, any> = {};
                 (listings || []).forEach((l) => { map[l.id] = l; });
@@ -280,6 +292,19 @@ export default function TripsPage() {
         const arr = b.arrival || null;
         const homeHref = `/homes/${b.listing_id}`;
         const hostName = capitializeFirst(hostNames[b.host_id] || 'your host');
+        const hostFirstName = hostName.split(' ')[0];
+
+        // Payment figures — all off the booking row. Shown under the Total via a
+        // "Show breakdown" toggle in the facts row (no separate section).
+        const payNights = Math.max(1, Math.round((new Date(b.check_out).getTime() - new Date(b.check_in).getTime()) / 86400000));
+        const payCleaning = Number((b as any).cleaning_fee || 0);
+        const payPet = Number((b as any).pet_fee || 0);
+        const payTotal = Number(b.total_price || 0);
+        const payAccommodation = Math.max(0, payTotal - payCleaning - payPet);
+        const payPaid = Number(b.amount_paid || 0);
+        const payRefunded = Number(b.amount_refunded || 0);
+        const payRemaining = Number(b.balance_amount || 0);
+        const breakdownOpen = !!openBreakdown[b.id];
 
         // Directions are built server-side by the shared rule (lib/directions):
         // a real pin, or a STREET address — never the town alone, which would
@@ -313,13 +338,13 @@ export default function TripsPage() {
         return (
             // Named so the link from the home page card lands on this trip
             // rather than at the top of a list of them.
-            <div key={b.id} id={'trip-' + b.id} className="border rounded-2xl p-5 scroll-mt-6">
+            <div key={b.id} id={'trip-' + b.id} className="border border-slate-200 rounded-2xl p-6 scroll-mt-6">
                 {/* Single column: the right column existed only for the
                     per-booking experiences panel, which is behind its flag and
                     now teased once at the page level, so the card is full width
                     rather than a wide half-empty two-up. When experiences launch,
                     the per-booking panel returns as the right column. */}
-                <div className="flex items-start gap-4">
+                <div className="flex flex-wrap items-start gap-4">
                     <Link href={homeHref} className="relative block w-16 h-16 rounded-xl overflow-hidden bg-slate-200 flex-shrink-0">
                         {listing?.images?.[0] && (
                             <Image src={getImageUrl(listing.images[0])} alt={listing.title} fill sizes="64px" className="object-cover" />
@@ -327,39 +352,126 @@ export default function TripsPage() {
                     </Link>
                     <div className="flex-1 min-w-0">
                         <Link href={homeHref} className="font-semibold text-slate-900 hover:underline break-words">{listing?.title || 'Listing'}</Link>
-                        <div className="text-sm text-slate-600">
-                            Hosted by {capitializeFirst(hostNames[b.host_id] || 'Host')} · {fmtDay(b.check_in)} – {fmtDay(b.check_out)}
+                        <div className="text-sm text-slate-600 mt-0.5">
+                            Hosted by {hostFirstName} · {fmtDay(b.check_in)} – {fmtDay(b.check_out)}
                         </div>
-                        {b.sharedWithMe ? (
-                            <div className="text-sm text-slate-400">
-                                {b.guests ? b.guests + (b.guests === 1 ? ' guest' : ' guests') : 'Shared with you'}
-                            </div>
-                        ) : (
-                            <div className="text-sm font-medium text-slate-700">£{b.total_price}</div>
-                        )}
-                        {phaseChip && (
-                            <div className="mt-1.5">
+                        {/* Status on the LEFT now, with the phase chip; the top-right
+                            is the host's Call + Message. */}
+                        <div className="mt-2 flex flex-wrap items-center gap-2">
+                            <span className={`inline-flex items-center rounded-full px-3 py-1 text-xs font-semibold capitalize ${statusStyles[b.status] || 'bg-slate-100 text-slate-600'}`}>
+                                {b.status}
+                            </span>
+                            {phaseChip && (
                                 <span className="inline-flex items-center rounded-full bg-emerald-50 px-2.5 py-0.5 text-xs font-medium text-emerald-800">
                                     {phaseChip}
                                 </span>
+                            )}
+                        </div>
+                    </div>
+                    {/* Contact the host — moved up here, beside the host line, and the
+                        standalone "Your host" block below is gone (merged in). */}
+                    {upcomingConfirmed && arr && (
+                        // Full-width on their own line on a phone (so the title
+                        // keeps its width); beside the host line on desktop.
+                        <div className="flex w-full items-center gap-2 sm:w-auto">
+                            {arr.hostPhone && (
+                                <a href={'tel:' + arr.hostPhone} className="inline-flex flex-1 items-center justify-center gap-1.5 rounded-lg bg-emerald-700 px-3 py-2 text-xs font-semibold text-white transition hover:bg-emerald-800 sm:flex-none">
+                                    <Phone className="h-3.5 w-3.5" /> Call
+                                </a>
+                            )}
+                            <Link href={`/messages/${b.id}`} className="inline-flex flex-1 items-center justify-center gap-1.5 rounded-lg border border-slate-300 bg-white px-3 py-2 text-xs font-semibold text-slate-700 transition hover:border-slate-400 sm:flex-none">
+                                <MessageCircle className="h-3.5 w-3.5" /> Message
+                            </Link>
+                        </div>
+                    )}
+                </div>
+
+                {/* Trip facts — Who's coming leads, as its own labelled section
+                    (Airbnb-style) rather than a bare "2 adults" under the price.
+                    Confirmation and total sit beside it as the other booking facts;
+                    a shared trip shows only who's coming, its money kept off it. */}
+                <div className="mt-8 border-t border-slate-100 pt-6">
+                    <div className="grid grid-cols-2 gap-x-6 gap-y-4 sm:grid-cols-3">
+                        <div>
+                            <div className="text-[11px] font-semibold uppercase tracking-wide text-slate-500">Who&apos;s coming</div>
+                            <div className="mt-1 text-sm font-medium text-slate-900">
+                                {partyLabel(b) || (b.sharedWithMe ? 'Shared with you' : '—')}
+                            </div>
+                        </div>
+                        {!b.sharedWithMe && (
+                            <div>
+                                <div className="text-[11px] font-semibold uppercase tracking-wide text-slate-500">Confirmation</div>
+                                <div className="mt-1 font-mono text-sm tracking-wide text-slate-900">{confirmationNumber(b.id)}</div>
+                            </div>
+                        )}
+                        {!b.sharedWithMe && (
+                            <div>
+                                <div className="text-[11px] font-semibold uppercase tracking-wide text-slate-500">Total</div>
+                                <div className="mt-1 text-sm font-medium text-slate-900">£{b.total_price}</div>
+                                {/* The payment breakdown lives here now — one
+                                    underlined toggle under the Total, opening the
+                                    figures in place. */}
+                                <button
+                                    type="button"
+                                    onClick={() => setOpenBreakdown((s) => ({ ...s, [b.id]: !s[b.id] }))}
+                                    className="mt-1 text-xs font-medium text-slate-500 underline hover:text-slate-800"
+                                >
+                                    {breakdownOpen ? 'Hide breakdown' : 'Show breakdown'}
+                                </button>
                             </div>
                         )}
                     </div>
-                    <span className={`text-xs font-semibold px-3 py-1 rounded-full capitalize flex-shrink-0 ${statusStyles[b.status] || 'bg-slate-100 text-slate-600'}`}>
-                        {b.status}
-                    </span>
+                    {!b.sharedWithMe && breakdownOpen && (
+                        <div className="mt-4 rounded-xl border border-slate-200 bg-slate-50/60 p-4">
+                            <div className="space-y-2 text-sm">
+                                <div className="flex items-baseline justify-between text-slate-600">
+                                    <span>Accommodation · {payNights} {payNights === 1 ? 'night' : 'nights'}</span>
+                                    <span className="tabular-nums">£{payAccommodation.toFixed(2)}</span>
+                                </div>
+                                {payCleaning > 0 && (
+                                    <div className="flex items-baseline justify-between text-slate-600">
+                                        <span>Cleaning fee</span><span className="tabular-nums">£{payCleaning.toFixed(2)}</span>
+                                    </div>
+                                )}
+                                {payPet > 0 && (
+                                    <div className="flex items-baseline justify-between text-slate-600">
+                                        <span>Pet fee</span><span className="tabular-nums">£{payPet.toFixed(2)}</span>
+                                    </div>
+                                )}
+                                <div className="flex items-baseline justify-between border-t border-slate-200 pt-2 font-semibold text-slate-900">
+                                    <span>Total</span><span className="tabular-nums">£{payTotal.toFixed(2)}</span>
+                                </div>
+                                <div className="flex items-baseline justify-between text-slate-600">
+                                    <span>Paid so far</span><span className="tabular-nums">£{payPaid.toFixed(2)}</span>
+                                </div>
+                                {payRefunded > 0 && (
+                                    <div className="flex items-baseline justify-between text-slate-600">
+                                        <span>Refunded</span><span className="tabular-nums">£{payRefunded.toFixed(2)}</span>
+                                    </div>
+                                )}
+                                {payRemaining > 0 && (
+                                    <div className="flex items-baseline justify-between font-medium text-amber-800">
+                                        <span>Still to pay{b.balance_due_date ? ' · due ' + b.balance_due_date : ''}</span>
+                                        <span className="tabular-nums">£{payRemaining.toFixed(2)}</span>
+                                    </div>
+                                )}
+                            </div>
+                        </div>
+                    )}
                 </div>
 
                 {/* The group, right under the stay details — stacked avatars and
                     the seats still to fill, so a group booking reads as one before
                     anything is opened. Only the booker manages it. */}
                 {!b.sharedWithMe && b.status !== 'cancelled' && b.status !== 'declined' && (
-                    <TripGroup
-                        bookingId={b.id}
-                        guests={b.guests}
-                        cottage={listing?.title}
-                        when={fmtDay(b.check_in) + ' – ' + fmtDay(b.check_out)}
-                    />
+                    <div className="mt-8">
+                        <TripGroup
+                            bookingId={b.id}
+                            guests={b.guests}
+                            cottage={listing?.title}
+                            when={fmtDay(b.check_in) + ' – ' + fmtDay(b.check_out)}
+                        />
+                    </div>
                 )}
 
                 {/* The whole approach, on the card. This used to be a thin
@@ -371,151 +483,141 @@ export default function TripsPage() {
                     on a card a guest might leave open on a train: the door code
                     and the wifi password, revealed only in their own window. */}
                 {upcomingConfirmed && arr && (
-                    <div className="mt-4 space-y-3 rounded-xl border border-slate-200 bg-slate-50/60 p-3.5">
-                        {/* The way in, lifted to the top of the card — the thing a
-                            guest most wants when they pull up outside, so it leads
-                            rather than sitting below the directions. It names what's
-                            behind it (the door code, and wifi when there is any)
-                            and links through to the arrival screen where the secrets
-                            actually live; the code and password never come down to
-                            this card or /api/trips. Same window as the Getting-in
-                            panel below: a code on file, inside its three days. */}
-                        {withinWindow && arr.hasCode && (
-                            <Link
-                                href={`/arrival/${b.id}`}
-                                className="flex items-center justify-between gap-3 rounded-lg border border-emerald-200 bg-emerald-50 px-3.5 py-3 transition hover:border-emerald-300 hover:bg-emerald-100/70"
-                            >
-                                <span className="flex items-center gap-2 text-sm font-semibold text-emerald-900">
-                                    <KeyRound className="h-4 w-4 flex-none text-emerald-700" />
-                                    {arr.hasWifi ? 'Door code and wifi' : 'Door code'}
-                                </span>
-                                <span className="text-emerald-700" aria-hidden>&rarr;</span>
-                            </Link>
-                        )}
+                    // The arrival essentials, grouped in one calm container: flat
+                    // sections divided by hairlines with an even rhythm, rather
+                    // than a stack of nested boxes packed tight against each other.
+                    <div className="mt-8 rounded-2xl border border-slate-200 bg-slate-50/50 p-6 sm:p-7">
+                        <div className="divide-y divide-slate-200/70">
+                            {/* Getting in — LEADS the group and is the ONE route to
+                                the door code and wifi. One statement, one action:
+                                inside the three-day window the whole panel is a
+                                single link to the arrival screen (no popup); the
+                                secrets never come down to this card or /api/trips
+                                (hasCode/hasWifi are booleans). Outside it, or with a
+                                check-in method / neither, it's a plain line. */}
+                            <div className="py-6 first:pt-0 last:pb-0">
+                                <div className="flex items-center gap-1.5 text-[11px] font-semibold uppercase tracking-wide text-slate-500">
+                                    <KeyRound className="h-3.5 w-3.5" /> Getting in
+                                </div>
+                                {withinWindow && (arr.hasCode || arr.hasWifi) ? (
+                                    <Link
+                                        href={`/arrival/${b.id}`}
+                                        className="group mt-3 flex items-center gap-3.5 rounded-xl border border-emerald-200 bg-emerald-50/70 p-4 transition hover:border-emerald-300 hover:bg-emerald-50"
+                                    >
+                                        <span className="flex h-11 w-11 flex-none items-center justify-center rounded-full bg-emerald-600 text-white">
+                                            <KeyRound className="h-5 w-5" />
+                                        </span>
+                                        <span className="min-w-0 flex-1">
+                                            <span className="block text-sm font-semibold text-emerald-900">Access code</span>
+                                            <span className="block text-xs text-emerald-700">View it on the arrival screen</span>
+                                        </span>
+                                        <ArrowRight className="h-5 w-5 flex-none text-emerald-600 transition group-hover:translate-x-0.5" />
+                                    </Link>
+                                ) : arr.hasCode ? (
+                                    <p className="mt-2 text-sm text-slate-500">Your way in appears here a few days before you arrive.</p>
+                                ) : arr.checkInMethod ? (
+                                    <div className="mt-2">
+                                        <div className="text-sm font-medium text-slate-900">{checkInMethodTitle(arr.checkInMethod)}</div>
+                                        {checkInBlurb(arr.checkInMethod) && <div className="text-sm text-slate-600">{checkInBlurb(arr.checkInMethod)}</div>}
+                                    </div>
+                                ) : (
+                                    <p className="mt-2 text-sm text-slate-500">{hostName} will let you know how to get in — send a message if you&apos;re not sure.</p>
+                                )}
+                            </div>
 
-                        {/* Where, and how to get there */}
-                        <div>
-                            <div className="flex gap-2">
-                                <MapPin className="mt-0.5 h-4 w-4 flex-none text-slate-400" />
-                                <div className="min-w-0">
+                            {/* Where you'll be — address, directions, and the area map */}
+                            <div className="py-6 first:pt-0 last:pb-0">
+                                <div className="flex items-center gap-1.5 text-[11px] font-semibold uppercase tracking-wide text-slate-500">
+                                    <MapPin className="h-3.5 w-3.5" /> Where you&apos;ll be
+                                </div>
+                                <div className="mt-2">
                                     {arr.addressLines.length
                                         ? arr.addressLines.map((line, i) => (
                                             <div key={i} className={i === 0 ? 'text-sm font-medium text-slate-900' : 'text-sm text-slate-600'}>{line}</div>
                                         ))
                                         : <div className="text-sm text-slate-500">Ask {hostName} for the address in the messages.</div>}
                                 </div>
+                                {/* The three words live inside the Get directions
+                                    picker (Apple Maps / Google Maps / what3words). */}
+                                {!hasCoords && directionsUrl && (
+                                    <p className="mt-2 text-xs text-slate-400">No pin saved for this cottage yet — directions use the address.</p>
+                                )}
+                                {(directionsUrl || arr.appleDirectionsUrl || arr.what3words || arr.addressString) && (
+                                    <div className="mt-3 grid grid-cols-2 gap-2">
+                                        <DirectionsPicker compact apple={arr.appleDirectionsUrl} google={directionsUrl} what3words={arr.what3words} />
+                                        {arr.addressString && <CopyField value={arr.addressString} label="Copy address" />}
+                                    </div>
+                                )}
+                                {/* A full-width map with a house pin at the property,
+                                    Airbnb-style. Keyless OpenStreetMap tiles. */}
+                                {hasCoords && (
+                                    <div className="mt-3">
+                                        <PropertyMap
+                                            variant="card"
+                                            latitude={arr.lat as number}
+                                            longitude={arr.lng as number}
+                                            area={listing?.location ? publicArea(listing.location) : undefined}
+                                        />
+                                    </div>
+                                )}
                             </div>
-                            {/* The three words now live inside the Get directions
-                                picker (Apple Maps / Google Maps / what3words), so the
-                                what3words row is gone here too — the block matches the
-                                home card. */}
-                            {!hasCoords && directionsUrl && (
-                                <p className="mt-2 pl-6 text-xs text-slate-400">No pin saved for this cottage yet — directions use the address.</p>
-                            )}
-                            {(directionsUrl || arr.appleDirectionsUrl || arr.what3words || arr.addressString) && (
-                                <div className="mt-2.5 grid grid-cols-2 gap-2">
-                                    <DirectionsPicker compact apple={arr.appleDirectionsUrl} google={directionsUrl} what3words={arr.what3words} />
-                                    {arr.addressString && <CopyField value={arr.addressString} label="Copy address" />}
+
+                            {/* The last bit — the host's own words for what sat-nav gets wrong */}
+                            {arr.arrivalDirections && (
+                                <div className="py-6 first:pt-0 last:pb-0">
+                                    <div className="rounded-xl border border-amber-200 bg-amber-50 p-4">
+                                        <div className="flex items-center gap-1.5 text-[11px] font-semibold uppercase tracking-wide text-amber-700">
+                                            <CornerDownRight className="h-3.5 w-3.5" /> The last bit
+                                        </div>
+                                        <p className="mt-1.5 whitespace-pre-line text-sm leading-relaxed text-amber-950">{arr.arrivalDirections}</p>
+                                    </div>
                                 </div>
                             )}
+
+                            {/* Check-in / checkout — a fact to read, not a door. */}
+                            <div className="py-6 first:pt-0 last:pb-0">
+                                <CheckInOutTimes
+                                    surface="trips"
+                                    mode="static"
+                                    checkInDate={b.check_in}
+                                    checkOutDate={b.check_out}
+                                    checkInTime={arr.checkInTime}
+                                    checkOutTime={arr.checkOutTime}
+                                    checkInEndTime={arr.checkInEndTime}
+                                />
+                            </div>
+
+                            {/* Parking, only if the host said */}
+                            {arr.parking && (
+                                <div className="py-6 first:pt-0 last:pb-0">
+                                    <div className="flex items-center gap-1.5 text-[11px] font-semibold uppercase tracking-wide text-slate-500">
+                                        <Car className="h-3.5 w-3.5" /> Parking
+                                    </div>
+                                    <p className="mt-2 whitespace-pre-line text-sm text-slate-700">{arr.parking}</p>
+                                </div>
+                            )}
+
                         </div>
 
-                        {/* The last bit — the host's own words for what sat-nav gets wrong */}
-                        {arr.arrivalDirections && (
-                            <div className="rounded-lg border border-amber-200 bg-amber-50 p-3">
-                                <div className="flex items-center gap-1.5 text-[11px] font-semibold uppercase tracking-wide text-amber-700">
-                                    <CornerDownRight className="h-3.5 w-3.5" /> The last bit
-                                </div>
-                                <p className="mt-1 whitespace-pre-line text-sm leading-relaxed text-amber-950">{arr.arrivalDirections}</p>
-                            </div>
-                        )}
-
-                        {/* Check-in / checkout — a fact to read, not a door. Each
-                            end pairs its date with its time on one line now. */}
-                        <CheckInOutTimes
-                            surface="trips"
-                            mode="static"
-                            checkInDate={b.check_in}
-                            checkOutDate={b.check_out}
-                            checkInTime={arr.checkInTime}
-                            checkOutTime={arr.checkOutTime}
-                            checkInEndTime={arr.checkInEndTime}
-                        />
-
-                        {/* Getting in — the SIGNAL, never the secret. Inside the
-                            window, with a code, the top banner is the way in; this
-                            panel just says quietly where the code lives, no second
-                            button. With no code but a check-in method (not a secret —
-                            it is on the listing), it shows the method plainly. With
-                            neither, it points at the host rather than going quiet. */}
-                        <div className="rounded-lg border border-slate-200 bg-white p-3">
-                            <div className="flex items-center gap-1.5 text-[11px] font-semibold uppercase tracking-wide text-slate-500">
-                                <KeyRound className="h-3.5 w-3.5" /> Getting in
-                            </div>
-                            {withinWindow && arr.hasCode ? (
-                                // The call to action is the "Door code and wifi"
-                                // banner at the top of the card now; here it's a
-                                // quiet pointer so the panel isn't silent in its own
-                                // window, without a second emerald prompt to the
-                                // same place.
-                                <p className="mt-1 text-sm text-slate-500">
-                                    {arr.hasWifi ? 'Your door code and wifi are on the arrival screen.' : 'Your door code is on the arrival screen.'}
-                                </p>
-                            ) : arr.hasCode ? (
-                                <p className="mt-1 text-sm text-slate-500">Your way in appears here a few days before you arrive.</p>
-                            ) : arr.checkInMethod ? (
-                                <div className="mt-1">
-                                    <div className="text-sm font-medium text-slate-900">{checkInMethodTitle(arr.checkInMethod)}</div>
-                                    {checkInBlurb(arr.checkInMethod) && <div className="text-sm text-slate-600">{checkInBlurb(arr.checkInMethod)}</div>}
-                                </div>
-                            ) : (
-                                <p className="mt-1 text-sm text-slate-500">{hostName} will let you know how to get in — send a message if you&apos;re not sure.</p>
-                            )}
-                            {/* The button stays only where there's no top banner to
-                                carry it: wifi on file but no door code, so nothing
-                                gated the banner on. A code (with or without wifi) is
-                                the banner's job. */}
-                            {withinWindow && !arr.hasCode && arr.hasWifi && (
-                                <Link href={`/arrival/${b.id}`} className="mt-2.5 inline-flex items-center gap-2 rounded-lg bg-slate-900 px-3 py-2 text-xs font-semibold text-white transition hover:bg-slate-800">
-                                    <Navigation className="h-3.5 w-3.5" /> Getting there
-                                </Link>
-                            )}
-                        </div>
-
-                        {/* Parking, only if the host said */}
-                        {arr.parking && (
-                            <div className="rounded-lg border border-slate-200 bg-white p-3">
-                                <div className="flex items-center gap-1.5 text-[11px] font-semibold uppercase tracking-wide text-slate-500">
-                                    <Car className="h-3.5 w-3.5" /> Parking
-                                </div>
-                                <p className="mt-1 whitespace-pre-line text-sm text-slate-700">{arr.parking}</p>
-                            </div>
-                        )}
-
-                        {/* Need a hand — the contact block, the moment you're
-                            stuck outside. Call the host if there's a number, or
-                            message either way. */}
-                        <div className="rounded-lg border border-slate-200 bg-white p-3">
-                            <div className="flex items-center gap-1.5 text-[11px] font-semibold uppercase tracking-wide text-slate-500">
-                                <Phone className="h-3.5 w-3.5" /> Need a hand? Ask {hostName}
-                            </div>
-                            <div className="mt-2 grid grid-cols-2 gap-2">
-                                {arr.hostPhone ? (
-                                    <a href={'tel:' + arr.hostPhone} className="inline-flex items-center justify-center gap-2 rounded-lg bg-emerald-700 px-3 py-2 text-xs font-semibold text-white transition hover:bg-emerald-800">
-                                        <Phone className="h-3.5 w-3.5" /> Call
-                                    </a>
-                                ) : <span />}
-                                <Link href={`/messages/${b.id}`} className="inline-flex items-center justify-center gap-2 rounded-lg border border-slate-300 bg-white px-3 py-2 text-xs font-semibold text-slate-700 transition hover:border-slate-400">
-                                    <MessageCircle className="h-3.5 w-3.5" /> Message
-                                </Link>
-                            </div>
-                        </div>
-
-                        {/* The offline promise moves here with the arrival detail:
-                            this is now the screen a guest opens before setting off
-                            down a track with no signal. */}
-                        <p className="flex items-center justify-center gap-1.5 pt-0.5 text-center text-[11px] text-slate-400">
+                        {/* The offline promise — the screen a guest opens before
+                            setting off down a track with no signal. */}
+                        <p className="mt-5 flex items-center justify-center gap-1.5 text-center text-[11px] text-slate-400">
                             <CloudOff className="h-3.5 w-3.5" /> Signal&apos;s patchy out here — open this before you set off and it stays put.
+                        </p>
+                    </div>
+                )}
+
+                {/* If something's not right — the out-of-hours backstop. The
+                    host's own number is in the host block above, so this points at
+                    support rather than repeating it. */}
+                {upcomingConfirmed && arr && (
+                    <div className="mt-8 rounded-2xl border border-slate-200 p-6 sm:p-7">
+                        <div className="flex items-center gap-1.5 text-[11px] font-semibold uppercase tracking-wide text-slate-500">
+                            <LifeBuoy className="h-3.5 w-3.5" /> If something&apos;s not right
+                        </div>
+                        <p className="mt-2 text-sm leading-relaxed text-slate-600">
+                            If something isn&apos;t right and {hostFirstName} can&apos;t help, contact{' '}
+                            <a href="mailto:support@gallowaygetaways.co.uk" className="font-semibold text-emerald-700 hover:text-emerald-800">support@gallowaygetaways.co.uk</a>.
                         </p>
                     </div>
                 )}
@@ -543,7 +645,7 @@ export default function TripsPage() {
                     && Number(b.balance_amount || 0) > 0
                     && b.status !== 'cancelled'
                     && b.status !== 'declined' && (
-                    <div className="mt-4 rounded-xl border border-amber-200 bg-amber-50 p-3">
+                    <div className="mt-8 rounded-xl border border-amber-200 bg-amber-50 p-4">
                         <div className="text-sm font-semibold text-amber-900">
                             £{Number(b.balance_amount).toFixed(2)} still to pay
                         </div>
@@ -594,6 +696,10 @@ export default function TripsPage() {
                     // refunded, red only when they'd lose something.
                     const costs = paidSoFar > 0 && refund < paidSoFar;
                     const orders = ordersByBooking[b.id] || [];
+                    // The standing policy in plain words — shown above the button
+                    // as the terms, distinct from the live "where you stand now"
+                    // line below it.
+                    const words = cancellationWords(listing?.cancellation_policy);
 
                     if (confirmingId !== b.id) {
                         // The position, under the Cancel link — a fact. Three
@@ -620,15 +726,27 @@ export default function TripsPage() {
                             // cancelling is the opposite intention to "add the
                             // people coming with you" and should not sit flush
                             // against it.
-                            <div className="mt-5 border-t border-slate-100 pt-4">
+                            <div className="mt-8 border-t border-slate-100 pt-6">
+                                {/* Cancellation policy, in words — the terms, with
+                                    a link to the full page. */}
+                                <p className="flex items-start gap-1.5 text-xs text-slate-500">
+                                    <ShieldCheck className="mt-0.5 h-3.5 w-3.5 flex-none text-slate-400" />
+                                    <span>
+                                        <span className="font-semibold text-slate-700">{words.tier} cancellation</span> — {words.summary}{' '}
+                                        <Link href="/cancellation-policy" className="font-medium text-slate-600 underline hover:text-slate-800">Full terms</Link>
+                                    </span>
+                                </p>
+                                {/* Cancel is the most consequential control on the
+                                    card — a real outlined button, not underlined
+                                    text. The live position sits beneath it. */}
                                 <button
                                     type="button"
                                     onClick={() => setConfirmingId(b.id)}
-                                    className="text-xs font-semibold text-slate-500 underline hover:text-slate-800"
+                                    className="mt-3 inline-flex items-center gap-2 rounded-lg border border-red-200 bg-white px-4 py-2 text-sm font-semibold text-red-700 transition hover:border-red-300 hover:bg-red-50"
                                 >
-                                    Cancel booking
+                                    <XCircle className="h-4 w-4" /> Cancel booking
                                 </button>
-                                <p className={'text-xs mt-1 ' + tone}>
+                                <p className={'text-xs mt-2 ' + tone}>
                                     {text}
                                 </p>
                             </div>
@@ -692,7 +810,7 @@ export default function TripsPage() {
                     closed (the "coming soon" line is said once at page level) and
                     quiet when there's nothing to show. */}
                 {upcomingConfirmed && (
-                    <div className="mt-5">
+                    <div className="mt-8">
                         <GuestExperiences
                             bookingId={b.id}
                             checkIn={b.check_in}

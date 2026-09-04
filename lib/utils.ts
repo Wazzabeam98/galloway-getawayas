@@ -61,6 +61,24 @@ export function displayName(
   return fallback;
 }
 
+// The counterparty's FIRST name, honouring the same switch as displayName.
+//
+// Where two people message each other — a guest and their host — a first name
+// is all either needs to hold a conversation, and neither should be handed the
+// other's surname just for booking direct. This protects a host from a guest
+// exactly as much as a guest from a host.
+//
+// It sits on top of displayName, so every promise that makes still holds: a
+// preferred name wins, and the switch turned OFF with no preferred name yields
+// the bare fallback ("Guest"/"Host"), never a shortened legal name.
+export function firstName(
+  profile: NameProfile | null | undefined,
+  fallback: string = "User"
+): string {
+  const shown = displayName(profile, fallback);
+  return shown.trim().split(" ")[0] || fallback;
+}
+
 // The same person, named on an ADMIN screen.
 //
 // Deliberately ignores show_full_name. Approving a host, settling a payout or

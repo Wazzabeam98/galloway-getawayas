@@ -26,7 +26,7 @@ const fs = require('fs');
 const path = require('path');
 
 /* eslint-disable @typescript-eslint/no-var-requires */
-const { displayName, adminName } = require('@/lib/utils');
+const { displayName, firstName, adminName } = require('@/lib/utils');
 
 const ROOT = path.resolve(__dirname, '..', '..');
 const read = (rel: string) => fs.readFileSync(path.join(ROOT, rel), 'utf8');
@@ -70,6 +70,61 @@ test('whitespace is not a name', () => {
 test('no profile at all falls back rather than throwing', () => {
     assert.equal(displayName(null, 'Guest'), 'Guest');
     assert.equal(displayName(undefined, 'Host'), 'Host');
+});
+
+/* --------------------------------- first name only, where two people message */
+
+// The intent, decided 4 September 2026: in a booking message thread a guest and
+// their host see each other's FIRST name only — enough to talk, and neither is
+// handed the other's surname just for booking direct. firstName() sits on top
+// of displayName(), so the switch is honoured exactly as above: off with no
+// preferred name is still the bare fallback, never a shortened legal name.
+
+test('the counterparty is named by first name only while the switch is on', () => {
+    assert.equal(firstName(MORAG, 'Guest'), 'Morag');
+    assert.equal(firstName(MORAG, 'Guest').indexOf('MacLellan'), -1);
+});
+
+test('a preferred name is shown as-is, switch on or off', () => {
+    assert.equal(firstName({ ...MORAG, preferred_name: 'Mo' }, 'Guest'), 'Mo');
+    assert.equal(firstName(HIDDEN_WITH_PREFERRED, 'Guest'), 'Mo');
+});
+
+test('switch off and no preferred name means the bare fallback, not a first name', () => {
+    // The same promise displayName keeps: turning the switch off yields "Guest"
+    // /"Host", never "Morag". first-name-only narrows what a counterparty sees;
+    // it does not widen it back for someone who asked to be hidden.
+    const shown = firstName(HIDDEN, 'Guest');
+    assert.equal(shown, 'Guest');
+    assert.equal(shown.indexOf('Morag'), -1);
+    assert.equal(shown.indexOf('MacLellan'), -1);
+});
+
+test('firstName with no profile falls back rather than throwing', () => {
+    assert.equal(firstName(null, 'Guest'), 'Guest');
+    assert.equal(firstName(undefined, 'Host'), 'Host');
+});
+
+test('the booking message thread names the other person by first name, honouring the switch', () => {
+    // Both directions: the list route and the single-thread route each name the
+    // counterparty (a host to a guest, a guest to a host). Both must use
+    // firstName, and both must read show_full_name so the switch is not
+    // invisible to them (selecting only full_name would read as "on").
+    for (const rel of ['app/api/messages/threads/route.ts', 'app/api/messages/threads/[bookingId]/route.ts']) {
+        const src = read(rel);
+        assert.ok(
+            src.indexOf('firstName(') !== -1,
+            rel + ' no longer names the other person by first name only'
+        );
+        assert.equal(
+            src.indexOf('displayName('), -1,
+            rel + ' still calls displayName, so it can show a counterparty their surname'
+        );
+        assert.ok(
+            src.indexOf('show_full_name') !== -1,
+            rel + ' does not select show_full_name, so the name switch is invisible to it'
+        );
+    }
 });
 
 /* ------------------------------------------------------ what an admin sees */

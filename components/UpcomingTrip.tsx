@@ -9,6 +9,7 @@ import { bookingReleasesPrivateData } from '@/lib/bookingEntitlement';
 import { adminClient } from '@/lib/supabaseAdmin';
 import { directionsUrl as buildDirectionsUrl, appleDirectionsUrl } from '@/lib/directions';
 import { publicArea } from '@/lib/places';
+import { partyLabel } from '@/lib/bookingDisplay';
 import ListingImage from '@/components/ListingImage';
 import CheckInOutTimes from '@/components/arrival/CheckInOutTimes';
 import CopyField from '@/components/arrival/CopyField';
@@ -36,7 +37,7 @@ export default async function UpcomingTrip() {
     // checked out yesterday survived the filter and showed as "-3 days to go".
     const { data: bookings } = await supabase
         .from('bookings')
-        .select('id, listing_id, check_in, check_out, status, payment_status, guests, amount_paid, amount_refunded, cleaning_fee')
+        .select('id, listing_id, check_in, check_out, status, payment_status, guests, adults, children, pets, amount_paid, amount_refunded, cleaning_fee')
         .eq('guest_id', auth.session.user.id)
         .in('status', ['confirmed', 'pending'])
         .order('check_in', { ascending: true })
@@ -169,9 +170,7 @@ export default async function UpcomingTrip() {
                 </div>
                 <div className="text-sm text-stone-500 mt-1">
                     {nights} {nights === 1 ? 'night' : 'nights'}
-                    {booking.guests
-                        ? ' · ' + booking.guests + (booking.guests === 1 ? ' guest' : ' guests')
-                        : ''}
+                    {partyLabel(booking) ? ' · ' + partyLabel(booking) : ''}
                 </div>
             </div>
         </>
