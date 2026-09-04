@@ -15,7 +15,7 @@ import CopyField from '@/components/arrival/CopyField';
 import TripGroup from '@/components/TripGroup';
 import HomeCancelPanel from '@/components/HomeCancelPanel';
 import GuestExperiences from '@/components/GuestExperiences';
-import { MessageSquare, CalendarDays, Navigation, Grid3x3 } from 'lucide-react';
+import { MessageSquare, CalendarDays, Navigation, Grid3x3, KeyRound } from 'lucide-react';
 
 // Shown at the top of the home page to someone with a stay coming up. The
 // point is that a guest logging in six weeks before their holiday sees their
@@ -71,14 +71,20 @@ export default async function UpcomingTrip() {
     // grant-less listing_arrival table.
     let directionsUrl: string | null = null;
     let what3words: string | null = null;
+    let hasCode = false;
     if (bookingReleasesPrivateData(booking)) {
         const admin = adminClient();
-        const [{ data: place }, { data: arr }] = await Promise.all([
+        const [{ data: place }, { data: arr }, { data: access }] = await Promise.all([
             admin.from('listings').select('street_address, postcode, location, latitude, longitude').eq('id', booking.listing_id).maybeSingle(),
             admin.from('listing_arrival').select('what3words').eq('listing_id', booking.listing_id).maybeSingle(),
+            // EXISTENCE ONLY — never the code value. Selecting 'code' would pull
+            // the secret into this request and into the card's data. The card is
+            // a signal; the code itself shows only on the arrival page.
+            admin.from('listing_access_codes').select('listing_id').eq('listing_id', booking.listing_id).maybeSingle(),
         ]);
         const p: any = place || {};
         what3words = (arr as any)?.what3words || null;
+        hasCode = !!access;
         // Shared rule: a pin, or a STREET address — never the town alone.
         directionsUrl = buildDirectionsUrl({
             latitude: p.latitude, longitude: p.longitude,
@@ -100,6 +106,12 @@ export default async function UpcomingTrip() {
             : phase === 'today' ? 'Arrives today'
                 : phase === 'tomorrow' ? 'Arrives tomorrow'
                     : daysUntilCheckIn + ' days to go';
+
+    // The door code stays off this card and out of /api/trips. This is the only
+    // thing the card knows about it: a code is on file AND its reveal window has
+    // opened (<= 3 days, the same window the arrival page uses). When both are
+    // true the card says the way in is ready and links through — signal only.
+    const wayInReady = hasCode && daysUntilCheckIn <= 3;
 
     // One place works out the cancellation position now — the same one the
     // Cancel screen and the messages pane read — so the card can never promise a
@@ -184,20 +196,26 @@ export default async function UpcomingTrip() {
                 checkOutDate={booking.check_out}
                 checkInTime={listing.check_in_time}
                 checkOutTime={listing.check_out_time}
-                aside={(directionsUrl || what3words) ? (
+                aside={(directionsUrl || what3words || wayInReady) ? (
                     <div className="flex h-full flex-col justify-center gap-2.5">
-                        {directionsUrl && (
-                            <a href={directionsUrl} target="_blank" rel="noreferrer"
-                                className="inline-flex items-center justify-center gap-2 rounded-lg bg-stone-900 px-3 py-2.5 text-sm font-semibold text-white transition hover:bg-stone-800">
-                                <Navigation className="h-4 w-4" /> Get directions
-                            </a>
-                        )}
                         {what3words && (
                             <div className="flex items-center gap-2">
                                 <Grid3x3 className="h-4 w-4 flex-none text-emerald-700" />
                                 <span className="min-w-0 truncate text-sm text-emerald-700">{what3words}</span>
                                 <CopyField value={what3words} label="Copy" />
                             </div>
+                        )}
+                        {directionsUrl && (
+                            <a href={directionsUrl} target="_blank" rel="noreferrer"
+                                className="flex w-full items-center justify-center gap-2 rounded-lg bg-stone-900 px-3 py-2.5 text-sm font-semibold text-white transition hover:bg-stone-800">
+                                <Navigation className="h-4 w-4" /> Get directions
+                            </a>
+                        )}
+                        {wayInReady && (
+                            <Link href={'/arrival/' + booking.id}
+                                className="inline-flex items-center gap-1.5 text-sm font-semibold text-emerald-700 hover:text-emerald-800">
+                                <KeyRound className="h-4 w-4 flex-none" /> Your way in is ready &rarr;
+                            </Link>
                         )}
                     </div>
                 ) : null}

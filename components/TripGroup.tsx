@@ -277,18 +277,20 @@ export default function TripGroup({
     const overflow = people.length - stackShown.length;
 
     // The five share tiles, acting on one seat's link.
+    // A compact 2×3 grid the way Airbnb shares — five channels as roomy targets
+    // inside the box, rather than five thin tiles stretched across the bottom.
     const ShareTiles = ({ p }: { p: Companion }) => {
-        const tile = 'flex flex-col items-center justify-center gap-1 rounded-xl border border-slate-200 bg-white py-2 text-[11px] font-medium text-slate-700 transition hover:border-slate-400 hover:bg-slate-50';
+        const tile = 'flex items-center justify-center gap-2 rounded-xl border border-slate-200 bg-white px-3 py-3 text-sm font-medium text-slate-700 transition hover:border-slate-400 hover:bg-slate-50';
         return (
-            <div className="grid grid-cols-5 gap-1.5">
+            <div className="grid grid-cols-2 gap-2">
                 <button type="button" onClick={() => copyLink(p)} className={tile}>
-                    {copiedId === p.id ? <Check className="h-4 w-4 text-emerald-600" /> : <Link2 className="h-4 w-4" />}
-                    {copiedId === p.id ? 'Copied' : 'Copy'}
+                    {copiedId === p.id ? <Check className="h-5 w-5 flex-none text-emerald-600" /> : <Link2 className="h-5 w-5 flex-none" />}
+                    {copiedId === p.id ? 'Copied' : 'Copy link'}
                 </button>
-                <button type="button" onClick={() => emailInvite(p)} className={tile}><Mail className="h-4 w-4" /> Email</button>
-                <a href={'sms:?&body=' + encodeURIComponent(shareText(p))} onClick={() => markSent(p)} className={tile}><MessageSquare className="h-4 w-4" /> Messages</a>
-                <a href={'https://wa.me/?text=' + encodeURIComponent(shareText(p))} target="_blank" rel="noreferrer" onClick={() => markSent(p)} className={tile}><WhatsAppIcon className="h-4 w-4" /> WhatsApp</a>
-                <a href={'fb-messenger://share/?link=' + encodeURIComponent(linkFor(p))} onClick={() => markSent(p)} className={tile}><MessengerIcon className="h-4 w-4" /> Messenger</a>
+                <button type="button" onClick={() => emailInvite(p)} className={tile}><Mail className="h-5 w-5 flex-none" /> Email</button>
+                <a href={'sms:?&body=' + encodeURIComponent(shareText(p))} onClick={() => markSent(p)} className={tile}><MessageSquare className="h-5 w-5 flex-none" /> Messages</a>
+                <a href={'https://wa.me/?text=' + encodeURIComponent(shareText(p))} target="_blank" rel="noreferrer" onClick={() => markSent(p)} className={tile}><WhatsAppIcon className="h-5 w-5 flex-none" /> WhatsApp</a>
+                <a href={'fb-messenger://share/?link=' + encodeURIComponent(linkFor(p))} onClick={() => markSent(p)} className={tile}><MessengerIcon className="h-5 w-5 flex-none" /> Messenger</a>
             </div>
         );
     };
