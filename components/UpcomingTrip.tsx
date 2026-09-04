@@ -202,12 +202,15 @@ export default async function UpcomingTrip() {
                     //   pair, stacking to one column at narrow widths.
                     <div className="flex h-full flex-col justify-center gap-2.5">
                         {what3words && (
-                            <div className="flex items-center justify-between gap-3">
-                                <span className="flex items-center gap-2 text-sm text-emerald-700">
-                                    <Grid3x3 className="h-4 w-4 flex-none text-emerald-700" />
-                                    <span className="whitespace-nowrap">{what3words}</span>
-                                </span>
-                                <CopyField value={what3words} label="Copy" />
+                            // Left-packed, not justified: the Copy button sits right
+                            // after the last word rather than across the card from
+                            // it. Icon-only, so it doesn't read as a second "Copy"
+                            // stacked above "Copy address" — the label lives in its
+                            // aria-label and title.
+                            <div className="flex items-center gap-2">
+                                <Grid3x3 className="h-4 w-4 flex-none text-emerald-700" />
+                                <span className="whitespace-nowrap text-sm text-emerald-700">{what3words}</span>
+                                <CopyField value={what3words} label="Copy what3words address" iconOnly />
                             </div>
                         )}
                         {(directionsUrl || addressToCopy) && (
