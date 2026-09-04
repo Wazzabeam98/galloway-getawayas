@@ -407,7 +407,10 @@ export default function TripsPage() {
                                 <div className="mt-2 flex items-center gap-2 pl-6">
                                     <Grid3x3 className="h-3.5 w-3.5 flex-none text-emerald-700" />
                                     <span className="text-sm text-emerald-700">{arr.what3words}</span>
-                                    <CopyField value={arr.what3words} label="Copy" />
+                                    {/* Icon-only, matching the home card: no second
+                                        "Copy" reading like a mistake next to Copy
+                                        address below. 44px target, label in aria. */}
+                                    <CopyField value={arr.what3words} label="Copy what3words address" iconOnly />
                                 </div>
                             )}
                             {!hasCoords && directionsUrl && (
