@@ -6,7 +6,7 @@ import { useEffect, useState } from 'react';
 import { createClientComponentClient } from '@supabase/auth-helpers-nextjs';
 import Logo from '@/components/base/Logo';
 import LoginModel from '@/components/auth/LoginModel';
-import { MessageCircle, MapPin, ArrowLeft, ArrowRight, CornerDownRight, Car, KeyRound, Phone, CloudOff, XCircle, ShieldCheck, Receipt, LifeBuoy, Lightbulb, Heart } from 'lucide-react';
+import { MessageCircle, MapPin, ArrowLeft, ArrowRight, CornerDownRight, Car, KeyRound, Phone, CloudOff, XCircle, ShieldCheck, LifeBuoy, Heart } from 'lucide-react';
 import CopyField from '@/components/arrival/CopyField';
 import DirectionsPicker from '@/components/arrival/DirectionsPicker';
 import PropertyMap from '@/components/PropertyMap';
@@ -99,6 +99,8 @@ export default function TripsPage() {
     // figure, the experiences it names, the call to the cancel route — lives in
     // CancelBookingConfirm, shared with the home card.
     const [confirmingId, setConfirmingId] = useState<string | null>(null);
+    // Which bookings have their payment breakdown expanded (under the Total).
+    const [openBreakdown, setOpenBreakdown] = useState<Record<string, boolean>>({});
 
     // Sends the guest to Stripe to settle what's left on a booking. Reached
     // either from the button below or from the link in a payment reminder
@@ -300,6 +302,19 @@ export default function TripsPage() {
         const arr = b.arrival || null;
         const homeHref = `/homes/${b.listing_id}`;
         const hostName = capitializeFirst(hostNames[b.host_id] || 'your host');
+        const hostFirstName = hostName.split(' ')[0];
+
+        // Payment figures — all off the booking row. Shown under the Total via a
+        // "Show breakdown" toggle in the facts row (no separate section).
+        const payNights = Math.max(1, Math.round((new Date(b.check_out).getTime() - new Date(b.check_in).getTime()) / 86400000));
+        const payCleaning = Number((b as any).cleaning_fee || 0);
+        const payPet = Number((b as any).pet_fee || 0);
+        const payTotal = Number(b.total_price || 0);
+        const payAccommodation = Math.max(0, payTotal - payCleaning - payPet);
+        const payPaid = Number(b.amount_paid || 0);
+        const payRefunded = Number(b.amount_refunded || 0);
+        const payRemaining = Number(b.balance_amount || 0);
+        const breakdownOpen = !!openBreakdown[b.id];
 
         // Directions are built server-side by the shared rule (lib/directions):
         // a real pin, or a STREET address — never the town alone, which would
@@ -367,23 +382,72 @@ export default function TripsPage() {
                     (Airbnb-style) rather than a bare "2 adults" under the price.
                     Confirmation and total sit beside it as the other booking facts;
                     a shared trip shows only who's coming, its money kept off it. */}
-                <div className="mt-5 grid grid-cols-2 gap-x-6 gap-y-4 border-t border-slate-100 pt-5 sm:grid-cols-3">
-                    <div>
-                        <div className="text-[11px] font-semibold uppercase tracking-wide text-slate-500">Who&apos;s coming</div>
-                        <div className="mt-1 text-sm font-medium text-slate-900">
-                            {partyLabel(b) || (b.sharedWithMe ? 'Shared with you' : '—')}
+                <div className="mt-8 border-t border-slate-100 pt-6">
+                    <div className="grid grid-cols-2 gap-x-6 gap-y-4 sm:grid-cols-3">
+                        <div>
+                            <div className="text-[11px] font-semibold uppercase tracking-wide text-slate-500">Who&apos;s coming</div>
+                            <div className="mt-1 text-sm font-medium text-slate-900">
+                                {partyLabel(b) || (b.sharedWithMe ? 'Shared with you' : '—')}
+                            </div>
                         </div>
+                        {!b.sharedWithMe && (
+                            <div>
+                                <div className="text-[11px] font-semibold uppercase tracking-wide text-slate-500">Confirmation</div>
+                                <div className="mt-1 font-mono text-sm tracking-wide text-slate-900">{confirmationNumber(b.id)}</div>
+                            </div>
+                        )}
+                        {!b.sharedWithMe && (
+                            <div>
+                                <div className="text-[11px] font-semibold uppercase tracking-wide text-slate-500">Total</div>
+                                <div className="mt-1 text-sm font-medium text-slate-900">£{b.total_price}</div>
+                                {/* The payment breakdown lives here now — one
+                                    underlined toggle under the Total, opening the
+                                    figures in place. */}
+                                <button
+                                    type="button"
+                                    onClick={() => setOpenBreakdown((s) => ({ ...s, [b.id]: !s[b.id] }))}
+                                    className="mt-1 text-xs font-medium text-slate-500 underline hover:text-slate-800"
+                                >
+                                    {breakdownOpen ? 'Hide breakdown' : 'Show breakdown'}
+                                </button>
+                            </div>
+                        )}
                     </div>
-                    {!b.sharedWithMe && (
-                        <div>
-                            <div className="text-[11px] font-semibold uppercase tracking-wide text-slate-500">Confirmation</div>
-                            <div className="mt-1 font-mono text-sm tracking-wide text-slate-900">{confirmationNumber(b.id)}</div>
-                        </div>
-                    )}
-                    {!b.sharedWithMe && (
-                        <div>
-                            <div className="text-[11px] font-semibold uppercase tracking-wide text-slate-500">Total</div>
-                            <div className="mt-1 text-sm font-medium text-slate-900">£{b.total_price}</div>
+                    {!b.sharedWithMe && breakdownOpen && (
+                        <div className="mt-4 rounded-xl border border-slate-200 bg-slate-50/60 p-4">
+                            <div className="space-y-2 text-sm">
+                                <div className="flex items-baseline justify-between text-slate-600">
+                                    <span>Accommodation · {payNights} {payNights === 1 ? 'night' : 'nights'}</span>
+                                    <span className="tabular-nums">£{payAccommodation.toFixed(2)}</span>
+                                </div>
+                                {payCleaning > 0 && (
+                                    <div className="flex items-baseline justify-between text-slate-600">
+                                        <span>Cleaning fee</span><span className="tabular-nums">£{payCleaning.toFixed(2)}</span>
+                                    </div>
+                                )}
+                                {payPet > 0 && (
+                                    <div className="flex items-baseline justify-between text-slate-600">
+                                        <span>Pet fee</span><span className="tabular-nums">£{payPet.toFixed(2)}</span>
+                                    </div>
+                                )}
+                                <div className="flex items-baseline justify-between border-t border-slate-200 pt-2 font-semibold text-slate-900">
+                                    <span>Total</span><span className="tabular-nums">£{payTotal.toFixed(2)}</span>
+                                </div>
+                                <div className="flex items-baseline justify-between text-slate-600">
+                                    <span>Paid so far</span><span className="tabular-nums">£{payPaid.toFixed(2)}</span>
+                                </div>
+                                {payRefunded > 0 && (
+                                    <div className="flex items-baseline justify-between text-slate-600">
+                                        <span>Refunded</span><span className="tabular-nums">£{payRefunded.toFixed(2)}</span>
+                                    </div>
+                                )}
+                                {payRemaining > 0 && (
+                                    <div className="flex items-baseline justify-between font-medium text-amber-800">
+                                        <span>Still to pay{b.balance_due_date ? ' · due ' + b.balance_due_date : ''}</span>
+                                        <span className="tabular-nums">£{payRemaining.toFixed(2)}</span>
+                                    </div>
+                                )}
+                            </div>
                         </div>
                     )}
                 </div>
@@ -394,29 +458,22 @@ export default function TripsPage() {
                     than a grey "Hosted by" line. Name is privacy-resolved on the
                     client; photo and bio come from the host's profile. */}
                 {upcomingConfirmed && arr && (
-                    <div className="mt-6 rounded-2xl border border-slate-200 p-5 sm:p-6">
-                        <div className="flex items-start gap-4">
+                    <div className="mt-8 rounded-2xl border border-slate-200 p-6 sm:p-7">
+                        <div className="flex items-center gap-4">
                             {arr.hostAvatar ? (
                                 // eslint-disable-next-line @next/next/no-img-element
-                                <img src={getImageUrl(arr.hostAvatar)} alt={hostName} className="h-14 w-14 flex-none rounded-full object-cover" />
+                                <img src={getImageUrl(arr.hostAvatar)} alt={hostFirstName} className="h-14 w-14 flex-none rounded-full object-cover" />
                             ) : (
                                 <div className="flex h-14 w-14 flex-none items-center justify-center rounded-full bg-emerald-100 text-lg font-semibold text-emerald-800">
-                                    {hostName.slice(0, 1).toUpperCase()}
+                                    {hostFirstName.slice(0, 1).toUpperCase()}
                                 </div>
                             )}
                             <div className="min-w-0 flex-1">
                                 <div className="text-[11px] font-semibold uppercase tracking-wide text-slate-500">Your host</div>
-                                <div className="mt-0.5 text-base font-semibold text-slate-900">{hostName}</div>
-                                {arr.hostBio ? (
-                                    <p className="mt-1.5 text-sm leading-relaxed text-slate-600">{arr.hostBio}</p>
-                                ) : (
-                                    <p className="mt-1.5 text-sm italic leading-relaxed text-slate-400">
-                                        {hostName} hasn&apos;t written an intro yet. <PlaceholderTag /> <span className="not-italic font-mono text-slate-400">profiles.host_bio</span>
-                                    </p>
-                                )}
+                                <div className="mt-0.5 text-base font-semibold text-slate-900">{hostFirstName}</div>
                             </div>
                         </div>
-                        <div className="mt-4 grid grid-cols-2 gap-2">
+                        <div className="mt-5 grid grid-cols-2 gap-2">
                             {arr.hostPhone ? (
                                 <a href={'tel:' + arr.hostPhone} className="inline-flex items-center justify-center gap-2 rounded-lg bg-emerald-700 px-3 py-2.5 text-sm font-semibold text-white transition hover:bg-emerald-800">
                                     <Phone className="h-4 w-4" /> Call
@@ -433,7 +490,7 @@ export default function TripsPage() {
                     the seats still to fill, so a group booking reads as one before
                     anything is opened. Only the booker manages it. */}
                 {!b.sharedWithMe && b.status !== 'cancelled' && b.status !== 'declined' && (
-                    <div className="mt-6">
+                    <div className="mt-8">
                         <TripGroup
                             bookingId={b.id}
                             guests={b.guests}
@@ -455,7 +512,7 @@ export default function TripsPage() {
                     // The arrival essentials, grouped in one calm container: flat
                     // sections divided by hairlines with an even rhythm, rather
                     // than a stack of nested boxes packed tight against each other.
-                    <div className="mt-6 rounded-2xl border border-slate-200 bg-slate-50/50 p-5 sm:p-6">
+                    <div className="mt-8 rounded-2xl border border-slate-200 bg-slate-50/50 p-6 sm:p-7">
                         <div className="divide-y divide-slate-200/70">
                             {/* Getting in — LEADS the group and is the ONE route to
                                 the door code and wifi. One statement, one action:
@@ -464,7 +521,7 @@ export default function TripsPage() {
                                 secrets never come down to this card or /api/trips
                                 (hasCode/hasWifi are booleans). Outside it, or with a
                                 check-in method / neither, it's a plain line. */}
-                            <div className="py-5 first:pt-0 last:pb-0">
+                            <div className="py-6 first:pt-0 last:pb-0">
                                 <div className="flex items-center gap-1.5 text-[11px] font-semibold uppercase tracking-wide text-slate-500">
                                     <KeyRound className="h-3.5 w-3.5" /> Getting in
                                 </div>
@@ -477,12 +534,8 @@ export default function TripsPage() {
                                             <KeyRound className="h-5 w-5" />
                                         </span>
                                         <span className="min-w-0 flex-1">
-                                            <span className="block text-sm font-semibold text-emerald-900">
-                                                {arr.hasCode && arr.hasWifi ? 'Your door code & wifi are ready'
-                                                    : arr.hasCode ? 'Your door code is ready'
-                                                        : 'Your wifi details are ready'}
-                                            </span>
-                                            <span className="block text-xs text-emerald-700">View them on the arrival screen</span>
+                                            <span className="block text-sm font-semibold text-emerald-900">Access code</span>
+                                            <span className="block text-xs text-emerald-700">View it on the arrival screen</span>
                                         </span>
                                         <ArrowRight className="h-5 w-5 flex-none text-emerald-600 transition group-hover:translate-x-0.5" />
                                     </Link>
@@ -499,7 +552,7 @@ export default function TripsPage() {
                             </div>
 
                             {/* Where you'll be — address, directions, and the area map */}
-                            <div className="py-5 first:pt-0 last:pb-0">
+                            <div className="py-6 first:pt-0 last:pb-0">
                                 <div className="flex items-center gap-1.5 text-[11px] font-semibold uppercase tracking-wide text-slate-500">
                                     <MapPin className="h-3.5 w-3.5" /> Where you&apos;ll be
                                 </div>
@@ -521,12 +574,10 @@ export default function TripsPage() {
                                         {arr.addressString && <CopyField value={arr.addressString} label="Copy address" />}
                                     </div>
                                 )}
-                                {/* A small SQUARE map of the area — sense of place,
-                                    not navigation. Marker-less: a soft shaded circle
-                                    shows WHICH part of the village without pinning the
-                                    door. Keyless OpenStreetMap tiles. */}
+                                {/* A full-width map with a house pin at the property,
+                                    Airbnb-style. Keyless OpenStreetMap tiles. */}
                                 {hasCoords && (
-                                    <div className="mt-3 max-w-sm">
+                                    <div className="mt-3">
                                         <PropertyMap
                                             variant="card"
                                             latitude={arr.lat as number}
@@ -539,7 +590,7 @@ export default function TripsPage() {
 
                             {/* The last bit — the host's own words for what sat-nav gets wrong */}
                             {arr.arrivalDirections && (
-                                <div className="py-5 first:pt-0 last:pb-0">
+                                <div className="py-6 first:pt-0 last:pb-0">
                                     <div className="rounded-xl border border-amber-200 bg-amber-50 p-4">
                                         <div className="flex items-center gap-1.5 text-[11px] font-semibold uppercase tracking-wide text-amber-700">
                                             <CornerDownRight className="h-3.5 w-3.5" /> The last bit
@@ -550,7 +601,7 @@ export default function TripsPage() {
                             )}
 
                             {/* Check-in / checkout — a fact to read, not a door. */}
-                            <div className="py-5 first:pt-0 last:pb-0">
+                            <div className="py-6 first:pt-0 last:pb-0">
                                 <CheckInOutTimes
                                     surface="trips"
                                     mode="static"
@@ -564,7 +615,7 @@ export default function TripsPage() {
 
                             {/* Parking, only if the host said */}
                             {arr.parking && (
-                                <div className="py-5 first:pt-0 last:pb-0">
+                                <div className="py-6 first:pt-0 last:pb-0">
                                     <div className="flex items-center gap-1.5 text-[11px] font-semibold uppercase tracking-wide text-slate-500">
                                         <Car className="h-3.5 w-3.5" /> Parking
                                     </div>
@@ -582,89 +633,20 @@ export default function TripsPage() {
                     </div>
                 )}
 
-                {/* Local knowledge — the things only the host knows. Nothing
-                    stores this today, so the content is placeholder; the shape is
-                    what a real one would look like. */}
+                {/* If something's not right — the out-of-hours backstop. The
+                    host's own number is in the host block above, so this points at
+                    support rather than repeating it. */}
                 {upcomingConfirmed && arr && (
-                    <div className="mt-6 rounded-2xl border border-dashed border-slate-300 bg-slate-50/40 p-5 sm:p-6">
-                        <div className="flex items-center gap-2">
-                            <div className="flex items-center gap-1.5 text-[11px] font-semibold uppercase tracking-wide text-slate-500">
-                                <Lightbulb className="h-3.5 w-3.5" /> Local knowledge
-                            </div>
-                            <PlaceholderTag />
-                        </div>
-                        <p className="mt-2 text-sm text-slate-500">The things only {hostName} knows — sample content:</p>
-                        <ul className="mt-2 space-y-1.5 text-sm text-slate-500">
-                            <li>Low tide is the good beach — the bay empties right out, so check the times.</li>
-                            <li>The village shop shuts at 1pm on Sundays; the Co-op in Whithorn stays open later.</li>
-                            <li>The shore road can flood on a spring tide — take the top road if it&apos;s been raining.</li>
-                        </ul>
-                        <p className="mt-3 text-xs text-slate-400">
-                            Nothing stores this yet. To make it real: a free-text <span className="font-mono">listing_arrival.local_notes</span> field the host writes in the arrival editor (or a short structured list of tips), shown here per stay.
-                        </p>
-                    </div>
-                )}
-
-                {/* If something's not right — the out-of-hours reassurance Airbnb
-                    sells as 24-hour support, except our host is twenty minutes
-                    away. Real: the number and Message. Placeholder: the response
-                    time / distance metric. */}
-                {upcomingConfirmed && arr && (
-                    <div className="mt-6 rounded-2xl border border-slate-200 p-5 sm:p-6">
+                    <div className="mt-8 rounded-2xl border border-slate-200 p-6 sm:p-7">
                         <div className="flex items-center gap-1.5 text-[11px] font-semibold uppercase tracking-wide text-slate-500">
                             <LifeBuoy className="h-3.5 w-3.5" /> If something&apos;s not right
                         </div>
                         <p className="mt-2 text-sm leading-relaxed text-slate-600">
-                            Locked out, a boiler that won&apos;t fire, a lost key at 9pm — {hostName} is local, not a call centre a country away.{' '}
-                            {arr.hostPhone
-                                ? <>Call or text <a href={'tel:' + arr.hostPhone} className="font-semibold text-emerald-700 hover:text-emerald-800">{arr.hostPhone}</a>, or message any time.</>
-                                : <>Message any time and {hostName} will pick it up.</>}
-                        </p>
-                        <p className="mt-2 text-xs italic text-slate-400">
-                            Usually replies in about 15 minutes · roughly 20 minutes away. <PlaceholderTag /> <span className="font-mono not-italic">profiles.response_time / host travel time</span>
+                            Locked out, a boiler that won&apos;t fire, a lost key at 9pm — {hostFirstName} is local and usually quickest to reach (their number&apos;s in the host details above). If you can&apos;t get hold of them, we&apos;ll step in: email{' '}
+                            <a href="mailto:support@gallowaygetaways.co.uk" className="font-semibold text-emerald-700 hover:text-emerald-800">support@gallowaygetaways.co.uk</a> and a real person here will help.
                         </p>
                     </div>
                 )}
-
-                {/* Payment breakdown — behind the total. All real: we take the
-                    money, so every figure is on the booking row. */}
-                {!b.sharedWithMe && (() => {
-                    const nights = Math.max(1, Math.round((new Date(b.check_out).getTime() - new Date(b.check_in).getTime()) / 86400000));
-                    const total = Number(b.total_price || 0);
-                    const cleaning = Number((b as any).cleaning_fee || 0);
-                    const pet = Number((b as any).pet_fee || 0);
-                    const accommodation = Math.max(0, total - cleaning - pet);
-                    const paid = Number(b.amount_paid || 0);
-                    const refunded = Number(b.amount_refunded || 0);
-                    const remaining = Number(b.balance_amount || 0);
-                    const Row = ({ label, val, strong }: { label: string; val: number; strong?: boolean }) => (
-                        <div className={'flex items-baseline justify-between ' + (strong ? 'font-semibold text-slate-900' : 'text-slate-600')}>
-                            <span className="text-sm">{label}</span>
-                            <span className="text-sm tabular-nums">£{val.toFixed(2)}</span>
-                        </div>
-                    );
-                    return (
-                        <div className="mt-6 rounded-2xl border border-slate-200 p-5 sm:p-6">
-                            <div className="flex items-center gap-1.5 text-[11px] font-semibold uppercase tracking-wide text-slate-500">
-                                <Receipt className="h-3.5 w-3.5" /> Payment
-                            </div>
-                            <div className="mt-3 space-y-2">
-                                <Row label={'Accommodation · ' + nights + (nights === 1 ? ' night' : ' nights')} val={accommodation} />
-                                {cleaning > 0 && <Row label="Cleaning fee" val={cleaning} />}
-                                {pet > 0 && <Row label="Pet fee" val={pet} />}
-                                <div className="border-t border-slate-100 pt-2"><Row label="Total" val={total} strong /></div>
-                                <Row label="Paid so far" val={paid} />
-                                {refunded > 0 && <Row label="Refunded" val={refunded} />}
-                                {remaining > 0 && (
-                                    <div className="mt-1 flex items-baseline justify-between rounded-lg bg-amber-50 px-3 py-2">
-                                        <span className="text-sm font-medium text-amber-900">Still to pay{b.balance_due_date ? ' · due ' + b.balance_due_date : ''}</span>
-                                        <span className="text-sm font-semibold tabular-nums text-amber-900">£{remaining.toFixed(2)}</span>
-                                    </div>
-                                )}
-                            </div>
-                        </div>
-                    );
-                })()}
 
                 {/* Message host stays a plain action for bookings with no arrival
                     detail on show — a pending request, a past stay. For an
@@ -689,7 +671,7 @@ export default function TripsPage() {
                     && Number(b.balance_amount || 0) > 0
                     && b.status !== 'cancelled'
                     && b.status !== 'declined' && (
-                    <div className="mt-6 rounded-xl border border-amber-200 bg-amber-50 p-4">
+                    <div className="mt-8 rounded-xl border border-amber-200 bg-amber-50 p-4">
                         <div className="text-sm font-semibold text-amber-900">
                             £{Number(b.balance_amount).toFixed(2)} still to pay
                         </div>
@@ -770,7 +752,7 @@ export default function TripsPage() {
                             // cancelling is the opposite intention to "add the
                             // people coming with you" and should not sit flush
                             // against it.
-                            <div className="mt-6 border-t border-slate-100 pt-5">
+                            <div className="mt-8 border-t border-slate-100 pt-6">
                                 {/* Cancellation policy, in words — the terms, with
                                     a link to the full page. */}
                                 <p className="flex items-start gap-1.5 text-xs text-slate-500">
@@ -822,7 +804,7 @@ export default function TripsPage() {
                     one. Real: the Book again link to the listing. Placeholder:
                     the returning-guest offer. */}
                 {!b.sharedWithMe && (
-                    <div className="mt-6 rounded-2xl border border-emerald-200 bg-emerald-50/50 p-5 sm:p-6">
+                    <div className="mt-8 rounded-2xl border border-emerald-200 bg-emerald-50/50 p-6 sm:p-7">
                         <div className="flex items-center gap-2">
                             <div className="flex items-center gap-1.5 text-[11px] font-semibold uppercase tracking-wide text-emerald-700">
                                 <Heart className="h-3.5 w-3.5" /> Coming back
@@ -880,7 +862,7 @@ export default function TripsPage() {
                     closed (the "coming soon" line is said once at page level) and
                     quiet when there's nothing to show. */}
                 {upcomingConfirmed && (
-                    <div className="mt-6">
+                    <div className="mt-8">
                         <GuestExperiences
                             bookingId={b.id}
                             checkIn={b.check_in}

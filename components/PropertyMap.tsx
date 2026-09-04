@@ -83,10 +83,10 @@ export default function PropertyMap({
 
             const map = L.map(containerRef.current, {
                 center: isCard ? [latitude, longitude] : [pinLat, pinLon],
-                // Village scale for the card, so the shaded area sits in its
-                // surroundings; street scale for the full listing block with its
-                // marker.
-                zoom: isCard ? 14 : 16,
+                // Street scale either way. The card now shows a house PIN at the
+                // property (Airbnb-style), so it sits close in; the full listing
+                // block keeps its slightly-fuzzed marker.
+                zoom: isCard ? 15 : 16,
                 scrollWheelZoom: false,
                 zoomControl: !isCard,
             });
@@ -105,28 +105,34 @@ export default function PropertyMap({
                 }
             ).addTo(map);
 
-            if (isCard) {
-                // No marker on the card. Instead a soft shaded circle over the
-                // rough area, so a guest can see WHICH part of the village they're
-                // going to without the exact door being pinned — the circle's
-                // radius is the fuzz. Centred on the true point.
-                L.circle([latitude, longitude], {
-                    radius: 500,
-                    color: '#059669',
-                    weight: 1.5,
-                    opacity: 0.5,
-                    fillColor: '#10b981',
-                    fillOpacity: 0.18,
-                    interactive: false,
-                }).addTo(map);
+            // A house in a dark circle, matching the site rather than Leaflet's
+            // default blue teardrop.
+            const icon = L.divIcon({
+                className: '',
+                html:
+                    '<div style="width:44px;height:44px;border-radius:9999px;background:#0f172a;' +
+                    'box-shadow:0 4px 12px rgba(0,0,0,0.3);display:flex;align-items:center;' +
+                    'justify-content:center;">' +
+                    '<svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" ' +
+                    'fill="none" stroke="#ffffff" stroke-width="2" stroke-linecap="round" ' +
+                    'stroke-linejoin="round"><path d="m3 9 9-7 9 7v11a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z"/>' +
+                    '<polyline points="9 22 9 12 15 12 15 22"/></svg>' +
+                    '</div>',
+                iconSize: [44, 44],
+                iconAnchor: [22, 22],
+            });
+            // The card pins the actual property; the full block uses the fuzzed
+            // point for pre-booking privacy.
+            L.marker(isCard ? [latitude, longitude] : [pinLat, pinLon], { icon, interactive: false }).addTo(map);
 
-                // A square frame can lay out AFTER Leaflet first reads its size,
+            if (isCard) {
+                // The rectangle can lay out AFTER Leaflet first reads its size,
                 // which leaves tiles grey or half-drawn; recompute the size once it
-                // has settled and on any later resize. Zoom/centre are fixed above,
-                // so this only ever corrects the canvas, never the view.
+                // has settled and on any later resize. Keep the pin centred.
                 const frame = () => {
                     if (!mapRef.current) return;
                     map.invalidateSize();
+                    map.setView([latitude, longitude], 15);
                 };
                 setTimeout(frame, 80);
                 if (typeof ResizeObserver !== 'undefined' && containerRef.current) {
@@ -134,24 +140,6 @@ export default function PropertyMap({
                     ro.observe(containerRef.current);
                     roRef.current = ro;
                 }
-            } else {
-                // A house in a dark circle, matching the site rather than
-                // Leaflet's default blue teardrop.
-                const icon = L.divIcon({
-                    className: '',
-                    html:
-                        '<div style="width:48px;height:48px;border-radius:9999px;background:#0f172a;' +
-                        'box-shadow:0 4px 12px rgba(0,0,0,0.3);display:flex;align-items:center;' +
-                        'justify-content:center;">' +
-                        '<svg xmlns="http://www.w3.org/2000/svg" width="22" height="22" viewBox="0 0 24 24" ' +
-                        'fill="none" stroke="#ffffff" stroke-width="2" stroke-linecap="round" ' +
-                        'stroke-linejoin="round"><path d="m3 9 9-7 9 7v11a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z"/>' +
-                        '<polyline points="9 22 9 12 15 12 15 22"/></svg>' +
-                        '</div>',
-                    iconSize: [48, 48],
-                    iconAnchor: [24, 24],
-                });
-                L.marker([pinLat, pinLon], { icon, interactive: false }).addTo(map);
             }
         };
 
@@ -173,10 +161,10 @@ export default function PropertyMap({
     if (isCard) {
         return (
             <div className="overflow-hidden rounded-xl border border-slate-200">
-                <div ref={containerRef} className="aspect-square w-full bg-slate-100 z-0" />
-                <div className="bg-white px-3.5 py-2 text-xs text-slate-500">
-                    {area ? area + ' — the shaded area, not the exact spot' : 'The shaded area, not the exact spot'}
-                </div>
+                <div ref={containerRef} className="aspect-[16/9] w-full bg-slate-100 z-0" />
+                {area && (
+                    <div className="bg-white px-3.5 py-2 text-xs text-slate-500">{area}</div>
+                )}
             </div>
         );
     }

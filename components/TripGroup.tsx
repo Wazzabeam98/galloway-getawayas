@@ -350,7 +350,7 @@ export default function TripGroup({
                         {nothingYet
                             ? 'Add the people coming with you'
                             : going === 0
-                                ? (openLabelN === 1 ? '1 spot to fill' : openLabelN + ' spots to fill')
+                                ? 'Invite guests'
                                 : 'You and ' + going + ' going' + (openLabelN ? ' · ' + openLabelN + ' to fill' : '')}
                     </div>
                     <div className="text-xs text-slate-500 group-hover:text-slate-700">
