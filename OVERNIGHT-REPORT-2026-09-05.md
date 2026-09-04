@@ -31,8 +31,48 @@ Today's production merges under review: **#106** (upcoming-trip payment status),
 
 # Findings, worst first
 
-*(filled as each task completes; ledger at the end says what was checked tonight
-vs carried.)*
+Ranked across everything tonight. "tonight" = built/ran and read back on test;
+"carried" = from a prior night, re-checked where noted.
+
+1. **🔴 HIGH — the erasure cascade is schema-wide, not just `bookings.guest_id`.**
+   Deleting a **host** profile (`listings.host_id → CASCADE`) destroys their
+   listings **and every guest's booking on them**, plus door codes, arrival
+   secrets and reviews; `payouts.host_id → SET NULL` severs the payout audit
+   trail; `reviews.*/messages.* → CASCADE` erase reputation and dispute evidence.
+   Same "anonymise + retain" fix, but the FK change-list is bigger. Extends last
+   night; add "host-side too" to the parked solicitor item. (tonight)
+2. **🟠 MEDIUM — `migrate.mjs --record` footgun.** It writes ledger-presence
+   without checking, and **no automated gate reacts** (status exits 0 on an
+   assumption; the pre-push hook is a note that greps only OUTSTANDING/EDITED).
+   **74% of the ledger (73/99) is assumption, not observation** and
+   checksum-null (undriftable). A wrongly-recorded money migration would be
+   silent — a read-back caught today's. (tonight)
+3. **🟠 MEDIUM — `full_name` leaks to anon regardless of `show_full_name`.**
+   Re-proven on test with the flag off. (carried)
+4. **🟠 MEDIUM — silent money routes** (`slots/schedule` unlogged calendar-wipe;
+   `order(s)`, `slots/book`, `ical-sync`, webhook notify catches → `console.error`
+   only). Untouched today. (carried)
+5. **🟠 MEDIUM — free-cancel deadline judged at processing time, not click time.**
+   Untouched today. (carried)
+6. **🟠 MEDIUM — webhook that never arrives → guest charged, cancelled, no
+   auto-refund.** Stripe retries usually save it; needs reconciliation. (carried)
+7. **🟡 LOW — storage has no owner-scoped upload paths.** Re-proven on test. (carried)
+8. **🟡 LOW — companion double-claim TOCTOU shipped (#111).** The unguarded claim
+   UPDATE is now live; false-success only, no over-capacity/access. (tonight)
+9. **🟡 LOW — demo data half-removed on test.** The `@gallowaymarket.test` seed is
+   gone, but other-domain demo providers + 2 live Stripe test accounts persist.
+   Test only. (tonight)
+
+**Clean / proven-good tonight:**
+- **The arrival-secret wall HOLDS after six merges, and is stronger** — door code
+  + wifi password never fetched, entitlement now `confirmed && paid/deposit_paid`,
+  planted booking refused, guest can't self-confirm (Task 1, proven).
+- **Quiet-hours migration is clean** — custom times preserved, nothing else
+  touched (proven on test).
+- **Payout invariants intact** and untouched by today's merges (Task 3).
+- **Unhappy paths ran green** — slot last-seat race never oversells, webhook-twice
+  dedupes, a hidden listing doesn't lock out a confirmed guest (Task 2).
+- **First-name display respects `show_full_name`** (Task 1).
 
 ---
 
@@ -312,3 +352,36 @@ so their ranks stand.
 | **Silent money routes catch with `console.error` only** | **read on master** — today's merges did **not** touch `services/order(s)`, `services/slots/*`, `cron/ical-sync`, or the webhook post-charge notify catches; all still `console.error`-only. `slots/schedule`'s non-atomic delete-then-insert calendar-wipe still unlogged. | swap `console.error` → `logError` (~1–2h); wrap `slots/schedule` in one atomic function. Breaks nothing. |
 
 None of today's six merges changed any of these; the fixes and their costs are exactly as last night.
+
+---
+
+## Task ledger — checked tonight vs carried
+
+Anchored to `origin/master` `2ef544e` (I fetched first).
+
+| The seven asks | Method | New vs carried |
+|---|---|---|
+| Six merges together + arrival wall | proven on test + read master | **NEW** — wall holds, stronger; first-name respects the switch; companion TOCTOU shipped |
+| Unhappy-path scenarios (run them) | **RAN 3 on test**, read 3 on master | **NEW execution** — slot race, webhook-twice, hidden-listing all green |
+| Payout before first real payout | read master + function on test | carried, re-verified on today's master |
+| Carried items (full_name / storage / silent routes) | proven on test + read master | carried, all three still true |
+| Erasure cascade — other same-shape cascades | FK sweep on test | **NEW** — host-side + payouts/reviews/messages |
+| Quiet-hours prod migration landed cleanly | **proven on test** (backfill re-run) | **NEW** — custom times preserved |
+| Demo data actually gone | proven on test | **NEW** — marketplace seed gone; other-domain demo persists |
+| `migrate.mjs --record` footgun | read master + ledger on test | **NEW** — 74% of ledger is assumption; no gate catches a bad record |
+
+### What I could NOT check tonight, and why
+- **Any live production value** — `migrate.mjs --target prod --sql` is refused by
+  this session's command classifier (harness limit, not "prod protected"). Prod
+  claims are from `origin/master` migration files or carried. Open prod read-backs:
+  `adjust_payout_balance`, the single `acct_…`, and that the quiet-hours backfill
+  on prod left custom-time listings untouched (same deterministic migration I
+  proved on test).
+- **Live HTTP** for the arrival page / cancel route / slot booking end-to-end —
+  I proved the DB-layer and route-logic pieces; a dev-server walk is the final
+  confirmation for the full request path.
+
+### Test housekeeping
+Reused throwaway accounts from prior nights (`sweep-stranger@` etc.); seeded and
+deleted bookings, a slot session, a `stripe_events` row, and toggled one
+listing's status/quiet-hours, all restored. No writes to production.
