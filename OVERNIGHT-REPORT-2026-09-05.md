@@ -186,3 +186,37 @@ the ledger is both unverified and undriftable-by-tool.
 Rank: MEDIUM — not a live security hole, but this is precisely the silent
 code-vs-schema divergence that produces a money bug (a revoke or constraint that
 "landed" only in the ledger). It nearly did today; the read-back saved it.
+
+---
+
+## 🔴 HIGH (extends last night) — the erasure cascade is NOT just `bookings.guest_id`; the same shape is all over the schema
+
+**Read on test 2026-09-05 (FK `delete_rule` is authoritative); the `bookings`
+leg was behaviourally proven last night.** I swept every `CASCADE` / `SET NULL`
+FK. Deleting a `profiles` row (what a "delete my account" does) or a `listings`
+row detonates far wider than one booking. Worst first:
+
+| FK | Deleting the parent… | Damage |
+|---|---|---|
+| `listings.host_id → profiles CASCADE` | delete a **host** account | **all their listings vanish**, and via `bookings.host_id → CASCADE` **every guest's booking on those listings** (each guest's paid stay), plus `listing_access_codes`, `listing_arrival`, `calendar_overrides`, `reviews`. Bigger blast radius than guest deletion. |
+| `bookings.guest_id / host_id → profiles CASCADE` | delete a guest or host | their bookings gone (proven last night); `payments`/`payouts` orphaned (`SET NULL`). |
+| `payouts.host_id → profiles SET NULL` | delete a host | payout rows **lose which host was paid** — the financial audit trail is severed while the money record remains. |
+| `reviews.reviewer_id / reviewee_id → profiles CASCADE` | delete any user | **reviews erased** — a departing guest destroys the honest reviews they wrote about hosts; a host's reputation record is mutable by a third party leaving. |
+| `messages.sender_id / recipient_id → profiles CASCADE` | delete any user | conversation history erased — **dispute evidence gone**. |
+| `reviews.listing_id → listings CASCADE` | delete/remove a listing | that property's reviews erased. |
+
+**The common thread:** a profile (or listing) deletion silently destroys
+**money trail** (payouts orphaned), **access/secrets** (arrival, door codes),
+**reputation** (reviews) and **evidence** (messages) — none of it announced.
+`payments.booking_id`/`payouts.booking_id` are `SET NULL` and `bookings.listing_id`
+is `RESTRICT`, so the money rows *survive* but disconnected, and a listing with
+bookings can't be deleted — small mercies, not a design.
+
+**This widens last night's erasure scope, it doesn't change the fix:** the same
+"anonymise + retain, never hard-delete the row, resolve money first" answer
+covers all of it — but the **FK change list is bigger than `bookings.guest_id`**.
+Every `→ profiles CASCADE` and `payouts.host_id → SET NULL` above wants the same
+`RESTRICT`/anonymise treatment, or a host/guest erasure quietly shreds other
+people's money, stays, and reputation. This belongs in the same solicitor-bound
+erasure design already parked in `OUTSTANDING.md §1` — the note there should say
+"host-side too", not just guest.
