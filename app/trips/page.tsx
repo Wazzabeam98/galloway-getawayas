@@ -370,6 +370,27 @@ export default function TripsPage() {
                     and the wifi password, revealed only in their own window. */}
                 {upcomingConfirmed && arr && (
                     <div className="mt-4 space-y-3 rounded-xl border border-slate-200 bg-slate-50/60 p-3.5">
+                        {/* The way in, lifted to the top of the card — the thing a
+                            guest most wants when they pull up outside, so it leads
+                            rather than sitting below the directions. It names what's
+                            behind it (the door code, and wifi when there is any)
+                            and links through to the arrival screen where the secrets
+                            actually live; the code and password never come down to
+                            this card or /api/trips. Same window as the Getting-in
+                            panel below: a code on file, inside its three days. */}
+                        {withinWindow && arr.hasCode && (
+                            <Link
+                                href={`/arrival/${b.id}`}
+                                className="flex items-center justify-between gap-3 rounded-lg border border-emerald-200 bg-emerald-50 px-3.5 py-3 transition hover:border-emerald-300 hover:bg-emerald-100/70"
+                            >
+                                <span className="flex items-center gap-2 text-sm font-semibold text-emerald-900">
+                                    <KeyRound className="h-4 w-4 flex-none text-emerald-700" />
+                                    {arr.hasWifi ? 'Door code and wifi' : 'Door code'}
+                                </span>
+                                <span className="text-emerald-700" aria-hidden>&rarr;</span>
+                            </Link>
+                        )}
+
                         {/* Where, and how to get there */}
                         <div>
                             <div className="flex gap-2">

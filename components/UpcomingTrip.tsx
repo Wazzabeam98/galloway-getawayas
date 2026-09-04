@@ -15,7 +15,7 @@ import CopyField from '@/components/arrival/CopyField';
 import TripGroup from '@/components/TripGroup';
 import HomeCancelPanel from '@/components/HomeCancelPanel';
 import GuestExperiences from '@/components/GuestExperiences';
-import { MessageSquare, CalendarDays, Navigation, Grid3x3, KeyRound } from 'lucide-react';
+import { MessageSquare, CalendarDays, Navigation, Grid3x3 } from 'lucide-react';
 
 // Shown at the top of the home page to someone with a stay coming up. The
 // point is that a guest logging in six weeks before their holiday sees their
@@ -72,20 +72,14 @@ export default async function UpcomingTrip() {
     let directionsUrl: string | null = null;
     let what3words: string | null = null;
     let addressToCopy: string | null = null;
-    let hasCode = false;
     if (bookingReleasesPrivateData(booking)) {
         const admin = adminClient();
-        const [{ data: place }, { data: arr }, { data: access }] = await Promise.all([
+        const [{ data: place }, { data: arr }] = await Promise.all([
             admin.from('listings').select('street_address, postcode, location, latitude, longitude').eq('id', booking.listing_id).maybeSingle(),
             admin.from('listing_arrival').select('what3words').eq('listing_id', booking.listing_id).maybeSingle(),
-            // EXISTENCE ONLY — never the code value. Selecting 'code' would pull
-            // the secret into this request and into the card's data. The card is
-            // a signal; the code itself shows only on the arrival page.
-            admin.from('listing_access_codes').select('listing_id').eq('listing_id', booking.listing_id).maybeSingle(),
         ]);
         const p: any = place || {};
         what3words = (arr as any)?.what3words || null;
-        hasCode = !!access;
         // The FULL street address and postcode for Copy address — never the
         // town on its own, which sends a guest to the wrong end of a village.
         addressToCopy = [p.street_address, p.postcode]
@@ -113,12 +107,6 @@ export default async function UpcomingTrip() {
             : phase === 'today' ? 'Arrives today'
                 : phase === 'tomorrow' ? 'Arrives tomorrow'
                     : daysUntilCheckIn + ' days to go';
-
-    // The door code stays off this card and out of /api/trips. This is the only
-    // thing the card knows about it: a code is on file AND its reveal window has
-    // opened (<= 3 days, the same window the arrival page uses). When both are
-    // true the card says the way in is ready and links through — signal only.
-    const wayInReady = hasCode && daysUntilCheckIn <= 3;
 
     // One place works out the cancellation position now — the same one the
     // Cancel screen and the messages pane read — so the card can never promise a
@@ -203,21 +191,16 @@ export default async function UpcomingTrip() {
                 checkOutDate={booking.check_out}
                 checkInTime={listing.check_in_time}
                 checkOutTime={listing.check_out_time}
-                aside={(directionsUrl || what3words || wayInReady || addressToCopy) ? (
-                    // Three full-width rows, not a grid.
-                    // TOP: the way-in signal — a STATUS, not an action, so it sits
-                    //   above rather than inside the button pair.
-                    // MIDDLE: what3words across the full width, its Copy at the
+                aside={(directionsUrl || what3words || addressToCopy) ? (
+                    // Two full-width rows. The way-in signal (door code / wifi) used
+                    // to sit on top here; it now lives at the top of the trips card,
+                    // where the code itself is one screen away. What's left is the
+                    // getting-there pair:
+                    // TOP: what3words across the full width, its Copy at the
                     //   right-hand end — full width means it never wraps.
                     // BOTTOM: Get directions and Copy address side by side, the
                     //   pair, stacking to one column at narrow widths.
                     <div className="flex h-full flex-col justify-center gap-2.5">
-                        {wayInReady && (
-                            <Link href={'/arrival/' + booking.id}
-                                className="inline-flex items-center gap-1.5 text-sm font-semibold text-emerald-700 hover:text-emerald-800">
-                                <KeyRound className="h-4 w-4 flex-none" /> Your way in is ready &rarr;
-                            </Link>
-                        )}
                         {what3words && (
                             <div className="flex items-center justify-between gap-3">
                                 <span className="flex items-center gap-2 text-sm text-emerald-700">
