@@ -9,7 +9,7 @@
 
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { directionsUrl, hasRealCoords } from '../lib/directions';
+import { directionsUrl, appleDirectionsUrl, hasRealCoords } from '../lib/directions';
 
 test('coordinates win — the link points at the pin', () => {
     const url = directionsUrl({ latitude: 54.8356, longitude: -4.0533, location: 'Kirkcudbright' });
@@ -35,6 +35,27 @@ test('postcode without a street is still not a door — no link', () => {
 
 test('nothing at all — no link', () => {
     assert.equal(directionsUrl({}), null);
+});
+
+// Apple Maps carries the same rule — a pin or a street, never the town — so the
+// picker's Apple option can never send a guest to the town centre either.
+test('Apple: coordinates win — daddr points at the pin', () => {
+    assert.equal(
+        appleDirectionsUrl({ latitude: 54.8356, longitude: -4.0533, location: 'Kirkcudbright' }),
+        'https://maps.apple.com/?daddr=54.8356,-4.0533',
+    );
+});
+
+test('Apple: a street address is geocodable — daddr uses the full address', () => {
+    const url = appleDirectionsUrl({ streetAddress: '2 Harbour Square', postcode: 'DG6 4HY', location: 'Kirkcudbright' });
+    assert.ok(url && url.startsWith('https://maps.apple.com/?daddr='));
+    assert.ok(url && url.includes(encodeURIComponent('2 Harbour Square, DG6 4HY, Kirkcudbright')));
+});
+
+test('Apple: the TOWN alone is not a destination — no link', () => {
+    assert.equal(appleDirectionsUrl({ location: 'Kirkcudbright, Dumfries and Galloway' }), null);
+    assert.equal(appleDirectionsUrl({ postcode: 'DG6 4HY', location: 'Kirkcudbright' }), null);
+    assert.equal(appleDirectionsUrl({}), null);
 });
 
 test('null-island (0,0) is treated as no pin, not a destination', () => {
