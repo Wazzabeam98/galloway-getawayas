@@ -220,3 +220,37 @@ Every `→ profiles CASCADE` and `payouts.host_id → SET NULL` above wants the 
 people's money, stays, and reputation. This belongs in the same solicitor-bound
 erasure design already parked in `OUTSTANDING.md §1` — the note there should say
 "host-side too", not just guest.
+
+---
+
+## 🟡 LOW — demo data: the marketplace seed IS gone, but other-domain demo providers persist (test only)
+
+**Proven on test 2026-09-05.** The specific worry — the `seed-marketplace.mjs`
+demo under `@gallowaymarket.test` — is **fully removed**: 0 such users remain, so
+`--reset` did its job for its own domain. Fake reviews are effectively gone too:
+**1** review total, **unpublished**.
+
+**But the reset only knows its own domain**, and four demo/test providers under
+*other* domains survive — approved and marketplace-visible, two with **live Stripe
+test accounts still attached**:
+
+| Provider | Owner (test domain) | Stripe test acct | Orders |
+|---|---|---|---|
+| Effie's Bakes | `effie@gallowaybaker.test` | `acct_1UApt…` (live) | 1 |
+| Demo Chef — Solway Table | `demo-chef@gg-preview.test` | `acct_1U9my…` (live) | 0 |
+| Nith Valley Plumbing | `nith@gallowaywalk.test` | — | 0 |
+| Baxter Plumbing & Heating | `baxter@gallowaywalk.test` | — | 0 |
+
+Plus junk under your own account (`liamworrall18@hotmail.com`): a `declined`
+provider `jhgjuv` and an approved provider literally named `TEST`.
+
+**Why it's the confusion source:** these are exactly the "half-removed seed"
+rows — `seed-marketplace.mjs --reset` cleans `@gallowaymarket.test` and nothing
+else, so anything seeded from `gallowaybaker.test` / `gg-preview.test` /
+`gallowaywalk.test` (earlier runs or manual preview setup) lingers, shows in the
+test marketplace, and carries dangling Stripe test accounts. **Test only** (the
+seed lib refuses a non-test key), so no prod exposure — but on test they'll keep
+appearing as real approved businesses. **Fix:** either broaden the reset to match
+all `*.test` demo domains (or a shared marker column), or delete these four + the
+two junk rows by hand and close the two Stripe test accounts. Low, but it's the
+recurring confusion you named.
