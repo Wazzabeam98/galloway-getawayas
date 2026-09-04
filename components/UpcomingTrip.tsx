@@ -35,7 +35,7 @@ export default async function UpcomingTrip() {
     // checked out yesterday survived the filter and showed as "-3 days to go".
     const { data: bookings } = await supabase
         .from('bookings')
-        .select('id, listing_id, check_in, check_out, status, guests, amount_paid, amount_refunded, cleaning_fee')
+        .select('id, listing_id, check_in, check_out, status, payment_status, guests, amount_paid, amount_refunded, cleaning_fee')
         .eq('guest_id', auth.session.user.id)
         .in('status', ['confirmed', 'pending'])
         .order('check_in', { ascending: true })
