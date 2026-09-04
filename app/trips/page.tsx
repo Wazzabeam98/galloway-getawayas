@@ -6,7 +6,7 @@ import { useEffect, useState } from 'react';
 import { createClientComponentClient } from '@supabase/auth-helpers-nextjs';
 import Logo from '@/components/base/Logo';
 import LoginModel from '@/components/auth/LoginModel';
-import { MessageCircle, MapPin, ArrowLeft, ArrowRight, CornerDownRight, Car, KeyRound, Phone, CloudOff, XCircle, ShieldCheck } from 'lucide-react';
+import { MessageCircle, MapPin, ArrowLeft, ArrowRight, CornerDownRight, Car, KeyRound, Phone, CloudOff, XCircle, ShieldCheck, Receipt, LifeBuoy, Lightbulb, Heart } from 'lucide-react';
 import CopyField from '@/components/arrival/CopyField';
 import DirectionsPicker from '@/components/arrival/DirectionsPicker';
 import PropertyMap from '@/components/PropertyMap';
@@ -67,7 +67,19 @@ interface Booking {
         hasCode: boolean;
         hasWifi: boolean;
         hostPhone: string | null;
+        hostAvatar: string | null;
+        hostBio: string | null;
     } | null;
+}
+
+// Marks content on the card that is not backed by real data yet, so a reviewer
+// (and a real guest, on this preview) can tell at a glance what's a placeholder.
+function PlaceholderTag() {
+    return (
+        <span className="inline-flex items-center rounded-full bg-amber-100 px-2 py-0.5 align-middle text-[10px] font-semibold uppercase tracking-wide text-amber-800">
+            Placeholder
+        </span>
+    );
 }
 
 export default function TripsPage() {
@@ -376,6 +388,47 @@ export default function TripsPage() {
                     )}
                 </div>
 
+                {/* Host — the human centre of the card: photo, name, their own
+                    words, and Message + Call together. Booking direct with the
+                    owner is the whole pitch, so this leads with the person rather
+                    than a grey "Hosted by" line. Name is privacy-resolved on the
+                    client; photo and bio come from the host's profile. */}
+                {upcomingConfirmed && arr && (
+                    <div className="mt-6 rounded-2xl border border-slate-200 p-5 sm:p-6">
+                        <div className="flex items-start gap-4">
+                            {arr.hostAvatar ? (
+                                // eslint-disable-next-line @next/next/no-img-element
+                                <img src={getImageUrl(arr.hostAvatar)} alt={hostName} className="h-14 w-14 flex-none rounded-full object-cover" />
+                            ) : (
+                                <div className="flex h-14 w-14 flex-none items-center justify-center rounded-full bg-emerald-100 text-lg font-semibold text-emerald-800">
+                                    {hostName.slice(0, 1).toUpperCase()}
+                                </div>
+                            )}
+                            <div className="min-w-0 flex-1">
+                                <div className="text-[11px] font-semibold uppercase tracking-wide text-slate-500">Your host</div>
+                                <div className="mt-0.5 text-base font-semibold text-slate-900">{hostName}</div>
+                                {arr.hostBio ? (
+                                    <p className="mt-1.5 text-sm leading-relaxed text-slate-600">{arr.hostBio}</p>
+                                ) : (
+                                    <p className="mt-1.5 text-sm italic leading-relaxed text-slate-400">
+                                        {hostName} hasn&apos;t written an intro yet. <PlaceholderTag /> <span className="not-italic font-mono text-slate-400">profiles.host_bio</span>
+                                    </p>
+                                )}
+                            </div>
+                        </div>
+                        <div className="mt-4 grid grid-cols-2 gap-2">
+                            {arr.hostPhone ? (
+                                <a href={'tel:' + arr.hostPhone} className="inline-flex items-center justify-center gap-2 rounded-lg bg-emerald-700 px-3 py-2.5 text-sm font-semibold text-white transition hover:bg-emerald-800">
+                                    <Phone className="h-4 w-4" /> Call
+                                </a>
+                            ) : <span />}
+                            <Link href={`/messages/${b.id}`} className="inline-flex items-center justify-center gap-2 rounded-lg border border-slate-300 bg-white px-3 py-2.5 text-sm font-semibold text-slate-700 transition hover:border-slate-400">
+                                <MessageCircle className="h-4 w-4" /> Message
+                            </Link>
+                        </div>
+                    </div>
+                )}
+
                 {/* The group, right under the stay details — stacked avatars and
                     the seats still to fill, so a group booking reads as one before
                     anything is opened. Only the booker manages it. */}
@@ -519,24 +572,6 @@ export default function TripsPage() {
                                 </div>
                             )}
 
-                            {/* Need a hand — the contact block, the moment you're
-                                stuck outside. Call the host if there's a number, or
-                                message either way. */}
-                            <div className="py-5 first:pt-0 last:pb-0">
-                                <div className="flex items-center gap-1.5 text-[11px] font-semibold uppercase tracking-wide text-slate-500">
-                                    <Phone className="h-3.5 w-3.5" /> Need a hand? Ask {hostName}
-                                </div>
-                                <div className="mt-2.5 grid grid-cols-2 gap-2">
-                                    {arr.hostPhone ? (
-                                        <a href={'tel:' + arr.hostPhone} className="inline-flex items-center justify-center gap-2 rounded-lg bg-emerald-700 px-3 py-2.5 text-xs font-semibold text-white transition hover:bg-emerald-800">
-                                            <Phone className="h-3.5 w-3.5" /> Call
-                                        </a>
-                                    ) : <span />}
-                                    <Link href={`/messages/${b.id}`} className="inline-flex items-center justify-center gap-2 rounded-lg border border-slate-300 bg-white px-3 py-2.5 text-xs font-semibold text-slate-700 transition hover:border-slate-400">
-                                        <MessageCircle className="h-3.5 w-3.5" /> Message
-                                    </Link>
-                                </div>
-                            </div>
                         </div>
 
                         {/* The offline promise — the screen a guest opens before
@@ -546,6 +581,90 @@ export default function TripsPage() {
                         </p>
                     </div>
                 )}
+
+                {/* Local knowledge — the things only the host knows. Nothing
+                    stores this today, so the content is placeholder; the shape is
+                    what a real one would look like. */}
+                {upcomingConfirmed && arr && (
+                    <div className="mt-6 rounded-2xl border border-dashed border-slate-300 bg-slate-50/40 p-5 sm:p-6">
+                        <div className="flex items-center gap-2">
+                            <div className="flex items-center gap-1.5 text-[11px] font-semibold uppercase tracking-wide text-slate-500">
+                                <Lightbulb className="h-3.5 w-3.5" /> Local knowledge
+                            </div>
+                            <PlaceholderTag />
+                        </div>
+                        <p className="mt-2 text-sm text-slate-500">The things only {hostName} knows — sample content:</p>
+                        <ul className="mt-2 space-y-1.5 text-sm text-slate-500">
+                            <li>Low tide is the good beach — the bay empties right out, so check the times.</li>
+                            <li>The village shop shuts at 1pm on Sundays; the Co-op in Whithorn stays open later.</li>
+                            <li>The shore road can flood on a spring tide — take the top road if it&apos;s been raining.</li>
+                        </ul>
+                        <p className="mt-3 text-xs text-slate-400">
+                            Nothing stores this yet. To make it real: a free-text <span className="font-mono">listing_arrival.local_notes</span> field the host writes in the arrival editor (or a short structured list of tips), shown here per stay.
+                        </p>
+                    </div>
+                )}
+
+                {/* If something's not right — the out-of-hours reassurance Airbnb
+                    sells as 24-hour support, except our host is twenty minutes
+                    away. Real: the number and Message. Placeholder: the response
+                    time / distance metric. */}
+                {upcomingConfirmed && arr && (
+                    <div className="mt-6 rounded-2xl border border-slate-200 p-5 sm:p-6">
+                        <div className="flex items-center gap-1.5 text-[11px] font-semibold uppercase tracking-wide text-slate-500">
+                            <LifeBuoy className="h-3.5 w-3.5" /> If something&apos;s not right
+                        </div>
+                        <p className="mt-2 text-sm leading-relaxed text-slate-600">
+                            Locked out, a boiler that won&apos;t fire, a lost key at 9pm — {hostName} is local, not a call centre a country away.{' '}
+                            {arr.hostPhone
+                                ? <>Call or text <a href={'tel:' + arr.hostPhone} className="font-semibold text-emerald-700 hover:text-emerald-800">{arr.hostPhone}</a>, or message any time.</>
+                                : <>Message any time and {hostName} will pick it up.</>}
+                        </p>
+                        <p className="mt-2 text-xs italic text-slate-400">
+                            Usually replies in about 15 minutes · roughly 20 minutes away. <PlaceholderTag /> <span className="font-mono not-italic">profiles.response_time / host travel time</span>
+                        </p>
+                    </div>
+                )}
+
+                {/* Payment breakdown — behind the total. All real: we take the
+                    money, so every figure is on the booking row. */}
+                {!b.sharedWithMe && (() => {
+                    const nights = Math.max(1, Math.round((new Date(b.check_out).getTime() - new Date(b.check_in).getTime()) / 86400000));
+                    const total = Number(b.total_price || 0);
+                    const cleaning = Number((b as any).cleaning_fee || 0);
+                    const pet = Number((b as any).pet_fee || 0);
+                    const accommodation = Math.max(0, total - cleaning - pet);
+                    const paid = Number(b.amount_paid || 0);
+                    const refunded = Number(b.amount_refunded || 0);
+                    const remaining = Number(b.balance_amount || 0);
+                    const Row = ({ label, val, strong }: { label: string; val: number; strong?: boolean }) => (
+                        <div className={'flex items-baseline justify-between ' + (strong ? 'font-semibold text-slate-900' : 'text-slate-600')}>
+                            <span className="text-sm">{label}</span>
+                            <span className="text-sm tabular-nums">£{val.toFixed(2)}</span>
+                        </div>
+                    );
+                    return (
+                        <div className="mt-6 rounded-2xl border border-slate-200 p-5 sm:p-6">
+                            <div className="flex items-center gap-1.5 text-[11px] font-semibold uppercase tracking-wide text-slate-500">
+                                <Receipt className="h-3.5 w-3.5" /> Payment
+                            </div>
+                            <div className="mt-3 space-y-2">
+                                <Row label={'Accommodation · ' + nights + (nights === 1 ? ' night' : ' nights')} val={accommodation} />
+                                {cleaning > 0 && <Row label="Cleaning fee" val={cleaning} />}
+                                {pet > 0 && <Row label="Pet fee" val={pet} />}
+                                <div className="border-t border-slate-100 pt-2"><Row label="Total" val={total} strong /></div>
+                                <Row label="Paid so far" val={paid} />
+                                {refunded > 0 && <Row label="Refunded" val={refunded} />}
+                                {remaining > 0 && (
+                                    <div className="mt-1 flex items-baseline justify-between rounded-lg bg-amber-50 px-3 py-2">
+                                        <span className="text-sm font-medium text-amber-900">Still to pay{b.balance_due_date ? ' · due ' + b.balance_due_date : ''}</span>
+                                        <span className="text-sm font-semibold tabular-nums text-amber-900">£{remaining.toFixed(2)}</span>
+                                    </div>
+                                )}
+                            </div>
+                        </div>
+                    );
+                })()}
 
                 {/* Message host stays a plain action for bookings with no arrival
                     detail on show — a pending request, a past stay. For an
@@ -697,6 +816,32 @@ export default function TripsPage() {
                         </div>
                     );
                 })()}
+
+                {/* Coming back — a guest who had a good week is the cheapest
+                    booking we'll ever get, so the card should ask for the next
+                    one. Real: the Book again link to the listing. Placeholder:
+                    the returning-guest offer. */}
+                {!b.sharedWithMe && (
+                    <div className="mt-6 rounded-2xl border border-emerald-200 bg-emerald-50/50 p-5 sm:p-6">
+                        <div className="flex items-center gap-2">
+                            <div className="flex items-center gap-1.5 text-[11px] font-semibold uppercase tracking-wide text-emerald-700">
+                                <Heart className="h-3.5 w-3.5" /> Coming back
+                            </div>
+                            <PlaceholderTag />
+                        </div>
+                        <p className="mt-2 text-sm leading-relaxed text-emerald-900">
+                            Had a good week? Book {listing?.title || 'this place'} again direct and skip the fees — returning guests get [10% off] their next stay.
+                        </p>
+                        <div className="mt-3">
+                            <Link href={homeHref} className="inline-flex items-center gap-2 rounded-lg bg-emerald-700 px-4 py-2 text-sm font-semibold text-white transition hover:bg-emerald-800">
+                                Book again <ArrowRight className="h-4 w-4" />
+                            </Link>
+                        </div>
+                        <p className="mt-2 text-xs text-emerald-700/70">
+                            The offer is placeholder. To make it real: a host-set returning-guest discount (e.g. <span className="font-mono">listings.returning_guest_discount</span>) or a personal rebook code, applied at checkout.
+                        </p>
+                    </div>
+                )}
 
                 {isCompleted && !alreadyReviewed && (() => {
                     // Reviews close 14 days after check-out.

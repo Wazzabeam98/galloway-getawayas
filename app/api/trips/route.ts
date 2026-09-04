@@ -121,7 +121,7 @@ export async function GET() {
             // request, which is exactly what this route promises never to do.
             admin.from('listing_access_codes').select('listing_id').in('listing_id', listingIds),
             hostIds.length
-                ? admin.from('profiles').select('id, phone').in('id', hostIds)
+                ? admin.from('profiles').select('id, phone, full_name, avatar_url, host_bio').in('id', hostIds)
                 : Promise.resolve({ data: [] as any[] }),
         ]);
         const infoBy: Record<string, any> = {};
@@ -130,7 +130,15 @@ export async function GET() {
         (la || []).forEach((a: any) => { arrBy[a.listing_id] = a; });
         const hasCodeFor = new Set((codes || []).map((c: any) => c.listing_id));
         const phoneBy: Record<string, string | null> = {};
-        (hosts || []).forEach((h: any) => { phoneBy[h.id] = h.phone || null; });
+        // Host profile for the human host block: name, photo and their own
+        // "about" line. Not sensitive (it's shown on the public listing too), but
+        // read here under the service role alongside the phone so a single fetch
+        // carries the whole block, and only for entitled trips.
+        const hostBy: Record<string, any> = {};
+        (hosts || []).forEach((h: any) => {
+            phoneBy[h.id] = h.phone || null;
+            hostBy[h.id] = { avatar: h.avatar_url || null, bio: (h.host_bio || '').trim() || null };
+        });
 
         trips.forEach((t) => {
             // Guard here too, not only on the fetch list: a guest can hold a
@@ -170,6 +178,10 @@ export async function GET() {
                 hasCode: hasCodeFor.has(t.listing_id),
                 hasWifi: !!av.wifi_name,
                 hostPhone: phoneBy[t.host_id] || null,
+                // The human host block — photo and their own words. The NAME is
+                // resolved on the client under the display-name privacy rules.
+                hostAvatar: hostBy[t.host_id]?.avatar || null,
+                hostBio: hostBy[t.host_id]?.bio || null,
             };
         });
     }
