@@ -109,10 +109,10 @@ export default async function UpcomingTrip() {
     // wrote it and never prints a negative day count.
     const { phase, daysUntilCheckIn } = stayCountdown(booking, now);
     const headline =
-        phase === 'during' ? 'You’re there now'
-            : phase === 'today' ? 'Arrives today'
-                : phase === 'tomorrow' ? 'Arrives tomorrow'
-                    : daysUntilCheckIn + ' days to go';
+        phase === 'during' ? 'You’re here'
+            : phase === 'today' ? 'You arrive today'
+                : phase === 'tomorrow' ? 'You arrive tomorrow'
+                    : 'You arrive in ' + daysUntilCheckIn + ' days';
 
     // One place works out the cancellation position now — the same one the
     // Cancel screen and the messages pane read — so the card can never promise a

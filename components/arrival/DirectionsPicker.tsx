@@ -20,10 +20,14 @@ export default function DirectionsPicker({
     apple,
     google,
     what3words,
+    compact = false,
 }: {
     apple?: string | null;
     google?: string | null;
     what3words?: string | null;
+    // The trips card sits its buttons a little smaller and in slate; the home
+    // card uses stone. Same picker, same behaviour — just the two house styles.
+    compact?: boolean;
 }) {
     const [open, setOpen] = useState(false);
     const ref = useRef<HTMLDivElement>(null);
@@ -45,7 +49,11 @@ export default function DirectionsPicker({
     // The words for the what3words link have no leading slashes.
     const w3wUrl = what3words ? 'https://what3words.com/' + what3words.replace(/^\/+/, '') : null;
 
-    const item = 'flex w-full items-center gap-2.5 px-3 py-2.5 text-left text-sm font-medium text-stone-700 transition hover:bg-stone-50';
+    const btn = compact
+        ? 'flex w-full items-center justify-center gap-2 rounded-lg bg-slate-900 px-3 py-2 text-sm font-semibold text-white transition hover:bg-slate-800'
+        : 'flex w-full items-center justify-center gap-2 rounded-lg bg-stone-900 px-3 py-2.5 text-sm font-semibold text-white transition hover:bg-stone-800';
+    const item = 'flex w-full items-center gap-2.5 px-3 text-left text-sm font-medium text-stone-700 transition hover:bg-stone-50 '
+        + (compact ? 'py-2' : 'py-2.5');
 
     // Nothing to offer — no pin, no street, no words — so no button at all.
     if (!apple && !google && !w3wUrl) return null;
@@ -57,7 +65,7 @@ export default function DirectionsPicker({
                 onClick={() => setOpen((o) => !o)}
                 aria-haspopup="menu"
                 aria-expanded={open}
-                className="flex w-full items-center justify-center gap-2 rounded-lg bg-stone-900 px-3 py-2.5 text-sm font-semibold text-white transition hover:bg-stone-800"
+                className={btn}
             >
                 <Navigation className="h-4 w-4" /> Get directions
             </button>

@@ -3,7 +3,7 @@ import { createClient } from '@supabase/supabase-js';
 import { cookies } from 'next/headers';
 import { NextResponse } from 'next/server';
 import { bookingReleasesPrivateData } from '@/lib/bookingEntitlement';
-import { directionsUrl } from '@/lib/directions';
+import { directionsUrl, appleDirectionsUrl } from '@/lib/directions';
 
 export const dynamic = 'force-dynamic';
 
@@ -153,6 +153,11 @@ export async function GET() {
                 // address — never the town alone. null means no safe directions,
                 // so the card shows no Get-directions button.
                 directionsUrl: directionsUrl({
+                    latitude: l.latitude, longitude: l.longitude,
+                    streetAddress: l.street_address, postcode: l.postcode, location: l.location,
+                }),
+                // Apple Maps, same guard — the picker offers both maps apps.
+                appleDirectionsUrl: appleDirectionsUrl({
                     latitude: l.latitude, longitude: l.longitude,
                     streetAddress: l.street_address, postcode: l.postcode, location: l.location,
                 }),
