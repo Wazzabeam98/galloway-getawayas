@@ -41,3 +41,19 @@ export function directionsUrl(p: DirectionsParts): string | null {
     }
     return null;
 }
+
+// Apple Maps, the same rule and the same guard — a pin or a STREET address only,
+// never the town. `daddr` is Apple's destination; the https://maps.apple.com
+// link opens the Maps app on an Apple device and the web map everywhere else,
+// which is how the picker lets the OS choose without us sniffing for the app.
+export function appleDirectionsUrl(p: DirectionsParts): string | null {
+    const base = 'https://maps.apple.com/?daddr=';
+    if (hasRealCoords(p.latitude, p.longitude)) {
+        return base + p.latitude + ',' + p.longitude;
+    }
+    if (p.streetAddress) {
+        const dest = [p.streetAddress, p.postcode, p.location].filter(Boolean).join(', ');
+        return base + encodeURIComponent(dest);
+    }
+    return null;
+}

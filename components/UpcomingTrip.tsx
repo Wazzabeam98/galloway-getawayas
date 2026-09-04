@@ -7,15 +7,16 @@ import { londonDayKey, daysBetweenKeys } from '@/lib/dayKey';
 import { liveForGuestCard, stayCountdown } from '@/lib/bookingWindows';
 import { bookingReleasesPrivateData } from '@/lib/bookingEntitlement';
 import { adminClient } from '@/lib/supabaseAdmin';
-import { directionsUrl as buildDirectionsUrl } from '@/lib/directions';
+import { directionsUrl as buildDirectionsUrl, appleDirectionsUrl } from '@/lib/directions';
 import { publicArea } from '@/lib/places';
 import ListingImage from '@/components/ListingImage';
 import CheckInOutTimes from '@/components/arrival/CheckInOutTimes';
 import CopyField from '@/components/arrival/CopyField';
+import DirectionsPicker from '@/components/arrival/DirectionsPicker';
 import TripGroup from '@/components/TripGroup';
 import HomeCancelPanel from '@/components/HomeCancelPanel';
 import GuestExperiences from '@/components/GuestExperiences';
-import { MessageSquare, CalendarDays, Navigation, Grid3x3 } from 'lucide-react';
+import { MessageSquare, CalendarDays } from 'lucide-react';
 
 // Shown at the top of the home page to someone with a stay coming up. The
 // point is that a guest logging in six weeks before their holiday sees their
@@ -70,6 +71,7 @@ export default async function UpcomingTrip() {
     // alone. Read under the service role because what3words lives in the
     // grant-less listing_arrival table.
     let directionsUrl: string | null = null;
+    let appleUrl: string | null = null;
     let what3words: string | null = null;
     let addressToCopy: string | null = null;
     if (bookingReleasesPrivateData(booking)) {
@@ -86,11 +88,15 @@ export default async function UpcomingTrip() {
             .map((s: any) => String(s || '').trim())
             .filter(Boolean)
             .join(', ') || null;
-        // Shared rule: a pin, or a STREET address — never the town alone.
-        directionsUrl = buildDirectionsUrl({
+        // Shared rule: a pin, or a STREET address — never the town alone. The
+        // picker offers both maps apps; each is built by the same guard, so
+        // neither can point at the town centre.
+        const parts = {
             latitude: p.latitude, longitude: p.longitude,
             streetAddress: p.street_address, postcode: p.postcode, location: p.location,
-        });
+        };
+        directionsUrl = buildDirectionsUrl(parts);
+        appleUrl = appleDirectionsUrl(parts);
     }
 
     const nights = Math.round(
@@ -103,10 +109,10 @@ export default async function UpcomingTrip() {
     // wrote it and never prints a negative day count.
     const { phase, daysUntilCheckIn } = stayCountdown(booking, now);
     const headline =
-        phase === 'during' ? 'You’re there now'
-            : phase === 'today' ? 'Arrives today'
-                : phase === 'tomorrow' ? 'Arrives tomorrow'
-                    : daysUntilCheckIn + ' days to go';
+        phase === 'during' ? 'You’re here'
+            : phase === 'today' ? 'You arrive today'
+                : phase === 'tomorrow' ? 'You arrive tomorrow'
+                    : 'You arrive in ' + daysUntilCheckIn + ' days';
 
     // One place works out the cancellation position now — the same one the
     // Cancel screen and the messages pane read — so the card can never promise a
@@ -191,41 +197,18 @@ export default async function UpcomingTrip() {
                 checkOutDate={booking.check_out}
                 checkInTime={listing.check_in_time}
                 checkOutTime={listing.check_out_time}
-                aside={(directionsUrl || what3words || addressToCopy) ? (
-                    // Two full-width rows. The way-in signal (door code / wifi) used
-                    // to sit on top here; it now lives at the top of the trips card,
-                    // where the code itself is one screen away. What's left is the
-                    // getting-there pair:
-                    // TOP: what3words across the full width, its Copy at the
-                    //   right-hand end — full width means it never wraps.
-                    // BOTTOM: Get directions and Copy address side by side, the
-                    //   pair, stacking to one column at narrow widths.
-                    <div className="flex h-full flex-col justify-center gap-2.5">
-                        {what3words && (
-                            // Left-packed, not justified: the Copy button sits right
-                            // after the last word rather than across the card from
-                            // it. Icon-only, so it doesn't read as a second "Copy"
-                            // stacked above "Copy address" — the label lives in its
-                            // aria-label and title.
-                            <div className="flex items-center gap-2">
-                                <Grid3x3 className="h-4 w-4 flex-none text-emerald-700" />
-                                <span className="whitespace-nowrap text-sm text-emerald-700">{what3words}</span>
-                                <CopyField value={what3words} label="Copy what3words address" iconOnly />
-                            </div>
-                        )}
-                        {(directionsUrl || addressToCopy) && (
-                            <div className="grid grid-cols-1 gap-2 sm:grid-cols-2">
-                                {directionsUrl && (
-                                    <a href={directionsUrl} target="_blank" rel="noreferrer"
-                                        className="flex w-full items-center justify-center gap-2 rounded-lg bg-stone-900 px-3 py-2.5 text-sm font-semibold text-white transition hover:bg-stone-800">
-                                        <Navigation className="h-4 w-4" /> Get directions
-                                    </a>
-                                )}
-                                {addressToCopy && (
-                                    <CopyField value={addressToCopy} label="Copy address" block />
-                                )}
-                            </div>
-                        )}
+                aside={(directionsUrl || appleUrl || what3words || addressToCopy) ? (
+                    // Get directions and Copy address, side by side, stacking to one
+                    // column at narrow widths. The what3words row is gone — the three
+                    // words now live inside the Get directions picker alongside the
+                    // two maps apps, so the block is just this clean pair.
+                    <div className="flex h-full flex-col justify-center">
+                        <div className="grid grid-cols-1 gap-2 sm:grid-cols-2">
+                            <DirectionsPicker apple={appleUrl} google={directionsUrl} what3words={what3words} />
+                            {addressToCopy && (
+                                <CopyField value={addressToCopy} label="Copy address" block />
+                            )}
+                        </div>
                     </div>
                 ) : null}
             />

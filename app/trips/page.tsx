@@ -6,8 +6,9 @@ import { useEffect, useState } from 'react';
 import { createClientComponentClient } from '@supabase/auth-helpers-nextjs';
 import Logo from '@/components/base/Logo';
 import LoginModel from '@/components/auth/LoginModel';
-import { MessageCircle, Navigation, MapPin, Grid3x3, ArrowLeft, CornerDownRight, Car, KeyRound, Phone, CloudOff } from 'lucide-react';
+import { MessageCircle, Navigation, MapPin, ArrowLeft, CornerDownRight, Car, KeyRound, Phone, CloudOff } from 'lucide-react';
 import CopyField from '@/components/arrival/CopyField';
+import DirectionsPicker from '@/components/arrival/DirectionsPicker';
 import CheckInOutTimes from '@/components/arrival/CheckInOutTimes';
 import CancelBookingConfirm from '@/components/CancelBookingConfirm';
 import ExperiencesTeaser from '@/components/ExperiencesTeaser';
@@ -54,6 +55,7 @@ interface Booking {
         parking: string | null;
         checkInMethod: string | null;
         directionsUrl: string | null;
+        appleDirectionsUrl: string | null;
         hasCode: boolean;
         hasWifi: boolean;
         hostPhone: string | null;
@@ -299,9 +301,9 @@ export default function TripsPage() {
         // outside it there is nothing yet to reveal and no link.
         const withinWindow = !!countdown && countdown.daysUntilCheckIn <= 3;
         const phaseChip =
-            phase === 'during' ? 'You’re there now'
-                : phase === 'today' ? 'Arrives today'
-                    : phase === 'tomorrow' ? 'Arrives tomorrow'
+            phase === 'during' ? 'You’re here'
+                : phase === 'today' ? 'You arrive today'
+                    : phase === 'tomorrow' ? 'You arrive tomorrow'
                         : null;
         const fmtDay = (s: string) => {
             const d = new Date(s);
@@ -403,27 +405,16 @@ export default function TripsPage() {
                                         : <div className="text-sm text-slate-500">Ask {hostName} for the address in the messages.</div>}
                                 </div>
                             </div>
-                            {arr.what3words && (
-                                <div className="mt-2 flex items-center gap-2 pl-6">
-                                    <Grid3x3 className="h-3.5 w-3.5 flex-none text-emerald-700" />
-                                    <span className="text-sm text-emerald-700">{arr.what3words}</span>
-                                    {/* Icon-only, matching the home card: no second
-                                        "Copy" reading like a mistake next to Copy
-                                        address below. 44px target, label in aria. */}
-                                    <CopyField value={arr.what3words} label="Copy what3words address" iconOnly />
-                                </div>
-                            )}
+                            {/* The three words now live inside the Get directions
+                                picker (Apple Maps / Google Maps / what3words), so the
+                                what3words row is gone here too — the block matches the
+                                home card. */}
                             {!hasCoords && directionsUrl && (
                                 <p className="mt-2 pl-6 text-xs text-slate-400">No pin saved for this cottage yet — directions use the address.</p>
                             )}
-                            {(directionsUrl || arr.addressString) && (
+                            {(directionsUrl || arr.appleDirectionsUrl || arr.what3words || arr.addressString) && (
                                 <div className="mt-2.5 grid grid-cols-2 gap-2">
-                                    {directionsUrl && (
-                                        <a href={directionsUrl} target="_blank" rel="noreferrer"
-                                            className="inline-flex items-center justify-center gap-2 rounded-lg bg-slate-900 px-3 py-2 text-xs font-semibold text-white transition hover:bg-slate-800">
-                                            <Navigation className="h-3.5 w-3.5" /> Get directions
-                                        </a>
-                                    )}
+                                    <DirectionsPicker compact apple={arr.appleDirectionsUrl} google={directionsUrl} what3words={arr.what3words} />
                                     {arr.addressString && <CopyField value={arr.addressString} label="Copy address" />}
                                 </div>
                             )}
