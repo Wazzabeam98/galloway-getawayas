@@ -254,3 +254,61 @@ appearing as real approved businesses. **Fix:** either broaden the reset to matc
 all `*.test` demo domains (or a shared marker column), or delete these four + the
 two junk rows by hand and close the two Stripe test accounts. Low, but it's the
 recurring confusion you named.
+
+---
+
+## TASK 3 — Payout engine on today's master — **RESULT: invariants intact, untouched by today's six merges**
+
+**Read on master `2ef544e` + function on test 2026-09-05.**
+- **None of today's six merges touched** the payout / clawback / refund path
+  (`git diff` name-only: empty for those files) — so nothing could have regressed
+  it, but I re-checked anyway.
+- **Clamp present:** `greatest(0, round(coalesce(payout_balance_owed,0)+p_delta,
+  2))` verbatim in `20260831120000_host_debt_moves_atomically.sql:45–47`.
+  `adjust_payout_balance` on test is SECURITY DEFINER with **no** browser EXECUTE.
+- **Exactly three writers survive:** `host-payouts/route.ts:371`,
+  `stripe/refund/route.ts:199`, `lib/clawback.ts:131`. `grep payout_balance_owed`
+  across `app/`+`lib/` shows **no direct writes** — every move goes through the
+  function.
+- **What the first LIVE payout does that test cannot exercise** (unchanged from
+  last night's detailed §, still the gate): real card-funds settlement
+  (`source_transaction` covers single-charge stays; the deposit+balance untied
+  fallback is safe only while the 30-day rule holds), real KYC / `payouts_enabled`
+  state, real Stripe fees eating the platform's cut, real disputes → clawback
+  with a real negative balance. **The one carried must-do stays open:** read
+  `adjust_payout_balance` back on **prod** and confirm the single `acct_…` is
+  yours before the first run — I still can't read prod this session.
+
+---
+
+## TASK 2 — Unhappy-path scenarios — RAN them this time. Nothing lands money or access wrong.
+
+Ran on test 2026-09-05 where executable; the rest read on master (cancellation /
+webhook / door-code paths were **not touched by today's merges**, so last night's
+analysis carries).
+
+| Scenario | How | What happened | Money/access misplaced? |
+|---|---|---|---|
+| **Two guests take the last slot at once** | **RAN** (real concurrent CAS on `slot_sessions`) | one got the seat, the other **LOST THE SWAP**; final `seats_taken = 2/2`. The compare-and-swap (`update … where seats_taken = <value read>`) serialises it. | **No** — never oversold; loser charged nothing (hold released). |
+| **Webhook arrives twice** | **RAN** (duplicate `stripe_events.event_id`) | second insert is a **no-op** — the unique `event_id` dedupes; the handler returns `{duplicate:true}` and skips. | **No** — never double-processed. |
+| **Listing hidden while a guest holds a confirmed booking** | **RAN** (confirmed+paid booking, set listing `hidden`, read `profile_private` as the guest) | guest **still reads the host** (1 row) — entitlement keys on **booking status, not listing visibility**. | **No** — a paid guest keeps their address/door code; hiding only stops new bookings. |
+| **Guest cancels 23:55 on the last free day, refund computed after midnight** | read master (unchanged today) | `lib/cancellation.ts` evaluates the cutoff with `new Date()` at **processing** time — a cancel just before the deadline, processed just after, can drop to a smaller refund. | **Edge risk** — carried MEDIUM; stamp the request time. Only bites at the exact boundary. |
+| **Webhook never arrives / an hour late** | read master (unchanged today) | *late*: the confirm has no status guard so it un-cancels the booking; if the dates were re-taken the exclusion constraint fires `23P01` → refund. *never*: booking cancelled after 1h, **no auto-refund** — Stripe's ~3-day retry usually saves it; a persistent outage needs reconciliation + alerting. | *late*: **no** (money safe). *never*: **potentially yes** but low-probability; carried MEDIUM. |
+| **Host changes the door code the day a guest arrives** | read master (unchanged today) | the arrival page reads `listing_access_codes.code` **live** via the service role — the guest sees the new code on next load. An **already-sent** scheduled door-code message keeps the old one. | **No** for the live path; set the physical lock to match, and note the stale message. Carried LOW. |
+
+**Verdict:** the three I could execute (slot race, webhook dedupe, hidden-listing
+access) all put money and access exactly where they belong. The three carried
+ones are unchanged since last night — today's merges didn't touch those files —
+so their ranks stand.
+
+---
+
+## TASK 4 — Carried items — re-verified on current master, all THREE still true
+
+| Item | Re-verified tonight | Cost to fix (carried) |
+|---|---|---|
+| **`full_name` leaks to anon regardless of `show_full_name`** | **proven on test** — set a profile `show_full_name=false`, anon still read `full_name`. (Two directors' legal names on prod, per last night.) | masking view `profiles_public` (`case when show_full_name then full_name else null end`), revoke `full_name` from the raw table, repoint ~15 reads. ½ day + careful migration. |
+| **Storage has no owner-scoped upload paths** | **proven on test** — the `listings`-bucket INSERT policy is still bare `bucket_id = 'listings'`. Any signed-in account uploads to any path (write-only; no overwrite/delete). | per-user path prefix + `(storage.foldername(name))[1] = auth.uid()::text` INSERT policy + migrate existing objects. ½ day. |
+| **Silent money routes catch with `console.error` only** | **read on master** — today's merges did **not** touch `services/order(s)`, `services/slots/*`, `cron/ical-sync`, or the webhook post-charge notify catches; all still `console.error`-only. `slots/schedule`'s non-atomic delete-then-insert calendar-wipe still unlogged. | swap `console.error` → `logError` (~1–2h); wrap `slots/schedule` in one atomic function. Breaks nothing. |
+
+None of today's six merges changed any of these; the fixes and their costs are exactly as last night.
