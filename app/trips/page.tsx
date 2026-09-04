@@ -10,6 +10,7 @@ import { MessageCircle, MapPin, ArrowLeft, ArrowRight, CornerDownRight, Car, Key
 import CopyField from '@/components/arrival/CopyField';
 import DirectionsPicker from '@/components/arrival/DirectionsPicker';
 import PropertyMap from '@/components/PropertyMap';
+import HouseRules from '@/components/HouseRules';
 import { partyLabel, confirmationNumber, cancellationWords } from '@/lib/bookingDisplay';
 import CheckInOutTimes from '@/components/arrival/CheckInOutTimes';
 import CancelBookingConfirm from '@/components/CancelBookingConfirm';
@@ -141,7 +142,7 @@ export default function TripsPage() {
             if (listingIds.length) {
                 const { data: listings } = await supabase
                     .from('listings')
-                    .select('id, title, images, location, cancellation_policy, check_in_time, check_in_end_time, check_out_time')
+                    .select('id, title, images, location, cancellation_policy, check_in_time, check_in_end_time, check_out_time, events_allowed, smoking_allowed, commercial_photography_allowed, quiet_hours_enabled, quiet_hours_start, quiet_hours_end, additional_rules')
                     .in('id', listingIds);
                 const map: Record<string, any> = {};
                 (listings || []).forEach((l) => { map[l.id] = l; });
@@ -574,28 +575,33 @@ export default function TripsPage() {
                                 </div>
                             )}
 
-                            {/* Check-in / checkout — a fact to read, not a door. */}
+                            {/* Check-in / checkout on the left, parking on the
+                                right, a divider down the middle (the halves stack
+                                below lg). Parking is the one arrival fact without
+                                another home on the card — the check-in method lives
+                                in Getting in, "the last bit" reads better full width,
+                                the address and directions sit above — so it earns
+                                the right half on its own. With no parking, the rail
+                                just fills the row and there's no empty half. */}
                             <div className="py-6 first:pt-0 last:pb-0">
                                 <CheckInOutTimes
                                     surface="trips"
-                                    mode="static"
+                                    mode="split"
                                     checkInDate={b.check_in}
                                     checkOutDate={b.check_out}
                                     checkInTime={arr.checkInTime}
                                     checkOutTime={arr.checkOutTime}
                                     checkInEndTime={arr.checkInEndTime}
+                                    aside={arr.parking ? (
+                                        <div>
+                                            <div className="flex items-center gap-1.5 text-[11px] font-semibold uppercase tracking-wide text-slate-500">
+                                                <Car className="h-3.5 w-3.5" /> Parking
+                                            </div>
+                                            <p className="mt-2 whitespace-pre-line text-sm text-slate-700">{arr.parking}</p>
+                                        </div>
+                                    ) : null}
                                 />
                             </div>
-
-                            {/* Parking, only if the host said */}
-                            {arr.parking && (
-                                <div className="py-6 first:pt-0 last:pb-0">
-                                    <div className="flex items-center gap-1.5 text-[11px] font-semibold uppercase tracking-wide text-slate-500">
-                                        <Car className="h-3.5 w-3.5" /> Parking
-                                    </div>
-                                    <p className="mt-2 whitespace-pre-line text-sm text-slate-700">{arr.parking}</p>
-                                </div>
-                            )}
 
                         </div>
 
@@ -606,6 +612,14 @@ export default function TripsPage() {
                         </p>
                     </div>
                 )}
+
+                {/* Rules and instructions — the house rules, same source and
+                    wording as the listing page (shared HouseRules component).
+                    CONFIRMED reservations only: a pending or unpaid booking does
+                    not render them. */}
+                {listing && b.status === 'confirmed'
+                    && (b.payment_status === 'paid' || b.payment_status === 'deposit_paid')
+                    && <HouseRules listing={listing} />}
 
                 {/* If something's not right — the out-of-hours backstop. The
                     host's own number is in the host block above, so this points at
