@@ -25,6 +25,7 @@ export default function PropertyMap({
 }) {
     const containerRef = useRef<HTMLDivElement>(null);
     const mapRef = useRef<any>(null);
+    const roRef = useRef<any>(null);
     const isCard = variant === 'card';
 
     // A fixed offset derived from the coordinates themselves, so the same
@@ -81,49 +82,75 @@ export default function PropertyMap({
             if (!L) return;
 
             const map = L.map(containerRef.current, {
-                center: [pinLat, pinLon],
-                // Town scale for the card so no single building is picked out;
-                // street scale for the full listing block with its marker.
-                zoom: isCard ? 13 : 16,
+                center: isCard ? [latitude, longitude] : [pinLat, pinLon],
+                // Village scale for the card, so the shaded area sits in its
+                // surroundings; street scale for the full listing block with its
+                // marker.
+                zoom: isCard ? 14 : 16,
                 scrollWheelZoom: false,
                 zoomControl: !isCard,
             });
             mapRef.current = map;
 
-            // CARTO's Voyager style — same OpenStreetMap data, but a far
-            // cleaner look than the default tiles. Free, no API key.
-            // For a plainer, near-greyscale map, swap 'rastertiles/voyager'
-            // for 'light_all' below.
+            // Plain OpenStreetMap tiles — free and keyless. CARTO's basemaps now
+            // require an API key and render an "API KEY REQUIRED" watermark on
+            // every tile without one, which is what this replaced.
             L.tileLayer(
-                'https://{s}.basemaps.cartocdn.com/rastertiles/voyager/{z}/{x}/{y}{r}.png',
+                'https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png',
                 {
                     maxZoom: 19,
-                    subdomains: 'abcd',
+                    subdomains: 'abc',
                     detectRetina: true,
-                    attribution: '&copy; OpenStreetMap contributors &copy; CARTO',
+                    attribution: '&copy; OpenStreetMap contributors',
                 }
             ).addTo(map);
 
-            // A house in a dark circle, matching the site rather than
-            // Leaflet's default blue teardrop.
-            const icon = L.divIcon({
-                className: '',
-                html:
-                    '<div style="width:48px;height:48px;border-radius:9999px;background:#0f172a;' +
-                    'box-shadow:0 4px 12px rgba(0,0,0,0.3);display:flex;align-items:center;' +
-                    'justify-content:center;">' +
-                    '<svg xmlns="http://www.w3.org/2000/svg" width="22" height="22" viewBox="0 0 24 24" ' +
-                    'fill="none" stroke="#ffffff" stroke-width="2" stroke-linecap="round" ' +
-                    'stroke-linejoin="round"><path d="m3 9 9-7 9 7v11a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z"/>' +
-                    '<polyline points="9 22 9 12 15 12 15 22"/></svg>' +
-                    '</div>',
-                iconSize: [48, 48],
-                iconAnchor: [24, 24],
-            });
+            if (isCard) {
+                // No marker on the card. Instead a soft shaded circle over the
+                // rough area, so a guest can see WHICH part of the village they're
+                // going to without the exact door being pinned — the circle's
+                // radius is the fuzz. Centred on the true point.
+                L.circle([latitude, longitude], {
+                    radius: 500,
+                    color: '#059669',
+                    weight: 1.5,
+                    opacity: 0.5,
+                    fillColor: '#10b981',
+                    fillOpacity: 0.18,
+                    interactive: false,
+                }).addTo(map);
 
-            // The card variant shows the area alone — no marker, so nothing
-            // points at the actual door.
-            if (!isCard) {
+                // A square frame can lay out AFTER Leaflet first reads its size,
+                // which leaves tiles grey or half-drawn; recompute the size once it
+                // has settled and on any later resize. Zoom/centre are fixed above,
+                // so this only ever corrects the canvas, never the view.
+                const frame = () => {
+                    if (!mapRef.current) return;
+                    map.invalidateSize();
+                };
+                setTimeout(frame, 80);
+                if (typeof ResizeObserver !== 'undefined' && containerRef.current) {
+                    const ro = new ResizeObserver(() => frame());
+                    ro.observe(containerRef.current);
+                    roRef.current = ro;
+                }
+            } else {
+                // A house in a dark circle, matching the site rather than
+                // Leaflet's default blue teardrop.
+                const icon = L.divIcon({
+                    className: '',
+                    html:
+                        '<div style="width:48px;height:48px;border-radius:9999px;background:#0f172a;' +
+                        'box-shadow:0 4px 12px rgba(0,0,0,0.3);display:flex;align-items:center;' +
+                        'justify-content:center;">' +
+                        '<svg xmlns="http://www.w3.org/2000/svg" width="22" height="22" viewBox="0 0 24 24" ' +
+                        'fill="none" stroke="#ffffff" stroke-width="2" stroke-linecap="round" ' +
+                        'stroke-linejoin="round"><path d="m3 9 9-7 9 7v11a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z"/>' +
+                        '<polyline points="9 22 9 12 15 12 15 22"/></svg>' +
+                        '</div>',
+                    iconSize: [48, 48],
+                    iconAnchor: [24, 24],
+                });
                 L.marker([pinLat, pinLon], { icon, interactive: false }).addTo(map);
             }
         };
@@ -132,6 +159,10 @@ export default function PropertyMap({
 
         return () => {
             cancelled = true;
+            if (roRef.current) {
+                roRef.current.disconnect();
+                roRef.current = null;
+            }
             if (mapRef.current) {
                 mapRef.current.remove();
                 mapRef.current = null;
@@ -141,10 +172,10 @@ export default function PropertyMap({
 
     if (isCard) {
         return (
-            <div className="mt-2.5 overflow-hidden rounded-lg border border-slate-200">
-                <div ref={containerRef} className="h-36 w-full bg-slate-100 z-0" />
-                <div className="bg-white px-3 py-1.5 text-[11px] text-slate-500">
-                    {area ? area + ' — the area, not the exact spot' : 'The area, not the exact spot'}
+            <div className="overflow-hidden rounded-xl border border-slate-200">
+                <div ref={containerRef} className="aspect-square w-full bg-slate-100 z-0" />
+                <div className="bg-white px-3.5 py-2 text-xs text-slate-500">
+                    {area ? area + ' — the shaded area, not the exact spot' : 'The shaded area, not the exact spot'}
                 </div>
             </div>
         );
@@ -163,7 +194,7 @@ export default function PropertyMap({
             />
 
             <p className="text-xs text-slate-400 mt-2">
-                Map data from OpenStreetMap contributors, tiles by CARTO. The pin shows the
+                Map data and tiles from OpenStreetMap contributors. The pin shows the
                 approximate area, not the exact property.
             </p>
         </div>
