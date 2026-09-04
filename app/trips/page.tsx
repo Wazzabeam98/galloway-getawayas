@@ -608,11 +608,13 @@ export default function TripsPage() {
                     </div>
                 )}
 
-                {/* Rules and instructions — the house rules the host set on the
-                    listing, same source and wording as the listing page (shared
-                    HouseRules component). Renders nothing when the host never
-                    configured them. */}
-                <HouseRules listing={listing} />
+                {/* Rules and instructions — the house rules, same source and
+                    wording as the listing page (shared HouseRules component).
+                    CONFIRMED reservations only: a pending or unpaid booking does
+                    not render them. */}
+                {listing && b.status === 'confirmed'
+                    && (b.payment_status === 'paid' || b.payment_status === 'deposit_paid')
+                    && <HouseRules listing={listing} />}
 
                 {/* If something's not right — the out-of-hours backstop. The
                     host's own number is in the host block above, so this points at
