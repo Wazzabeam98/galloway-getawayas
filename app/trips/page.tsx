@@ -575,28 +575,33 @@ export default function TripsPage() {
                                 </div>
                             )}
 
-                            {/* Check-in / checkout — a fact to read, not a door. */}
+                            {/* Check-in / checkout on the left, parking on the
+                                right, a divider down the middle (the halves stack
+                                below lg). Parking is the one arrival fact without
+                                another home on the card — the check-in method lives
+                                in Getting in, "the last bit" reads better full width,
+                                the address and directions sit above — so it earns
+                                the right half on its own. With no parking, the rail
+                                just fills the row and there's no empty half. */}
                             <div className="py-6 first:pt-0 last:pb-0">
                                 <CheckInOutTimes
                                     surface="trips"
-                                    mode="static"
+                                    mode="split"
                                     checkInDate={b.check_in}
                                     checkOutDate={b.check_out}
                                     checkInTime={arr.checkInTime}
                                     checkOutTime={arr.checkOutTime}
                                     checkInEndTime={arr.checkInEndTime}
+                                    aside={arr.parking ? (
+                                        <div>
+                                            <div className="flex items-center gap-1.5 text-[11px] font-semibold uppercase tracking-wide text-slate-500">
+                                                <Car className="h-3.5 w-3.5" /> Parking
+                                            </div>
+                                            <p className="mt-2 whitespace-pre-line text-sm text-slate-700">{arr.parking}</p>
+                                        </div>
+                                    ) : null}
                                 />
                             </div>
-
-                            {/* Parking, only if the host said */}
-                            {arr.parking && (
-                                <div className="py-6 first:pt-0 last:pb-0">
-                                    <div className="flex items-center gap-1.5 text-[11px] font-semibold uppercase tracking-wide text-slate-500">
-                                        <Car className="h-3.5 w-3.5" /> Parking
-                                    </div>
-                                    <p className="mt-2 whitespace-pre-line text-sm text-slate-700">{arr.parking}</p>
-                                </div>
-                            )}
 
                         </div>
 
