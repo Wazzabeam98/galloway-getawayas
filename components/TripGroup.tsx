@@ -111,6 +111,7 @@ export default function TripGroup({
     const [mounted, setMounted] = useState(false);
     const [open, setOpen] = useState(false);
     const [copiedId, setCopiedId] = useState<string | null>(null);
+    const [copyErrorId, setCopyErrorId] = useState<string | null>(null);
     const [shareOpen, setShareOpen] = useState(false);
     const [shareId, setShareId] = useState<string | null>(null);
     const [busyId, setBusyId] = useState<string | null>(null);
@@ -192,8 +193,16 @@ export default function TripGroup({
         try {
             await navigator.clipboard.writeText(linkFor(p));
             setCopiedId(p.id); setTimeout(() => setCopiedId(null), 1500);
+            setCopyErrorId(null);
+            // Only NOW is the seat shared — the clipboard write actually succeeded.
             markSent(p);
-        } catch { toast.error('Could not copy the link.', { theme: 'colored' }); }
+        } catch {
+            // A silent clipboard failure is how a host pastes nothing. Say so
+            // loudly and put the link on screen so they can copy it by hand — and
+            // do NOT mark the seat shared, since nothing was copied.
+            setCopyErrorId(p.id);
+            toast.error('Couldn’t copy — the link is shown below, select and copy it by hand.', { theme: 'colored' });
+        }
     };
 
     const emailInvite = async (p: Companion) => {
@@ -208,7 +217,9 @@ export default function TripGroup({
         } else {
             const subject = encodeURIComponent('Join my trip' + (cottage ? ' to ' + cottage : ''));
             window.location.href = 'mailto:?subject=' + subject + '&body=' + encodeURIComponent(shareText(p));
-            markSent(p);
+            // Not marked shared: a mailto with no configured mail client opens
+            // nothing, and we can't tell. An unshared link staying inert is the
+            // safe failure — the host can Re-share, or use Copy link.
         }
     };
 
@@ -281,16 +292,36 @@ export default function TripGroup({
     // inside the box, rather than five thin tiles stretched across the bottom.
     const ShareTiles = ({ p }: { p: Companion }) => {
         const tile = 'flex items-center justify-center gap-2 rounded-xl border border-slate-200 bg-white px-3 py-3 text-sm font-medium text-slate-700 transition hover:border-slate-400 hover:bg-slate-50';
+        const copied = copiedId === p.id;
+        const failed = copyErrorId === p.id;
         return (
-            <div className="grid grid-cols-2 gap-2">
-                <button type="button" onClick={() => copyLink(p)} className={tile}>
-                    {copiedId === p.id ? <Check className="h-5 w-5 flex-none text-emerald-600" /> : <Link2 className="h-5 w-5 flex-none" />}
-                    {copiedId === p.id ? 'Copied' : 'Copy link'}
+            <div className="space-y-2">
+                {/* Copy link leads, full width. It is the only channel that works
+                    everywhere and the only one we can confirm, so it is also the
+                    only tile that marks the seat shared. */}
+                <button type="button" onClick={() => copyLink(p)}
+                    className={'flex w-full items-center justify-center gap-2 rounded-xl px-3 py-3 text-sm font-semibold text-white transition ' + (copied ? 'bg-emerald-600' : failed ? 'bg-red-600 hover:bg-red-700' : 'bg-slate-900 hover:bg-slate-700')}>
+                    {copied ? <Check className="h-5 w-5 flex-none" /> : failed ? <X className="h-5 w-5 flex-none" /> : <Link2 className="h-5 w-5 flex-none" />}
+                    {copied ? 'Copied' : failed ? 'Couldn’t copy — copy it below' : 'Copy link'}
                 </button>
-                <button type="button" onClick={() => emailInvite(p)} className={tile}><Mail className="h-5 w-5 flex-none" /> Email</button>
-                <a href={'sms:?&body=' + encodeURIComponent(shareText(p))} onClick={() => markSent(p)} className={tile}><MessageSquare className="h-5 w-5 flex-none" /> Messages</a>
-                <a href={'https://wa.me/?text=' + encodeURIComponent(shareText(p))} target="_blank" rel="noreferrer" onClick={() => markSent(p)} className={tile}><WhatsAppIcon className="h-5 w-5 flex-none" /> WhatsApp</a>
-                <a href={'fb-messenger://share/?link=' + encodeURIComponent(linkFor(p))} onClick={() => markSent(p)} className={tile}><MessengerIcon className="h-5 w-5 flex-none" /> Messenger</a>
+                {failed && (
+                    <input
+                        readOnly
+                        value={linkFor(p)}
+                        onFocus={(e) => e.currentTarget.select()}
+                        onClick={(e) => e.currentTarget.select()}
+                        className="w-full rounded-lg border border-red-300 bg-red-50 px-3 py-2 text-xs text-red-900"
+                    />
+                )}
+                {/* Best-effort deep links. They do NOT mark the seat shared —
+                    a click can't tell us whether anything was actually sent, and
+                    an unshared link staying inert is the safe failure. */}
+                <div className="grid grid-cols-2 gap-2">
+                    <button type="button" onClick={() => emailInvite(p)} className={tile}><Mail className="h-5 w-5 flex-none" /> Email</button>
+                    <a href={'sms:?&body=' + encodeURIComponent(shareText(p))} className={tile}><MessageSquare className="h-5 w-5 flex-none" /> Messages</a>
+                    <a href={'https://wa.me/?text=' + encodeURIComponent(shareText(p))} target="_blank" rel="noreferrer" className={tile}><WhatsAppIcon className="h-5 w-5 flex-none" /> WhatsApp</a>
+                    <a href={'fb-messenger://share/?link=' + encodeURIComponent(linkFor(p))} className={tile}><MessengerIcon className="h-5 w-5 flex-none" /> Messenger</a>
+                </div>
             </div>
         );
     };
