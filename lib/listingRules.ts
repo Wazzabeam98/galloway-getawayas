@@ -20,6 +20,27 @@
 // typed into the postcode box, not to prove the place exists.
 export const UK_POSTCODE = /^[A-Z]{1,2}[0-9][A-Z0-9]?\s*[0-9][A-Z]{2}$/i;
 
+// A listing cannot be PUBLISHED without a real street address and postcode —
+// you can't list accommodation that doesn't exist, and a booked guest has to be
+// sent somewhere. This is the SERVER half of the address/postcode PUBLISH_RULES
+// below: the wizard shows them client-side, but the publish endpoint must refuse
+// a publish that lacks them too, or a direct API call (or a listing that
+// predates the rule) slips through. Gates the FIRST publish only — re-showing an
+// already-live listing (visibility un-hide) is left alone, so a host can still
+// manage a grandfathered address-less listing. Takes a raw listings row and
+// returns a host-readable sentence, or null when it's fit to publish. The
+// address stays hidden from guests until they book (walling is elsewhere).
+export function addressBlockerForPublish(
+    row: { street_address?: string | null; postcode?: string | null },
+): string | null {
+    const street = String(row.street_address || '').trim();
+    const postcode = String(row.postcode || '').trim();
+    if (!street) return 'Add the street address before publishing — a booked guest needs somewhere to be sent.';
+    if (!postcode) return 'Add a postcode before publishing.';
+    if (!UK_POSTCODE.test(postcode)) return 'That postcode doesn’t look right — please check it before publishing.';
+    return null;
+}
+
 // Not a business rule — a typo catcher, for the extra zero on £500. Raise it if
 // a big group property ever needs more.
 export const MAX_PRICE_PER_NIGHT = 5000;
