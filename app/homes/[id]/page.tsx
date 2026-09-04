@@ -17,6 +17,7 @@ import { checkInMethodTitle, checkInBlurb } from '@/lib/checkInMethods';
 import { townKey } from '@/lib/places';
 import { areaForTownKey, hasCopy } from '@/config/areas';
 import PropertyMap from '@/components/PropertyMap';
+import HouseRules from '@/components/HouseRules';
 import ShowMoreText from '@/components/ShowMoreText';
 import AmenityList from '@/components/AmenityList';
 import MobileBookingBar from '@/components/MobileBookingBar';
@@ -245,7 +246,7 @@ const FindHome = async ({ params }: { params: { id: string } }) => {
     const { data: home } = await supabase
         .from('listings')
         .select(
-            'id, host_id, title, description, location, approx_latitude, approx_longitude, price_per_night, max_guests, images, property_type, privacy_type, bedrooms, beds, bathrooms, amenities, status, ical_import_url, cancellation_policy, weekend_price, cleaning_fee, pet_fee, extra_guest_fee, extra_guest_after, extra_guest_period, availability_window, instant_book, instant_book_requires_phone, instant_book_requires_verified_id, check_in_time, check_in_end_time, check_out_time, check_in_method, damage_deposit, nearby, rating_avg, rating_count, rating_cleanliness, rating_accuracy, rating_checkin, rating_communication, rating_location, rating_value'
+            'id, host_id, title, description, location, approx_latitude, approx_longitude, price_per_night, max_guests, images, property_type, privacy_type, bedrooms, beds, bathrooms, amenities, status, ical_import_url, cancellation_policy, weekend_price, cleaning_fee, pet_fee, extra_guest_fee, extra_guest_after, extra_guest_period, availability_window, instant_book, instant_book_requires_phone, instant_book_requires_verified_id, check_in_time, check_in_end_time, check_out_time, check_in_method, events_allowed, smoking_allowed, commercial_photography_allowed, quiet_hours_enabled, quiet_hours_start, quiet_hours_end, additional_rules, damage_deposit, nearby, rating_avg, rating_count, rating_cleanliness, rating_accuracy, rating_checkin, rating_communication, rating_location, rating_value'
         )
         .eq('id', params.id)
         .single();
@@ -684,6 +685,10 @@ const FindHome = async ({ params }: { params: { id: string } }) => {
                                 area={placeSummary(home.location)}
                             />
                         )}
+
+                        {/* House rules — same shared component and wording the
+                            guest sees again on their trip card after booking. */}
+                        <HouseRules listing={home} variant="page" />
 
                         {(!reviews || reviews.length === 0) && (
                             <div className='mt-8 pt-8 border-t'>

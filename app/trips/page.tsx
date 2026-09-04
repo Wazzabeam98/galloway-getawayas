@@ -10,6 +10,7 @@ import { MessageCircle, MapPin, ArrowLeft, ArrowRight, CornerDownRight, Car, Key
 import CopyField from '@/components/arrival/CopyField';
 import DirectionsPicker from '@/components/arrival/DirectionsPicker';
 import PropertyMap from '@/components/PropertyMap';
+import HouseRules from '@/components/HouseRules';
 import { partyLabel, confirmationNumber, cancellationWords } from '@/lib/bookingDisplay';
 import CheckInOutTimes from '@/components/arrival/CheckInOutTimes';
 import CancelBookingConfirm from '@/components/CancelBookingConfirm';
@@ -141,7 +142,7 @@ export default function TripsPage() {
             if (listingIds.length) {
                 const { data: listings } = await supabase
                     .from('listings')
-                    .select('id, title, images, location, cancellation_policy, check_in_time, check_in_end_time, check_out_time')
+                    .select('id, title, images, location, cancellation_policy, check_in_time, check_in_end_time, check_out_time, events_allowed, smoking_allowed, commercial_photography_allowed, quiet_hours_enabled, quiet_hours_start, quiet_hours_end, additional_rules')
                     .in('id', listingIds);
                 const map: Record<string, any> = {};
                 (listings || []).forEach((l) => { map[l.id] = l; });
@@ -606,6 +607,12 @@ export default function TripsPage() {
                         </p>
                     </div>
                 )}
+
+                {/* Rules and instructions — the house rules the host set on the
+                    listing, same source and wording as the listing page (shared
+                    HouseRules component). Renders nothing when the host never
+                    configured them. */}
+                <HouseRules listing={listing} />
 
                 {/* If something's not right — the out-of-hours backstop. The
                     host's own number is in the host block above, so this points at
