@@ -364,11 +364,11 @@ export default function TripGroup({
                 <div className="fixed inset-0 z-50 flex items-end justify-center bg-black/50 px-0 sm:items-center sm:px-4" onClick={() => setOpen(false)}>
                     <div className="flex max-h-[92vh] w-full max-w-md flex-col rounded-t-2xl bg-white shadow-xl sm:rounded-2xl" onClick={(e) => e.stopPropagation()}>
                         <div className="flex items-center justify-between px-5 pt-5">
-                            <h2 className="text-lg font-bold text-slate-900">Your group</h2>
+                            <h2 className="text-lg font-bold text-slate-900">Invite guests</h2>
                             <button type="button" onClick={() => setOpen(false)} className="text-slate-400 hover:text-slate-700"><X className="h-5 w-5" /></button>
                         </div>
                         <p className="px-5 pb-3 pt-1 text-sm text-slate-500">
-                            Everyone on the booking. Invite an open seat with its link — no email needed.
+                            Invite guests to join your trip{cottage ? ' to ' + cottage : ''}.
                         </p>
 
                         <div className="min-h-0 flex-1 space-y-2 overflow-y-auto px-5">
@@ -392,6 +392,13 @@ export default function TripGroup({
                                 tapping a guest does nothing. */}
                             {people.map((p) => {
                                 const accepted = seatState(p) === 'accepted';
+                                // Re-share only means anything once a link has actually
+                                // gone out. An unshared seat (nothing shared yet) is a
+                                // plain Guest row with just Remove — first-time sharing
+                                // is the "Invite guests" button at the foot. Showing
+                                // "Re-share" on a seat you've never shared reads as a
+                                // mistake; it used to appear on every unaccepted seat.
+                                const shared = seatState(p) === 'shared';
                                 const sharing = shareId === p.id;
                                 return (
                                     <div key={p.id} className="rounded-xl border border-slate-200 p-3">
@@ -401,15 +408,15 @@ export default function TripGroup({
                                                 <div className="truncate text-sm font-medium text-slate-900">{nameOf(p)}</div>
                                             </div>
                                             {/* Re-share sends the SAME link again — the message got lost,
-                                                the link didn't. Small, so the row stays clean. */}
-                                            {!accepted && (
+                                                the link didn't. Only on a seat whose link has gone out. */}
+                                            {shared && (
                                                 <button type="button" onClick={() => setShareId(sharing ? null : p.id)} className="flex-none text-xs font-medium text-slate-400 hover:text-slate-700">
                                                     {sharing ? 'Close' : 'Re-share'}
                                                 </button>
                                             )}
                                             <button type="button" onClick={() => remove(p)} className="flex-none text-xs font-medium text-slate-400 hover:text-red-600">Remove</button>
                                         </div>
-                                        {!accepted && sharing && (
+                                        {shared && sharing && (
                                             <div className="mt-3 border-t border-slate-100 pt-3">
                                                 <p className="mb-2 text-xs text-slate-500">Send the same link again:</p>
                                                 <ShareTiles p={p} />
@@ -422,13 +429,11 @@ export default function TripGroup({
                                 );
                             })}
 
-                            {/* What a companion sees — plain, because it's expected */}
+                            {/* What a guest sees — plain, because it's expected */}
                             <div className="rounded-xl bg-slate-50 p-3.5">
-                                <div className="mb-1 text-xs font-semibold uppercase tracking-wide text-slate-500">What a companion sees</div>
+                                <div className="mb-1 text-xs font-semibold uppercase tracking-wide text-slate-500">What a guest sees</div>
                                 <p className="text-sm text-slate-600">
-                                    The address and directions, check-in times and arrival notes, and — close to
-                                    arrival — the door code and wifi, plus a way to message the host. Not the price,
-                                    and they can't change or cancel the booking.
+                                    They'll see all the booking details except the price and payment.
                                 </p>
                             </div>
                         </div>
