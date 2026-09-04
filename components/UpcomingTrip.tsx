@@ -71,6 +71,7 @@ export default async function UpcomingTrip() {
     // grant-less listing_arrival table.
     let directionsUrl: string | null = null;
     let what3words: string | null = null;
+    let addressToCopy: string | null = null;
     let hasCode = false;
     if (bookingReleasesPrivateData(booking)) {
         const admin = adminClient();
@@ -85,6 +86,12 @@ export default async function UpcomingTrip() {
         const p: any = place || {};
         what3words = (arr as any)?.what3words || null;
         hasCode = !!access;
+        // The FULL street address and postcode for Copy address — never the
+        // town on its own, which sends a guest to the wrong end of a village.
+        addressToCopy = [p.street_address, p.postcode]
+            .map((s: any) => String(s || '').trim())
+            .filter(Boolean)
+            .join(', ') || null;
         // Shared rule: a pin, or a STREET address — never the town alone.
         directionsUrl = buildDirectionsUrl({
             latitude: p.latitude, longitude: p.longitude,
@@ -196,27 +203,43 @@ export default async function UpcomingTrip() {
                 checkOutDate={booking.check_out}
                 checkInTime={listing.check_in_time}
                 checkOutTime={listing.check_out_time}
-                aside={(directionsUrl || what3words || wayInReady) ? (
-                    <div className="flex h-full flex-col justify-center gap-2.5">
-                        {what3words && (
-                            <div className="flex items-center gap-2">
-                                <Grid3x3 className="h-4 w-4 flex-none text-emerald-700" />
-                                <span className="min-w-0 truncate text-sm text-emerald-700">{what3words}</span>
-                                <CopyField value={what3words} label="Copy" />
-                            </div>
-                        )}
-                        {directionsUrl && (
-                            <a href={directionsUrl} target="_blank" rel="noreferrer"
-                                className="flex w-full items-center justify-center gap-2 rounded-lg bg-stone-900 px-3 py-2.5 text-sm font-semibold text-white transition hover:bg-stone-800">
-                                <Navigation className="h-4 w-4" /> Get directions
-                            </a>
-                        )}
-                        {wayInReady && (
-                            <Link href={'/arrival/' + booking.id}
-                                className="inline-flex items-center gap-1.5 text-sm font-semibold text-emerald-700 hover:text-emerald-800">
-                                <KeyRound className="h-4 w-4 flex-none" /> Your way in is ready &rarr;
-                            </Link>
-                        )}
+                aside={(directionsUrl || what3words || wayInReady || addressToCopy) ? (
+                    // A 2×2, like the arrival screen's row. Left column: what3words
+                    // (with its Copy) and Get directions beneath it. Right column:
+                    // the way-in signal and Copy address beneath it — so the two
+                    // buttons sit side by side on one row, not one full-width slab.
+                    // Below sm the two columns STACK into one (see note); nothing
+                    // is squeezed into a half-width button.
+                    <div className="grid grid-cols-1 items-stretch gap-x-4 gap-y-3 sm:grid-cols-2">
+                        <div className="flex flex-col justify-between gap-2.5">
+                            {what3words ? (
+                                <div className="flex items-center gap-2">
+                                    <Grid3x3 className="h-4 w-4 flex-none text-emerald-700" />
+                                    {/* Wrap, don't truncate — the three words are
+                                        the precise thing and must be readable in
+                                        full even in the narrower column. */}
+                                    <span className="min-w-0 flex-1 break-words text-sm text-emerald-700">{what3words}</span>
+                                    <CopyField value={what3words} label="Copy" />
+                                </div>
+                            ) : <span aria-hidden="true" />}
+                            {directionsUrl && (
+                                <a href={directionsUrl} target="_blank" rel="noreferrer"
+                                    className="flex w-full items-center justify-center gap-2 rounded-lg bg-stone-900 px-3 py-2.5 text-sm font-semibold text-white transition hover:bg-stone-800">
+                                    <Navigation className="h-4 w-4" /> Get directions
+                                </a>
+                            )}
+                        </div>
+                        <div className="flex flex-col justify-between gap-2.5">
+                            {wayInReady ? (
+                                <Link href={'/arrival/' + booking.id}
+                                    className="inline-flex items-center gap-1.5 text-sm font-semibold text-emerald-700 hover:text-emerald-800">
+                                    <KeyRound className="h-4 w-4 flex-none" /> Your way in is ready &rarr;
+                                </Link>
+                            ) : <span aria-hidden="true" />}
+                            {addressToCopy && (
+                                <CopyField value={addressToCopy} label="Copy address" block />
+                            )}
+                        </div>
                     </div>
                 ) : null}
             />
