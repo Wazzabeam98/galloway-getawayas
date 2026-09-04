@@ -69,9 +69,12 @@ were read on master at `43c5158`.
 
 # 1. Needs a decision from you
 
-One. The other — `full_name` being readable against the owner's wishes — turned
-out to rest on a wrong claim and is now done; it is kept below, struck through,
-because the correction is the useful part.
+One to decide here (`services/apply`). One more — the account-erasure /
+"delete my account" policy — is a **solicitor question** that goes with the host
+terms review, not a coding decision; it is parked at the end of this section so it
+isn't lost. The other — `full_name` being readable against the owner's wishes —
+turned out to rest on a wrong claim and is now done; it is kept below, struck
+through, because the correction is the useful part.
 
 ### ~~`full_name` is readable even when the owner asked for it not to be~~
 
@@ -124,6 +127,30 @@ said you would rather decide that than have a security fix decide it for you.
 guest-experiences work shipped behind `GUEST_EXPERIENCES_OPEN` (#38) and eight
 new `services/*` routes came with it. The join flow this touches is the one
 that phase opens with.
+
+### Account erasure / "delete my account" — SOLICITOR question (bundle with the host terms)
+
+Parked, not to be coded until the solicitor has ruled. Goes to them **with** the
+host-terms / agent-or-principal question (CLAUDE.md §4), because it turns on the
+same retention basis.
+
+The one thing to know: today the schema `ON DELETE CASCADE`s a guest's bookings
+when their profile is deleted, which would silently destroy a paid upcoming stay
+and strand the money (proven on test, night of 3→4 Sep — `bookings.guest_id →
+CASCADE`, `payments.booking_id → SET NULL`). So a naive "delete my account"
+button is dangerous. **No such button exists yet — do not add one until this is
+settled.**
+
+The likely answer is **anonymise + retain, not delete**: the privacy policy
+already promises 6-year retention of booking and payment records, and UK GDPR
+Art 17(3) switches erasure off for data kept under a legal obligation — so
+"delete me" means strip the identity and keep the (restricted) financial record,
+with money resolved first for anyone mid-stay. Full scope, the schema changes it
+implies, and the denormalised-PII gotcha are written up in
+`OVERNIGHT-REPORT-2026-09-04.md` (§ "ERASURE DESIGN SCOPE") on branch
+`audit/overnight-2026-09-04`. Questions for the solicitor: does the 6-year basis
+cover both booking and payment records; are guest messages retained as dispute
+evidence; do host and guest erasure differ.
 
 ---
 
