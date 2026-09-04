@@ -13,7 +13,7 @@ export const dynamic = 'force-dynamic';
 async function bookedBy(admin: any, bookingId: string, userId: string) {
     const { data } = await admin
         .from('bookings')
-        .select('id, listing_id, guest_id, check_in, check_out, status')
+        .select('id, listing_id, guest_id, check_in, check_out, status, guests')
         .eq('id', bookingId)
         .maybeSingle();
 
@@ -39,20 +39,115 @@ export async function POST(request: Request) {
         const action: string = (body && body.action) || 'invite';
         const admin = adminClient();
 
-        // ---- Invite someone along -----------------------------------------
+        // ---- Fill the sheet with one seat per place on the booking ---------
+        // Called when the group sheet opens. Every seat on the booking that
+        // isn't already a row gets one, each with its own single-use link ready
+        // to share — so the sheet shows the whole party the moment it opens,
+        // with nothing to add first. Idempotent: it only tops up the shortfall,
+        // so re-opening the sheet mints nothing new.
+        if (action === 'ensure-seats') {
+            const bookingId: string = body.bookingId;
+            if (!bookingId) {
+                return NextResponse.json({ ok: false, error: 'Which booking?' }, { status: 400 });
+            }
+            const booking = await bookedBy(admin, bookingId, user.id);
+            if (!booking) {
+                return NextResponse.json({ ok: false, error: 'Not your booking' }, { status: 403 });
+            }
+            if (booking.status === 'cancelled' || booking.status === 'declined') {
+                return NextResponse.json({ ok: false, error: 'This booking has been cancelled.' }, { status: 400 });
+            }
+
+            // The booker is one of the party; the rest are companion seats.
+            const capacity = Math.max(0, ((booking.guests as number) || 1) - 1);
+
+            // Atomic top-up in one statement, guarded by a partial unique index on
+            // (booking_id, seat_index): two devices — or two tabs — opening the
+            // sheet at once can no longer each insert the shortfall and double the
+            // seats. See 20260903174512_booking_seats_are_atomic.sql.
+            const { data: minted, error: seatErr } = await admin
+                .rpc('ensure_booking_seats', { p_booking: bookingId, p_inviter: user.id });
+            if (seatErr) {
+                await logError('booking-guests/ensure-seats: could not top up the party seats', seatErr, {
+                    path: 'api/booking-guests', userId: user.id,
+                });
+                return NextResponse.json({ ok: false, error: 'Could not set up the seats.' }, { status: 500 });
+            }
+
+            return NextResponse.json({ ok: true, capacity, minted: minted ?? 0 });
+        }
+
+        // ---- Label or bind a seat (optional, on the seat's own row) --------
+        // A booker can put a name on a seat, or bind its link to an email so
+        // only that address can claim it. Both optional and both reversible;
+        // this is the only place name/email live now that they're out of the
+        // main share flow.
+        if (action === 'label') {
+            const guestRowId: string = body.guestId;
+            const email: string = ((body.email || '') as string).trim().toLowerCase();
+            const name: string = ((body.name || '') as string).trim();
+
+            if (email && !/^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(email)) {
+                return NextResponse.json(
+                    { ok: false, error: 'That doesn’t look like an email address.' },
+                    { status: 400 }
+                );
+            }
+
+            const { data: row } = await admin
+                .from('booking_guests')
+                .select('id, booking_id, status')
+                .eq('id', guestRowId)
+                .maybeSingle();
+            if (!row || row.status === 'removed') {
+                return NextResponse.json({ ok: false, error: 'Not found' }, { status: 404 });
+            }
+            const booking = await bookedBy(admin, row.booking_id, user.id);
+            if (!booking) {
+                return NextResponse.json({ ok: false, error: 'Not your booking' }, { status: 403 });
+            }
+            // Someone already on the seat isn't relabelled from here.
+            if (row.status === 'active') {
+                return NextResponse.json({ ok: false, error: 'They’ve already joined.' }, { status: 400 });
+            }
+
+            // Binding to an address pre-points the seat at that account if it
+            // exists; clearing the address unbinds it.
+            const { data: matched } = email
+                ? await admin.from('profiles').select('id').ilike('email', email).maybeSingle()
+                : { data: null };
+
+            const { error } = await admin
+                .from('booking_guests')
+                .update({ name: name || null, email: email || null, user_id: (matched && matched.id) || null })
+                .eq('id', guestRowId);
+            if (error) {
+                const duplicate = (error.message || '').indexOf('booking_guests_unique_person') !== -1;
+                return NextResponse.json(
+                    { ok: false, error: duplicate ? 'That address is already on this trip.' : error.message },
+                    { status: 400 }
+                );
+            }
+            return NextResponse.json({ ok: true });
+        }
+
+        // ---- Add someone along --------------------------------------------
+        // Name and email are both optional now. Adding someone mints a seat and
+        // a single-use link; the booker shares it however they like. An email,
+        // when given, keeps binding the link to that address (see accept route).
         if (action === 'invite') {
             const bookingId: string = body.bookingId;
             const email: string = ((body.email || '') as string).trim().toLowerCase();
             const name: string = ((body.name || '') as string).trim();
 
-            if (!bookingId || !email) {
+            if (!bookingId) {
                 return NextResponse.json(
-                    { ok: false, error: 'Enter their email address.' },
+                    { ok: false, error: 'Which booking?' },
                     { status: 400 }
                 );
             }
 
-            if (!/^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(email)) {
+            if (email && !/^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(email)) {
                 return NextResponse.json(
                     { ok: false, error: 'That doesn\u2019t look like an email address.' },
                     { status: 400 }
@@ -71,24 +166,23 @@ export async function POST(request: Request) {
                 );
             }
 
-            if (email === (user.email || '').toLowerCase()) {
+            if (email && email === (user.email || '').toLowerCase()) {
                 return NextResponse.json(
                     { ok: false, error: 'You booked it, so you\u2019re already on it.' },
                     { status: 400 }
                 );
             }
 
-            const { data: existingProfile } = await admin
-                .from('profiles')
-                .select('id')
-                .ilike('email', email)
-                .maybeSingle();
+            // Only pre-match a profile when we actually have an address to match.
+            const { data: existingProfile } = email
+                ? await admin.from('profiles').select('id').ilike('email', email).maybeSingle()
+                : { data: null };
 
             const { data: created, error } = await admin
                 .from('booking_guests')
                 .insert({
                     booking_id: bookingId,
-                    email: email,
+                    email: email || null,
                     name: name || null,
                     user_id: (existingProfile && existingProfile.id) || null,
                     invited_by: user.id,
@@ -107,16 +201,74 @@ export async function POST(request: Request) {
                 );
             }
 
-            // The row (and its token) come back; the booker chooses how to deliver
-            // the link \u2014 copy it, email it, Messages or WhatsApp \u2014 so we no longer
-            // force an email here. Email is one channel among four now, sent on
-            // demand by action=email below.
             return NextResponse.json({
                 ok: true,
                 id: created.id,
                 token: created.invite_token,
                 link: SITE_URL + '/trip-invite/' + created.invite_token,
             });
+        }
+
+        // ---- Regenerate a link (revoke in place) ---------------------------
+        // A link that's gone to the wrong place, or one that's gone cold: mint a
+        // fresh token on the SAME seat. The old link dies instantly (its token
+        // no longer exists), and anyone who'd already accepted on the old link
+        // is dropped back to invited. The seat, the name and any email are kept.
+        if (action === 'regenerate') {
+            const guestRowId: string = body.guestId;
+            const { data: row } = await admin
+                .from('booking_guests')
+                .select('id, booking_id')
+                .eq('id', guestRowId)
+                .maybeSingle();
+            if (!row) {
+                return NextResponse.json({ ok: false, error: 'Not found' }, { status: 404 });
+            }
+            const booking = await bookedBy(admin, row.booking_id, user.id);
+            if (!booking) {
+                return NextResponse.json({ ok: false, error: 'Not your booking' }, { status: 403 });
+            }
+
+            const freshToken = crypto.randomUUID();
+            await admin
+                .from('booking_guests')
+                .update({
+                    invite_token: freshToken,
+                    status: 'invited',
+                    accepted_at: null,
+                    link_sent_at: null,
+                })
+                .eq('id', guestRowId);
+
+            return NextResponse.json({
+                ok: true,
+                token: freshToken,
+                link: SITE_URL + '/trip-invite/' + freshToken,
+            });
+        }
+
+        // ---- Mark a link as sent -------------------------------------------
+        // Stamped when the booker actually shares a link, so the sheet can show
+        // "waiting to send" until it's gone out, then "invited".
+        if (action === 'mark-sent') {
+            const guestRowId: string = body.guestId;
+            const { data: row } = await admin
+                .from('booking_guests')
+                .select('id, booking_id')
+                .eq('id', guestRowId)
+                .maybeSingle();
+            if (!row) {
+                return NextResponse.json({ ok: false, error: 'Not found' }, { status: 404 });
+            }
+            const booking = await bookedBy(admin, row.booking_id, user.id);
+            if (!booking) {
+                return NextResponse.json({ ok: false, error: 'Not your booking' }, { status: 403 });
+            }
+            await admin
+                .from('booking_guests')
+                .update({ link_sent_at: new Date().toISOString() })
+                .eq('id', guestRowId);
+            return NextResponse.json({ ok: true });
         }
 
         // ---- Send (or resend) the branded invite email for one companion ----
@@ -164,10 +316,19 @@ export async function POST(request: Request) {
                 )
             );
 
+            await admin
+                .from('booking_guests')
+                .update({ link_sent_at: new Date().toISOString() })
+                .eq('id', row.id);
+
             return NextResponse.json({ ok: true });
         }
 
-        // ---- Take someone off it -------------------------------------------
+        // ---- Empty a seat --------------------------------------------------
+        // The seat is part of the booking, so taking someone off it doesn't
+        // delete the row — it frees the seat: identity cleared, a fresh token
+        // minted (so the old link dies with the person who held it), back to an
+        // unclaimed "Guest" ready to invite again. Keeps one row per place.
         if (action === 'remove') {
             const guestRowId: string = body.guestId;
 
@@ -183,7 +344,7 @@ export async function POST(request: Request) {
 
             const booking = await bookedBy(admin, row.booking_id, user.id);
 
-            // The booker can remove anyone; anyone can remove themselves.
+            // The booker can empty anyone's seat; anyone can leave their own.
             const isSelf = row.user_id === user.id;
 
             if (!booking && !isSelf) {
@@ -192,7 +353,15 @@ export async function POST(request: Request) {
 
             await admin
                 .from('booking_guests')
-                .update({ status: 'removed' })
+                .update({
+                    status: 'invited',
+                    user_id: null,
+                    name: null,
+                    email: null,
+                    accepted_at: null,
+                    link_sent_at: null,
+                    invite_token: crypto.randomUUID(),
+                })
                 .eq('id', guestRowId);
 
             return NextResponse.json({ ok: true });

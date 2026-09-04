@@ -370,6 +370,27 @@ export default function TripsPage() {
                     and the wifi password, revealed only in their own window. */}
                 {upcomingConfirmed && arr && (
                     <div className="mt-4 space-y-3 rounded-xl border border-slate-200 bg-slate-50/60 p-3.5">
+                        {/* The way in, lifted to the top of the card — the thing a
+                            guest most wants when they pull up outside, so it leads
+                            rather than sitting below the directions. It names what's
+                            behind it (the door code, and wifi when there is any)
+                            and links through to the arrival screen where the secrets
+                            actually live; the code and password never come down to
+                            this card or /api/trips. Same window as the Getting-in
+                            panel below: a code on file, inside its three days. */}
+                        {withinWindow && arr.hasCode && (
+                            <Link
+                                href={`/arrival/${b.id}`}
+                                className="flex items-center justify-between gap-3 rounded-lg border border-emerald-200 bg-emerald-50 px-3.5 py-3 transition hover:border-emerald-300 hover:bg-emerald-100/70"
+                            >
+                                <span className="flex items-center gap-2 text-sm font-semibold text-emerald-900">
+                                    <KeyRound className="h-4 w-4 flex-none text-emerald-700" />
+                                    {arr.hasWifi ? 'Door code and wifi' : 'Door code'}
+                                </span>
+                                <span className="text-emerald-700" aria-hidden>&rarr;</span>
+                            </Link>
+                        )}
+
                         {/* Where, and how to get there */}
                         <div>
                             <div className="flex gap-2">
@@ -386,7 +407,10 @@ export default function TripsPage() {
                                 <div className="mt-2 flex items-center gap-2 pl-6">
                                     <Grid3x3 className="h-3.5 w-3.5 flex-none text-emerald-700" />
                                     <span className="text-sm text-emerald-700">{arr.what3words}</span>
-                                    <CopyField value={arr.what3words} label="Copy" />
+                                    {/* Icon-only, matching the home card: no second
+                                        "Copy" reading like a mistake next to Copy
+                                        address below. 44px target, label in aria. */}
+                                    <CopyField value={arr.what3words} label="Copy what3words address" iconOnly />
                                 </div>
                             )}
                             {!hasCoords && directionsUrl && (
@@ -428,21 +452,23 @@ export default function TripsPage() {
                         />
 
                         {/* Getting in — the SIGNAL, never the secret. Inside the
-                            window, if there is a code, it says so and links to
-                            Getting there where the code lives. With no code but a
-                            check-in method (not a secret — it is on the listing),
-                            it shows the method plainly. With neither, it points at
-                            the host rather than going quiet. */}
+                            window, with a code, the top banner is the way in; this
+                            panel just says quietly where the code lives, no second
+                            button. With no code but a check-in method (not a secret —
+                            it is on the listing), it shows the method plainly. With
+                            neither, it points at the host rather than going quiet. */}
                         <div className="rounded-lg border border-slate-200 bg-white p-3">
                             <div className="flex items-center gap-1.5 text-[11px] font-semibold uppercase tracking-wide text-slate-500">
                                 <KeyRound className="h-3.5 w-3.5" /> Getting in
                             </div>
                             {withinWindow && arr.hasCode ? (
-                                <p className="mt-1 text-sm font-medium text-emerald-800">
-                                    Your way in is ready.{' '}
-                                    <span className="font-normal text-emerald-700">
-                                        {arr.hasWifi ? 'Your door code and wifi are on the arrival screen.' : 'Your door code is on the arrival screen.'}
-                                    </span>
+                                // The call to action is the "Door code and wifi"
+                                // banner at the top of the card now; here it's a
+                                // quiet pointer so the panel isn't silent in its own
+                                // window, without a second emerald prompt to the
+                                // same place.
+                                <p className="mt-1 text-sm text-slate-500">
+                                    {arr.hasWifi ? 'Your door code and wifi are on the arrival screen.' : 'Your door code is on the arrival screen.'}
                                 </p>
                             ) : arr.hasCode ? (
                                 <p className="mt-1 text-sm text-slate-500">Your way in appears here a few days before you arrive.</p>
@@ -454,7 +480,11 @@ export default function TripsPage() {
                             ) : (
                                 <p className="mt-1 text-sm text-slate-500">{hostName} will let you know how to get in — send a message if you&apos;re not sure.</p>
                             )}
-                            {withinWindow && (arr.hasCode || arr.hasWifi) && (
+                            {/* The button stays only where there's no top banner to
+                                carry it: wifi on file but no door code, so nothing
+                                gated the banner on. A code (with or without wifi) is
+                                the banner's job. */}
+                            {withinWindow && !arr.hasCode && arr.hasWifi && (
                                 <Link href={`/arrival/${b.id}`} className="mt-2.5 inline-flex items-center gap-2 rounded-lg bg-slate-900 px-3 py-2 text-xs font-semibold text-white transition hover:bg-slate-800">
                                     <Navigation className="h-3.5 w-3.5" /> Getting there
                                 </Link>

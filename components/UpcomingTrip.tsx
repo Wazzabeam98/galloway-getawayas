@@ -71,6 +71,7 @@ export default async function UpcomingTrip() {
     // grant-less listing_arrival table.
     let directionsUrl: string | null = null;
     let what3words: string | null = null;
+    let addressToCopy: string | null = null;
     if (bookingReleasesPrivateData(booking)) {
         const admin = adminClient();
         const [{ data: place }, { data: arr }] = await Promise.all([
@@ -79,6 +80,12 @@ export default async function UpcomingTrip() {
         ]);
         const p: any = place || {};
         what3words = (arr as any)?.what3words || null;
+        // The FULL street address and postcode for Copy address — never the
+        // town on its own, which sends a guest to the wrong end of a village.
+        addressToCopy = [p.street_address, p.postcode]
+            .map((s: any) => String(s || '').trim())
+            .filter(Boolean)
+            .join(', ') || null;
         // Shared rule: a pin, or a STREET address — never the town alone.
         directionsUrl = buildDirectionsUrl({
             latitude: p.latitude, longitude: p.longitude,
@@ -121,6 +128,161 @@ export default async function UpcomingTrip() {
 
     const homeHref = '/homes/' + booking.listing_id;
 
+    // The card's content, one block each, so the two layouts below arrange the
+    // SAME pieces — nothing added or removed between them.
+    const photoEl = (
+        <Link href={homeHref}
+            className="group relative block aspect-[4/3] w-full overflow-hidden rounded-2xl bg-stone-200 md:aspect-square">
+            <ListingImage
+                images={listing.images}
+                alt={listing.title}
+                sizes="(max-width: 768px) 100vw, 33vw"
+                className="object-cover transition duration-300 group-hover:scale-105"
+                priority
+            />
+        </Link>
+    );
+
+    const headlineEl = (
+        <div className="text-4xl md:text-5xl font-bold text-stone-900 tracking-tight">{headline}</div>
+    );
+
+    const stayDetailsEl = (
+        <>
+            <div className="mt-6 space-y-1">
+                <Link href={homeHref} className="text-lg font-semibold text-stone-900 hover:underline">
+                    {listing.title}
+                </Link>
+                {listing.location && (
+                    <div className="text-stone-500">{publicArea(listing.location)}</div>
+                )}
+            </div>
+            <div className="mt-5 pt-5 border-t border-stone-100 text-stone-700">
+                <div className="font-medium">
+                    {formatUk(new Date(booking.check_in))} &rarr; {formatUk(new Date(booking.check_out))}
+                </div>
+                <div className="text-sm text-stone-500 mt-1">
+                    {nights} {nights === 1 ? 'night' : 'nights'}
+                    {booking.guests
+                        ? ' · ' + booking.guests + (booking.guests === 1 ? ' guest' : ' guests')
+                        : ''}
+                </div>
+            </div>
+        </>
+    );
+
+    const groupEl = (booking.status !== 'cancelled' && booking.status !== 'declined') ? (
+        <div className="mt-4">
+            <TripGroup
+                bookingId={booking.id}
+                guests={booking.guests}
+                cottage={listing.title}
+                when={formatUk(new Date(booking.check_in)) + ' → ' + formatUk(new Date(booking.check_out))}
+            />
+        </div>
+    ) : null;
+
+    const railEl = (
+        <div className="mt-5">
+            <CheckInOutTimes
+                surface="home"
+                mode="split"
+                checkInDate={booking.check_in}
+                checkOutDate={booking.check_out}
+                checkInTime={listing.check_in_time}
+                checkOutTime={listing.check_out_time}
+                aside={(directionsUrl || what3words || addressToCopy) ? (
+                    // Two full-width rows. The way-in signal (door code / wifi) used
+                    // to sit on top here; it now lives at the top of the trips card,
+                    // where the code itself is one screen away. What's left is the
+                    // getting-there pair:
+                    // TOP: what3words across the full width, its Copy at the
+                    //   right-hand end — full width means it never wraps.
+                    // BOTTOM: Get directions and Copy address side by side, the
+                    //   pair, stacking to one column at narrow widths.
+                    <div className="flex h-full flex-col justify-center gap-2.5">
+                        {what3words && (
+                            // Left-packed, not justified: the Copy button sits right
+                            // after the last word rather than across the card from
+                            // it. Icon-only, so it doesn't read as a second "Copy"
+                            // stacked above "Copy address" — the label lives in its
+                            // aria-label and title.
+                            <div className="flex items-center gap-2">
+                                <Grid3x3 className="h-4 w-4 flex-none text-emerald-700" />
+                                <span className="whitespace-nowrap text-sm text-emerald-700">{what3words}</span>
+                                <CopyField value={what3words} label="Copy what3words address" iconOnly />
+                            </div>
+                        )}
+                        {(directionsUrl || addressToCopy) && (
+                            <div className="grid grid-cols-1 gap-2 sm:grid-cols-2">
+                                {directionsUrl && (
+                                    <a href={directionsUrl} target="_blank" rel="noreferrer"
+                                        className="flex w-full items-center justify-center gap-2 rounded-lg bg-stone-900 px-3 py-2.5 text-sm font-semibold text-white transition hover:bg-stone-800">
+                                        <Navigation className="h-4 w-4" /> Get directions
+                                    </a>
+                                )}
+                                {addressToCopy && (
+                                    <CopyField value={addressToCopy} label="Copy address" block />
+                                )}
+                            </div>
+                        )}
+                    </div>
+                ) : null}
+            />
+        </div>
+    );
+
+    const cancelEl = freeUntilKey ? (
+        <HomeCancelPanel
+            bookingId={booking.id}
+            checkIn={booking.check_in}
+            policy={listing.cancellation_policy}
+            amountPaid={booking.amount_paid}
+            amountRefunded={booking.amount_refunded}
+            cleaningFee={(booking as any).cleaning_fee}
+            orders={cancelOrders}
+            freeUntilKey={freeUntilKey}
+            freeDaysLeft={freeDaysLeft}
+        />
+    ) : null;
+
+    const actionsEl = (
+        <div className="flex flex-wrap gap-3 mt-8">
+            <Link href="/trips"
+                className="inline-flex items-center gap-2 px-6 py-3 bg-emerald-700 hover:bg-emerald-800 text-white text-sm font-semibold rounded-xl transition">
+                <CalendarDays className="w-4 h-4" /> Your trip
+            </Link>
+            <Link href={'/messages/' + booking.id}
+                className="inline-flex items-center gap-2 px-6 py-3 border border-stone-300 hover:border-stone-900 text-stone-800 text-sm font-semibold rounded-xl transition">
+                <MessageSquare className="w-4 h-4" /> Message your host
+            </Link>
+        </div>
+    );
+
+    // Photo top-left, and the details beside it: headline, stay details, then the
+    // group row directly under them — so the column beside the square photo is
+    // filled rather than left hanging under the image. The rail and the actions
+    // run full width below both.
+    const card = (
+        <div className="rounded-3xl border border-stone-200 bg-white p-6 md:p-8">
+            <div className="md:flex md:items-start md:gap-8">
+                <div className="mb-6 md:mb-0 md:w-1/4 md:flex-none">
+                    {photoEl}
+                </div>
+                <div className="md:min-w-0 md:flex-1">
+                    {headlineEl}
+                    {stayDetailsEl}
+                    {groupEl}
+                </div>
+            </div>
+            <div>
+                {railEl}
+                {cancelEl}
+                {actionsEl}
+            </div>
+        </div>
+    );
+
     return (
         <section className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 pt-14">
             <div className="mb-6 border-b border-stone-200 pb-4">
@@ -134,136 +296,7 @@ export default async function UpcomingTrip() {
                 </p>
             </div>
 
-            <div className="rounded-3xl overflow-hidden border border-stone-200 bg-white md:flex">
-                {/* Landscape photo ALONGSIDE the details on desktop, a banner
-                    above them on a phone. A landscape shot fills a half-width
-                    column at the page's full width far better than a banner over a
-                    narrow one; and half the card is wide enough that it never
-                    becomes the tall portrait sliver a wide photo used to be
-                    cropped to. */}
-                <Link
-                    href={homeHref}
-                    className="group relative block aspect-[4/3] w-full overflow-hidden bg-stone-200 md:aspect-auto md:w-1/2 md:min-h-[26rem]"
-                >
-                    <ListingImage
-                        images={listing.images}
-                        alt={listing.title}
-                        sizes="(max-width: 768px) 100vw, 50vw"
-                        className="object-cover transition duration-300 group-hover:scale-105"
-                        priority
-                    />
-                </Link>
-
-                <div className="p-8 md:p-10 md:w-1/2 md:flex md:flex-col md:justify-center">
-                    {/* The countdown is the reason anyone looks at this, so it
-                        gets the room. Everything else is supporting detail. */}
-                    <div className="text-4xl md:text-5xl font-bold text-stone-900 tracking-tight">
-                        {headline}
-                    </div>
-
-                    <div className="mt-6 space-y-1">
-                        <Link href={homeHref} className="text-lg font-semibold text-stone-900 hover:underline">
-                            {listing.title}
-                        </Link>
-                        {listing.location && (
-                            <div className="text-stone-500">{publicArea(listing.location)}</div>
-                        )}
-                    </div>
-
-                    <div className="mt-5 pt-5 border-t border-stone-100 text-stone-700">
-                        <div className="font-medium">
-                            {formatUk(new Date(booking.check_in))} &rarr; {formatUk(new Date(booking.check_out))}
-                        </div>
-                        <div className="text-sm text-stone-500 mt-1">
-                            {nights} {nights === 1 ? 'night' : 'nights'}
-                            {booking.guests
-                                ? ' · ' + booking.guests + (booking.guests === 1 ? ' guest' : ' guests')
-                                : ''}
-                        </div>
-                    </div>
-
-                    {/* The group — the same control the trips card carries, so a
-                        guest who never leaves the home page can still add the
-                        people coming with them. */}
-                    {booking.status !== 'cancelled' && booking.status !== 'declined' && (
-                        <div className="mt-4">
-                            <TripGroup
-                                bookingId={booking.id}
-                                guests={booking.guests}
-                                cottage={listing.title}
-                                when={formatUk(new Date(booking.check_in)) + ' → ' + formatUk(new Date(booking.check_out))}
-                            />
-                        </div>
-                    )}
-
-                    {/* The times, as a matched pair — times only, because the
-                        date range and the nights already sit right above. The
-                        freed right half carries the one thing this card didn't
-                        have: Get directions and the what3words, the essentials a
-                        guest wants at a glance on the morning they set off. Two
-                        columns on wide screens; stacked below lg. */}
-                    <div className="mt-5">
-                        <CheckInOutTimes
-                            surface="home"
-                            mode="split"
-                            checkInTime={listing.check_in_time}
-                            checkOutTime={listing.check_out_time}
-                            aside={(directionsUrl || what3words) ? (
-                                <div className="flex h-full flex-col justify-center gap-2.5">
-                                    {directionsUrl && (
-                                        <a href={directionsUrl} target="_blank" rel="noreferrer"
-                                            className="inline-flex items-center justify-center gap-2 rounded-lg bg-stone-900 px-3 py-2.5 text-sm font-semibold text-white transition hover:bg-stone-800">
-                                            <Navigation className="h-4 w-4" /> Get directions
-                                        </a>
-                                    )}
-                                    {what3words && (
-                                        <div className="flex items-center gap-2">
-                                            <Grid3x3 className="h-4 w-4 flex-none text-emerald-700" />
-                                            <span className="min-w-0 truncate text-sm text-emerald-700">{what3words}</span>
-                                            <CopyField value={what3words} label="Copy" />
-                                        </div>
-                                    )}
-                                </div>
-                            ) : null}
-                        />
-                    </div>
-
-                    {/* "Free to cancel until [date]" reads as a fact; pressing it
-                        opens the confirm IN PLACE here — the same component the
-                        trips card uses — rather than navigating to /trips. Two
-                        steps, one page. */}
-                    {freeUntilKey && (
-                        <HomeCancelPanel
-                            bookingId={booking.id}
-                            checkIn={booking.check_in}
-                            policy={listing.cancellation_policy}
-                            amountPaid={booking.amount_paid}
-                            amountRefunded={booking.amount_refunded}
-                            cleaningFee={(booking as any).cleaning_fee}
-                            orders={cancelOrders}
-                            freeUntilKey={freeUntilKey}
-                            freeDaysLeft={freeDaysLeft}
-                        />
-                    )}
-
-                    <div className="flex flex-wrap gap-3 mt-8">
-                        <Link
-                            href="/trips"
-                            className="inline-flex items-center gap-2 px-6 py-3 bg-emerald-700 hover:bg-emerald-800 text-white text-sm font-semibold rounded-xl transition"
-                        >
-                            <CalendarDays className="w-4 h-4" />
-                            Your trip
-                        </Link>
-                        <Link
-                            href={'/messages/' + booking.id}
-                            className="inline-flex items-center gap-2 px-6 py-3 border border-stone-300 hover:border-stone-900 text-stone-800 text-sm font-semibold rounded-xl transition"
-                        >
-                            <MessageSquare className="w-4 h-4" />
-                            Message your host
-                        </Link>
-                    </div>
-                </div>
-            </div>
+            {card}
 
             {/* The guest experiences, below the trip — what's booked for the stay
                 and a way into browsing more, the same panel the trips page carries,

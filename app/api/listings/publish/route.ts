@@ -4,6 +4,7 @@ import { adminClient } from '@/lib/supabaseAdmin';
 import { cookies } from 'next/headers';
 import { NextResponse } from 'next/server';
 import { coordinatePatchFor } from '@/lib/postcodeGeocode';
+import { addressBlockerForPublish } from '@/lib/listingRules';
 
 export const dynamic = 'force-dynamic';
 
@@ -48,7 +49,7 @@ export async function POST(request: Request) {
 
         const { data: listing } = await admin
             .from('listings')
-            .select('id, host_id, title, price_per_night, status, postcode, latitude, longitude')
+            .select('id, host_id, title, price_per_night, status, street_address, postcode, latitude, longitude')
             .eq('id', listingId)
             .maybeSingle();
 
@@ -72,6 +73,12 @@ export async function POST(request: Request) {
                 { ok: false, error: 'A listing needs a name and a price before it can go live.' },
                 { status: 400 }
             );
+        }
+
+        // And a real address — you can't list accommodation that doesn't exist.
+        const addressProblem = addressBlockerForPublish(listing);
+        if (addressProblem) {
+            return NextResponse.json({ ok: false, error: addressProblem }, { status: 400 });
         }
 
         const { error } = await admin

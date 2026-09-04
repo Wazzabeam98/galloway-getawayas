@@ -23,8 +23,12 @@ export default function AcceptTripInvite({
     const [working, setWorking] = useState(false);
     const [done, setDone] = useState(false);
 
+    // An email-bound invite must be accepted from that address; a plain share
+    // link has no address to match, so anyone signed in can accept.
+    const emailBound = !!(inviteEmail && inviteEmail.trim());
     const matches =
-        signedInAs && signedInAs.toLowerCase() === (inviteEmail || '').toLowerCase();
+        !emailBound ||
+        (signedInAs && signedInAs.toLowerCase() === inviteEmail.toLowerCase());
 
     const accept = async () => {
         setWorking(true);
@@ -76,14 +80,26 @@ export default function AcceptTripInvite({
     if (!signedInAs) {
         return (
             <div className="rounded-2xl border border-slate-200 bg-slate-50 p-5">
-                <p className="text-sm text-slate-700">
-                    Sign in as <strong>{inviteEmail}</strong> to join this trip.
-                </p>
-                <p className="mt-1 text-sm text-slate-500">
-                    New to Galloway Getaways? Create an account with that same email address —
-                    <strong> {inviteEmail}</strong> — or the invitation won&apos;t match and you&apos;ll be
-                    stuck. You&apos;ll come straight back here to join.
-                </p>
+                {emailBound ? (
+                    <>
+                        <p className="text-sm text-slate-700">
+                            Sign in as <strong>{inviteEmail}</strong> to join this trip.
+                        </p>
+                        <p className="mt-1 text-sm text-slate-500">
+                            New to Galloway Getaways? Create an account with that same email address —
+                            <strong> {inviteEmail}</strong> — or the invite won&apos;t match. You&apos;ll come
+                            straight back here to join.
+                        </p>
+                    </>
+                ) : (
+                    <>
+                        <p className="text-sm text-slate-700">Sign in to join this trip.</p>
+                        <p className="mt-1 text-sm text-slate-500">
+                            New to Galloway Getaways? Create a free account — it takes a moment, and
+                            you&apos;ll come straight back here to join.
+                        </p>
+                    </>
+                )}
                 {/* Rendered here so sign-in happens on the invite: a password
                     sign-in reloads this page, and sign-up/Google carry a return
                     path back to it. Both render as menu-item buttons (the site's

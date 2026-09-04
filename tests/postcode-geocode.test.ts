@@ -159,6 +159,9 @@ test('publishing fills the coordinates from the postcode', async () => {
         title: 'Modern Cottage, with Hot Tub',
         price_per_night: 120,
         status: 'draft',
+        // A street address is now required to publish (addressBlockerForPublish),
+        // so a publishable fixture carries one alongside the postcode it geocodes.
+        street_address: '1 Harbour Row, Garlieston',
         postcode: 'DG6 4JS',
         latitude: null,
         longitude: null,

@@ -36,7 +36,7 @@ export async function POST(request: Request) {
 
         const { data: invite } = await admin
             .from('booking_guests')
-            .select('id, booking_id, email, status')
+            .select('id, booking_id, email, status, user_id, link_sent_at')
             .eq('invite_token', token)
             .maybeSingle();
 
@@ -47,22 +47,70 @@ export async function POST(request: Request) {
             );
         }
 
-        // Invited to a person, not to whoever opens the link — otherwise a
-        // forwarded email would let a stranger see where someone is staying.
-        const signedInEmail = (user.email || '').toLowerCase();
+        // The link expires when the stay ends, so a leaked or forgotten invite
+        // can't sit live for months. Read the booking's check_out and compare on
+        // date, not time — a same-day accept on the checkout day still counts.
+        const { data: booking } = await admin
+            .from('bookings')
+            .select('check_out, status')
+            .eq('id', invite.booking_id)
+            .maybeSingle();
 
-        if (signedInEmail !== (invite.email || '').toLowerCase()) {
+        if (!booking || booking.status === 'cancelled' || booking.status === 'declined') {
             return NextResponse.json(
-                {
-                    ok: false,
-                    error: 'This invitation was sent to ' + invite.email + '. Sign in with that address to accept it.',
-                },
-                { status: 403 }
+                { ok: false, error: 'That trip is no longer available.' },
+                { status: 404 }
             );
         }
 
+        const today = new Date().toISOString().slice(0, 10);
+        if (String(booking.check_out) < today) {
+            return NextResponse.json(
+                { ok: false, error: 'This invite has expired — the stay has already ended.' },
+                { status: 410 }
+            );
+        }
+
+        // Single use. Once a link is claimed it belongs to whoever claimed it:
+        // the same person re-opening it is fine, anyone else gets a dead link.
+        // This is what lets us drop the hard email binding below — a claimed
+        // link can't be reused, and an unclaimed one can be revoked.
         if (invite.status === 'active') {
-            return NextResponse.json({ ok: true, already: true });
+            if (invite.user_id === user.id) {
+                return NextResponse.json({ ok: true, already: true });
+            }
+            return NextResponse.json(
+                { ok: false, error: 'This link has already been used to join the trip.' },
+                { status: 409 }
+            );
+        }
+
+        // A minted-but-never-shared seat is INERT: its link cannot be claimed
+        // until the booker actually hands it out (link_sent_at) or binds it to an
+        // email. Opening the sheet mints the links, but they arm only when shared
+        // — which closes the window where a link that was created but never sent
+        // could be used. This is a "not ready yet" state, not a failure; the
+        // invite page shows it gently.
+        if (!invite.link_sent_at && !invite.email) {
+            return NextResponse.json(
+                { ok: false, notReady: true, error: 'This invite isn’t ready yet — ask whoever booked to send you the link.' },
+                { status: 409 }
+            );
+        }
+
+        // Email is an OPTIONAL gate now. When the booker typed an address, the
+        // link stays bound to it — a forwarded invite still can't be claimed by
+        // a stranger. When they didn't (a share-anywhere link), whoever opens
+        // the unclaimed link first claims the seat.
+        const signedInEmail = (user.email || '').toLowerCase();
+        if (invite.email && signedInEmail !== invite.email.toLowerCase()) {
+            return NextResponse.json(
+                {
+                    ok: false,
+                    error: 'This invite was sent to ' + invite.email + '. Sign in with that address to accept it.',
+                },
+                { status: 403 }
+            );
         }
 
         await admin
