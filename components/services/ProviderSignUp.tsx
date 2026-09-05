@@ -112,7 +112,11 @@ const draftKey = (trade: string) => 'gg.provider-draft.' + trade;
 // falls back to the line glyph, so the set can land one at a time. All from one
 // contributor (Ndevisuals) so they share perspective, lighting and palette.
 const GUEST_ART: Record<string, string> = {
+    food: '/illustrations/guest-food.png',
     outdoors: '/illustrations/guest-outdoors.png',
+    wellness: '/illustrations/guest-wellness.png',
+    crafts: '/illustrations/guest-crafts.png',
+    other: '/illustrations/guest-other.png',
 };
 
 function ApplicationForm() {
