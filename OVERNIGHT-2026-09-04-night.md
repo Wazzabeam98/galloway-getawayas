@@ -126,3 +126,33 @@ The required-address rule (`addressBlockerForPublish`, lib/listingRules.ts) retu
 
 **Nothing merged, nothing on production, no production migration.** Demo data (marketplace + reviews + the windowed trip) is on **test** and comes out with:
 `LISTING=<cottage> node scripts/_seed-reviews.mjs --reset` · `node scripts/seed-marketplace.mjs --reset` · then delete the branch + its GUEST_EXPERIENCES_OPEN flag.
+
+---
+
+# Follow-up (2026-09-05): builds + the live sign-up walk
+
+## Live provider sign-up walk — a fresh sauna owner is stopped at step one
+
+I opened `/services/join` on the preview as a fresh person. The page is titled **"Join as a trade"**, and step 1 ("What do you do?") offers only: **Cleaning · Waste removal · Gardening & grounds · Window cleaning · Maintenance & repairs.** There is **no experience/sauna/chef/activity category at all.**
+
+So the friction the code didn't show is the worst kind: **a sauna owner can't sign up.** They land on the join page, see five trades that aren't them, and leave — before typing a thing. The guest-experience grid *exists* in `TradeTiles` (there's a chef icon and a "grid a guest provider starts from" comment) and the whole guest flow exists in `ProviderSignUp`, but **nothing public routes to it** — guest providers are currently only created by hand / seed. Per your own note ("branch sign-up by audience — you scope the questions first"), I did **not** build the guest entry; this confirms it's the missing piece, and it's the highest-leverage one: no chef or sauna owner reaches us self-serve today.
+
+Because of that, I couldn't complete a real sauna account + emailed link end to end — there's no door to walk through. What I *did* verify:
+- The downstream guest-slot flow (reachable via a direct `?trade=` link / the edit flow) now **can't finish with an empty calendar** (below), so once an entry exists the silent-invisible failure is already closed.
+- The email/finish mechanism is shared with the trades flow (`/services/join/finish/[token]` + `FinishForm`, with a `resend-verification` path) — a real person who closes the tab at the email step is lost unless they return and resend. That drop-off is common to every provider and worth a "we've emailed you — didn't arrive? resend" screen state.
+
+**If you want the real trades account + email walk** (same finish/email leg a guest would hit), say so and I'll drive a cleaner sign-up through to the inbox — but the sauna-owner answer is upstream of that: there's no experience category to pick.
+
+**Three ways a real person could break it:**
+1. A sauna owner opens `/services/join`, sees only trades, and never comes back.
+2. Someone reaches the guest flow by a shared `?trade=` link, fills it, then closes the tab on the "check your email" step and never clicks the link.
+3. A guest provider created by hand (no self-serve) has no obvious way to edit their own hours later — "Edit your listing" reopens the same flow, which is fine, but they have to know it's there.
+
+## Built this follow-up (branch `overnight/marketplace-and-card`, preview only)
+
+- **Address rule gap closed for everyone else.** Editor shows a non-blocking amber banner when a live listing has no street address or postcode ("This listing is live but has no street address… Add it under Location"), with a jump to the Location section. **Save is never blocked.** The **un-hide** path now enforces the address rule (going live is a publish); **hiding is never blocked.** Test `hiding and un-hiding a live listing still works` updated to the new intent (fixture has an address) + a new case asserts un-hiding an address-less listing is refused and hiding still works.
+- **Availability required for slot sign-up.** `submitProblems` now flags a guest slot provider with no weekly hours (field `availability` → the Business step), so Finish is blocked and the availability block opens on the jump. Plus a **first-login prompt** on the slot dashboard ("You have no bookable hours yet — Add your weekly hours") for anyone who reaches it empty.
+- **Allergies (guest side).** Common-allergen **tick-box chips** (Nuts, Peanuts, Gluten, Dairy, Eggs, Fish, Shellfish, Soya, Sesame) at the point of booking, combined with the free-text field into one line the provider reads. The chef-declares-what-they-handle side is left until you have a real chef.
+- **Cancelled + overdue-deposit states.** A cancelled booking now shows **"Cancelled — £X refunded"** (or "No refund due" / "Nothing was paid") instead of "Total £X · Show breakdown" that read as a bill. A deposit past its due date reads **"overdue"** and "This was due on {date} and is taken automatically — pay now to settle it", not a future "due {past date}".
+
+**Still your call (unchanged):** the guest-experience sign-up entry (scope the questions); finer categories for generic MCCs; the chef-declares-allergens side.
