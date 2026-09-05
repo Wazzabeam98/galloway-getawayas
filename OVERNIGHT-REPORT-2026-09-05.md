@@ -423,3 +423,57 @@ Anchored to `origin/master` `2ef544e` (I fetched first).
 Reused throwaway accounts from prior nights (`sweep-stranger@` etc.); seeded and
 deleted bookings, a slot session, a `stripe_events` row, and toggled one
 listing's status/quiet-hours, all restored. No writes to production.
+
+---
+
+## FOLLOW-UP (5 Sep, after #116 merged) — verifying the 73 legacy assumptions
+
+`--record` now verifies going forward (#116, merged + deployed). The question is
+the 73 rows already in the ledger (`backfilled=true`, `checksum=null`). Classified
+on test 2026-09-05:
+
+- **68 are structural** (DDL: create/alter/grant/revoke). Each takes a one-line
+  `--check` schema assertion — I wrote and ran 11 in minutes (see below). ~half a
+  day for all 68, most trivial.
+- **5 are data-only backfills**, all **non-money-path**, and some inherently
+  un-reverifiable after the fact:
+  `clear_instant_book_requires_verified_id`, `gardening_and_windows_subscription`,
+  `storage_limits` (checkable via the bucket config), `trial_starts_at_first_enquiry`,
+  `remove_test_mode_rows_from_production` (a one-time DELETE — cannot be proven
+  now; "gone" looks identical to "never inserted"). Give the checkable ones a
+  data-state assertion; accept the rest as honest legacy assumptions.
+
+### The 11 money-path assumptions — verify these FIRST. All present on test (proven).
+| Migration | Check (schema assertion) | Test |
+|---|---|---|
+| `host_debt_moves_atomically` (the payout **clamp**) | `adjust_payout_balance` def matches `greatest\(\s*0` | ✅ |
+| `a_payout_transfer_is_recorded_once` | index `payouts_one_row_per_transfer` exists | ✅ |
+| `payments_one_row_per_intent` | index `payments_one_row_per_intent` exists | ✅ |
+| `no_overlapping_confirmed_bookings` | exclusion constraint `bookings_no_overlapping_confirmed` | ✅ |
+| `a_booking_cannot_arrive_paid` | anon has no table INSERT/UPDATE on `bookings` | ✅ |
+| `bookings_revoke_public_read` | anon has no SELECT on `bookings` | ✅ |
+| `cancellation_record_and_debt_settlement` | `bookings.cancelled_at` column | ✅ |
+| `disputes` | `to_regclass('public.disputes')` not null | ✅ |
+| `enquiry_cancellation` | constraint `service_enquiries_status_check` | ✅ |
+| `bookings_cleaning_fee` | `bookings.cleaning_fee` column | ✅ |
+| `bookings_busy_nights_view` | `to_regclass('public.listing_busy_nights')` | ✅ |
+
+> One caveat worth keeping: my first clamp check (`like '%greatest(0%'`) gave a
+> false FAIL because the function text is `greatest(\n  0`. A whitespace-tolerant
+> regex passed. Checks need the same care as the migration — a wrong check is its
+> own footgun.
+
+### What it takes, concretely
+1. **A small runner addition** so `--record --check` can *attach* a check to an
+   already-recorded row (today it says "already recorded, nothing to do"). ~20
+   lines: on a backfilled row with null `verify_sql`, run the check — pass → set
+   `verify_sql`; fail → refuse loudly. This upgrades a legacy assumption to a
+   continuously-verified one.
+2. **Write the 68 schema checks** (few hours; most one-liners) + best-effort data
+   checks for the 5.
+3. **Run the set against PRODUCTION** — the one place it matters and the one I
+   can't reach this session. Verifying `host_debt_moves_atomically` on prod IS the
+   carried "read `adjust_payout_balance` back before the first payout" must-do,
+   now expressible as a stored check that `--status` re-runs forever.
+
+I can build (1) + the 11 money checks as a follow-up PR on request.
