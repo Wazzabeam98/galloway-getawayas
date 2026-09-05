@@ -2578,7 +2578,7 @@ function ApplicationForm() {
                     // else. The narrower choice is screen two (g_subtype). No
                     // instructions, no Stripe line — the question carries it.
                     return (
-                        <div className="grid grid-cols-2 gap-3 sm:grid-cols-5">
+                        <div className="grid grid-cols-2 gap-4 sm:grid-cols-3">
                             {GUEST_GROUPS.map((g) => {
                                 const Icon = TRADE_ICONS[g.icon] || Sparkles;
                                 return (
@@ -2586,10 +2586,16 @@ function ApplicationForm() {
                                         key={g.key}
                                         type="button"
                                         onClick={() => chooseGroup(g.key)}
-                                        className="flex flex-col items-center gap-4 rounded-2xl border-2 border-slate-200 bg-white px-4 py-7 text-center transition hover:border-slate-300 focus:outline-none focus-visible:ring-2 focus-visible:ring-emerald-600"
+                                        className="group flex flex-col items-center gap-5 rounded-3xl border-2 border-slate-200 bg-white p-7 text-center transition hover:border-slate-300 hover:shadow-md focus:outline-none focus-visible:ring-2 focus-visible:ring-emerald-600"
                                     >
-                                        <Icon className="h-10 w-10 text-emerald-600" strokeWidth={1.5} aria-hidden />
-                                        <span className="text-sm font-semibold leading-snug text-slate-900">{g.label}</span>
+                                        {/* The illustration zone — large and dominant, Airbnb-style.
+                                            The 3D artwork drops in here: replace the <Icon> with
+                                            <img src="/illustrations/guest-<key>.png" alt="" className="h-full w-auto" />.
+                                            The fixed height keeps every card's art aligned. */}
+                                        <span className="flex h-28 items-center justify-center sm:h-32">
+                                            <Icon className="h-16 w-16 text-emerald-600 sm:h-20 sm:w-20" strokeWidth={1.5} aria-hidden />
+                                        </span>
+                                        <span className="text-base font-semibold leading-snug text-slate-900">{g.label}</span>
                                     </button>
                                 );
                             })}

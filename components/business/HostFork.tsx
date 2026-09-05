@@ -57,7 +57,7 @@ export default function HostFork() {
 
             {/* The one question. */}
             <main className="flex flex-1 flex-col items-center justify-center overflow-y-auto px-4 py-10">
-                <div className="w-full max-w-3xl">
+                <div className="w-full max-w-4xl">
                     <div className="mx-auto max-w-xl text-center">
                         <h1 className="text-3xl font-extrabold tracking-tight text-slate-900 sm:text-4xl">
                             What would you like to host?
@@ -67,7 +67,7 @@ export default function HostFork() {
                         </p>
                     </div>
 
-                    <div className="mt-10 grid gap-4 sm:grid-cols-3">
+                    <div className="mt-12 grid gap-5 sm:grid-cols-3">
                         {CHOICES.map(({ key, title, Icon }) => {
                             const isOn = selected === key;
                             return (
@@ -77,15 +77,21 @@ export default function HostFork() {
                                     aria-pressed={isOn}
                                     onClick={() => setSelected(key)}
                                     className={
-                                        'group flex flex-col items-center gap-5 rounded-2xl border-2 bg-white px-6 py-8 text-center transition '
+                                        'group flex flex-col items-center gap-6 rounded-3xl border-2 bg-white px-6 py-10 text-center transition '
                                         + 'focus:outline-none focus-visible:ring-2 focus-visible:ring-emerald-600 '
                                         + (isOn
-                                            ? 'border-emerald-600 shadow-sm'
-                                            : 'border-slate-200 hover:border-slate-300')
+                                            ? 'border-emerald-600 shadow-md'
+                                            : 'border-slate-200 hover:border-slate-300 hover:shadow-md')
                                     }
                                 >
-                                    <Icon className="h-11 w-11 text-emerald-600" strokeWidth={1.5} aria-hidden />
-                                    <span className="text-base font-semibold text-slate-900">{title}</span>
+                                    {/* The illustration zone — large and dominant, Airbnb-style.
+                                        The 3D artwork drops in here: replace the <Icon> with
+                                        <img src="/illustrations/fork-<key>.png" alt="" className="h-full w-auto" />.
+                                        The fixed height keeps all three cards' art aligned. */}
+                                    <span className="flex h-28 items-center justify-center sm:h-36">
+                                        <Icon className="h-16 w-16 text-emerald-600 sm:h-24 sm:w-24" strokeWidth={1.5} aria-hidden />
+                                    </span>
+                                    <span className="text-lg font-semibold text-slate-900">{title}</span>
                                 </button>
                             );
                         })}
