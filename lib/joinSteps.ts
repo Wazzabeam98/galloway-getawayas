@@ -133,10 +133,13 @@ export function stepApplies(step: StepKey, trade: string, ctx?: StepContext): bo
             // tastings), by the category's own `food` flag. A sauna never sees it.
             case 'g_diet':
                 return guestCategoryIsFood(ctx.category);
-            // How far they travel only when they travel — they come to you on a
-            // slot, so a sauna has no coverage question.
+            // Every guest needs a location — submitProblems requires at least one
+            // area for anyone, and the marketplace has to know where they are.
+            // The wording adapts (how far will you travel vs where is it), but
+            // the step is always there; a slot that skipped it would strand the
+            // provider on an areas error with no step to fix it on.
             case 'g_area':
-                return shape === 'comes_to_you' || shape === 'made_to_order';
+                return true;
             default:
                 return false;
         }
