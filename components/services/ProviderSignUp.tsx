@@ -107,6 +107,14 @@ interface AreaRow {
 // it on. Per trade, because somebody can be part-way through two.
 const draftKey = (trade: string) => 'gg.provider-draft.' + trade;
 
+// The 3D illustrations for the category-group cards, keyed by GUEST_GROUPS key.
+// A key present here renders its 3D render in the card's art zone; a key absent
+// falls back to the line glyph, so the set can land one at a time. All from one
+// contributor (Ndevisuals) so they share perspective, lighting and palette.
+const GUEST_ART: Record<string, string> = {
+    outdoors: '/illustrations/guest-outdoors.png',
+};
+
 function ApplicationForm() {
     const router = useRouter();
     const params = useSearchParams();
@@ -2581,6 +2589,7 @@ function ApplicationForm() {
                         <div className="grid grid-cols-2 gap-4 sm:grid-cols-3">
                             {GUEST_GROUPS.map((g) => {
                                 const Icon = TRADE_ICONS[g.icon] || Sparkles;
+                                const art = GUEST_ART[g.key];
                                 return (
                                     <button
                                         key={g.key}
@@ -2589,11 +2598,13 @@ function ApplicationForm() {
                                         className="group flex flex-col items-center gap-5 rounded-3xl border-2 border-slate-200 bg-white p-7 text-center transition hover:border-slate-300 hover:shadow-md focus:outline-none focus-visible:ring-2 focus-visible:ring-emerald-600"
                                     >
                                         {/* The illustration zone — large and dominant, Airbnb-style.
-                                            The 3D artwork drops in here: replace the <Icon> with
-                                            <img src="/illustrations/guest-<key>.png" alt="" className="h-full w-auto" />.
-                                            The fixed height keeps every card's art aligned. */}
+                                            A 3D render (GUEST_ART) fills it where we have one; the
+                                            glyph stands in for the rest until their art lands. The
+                                            fixed height keeps every card's art aligned. */}
                                         <span className="flex h-28 items-center justify-center sm:h-32">
-                                            <Icon className="h-16 w-16 text-emerald-600 sm:h-20 sm:w-20" strokeWidth={1.5} aria-hidden />
+                                            {art
+                                                ? <img src={art} alt="" className="h-full w-auto object-contain" />
+                                                : <Icon className="h-16 w-16 text-emerald-600 sm:h-20 sm:w-20" strokeWidth={1.5} aria-hidden />}
                                         </span>
                                         <span className="text-base font-semibold leading-snug text-slate-900">{g.label}</span>
                                     </button>
