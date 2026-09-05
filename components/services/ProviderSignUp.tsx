@@ -1162,6 +1162,20 @@ function ApplicationForm() {
     // past their business name.
     const stepProblems = problemsOnStep(problems, step, stepCtx);
 
+    // Which guest content steps a person can skip. Everything else with a
+    // question on it is required — and the footer says which is which, so a
+    // greyed Next is never a silent dead end and a skippable screen never
+    // looks like one she has to fill. Pickers (trade, g_subtype) and the
+    // finish step carry their own affordances and are left out here.
+    const OPTIONAL_GUEST_STEPS: StepKey[] = ['g_menu', 'g_you', 'g_diet', 'g_checks'];
+    const stepIsPicker = step === 'trade' || step === 'g_subtype';
+    const stepIsOptional = isGuest && !stepIsPicker && OPTIONAL_GUEST_STEPS.indexOf(step) !== -1;
+    // The one thing missing on a required step, phrased for a person. Shown in
+    // the footer beside the greyed Next so she knows exactly what to add.
+    const stepMissing = isGuest && !stepIsPicker && !stepIsOptional && stepProblems.length > 0
+        ? stepProblems[0].message
+        : null;
+
     const markVisited = (key: StepKey) =>
         setVisited((prev) => (prev.indexOf(key) === -1 ? prev.concat([key]) : prev));
 
@@ -1291,32 +1305,43 @@ function ApplicationForm() {
     // booking shape it usually is, so the next step opens on the right question
     // rather than asking it cold. The provider still confirms the shape, and the
     // owner has the final say on both — nothing here is binding.
-    const chooseGuestCategory = (key: string) => {
+    // SELECT vs ADVANCE. Both picker screens now behave the same as the fork:
+    // tapping a card selects it (an emerald outline), and the footer Next is
+    // what carries them on — never an auto-advance jump-cut.
+
+    // Screen two: select a sub-type. Records the category (a starting point,
+    // confirmed at review) and pre-selects the booking shape it usually is.
+    const selectGuestCategory = (key: string) => {
         setGuestCategory(key);
         const cat = guestCategoryByKey(key);
         if (cat && cat.shape) setShape(cat.shape);
-        // Changing category can change which shape applies, so a food category
-        // swapped for a non-food one must not keep a dietary note nobody sees;
-        // leave what they typed, it is only shown when a food category is set.
         markVisited('trade');
         markVisited('g_subtype');
-        setStep('business');
-        scrollPanelToTop();
     };
 
-    // The top-level group, picked on screen one. If it has a sub-type screen we
-    // go there; 'other' is alone under its group, so its lone category is set
-    // and we go straight to the business step — no screen-two of one card.
-    const chooseGroup = (key: string) => {
+    // Screen one: select a top-level group.
+    const selectGroup = (key: string) => {
         setGuestGroup(key);
         markVisited('trade');
-        const subs = categoriesForGroup(key);
-        if (key === 'other' || subs.length <= 1) {
-            if (subs[0]) chooseGuestCategory(subs[0].key);
-            else setStep('business');
+    };
+
+    // Next on screen one. A group with real sub-types opens screen two; 'other'
+    // (alone under its group) skips it — its lone category is set and we go
+    // straight to the business step, no screen-two of one card.
+    const advanceFromGroup = () => {
+        const subs = categoriesForGroup(guestGroup);
+        if (guestGroup === 'other' || subs.length <= 1) {
+            if (subs[0]) selectGuestCategory(subs[0].key);
+            setStep('business');
         } else {
             setStep('g_subtype');
         }
+        scrollPanelToTop();
+    };
+
+    // Next on screen two.
+    const advanceFromSubtype = () => {
+        setStep('business');
         scrollPanelToTop();
     };
 
@@ -2354,10 +2379,15 @@ function ApplicationForm() {
                             </Link>
                         </div>
                         {chosen && (
-                            <div className="flex items-center gap-1 pb-3" role="progressbar" aria-valuenow={position} aria-valuemin={1} aria-valuemax={total} aria-label={'Step ' + position + ' of ' + total}>
-                                {steps.map((s, i) => (
-                                    <div key={s.key} className={'h-1 flex-1 rounded-full transition-colors ' + (i + 1 <= position ? 'bg-emerald-600' : 'bg-slate-200')} />
-                                ))}
+                            <div className="pb-3">
+                                <div className="flex items-center gap-1" role="progressbar" aria-valuenow={position} aria-valuemin={1} aria-valuemax={total} aria-label={'Step ' + position + ' of ' + total}>
+                                    {steps.map((s, i) => (
+                                        <div key={s.key} className={'h-1 flex-1 rounded-full transition-colors ' + (i + 1 <= position ? 'bg-emerald-600' : 'bg-slate-200')} />
+                                    ))}
+                                </div>
+                                {/* The number, said plainly — a bar alone just
+                                    creeps and never tells you how much is left. */}
+                                <p className="mt-2 text-xs font-medium text-slate-500">Step {position} of {total}</p>
                             </div>
                         )}
                     </div>
@@ -2447,8 +2477,14 @@ function ApplicationForm() {
 
                 {/* ---- the questions ---- */}
                 <div id="signup-panel" className={isGuest
-                    ? ('flex-1 w-full mx-auto overflow-y-auto px-5 sm:px-6 py-10 sm:py-12 '
-                        + ((step === 'trade' || step === 'g_subtype') ? 'max-w-4xl' : 'max-w-2xl'))
+                    ? ('flex-1 w-full mx-auto overflow-y-auto px-5 sm:px-6 '
+                        + (step === 'trade'
+                            /* Screen one sits lower with more air above it, and
+                               widens so the five cards sit on a single row. */
+                            ? 'max-w-5xl pt-20 pb-10 sm:pt-28 sm:pb-12'
+                            : step === 'g_subtype'
+                                ? 'max-w-3xl py-10 sm:py-12'
+                                : 'max-w-2xl py-10 sm:py-12'))
                     : 'flex-1 overflow-y-auto px-4 sm:px-6 py-5'}>
                     {/* One big question a screen. The two picker screens (group,
                         sub-type) centre it over a row of cards, Airbnb-style; the
@@ -2458,7 +2494,7 @@ function ApplicationForm() {
                         <h1 className={'font-extrabold tracking-tight text-slate-900 [text-wrap:balance] text-3xl sm:text-4xl '
                             + ((step === 'trade' || step === 'g_subtype') ? 'mb-10 text-center' : 'mb-8')}>
                             {step === 'trade'
-                                ? 'What experience will you offer to guests?'
+                                ? 'What will you offer guests staying nearby?'
                                 : stepMeta.title}
                         </h1>
                     )}
@@ -2578,24 +2614,30 @@ function ApplicationForm() {
                     // else. The narrower choice is screen two (g_subtype). No
                     // instructions, no Stripe line — the question carries it.
                     return (
-                        <div className="grid grid-cols-2 gap-4 sm:grid-cols-3">
+                        <div className="grid grid-cols-2 gap-4 sm:grid-cols-5">
                             {GUEST_GROUPS.map((g) => {
                                 const Icon = TRADE_ICONS[g.icon] || Sparkles;
+                                // Select, don't advance: the card takes an emerald
+                                // outline and the footer Next carries them on — so
+                                // this screen behaves the same as the sub-type one.
+                                const on = guestGroup === g.key;
                                 return (
                                     <button
                                         key={g.key}
                                         type="button"
-                                        onClick={() => chooseGroup(g.key)}
-                                        className="group flex flex-col items-center gap-5 rounded-3xl border-2 border-slate-200 bg-white p-7 text-center transition hover:border-slate-300 hover:shadow-md focus:outline-none focus-visible:ring-2 focus-visible:ring-emerald-600"
+                                        aria-pressed={on}
+                                        onClick={() => selectGroup(g.key)}
+                                        className={'group flex flex-col items-center gap-4 rounded-3xl border-2 bg-white p-5 text-center transition hover:shadow-md focus:outline-none focus-visible:ring-2 focus-visible:ring-emerald-600 '
+                                            + (on ? 'border-emerald-600 shadow-md' : 'border-slate-200 hover:border-slate-300')}
                                     >
                                         {/* The illustration zone — large and dominant, Airbnb-style.
                                             The 3D artwork drops in here: replace the <Icon> with
                                             <img src="/illustrations/guest-<key>.png" alt="" className="h-full w-auto" />.
                                             The fixed height keeps every card's art aligned. */}
-                                        <span className="flex h-28 items-center justify-center sm:h-32">
-                                            <Icon className="h-16 w-16 text-emerald-600 sm:h-20 sm:w-20" strokeWidth={1.5} aria-hidden />
+                                        <span className="flex h-24 items-center justify-center sm:h-28">
+                                            <Icon className={'h-14 w-14 sm:h-16 sm:w-16 ' + (on ? 'text-emerald-700' : 'text-emerald-600')} strokeWidth={1.5} aria-hidden />
                                         </span>
-                                        <span className="text-base font-semibold leading-snug text-slate-900">{g.label}</span>
+                                        <span className="text-sm font-semibold leading-snug text-slate-900 sm:text-base">{g.label}</span>
                                     </button>
                                 );
                             })}
@@ -2716,24 +2758,44 @@ function ApplicationForm() {
                 );
             })()}
 
-            {/* SCREEN TWO — the narrower choice under the chosen group. Text
-                cards, the name only, the card advances. Airbnb's "How would you
-                describe your experience?". Outside the fieldset: it is a picker,
-                not a field, and must not be disabled with the rest. */}
-            {onStep('g_subtype') && audienceForTrade(trade) === 'guest' && (
-                <div className="mx-auto grid max-w-2xl grid-cols-1 gap-3 sm:grid-cols-2">
-                    {categoriesForGroup(guestGroup).map((c) => (
-                        <button
-                            key={c.key}
-                            type="button"
-                            onClick={() => chooseGuestCategory(c.key)}
-                            className="rounded-2xl border-2 border-slate-200 bg-white px-5 py-6 text-center transition hover:border-slate-300 focus:outline-none focus-visible:ring-2 focus-visible:ring-emerald-600"
-                        >
-                            <span className="text-base font-semibold text-slate-900">{c.label}</span>
-                        </button>
-                    ))}
-                </div>
-            )}
+            {/* SCREEN TWO — the narrower choice under the chosen group. The
+                group card they picked on screen one travels here and lands
+                pinned above the choices (a 3D swoosh, not a jump cut). Select a
+                sub-type for an emerald outline; the footer Next carries them on.
+                Outside the fieldset: it is a picker, not a field. */}
+            {onStep('g_subtype') && audienceForTrade(trade) === 'guest' && (() => {
+                const groupMeta = GUEST_GROUPS.filter((x) => x.key === guestGroup)[0];
+                const GroupIcon = groupMeta ? (TRADE_ICONS[groupMeta.icon] || Sparkles) : Sparkles;
+                return (
+                    <>
+                        {groupMeta && (
+                            <div className="mb-9 flex justify-center [perspective:900px]">
+                                <div className="animate-guest-swoosh inline-flex items-center gap-3 rounded-2xl border-2 border-emerald-600 bg-emerald-50/60 px-5 py-3 shadow-sm">
+                                    <GroupIcon className="h-8 w-8 text-emerald-700" strokeWidth={1.5} aria-hidden />
+                                    <span className="text-base font-semibold text-slate-900">{groupMeta.label}</span>
+                                </div>
+                            </div>
+                        )}
+                        <div className="mx-auto grid max-w-2xl grid-cols-1 gap-3 sm:grid-cols-2">
+                            {categoriesForGroup(guestGroup).map((c) => {
+                                const on = guestCategory === c.key;
+                                return (
+                                    <button
+                                        key={c.key}
+                                        type="button"
+                                        aria-pressed={on}
+                                        onClick={() => selectGuestCategory(c.key)}
+                                        className={'rounded-2xl border-2 bg-white px-5 py-6 text-center transition hover:shadow-sm focus:outline-none focus-visible:ring-2 focus-visible:ring-emerald-600 '
+                                            + (on ? 'border-emerald-600 shadow-sm' : 'border-slate-200 hover:border-slate-300')}
+                                    >
+                                        <span className="text-base font-semibold text-slate-900">{c.label}</span>
+                                    </button>
+                                );
+                            })}
+                        </div>
+                    </>
+                );
+            })()}
 
             <fieldset disabled={locked} className={locked ? 'opacity-70' : ''}>
                 {onStep('business') && audienceForTrade(trade) === 'guest' ? (
@@ -2874,7 +2936,7 @@ function ApplicationForm() {
                     <div className="grid gap-3 sm:grid-cols-3">
                         {[
                             { v: 'comes_to_you', t: 'I come to them', d: 'At the cottage — a private chef, a massage' },
-                            { v: 'made_to_order', t: 'I make it for a date', d: 'They collect it or I drop it off — cakes, hampers' },
+                            { v: 'made_to_order', t: 'I make it to order', d: 'They collect it or I drop it off — cakes, hampers' },
                             { v: 'slot', t: 'They come to me', d: 'Sessions people book into — a sauna, a class, a tasting' },
                         ].map((o) => {
                             const on = shape === o.v;
@@ -4183,19 +4245,26 @@ function ApplicationForm() {
                         </>
                     )}
 
+                    {/* Free text with the known towns as suggestions — a chef in
+                        a village that isn't on the list can just type it, rather
+                        than being trapped by a fixed dropdown. */}
+                    <datalist id="coverage-towns">
+                        {COVERAGE_TOWNS.map((t) => (
+                            <option key={t.key} value={t.label} />
+                        ))}
+                    </datalist>
                     <div className="space-y-2 md:max-w-xl">
                         {areas.map((a, i) => (
                             <div key={i} className="flex items-center gap-2">
-                                <select
+                                <input
+                                    type="text"
+                                    list="coverage-towns"
                                     value={a.town}
                                     aria-label="Town"
+                                    placeholder="Type a town or village"
                                     onChange={(e) => setAreas((prev) => prev.map((x, j) => (j === i ? { ...x, town: e.target.value } : x)))}
                                     className="flex-1 min-w-0 rounded-xl border border-slate-300 px-3 py-2.5 focus:outline-none focus:ring-2 focus:ring-emerald-700"
-                                >
-                                    {COVERAGE_TOWNS.map((t) => (
-                                        <option key={t.key} value={t.label}>{t.label}</option>
-                                    ))}
-                                </select>
+                                />
                                 <select
                                     value={a.radius_miles}
                                     aria-label="Distance covered"
@@ -4671,30 +4740,53 @@ function ApplicationForm() {
                         </Link>
                     ))}
 
+                    {/* A required guest step says exactly what is missing beside
+                        the greyed Next; a skippable one says so. Either way the
+                        Next is never a silent dead end and a skippable screen is
+                        never mistaken for one she must fill. */}
+                    {stepMissing && (
+                        <p className="text-sm font-medium text-amber-700 pr-1">{stepMissing}</p>
+                    )}
+                    {stepIsOptional && (
+                        <p className="text-sm text-slate-400 pr-1">Optional — you can skip this</p>
+                    )}
+
                     <div className="flex-1" />
 
-                    {/* Step one has no Next: choosing the trade is what moves
-                        it on, and a Next beside it would be a button that
-                        cannot do anything until a card is tapped.
+                    {/* The guest picker screens (group, sub-type) now carry a
+                        Next like every other step — select a card, then Next —
+                        so the two behave the same. A host's step one still
+                        advances on the card itself and has no Next.
 
                         The last step has no Next either -- it has send, which
                         is already in the panel above with the words about what
-                        it does. Two buttons that both look like the end of the
-                        form is one too many. */}
-                    {step !== 'trade' && !lastStep && (
-                        <button
-                            type="button"
-                            onClick={goNext}
-                            disabled={isGuest && stepProblems.length > 0}
-                            className={'inline-flex items-center gap-1.5 rounded-full px-6 py-2.5 text-sm font-semibold transition '
-                                + (isGuest && stepProblems.length > 0
-                                    ? 'bg-slate-200 text-slate-400 cursor-not-allowed'
-                                    : 'bg-emerald-700 hover:bg-emerald-800 text-white')}
-                        >
-                            Next
-                            <ChevronRight className="w-4 h-4" />
-                        </button>
-                    )}
+                        it does. */}
+                    {!lastStep && (step !== 'trade' || isGuest) && (() => {
+                        const disabled = isGuest && (
+                            step === 'trade' ? !guestGroup
+                            : step === 'g_subtype' ? !guestCategory
+                            : stepProblems.length > 0
+                        );
+                        const onNext = () => {
+                            if (isGuest && step === 'trade') return advanceFromGroup();
+                            if (isGuest && step === 'g_subtype') return advanceFromSubtype();
+                            goNext();
+                        };
+                        return (
+                            <button
+                                type="button"
+                                onClick={onNext}
+                                disabled={disabled}
+                                className={'inline-flex items-center gap-1.5 rounded-full px-6 py-2.5 text-sm font-semibold transition '
+                                    + (disabled
+                                        ? 'bg-slate-200 text-slate-400 cursor-not-allowed'
+                                        : 'bg-emerald-700 hover:bg-emerald-800 text-white')}
+                            >
+                                Next
+                                <ChevronRight className="w-4 h-4" />
+                            </button>
+                        );
+                    })()}
 
                     {/* The last step's forward action, in the place every other
                         step keeps one: Back on the left, the thing that moves

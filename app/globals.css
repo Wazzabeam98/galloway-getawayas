@@ -343,3 +343,30 @@
 .airbnb-mobile-calendar .rdrMonthsVertical {
   overflow: visible;
 }
+
+/* The guest sign-up's screen-one → screen-two move. The category card the
+   person chose lands pinned on the sub-type screen with a 3D swoosh — a card
+   flying in and settling, not a jump cut. Its container sets the perspective;
+   this rotates and scales it home. Honoured only where motion is welcome. */
+@keyframes guest-swoosh {
+  0% {
+    opacity: 0;
+    transform: translateY(46px) translateZ(-140px) rotateX(26deg) rotateY(-24deg) scale(0.72);
+  }
+  55% {
+    opacity: 1;
+  }
+  100% {
+    opacity: 1;
+    transform: translateY(0) translateZ(0) rotateX(0) rotateY(0) scale(1);
+  }
+}
+.animate-guest-swoosh {
+  transform-style: preserve-3d;
+  animation: guest-swoosh 0.55s cubic-bezier(0.22, 0.72, 0.2, 1) both;
+}
+@media (prefers-reduced-motion: reduce) {
+  .animate-guest-swoosh {
+    animation: none;
+  }
+}
