@@ -48,10 +48,14 @@
 //   node scripts/migrate.mjs --sql "select ..."
 //       A read-only query. Refuses anything that writes.
 //
-//   node scripts/migrate.mjs --target prod <file> --record --note "why"
+//   node scripts/migrate.mjs --target prod <file> --record --note "why" \
+//       --check "select to_regclass('public.foo') is not null"
 //       Somebody else applied it, by hand or from a branch that predates the
 //       ledger. Writes the row as an ASSUMPTION so --status stops calling it
-//       outstanding. Checks nothing — the note is what a person can check.
+//       outstanding — but ONLY if --check proves the change is present first
+//       (one truthy value, read-only). The check is stored, and --status re-runs
+//       it on every read, so a schema that later drifts from it is caught loudly
+//       rather than passing as a silent tick.
 
 import fs from 'node:fs';
 import pg from 'pg';
