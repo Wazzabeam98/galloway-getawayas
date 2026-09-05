@@ -3,7 +3,7 @@
 import { useState } from 'react';
 import { useRouter } from 'next/navigation';
 import Link from 'next/link';
-import { Home, Sparkles, Wrench, X, ArrowRight } from 'lucide-react';
+import { X, ArrowRight } from 'lucide-react';
 
 // The single fork — Airbnb's "What would you like to host?" done our way.
 //
@@ -23,15 +23,17 @@ type Choice = {
     key: string;
     href: string;
     title: string;
-    Icon: typeof Home;
+    art: string;
 };
 
-// One palette across all three — the brand emerald — so the tiles read as a
-// set, not three unrelated colours. The glyph stays the only colour on screen.
+// Trial-fit of the free, open-licence unDraw set — real illustrations in place
+// of the flat glyphs, every one recoloured to the single brand emerald so the
+// three read as a set. These are a no-cost stand-in to judge the platform look;
+// swapping in a bought 3D set later is the same <img>, different file.
 const CHOICES: Choice[] = [
-    { key: 'home', href: '/addhome', title: 'List a home or holiday let', Icon: Home },
-    { key: 'guest', href: '/services/join?trade=guest', title: 'Host a guest experience', Icon: Sparkles },
-    { key: 'service', href: '/services/join', title: 'Offer a service', Icon: Wrench },
+    { key: 'home', href: '/addhome', title: 'List a home or holiday let', art: '/illustrations/fork-home.svg' },
+    { key: 'guest', href: '/services/join?trade=guest', title: 'Host a guest experience', art: '/illustrations/fork-guest.svg' },
+    { key: 'service', href: '/services/join', title: 'Offer a service', art: '/illustrations/fork-service.svg' },
 ];
 
 export default function HostFork() {
@@ -68,7 +70,7 @@ export default function HostFork() {
                     </div>
 
                     <div className="mt-10 grid gap-4 sm:grid-cols-3">
-                        {CHOICES.map(({ key, title, Icon }) => {
+                        {CHOICES.map(({ key, title, art }) => {
                             const isOn = selected === key;
                             return (
                                 <button
@@ -77,14 +79,15 @@ export default function HostFork() {
                                     aria-pressed={isOn}
                                     onClick={() => setSelected(key)}
                                     className={
-                                        'group flex flex-col items-center gap-5 rounded-2xl border-2 bg-white px-6 py-8 text-center transition '
+                                        'group flex flex-col items-center gap-4 rounded-2xl border-2 bg-white px-6 pb-7 pt-6 text-center transition '
                                         + 'focus:outline-none focus-visible:ring-2 focus-visible:ring-emerald-600 '
                                         + (isOn
                                             ? 'border-emerald-600 shadow-sm'
                                             : 'border-slate-200 hover:border-slate-300')
                                     }
                                 >
-                                    <Icon className="h-11 w-11 text-emerald-600" strokeWidth={1.5} aria-hidden />
+                                    {/* eslint-disable-next-line @next/next/no-img-element */}
+                                    <img src={art} alt="" aria-hidden className="h-28 w-auto max-w-full object-contain" />
                                     <span className="text-base font-semibold text-slate-900">{title}</span>
                                 </button>
                             );
