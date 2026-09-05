@@ -8,7 +8,7 @@ import { supabaseEmailFlow } from '@/lib/supabaseEmailFlow';
 import { toast } from 'react-toastify';
 import {
     Sparkles, Wrench, Trees, Droplet, ChefHat, Cake, ShoppingBasket, Trash2,
-    Plus, X, ChevronLeft, ChevronRight, Check, Zap, Hammer, Paintbrush, Home,
+    Plus, Minus, X, ChevronLeft, ChevronRight, Check, Zap, Hammer, Paintbrush, Home,
     ImagePlus,
 } from 'lucide-react';
 import { TradeTile, TradeTileGrid, TRADE_ICONS, GROUP_ICONS } from '@/components/services/TradeTiles';
@@ -110,6 +110,50 @@ interface AreaRow {
 // Where an unfinished application lives before there is an account to hang
 // it on. Per trade, because somebody can be part-way through two.
 const draftKey = (trade: string) => 'gg.provider-draft.' + trade;
+
+// A −/+ stepper with a big display number, in the register Airbnb use for every
+// count in their host flow (a guest picks a number by nudging it, not by typing
+// into a small box). Used here for the counts that always have a value and a
+// sensible default — a session length, a group size, days of notice — where a
+// blank would be a worse answer than a number. The value stays a string to match
+// the fields it replaced, so nothing downstream (the draft, the write, the
+// validation) has to change. Empty means "not set yet" and shows the min.
+function NumberStepper({
+    value, onChange, min = 0, max = 999, step = 1, suffix,
+}: {
+    value: string;
+    onChange: (v: string) => void;
+    min?: number;
+    max?: number;
+    step?: number;
+    suffix?: string;
+}) {
+    const parsed = Number(String(value).trim());
+    const current = String(value).trim() !== '' && Number.isFinite(parsed) ? parsed : min;
+    const commit = (n: number) => onChange(String(Math.max(min, Math.min(max, n))));
+
+    const circle =
+        'flex h-11 w-11 flex-none items-center justify-center rounded-full border border-slate-300 '
+        + 'text-slate-600 transition hover:border-slate-500 focus:outline-none focus-visible:ring-2 '
+        + 'focus-visible:ring-emerald-600 disabled:opacity-40 disabled:hover:border-slate-300';
+
+    return (
+        <div className="flex items-center gap-5">
+            <button type="button" onClick={() => commit(current - step)} disabled={current <= min}
+                aria-label="Decrease" className={circle}>
+                <Minus className="h-4 w-4" strokeWidth={2.25} />
+            </button>
+            <span className="min-w-[2ch] text-center text-4xl font-extrabold tabular-nums text-slate-900">
+                {current}
+            </span>
+            <button type="button" onClick={() => commit(current + step)} disabled={current >= max}
+                aria-label="Increase" className={circle}>
+                <Plus className="h-4 w-4" strokeWidth={2.25} />
+            </button>
+            {suffix && <span className="text-sm text-slate-500">{suffix}</span>}
+        </div>
+    );
+}
 
 function ApplicationForm() {
     const router = useRouter();
@@ -287,8 +331,11 @@ function ApplicationForm() {
     // private → the whole session for one group (capacity 1, flat price); shared
     // → several people join (a "how many fit?" capacity, per-person price).
     const [slotPrivate, setSlotPrivate] = useState<boolean | null>(null);
-    const [slotCapacity, setSlotCapacity] = useState('');
-    const [slotLength, setSlotLength] = useState('');
+    // Sensible starting counts so the stepper shows a real value that also
+    // saves (a blank behind a displayed number would save nothing). The
+    // provider nudges from here; a returning record or draft overrides them.
+    const [slotCapacity, setSlotCapacity] = useState('8');
+    const [slotLength, setSlotLength] = useState('60');
     // The declarations they've confirmed on the checks screen, keyed by check
     // (lib/serviceProviders GUEST_CHECKS). Non-blocking — recorded for the owner
     // to weigh at review, never a gate on Next or submit.
@@ -3226,16 +3273,8 @@ function ApplicationForm() {
                     once, here. Gated on the shape, not worded as a condition. */}
                 {onStep('g_area') && audienceForTrade(trade) === 'guest' && shape === 'made_to_order' && (
                 <section className="mb-8">
-                    <label className="block text-xs font-medium text-slate-500 mb-2">How much notice do you need?</label>
-                    <div className="flex items-center gap-2">
-                        <input
-                            type="number" min="0" step="1" inputMode="numeric" value={leadTimeDays}
-                            onChange={(e) => setLeadTimeDays(e.target.value)}
-                            placeholder="2"
-                            className="w-24 rounded-lg border border-slate-300 px-3 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-emerald-700"
-                        />
-                        <span className="text-sm text-slate-600">days’ notice</span>
-                    </div>
+                    <label className="block text-xs font-medium text-slate-500 mb-3">How much notice do you need?</label>
+                    <NumberStepper value={leadTimeDays} onChange={setLeadTimeDays} min={0} max={90} suffix="days’ notice" />
                 </section>
                 )}
 
@@ -3283,20 +3322,13 @@ function ApplicationForm() {
                             <div className="grid gap-4 sm:grid-cols-2 mb-6">
                                 {slotPrivate === false && (
                                     <div>
-                                        <label className="block text-xs font-medium text-slate-500 mb-2">How many fit?</label>
-                                        <input type="number" min="1" step="1" inputMode="numeric" value={slotCapacity}
-                                            onChange={(e) => setSlotCapacity(e.target.value)} placeholder="8"
-                                            className="w-full rounded-lg border border-slate-300 px-3 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-emerald-700" />
+                                        <label className="block text-xs font-medium text-slate-500 mb-3">How many fit?</label>
+                                        <NumberStepper value={slotCapacity} onChange={setSlotCapacity} min={1} max={60} suffix="people" />
                                     </div>
                                 )}
                                 <div>
-                                    <label className="block text-xs font-medium text-slate-500 mb-2">How long is each session?</label>
-                                    <div className="flex items-center gap-2">
-                                        <input type="number" min="15" step="15" inputMode="numeric" value={slotLength}
-                                            onChange={(e) => setSlotLength(e.target.value)} placeholder="60"
-                                            className="w-24 rounded-lg border border-slate-300 px-3 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-emerald-700" />
-                                        <span className="text-sm text-slate-600">minutes</span>
-                                    </div>
+                                    <label className="block text-xs font-medium text-slate-500 mb-3">How long is each session?</label>
+                                    <NumberStepper value={slotLength} onChange={setSlotLength} min={15} max={480} step={15} suffix="minutes" />
                                 </div>
                             </div>
 
