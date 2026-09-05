@@ -232,7 +232,7 @@ export async function POST(req: Request) {
                 },
                 token_hash: hash,
             })
-            .select('id, email, business_name')
+            .select('id, email, business_name, trade')
             .single();
 
         if (appError || !application) {

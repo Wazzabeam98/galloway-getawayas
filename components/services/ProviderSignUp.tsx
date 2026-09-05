@@ -1423,7 +1423,9 @@ function ApplicationForm() {
         }
 
         toast.success('Removed.', { theme: 'colored' });
-        router.push('/services/join');
+        // Back to the right step one to re-pick: a guest re-chooses a category
+        // (only reachable via ?trade=guest), a trade re-picks off the grid.
+        router.push(trade === 'guest' ? '/services/join?trade=guest' : '/services/join');
     };
 
     const addArea = () => {

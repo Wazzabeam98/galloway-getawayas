@@ -145,11 +145,12 @@ export function verificationEmail(row: {
  * answered exactly that, with a 409. Both cases now look identical from
  * outside, and the difference is carried by the message only its owner can read.
  */
-export function alreadyHaveAccountEmail(row: { business_name: string }): {
+export function alreadyHaveAccountEmail(row: { business_name: string; trade?: string }): {
     subject: string;
     html: string;
 } {
     const business = escapeHtml(row.business_name || 'your business');
+    const joinUrl = SITE_URL + '/services/join?trade=' + encodeURIComponent(row.trade || '');
 
     return {
         subject: 'Finish listing ' + (row.business_name || 'your business') + ' on Galloway Getaways',
@@ -159,7 +160,7 @@ export function alreadyHaveAccountEmail(row: { business_name: string }): {
             + '<p style="margin:0 0 16px;font-size:16px;">You already have a Galloway Getaways'
                 + ' account on this address, so there is nothing to set up — sign in and it will be'
                 + ' waiting for you.</p>'
-            + button(SITE_URL + '/services/join', 'Sign in and finish')
+            + button(joinUrl, 'Sign in and finish')
             + '<p style="margin:16px 0 0;padding-top:14px;border-top:1px solid #e5e7eb;'
                 + 'font-size:14px;color:#6b7280;"><strong style="color:#111827">Did not apply?</strong>'
                 + ' Somebody has typed your address into our form. Nothing has changed about your'
