@@ -49,7 +49,7 @@ export default async function FinishPage({ params }: { params: { token: string }
                 <p className="text-slate-600">
                     It may have been used already, or it may be older than {RETENTION_DAYS} days —
                     we do not keep applications longer than that. Start again at{' '}
-                    <a className="text-emerald-800 font-medium underline" href="/services/join">
+                    <a className="text-emerald-800 font-medium underline" href="/business">
                         Set up a business
                     </a>
                     , or reply to any of our emails and we will find you.
@@ -72,7 +72,7 @@ export default async function FinishPage({ params }: { params: { token: string }
                     to change anything.
                 </p>
                 <a
-                    href="/services/join"
+                    href={'/services/join?trade=' + encodeURIComponent(application.trade || '')}
                     className="block text-center bg-emerald-700 text-white font-semibold rounded-xl py-3 hover:bg-emerald-800 transition"
                 >
                     Sign in
@@ -123,7 +123,7 @@ export default async function FinishPage({ params }: { params: { token: string }
                 will put it in front of the team.
             </p>
 
-            <FinishForm token={params.token} email={application.email} />
+            <FinishForm token={params.token} email={application.email} trade={application.trade || ''} />
 
             <p className="text-sm text-slate-500 mt-7 pt-4 border-t border-slate-200">
                 We read every application ourselves, usually within a couple of days, and we email you
