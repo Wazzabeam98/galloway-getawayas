@@ -2988,16 +2988,12 @@ function ApplicationForm() {
                     };
 
                     const namePh = isSlot ? 'e.g. Lochside sauna session' : 'What you’re offering';
+                    // The big question ("What you offer, and what it costs")
+                    // carries this screen — no nested sub-heading, no paragraph.
+                    // Each priced thing is one card; the quiet field labels are
+                    // all the naming a person needs.
                     return (
                         <section className="mb-8">
-                            <h2 className="text-sm font-semibold text-slate-900 mb-1">
-                                {isSlot ? 'What people book' : 'What you offer'}
-                            </h2>
-                            <p className="text-sm text-slate-500 mb-3">
-                                {isSlot
-                                    ? 'Your session — a name, a photo and a price. How it is priced comes from the private-or-shared question below.'
-                                    : 'Name each thing a guest can book, with a photo and a price. One is plenty — a set dinner, say — or list as many as you like: a cake, a box of cupcakes, a tray bake. A guest booking six at a per-person price pays for six. You can edit or remove any of them later.'}
-                            </p>
                             <div className="space-y-3">
                                 {rows.map((it, i) => (
                                     <div key={it.id || i} className="rounded-xl border border-slate-200 p-3">
@@ -3090,11 +3086,7 @@ function ApplicationForm() {
                     once, here. Gated on the shape, not worded as a condition. */}
                 {onStep('g_avail') && audienceForTrade(trade) === 'guest' && shape === 'made_to_order' && (
                 <section className="mb-8">
-                    <label className="block text-sm font-semibold text-slate-900 mb-1.5">How much notice do you need?</label>
-                    <p className="text-sm text-slate-500 mb-3">
-                        So a guest can’t pick a date sooner than you can make it. A cake that needs three
-                        days won’t be offered for tomorrow.
-                    </p>
+                    <label className="block text-xs font-medium text-slate-500 mb-2">How much notice do you need?</label>
                     <div className="flex items-center gap-2">
                         <input
                             type="number" min="0" step="1" inputMode="numeric" value={leadTimeDays}
@@ -3123,17 +3115,14 @@ function ApplicationForm() {
                         if (val && blockedDates.indexOf(val) === -1) setBlockedDates([...blockedDates, val].sort());
                     };
                     const removeBlock = (val: string) => setBlockedDates(blockedDates.filter((b) => b !== val));
+                    // The big question ("When can guests book?") carries this
+                    // screen — no nested sub-headings, no paragraphs. Quiet field
+                    // labels name each control, one rhythm holds it together, so a
+                    // schedule reads as one focused task.
                     return (
                         <section className="mb-8">
-                            <h2 className="text-sm font-semibold text-slate-900 mb-1">When are you open?</h2>
-                            <p className="text-sm text-slate-500 mb-4">
-                                Set your regular week once. Guests staying nearby book the times that fall
-                                inside their stay; you can take a day off any time.
-                            </p>
-
-                            {/* Private or shared — sets the price unit and capacity. */}
-                            <div className="mb-5">
-                                <label className="block text-sm font-semibold text-slate-900 mb-1.5">Who is a session for?</label>
+                            <div className="mb-6">
+                                <label className="block text-xs font-medium text-slate-500 mb-2">Who is a session for?</label>
                                 <div className="grid gap-3 sm:grid-cols-2">
                                     {[
                                         { v: true, t: 'One group at a time', d: 'The whole thing is theirs — a private sauna. One booking fills it.' },
@@ -3151,17 +3140,17 @@ function ApplicationForm() {
                                 </div>
                             </div>
 
-                            <div className="grid gap-4 sm:grid-cols-2 mb-5">
+                            <div className="grid gap-4 sm:grid-cols-2 mb-6">
                                 {slotPrivate === false && (
                                     <div>
-                                        <label className="block text-sm font-semibold text-slate-900 mb-1.5">How many fit?</label>
+                                        <label className="block text-xs font-medium text-slate-500 mb-2">How many fit?</label>
                                         <input type="number" min="1" step="1" inputMode="numeric" value={slotCapacity}
                                             onChange={(e) => setSlotCapacity(e.target.value)} placeholder="8"
                                             className="w-full rounded-lg border border-slate-300 px-3 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-emerald-700" />
                                     </div>
                                 )}
                                 <div>
-                                    <label className="block text-sm font-semibold text-slate-900 mb-1.5">How long is each session?</label>
+                                    <label className="block text-xs font-medium text-slate-500 mb-2">How long is each session?</label>
                                     <div className="flex items-center gap-2">
                                         <input type="number" min="15" step="15" inputMode="numeric" value={slotLength}
                                             onChange={(e) => setSlotLength(e.target.value)} placeholder="60"
@@ -3173,7 +3162,7 @@ function ApplicationForm() {
 
                             {/* The weekly hours — a day toggles open, and shows an
                                 open/close time when it is. */}
-                            <label className="block text-sm font-semibold text-slate-900 mb-2">Which days, and what hours?</label>
+                            <label className="block text-xs font-medium text-slate-500 mb-2">Which days, and what hours?</label>
                             <div className="space-y-2">
                                 {DAYS.map((label, d) => {
                                     const row = schedule.find((r) => r.day === d);
@@ -3200,8 +3189,8 @@ function ApplicationForm() {
                             </div>
 
                             {/* Block a date — the one exception the v1 schedule allows. */}
-                            <div className="mt-5">
-                                <label className="block text-sm font-semibold text-slate-900 mb-1.5">Days off</label>
+                            <div className="mt-6">
+                                <label className="block text-xs font-medium text-slate-500 mb-2">Days off</label>
                                 <div className="flex flex-wrap items-center gap-2">
                                     {blockedDates.map((b) => (
                                         <span key={b} className="inline-flex items-center gap-1.5 rounded-full bg-slate-100 px-3 py-1 text-xs font-medium text-slate-700">
@@ -3214,7 +3203,6 @@ function ApplicationForm() {
                                     <input type="date" onChange={(e) => { addBlock(e.target.value); e.target.value = ''; }}
                                         className="rounded-lg border border-slate-300 px-2 py-1.5 text-sm text-slate-600 focus:outline-none focus:ring-2 focus:ring-emerald-700" />
                                 </div>
-                                <p className="mt-1.5 text-xs text-slate-500">Add a holiday or a day you’re away. You can do this any time later, too.</p>
                             </div>
                         </section>
                     );
@@ -3232,16 +3220,16 @@ function ApplicationForm() {
                     {/* "Your name" now sits with the business name up in the
                         identity group — a guest is choosing a person as much as a
                         business, so the two names belong together. */}
-                    <label className="block text-sm font-semibold text-slate-900 mb-1.5">A short line about you</label>
+                    <label className="block text-xs font-medium text-slate-500 mb-2">A short line about you</label>
                     <input
                         type="text"
                         value={basedLine}
                         onChange={(e) => setBasedLine(e.target.value)}
                         placeholder="Kirkcudbright · cooking since 2019"
-                        className="w-full md:max-w-md rounded-xl border border-slate-300 px-4 py-3 mb-4 focus:outline-none focus:ring-2 focus:ring-emerald-700"
+                        className="w-full md:max-w-md rounded-xl border border-slate-300 px-4 py-3 mb-6 focus:outline-none focus:ring-2 focus:ring-emerald-700"
                     />
 
-                    <label className="block text-sm font-semibold text-slate-900 mb-1.5">A photo of you</label>
+                    <label className="block text-xs font-medium text-slate-500 mb-2">A photo of you</label>
                     <div className="flex items-center gap-3">
                         {headshot && (
                             <img src={getImageUrl(headshot)} alt="" className="w-16 h-16 rounded-full object-cover" />
@@ -3276,16 +3264,17 @@ function ApplicationForm() {
                     flag). A sauna or a pottery class never reaches it. */}
                 {onStep('g_diet') && audienceForTrade(trade) === 'guest' && (
                 <section className="mb-8">
-                    <label className="block text-sm font-semibold text-slate-900 mb-1.5">What can you cater for?</label>
+                    {/* No label — the big question already asks it. One field, one
+                        short line of consequence, nothing else. */}
                     <textarea
                         value={dietaryNote}
                         onChange={(e) => setDietaryNote(e.target.value)}
-                        rows={2}
+                        rows={3}
                         placeholder="e.g. can do gluten-free and dairy-free with a day’s notice; not a nut-free kitchen"
-                        className="w-full md:max-w-md rounded-xl border border-slate-300 px-4 py-3 mb-1.5 focus:outline-none focus:ring-2 focus:ring-emerald-700"
+                        className="w-full rounded-xl border border-slate-300 px-4 py-3 mb-2 focus:outline-none focus:ring-2 focus:ring-emerald-700"
                     />
-                    <p className="text-xs text-slate-500">
-                        Shown on your listing. Leave it blank and the listing tells guests you haven&rsquo;t said — so they know to ask before booking.
+                    <p className="text-sm text-slate-500">
+                        Leave it blank and your listing tells guests you haven&rsquo;t said, so they know to ask.
                     </p>
                 </section>
                 )}
@@ -4353,7 +4342,7 @@ function ApplicationForm() {
                 {(audienceForTrade(trade) === 'guest' ? onStep('g_contact') : onStep('business')) && (
                 <section className="mb-8 grid sm:grid-cols-2 gap-4">
                     <div>
-                        <label className="block text-sm font-semibold text-slate-900 mb-1.5">
+                        <label className="block text-xs font-medium text-slate-500 mb-2">
                             Email for us to reach you on
                         </label>
                         <input
@@ -4366,8 +4355,8 @@ function ApplicationForm() {
                         )}
                     </div>
                     <div>
-                        <label className="block text-sm font-semibold text-slate-900 mb-1.5">
-                            Phone <span className="font-normal text-slate-500">(optional)</span>
+                        <label className="block text-xs font-medium text-slate-500 mb-2">
+                            Phone <span className="text-slate-400">(optional)</span>
                         </label>
                         <input
                             value={contactPhone}
@@ -4375,17 +4364,10 @@ function ApplicationForm() {
                             className="w-full rounded-xl border border-slate-300 px-4 py-3 focus:outline-none focus:ring-2 focus:ring-emerald-700"
                         />
 
-                        {/* SAID BESIDE THE FIELD, NOT IN A POLICY.
-                            A text that arrives unannounced is the thing this
-                            sentence exists to prevent. It is also the reason
-                            the opt-out below is here rather than buried in a
-                            settings page nobody opens: without one, a
-                            tradesman who does not want texts removes his
-                            number instead, and then nobody can reach him at
-                            all when it is urgent. */}
-                        <p className="text-sm text-slate-600 mt-2">
-                            If it is a mobile, we will text you when an owner has an emergency —
-                            those are the ones where minutes matter. Everything else comes by email.
+                        {/* One short line, not a policy paragraph. The opt-out sits
+                            with it so a mobile number isn't removed to avoid texts. */}
+                        <p className="text-sm text-slate-500 mt-2">
+                            A mobile only gets a text for an owner’s emergency; everything else is email.
                         </p>
 
                         <label className="flex items-start gap-2.5 mt-3 cursor-pointer">
@@ -4404,14 +4386,8 @@ function ApplicationForm() {
                         </label>
                     </div>
 
-                    {/* Said once, plainly, and true today: nothing renders
-                        these publicly. It is here because the labels used to
-                        say "for job requests", which promised an owner would
-                        write to them directly — and the direction is the
-                        opposite of that. */}
                     <p className="sm:col-span-2 text-sm text-slate-500">
-                        Neither of these goes on your listing. We use them to tell you about
-                        your application and about work coming in.
+                        Neither goes on your listing — we use them to reach you about your work.
                     </p>
                 </section>
                 )}
