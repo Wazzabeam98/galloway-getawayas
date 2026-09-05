@@ -18,6 +18,10 @@ interface PanelProvider {
 // Between a yyyy-mm-dd key and a local Date at midnight. Constructing from the
 // parts (not new Date(key), which parses as UTC) keeps the calendar day the guest
 // clicks and the key we send to the server the same, in any timezone.
+// The common ones as one-tap chips, so a guest names an allergy even when they
+// wouldn't type it out. Free text below still catches anything not listed.
+const COMMON_ALLERGENS = ['Nuts', 'Peanuts', 'Gluten', 'Dairy', 'Eggs', 'Fish', 'Shellfish', 'Soya', 'Sesame'];
+
 function keyToDate(key: string): Date {
     const [y, m, d] = key.split('-').map(Number);
     return new Date(y, (m || 1) - 1, d || 1);
@@ -48,6 +52,7 @@ export default function BookingPanel({ bookingId, checkIn, checkOut, provider }:
     const [session, setSession] = useState<PanelSession | null>(null);
     const [dayIdx, setDayIdx] = useState<number>(0);
     const [allergy, setAllergy] = useState<string>('');
+    const [allergyTags, setAllergyTags] = useState<string[]>([]);
     const [note, setNote] = useState<string>('');
     const [busy, setBusy] = useState(false);
     const [error, setError] = useState<string | null>(null);
@@ -90,7 +95,11 @@ export default function BookingPanel({ bookingId, checkIn, checkOut, provider }:
         try {
             const url = isSlot ? '/api/services/slots/book' : '/api/services/order';
             const trimmedNote = note.trim();
-            const trimmedAllergy = provider.isFood ? allergy.trim() : '';
+            // Ticked chips first, then anything typed — one string the provider
+            // reads on its own line / badge.
+            const trimmedAllergy = provider.isFood
+                ? [allergyTags.join(', '), allergy.trim()].filter(Boolean).join(allergyTags.length && allergy.trim() ? ' — ' : '')
+                : '';
             const body = isSlot
                 ? { providerId: provider.id, bookingId, sessionDate: session!.date, sessionTime: session!.time, quantity, note: trimmedNote, allergy: trimmedAllergy }
                 : { itemId: item.id, bookingId, serviceDate: date, quantity, note: trimmedNote, allergy: trimmedAllergy };
@@ -247,6 +256,19 @@ export default function BookingPanel({ bookingId, checkIn, checkOut, provider }:
                         Allergies &amp; dietary needs
                         <span className="ml-1 font-normal normal-case tracking-normal text-slate-400">(optional)</span>
                     </span>
+                    <div className="mt-2 flex flex-wrap gap-1.5">
+                        {COMMON_ALLERGENS.map((a) => {
+                            const on = allergyTags.includes(a);
+                            return (
+                                <button key={a} type="button"
+                                    aria-pressed={on}
+                                    onClick={() => setAllergyTags((prev) => on ? prev.filter((x) => x !== a) : [...prev, a])}
+                                    className={`rounded-full border px-2.5 py-1 text-xs transition ${on ? 'border-rose-500 bg-rose-500 text-white' : 'border-rose-300 text-rose-700 hover:border-rose-400'}`}>
+                                    {a}
+                                </button>
+                            );
+                        })}
+                    </div>
                     <textarea
                         value={allergy}
                         onChange={(e) => setAllergy(e.target.value.slice(0, 500))}

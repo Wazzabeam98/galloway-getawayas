@@ -4,6 +4,7 @@ import { createClient } from '@supabase/supabase-js';
 import { cookies } from 'next/headers';
 import { NextResponse } from 'next/server';
 import { checkListing } from '@/lib/access';
+import { addressBlockerForPublish } from '@/lib/listingRules';
 
 export const dynamic = 'force-dynamic';
 
@@ -51,7 +52,7 @@ export async function POST(request: Request) {
         // it somewhere it can't be finished from.
         const { data: listing } = await admin
             .from('listings')
-            .select('status')
+            .select('status, street_address, postcode')
             .eq('id', listingId)
             .maybeSingle();
 
@@ -78,6 +79,17 @@ export async function POST(request: Request) {
                 { ok: false, error: 'This listing isn\u2019t published yet.' },
                 { status: 400 }
             );
+        }
+
+        // Putting it back on the site is a publish \u2014 so it takes the same address
+        // rule as publishing. (Hiding never does: a host taking a listing DOWN
+        // must never be blocked.) This closes the un-hide loophole where an
+        // address-less listing could go live without a street a guest can reach.
+        if (!hidden) {
+            const addressProblem = addressBlockerForPublish(listing);
+            if (addressProblem) {
+                return NextResponse.json({ ok: false, error: addressProblem }, { status: 400 });
+            }
         }
 
         const { error } = await admin

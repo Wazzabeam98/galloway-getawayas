@@ -138,7 +138,7 @@ export default async function ProviderDashboardPage() {
                     week, nothing to approve), everyone else the INBOX (requests
                     to confirm, then coming up). The payouts gate is in both. */}
                 {shapeOf(provider) === 'slot'
-                    ? <ProviderSlotDashboard providerId={provider.id} />
+                    ? <ProviderSlotDashboard providerId={provider.id} editHref={`/services/join?trade=${provider.trade}`} />
                     : <ProviderExperienceDashboard providerId={provider.id} />}
             </div>
         );

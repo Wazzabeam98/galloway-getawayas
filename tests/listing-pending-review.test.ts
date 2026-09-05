@@ -40,14 +40,14 @@ const ROUTE = '@/app/api/listings/visibility/route';
 
 /* ------------------------------------------------ the self-approval hole */
 
-function loadVisibility(status: string) {
+function loadVisibility(status: string, address: any = { street_address: '1 Harbour Row', postcode: 'DG6 4JG' }) {
     const updates: any[] = [];
 
     const admin: any = {
         from() {
             const chain: any = new Proxy({}, {
                 get(_t, prop: string) {
-                    if (prop === 'maybeSingle') return async () => ({ data: { status }, error: null });
+                    if (prop === 'maybeSingle') return async () => ({ data: { status, ...address }, error: null });
                     if (prop === 'update') {
                         return (patch: any) => { updates.push(patch); return chain; };
                     }
@@ -125,6 +125,24 @@ test('hiding and un-hiding a live listing still works', async () => {
     const shown = await show.route.POST(post({ listingId: 'l-1', hidden: false }));
     assert.equal(shown.body.ok, true);
     assert.deepEqual(show.updates, [{ status: 'published' }]);
+});
+
+test('un-hiding a listing with no address is refused — going live is a publish', async () => {
+    // New rule (2026-09-05): putting a listing back on the site takes the same
+    // address rule as publishing, so a guest is never sent nowhere. Hiding must
+    // still work regardless — a host taking a listing down is never blocked.
+    const noAddr = { street_address: null, postcode: null };
+
+    const show = loadVisibility('hidden', noAddr);
+    const blocked = await show.route.POST(post({ listingId: 'l-1', hidden: false }));
+    assert.equal(blocked.status, 400, 'un-hiding an address-less listing is blocked');
+    assert.equal(blocked.body.ok, false);
+    assert.deepEqual(show.updates, [], 'nothing is written when it is blocked');
+
+    const hide = loadVisibility('published', noAddr);
+    const hidden = await hide.route.POST(post({ listingId: 'l-1', hidden: true }));
+    assert.equal(hidden.body.ok, true, 'hiding is never blocked by the address rule');
+    assert.deepEqual(hide.updates, [{ status: 'hidden' }]);
 });
 
 /* -------------------------------------- the screens know the new status */
