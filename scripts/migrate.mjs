@@ -456,9 +456,24 @@ if (flag('record')) {
 
     const client = await connect();
     try {
-        // Self-bootstrap the column so a fresh ledger, and the read just below,
-        // never trip over its absence.
-        await client.query('alter table public.schema_migrations add column if not exists verify_sql text');
+        // The verify_sql column is added by an ordinary migration
+        // (20260905072319_ledger_verify_sql_column.sql), NOT here — the ledger is
+        // what you read to know what ran, so it must not grow a column as a side
+        // effect of verifying something. If it is missing, that migration has not
+        // been applied to this target yet; say so rather than write a half-row.
+        const hasVerifyCol = (await client.query(
+            "select count(*) n from information_schema.columns where table_schema='public' "
+            + "and table_name='schema_migrations' and column_name='verify_sql'"
+        )).rows[0].n > 0;
+        if (!hasVerifyCol) {
+            await client.end().catch(() => {});
+            die('schema_migrations has no verify_sql column on ' + target.name + ' yet.\n'
+                + '  Apply the migration that adds it first, the normal way:\n'
+                + '    node scripts/migrate.mjs --target ' + targetName
+                + ' supabase/migrations/20260905072319_ledger_verify_sql_column.sql --apply\n'
+                + '  Then run this --record again. The ledger is not changed as a side effect\n'
+                + '  of a check; the column arrives as its own migration, read back like any other.');
+        }
 
         // Run the proof FIRST, before deciding whether this is a new record or a
         // check being attached to one already in the ledger. Either way the rule
