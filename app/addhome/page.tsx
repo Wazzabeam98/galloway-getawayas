@@ -157,7 +157,7 @@ export default function AddHome() {
     // are no longer given their own boxes (they were only on the removed landing
     // modal) but are kept here so buildStreetAddress on save keeps its shape — a
     // host who has a flat or a house name folds it into the street line.
-    const [flat] = useState('');
+    const [flat, setFlat] = useState('');
     const [propertyName] = useState('');
     const [street, setStreet] = useState('');
     const [postcode, setPostcode] = useState('');
@@ -672,6 +672,10 @@ export default function AddHome() {
                                 : 'Where is your place? Guests only ever see the town and region.'}
                         </p>
                         <div className="space-y-4">
+                            <div>
+                                <label className="text-xs text-slate-500 font-semibold uppercase">Flat, floor or building <span className="normal-case text-slate-400 font-normal">(if applicable)</span></label>
+                                <input type="text" value={flat} onChange={(e) => setFlat(e.target.value)} placeholder="e.g. Flat 2, or The Old Coach House" className="w-full p-3 border rounded-xl mt-1" />
+                            </div>
                             <div>
                                 <label className="text-xs text-slate-500 font-semibold uppercase">Street address</label>
                                 <input type="text" value={street} onChange={(e) => setStreet(e.target.value)} className="w-full p-3 border rounded-xl mt-1" />
