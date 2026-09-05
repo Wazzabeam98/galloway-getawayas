@@ -178,3 +178,49 @@ Two of them are *fresh starts* with no known audience, so they correctly go to t
 - **C.** …Owners of self-catering lets nearby find you by what you do and bring you the work.
 
 **Still your call (unchanged):** the trades-card wording (pick above); the guest-experience sign-up entry (scope the questions); finer categories for generic MCCs; the chef-declares-allergens side.
+
+---
+
+# Follow-up 3 (2026-09-05): per-night pricing + the full sign-up walk
+
+## Trades card — Liam picked A + B
+Heading "Get work from holiday lets"; line "…The jobs come to you — owners near you find you by the areas you cover and get in touch." Live on the preview.
+
+## Per-night pricing in the breakdown — what we store
+
+**We store only the total. The per-night detail is not persisted anywhere.**
+
+- A `bookings` row keeps aggregate money only: `total_price`, `deposit_amount`, `balance_amount`, `cleaning_fee`, `commission_rate`, `payout_amount` — no `nightly_rate`, no JSON of nightly prices, not even `nights` (it's `check_out − check_in`). (`supabase/schema.sql:471-507`.)
+- The per-night series is computed on the fly by `quoteBooking()` (`lib/pricing.ts:86-140`), which sums each night's `nightlyRate()` (override → weekend → base) into one `nightsSubtotal`. The individual night prices are computed inside the loop and **discarded**.
+- The breakdown UI is one line — "{nights} nights → £{nightsSubtotal}" (`components/BookingWidget.tsx:498-501`) — so a guest can't see which nights were weekend/override rate.
+- Worse than just missing: `calendar_overrides` is host-mutable after booking, and nothing snapshots it. Checkout freezes `commission_rate` and `cleaning_fee` but **not** the accommodation subtotal, so recomputing an old booking from current data can give a different per-night series (and total) than the guest was charged. The charge itself is a fresh recompute at checkout (`app/api/stripe/checkout/route.ts:238`), reconciled against the stored total.
+
+**What it'd take to show it honestly** (a money-path change — not built, needs your say-so + a review branch):
+1. Have `quoteBooking` return the per-night series it already computes (`[{date, rate, source: base|weekend|override}]`).
+2. Add a `nightly_breakdown jsonb` column to `bookings`; stamp it at checkout the same way `cleaning_fee`/`commission_rate` are frozen (migration).
+3. Render the stored series under the breakdown (expandable), reading the snapshot, never a recompute.
+4. Back-fill: old bookings have no snapshot — either show the single line as today, or a best-effort recompute clearly marked "estimated from current rates".
+
+Small, self-contained, and it closes a real "can I see what I was charged per night?" gap. Say the word and I'll do it on a branch.
+
+## Provider sign-up — the whole walk, /business → live
+
+Walked it on the preview as a chef and mapped every gate. What a real person sees:
+
+1. **/business** — two cards. "Sell guest experiences" → `/services/join?trade=guest`.
+2. **Step 1 · Trade** — a category grid (Private chef, Cakes, Hampers, Drinks & tastings, Guided outdoors, On the water, Wellness & spa [sauna], Arts & crafts, Something else). Footnote, upfront and honest: "A guest can book you once we have approved you and you have connected Stripe for payouts — not the moment you sign up."
+3. **Step 2 · Business** — name, your name, about; the shape picker ("I come to them" / "I make it for a date" / "They come to me [a sauna, class, tasting]"); a chef also gets **"What can you cater for?"** (a free-text dietary-capability field — the chef-declares side *already exists* as text, so when you get a chef there's a field waiting); a photo; coverage areas; contact email + phone. **Slot shapes (sauna) get the weekly-hours block here — now required** (the earlier build).
+4. **Step 3 · Finish** — one press: tick consent → "Save and email me a link." Lodges via `/api/services/apply`.
+5. **"Saved. One step left."** — "We have sent a link to <email>. Open it, pick a password, and your application goes straight to us — usually answered within 48 hours. The link works for 14 days." **This is the first real-world stall: they leave the site for their inbox. No email, no account.** (Local-storage keeps their answers, and there's a "Send the confirmation email again".)
+6. **Email → set password →** account created, signed in, `pending_review`.
+7. **Admin reviews** — assigns a category (MCC + guest-facing label) and approves. Guests can't self-approve.
+8. **Dashboard: "One step before guests can book you — Set up payouts… You won't appear to guests until this is done."** They run Stripe Connect. **This is the second real stall and the true go-live action.**
+9. **Live:** "Payouts are set up — you're live to guests." Slot owners get a diary + days-off; chefs get requests/orders.
+
+### Rough edge found in the walk
+A **returning** pending provider (opens `/services/join?trade=guest` cold — from the approval email, a re-login, a new device) can land on the **category grid** with only a small "Your details have been saved," **not** a clear "we're reviewing you." The pending panel shows fine *immediately* after finishing (`finished=1`), but on a cold reload the client resume didn't reload the pending record (a session-timing/resume gap — RLS does allow an owner to read their own row, so it's not permissions). Worth a proper look; low-frequency but confusing when it hits. Not fixed.
+
+### Three ways a real person could break it
+1. Lodges, never opens the email (or it lands in spam) — stuck at "one step left" forever; the only nudge is the resend button they have to come back to.
+2. Approved, never finishes Stripe Connect — invisible to guests with no strong prompt outside the dashboard they may not revisit.
+3. A sauna owner approves + connects Stripe but sets no weekly hours — hidden entirely (slot with no session is dropped). The required-hours step + dashboard prompt now guard this, but only inside the wizard.
