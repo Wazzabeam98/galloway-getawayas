@@ -497,14 +497,16 @@ test('a cake maker (food, made to order) gains a lead-time and a coverage step',
     );
 });
 
-test('a sauna owner (not food, slot) has a schedule but no dietary or coverage', () => {
+test('a sauna owner (not food, slot) has a schedule and a location, but no dietary', () => {
     const ctx = { category: 'wellness', shape: 'slot' };
     assert.deepEqual(
         gkeys(ctx),
-        ['trade', 'business', 'g_about', 'g_offer', 'g_menu', 'g_avail', 'g_you', 'g_checks', 'g_contact', 'finish'],
+        ['trade', 'business', 'g_about', 'g_offer', 'g_menu', 'g_avail', 'g_you', 'g_area', 'g_checks', 'g_contact', 'finish'],
     );
     assert.equal(stepApplies('g_diet', 'guest', ctx), false, 'not food -> no dietary');
-    assert.equal(stepApplies('g_area', 'guest', ctx), false, 'they come to you -> no coverage');
+    // Location is required of everyone (submitProblems needs an area), so a slot
+    // keeps g_area — it just asks "where is it" rather than "how far will you go".
+    assert.equal(stepApplies('g_area', 'guest', ctx), true, 'a slot still needs a location');
 });
 
 test('the guest split never touches a host trade', () => {
