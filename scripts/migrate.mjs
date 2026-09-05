@@ -456,19 +456,16 @@ if (flag('record')) {
 
     const client = await connect();
     try {
-        const already = await client.query(
-            'select backfilled from public.schema_migrations where filename = $1', [name]
-        );
+        // Self-bootstrap the column so a fresh ledger, and the read just below,
+        // never trip over its absence.
+        await client.query('alter table public.schema_migrations add column if not exists verify_sql text');
 
-        if (already.rows.length) {
-            console.log('\n  Already recorded' + (already.rows[0].backfilled ? ' (as an assumption)' : ' by this runner') + '. Nothing to do.\n');
-            process.exit(0);
-        }
-
-        // Run the proof. One truthy value or it is not recorded.
+        // Run the proof FIRST, before deciding whether this is a new record or a
+        // check being attached to one already in the ledger. Either way the rule
+        // is the same: the change must be present now, or nothing is written.
         let ok = false;
         try {
-            const res = await client.query('begin');
+            await client.query('begin');
             const r = await client.query(check);
             await client.query('rollback');
             const rows = r.rows || [];
@@ -480,28 +477,58 @@ if (flag('record')) {
             }
         } catch (err) {
             await client.query('rollback').catch(() => {});
-            die('the --check query errored, so nothing was recorded:\n  '
+            die('the --check query errored, so nothing was written:\n  '
                 + String(err.message).split(dbUrl).join(redacted)
                 + '\n  Fix the check, or if the migration is genuinely NOT applied, apply it.');
         }
         if (!ok) {
             die('the --check came back false/empty on ' + target.name + ', so the change is\n'
-                + '  NOT present. Nothing recorded — this is the footgun working. Either the\n'
+                + '  NOT present. Nothing written — this is the footgun working. Either the\n'
                 + '  migration has not actually been applied, or the check is wrong.');
         }
 
-        // Self-bootstrap the column so a fresh ledger needs no separate migration.
-        await client.query('alter table public.schema_migrations add column if not exists verify_sql text');
-        await client.query(
-            `insert into public.schema_migrations (filename, checksum, backfilled, note, verify_sql)
-             values ($1, null, true, $2, $3)`,
-            [name, note, check]
+        const already = await client.query(
+            'select backfilled, verify_sql from public.schema_migrations where filename = $1', [name]
         );
 
-        console.log('\n  Verified and recorded ' + name + ' on ' + target.name + '.');
-        console.log('  The --check passed, so the change is present now. Stored as an');
-        console.log('  ASSUMPTION (backfilled, no checksum) — but --status will RE-RUN the');
-        console.log('  check and shout if the schema ever drifts from it.');
+        if (!already.rows.length) {
+            // A genuinely new record.
+            await client.query(
+                `insert into public.schema_migrations (filename, checksum, backfilled, note, verify_sql)
+                 values ($1, null, true, $2, $3)`,
+                [name, note, check]
+            );
+            console.log('\n  Verified and recorded ' + name + ' on ' + target.name + '.');
+            console.log('  The --check passed, so the change is present now. Stored as an');
+            console.log('  ASSUMPTION (backfilled, no checksum) — but --status will RE-RUN the');
+            console.log('  check and shout if the schema ever drifts from it.');
+        } else if (!already.rows[0].backfilled) {
+            // Already an OBSERVATION — the runner watched it run and holds a
+            // checksum. That is stronger than any after-the-fact --check, so we
+            // leave it alone rather than downgrade it to an assumption.
+            console.log('\n  ' + name + ' is already recorded by this runner as an OBSERVATION');
+            console.log('  (it has a checksum). That is stronger than a --check — nothing to do.\n');
+            process.exit(0);
+        } else if (already.rows[0].verify_sql === check) {
+            console.log('\n  ' + name + ' already carries exactly this check, and it still passes.');
+            console.log('  Nothing to do.\n');
+            process.exit(0);
+        } else {
+            // THE ATTACH PATH. A legacy assumption (backfilled, no checksum, and
+            // either no check or a different one) — the 73 the 1 Sept backfill
+            // left un-verifiable. The check passed, so bring it under continuous
+            // verification: --status will re-run this from now on.
+            const wasNull = already.rows[0].verify_sql == null;
+            await client.query(
+                'update public.schema_migrations set verify_sql = $2, note = $3 where filename = $1',
+                [name, check, note]
+            );
+            console.log('\n  ' + (wasNull ? 'Attached a check to' : 'Updated the check on')
+                + ' a legacy assumption: ' + name + ' on ' + target.name + '.');
+            console.log('  The --check passed, so the change IS present. It is no longer a blind');
+            console.log('  assumption — --status re-runs this check and shouts if it ever fails.');
+        }
+
         console.log('  note:  ' + note);
         console.log('  check: ' + check + '\n');
     } finally {
