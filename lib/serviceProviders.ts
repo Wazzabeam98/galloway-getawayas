@@ -91,26 +91,58 @@ export const GUEST_TRADES = ['guest'] as const;
 // OVERNIGHT-BUILD.md for why these nine.
 export interface GuestCategory {
     key: string;
+    group: string;   // the GUEST_GROUPS key this sub-type sits under
     label: string;   // pre-fills custom_label; shown to guests until the owner changes it
-    hint: string;    // the supporting line under the tile
+    hint: string;    // the supporting line, used on the sub-type screen
     icon: string;    // a TRADE_ICONS key (components/services/TradeTiles)
     food: boolean;   // gates the "what can you cater for?" question
     shape: 'comes_to_you' | 'made_to_order' | 'slot' | null;  // pre-selects the shape question
 }
 
-export const GUEST_CATEGORIES: GuestCategory[] = [
-    { key: 'chef', label: 'Private chef & catering', hint: 'Dinners cooked at the cottage, grazing tables', icon: 'chef', food: true, shape: 'comes_to_you' },
-    { key: 'baking', label: 'Cakes & baking', hint: 'Celebration cakes, tray bakes, fresh bread', icon: 'cake', food: true, shape: 'made_to_order' },
-    { key: 'hampers', label: 'Hampers & local produce', hint: 'Welcome hampers, fresh fish, veg boxes', icon: 'hamper', food: true, shape: 'made_to_order' },
-    { key: 'tastings', label: 'Drinks & tastings', hint: 'Whisky, gin and wine tastings', icon: 'tasting', food: true, shape: 'slot' },
-    { key: 'outdoors', label: 'Guided outdoors', hint: 'Walks, wild swimming, fishing, foraging, dark skies', icon: 'outdoors', food: false, shape: 'slot' },
-    { key: 'water', label: 'On the water', hint: 'Kayaking, paddleboarding, boat trips', icon: 'water', food: false, shape: 'slot' },
-    { key: 'wellness', label: 'Wellness & spa', hint: 'Massage, sauna, yoga', icon: 'wellness', food: false, shape: 'slot' },
-    { key: 'crafts', label: 'Arts & crafts', hint: 'Pottery, painting, make-your-own workshops', icon: 'crafts', food: false, shape: 'slot' },
-    // Always last, always the storefront icon, like the tradesman "Something
-    // else": the generic template that covers whatever the eight above don't.
-    { key: 'other', label: '', hint: 'Anything else a guest would book for their stay', icon: 'other', food: false, shape: null },
+// The top level of the guest picker — five broad cards with a glyph and a
+// name, Airbnb-style. Choosing one opens a second screen of the narrower
+// categories that sit under it; 'other' has no sub-type and goes straight on.
+export interface GuestGroup { key: string; label: string; icon: string; }
+export const GUEST_GROUPS: GuestGroup[] = [
+    { key: 'food', label: 'Food & drink', icon: 'chef' },
+    { key: 'outdoors', label: 'Outdoors & water', icon: 'outdoors' },
+    { key: 'wellness', label: 'Wellness & spa', icon: 'wellness' },
+    { key: 'crafts', label: 'Arts & crafts', icon: 'crafts' },
+    { key: 'other', label: 'Something else', icon: 'other' },
 ];
+
+// The sub-types, each tagged with its group. The booking shape and the food
+// flag live here, on the granular choice, because that is what actually decides
+// the flow — a private chef comes to you, a cake is made to order, a tasting is
+// a slot. Wellness and Arts split into three each so their group leads to a
+// real screen-two rather than a lone card.
+export const GUEST_CATEGORIES: GuestCategory[] = [
+    { key: 'chef', group: 'food', label: 'Private chef & catering', hint: 'Dinners cooked at the cottage, grazing tables', icon: 'chef', food: true, shape: 'comes_to_you' },
+    { key: 'baking', group: 'food', label: 'Cakes & baking', hint: 'Celebration cakes, tray bakes, fresh bread', icon: 'cake', food: true, shape: 'made_to_order' },
+    { key: 'hampers', group: 'food', label: 'Hampers & local produce', hint: 'Welcome hampers, fresh fish, veg boxes', icon: 'hamper', food: true, shape: 'made_to_order' },
+    { key: 'tastings', group: 'food', label: 'Drinks & tastings', hint: 'Whisky, gin and wine tastings', icon: 'tasting', food: true, shape: 'slot' },
+    { key: 'outdoors', group: 'outdoors', label: 'Guided outdoors', hint: 'Walks, wild swimming, fishing, foraging, dark skies', icon: 'outdoors', food: false, shape: 'slot' },
+    { key: 'water', group: 'outdoors', label: 'On the water', hint: 'Kayaking, paddleboarding, boat trips', icon: 'water', food: false, shape: 'slot' },
+    { key: 'massage', group: 'wellness', label: 'Massage & treatments', hint: 'Massage, reflexology, beauty', icon: 'wellness', food: false, shape: 'slot' },
+    { key: 'sauna', group: 'wellness', label: 'Sauna & cold-water', hint: 'Wood-fired sauna, cold-water dipping', icon: 'wellness', food: false, shape: 'slot' },
+    { key: 'yoga', group: 'wellness', label: 'Yoga & movement', hint: 'Yoga, pilates, breathwork', icon: 'wellness', food: false, shape: 'slot' },
+    { key: 'pottery', group: 'crafts', label: 'Pottery', hint: 'Wheel-throwing, hand-building', icon: 'crafts', food: false, shape: 'slot' },
+    { key: 'painting', group: 'crafts', label: 'Painting & drawing', hint: 'Watercolour, sketching, life classes', icon: 'crafts', food: false, shape: 'slot' },
+    { key: 'workshops', group: 'crafts', label: 'Make-your-own workshops', hint: 'Candles, prints, willow, jewellery', icon: 'crafts', food: false, shape: 'slot' },
+    // Always last, the storefront icon: the generic template for whatever the
+    // groups above don't cover. Its group has no sub-type screen.
+    { key: 'other', group: 'other', label: '', hint: 'Anything else a guest would book for their stay', icon: 'other', food: false, shape: null },
+];
+
+export function guestGroupByKey(key: string | null | undefined): GuestGroup | null {
+    return GUEST_GROUPS.filter((g) => g.key === String(key || ''))[0] || null;
+}
+
+// The sub-types under a group, in order. 'other' is alone under its group,
+// which is what makes its group skip the sub-type screen.
+export function categoriesForGroup(group: string | null | undefined): GuestCategory[] {
+    return GUEST_CATEGORIES.filter((c) => c.group === String(group || ''));
+}
 
 export function guestCategoryByKey(key: string | null | undefined): GuestCategory | null {
     return GUEST_CATEGORIES.filter((c) => c.key === String(key || ''))[0] || null;

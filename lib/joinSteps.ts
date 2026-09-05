@@ -39,19 +39,21 @@ import {
 // with no context still sees the old trade/business/finish, and no host trade
 // ever gains one. See stepApplies.
 export type StepKey =
-    | 'trade' | 'business'
+    | 'trade' | 'g_subtype' | 'business'
     | 'g_about' | 'g_offer' | 'g_menu' | 'g_avail' | 'g_you' | 'g_diet' | 'g_area' | 'g_checks' | 'g_contact'
     | 'credentials' | 'prices' | 'finish';
 
 // The guest-only steps, in flow order.
 const GUEST_STEP_KEYS: StepKey[] = [
+    'g_subtype',
     'g_about', 'g_offer', 'g_menu', 'g_avail', 'g_you', 'g_diet', 'g_area', 'g_checks', 'g_contact',
 ];
 
-// What a guest's later steps branch on. Both come from earlier answers —
-// the category (its `food` flag) and the booking shape — never from a
-// hand-coded per-category list.
+// What a guest's steps branch on, all from earlier answers: the top-level group
+// (does it have a sub-type screen), the sub-type category (its `food` flag) and
+// the booking shape. Never a hand-coded per-category list.
 export interface StepContext {
+    group?: string | null;
     category?: string | null;
     shape?: string | null;
 }
@@ -66,6 +68,9 @@ export interface Step {
 
 const ALL_STEPS: Step[] = [
     { key: 'trade', label: 'Trade', title: 'What do you do?' },
+    // A guest's second screen: the narrower choices under the group they picked
+    // (Airbnb's "How would you describe your experience?"). Off for 'other'.
+    { key: 'g_subtype', label: 'Type', title: 'How would you describe it?' },
     { key: 'business', label: 'Business', title: 'Your business' },
     // The guest experience, split out of the old single 'business' step. Each
     // is one question a screen; which of them a given guest sees is decided by
@@ -116,6 +121,10 @@ export function stepApplies(step: StepKey, trade: string, ctx?: StepContext): bo
 
         const shape = ctx.shape || null;
         switch (step) {
+            // The sub-type screen, only when the chosen group has one. 'other'
+            // is alone under its group, so it goes straight to the business step.
+            case 'g_subtype':
+                return !!ctx.group && ctx.group !== 'other';
             // Asked of every guest.
             case 'g_about':
             case 'g_offer':
@@ -274,6 +283,7 @@ const STEP_FIELDS: Record<StepKey, string[]> = {
     // slice, where stepForField also becomes context-aware (several fields —
     // description, contact_email, areas — move off 'business' for a guest). Empty
     // for now: the component does not yet drive these steps, so nothing maps here.
+    g_subtype: [],
     g_about: [],
     g_offer: [],
     g_menu: [],
