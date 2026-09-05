@@ -24,13 +24,14 @@ type Choice = {
     href: string;
     title: string;
     Icon: typeof Home;
-    tint: string; // the one bit of colour on the screen
 };
 
+// One palette across all three — the brand emerald — so the tiles read as a
+// set, not three unrelated colours. The glyph stays the only colour on screen.
 const CHOICES: Choice[] = [
-    { key: 'home', href: '/addhome', title: 'List a home or holiday let', Icon: Home, tint: 'text-sky-600' },
-    { key: 'guest', href: '/services/join?trade=guest', title: 'Host a guest experience', Icon: Sparkles, tint: 'text-emerald-600' },
-    { key: 'service', href: '/services/join', title: 'Offer a service', Icon: Wrench, tint: 'text-amber-600' },
+    { key: 'home', href: '/addhome', title: 'List a home or holiday let', Icon: Home },
+    { key: 'guest', href: '/services/join?trade=guest', title: 'Host a guest experience', Icon: Sparkles },
+    { key: 'service', href: '/services/join', title: 'Offer a service', Icon: Wrench },
 ];
 
 export default function HostFork() {
@@ -67,7 +68,7 @@ export default function HostFork() {
                     </div>
 
                     <div className="mt-10 grid gap-4 sm:grid-cols-3">
-                        {CHOICES.map(({ key, title, Icon, tint }) => {
+                        {CHOICES.map(({ key, title, Icon }) => {
                             const isOn = selected === key;
                             return (
                                 <button
@@ -83,7 +84,7 @@ export default function HostFork() {
                                             : 'border-slate-200 hover:border-slate-300')
                                     }
                                 >
-                                    <Icon className={`h-11 w-11 ${tint}`} strokeWidth={1.5} aria-hidden />
+                                    <Icon className="h-11 w-11 text-emerald-600" strokeWidth={1.5} aria-hidden />
                                     <span className="text-base font-semibold text-slate-900">{title}</span>
                                 </button>
                             );
