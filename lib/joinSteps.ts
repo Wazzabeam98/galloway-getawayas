@@ -29,6 +29,7 @@ import {
     asksAboutFuel,
     audienceForTrade,
     guestCategoryIsFood,
+    checksFor,
 } from '@/lib/serviceProviders';
 
 // The host trades keep 'trade' | 'business' | 'credentials' | 'prices' |
@@ -132,11 +133,13 @@ export function stepApplies(step: StepKey, trade: string, ctx?: StepContext): bo
             case 'g_you':
             case 'g_contact':
                 return true;
-            // The checks sub-flow (declarations + its migration) is the next
-            // stage. Off until it has something to ask, so a guest never lands
-            // on a blank step in the meantime.
+            // The checks sub-flow: the declarations this category has to
+            // confirm. Always at least the two universal ones (insurance and
+            // accuracy), so it is on for every guest — but computed from
+            // checksFor so it would fall away by itself if a category ever had
+            // nothing to ask, rather than a hand-set true.
             case 'g_checks':
-                return false;
+                return checksFor(ctx.category).length > 0;
             // A schedule only where there is one: a slot is booked into a time,
             // a made-to-order needs a lead time. Someone who comes to the guest
             // (comes_to_you) arranges it on the enquiry, so no schedule screen.

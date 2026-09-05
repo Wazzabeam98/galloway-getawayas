@@ -155,6 +155,107 @@ export function guestCategoryIsFood(key: string | null | undefined): boolean {
     return !!(c && c.food);
 }
 
+// GUEST CHECKS — the declarations a guest confirms before we list them.
+//
+// Airbnb's experience flow ends on a health-and-safety attestation; ours does
+// the same, but the statements are chosen for what the category actually is —
+// a private chef confirms food registration, a sauna owner confirms their heat
+// setup is maintained, a paddleboard guide confirms the water-safety kit. Two
+// are universal (insurance and an accuracy statement); the rest are gated by
+// the category's group, its `food` flag, or the category itself, so nobody
+// ticks a box that has nothing to do with what they offer.
+//
+// Non-blocking for now: these are recorded against the application (the
+// `declarations` column) for the owner to weigh at review, not enforced as a
+// gate on Next or submit. The applicant should not be turned away at sign-up
+// over a box; the owner decides what a missing tick means when they approve.
+//
+// `applies` is a predicate over the chosen category (null when unpicked or
+// "Something else"), so the set a given provider sees is computed, never a
+// hand-maintained per-category list that would drift from GUEST_CATEGORIES.
+export interface GuestCheck {
+    key: string;
+    label: string;   // the statement the provider confirms
+    hint?: string;   // the supporting line under it
+    applies: (category: GuestCategory | null) => boolean;
+}
+
+export const GUEST_CHECKS: GuestCheck[] = [
+    // Universal — asked of every guest experience.
+    {
+        key: 'insurance',
+        label: 'I hold public liability insurance for what I offer.',
+        hint: 'Cover for a guest who is hurt, or whose property is damaged, while you host them.',
+        applies: () => true,
+    },
+    {
+        key: 'accurate',
+        label: "Everything I've described here is accurate, and I'll keep it up to date.",
+        hint: 'What a guest reads is what they get.',
+        applies: () => true,
+    },
+    // Food & drink — a food business in Scotland must register with its council.
+    {
+        key: 'food_registered',
+        label: 'I am registered as a food business with my local council.',
+        hint: 'Free, and required before you sell food. Dumfries & Galloway Council registers you — allow 28 days.',
+        applies: (c) => !!c && c.food,
+    },
+    {
+        key: 'allergens',
+        label: 'I can give guests full allergen information for what I make.',
+        hint: 'The fourteen named allergens, on request and labelled on anything pre-packed.',
+        applies: (c) => !!c && c.food,
+    },
+    // Alcohol — pouring at a tasting needs a licence.
+    {
+        key: 'alcohol',
+        label: 'I hold the licence to serve alcohol, or guests supply their own.',
+        hint: 'A tasting where you pour needs a personal or occasional licence.',
+        applies: (c) => !!c && c.key === 'tastings',
+    },
+    // Outdoors & water — leading people into the outdoors.
+    {
+        key: 'outdoor_trained',
+        label: 'I am trained and equipped to lead this activity safely.',
+        hint: 'The right qualification for what you run, and a plan for when conditions turn.',
+        applies: (c) => !!c && c.group === 'outdoors',
+    },
+    {
+        key: 'water_safety',
+        label: 'I carry the water-safety kit, and I check conditions before every session.',
+        hint: 'Tides, water temperature, and a way to get someone out.',
+        applies: (c) => !!c && c.key === 'water',
+    },
+    // Wellness — heat, cold water, and hands-on treatment.
+    {
+        key: 'sauna_safe',
+        label: 'My sauna and cold-water setup is maintained, and guests get clear safety guidance.',
+        hint: 'Ventilation, a way out from the inside, and who should not use it.',
+        applies: (c) => !!c && c.key === 'sauna',
+    },
+    {
+        key: 'treatment_qualified',
+        label: 'I am qualified and insured for the treatments I give.',
+        hint: 'Trained to give massage, reflexology or beauty treatments to the public.',
+        applies: (c) => !!c && c.key === 'massage',
+    },
+    // Arts & crafts — tools, kilns and materials around guests.
+    {
+        key: 'equipment_safe',
+        label: 'My tools, kiln and materials are safe for guests to use under supervision.',
+        applies: (c) => !!c && c.group === 'crafts',
+    },
+];
+
+// The checks a given category must confirm, in order. An unknown / unpicked /
+// "Something else" category (c === null) still gets the two universal ones, so
+// every guest experience has a checks screen with something on it.
+export function checksFor(category: string | null | undefined): GuestCheck[] {
+    const c = guestCategoryByKey(category);
+    return GUEST_CHECKS.filter((k) => k.applies(c));
+}
+
 // A heading on the picker, not a thing anybody is.
 //
 // Six trades would swamp a page that otherwise has four entries on it, and
