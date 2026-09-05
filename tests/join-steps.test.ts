@@ -514,33 +514,35 @@ test('a cake maker (made to order) skips the years and expertise screens', () =>
     assert.equal(stepApplies('g_creds', 'guest', ctx), false, 'no expertise screen for a product');
 });
 
-test('a sauna owner (not food, slot) walks the same twelve, with dietary folded away', () => {
-    const ctx = { group: 'wellness', category: 'sauna', shape: 'slot' };
+test('a yoga instructor (not food, slot) walks the same twelve, with dietary folded away', () => {
+    const ctx = { group: 'wellness', category: 'yoga', shape: 'slot' };
     assert.deepEqual(gkeys(ctx), TWELVE);
     // Dietary is no longer a step — it renders inside g_expect for a food
-    // category only, so a sauna simply never sees that field.
+    // category only, so a yoga class simply never sees that field.
     assert.equal(stepApplies('g_area', 'guest', ctx), true, 'a slot still needs a location, on the where-and-when step');
     // What guests can expect and the photos step are asked of everyone.
     assert.equal(stepApplies('g_expect', 'guest', ctx), true);
     assert.equal(stepApplies('g_photos', 'guest', ctx), true);
 });
 
-test('expertise is asked of every experience, but never of a made-to-order product', () => {
-    // Photos are asked of everyone. The expertise/years screens are asked of
-    // every experience (a person you book) but never a product (a thing you buy).
+test('expertise is asked where the person is the draw, but never for a product or a sauna', () => {
+    // Photos are asked of everyone. The expertise/years screens are asked where
+    // a guest is really booking the person (a chef, a class), not where they're
+    // booking a thing.
     for (const ctx of [
         { group: 'food', category: 'chef', shape: 'comes_to_you' },
-        { group: 'wellness', category: 'sauna', shape: 'slot' },
+        { group: 'wellness', category: 'yoga', shape: 'slot' },
         { group: 'other', category: 'other', shape: null },
     ]) {
         assert.equal(stepApplies('g_creds', 'guest', ctx), true, JSON.stringify(ctx) + ' is asked for expertise');
         assert.equal(stepApplies('g_photos', 'guest', ctx), true, JSON.stringify(ctx) + ' has a photos step');
     }
-    // The two made-to-order products skip both the years and the expertise
-    // screen — but still have a photos step, which sells the product.
+    // Skipped: the two made-to-order products AND the sauna — nobody books a hot
+    // barrel for the owner's years. All keep a photos step, which sells them.
     for (const ctx of [
         { group: 'food', category: 'baking', shape: 'made_to_order' },
         { group: 'food', category: 'hampers', shape: 'made_to_order' },
+        { group: 'wellness', category: 'sauna', shape: 'slot' },
     ]) {
         assert.equal(stepApplies('g_you', 'guest', ctx), false, JSON.stringify(ctx) + ' skips years');
         assert.equal(stepApplies('g_creds', 'guest', ctx), false, JSON.stringify(ctx) + ' skips expertise');
@@ -594,17 +596,18 @@ test('years and qualifications are required only where physical safety is at sta
     assert.equal(guestAsksExpertise('chef'), true);
 
     // The optional middle — asked, never forced.
-    for (const c of ['tastings', 'sauna', 'pottery', 'painting', 'workshops', 'other']) {
+    for (const c of ['tastings', 'pottery', 'painting', 'workshops', 'other']) {
         assert.equal(guestYearsRequired(c), false, c + ' does not force years');
         assert.equal(guestQualificationsRequired(c), false, c + ' does not force qualifications');
         assert.equal(guestAsksExpertise(c), true, c + ' is still asked, optionally');
     }
 
-    // The products — asked neither.
-    for (const c of ['baking', 'hampers']) {
+    // Skipped entirely: the products, and the sauna — the years and expertise
+    // screens never appear, because the answer changes neither the booking nor
+    // the approval.
+    for (const c of ['baking', 'hampers', 'sauna']) {
         assert.equal(guestAsksExpertise(c), false, c + ' skips the years and expertise screens');
         assert.equal(guestYearsRequired(c), false);
-        assert.equal(guestQualificationsRequired(c), false);
     }
 });
 

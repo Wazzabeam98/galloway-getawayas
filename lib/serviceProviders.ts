@@ -179,13 +179,22 @@ export function guestCategoryIsFood(key: string | null | undefined): boolean {
 const GUEST_QUALS_REQUIRED = ['outdoors', 'water', 'massage', 'yoga'];
 const GUEST_YEARS_REQUIRED = ['outdoors', 'water', 'massage', 'yoga', 'chef'];
 
+// Categories that skip the years + expertise screens even though they aren't a
+// made-to-order product. A sauna is the case that named the rule: nobody books
+// a hot barrel by the water for the owner's years or credentials — they book it
+// because it's warm, clean and well-sited, and the sauna-safety declaration
+// already covers what matters. The test is "does the answer change whether a
+// guest books, or whether we'd approve them?" — if not, don't ask.
+const GUEST_EXPERTISE_SKIP = ['sauna'];
+
 // Whether the years + expertise screens are shown at all. Off for a made-to-
-// order product; on for everyone else (including "Something else", where they
-// stay optional).
+// order product and for the skip list above; on for everyone else (including
+// "Something else", where they stay optional).
 export function guestAsksExpertise(category: string | null | undefined): boolean {
     const c = guestCategoryByKey(category);
     if (!c) return true;
-    return c.shape !== 'made_to_order';
+    if (c.shape === 'made_to_order') return false;
+    return GUEST_EXPERTISE_SKIP.indexOf(c.key) === -1;
 }
 
 // Whether qualifications must be filled in before Next. The four safety
