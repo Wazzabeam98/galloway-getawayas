@@ -74,8 +74,16 @@ export async function GET() {
             children: b.children,
             pets: b.pets,
             status: b.status,
-            // Deliberately absent: total_price, amount_paid, balance_amount,
-            // payment_status, and everything else about the money.
+            // status AND payment_status are the entitlement signal the arrival
+            // gate reads (bookingReleasesPrivateData = confirmed + paid). They say
+            // WHETHER the stay is a real, paid stay — not what was paid — so a
+            // companion needs them to see the address, directions and the way in,
+            // exactly as the invite promises. Without payment_status the gate was
+            // silently false for every companion and their card showed no arrival
+            // and no link to it.
+            payment_status: b.payment_status,
+            // Deliberately absent: total_price, amount_paid, balance_amount, and
+            // everything else that says HOW MUCH — a companion never sees the money.
             sharedWithMe: true,
         });
     });
