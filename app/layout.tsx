@@ -6,6 +6,7 @@ import Navbar from '@/components/base/Navbar';
 import Footer from '@/components/base/Footer';
 import FooterMinimal from '@/components/base/FooterMinimal';
 import FooterSwitch from '@/components/base/FooterSwitch';
+import ChromeGate from '@/components/base/ChromeGate';
 import { ToastContainer } from 'react-toastify';
 import { Suspense } from 'react';
 import Toast from '@/components/base/Toast';
@@ -113,7 +114,7 @@ export default function RootLayout({
           type="application/ld+json"
           dangerouslySetInnerHTML={{ __html: JSON.stringify(organisationSchema) }}
         />
-        <Navbar />
+        <ChromeGate><Navbar /></ChromeGate>
         {children}
         <FooterSwitch full={<Footer />} minimal={<FooterMinimal />} />
         <ToastContainer position="top-center" />
