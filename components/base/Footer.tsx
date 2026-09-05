@@ -43,7 +43,7 @@ const Footer = () => {
                     <div>
                         <h3 className="text-sm font-semibold text-slate-900 mb-3">Hosting</h3>
                         <ul className="space-y-2 text-sm text-slate-600">
-                            <li><Link href="/addhome" className="hover:text-slate-900">List your property</Link></li>
+                            <li><Link href="/business" className="hover:text-slate-900">Start hosting</Link></li>
                             <li><Link href="/dashboard" className="hover:text-slate-900">Host dashboard</Link></li>
                             <li><Link href="/services/property" className="hover:text-slate-900">Property services</Link></li>
                         </ul>
@@ -53,10 +53,6 @@ const Footer = () => {
                         <h3 className="text-sm font-semibold text-slate-900 mb-3">Company</h3>
                         <ul className="space-y-2 text-sm text-slate-600">
                             <li><Link href="/contact" className="hover:text-slate-900">Contact us</Link></li>
-                            {/* Tradespeople and local businesses, not property
-                                owners — the navbar is for guests and hosts and
-                                this would crowd it. */}
-                            <li><Link href="/business" className="hover:text-slate-900">Set up a business</Link></li>
                             <li><Link href="/terms" className="hover:text-slate-900">Terms &amp; conditions</Link></li>
                             <li><Link href="/privacy" className="hover:text-slate-900">Privacy policy</Link></li>
                         </ul>

@@ -17,8 +17,8 @@ const SearchSheetNav = ({ session, searchInputCallback }: { session: any, search
                 onChange={(e) => searchInputCallback(e.target.value)}
             />
             <div className='hidden md:flex items-center space-x-4'>
-                <Link href="/addhome" className="text-sm font-semibold">
-                    Add homes
+                <Link href="/business" className="text-sm font-semibold">
+                    Start hosting
                 </Link>
                 <NavMenu session={session} />
             </div>

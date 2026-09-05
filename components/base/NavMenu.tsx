@@ -189,7 +189,7 @@ const NavMenu = ({
                                 null
                             ) : (
                                 <li className={itemClass}>
-                                    <Link href='/addhome'>Become a host</Link>
+                                    <Link href='/business'>Start hosting</Link>
                                 </li>
                             )}
 
@@ -200,7 +200,7 @@ const NavMenu = ({
                             <LoginModel />
                             <SignupModel />
                             <li className={itemClass}>
-                                <Link href='/addhome'>Become a host</Link>
+                                <Link href='/business'>Start hosting</Link>
                             </li>
                         </>
                     )}

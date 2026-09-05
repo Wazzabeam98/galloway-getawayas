@@ -1,127 +1,121 @@
 import Link from 'next/link';
-import { Sparkles, ChefHat, ArrowRight, Check } from 'lucide-react';
+import { Home, ChefHat, Wrench, ArrowRight } from 'lucide-react';
 
 export const metadata = {
-    // The root layout appends ' | Galloway Getaways' to every page title, so
-    // naming it here again put it in the tab twice. Same fix as app/services.
-    title: 'Set up a business',
+    // The root layout appends ' | Galloway Getaways' to every page title.
+    title: 'Start hosting',
     description:
-        'For local tradespeople and businesses in Dumfries & Galloway — cleaning, gardening, '
-        + 'maintenance, and experiences sold to guests staying nearby.',
+        'List a cottage, host a guest experience, or offer a trade — the one place to start, '
+        + 'for everyone with something to offer in Dumfries & Galloway.',
     alternates: { canonical: '/business' },
 };
 
-// The way in for tradespeople and local businesses — the front door to both
-// sign-ups, so it is worth looking like something rather than two bordered
-// boxes. Two cards, one decision: do property owners hire you, or do the guests
-// staying nearby book you?
+// The single fork — one page, three tiles — replacing the old two-card
+// "Set up a business". It mirrors Airbnb's "What would you like to host?":
+// every "become a host / list your property / set up a business" link on the
+// site now lands here and branches from one decision. The tiles are a front
+// door; the flows behind them are unchanged.
 //
-// The line about letting a property is the whole point of this page existing.
-// "Set up a business" reads, to somebody with a cottage, exactly like the
-// thing they came to do — and sending them into a cleaner's sign-up would be
-// nobody's fault but ours.
+//   • cottage      → /addhome (its own 9-step wizard)
+//   • guest exp.   → /services/join?trade=guest
+//   • trade        → /services/join
+//
+// PLACEHOLDER ART: the illustrations are marked placeholders so the layout can
+// be judged now; real artwork replaces <TileArt> later. Do not ship these to
+// production as final.
 
-// One selling point, ticked. Kept small so the card leads with its heading.
-function Point({ children }: { children: React.ReactNode }) {
+type Fork = {
+    href: string;
+    title: string;
+    blurb: string;
+    Icon: typeof Home;
+    art: string; // emoji stand-in, clearly a placeholder
+};
+
+const FORKS: Fork[] = [
+    {
+        href: '/addhome',
+        title: 'List a cottage',
+        blurb: 'A place for guests to stay.',
+        Icon: Home,
+        art: '🏡',
+    },
+    {
+        href: '/services/join?trade=guest',
+        title: 'Host a guest experience',
+        blurb: 'Cook, bake, pour or host — anything a guest would book for their stay.',
+        Icon: ChefHat,
+        art: '🧑‍🍳',
+    },
+    {
+        href: '/services/join',
+        title: 'Offer a trade',
+        blurb: 'Get work from the holiday lets nearby.',
+        Icon: Wrench,
+        art: '🔧',
+    },
+];
+
+// A deliberately unfinished illustration: dashed frame, oversized emoji, and a
+// "Placeholder" tag so nobody mistakes it for the real thing.
+function TileArt({ art, Icon }: { art: string; Icon: typeof Home }) {
     return (
-        <li className="flex items-start gap-2 text-sm text-slate-600">
-            <Check className="mt-0.5 h-4 w-4 flex-none text-emerald-600" strokeWidth={2.5} />
-            <span>{children}</span>
-        </li>
+        <div className="relative flex aspect-[4/3] items-center justify-center overflow-hidden rounded-2xl border border-dashed border-emerald-300/70 bg-emerald-50/60">
+            <span aria-hidden className="text-5xl leading-none opacity-90">{art}</span>
+            <Icon aria-hidden className="absolute bottom-3 right-3 h-5 w-5 text-emerald-600/50" strokeWidth={1.75} />
+            <span className="absolute left-2 top-2 rounded-full bg-white/85 px-2 py-0.5 text-[10px] font-semibold uppercase tracking-wider text-emerald-700 ring-1 ring-emerald-600/20">
+                Placeholder
+            </span>
+        </div>
     );
 }
 
 export default function BusinessPage() {
     return (
         <div className="relative isolate overflow-hidden">
-            {/* A soft wash behind the hero so the cards sit on something, not on
-                bare white — the same emerald the brand uses, barely there. */}
             <div
                 aria-hidden
                 className="pointer-events-none absolute inset-x-0 top-0 -z-10 h-72 bg-gradient-to-b from-emerald-50 to-transparent"
             />
 
-            <div className="mx-auto max-w-4xl px-4 sm:px-6 py-14 pb-24">
+            <div className="mx-auto max-w-5xl px-4 sm:px-6 py-14 pb-24">
                 <div className="max-w-2xl">
                     <span className="inline-flex items-center rounded-full bg-white/70 px-3 py-1 text-xs font-semibold uppercase tracking-[0.14em] text-emerald-700 ring-1 ring-emerald-600/20">
-                        Galloway Getaways for business
+                        Galloway Getaways
                     </span>
                     <h1 className="mt-4 text-4xl sm:text-5xl font-extrabold tracking-tight text-slate-900">
-                        Set up a business
+                        What would you like to host?
                     </h1>
                     <p className="mt-4 text-lg leading-relaxed text-slate-600">
-                        For local tradespeople and businesses across Dumfries &amp; Galloway. You keep your
-                        own customers and your own prices; we put you in front of the people who need you.
-                    </p>
-                    <p className="mt-3 text-sm text-slate-500">
-                        Wanting to let out a cottage instead?{' '}
-                        <Link href="/addhome" className="font-semibold text-emerald-700 underline decoration-emerald-300 underline-offset-2 hover:text-emerald-800">
-                            List your property
-                        </Link>{' '}
-                        — that is a different thing and this is not it.
+                        One place to start, whatever you have to offer in Dumfries &amp; Galloway.
+                        Pick the one that fits — you keep your own prices and your own customers.
                     </p>
                 </div>
 
-                <div className="mt-10 grid items-stretch gap-5 sm:grid-cols-2">
-                    {/* Tradesperson — a local business getting leads from cottages, not a host's staff. */}
-                    <Link
-                        href="/services/join"
-                        className="group relative flex flex-col rounded-3xl border border-slate-200 bg-white p-7 shadow-sm transition hover:-translate-y-0.5 hover:border-emerald-300 hover:shadow-lg focus:outline-none focus-visible:ring-2 focus-visible:ring-emerald-600"
-                    >
-                        <span className="inline-flex h-14 w-14 items-center justify-center rounded-2xl bg-emerald-50 ring-1 ring-emerald-600/15">
-                            <Sparkles className="h-7 w-7 text-emerald-700" strokeWidth={1.75} />
-                        </span>
-                        <h2 className="mt-5 text-xl font-bold text-slate-900">Get work from holiday lets</h2>
-                        <p className="mt-2 text-sm leading-relaxed text-slate-600">
-                            Changeover cleaning, waste, gardening, maintenance and window cleaning.
-                            The jobs come to you — owners near you find you by the areas you cover and get in touch.
-                        </p>
-                        <ul className="mt-5 space-y-2">
-                            <Point>Listed by the trades and areas you cover</Point>
-                            <Point>Owners message you directly with the job</Point>
-                            <Point>Your own prices, your own customers</Point>
-                        </ul>
-                        <span className="mt-auto pt-6 inline-flex items-center gap-2 self-start rounded-full bg-emerald-700 px-5 py-2.5 text-sm font-semibold text-white transition group-hover:bg-emerald-800">
-                            Get started
-                            <ArrowRight className="h-4 w-4 transition group-hover:translate-x-0.5" />
-                        </span>
-                    </Link>
-
-                    {/* Guest experience — booked by the guests staying nearby. */}
-                    <Link
-                        href="/services/join?trade=guest"
-                        className="group relative flex flex-col rounded-3xl border border-slate-200 bg-white p-7 shadow-sm transition hover:-translate-y-0.5 hover:border-emerald-300 hover:shadow-lg focus:outline-none focus-visible:ring-2 focus-visible:ring-emerald-600"
-                    >
-                        <span className="inline-flex h-14 w-14 items-center justify-center rounded-2xl bg-emerald-50 ring-1 ring-emerald-600/15">
-                            <ChefHat className="h-7 w-7 text-emerald-700" strokeWidth={1.75} />
-                        </span>
-                        <h2 className="mt-5 text-xl font-bold text-slate-900">Sell guest experiences</h2>
-                        <p className="mt-2 text-sm leading-relaxed text-slate-600">
-                            A private chef, a cake, a welcome hamper, a wild-swimming guide, a whisky
-                            tasting — anything a guest would book for their stay. Bought by the people
-                            staying in the cottages, not by the owners.
-                        </p>
-                        <ul className="mt-5 space-y-2">
-                            <Point>Shown to guests booked into cottages near you</Point>
-                            <Point>Take payment through the site, paid out by Stripe</Point>
-                            <Point>You set what you offer and what it costs</Point>
-                        </ul>
-
-                        {/* Said plainly, not buried: signing up is not going live. A
-                            guest cannot see you until you are approved and have
-                            connected Stripe — the same two steps a host goes through. */}
-                        <p className="mt-5 rounded-xl bg-slate-50 px-3.5 py-3 text-xs leading-relaxed text-slate-500">
-                            You describe your business and set your prices; we check it and give it a
-                            category; you connect Stripe so we can pay you. A guest can book you once
-                            you are approved and connected — not the moment you sign up.
-                        </p>
-
-                        <span className="mt-auto pt-6 inline-flex items-center gap-2 self-start rounded-full bg-emerald-700 px-5 py-2.5 text-sm font-semibold text-white transition group-hover:bg-emerald-800">
-                            Get started
-                            <ArrowRight className="h-4 w-4 transition group-hover:translate-x-0.5" />
-                        </span>
-                    </Link>
+                <div className="mt-10 grid items-stretch gap-5 sm:grid-cols-3">
+                    {FORKS.map(({ href, title, blurb, Icon, art }) => (
+                        <Link
+                            key={title}
+                            href={href}
+                            className="group relative flex flex-col rounded-3xl border border-slate-200 bg-white p-5 shadow-sm transition hover:-translate-y-0.5 hover:border-emerald-300 hover:shadow-lg focus:outline-none focus-visible:ring-2 focus-visible:ring-emerald-600"
+                        >
+                            <TileArt art={art} Icon={Icon} />
+                            <h2 className="mt-5 text-xl font-bold text-slate-900">{title}</h2>
+                            <p className="mt-2 text-sm leading-relaxed text-slate-600">{blurb}</p>
+                            <span className="mt-auto pt-5 inline-flex items-center gap-2 text-sm font-semibold text-emerald-700 transition group-hover:text-emerald-800">
+                                Start hosting
+                                <ArrowRight className="h-4 w-4 transition group-hover:translate-x-0.5" />
+                            </span>
+                        </Link>
+                    ))}
                 </div>
+
+                {/* Liam's reassurance from the old page, kept but moved out of the
+                    tiles: signing up is not going live. */}
+                <p className="mt-8 max-w-2xl text-sm text-slate-500">
+                    Experiences and trades are reviewed and set up for payment before guests can
+                    book — signing up isn&rsquo;t going live.
+                </p>
             </div>
         </div>
     );

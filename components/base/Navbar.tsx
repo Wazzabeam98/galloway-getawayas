@@ -98,8 +98,8 @@ const Navbar = async () => {
                         /* A tradesman isn't a lapsed host to convert. */
                         null
                     ) : (
-                        <Link href="/addhome" className="text-sm font-semibold hover:bg-slate-100 rounded-full py-2 px-4 transition text-slate-800">
-                            Become a host
+                        <Link href="/business" className="text-sm font-semibold hover:bg-slate-100 rounded-full py-2 px-4 transition text-slate-800">
+                            Start hosting
                         </Link>
                     )}
 
