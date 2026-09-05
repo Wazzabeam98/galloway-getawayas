@@ -103,7 +103,17 @@ interface AreaRow {
 // it on. Per trade, because somebody can be part-way through two.
 const draftKey = (trade: string) => 'gg.provider-draft.' + trade;
 
-function ApplicationForm() {
+// The existing record the server resolved for a signed-in owner, handed in so
+// a returning applicant sees their real state on the first paint rather than
+// the picker. See the note in app/services/join/page.tsx.
+export interface InitialResume {
+    id: string;
+    trade: string;
+    status: string;
+    business_name: string;
+}
+
+function ApplicationForm({ initialResume = null }: { initialResume?: InitialResume | null }) {
     const router = useRouter();
     const params = useSearchParams();
 
@@ -116,17 +126,20 @@ function ApplicationForm() {
     const [loading, setLoading] = useState(true);
     const [session, setSession] = useState<any>(null);
 
-    const [providerId, setProviderId] = useState<string | null>(null);
+    // Seeded from the server-resolved record where there is one, so the pending
+    // panel (or the payout gate) is on screen before the client's own lookup
+    // runs — and never replaced by the picker if that lookup races the cookie.
+    const [providerId, setProviderId] = useState<string | null>(initialResume?.id ?? null);
     // Set only on the unauthenticated path, where a press lodges an
     // application rather than making an account. A provider row does not exist
     // yet — that happens when the emailed link is opened — so this is the
     // handle the resend button uses, and it is deliberately not providerId.
     const [applicationId, setApplicationId] = useState<string | null>(null);
-    const [status, setStatus] = useState('draft');
+    const [status, setStatus] = useState(initialResume?.status || 'draft');
     const [reviewNote, setReviewNote] = useState<string | null>(null);
 
-    const [businessName, setBusinessName] = useState('');
-    const [trade, setTrade] = useState(tradeFromUrl || 'sponge');
+    const [businessName, setBusinessName] = useState(initialResume?.business_name || '');
+    const [trade, setTrade] = useState(initialResume?.trade || tradeFromUrl || 'sponge');
     const [description, setDescription] = useState('');
     const [contactEmail, setContactEmail] = useState('');
     const [contactPhone, setContactPhone] = useState('');
@@ -151,7 +164,11 @@ function ApplicationForm() {
     // query string is for; the step is a position in a form somebody is
     // filling in, and putting it in the URL would put every keystroke's worth
     // of navigation into their browser history.
-    const [step, setStep] = useState<StepKey>('trade');
+    // A returning applicant already answered step one, so they open past the
+    // picker — on 'business', where the pending panel and the payout gate live.
+    // Without this the picker would flash under the status panel for the moment
+    // before hydration moves them off it.
+    const [step, setStep] = useState<StepKey>(initialResume ? 'business' : 'trade');
 
     // Which steps they have pressed Next on. Errors on a step nobody has
     // reached yet stay hidden: a form that turns red before it has been
@@ -4547,12 +4564,12 @@ function ApplicationForm() {
     );
 }
 
-export default function ProviderSignUp() {
+export default function ProviderSignUp({ initialResume = null }: { initialResume?: InitialResume | null }) {
     // useSearchParams needs a boundary, the same as the query-string reader in
     // the root layout.
     return (
         <Suspense fallback={<div className="max-w-3xl mx-auto px-4 sm:px-6 py-16 text-slate-500">Loading…</div>}>
-            <ApplicationForm />
+            <ApplicationForm initialResume={initialResume} />
         </Suspense>
     );
 }
