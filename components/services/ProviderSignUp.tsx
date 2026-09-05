@@ -71,6 +71,7 @@ import {
     guestCategoryByKey,
     guestCategoryIsFood,
     checksFor,
+    DEFAULT_SERVICE_COMMISSION,
 } from '@/lib/serviceProviders';
 import {
     stepsFor,
@@ -238,6 +239,27 @@ function ApplicationForm() {
     const [dietaryNote, setDietaryNote] = useState('');
     const [headshot, setHeadshot] = useState<string | null>(null);
     const [uploadingHeadshot, setUploadingHeadshot] = useState(false);
+
+    // --- Guest experience: the Airbnb-shaped content screens -----------------
+    //
+    // The questions that make a guest experience sell and that we need to take a
+    // booking, added when the flow was rebuilt against Airbnb's (Sep 2026):
+    //   - yearsDoing        how long they've done it (the momentum-first opener)
+    //   - professionalTitle a short professional title ("Private chef")
+    //   - qualifications    training and credentials — REQUIRED, the whole pitch
+    //   - whatToExpect      what actually happens, so a guest knows what they get
+    //   - whatIncluded      what's provided
+    //   - whatToBring       what a guest brings themselves
+    // Held in component state and the local-storage draft so the flow works and
+    // survives a reload; wiring them to their own columns (and the admin review
+    // of them) is the follow-up that lands with the held declarations migration.
+    const [yearsDoing, setYearsDoing] = useState('');
+    const [professionalTitle, setProfessionalTitle] = useState('');
+    const [qualifications, setQualifications] = useState('');
+    const [whatToExpect, setWhatToExpect] = useState('');
+    const [whatIncluded, setWhatIncluded] = useState('');
+    const [whatToBring, setWhatToBring] = useState('');
+    const [uploadingPhotos, setUploadingPhotos] = useState(false);
 
     // --- Guest experience: category, shape, and the shape's own fields -------
     //
@@ -693,6 +715,12 @@ function ApplicationForm() {
             if (d.basedLine) setBasedLine(d.basedLine);
             if (d.dietaryNote) setDietaryNote(d.dietaryNote);
             if (d.headshot) setHeadshot(d.headshot);
+            if (d.yearsDoing) setYearsDoing(d.yearsDoing);
+            if (d.professionalTitle) setProfessionalTitle(d.professionalTitle);
+            if (d.qualifications) setQualifications(d.qualifications);
+            if (d.whatToExpect) setWhatToExpect(d.whatToExpect);
+            if (d.whatIncluded) setWhatIncluded(d.whatIncluded);
+            if (d.whatToBring) setWhatToBring(d.whatToBring);
             // The category, shape and its fields. Set before the filledIn check
             // so a guest who picked a category but typed nothing still lands past
             // the picker rather than being asked to choose it again.
@@ -821,6 +849,9 @@ function ApplicationForm() {
                     // The guest-trade fields: the price, and who they are. The
                     // headshot is a storage path like the photos.
                     items, providerName, basedLine, headshot, dietaryNote,
+                    // The Airbnb-shaped content answers.
+                    yearsDoing, professionalTitle, qualifications,
+                    whatToExpect, whatIncluded, whatToBring,
                     // The category, the inferred shape and its own fields.
                     guestCategory, shape, leadTimeDays,
                     slotPrivate, slotCapacity, slotLength, schedule, blockedDates,
@@ -838,7 +869,9 @@ function ApplicationForm() {
         pricingChoice, billableHourlyRate, coveredBands,
         doesGas, doesOil, registrations, calloutWaived, skills,
         photos, logo, buildingType, panes,
-        items, providerName, basedLine, headshot,
+        items, providerName, basedLine, headshot, dietaryNote,
+        yearsDoing, professionalTitle, qualifications,
+        whatToExpect, whatIncluded, whatToBring,
         guestCategory, shape, leadTimeDays,
         slotPrivate, slotCapacity, slotLength, schedule, blockedDates,
         declarations,
@@ -1167,14 +1200,29 @@ function ApplicationForm() {
     // greyed Next is never a silent dead end and a skippable screen never
     // looks like one she has to fill. Pickers (trade, g_subtype) and the
     // finish step carry their own affordances and are left out here.
-    const OPTIONAL_GUEST_STEPS: StepKey[] = ['g_menu', 'g_you', 'g_diet', 'g_checks'];
+    const OPTIONAL_GUEST_STEPS: StepKey[] = ['g_you', 'g_menu', 'g_expect', 'g_checks'];
     const stepIsPicker = step === 'trade' || step === 'g_subtype';
     const stepIsOptional = isGuest && !stepIsPicker && OPTIONAL_GUEST_STEPS.indexOf(step) !== -1;
+
+    // Two guest steps are required but have no submitProblems field of their
+    // own — qualifications (the whole pitch: a real chef, checked by a person)
+    // and at least one photo. They gate Next on the spot, the same way the
+    // pickers do, with a plain line saying what to add.
+    const guestExtraMissing: string | null = isGuest
+        ? (step === 'g_creds' && !qualifications.trim()
+            ? 'Add your training or qualifications — it’s the main thing guests choose you on.'
+            : step === 'g_photos' && photos.length === 0
+                ? 'Add at least one photo — a listing without one doesn’t sell.'
+                : null)
+        : null;
+
     // The one thing missing on a required step, phrased for a person. Shown in
     // the footer beside the greyed Next so she knows exactly what to add.
-    const stepMissing = isGuest && !stepIsPicker && !stepIsOptional && stepProblems.length > 0
-        ? stepProblems[0].message
-        : null;
+    const stepMissing = guestExtraMissing
+        ? guestExtraMissing
+        : isGuest && !stepIsPicker && !stepIsOptional && stepProblems.length > 0
+            ? stepProblems[0].message
+            : null;
 
     const markVisited = (key: StepKey) =>
         setVisited((prev) => (prev.indexOf(key) === -1 ? prev.concat([key]) : prev));
@@ -1332,16 +1380,18 @@ function ApplicationForm() {
         const subs = categoriesForGroup(guestGroup);
         if (guestGroup === 'other' || subs.length <= 1) {
             if (subs[0]) selectGuestCategory(subs[0].key);
-            setStep('business');
+            setStep('g_you');
         } else {
             setStep('g_subtype');
         }
         scrollPanelToTop();
     };
 
-    // Next on screen two.
+    // Next on screen two. A guest's first content screen is g_you ("how long
+    // have you been doing this?") — there is no standalone business step for
+    // them any more; the name rides on g_about.
     const advanceFromSubtype = () => {
-        setStep('business');
+        setStep('g_you');
         scrollPanelToTop();
     };
 
@@ -1472,6 +1522,48 @@ function ApplicationForm() {
         }
 
         setUploadingItem(null);
+        e.target.value = '';
+    };
+
+    // A gallery photo for the guest listing — the room, the table, the view. The
+    // dedicated photos step (g_photos) that Airbnb has and we lacked. Same
+    // owner-prefixed path and compression as the headshot and item photos;
+    // appended to `photos`, which already saves and loads and is read by the
+    // listing. More than one file at a time, so a provider can add a set at once.
+    const uploadGalleryPhotos = async (e: React.ChangeEvent<HTMLInputElement>) => {
+        const files = Array.from(e.target.files || []);
+        if (!files.length) return;
+
+        if (!session) {
+            toast.info('Your photos can go on as soon as this is sent — nothing has been lost, just pick them again then.', {
+                theme: 'colored',
+            });
+            e.target.value = '';
+            return;
+        }
+
+        setUploadingPhotos(true);
+
+        for (const file of files) {
+            try {
+                const ready = await compressImage(file);
+                const path = 'providers/photo-' + session.user.id + '-' + Date.now() + '_' + generateRandomNumber() + '.jpg';
+
+                const { error } = await supabase.storage
+                    .from(Env.S3_BUCKET)
+                    .upload(path, ready, { contentType: 'image/jpeg' });
+
+                if (error) {
+                    toast.error(error.message, { theme: 'colored' });
+                } else {
+                    setPhotos((prev) => [...prev, path]);
+                }
+            } catch (err) {
+                toast.error('That image could not be read. Try a different one.', { theme: 'colored' });
+            }
+        }
+
+        setUploadingPhotos(false);
         e.target.value = '';
     };
 
@@ -2793,38 +2885,10 @@ function ApplicationForm() {
             })()}
 
             <fieldset disabled={locked} className={locked ? 'opacity-70' : ''}>
-                {onStep('business') && audienceForTrade(trade) === 'guest' ? (
-                    // Guest identity group: the business name and the person's name
-                    // sit together — a guest is choosing a person as much as a
-                    // business — two columns on desktop, stacked on a phone.
-                    <section className="mb-8">
-                        <div className="grid gap-4 sm:grid-cols-2 md:max-w-2xl">
-                            <div>
-                                <label className="block text-sm font-semibold text-slate-900 mb-1.5">Business name</label>
-                                <input
-                                    type="text"
-                                    value={businessName}
-                                    onChange={(e) => setBusinessName(e.target.value)}
-                                    placeholder="Solway Suppers"
-                                    className="w-full rounded-xl border border-slate-300 px-3.5 py-3 focus:outline-none focus:ring-2 focus:ring-emerald-700"
-                                />
-                                {problemFor('business_name') && (
-                                    <p data-problem className="text-sm text-rose-700 mt-1.5">{problemFor('business_name')!.message}</p>
-                                )}
-                            </div>
-                            <div>
-                                <label className="block text-sm font-semibold text-slate-900 mb-1.5">Your name</label>
-                                <input
-                                    type="text"
-                                    value={providerName}
-                                    onChange={(e) => setProviderName(e.target.value)}
-                                    placeholder="Rosa"
-                                    className="w-full rounded-xl border border-slate-300 px-3.5 py-3 focus:outline-none focus:ring-2 focus:ring-emerald-700"
-                                />
-                            </div>
-                        </div>
-                    </section>
-                ) : onStep('business') && (
+                {/* The standalone business step is host-only now. A guest names
+                    the experience on g_about ("Name it, and tell guests what it
+                    is"), beside the description, so they never answer it twice. */}
+                {onStep('business') && (
                     <section className="mb-8">
                         <label className="block text-sm font-semibold text-slate-900 mb-1.5">Business name</label>
                         <input
@@ -2904,13 +2968,51 @@ function ApplicationForm() {
 
                 {(audienceForTrade(trade) === 'guest' ? onStep('g_about') : onStep('business')) && (
                 <section className="mb-8">
+                    {/* A guest names the experience here, beside the description —
+                        the business name and the person's name together, since a
+                        guest is choosing a person as much as a business. A host set
+                        the name on the business step above, so they only see the
+                        description. */}
+                    {isGuest && (
+                        <div className="grid gap-4 sm:grid-cols-2 md:max-w-xl mb-6">
+                            <div>
+                                <label className="block text-xs font-medium text-slate-500 mb-2">What it’s called</label>
+                                <input
+                                    type="text"
+                                    value={businessName}
+                                    onChange={(e) => setBusinessName(e.target.value)}
+                                    placeholder="Solway Suppers"
+                                    className="w-full rounded-xl border border-slate-300 px-3.5 py-3 focus:outline-none focus:ring-2 focus:ring-emerald-700"
+                                />
+                                {problemFor('business_name') && (
+                                    <p data-problem className="text-sm text-rose-700 mt-1.5">{problemFor('business_name')!.message}</p>
+                                )}
+                            </div>
+                            <div>
+                                <label className="block text-xs font-medium text-slate-500 mb-2">Your name</label>
+                                <input
+                                    type="text"
+                                    value={providerName}
+                                    onChange={(e) => setProviderName(e.target.value)}
+                                    placeholder="Rosa"
+                                    className="w-full rounded-xl border border-slate-300 px-3.5 py-3 focus:outline-none focus:ring-2 focus:ring-emerald-700"
+                                />
+                            </div>
+                        </div>
+                    )}
+
+                    {isGuest && (
+                        <label className="block text-xs font-medium text-slate-500 mb-2">Describe it for a guest</label>
+                    )}
                     {/* Capped to a measure rather than the window: past about
                         70 characters a line is harder to read, not easier. */}
                     <textarea
                         value={description}
                         onChange={(e) => setDescription(e.target.value)}
                         rows={5}
-                        placeholder="What do you offer? Describe your business."
+                        placeholder={isGuest
+                            ? 'A private, five-course dinner cooked at your cottage using Galloway produce — you sit down, I bring it all and clear up after.'
+                            : 'What do you offer? Describe your business.'}
                         className="w-full md:max-w-xl rounded-xl border border-slate-300 px-4 py-3 focus:outline-none focus:ring-2 focus:ring-emerald-700"
                     />
                     {problemFor('description') && (
@@ -2919,41 +3021,41 @@ function ApplicationForm() {
                 </section>
                 )}
 
-                {/* HOW A GUEST GETS IT — the one plain question that decides the
-                    booking shape (GUEST-EXPERIENCES-MARKETPLACE.md §10). It never
-                    shows the words "shape", "unit" or "capacity"; the category has
-                    already pre-selected an answer, the provider confirms it, and
-                    the owner has the final say at review. Everything below adapts
-                    to it: a menu for the two request shapes, a session schedule
-                    for a slot. */}
-                {onStep('g_offer') && audienceForTrade(trade) === 'guest' && (
-                <section className="mb-8">
-                    <div className="grid gap-3 sm:grid-cols-3">
-                        {[
-                            { v: 'comes_to_you', t: 'I come to them', d: 'At the cottage — a private chef, a massage' },
-                            { v: 'made_to_order', t: 'I make it to order', d: 'They collect it or I drop it off — cakes, hampers' },
-                            { v: 'slot', t: 'They come to me', d: 'Sessions people book into — a sauna, a class, a tasting' },
-                        ].map((o) => {
-                            const on = shape === o.v;
-                            return (
-                                <button
-                                    key={o.v}
-                                    type="button"
-                                    onClick={() => setShape(o.v)}
-                                    aria-pressed={on}
-                                    className={
-                                        'flex flex-col rounded-2xl border p-4 text-left transition '
-                                        + (on
-                                            ? 'border-emerald-600 bg-emerald-50 ring-1 ring-emerald-600'
-                                            : 'border-slate-300 hover:border-emerald-400')
-                                    }
-                                >
-                                    <span className="font-semibold text-slate-900">{o.t}</span>
-                                    <span className="mt-1 text-xs leading-snug text-slate-500">{o.d}</span>
-                                </button>
-                            );
-                        })}
-                    </div>
+                {/* THE BOOKING SHAPE IS INFERRED, NEVER ASKED. The old "How do
+                    guests get it?" screen made a sauna owner classify our internal
+                    booking model — obvious from the category, so we read it off
+                    the category (cat.shape) at selection instead. Everything that
+                    used to sit under it now adapts silently: the price unit on
+                    g_menu, and the schedule on the where-and-when step. */}
+
+                {/* EXPERTISE — the screen Airbnb has and we lacked, and the whole
+                    pitch: a real chef, checked by a person. A short professional
+                    title, then the qualifications, which are REQUIRED (the footer
+                    gates Next on them) because if they're optional most leave them
+                    blank and every listing reads the same. None of it is a badge —
+                    nothing here is verified yet, so nothing claims to be. */}
+                {onStep('g_creds') && isGuest && (
+                <section className="mb-8 md:max-w-xl">
+                    <label className="block text-xs font-medium text-slate-500 mb-2">Your title <span className="text-slate-400">(optional)</span></label>
+                    <input
+                        type="text"
+                        value={professionalTitle}
+                        onChange={(e) => setProfessionalTitle(e.target.value.slice(0, 40))}
+                        placeholder="Private chef"
+                        className="w-full rounded-xl border border-slate-300 px-4 py-3 mb-6 focus:outline-none focus:ring-2 focus:ring-emerald-700"
+                    />
+
+                    <label className="block text-xs font-medium text-slate-500 mb-2">Your training and qualifications</label>
+                    <textarea
+                        value={qualifications}
+                        onChange={(e) => setQualifications(e.target.value)}
+                        rows={4}
+                        placeholder="Trained at Leiths, ten years in restaurant kitchens, Level 3 Food Hygiene. Say what qualifies you — a guest chooses you on this."
+                        className="w-full rounded-xl border border-slate-300 px-4 py-3 focus:outline-none focus:ring-2 focus:ring-emerald-700"
+                    />
+                    <p className="mt-2 text-sm text-slate-500">
+                        This is what a guest weighs you on, so it’s the one thing we ask for here.
+                    </p>
                 </section>
                 )}
 
@@ -3059,6 +3161,17 @@ function ApplicationForm() {
                                                         </select>
                                                     )}
                                                 </div>
+                                                {/* The payout, live as they type — Airbnb shows
+                                                    "You earn £34" beside the price, so the "what
+                                                    do I actually keep?" doubt never sits under
+                                                    the decision. Our commission is the 10% in
+                                                    DEFAULT_SERVICE_COMMISSION. */}
+                                                {Number(it.price) > 0 && (
+                                                    <p className="mt-1.5 text-xs text-emerald-700">
+                                                        You keep £{(Number(it.price) * (1 - DEFAULT_SERVICE_COMMISSION)).toFixed(2)}
+                                                        <span className="text-slate-400"> · we take {Math.round(DEFAULT_SERVICE_COMMISSION * 100)}%</span>
+                                                    </p>
+                                                )}
                                             </div>
                                         </div>
                                         <label className="block text-xs font-medium text-slate-500 mt-3 mb-1">Description</label>
@@ -3084,7 +3197,7 @@ function ApplicationForm() {
                 {/* MADE-TO-ORDER adds one field: the notice needed. It is the same
                     fact as the made-to-order cancellation cutoff, so it is asked
                     once, here. Gated on the shape, not worded as a condition. */}
-                {onStep('g_avail') && audienceForTrade(trade) === 'guest' && shape === 'made_to_order' && (
+                {onStep('g_area') && audienceForTrade(trade) === 'guest' && shape === 'made_to_order' && (
                 <section className="mb-8">
                     <label className="block text-xs font-medium text-slate-500 mb-2">How much notice do you need?</label>
                     <div className="flex items-center gap-2">
@@ -3102,7 +3215,7 @@ function ApplicationForm() {
                 {/* SLOT: the private/shared answer (which sets the price unit and
                     the capacity), the session length, and the weekly opening hours
                     — the schedule editor a sauna owner needs and never had. §7/§10. */}
-                {onStep('g_avail') && audienceForTrade(trade) === 'guest' && shape === 'slot' && (() => {
+                {onStep('g_area') && audienceForTrade(trade) === 'guest' && shape === 'slot' && (() => {
                     const DAYS = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
                     const dayOpen = (d: number) => schedule.some((r) => r.day === d);
                     const toggleDay = (d: number) => {
@@ -3217,9 +3330,22 @@ function ApplicationForm() {
                     to be. */}
                 {onStep('g_you') && audienceForTrade(trade) === 'guest' && (
                 <section className="mb-8">
-                    {/* "Your name" now sits with the business name up in the
-                        identity group — a guest is choosing a person as much as a
-                        business, so the two names belong together. */}
+                    {/* The momentum-first opener, Airbnb-style: a number with a
+                        sensible default is the easiest question there is, so it's
+                        the first content screen. "Your name" sits with the business
+                        name over on g_about. */}
+                    <label className="block text-xs font-medium text-slate-500 mb-2">Years doing this</label>
+                    <div className="flex items-center gap-2 mb-6">
+                        <input
+                            type="number" min="0" step="1" inputMode="numeric"
+                            value={yearsDoing}
+                            onChange={(e) => setYearsDoing(e.target.value)}
+                            placeholder="5"
+                            className="w-24 rounded-xl border border-slate-300 px-4 py-3 focus:outline-none focus:ring-2 focus:ring-emerald-700"
+                        />
+                        <span className="text-sm text-slate-600">years</span>
+                    </div>
+
                     <label className="block text-xs font-medium text-slate-500 mb-2">A short line about you</label>
                     <input
                         type="text"
@@ -3259,22 +3385,92 @@ function ApplicationForm() {
                 </section>
                 )}
 
-                {/* WHAT CAN YOU CATER FOR — its own step now, shown only for a
-                    food category (stepApplies gates g_diet on the category's food
-                    flag). A sauna or a pottery class never reaches it. */}
-                {onStep('g_diet') && audienceForTrade(trade) === 'guest' && (
+                {/* WHAT A GUEST CAN EXPECT — Airbnb's itinerary and what's-included
+                    steps, folded into one screen for us: what actually happens,
+                    what's provided, and what a guest brings. Dietary rides here too
+                    for a food category (guestCategoryIsFood), so a chef answers it
+                    in context rather than on a screen of its own. All optional — a
+                    fuller listing sells better, but none of it blocks a booking. */}
+                {onStep('g_expect') && isGuest && (
+                <section className="mb-8 md:max-w-xl space-y-6">
+                    <div>
+                        <label className="block text-xs font-medium text-slate-500 mb-2">What happens</label>
+                        <textarea
+                            value={whatToExpect}
+                            onChange={(e) => setWhatToExpect(e.target.value)}
+                            rows={3}
+                            placeholder="I arrive at 6, cook three courses while you relax, serve at the table and clear everything away by 9."
+                            className="w-full rounded-xl border border-slate-300 px-4 py-3 focus:outline-none focus:ring-2 focus:ring-emerald-700"
+                        />
+                    </div>
+                    <div>
+                        <label className="block text-xs font-medium text-slate-500 mb-2">What’s included</label>
+                        <textarea
+                            value={whatIncluded}
+                            onChange={(e) => setWhatIncluded(e.target.value)}
+                            rows={2}
+                            placeholder="All ingredients, my own pans and knives, and the washing up."
+                            className="w-full rounded-xl border border-slate-300 px-4 py-3 focus:outline-none focus:ring-2 focus:ring-emerald-700"
+                        />
+                    </div>
+                    <div>
+                        <label className="block text-xs font-medium text-slate-500 mb-2">What a guest brings <span className="text-slate-400">(if anything)</span></label>
+                        <textarea
+                            value={whatToBring}
+                            onChange={(e) => setWhatToBring(e.target.value)}
+                            rows={2}
+                            placeholder="Just their own drinks — the kitchen and dining table at the cottage is all I need."
+                            className="w-full rounded-xl border border-slate-300 px-4 py-3 focus:outline-none focus:ring-2 focus:ring-emerald-700"
+                        />
+                    </div>
+                    {guestCategoryIsFood(guestCategory) && (
+                        <div>
+                            <label className="block text-xs font-medium text-slate-500 mb-2">Dietary — what you can cater for</label>
+                            <textarea
+                                value={dietaryNote}
+                                onChange={(e) => setDietaryNote(e.target.value)}
+                                rows={2}
+                                placeholder="Gluten-free and dairy-free with a day’s notice; not a nut-free kitchen."
+                                className="w-full rounded-xl border border-slate-300 px-4 py-3 focus:outline-none focus:ring-2 focus:ring-emerald-700"
+                            />
+                            <p className="mt-2 text-sm text-slate-500">
+                                Leave it blank and your listing tells guests you haven&rsquo;t said, so they know to ask.
+                            </p>
+                        </div>
+                    )}
+                </section>
+                )}
+
+                {/* PHOTOS — a real, required step, the way Airbnb makes it (they
+                    ask for five; we ask for at least one, gated in the footer). A
+                    listing without a photo doesn't sell, and until now guest photos
+                    were only ever the per-item pictures. These append to `photos`,
+                    which already saves, loads and feeds the listing. */}
+                {onStep('g_photos') && isGuest && (
                 <section className="mb-8">
-                    {/* No label — the big question already asks it. One field, one
-                        short line of consequence, nothing else. */}
-                    <textarea
-                        value={dietaryNote}
-                        onChange={(e) => setDietaryNote(e.target.value)}
-                        rows={3}
-                        placeholder="e.g. can do gluten-free and dairy-free with a day’s notice; not a nut-free kitchen"
-                        className="w-full rounded-xl border border-slate-300 px-4 py-3 mb-2 focus:outline-none focus:ring-2 focus:ring-emerald-700"
-                    />
-                    <p className="text-sm text-slate-500">
-                        Leave it blank and your listing tells guests you haven&rsquo;t said, so they know to ask.
+                    <div className="grid grid-cols-2 sm:grid-cols-3 gap-3 md:max-w-xl">
+                        {photos.map((p, i) => (
+                            <div key={p || i} className="relative aspect-square rounded-xl overflow-hidden border border-slate-200 bg-slate-50">
+                                <img src={getImageUrl(p)} alt="" className="w-full h-full object-cover" />
+                                <button
+                                    type="button"
+                                    onClick={() => setPhotos((prev) => prev.filter((_, j) => j !== i))}
+                                    aria-label="Remove photo"
+                                    className="absolute top-1.5 right-1.5 rounded-full bg-black/55 p-1 text-white hover:bg-black/75"
+                                >
+                                    <X className="w-3.5 h-3.5" />
+                                </button>
+                            </div>
+                        ))}
+                        <label className="aspect-square rounded-xl border-2 border-dashed border-slate-300 hover:border-emerald-400 bg-white cursor-pointer flex flex-col items-center justify-center gap-1.5 text-center text-slate-500">
+                            <ImagePlus className="w-6 h-6 text-slate-400" strokeWidth={1.5} />
+                            <span className="text-xs px-2">{uploadingPhotos ? 'Uploading…' : 'Add photos'}</span>
+                            <input type="file" accept="image/*" multiple className="sr-only"
+                                onChange={uploadGalleryPhotos} disabled={uploadingPhotos} />
+                        </label>
+                    </div>
+                    <p className="mt-3 text-sm text-slate-500">
+                        Real photos of the food, the room, the view — not a logo. The first one leads your listing.
                     </p>
                 </section>
                 )}
@@ -4229,6 +4425,20 @@ function ApplicationForm() {
                         </>
                     )}
 
+                    {/* The location question adapts to the inferred shape rather
+                        than asking a fixed venue "how far will you travel?" — the
+                        complaint the whole rebuild started from. A slot happens
+                        somewhere fixed; a chef travels to the cottage. */}
+                    {isGuest && (
+                        <label className="block text-xs font-medium text-slate-500 mb-2">
+                            {shape === 'slot'
+                                ? 'Where does it take place?'
+                                : shape === 'made_to_order'
+                                    ? 'Where are you based, and how far will you deliver?'
+                                    : 'How far will you travel?'}
+                        </label>
+                    )}
+
                     {/* Free text with the known towns as suggestions — a chef in
                         a village that isn't on the list can just type it, rather
                         than being trapped by a fixed dropdown. */}
@@ -4736,6 +4946,8 @@ function ApplicationForm() {
                         const disabled = isGuest && (
                             step === 'trade' ? !guestGroup
                             : step === 'g_subtype' ? !guestCategory
+                            : step === 'g_creds' ? !qualifications.trim()
+                            : step === 'g_photos' ? photos.length === 0
                             : stepProblems.length > 0
                         );
                         const onNext = () => {

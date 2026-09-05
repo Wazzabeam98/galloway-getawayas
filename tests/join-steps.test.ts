@@ -454,10 +454,11 @@ test('a guest with no category yet opens on the picker, not the business step', 
         'trade',
     );
     // Once a category is picked (or a returning provider is loaded), the flag is
-    // false and they go on to the business step like anyone with an answered step one.
+    // false and they go on to their first content screen — g_you, not the
+    // business step, which is host-only now.
     assert.equal(
         openingStep({ hydrated: true, restored: false, lodged: false, trade: 'guest', guestNeedsCategory: false }),
-        'business',
+        'g_you',
     );
     // The picker is what they have seen when they land there.
     assert.deepEqual(
@@ -480,34 +481,53 @@ test('a guest with no context still sees the old three steps', () => {
     assert.deepEqual(stepsFor('guest').map((s: any) => s.key), ['trade', 'business', 'finish']);
 });
 
-test('a chef (food, comes to them) is split, with a sub-type screen and no schedule', () => {
-    // The food group has a sub-type screen (g_subtype); comes_to_you needs no
-    // "when"; it is food, so dietary shows; they travel, so coverage shows; and
-    // everyone confirms their checks (g_checks) before the contact step.
-    assert.deepEqual(
-        gkeys({ group: 'food', category: 'chef', shape: 'comes_to_you' }),
-        ['trade', 'g_subtype', 'business', 'g_about', 'g_offer', 'g_menu', 'g_you', 'g_diet', 'g_area', 'g_checks', 'g_contact', 'finish'],
-    );
-    assert.equal(stepApplies('g_avail', 'guest', { group: 'food', category: 'chef', shape: 'comes_to_you' }), false);
+// The rebuilt twelve (Sep 2026). The booking shape is inferred from the
+// category and never a step; availability folds into g_area; dietary folds into
+// g_expect; the business step is host-only (the name rides on g_about). So every
+// category that has a sub-type walks the same twelve keys — what differs between
+// a chef, a cake maker and a sauna is what renders INSIDE g_area and g_expect,
+// not which steps exist.
+const TWELVE = [
+    'trade', 'g_subtype', 'g_you', 'g_creds', 'g_about', 'g_menu',
+    'g_expect', 'g_photos', 'g_area', 'g_checks', 'g_contact', 'finish',
+];
+
+test('a chef (food, comes to them) walks the twelve, and never sees the business step', () => {
+    const ctx = { group: 'food', category: 'chef', shape: 'comes_to_you' };
+    assert.deepEqual(gkeys(ctx), TWELVE);
+    // The old "how do guests get it?" screen is gone — the shape is inferred.
+    assert.equal(stepApplies('business', 'guest', ctx), false, 'a guest names it on g_about, not a business step');
 });
 
-test('a cake maker (food, made to order) gains a lead-time and a coverage step', () => {
+test('a cake maker (food, made to order) walks the same twelve', () => {
+    // The lead time it needs now lives inside the where-and-when step, not on a
+    // screen of its own, so the key list is identical to the chef's.
     assert.deepEqual(
         gkeys({ group: 'food', category: 'baking', shape: 'made_to_order' }),
-        ['trade', 'g_subtype', 'business', 'g_about', 'g_offer', 'g_menu', 'g_avail', 'g_you', 'g_diet', 'g_area', 'g_checks', 'g_contact', 'finish'],
+        TWELVE,
     );
 });
 
-test('a sauna owner (not food, slot) has a schedule and a location, but no dietary', () => {
+test('a sauna owner (not food, slot) walks the same twelve, with dietary folded away', () => {
     const ctx = { group: 'wellness', category: 'sauna', shape: 'slot' };
-    assert.deepEqual(
-        gkeys(ctx),
-        ['trade', 'g_subtype', 'business', 'g_about', 'g_offer', 'g_menu', 'g_avail', 'g_you', 'g_area', 'g_checks', 'g_contact', 'finish'],
-    );
-    assert.equal(stepApplies('g_diet', 'guest', ctx), false, 'not food -> no dietary');
-    // Location is required of everyone (submitProblems needs an area), so a slot
-    // keeps g_area — it just asks "where is it" rather than "how far will you go".
-    assert.equal(stepApplies('g_area', 'guest', ctx), true, 'a slot still needs a location');
+    assert.deepEqual(gkeys(ctx), TWELVE);
+    // Dietary is no longer a step — it renders inside g_expect for a food
+    // category only, so a sauna simply never sees that field.
+    assert.equal(stepApplies('g_area', 'guest', ctx), true, 'a slot still needs a location, on the where-and-when step');
+    // What guests can expect and the photos step are asked of everyone.
+    assert.equal(stepApplies('g_expect', 'guest', ctx), true);
+    assert.equal(stepApplies('g_photos', 'guest', ctx), true);
+});
+
+test('expertise (g_creds) and photos (g_photos) are asked of every guest', () => {
+    for (const ctx of [
+        { group: 'food', category: 'chef', shape: 'comes_to_you' },
+        { group: 'wellness', category: 'sauna', shape: 'slot' },
+        { group: 'other', category: 'other', shape: null },
+    ]) {
+        assert.equal(stepApplies('g_creds', 'guest', ctx), true, JSON.stringify(ctx) + ' is asked for expertise');
+        assert.equal(stepApplies('g_photos', 'guest', ctx), true, JSON.stringify(ctx) + ' has a photos step');
+    }
 });
 
 test('every guest confirms their checks, and the set is chosen for the category', () => {
@@ -541,9 +561,10 @@ test('the something-else group skips the sub-type screen', () => {
     // 'other' is alone under its group, so there is no screen two to show.
     const ctx = { group: 'other', category: 'other', shape: null };
     assert.equal(stepApplies('g_subtype', 'guest', ctx), false, 'other has no sub-type');
+    // The twelve minus the sub-type screen — eleven.
     assert.deepEqual(
         gkeys(ctx),
-        ['trade', 'business', 'g_about', 'g_offer', 'g_menu', 'g_you', 'g_area', 'g_checks', 'g_contact', 'finish'],
+        ['trade', 'g_you', 'g_creds', 'g_about', 'g_menu', 'g_expect', 'g_photos', 'g_area', 'g_checks', 'g_contact', 'finish'],
     );
 });
 
@@ -554,17 +575,18 @@ test('the guest split never touches a host trade', () => {
         stepsFor('plumber', ctx).map((s: any) => s.key),
         stepsFor('plumber').map((s: any) => s.key),
     );
-    for (const k of ['g_subtype', 'g_about', 'g_offer', 'g_menu', 'g_avail', 'g_you', 'g_diet', 'g_area', 'g_checks', 'g_contact']) {
+    for (const k of ['g_subtype', 'g_you', 'g_creds', 'g_about', 'g_menu', 'g_expect', 'g_photos', 'g_area', 'g_checks', 'g_contact']) {
         assert.equal(stepApplies(k as any, 'plumber', ctx), false, k + ' is off for a host trade');
     }
 });
 
 test('guest movement and the last step honour the context', () => {
     const ctx = { group: 'wellness', category: 'sauna', shape: 'slot' };
-    assert.equal(nextStep('guest', 'g_offer', ctx), 'g_menu');
-    assert.equal(previousStep('guest', 'g_menu', ctx), 'g_offer');
+    assert.equal(nextStep('guest', 'g_menu', ctx), 'g_expect');
+    assert.equal(previousStep('guest', 'g_expect', ctx), 'g_menu');
     assert.equal(isLastStep('guest', 'finish', ctx), true);
     assert.equal(isLastStep('guest', 'g_contact', ctx), false);
-    // A step the context has switched off resolves back to a real one.
-    assert.equal(resolveStep('guest', 'g_diet', ctx), 'finish');
+    // The business step is off for a guest-with-context, so it resolves back to
+    // a real one rather than stranding them.
+    assert.equal(resolveStep('guest', 'business', ctx), 'finish');
 });
