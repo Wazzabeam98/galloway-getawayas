@@ -63,7 +63,9 @@ export default function BusinessPage() {
                 </div>
 
                 <div className="mt-10 grid items-stretch gap-5 sm:grid-cols-2">
-                    {/* Tradesperson — hired by owners. */}
+                    {/* Tradesperson — a local business getting leads from cottages, not a host's staff. */}
+                    {/* PLACEHOLDER COPY (2026-09-05): heading + line are option A of the set
+                        given to Liam to choose from — swap once he picks. */}
                     <Link
                         href="/services/join"
                         className="group relative flex flex-col rounded-3xl border border-slate-200 bg-white p-7 shadow-sm transition hover:-translate-y-0.5 hover:border-emerald-300 hover:shadow-lg focus:outline-none focus-visible:ring-2 focus-visible:ring-emerald-600"
@@ -71,10 +73,10 @@ export default function BusinessPage() {
                         <span className="inline-flex h-14 w-14 items-center justify-center rounded-2xl bg-emerald-50 ring-1 ring-emerald-600/15">
                             <Sparkles className="h-7 w-7 text-emerald-700" strokeWidth={1.75} />
                         </span>
-                        <h2 className="mt-5 text-xl font-bold text-slate-900">Work for property owners</h2>
+                        <h2 className="mt-5 text-xl font-bold text-slate-900">Get work from holiday lets</h2>
                         <p className="mt-2 text-sm leading-relaxed text-slate-600">
                             Changeover cleaning, waste, gardening, maintenance and window cleaning.
-                            Owners find you by the areas you cover and ask you for work.
+                            Cottage owners across your area find you by the work you do and send the job your way.
                         </p>
                         <ul className="mt-5 space-y-2">
                             <Point>Listed by the trades and areas you cover</Point>

@@ -468,7 +468,7 @@ export async function POST(req: Request) {
                                 + '</strong> has been approved and is now on the site.</p>'
                                 + '<p style="margin:0 0 16px;font-size:16px;">People looking for your trade in the areas you cover can now find you. We will email you whenever somebody asks for work.</p>'
                                 + terms
-                                + button(SITE_URL + '/services/join', 'See your listing'),
+                                + button(SITE_URL + '/services/join?trade=' + encodeURIComponent(provider.trade || ''), 'See your listing'),
                             FOOT
                         );
                     } else if (decision === 'decline') {
@@ -478,7 +478,7 @@ export async function POST(req: Request) {
                                 + '</strong>. We are not able to list it as it stands.</p>'
                                 + quoted(note)
                                 + '<p style="margin:0 0 16px;font-size:16px;">You can change it and send it back to us whenever you like.</p>'
-                                + button(SITE_URL + '/services/join', 'Update your details'),
+                                + button(SITE_URL + '/services/join?trade=' + encodeURIComponent(provider.trade || ''), 'Update your details'),
                             FOOT
                         );
                     } else if (decision === 'approve_changes') {
@@ -489,7 +489,7 @@ export async function POST(req: Request) {
                         html = emailLayout(
                             '<p style="margin:0 0 16px;font-size:16px;">We have looked at the changes you made to <strong>'
                                 + name + '</strong>. Nothing needs doing — you stayed on the site throughout.</p>'
-                                + button(SITE_URL + '/services/join', 'See your listing'),
+                                + button(SITE_URL + '/services/join?trade=' + encodeURIComponent(provider.trade || ''), 'See your listing'),
                             FOOT
                         );
                     } else {
@@ -503,7 +503,7 @@ export async function POST(req: Request) {
                                     ? 'Your listing is hidden for now. Change it and send it back to us, and we will put it straight back up.'
                                     : 'Your listing is still up. Change it whenever you can and we will take another look.')
                                 + '</p>'
-                                + button(SITE_URL + '/services/join', 'Update your details'),
+                                + button(SITE_URL + '/services/join?trade=' + encodeURIComponent(provider.trade || ''), 'Update your details'),
                             FOOT
                         );
                     }
