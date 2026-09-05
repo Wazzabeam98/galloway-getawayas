@@ -1118,8 +1118,9 @@ function ApplicationForm() {
     // shape — passed to every joinSteps call. It is UNDEFINED for a host trade,
     // which is what keeps a host's steps and validation byte-for-byte unchanged:
     // the guest steps stay off and stepForField uses the host map.
+    const isGuest = audienceForTrade(trade) === 'guest';
     const stepCtx: StepContext | undefined =
-        audienceForTrade(trade) === 'guest' ? { category: guestCategory, shape } : undefined;
+        isGuest ? { category: guestCategory, shape } : undefined;
 
     const problemFor = (field: string) => {
         const where = stepForField(field, stepCtx);
@@ -2274,17 +2275,46 @@ function ApplicationForm() {
            header and the buttons stay put while the questions move — on a
            phone that means the way forward is always under your thumb and
            never below the fold. */
-        <div className="fixed inset-0 z-[60] flex md:items-center md:justify-center md:p-6 bg-white md:bg-slate-900/40">
-            {/* The business step carries the most, and a guest's carries three
-                groups — so it gets a wider modal on desktop to lay them out in
-                two columns. Every other step, and the whole of a phone, is
-                unchanged. */}
-            <div className={
-                'flex flex-col w-full h-full bg-white md:h-auto md:max-h-[90vh] md:w-full md:rounded-2xl md:shadow-xl overflow-hidden '
-                + (step === 'business' && audienceForTrade(trade) === 'guest' ? 'md:max-w-4xl' : 'md:max-w-3xl')
+        <div className={isGuest
+            ? 'fixed inset-0 z-[60] flex flex-col bg-white'
+            : 'fixed inset-0 z-[60] flex md:items-center md:justify-center md:p-6 bg-white md:bg-slate-900/40'}>
+            {/* A guest gets a full-page takeover (no card, no dimmed backdrop,
+                no site header behind it) matching /addhome and the fork; a trade
+                keeps the centred modal it always had. */}
+            <div className={isGuest
+                ? 'flex flex-col w-full h-full bg-white overflow-hidden'
+                : 'flex flex-col w-full h-full bg-white md:h-auto md:max-h-[90vh] md:w-full md:rounded-2xl md:shadow-xl overflow-hidden md:max-w-3xl'
             }>
 
-                {/* ---- header: where they are, and the way out ---- */}
+                {isGuest ? (
+                    /* Guest takeover top bar — Back top-left, brand, a way out,
+                       and a subtle unlabelled progress bar. No ten labelled
+                       segments; the question itself carries the step. */
+                    <div className="shrink-0 border-b border-slate-100 px-4 sm:px-8">
+                        <div className="flex h-16 items-center justify-between gap-3">
+                            {(position > 1 || openGroup) ? (
+                                <button type="button" onClick={goBack} className="inline-flex items-center gap-1 rounded-full px-3 py-2 text-sm font-semibold text-slate-700 hover:bg-slate-100 transition">
+                                    <ChevronLeft className="w-5 h-5" /> Back
+                                </button>
+                            ) : (
+                                <Link href="/business" className="inline-flex items-center gap-1 rounded-full px-3 py-2 text-sm font-semibold text-slate-700 hover:bg-slate-100 transition">
+                                    <ChevronLeft className="w-5 h-5" /> Back
+                                </Link>
+                            )}
+                            <span className="text-sm font-bold tracking-tight text-slate-900">Galloway Getaways</span>
+                            <Link href="/business" aria-label="Close" className="inline-flex h-9 w-9 items-center justify-center rounded-full text-slate-500 hover:bg-slate-100 hover:text-slate-800 transition">
+                                <X className="w-5 h-5" />
+                            </Link>
+                        </div>
+                        {chosen && (
+                            <div className="flex items-center gap-1 pb-3" role="progressbar" aria-valuenow={position} aria-valuemin={1} aria-valuemax={total} aria-label={'Step ' + position + ' of ' + total}>
+                                {steps.map((s, i) => (
+                                    <div key={s.key} className={'h-1 flex-1 rounded-full transition-colors ' + (i + 1 <= position ? 'bg-emerald-600' : 'bg-slate-200')} />
+                                ))}
+                            </div>
+                        )}
+                    </div>
+                ) : (
                 <div className="shrink-0 border-b border-slate-200 px-4 sm:px-6 pt-4 pb-3">
                     <div className="flex items-center justify-between gap-3">
                         <div className="min-w-0">
@@ -2366,8 +2396,20 @@ function ApplicationForm() {
                     </div>
                 </div>
 
+                )}
+
                 {/* ---- the questions ---- */}
-                <div id="signup-panel" className="flex-1 overflow-y-auto px-4 sm:px-6 py-5">
+                <div id="signup-panel" className={isGuest
+                    ? 'flex-1 w-full max-w-2xl mx-auto overflow-y-auto px-5 sm:px-6 py-10 sm:py-12'
+                    : 'flex-1 overflow-y-auto px-4 sm:px-6 py-5'}>
+                    {/* One big question a screen, /addhome-style. The category
+                        grid and the finish step carry their own headings, so
+                        they keep them. */}
+                    {isGuest && step !== 'trade' && step !== 'finish' && (
+                        <h1 className="text-3xl sm:text-4xl font-extrabold tracking-tight text-slate-900 mb-8 [text-wrap:balance]">
+                            {stepMeta.title}
+                        </h1>
+                    )}
 
             {/* Read before the questions rather than under them. It used to
                 narrate the step as well — "you are back on step 5 of 5" — which
@@ -4488,7 +4530,9 @@ function ApplicationForm() {
                         route change: routing would remount this component and
                         take every field with it, which is the bug that makes
                         people distrust a stepped form. */}
-                    {(position > 1 || openGroup) ? (
+                    {/* For a guest, Back lives top-left in the takeover bar, so
+                        the footer carries only the way on. A trade keeps Back here. */}
+                    {!isGuest && ((position > 1 || openGroup) ? (
                         <button
                             type="button"
                             onClick={goBack}
@@ -4505,7 +4549,7 @@ function ApplicationForm() {
                             <ChevronLeft className="w-4 h-4" />
                             Back
                         </Link>
-                    )}
+                    ))}
 
                     <div className="flex-1" />
 
@@ -4521,7 +4565,11 @@ function ApplicationForm() {
                         <button
                             type="button"
                             onClick={goNext}
-                            className="inline-flex items-center gap-1.5 rounded-full bg-emerald-700 hover:bg-emerald-800 text-white px-6 py-2.5 text-sm font-semibold transition"
+                            disabled={isGuest && stepProblems.length > 0}
+                            className={'inline-flex items-center gap-1.5 rounded-full px-6 py-2.5 text-sm font-semibold transition '
+                                + (isGuest && stepProblems.length > 0
+                                    ? 'bg-slate-200 text-slate-400 cursor-not-allowed'
+                                    : 'bg-emerald-700 hover:bg-emerald-800 text-white')}
                         >
                             Next
                             <ChevronRight className="w-4 h-4" />
