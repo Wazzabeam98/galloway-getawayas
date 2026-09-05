@@ -24,6 +24,21 @@ import { cancellationPosition } from '@/lib/cancellationView';
 import { ukLongDate, londonDayKey } from '@/lib/dayKey';
 import { upcomingUntilCheckout, liveForGuestCard, stayCountdown } from '@/lib/bookingWindows';
 
+// A stamped night's date as "Fri 11 Sep". Built at T12:00 so the day never
+// slips under a timezone offset.
+function nightDateLabel(iso: string): string {
+    const d = new Date(String(iso).split('T')[0] + 'T12:00:00');
+    return d.toLocaleDateString('en-GB', { weekday: 'short', day: 'numeric', month: 'short' });
+}
+
+// The word beside a night that was dearer than the base rate. Base nights say
+// nothing — only the reason for a difference is worth the guest's attention.
+function nightKindLabel(kind: string): string {
+    if (kind === 'weekend') return 'weekend';
+    if (kind === 'override') return 'seasonal rate';
+    return '';
+}
+
 interface Booking {
     id: string;
     listing_id: string;
@@ -37,6 +52,11 @@ interface Booking {
     balance_due_date: string | null;
     amount_paid: number | null;
     amount_refunded: number | null;
+    // The per-night accommodation split, stamped at checkout and never rewritten
+    // (lib/pricing.ts quoteBooking().nightly). Null on bookings made before the
+    // column existed — the breakdown then shows one estimated line rather than
+    // inventing a series against a calendar that has since moved.
+    nightly_breakdown?: { date: string; rate: number; kind: 'base' | 'weekend' | 'override' }[] | null;
     // True when someone else booked it and added this person along.
     guests?: number | null;
     // The party split, written at checkout and carried through /api/trips. Used
@@ -302,6 +322,13 @@ export default function TripsPage() {
         const payPet = Number((b as any).pet_fee || 0);
         const payTotal = Number(b.total_price || 0);
         const payAccommodation = Math.max(0, payTotal - payCleaning - payPet);
+        // The stamped per-night split, if this booking carries one. Rendered
+        // exactly as stored — never recomputed — so what a guest sees is what
+        // they were charged, even after the host edits the calendar. Older
+        // bookings have none and fall back to the single estimated line.
+        const nightlySnapshot = Array.isArray(b.nightly_breakdown) && b.nightly_breakdown.length
+            ? b.nightly_breakdown
+            : null;
         const payPaid = Number(b.amount_paid || 0);
         const payRefunded = Number(b.amount_refunded || 0);
         const payRemaining = Number(b.balance_amount || 0);
@@ -425,10 +452,35 @@ export default function TripsPage() {
                     {!b.sharedWithMe && breakdownOpen && (
                         <div className="mt-4 rounded-xl border border-slate-200 bg-slate-50/60 p-4">
                             <div className="space-y-2 text-sm">
-                                <div className="flex items-baseline justify-between text-slate-600">
-                                    <span>Accommodation · {payNights} {payNights === 1 ? 'night' : 'nights'}</span>
-                                    <span className="tabular-nums">£{payAccommodation.toFixed(2)}</span>
-                                </div>
+                                {nightlySnapshot ? (
+                                    <div>
+                                        <div className="flex items-baseline justify-between font-medium text-slate-700">
+                                            <span>Accommodation · {payNights} {payNights === 1 ? 'night' : 'nights'}</span>
+                                            <span className="tabular-nums">£{payAccommodation.toFixed(2)}</span>
+                                        </div>
+                                        <div className="mt-1.5 space-y-1 border-l border-slate-200 pl-3">
+                                            {nightlySnapshot.map((n) => (
+                                                <div key={n.date} className="flex items-baseline justify-between text-xs text-slate-500">
+                                                    <span>
+                                                        {nightDateLabel(n.date)}
+                                                        {nightKindLabel(n.kind) && (
+                                                            <span className="ml-1.5 text-slate-400">· {nightKindLabel(n.kind)}</span>
+                                                        )}
+                                                    </span>
+                                                    <span className="tabular-nums">£{Number(n.rate).toFixed(2)}</span>
+                                                </div>
+                                            ))}
+                                        </div>
+                                    </div>
+                                ) : (
+                                    <div className="flex items-baseline justify-between text-slate-600">
+                                        <span>
+                                            Accommodation · {payNights} {payNights === 1 ? 'night' : 'nights'}
+                                            <span className="block text-xs text-slate-400">Estimated from current rates — this booking predates the per-night record</span>
+                                        </span>
+                                        <span className="tabular-nums">£{payAccommodation.toFixed(2)}</span>
+                                    </div>
+                                )}
                                 {payCleaning > 0 && (
                                     <div className="flex items-baseline justify-between text-slate-600">
                                         <span>Cleaning fee</span><span className="tabular-nums">£{payCleaning.toFixed(2)}</span>
