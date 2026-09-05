@@ -155,6 +155,51 @@ export function guestCategoryIsFood(key: string | null | undefined): boolean {
     return !!(c && c.food);
 }
 
+// HOW HARD WE ASK ABOUT THE PERSON BEHIND THE EXPERIENCE.
+//
+// Not every category should be asked its years and qualifications, and forcing
+// them everywhere turns away the wrong people. The line, decided category by
+// category (Sep 2026):
+//
+//   - A MADE-TO-ORDER product (a cake, a hamper) skips both screens entirely.
+//     You are buying the thing, not the maker; the photos and the price sell it,
+//     and food registration (a separate check) does the safety work.
+//   - The four where someone's PHYSICAL SAFETY is in their hands — a guide, on
+//     the water, a massage, a yoga class — require both years and
+//     qualifications. This is the whole reason to ask.
+//   - A private chef requires YEARS (a real track record) but not a formal
+//     qualification: a brilliant self-taught cook doing supper clubs may have no
+//     certificate, and food hygiene registration is already a check. Requiring a
+//     qualification would turn away exactly the people we want.
+//   - Everything else asks both, but they are optional — a potter's work speaks
+//     for itself, a whisky host's licence is the real gate.
+//
+// Keyed off the category (and its inferred shape for the made-to-order skip), so
+// the wizard, its Next gate and any later review all read the same rule.
+const GUEST_QUALS_REQUIRED = ['outdoors', 'water', 'massage', 'yoga'];
+const GUEST_YEARS_REQUIRED = ['outdoors', 'water', 'massage', 'yoga', 'chef'];
+
+// Whether the years + expertise screens are shown at all. Off for a made-to-
+// order product; on for everyone else (including "Something else", where they
+// stay optional).
+export function guestAsksExpertise(category: string | null | undefined): boolean {
+    const c = guestCategoryByKey(category);
+    if (!c) return true;
+    return c.shape !== 'made_to_order';
+}
+
+// Whether qualifications must be filled in before Next. The four safety
+// categories only.
+export function guestQualificationsRequired(category: string | null | undefined): boolean {
+    return GUEST_QUALS_REQUIRED.indexOf(String(category || '')) !== -1;
+}
+
+// Whether the years field must be filled in before Next. The four, plus the
+// private chef.
+export function guestYearsRequired(category: string | null | undefined): boolean {
+    return GUEST_YEARS_REQUIRED.indexOf(String(category || '')) !== -1;
+}
+
 // GUEST CHECKS — the declarations a guest confirms before we list them.
 //
 // Airbnb's experience flow ends on a health-and-safety attestation; ours does

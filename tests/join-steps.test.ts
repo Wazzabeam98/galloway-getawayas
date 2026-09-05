@@ -35,6 +35,7 @@ const {
     TRADES, submitProblems, planForTrade,
     capabilityFor, pricedOfferingsFor, showsRates, extrasFor, bandsFor,
     asksAboutFuel, asksAboutSkills, offerableSchemes, checksFor,
+    guestAsksExpertise, guestQualificationsRequired, guestYearsRequired,
 } = require('@/lib/serviceProviders');
 
 const keys = (trade: string) => stepsFor(trade).map((s: any) => s.key);
@@ -499,13 +500,18 @@ test('a chef (food, comes to them) walks the twelve, and never sees the business
     assert.equal(stepApplies('business', 'guest', ctx), false, 'a guest names it on g_about, not a business step');
 });
 
-test('a cake maker (food, made to order) walks the same twelve', () => {
-    // The lead time it needs now lives inside the where-and-when step, not on a
-    // screen of its own, so the key list is identical to the chef's.
+test('a cake maker (made to order) skips the years and expertise screens', () => {
+    // A made-to-order product: you're buying the cake, not the baker, so we
+    // don't ask years or qualifications. That's g_you and g_creds gone — ten
+    // steps, not twelve. The lead time it needs lives inside the where-and-when
+    // step, not a screen of its own.
     assert.deepEqual(
         gkeys({ group: 'food', category: 'baking', shape: 'made_to_order' }),
-        TWELVE,
+        ['trade', 'g_subtype', 'g_about', 'g_menu', 'g_expect', 'g_photos', 'g_area', 'g_checks', 'g_contact', 'finish'],
     );
+    const ctx = { group: 'food', category: 'baking', shape: 'made_to_order' };
+    assert.equal(stepApplies('g_you', 'guest', ctx), false, 'no years screen for a product');
+    assert.equal(stepApplies('g_creds', 'guest', ctx), false, 'no expertise screen for a product');
 });
 
 test('a sauna owner (not food, slot) walks the same twelve, with dietary folded away', () => {
@@ -519,7 +525,9 @@ test('a sauna owner (not food, slot) walks the same twelve, with dietary folded 
     assert.equal(stepApplies('g_photos', 'guest', ctx), true);
 });
 
-test('expertise (g_creds) and photos (g_photos) are asked of every guest', () => {
+test('expertise is asked of every experience, but never of a made-to-order product', () => {
+    // Photos are asked of everyone. The expertise/years screens are asked of
+    // every experience (a person you book) but never a product (a thing you buy).
     for (const ctx of [
         { group: 'food', category: 'chef', shape: 'comes_to_you' },
         { group: 'wellness', category: 'sauna', shape: 'slot' },
@@ -527,6 +535,16 @@ test('expertise (g_creds) and photos (g_photos) are asked of every guest', () =>
     ]) {
         assert.equal(stepApplies('g_creds', 'guest', ctx), true, JSON.stringify(ctx) + ' is asked for expertise');
         assert.equal(stepApplies('g_photos', 'guest', ctx), true, JSON.stringify(ctx) + ' has a photos step');
+    }
+    // The two made-to-order products skip both the years and the expertise
+    // screen — but still have a photos step, which sells the product.
+    for (const ctx of [
+        { group: 'food', category: 'baking', shape: 'made_to_order' },
+        { group: 'food', category: 'hampers', shape: 'made_to_order' },
+    ]) {
+        assert.equal(stepApplies('g_you', 'guest', ctx), false, JSON.stringify(ctx) + ' skips years');
+        assert.equal(stepApplies('g_creds', 'guest', ctx), false, JSON.stringify(ctx) + ' skips expertise');
+        assert.equal(stepApplies('g_photos', 'guest', ctx), true, JSON.stringify(ctx) + ' still has photos');
     }
 });
 
@@ -555,6 +573,39 @@ test('every guest confirms their checks, and the set is chosen for the category'
     // A sauna confirms its heat-and-cold statement; a chef never sees it.
     assert.equal(checksFor('sauna').some((c: any) => c.key === 'sauna_safe'), true);
     assert.equal(checksFor('chef').some((c: any) => c.key === 'sauna_safe'), false);
+});
+
+test('years and qualifications are required only where physical safety is at stake', () => {
+    // The line, category by category (Sep 2026). The four where a guide holds
+    // someone's safety require both; a private chef requires a track record but
+    // not a certificate (food hygiene is a separate check); a made-to-order
+    // product asks neither; everyone else asks, optionally.
+    const REQUIRE_BOTH = ['outdoors', 'water', 'massage', 'yoga'];
+    for (const c of REQUIRE_BOTH) {
+        assert.equal(guestYearsRequired(c), true, c + ' requires years');
+        assert.equal(guestQualificationsRequired(c), true, c + ' requires qualifications');
+        assert.equal(guestAsksExpertise(c), true, c + ' is asked');
+    }
+
+    // The chef: years required, qualifications not — a self-taught supper-club
+    // cook has no certificate and we want them.
+    assert.equal(guestYearsRequired('chef'), true, 'a chef needs a track record');
+    assert.equal(guestQualificationsRequired('chef'), false, 'a chef is not forced to hold a qualification');
+    assert.equal(guestAsksExpertise('chef'), true);
+
+    // The optional middle — asked, never forced.
+    for (const c of ['tastings', 'sauna', 'pottery', 'painting', 'workshops', 'other']) {
+        assert.equal(guestYearsRequired(c), false, c + ' does not force years');
+        assert.equal(guestQualificationsRequired(c), false, c + ' does not force qualifications');
+        assert.equal(guestAsksExpertise(c), true, c + ' is still asked, optionally');
+    }
+
+    // The products — asked neither.
+    for (const c of ['baking', 'hampers']) {
+        assert.equal(guestAsksExpertise(c), false, c + ' skips the years and expertise screens');
+        assert.equal(guestYearsRequired(c), false);
+        assert.equal(guestQualificationsRequired(c), false);
+    }
 });
 
 test('the something-else group skips the sub-type screen', () => {
