@@ -188,6 +188,7 @@ export default function EditListing() {
     const [locTown, setLocTown] = useState('');
     const [locRegion, setLocRegion] = useState(DEFAULT_REGION);
     const [streetAddress, setStreetAddress] = useState('');
+    const [listingStatus, setListingStatus] = useState('');
     const [locPostcode, setLocPostcode] = useState('');
     const [price, setPrice] = useState('');
     const [propertyType, setPropertyType] = useState('');
@@ -309,6 +310,7 @@ export default function EditListing() {
             setLocRegion(place.region || DEFAULT_REGION);
             setStreetAddress(listing.street_address || '');
             setLocPostcode(listing.postcode || '');
+            setListingStatus(listing.status || '');
             setPrice(String(listing.price_per_night ?? ''));
             setCommissionRate(listing.commission_rate ?? null);
             setPropertyType(listing.property_type || '');
@@ -613,6 +615,26 @@ export default function EditListing() {
                     {moderating ? 'Back to all listings' : 'Back to dashboard'}
                 </button>
             </div>
+
+            {/* A live listing with no address a guest can be sent to. Grandfathered
+                listings predate the required-address rule, so we don't block Save
+                (a host shouldn't be stopped fixing a typo) — but we do say it,
+                loudly, with a jump to where it's fixed. */}
+            {(listingStatus === 'published' || listingStatus === 'hidden')
+                && (!streetAddress.trim() || !locPostcode.trim()) && (
+                <div className="mb-6 rounded-2xl border border-amber-300 bg-amber-50 p-4">
+                    <p className="font-semibold text-amber-900">
+                        This listing is live but has no {!streetAddress.trim() ? 'street address' : 'postcode'}.
+                    </p>
+                    <p className="mt-1 text-sm text-amber-900/80">
+                        A booked guest needs somewhere to be sent. Add it under Location — it stays private and is only shared once a booking is confirmed.
+                    </p>
+                    <button type="button" onClick={() => setActiveSection('location')}
+                        className="mt-3 rounded-md bg-amber-700 px-3 py-2 text-sm font-medium text-white">
+                        Add the address
+                    </button>
+                </div>
+            )}
 
             {/* Impossible to mistake for your own listing, which is the whole
                 point — this form looks identical either way. */}

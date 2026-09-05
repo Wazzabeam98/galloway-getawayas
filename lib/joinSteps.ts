@@ -182,7 +182,7 @@ export function resolveStep(trade: string, wanted: string | null | undefined): S
 
 const STEP_FIELDS: Record<StepKey, string[]> = {
     trade: ['trade', 'audience'],
-    business: ['business_name', 'contact_email', 'description', 'areas'],
+    business: ['business_name', 'contact_email', 'description', 'areas', 'availability'],
     credentials: ['registration_'],
     prices: [
         'prices', 'price_', 'hours_', 'hourly_rate', 'callout_fee', 'extra_price_',

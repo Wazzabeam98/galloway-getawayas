@@ -16,10 +16,12 @@ interface Order {
     guest_name: string | null; guest_phone: string | null; guest_email: string | null;
 }
 
-export default function ProviderSlotDashboard({ providerId }: { providerId: string }) {
+export default function ProviderSlotDashboard({ providerId, editHref }: { providerId: string; editHref?: string }) {
     const [payouts, setPayouts] = useState<null | { connected: boolean; payouts_enabled: boolean }>(null);
     const [orders, setOrders] = useState<Order[]>([]);
     const [blocks, setBlocks] = useState<string[]>([]);
+    // null until loaded; false means no weekly hours, so nothing is bookable.
+    const [hasHours, setHasHours] = useState<boolean | null>(null);
     const [blockDate, setBlockDate] = useState('');
     const [busy, setBusy] = useState<string | null>(null);
     const [error, setError] = useState<string | null>(null);
@@ -44,7 +46,7 @@ export default function ProviderSlotDashboard({ providerId }: { providerId: stri
         try {
             const r = await fetch('/api/services/slots/schedule?provider=' + encodeURIComponent(providerId));
             const d = await r.json();
-            if (d && d.ok) setBlocks(d.blocks || []);
+            if (d && d.ok) { setBlocks(d.blocks || []); setHasHours((d.availability || []).length > 0); }
         } catch { /* ignore */ }
     }, [providerId]);
 
@@ -118,6 +120,23 @@ export default function ProviderSlotDashboard({ providerId }: { providerId: stri
                 </div>
             )}
             {live && <p className="text-sm text-emerald-800">Payouts are set up — you’re live to guests.</p>}
+
+            {/* No weekly hours = nothing to book. Sign-up now requires them, so
+                this only catches a provider who cleared their hours or a legacy
+                one — but a slot business with no hours is invisible, so say it
+                loudly and point at where to fix it. */}
+            {hasHours === false && (
+                <div className="rounded-xl border border-amber-300 bg-amber-50 p-4">
+                    <p className="font-semibold text-amber-900">You have no bookable hours yet</p>
+                    <p className="mt-1 text-sm text-amber-900/80">Guests can’t book you until you add your weekly hours. Add them and your times appear straight away.</p>
+                    {editHref && (
+                        <a href={editHref}
+                            className="mt-3 inline-block rounded-md bg-amber-700 px-3 py-2 text-sm font-medium text-white">
+                            Add your weekly hours
+                        </a>
+                    )}
+                </div>
+            )}
 
             {/* The diary */}
             <div>
