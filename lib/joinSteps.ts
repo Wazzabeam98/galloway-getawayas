@@ -29,6 +29,7 @@ import {
     asksAboutFuel,
     audienceForTrade,
     checksFor,
+    guestAsksExpertise,
 } from '@/lib/serviceProviders';
 
 // The host trades keep 'trade' | 'business' | 'credentials' | 'prices' |
@@ -141,12 +142,17 @@ export function stepApplies(step: StepKey, trade: string, ctx?: StepContext): bo
             // is alone under its group, so it goes straight to the business step.
             case 'g_subtype':
                 return !!ctx.group && ctx.group !== 'other';
-            // Asked of every guest: how long they've done it and a line about
-            // them (g_you), their expertise (g_creds), the listing name and
-            // description (g_about), the price (g_menu), what a guest can expect
-            // (g_expect), the photos (g_photos) and how to reach them (g_contact).
+            // The years opener (g_you) and the expertise screen (g_creds) are
+            // shown for everyone EXCEPT a made-to-order product — you're buying a
+            // cake or a hamper, not the maker, so we don't ask about the person.
+            // guestAsksExpertise decides; the required-vs-optional split within
+            // the "asked" set is a Next-gate in the form, not a step gate.
             case 'g_you':
             case 'g_creds':
+                return guestAsksExpertise(ctx.category);
+            // Asked of every guest: the listing name and description (g_about),
+            // the price (g_menu), what a guest can expect (g_expect), the photos
+            // (g_photos) and how to reach them (g_contact).
             case 'g_about':
             case 'g_menu':
             case 'g_expect':

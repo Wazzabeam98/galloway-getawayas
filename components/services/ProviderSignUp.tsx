@@ -70,6 +70,9 @@ import {
     categoriesForGroup,
     guestCategoryByKey,
     guestCategoryIsFood,
+    guestAsksExpertise,
+    guestQualificationsRequired,
+    guestYearsRequired,
     checksFor,
     DEFAULT_SERVICE_COMMISSION,
 } from '@/lib/serviceProviders';
@@ -1200,20 +1203,34 @@ function ApplicationForm() {
     // greyed Next is never a silent dead end and a skippable screen never
     // looks like one she has to fill. Pickers (trade, g_subtype) and the
     // finish step carry their own affordances and are left out here.
-    const OPTIONAL_GUEST_STEPS: StepKey[] = ['g_you', 'g_menu', 'g_expect', 'g_checks'];
-    const stepIsPicker = step === 'trade' || step === 'g_subtype';
-    const stepIsOptional = isGuest && !stepIsPicker && OPTIONAL_GUEST_STEPS.indexOf(step) !== -1;
+    // Whether this guest's category requires years and/or qualifications before
+    // Next — the four safety categories require both, a private chef requires
+    // years only, everyone else who's asked can leave them blank.
+    const catYearsRequired = isGuest && guestYearsRequired(guestCategory);
+    const catQualsRequired = isGuest && guestQualificationsRequired(guestCategory);
 
-    // Two guest steps are required but have no submitProblems field of their
-    // own — qualifications (the whole pitch: a real chef, checked by a person)
-    // and at least one photo. They gate Next on the spot, the same way the
-    // pickers do, with a plain line saying what to add.
+    // g_menu, g_expect and g_checks are always skippable; g_you and g_creds are
+    // skippable only when this category doesn't require them.
+    const OPTIONAL_GUEST_STEPS: StepKey[] = ['g_menu', 'g_expect', 'g_checks'];
+    const stepIsPicker = step === 'trade' || step === 'g_subtype';
+    const stepIsOptional = isGuest && !stepIsPicker && (
+        OPTIONAL_GUEST_STEPS.indexOf(step) !== -1
+        || (step === 'g_you' && !catYearsRequired)
+        || (step === 'g_creds' && !catQualsRequired)
+    );
+
+    // Three guest steps can be required without a submitProblems field of their
+    // own — years and qualifications (only for the categories that need them)
+    // and at least one photo (always). They gate Next on the spot, the same way
+    // the pickers do, with a plain line saying what to add.
     const guestExtraMissing: string | null = isGuest
-        ? (step === 'g_creds' && !qualifications.trim()
-            ? 'Add your training or qualifications — it’s the main thing guests choose you on.'
-            : step === 'g_photos' && photos.length === 0
-                ? 'Add at least one photo — a listing without one doesn’t sell.'
-                : null)
+        ? (step === 'g_you' && catYearsRequired && !yearsDoing.trim()
+            ? 'Add how long you’ve been doing this.'
+            : step === 'g_creds' && catQualsRequired && !qualifications.trim()
+                ? 'Add your training or qualifications — for this kind of experience it’s required.'
+                : step === 'g_photos' && photos.length === 0
+                    ? 'Add at least one photo — a listing without one doesn’t sell.'
+                    : null)
         : null;
 
     // The one thing missing on a required step, phrased for a person. Shown in
@@ -1376,22 +1393,28 @@ function ApplicationForm() {
     // Next on screen one. A group with real sub-types opens screen two; 'other'
     // (alone under its group) skips it — its lone category is set and we go
     // straight to the business step, no screen-two of one card.
+    // A guest's first content screen is the years opener (g_you) — unless the
+    // category is a made-to-order product, which skips the years and expertise
+    // screens, so it opens on g_about instead. There is no standalone business
+    // step for a guest any more; the name rides on g_about.
+    const firstGuestContentStep = (category: string): StepKey =>
+        guestAsksExpertise(category) ? 'g_you' : 'g_about';
+
     const advanceFromGroup = () => {
         const subs = categoriesForGroup(guestGroup);
         if (guestGroup === 'other' || subs.length <= 1) {
-            if (subs[0]) selectGuestCategory(subs[0].key);
-            setStep('g_you');
+            const key = subs[0]?.key || '';
+            if (key) selectGuestCategory(key);
+            setStep(firstGuestContentStep(key));
         } else {
             setStep('g_subtype');
         }
         scrollPanelToTop();
     };
 
-    // Next on screen two. A guest's first content screen is g_you ("how long
-    // have you been doing this?") — there is no standalone business step for
-    // them any more; the name rides on g_about.
+    // Next on screen two.
     const advanceFromSubtype = () => {
-        setStep('g_you');
+        setStep(firstGuestContentStep(guestCategory));
         scrollPanelToTop();
     };
 
@@ -3045,7 +3068,9 @@ function ApplicationForm() {
                         className="w-full rounded-xl border border-slate-300 px-4 py-3 mb-6 focus:outline-none focus:ring-2 focus:ring-emerald-700"
                     />
 
-                    <label className="block text-xs font-medium text-slate-500 mb-2">Your training and qualifications</label>
+                    <label className="block text-xs font-medium text-slate-500 mb-2">
+                        Your training and qualifications {!catQualsRequired && <span className="text-slate-400">(optional)</span>}
+                    </label>
                     <textarea
                         value={qualifications}
                         onChange={(e) => setQualifications(e.target.value)}
@@ -3054,7 +3079,9 @@ function ApplicationForm() {
                         className="w-full rounded-xl border border-slate-300 px-4 py-3 focus:outline-none focus:ring-2 focus:ring-emerald-700"
                     />
                     <p className="mt-2 text-sm text-slate-500">
-                        This is what a guest weighs you on, so it’s the one thing we ask for here.
+                        {catQualsRequired
+                            ? 'A guest is putting their safety in your hands, so for this kind of experience we do need it.'
+                            : 'Not required — but it’s what a guest weighs you on, so it’s worth a line if you have one.'}
                     </p>
                 </section>
                 )}
@@ -3334,7 +3361,9 @@ function ApplicationForm() {
                         sensible default is the easiest question there is, so it's
                         the first content screen. "Your name" sits with the business
                         name over on g_about. */}
-                    <label className="block text-xs font-medium text-slate-500 mb-2">Years doing this</label>
+                    <label className="block text-xs font-medium text-slate-500 mb-2">
+                        Years doing this {!catYearsRequired && <span className="text-slate-400">(optional)</span>}
+                    </label>
                     <div className="flex items-center gap-2 mb-6">
                         <input
                             type="number" min="0" step="1" inputMode="numeric"
@@ -4946,7 +4975,8 @@ function ApplicationForm() {
                         const disabled = isGuest && (
                             step === 'trade' ? !guestGroup
                             : step === 'g_subtype' ? !guestCategory
-                            : step === 'g_creds' ? !qualifications.trim()
+                            : step === 'g_you' ? (catYearsRequired && !yearsDoing.trim())
+                            : step === 'g_creds' ? (catQualsRequired && !qualifications.trim())
                             : step === 'g_photos' ? photos.length === 0
                             : stepProblems.length > 0
                         );
