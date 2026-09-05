@@ -485,7 +485,7 @@ test('a chef (food, comes to them) is split, with no schedule step', () => {
     // it is food, so dietary shows; they travel, so coverage shows.
     assert.deepEqual(
         gkeys({ category: 'chef', shape: 'comes_to_you' }),
-        ['trade', 'business', 'g_about', 'g_offer', 'g_menu', 'g_you', 'g_diet', 'g_area', 'g_checks', 'g_contact', 'finish'],
+        ['trade', 'business', 'g_about', 'g_offer', 'g_menu', 'g_you', 'g_diet', 'g_area', 'g_contact', 'finish'],
     );
     assert.equal(stepApplies('g_avail', 'guest', { category: 'chef', shape: 'comes_to_you' }), false);
 });
@@ -493,7 +493,7 @@ test('a chef (food, comes to them) is split, with no schedule step', () => {
 test('a cake maker (food, made to order) gains a lead-time and a coverage step', () => {
     assert.deepEqual(
         gkeys({ category: 'baking', shape: 'made_to_order' }),
-        ['trade', 'business', 'g_about', 'g_offer', 'g_menu', 'g_avail', 'g_you', 'g_diet', 'g_area', 'g_checks', 'g_contact', 'finish'],
+        ['trade', 'business', 'g_about', 'g_offer', 'g_menu', 'g_avail', 'g_you', 'g_diet', 'g_area', 'g_contact', 'finish'],
     );
 });
 
@@ -501,7 +501,7 @@ test('a sauna owner (not food, slot) has a schedule and a location, but no dieta
     const ctx = { category: 'wellness', shape: 'slot' };
     assert.deepEqual(
         gkeys(ctx),
-        ['trade', 'business', 'g_about', 'g_offer', 'g_menu', 'g_avail', 'g_you', 'g_area', 'g_checks', 'g_contact', 'finish'],
+        ['trade', 'business', 'g_about', 'g_offer', 'g_menu', 'g_avail', 'g_you', 'g_area', 'g_contact', 'finish'],
     );
     assert.equal(stepApplies('g_diet', 'guest', ctx), false, 'not food -> no dietary');
     // Location is required of everyone (submitProblems needs an area), so a slot
@@ -516,7 +516,7 @@ test('the guest split never touches a host trade', () => {
         stepsFor('plumber', ctx).map((s: any) => s.key),
         stepsFor('plumber').map((s: any) => s.key),
     );
-    for (const k of ['g_about', 'g_offer', 'g_menu', 'g_avail', 'g_you', 'g_diet', 'g_area', 'g_checks', 'g_contact']) {
+    for (const k of ['g_about', 'g_offer', 'g_menu', 'g_avail', 'g_you', 'g_diet', 'g_area', 'g_contact']) {
         assert.equal(stepApplies(k as any, 'plumber', ctx), false, k + ' is off for a host trade');
     }
 });

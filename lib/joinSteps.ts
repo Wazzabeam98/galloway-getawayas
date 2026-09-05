@@ -121,9 +121,13 @@ export function stepApplies(step: StepKey, trade: string, ctx?: StepContext): bo
             case 'g_offer':
             case 'g_menu':
             case 'g_you':
-            case 'g_checks':
             case 'g_contact':
                 return true;
+            // The checks sub-flow (declarations + its migration) is the next
+            // stage. Off until it has something to ask, so a guest never lands
+            // on a blank step in the meantime.
+            case 'g_checks':
+                return false;
             // A schedule only where there is one: a slot is booked into a time,
             // a made-to-order needs a lead time. Someone who comes to the guest
             // (comes_to_you) arranges it on the enquiry, so no schedule screen.
@@ -282,11 +286,30 @@ const STEP_FIELDS: Record<StepKey, string[]> = {
     finish: [],
 };
 
-export function stepForField(field: string): StepKey | null {
-    const name = String(field || '');
+// The guest field→step map. Only the fields submitProblems can actually raise
+// for a guest are listed (business_name, description, areas, availability for a
+// slot, contact_email) — everything else the guest form collects (shape, menu,
+// dietary, headshot) is non-blocking, so it belongs to no step's Next. Several
+// of these fields sit on 'business' for a host but move to their own screen for
+// a guest, which is the whole reason stepForField takes a context.
+const GUEST_STEP_FIELDS: Partial<Record<StepKey, string[]>> = {
+    trade: ['trade', 'audience'],
+    business: ['business_name'],
+    g_about: ['description'],
+    g_avail: ['availability'],
+    g_area: ['areas'],
+    g_contact: ['contact_email', 'contact_phone'],
+};
 
-    for (const key of Object.keys(STEP_FIELDS) as StepKey[]) {
-        for (const match of STEP_FIELDS[key]) {
+// Which step an error belongs on. With a guest context, the guest map is used
+// (the split moves description/areas/contact off 'business'); without one, the
+// host map — so a trade's validation is byte-for-byte what it was.
+export function stepForField(field: string, ctx?: StepContext): StepKey | null {
+    const name = String(field || '');
+    const map: Partial<Record<StepKey, string[]>> = ctx ? GUEST_STEP_FIELDS : STEP_FIELDS;
+
+    for (const key of Object.keys(map) as StepKey[]) {
+        for (const match of (map[key] || [])) {
             // A bare name matches exactly; a name ending in _ is a prefix.
             const hit = match.charAt(match.length - 1) === '_'
                 ? name.indexOf(match) === 0
@@ -301,8 +324,8 @@ export function stepForField(field: string): StepKey | null {
 
 export interface Problem { field: string; message: string }
 
-export function problemsOnStep(problems: Problem[] | null | undefined, step: StepKey): Problem[] {
-    return (problems || []).filter((p) => stepForField(p.field) === step);
+export function problemsOnStep(problems: Problem[] | null | undefined, step: StepKey, ctx?: StepContext): Problem[] {
+    return (problems || []).filter((p) => stepForField(p.field, ctx) === step);
 }
 
 // The first step that still has something wrong with it, so send can take
@@ -313,7 +336,7 @@ export function firstStepWithProblem(
     ctx?: StepContext
 ): StepKey | null {
     for (const step of stepsFor(trade, ctx)) {
-        if (problemsOnStep(problems, step.key).length > 0) return step.key;
+        if (problemsOnStep(problems, step.key, ctx).length > 0) return step.key;
     }
     return null;
 }

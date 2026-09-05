@@ -83,6 +83,7 @@ import {
     firstStepWithProblem,
     stepForField,
     StepKey,
+    StepContext,
 } from '@/lib/joinSteps';
 
 const PICKER_STATUS_STYLE: Record<string, string> = {
@@ -742,13 +743,20 @@ function ApplicationForm() {
             // registration step as a plumber and come back as a cleaner -- and
             // it lands them on the last step this trade does have rather than
             // on a blank panel.
-            const landing = resolveStep(d.trade || tradeFromUrl, d.step);
+            // A guest's steps depend on the category and shape from the draft,
+            // so resolve and count them with that context.
+            const restoreTrade = d.trade || tradeFromUrl;
+            const restoreCtx: StepContext | undefined =
+                audienceForTrade(restoreTrade) === 'guest'
+                    ? { category: d.guestCategory, shape: d.shape }
+                    : undefined;
+            const landing = resolveStep(restoreTrade, d.step, restoreCtx);
             setStep(landing);
 
             // Everything up to where they were counts as seen, so the step
             // they are returning to shows its errors rather than looking
             // finished. Steps ahead of them stay quiet.
-            const upTo = stepsFor(d.trade || tradeFromUrl);
+            const upTo = stepsFor(restoreTrade, restoreCtx);
             const at = upTo.findIndex((x: any) => x.key === landing);
             setVisited(upTo.slice(0, at + 1).map((x: any) => x.key));
 
@@ -1106,22 +1114,29 @@ function ApplicationForm() {
     // at once and had to go back up looking for them. Now a step answers for
     // itself on the way past, and by the time send is pressed there is
     // normally nothing left to say.
+    // The guest split is driven by a context — the category and the booking
+    // shape — passed to every joinSteps call. It is UNDEFINED for a host trade,
+    // which is what keeps a host's steps and validation byte-for-byte unchanged:
+    // the guest steps stay off and stepForField uses the host map.
+    const stepCtx: StepContext | undefined =
+        audienceForTrade(trade) === 'guest' ? { category: guestCategory, shape } : undefined;
+
     const problemFor = (field: string) => {
-        const where = stepForField(field);
+        const where = stepForField(field, stepCtx);
         const shown = touchedSubmit || (where !== null && visited.indexOf(where) !== -1);
         return shown ? (problems.filter((p) => p.field === field)[0] || null) : null;
     };
 
     // ---- moving between steps --------------------------------------------
 
-    const steps = stepsFor(trade);
+    const steps = stepsFor(trade, stepCtx);
     const stepMeta = steps.filter((x) => x.key === step)[0] || steps[0];
     const onStep = (key: StepKey) => step === key;
 
     // What is wrong on the step in front of them, which is all Next is
     // allowed to care about. A missing price must not stop somebody getting
     // past their business name.
-    const stepProblems = problemsOnStep(problems, step);
+    const stepProblems = problemsOnStep(problems, step, stepCtx);
 
     const markVisited = (key: StepKey) =>
         setVisited((prev) => (prev.indexOf(key) === -1 ? prev.concat([key]) : prev));
@@ -1181,7 +1196,7 @@ function ApplicationForm() {
             return;
         }
 
-        const to = nextStep(trade, step);
+        const to = nextStep(trade, step, stepCtx);
         if (to === step) return;
 
         setStep(to);
@@ -1197,7 +1212,7 @@ function ApplicationForm() {
             return;
         }
 
-        const to = previousStep(trade, step);
+        const to = previousStep(trade, step, stepCtx);
         if (to === step) return;
 
         // Nothing is validated and nothing is cleared on the way back. Every
@@ -1217,7 +1232,7 @@ function ApplicationForm() {
     const goToFirstProblem = () => {
         setVisited(steps.map((x) => x.key));
 
-        const to = firstStepWithProblem(trade, problems);
+        const to = firstStepWithProblem(trade, problems, stepCtx);
         if (!to || to === step) return;
 
         setStep(to);
@@ -2242,9 +2257,9 @@ function ApplicationForm() {
     const summary = statusSummary(status);
     const locked = status === 'pending_review';
 
-    const position = stepNumber(trade, step);
-    const total = stepCount(trade);
-    const lastStep = isLastStep(trade, step);
+    const position = stepNumber(trade, step, stepCtx);
+    const total = stepCount(trade, stepCtx);
+    const lastStep = isLastStep(trade, step, stepCtx);
 
     return (
         /* THE MODAL.
@@ -2713,7 +2728,7 @@ function ApplicationForm() {
                 {/* The trade chip is gone: it said what they picked, and the
                     modal header now says that on every step. */}
 
-                {onStep('business') && (
+                {(audienceForTrade(trade) === 'guest' ? onStep('g_about') : onStep('business')) && (
                 <section className="mb-8">
                     <label className="block text-sm font-semibold text-slate-900 mb-1.5">About your business</label>
                     {/* Capped to a measure rather than the window: past about
@@ -2738,7 +2753,7 @@ function ApplicationForm() {
                     the owner has the final say at review. Everything below adapts
                     to it: a menu for the two request shapes, a session schedule
                     for a slot. */}
-                {onStep('business') && audienceForTrade(trade) === 'guest' && (
+                {onStep('g_offer') && audienceForTrade(trade) === 'guest' && (
                 <section className="mb-8">
                     <h2 className="text-sm font-semibold text-slate-900 mb-1">How do guests get what you offer?</h2>
                     <p className="text-sm text-slate-500 mb-3">
@@ -2782,7 +2797,7 @@ function ApplicationForm() {
                     with no priced item is simply not live to guests. A one-item
                     menu renders as a single price on the card, so the chef's
                     "one thing, one price" reads exactly as it should. */}
-                {onStep('business') && audienceForTrade(trade) === 'guest' && shape && (() => {
+                {onStep('g_menu') && audienceForTrade(trade) === 'guest' && (() => {
                     // A slot is one session offering, not a menu — a sauna owner
                     // sells "the sauna", not a list. So a slot shows a single row
                     // with no "add another", and its price unit is read off the
@@ -2904,7 +2919,7 @@ function ApplicationForm() {
                 {/* MADE-TO-ORDER adds one field: the notice needed. It is the same
                     fact as the made-to-order cancellation cutoff, so it is asked
                     once, here. Gated on the shape, not worded as a condition. */}
-                {onStep('business') && audienceForTrade(trade) === 'guest' && shape === 'made_to_order' && (
+                {onStep('g_avail') && audienceForTrade(trade) === 'guest' && shape === 'made_to_order' && (
                 <section className="mb-8">
                     <label className="block text-sm font-semibold text-slate-900 mb-1.5">How much notice do you need?</label>
                     <p className="text-sm text-slate-500 mb-3">
@@ -2926,7 +2941,7 @@ function ApplicationForm() {
                 {/* SLOT: the private/shared answer (which sets the price unit and
                     the capacity), the session length, and the weekly opening hours
                     — the schedule editor a sauna owner needs and never had. §7/§10. */}
-                {onStep('business') && audienceForTrade(trade) === 'guest' && shape === 'slot' && (() => {
+                {onStep('g_avail') && audienceForTrade(trade) === 'guest' && shape === 'slot' && (() => {
                     const DAYS = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
                     const dayOpen = (d: number) => schedule.some((r) => r.day === d);
                     const toggleDay = (d: number) => {
@@ -3043,7 +3058,7 @@ function ApplicationForm() {
                     earns its place, the rest fill in trust. Deliberately no
                     vetting badges — nothing here is checked, so nothing claims
                     to be. */}
-                {onStep('business') && audienceForTrade(trade) === 'guest' && (
+                {onStep('g_you') && audienceForTrade(trade) === 'guest' && (
                 <section className="mb-8">
                     <h2 className="text-sm font-semibold text-slate-900 mb-1">A bit about you</h2>
                     <p className="text-sm text-slate-500 mb-4">
@@ -3062,27 +3077,6 @@ function ApplicationForm() {
                         placeholder="Kirkcudbright · cooking since 2019"
                         className="w-full md:max-w-md rounded-xl border border-slate-300 px-4 py-3 mb-4 focus:outline-none focus:ring-2 focus:ring-emerald-700"
                     />
-
-                    {/* The food question is now conditional in its LOGIC, not just
-                        its wording: it only shows for a food category. A sauna or a
-                        photographer never sees it. (The marketplace's own food test
-                        is the Stripe MCC assigned at review; at sign-up the category
-                        is the signal, and it is the right one.) */}
-                    {(guestCategoryIsFood(guestCategory) || dietaryNote.trim() !== '') && (
-                        <>
-                            <label className="block text-sm font-semibold text-slate-900 mb-1.5">What can you cater for?</label>
-                            <textarea
-                                value={dietaryNote}
-                                onChange={(e) => setDietaryNote(e.target.value)}
-                                rows={2}
-                                placeholder="e.g. can do gluten-free and dairy-free with a day’s notice; not a nut-free kitchen"
-                                className="w-full md:max-w-md rounded-xl border border-slate-300 px-4 py-3 mb-1.5 focus:outline-none focus:ring-2 focus:ring-emerald-700"
-                            />
-                            <p className="text-xs text-slate-500 mb-4">
-                                Shown on your listing. Leave it blank and the listing tells guests you haven’t said — so they know to ask before booking.
-                            </p>
-                        </>
-                    )}
 
                     <label className="block text-sm font-semibold text-slate-900 mb-1.5">A photo of you</label>
                     <div className="flex items-center gap-3">
@@ -3111,6 +3105,25 @@ function ApplicationForm() {
                             </button>
                         )}
                     </div>
+                </section>
+                )}
+
+                {/* WHAT CAN YOU CATER FOR — its own step now, shown only for a
+                    food category (stepApplies gates g_diet on the category's food
+                    flag). A sauna or a pottery class never reaches it. */}
+                {onStep('g_diet') && audienceForTrade(trade) === 'guest' && (
+                <section className="mb-8">
+                    <label className="block text-sm font-semibold text-slate-900 mb-1.5">What can you cater for?</label>
+                    <textarea
+                        value={dietaryNote}
+                        onChange={(e) => setDietaryNote(e.target.value)}
+                        rows={2}
+                        placeholder="e.g. can do gluten-free and dairy-free with a day’s notice; not a nut-free kitchen"
+                        className="w-full md:max-w-md rounded-xl border border-slate-300 px-4 py-3 mb-1.5 focus:outline-none focus:ring-2 focus:ring-emerald-700"
+                    />
+                    <p className="text-xs text-slate-500">
+                        Shown on your listing. Leave it blank and the listing tells guests you haven&rsquo;t said — so they know to ask before booking.
+                    </p>
                 </section>
                 )}
 
@@ -4053,7 +4066,7 @@ function ApplicationForm() {
                 )}
 
 
-                {onStep('business') && (
+                {(audienceForTrade(trade) === 'guest' ? onStep('g_area') : onStep('business')) && (
                 <section className="mb-8">
                     <h2 className="text-sm font-semibold text-slate-900 mb-1.5">Where do you cover?</h2>
                     <p className="text-sm text-slate-500 mb-3">
@@ -4111,7 +4124,7 @@ function ApplicationForm() {
                 </section>
                 )}
 
-                {onStep('business') && (
+                {(audienceForTrade(trade) === 'guest' ? onStep('g_contact') : onStep('business')) && (
                 <section className="mb-8 grid sm:grid-cols-2 gap-4">
                     <div>
                         <label className="block text-sm font-semibold text-slate-900 mb-1.5">
