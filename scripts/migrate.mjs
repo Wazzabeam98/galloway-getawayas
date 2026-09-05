@@ -95,7 +95,7 @@ const valueOf = (name) => {
 // The file is the one bare argument that is not the VALUE of a flag. Listing
 // the value-taking flags in one place, because adding a new one and forgetting
 // it here is how `--target prod` came to be treated as a filename.
-const VALUE_FLAGS = ['--sql', '--read', '--target', '--note'];
+const VALUE_FLAGS = ['--sql', '--read', '--target', '--note', '--check'];
 const file = (() => {
     for (let i = 0; i < args.length; i++) {
         if (args[i].startsWith('--')) continue;
@@ -425,6 +425,31 @@ if (flag('record')) {
             + '  checked:  --note "verified from the schema on 1 Sept — index present"');
     }
 
+    // --record USED to take the operator's word for it: it wrote a ledger row
+    // without asking the database anything, so a wrong belief became a silent
+    // lie the gate could not catch (status exits clean on an assumption). Now it
+    // must PROVE the claim first. --check is a read-only query that asserts the
+    // migration's effect is present — a column, an index, a grant, a constraint.
+    // It has to return a single truthy value (true, or a count > 0). If it comes
+    // back false, empty, or errors, NOTHING is written: an unverifiable record is
+    // exactly the footgun this flag exists to remove.
+    const check = valueOf('check');
+    if (!check) {
+        die('--record needs --check "<read-only SQL that proves it is applied>".\n'
+            + '  The row is only worth writing if the schema actually shows the change.\n'
+            + '  The query must return one truthy value — refused otherwise. Examples:\n'
+            + "    --check \"select to_regclass('public.foo') is not null\"\n"
+            + "    --check \"select count(*) > 0 from information_schema.columns\n"
+            + "             where table_name='bookings' and column_name='free_cancel_until'\"\n"
+            + '  It is stored with the row, so --status can re-run it and catch the day\n'
+            + '  the schema drifts away from what you recorded.');
+    }
+    const { writes: checkWrites } = classify(check);
+    if (checkWrites) {
+        die('--check is a read-only assertion. That query writes. It must only ASK\n'
+            + '  whether the change is present, never make one.');
+    }
+
     const client = await connect();
     try {
         const already = await client.query(
@@ -436,15 +461,45 @@ if (flag('record')) {
             process.exit(0);
         }
 
+        // Run the proof. One truthy value or it is not recorded.
+        let ok = false;
+        try {
+            const res = await client.query('begin');
+            const r = await client.query(check);
+            await client.query('rollback');
+            const rows = r.rows || [];
+            if (rows.length) {
+                const first = rows[0][Object.keys(rows[0])[0]];
+                ok = first === true || (typeof first === 'number' && first > 0)
+                    || (typeof first === 'bigint' && first > 0n)
+                    || (typeof first === 'string' && first !== '' && first !== 'f' && first !== '0');
+            }
+        } catch (err) {
+            await client.query('rollback').catch(() => {});
+            die('the --check query errored, so nothing was recorded:\n  '
+                + String(err.message).split(dbUrl).join(redacted)
+                + '\n  Fix the check, or if the migration is genuinely NOT applied, apply it.');
+        }
+        if (!ok) {
+            die('the --check came back false/empty on ' + target.name + ', so the change is\n'
+                + '  NOT present. Nothing recorded — this is the footgun working. Either the\n'
+                + '  migration has not actually been applied, or the check is wrong.');
+        }
+
+        // Self-bootstrap the column so a fresh ledger needs no separate migration.
+        await client.query('alter table public.schema_migrations add column if not exists verify_sql text');
         await client.query(
-            `insert into public.schema_migrations (filename, checksum, backfilled, note)
-             values ($1, null, true, $2)`,
-            [name, note]
+            `insert into public.schema_migrations (filename, checksum, backfilled, note, verify_sql)
+             values ($1, null, true, $2, $3)`,
+            [name, note, check]
         );
 
-        console.log('\n  Recorded ' + name + ' on ' + target.name + '.');
-        console.log('  Marked as an ASSUMPTION, not an observation — --status will keep saying so.');
-        console.log('  note: ' + note + '\n');
+        console.log('\n  Verified and recorded ' + name + ' on ' + target.name + '.');
+        console.log('  The --check passed, so the change is present now. Stored as an');
+        console.log('  ASSUMPTION (backfilled, no checksum) — but --status will RE-RUN the');
+        console.log('  check and shout if the schema ever drifts from it.');
+        console.log('  note:  ' + note);
+        console.log('  check: ' + check + '\n');
     } finally {
         await client.end().catch(() => {});
     }
@@ -476,8 +531,16 @@ if (flag('status')) {
 
     let ledger;
     try {
+        // verify_sql only exists once a --record --check has run against this
+        // database, so read it conditionally rather than assume the column.
+        const hasVerify = (await readQuery(
+            "select count(*) n from information_schema.columns "
+            + "where table_schema='public' and table_name='schema_migrations' "
+            + "and column_name='verify_sql'"
+        ))[0].n > 0;
         ledger = await readQuery(
-            'select filename, applied_at, checksum, backfilled, note '
+            'select filename, applied_at, checksum, backfilled, note, '
+            + (hasVerify ? 'verify_sql ' : 'null::text as verify_sql ')
             + 'from public.schema_migrations order by filename'
         );
     } catch (err) {
@@ -509,6 +572,31 @@ if (flag('status')) {
 
         if (row.checksum && row.checksum !== now) edited.push({ name, was: row.checksum, is: now });
         else observed++;
+    }
+
+    // Re-run the stored proof for every assumption that has one. A --record now
+    // writes the --check that verified it, so the gate is no longer blind to
+    // assumptions: if the schema has since drifted away from what was recorded,
+    // the check comes back false HERE and this stops being a silent tick. The
+    // legacy backfill rows carry no check (verify_sql is null) and stay in the
+    // quiet "assumed, not observed" list — there is nothing to re-run for them.
+    const assumedFailing = [];
+    const assumedVerified = [];
+    const assumedLegacy = [];
+    for (const name of assumed) {
+        const vsql = known.get(name).verify_sql;
+        if (!vsql) { assumedLegacy.push(name); continue; }
+        try {
+            const r = await readQuery(vsql);
+            const rows = Array.isArray(r) ? r : [];
+            const first = rows.length ? rows[0][Object.keys(rows[0])[0]] : null;
+            const ok = first === true || (typeof first === 'number' && first > 0)
+                || (typeof first === 'bigint' && first > 0n)
+                || (typeof first === 'string' && first !== '' && first !== 'f' && first !== '0');
+            (ok ? assumedVerified : assumedFailing).push({ name, vsql });
+        } catch (err) {
+            assumedFailing.push({ name, vsql, error: String(err.message).split(dbUrl).join(redacted) });
+        }
     }
 
     // In the ledger and not on disk. A deleted or renamed migration file.
@@ -560,28 +648,51 @@ if (flag('status')) {
         orphaned.forEach((n) => console.log('      ' + n));
     }
 
-    if (assumed.length) {
-        console.log('\n  ASSUMED, NOT OBSERVED (' + assumed.length + ')');
-        console.log('      Backfilled. Nobody watched these run and no checksum was taken,');
-        console.log('      so an edit to any of them cannot be detected. They are here');
-        console.log('      because the schema said so, not because the runner saw it.');
-        const note = assumed.map((n) => known.get(n).note).find(Boolean);
-        if (note) console.log('      Basis: ' + note);
+    if (assumedFailing.length) {
+        console.log('\n  ASSUMED — VERIFICATION NOW FAILS (' + assumedFailing.length + ')');
+        console.log('      Recorded as applied, with a check that PROVED it at the time — and');
+        console.log('      that check does NOT pass now. The schema has drifted away from what');
+        console.log('      was recorded, or the change was never really there. This is the');
+        console.log('      thing the ledger exists to catch. Do not trust these as applied.');
+        assumedFailing.forEach((a) => {
+            console.log('      ' + a.name);
+            console.log('          check: ' + a.vsql);
+            if (a.error) console.log('          errored: ' + a.error);
+        });
+    }
+
+    if (assumedVerified.length) {
+        console.log('\n  ASSUMED, RE-VERIFIED NOW (' + assumedVerified.length + ')');
+        console.log('      Backfilled, no checksum — but each carries a --check that still');
+        console.log('      passes, so the change IS present. Trustworthy as far as the check goes.');
+        assumedVerified.forEach((a) => console.log('      ' + a.name));
+    }
+
+    if (assumedLegacy.length) {
+        console.log('\n  ASSUMED, NOT OBSERVED (' + assumedLegacy.length + ')');
+        console.log('      Backfilled with no check and no checksum. Nobody watched these run');
+        console.log('      and an edit to any of them cannot be detected. They are here because');
+        console.log('      the schema said so once, not because the runner saw it. Re-record any');
+        console.log('      that matter with --check to bring them under continuous verification.');
+        const note = assumedLegacy.map((n) => known.get(n).note).find(Boolean);
+        if (note) console.log('      Basis (example): ' + note);
     }
 
     console.log('\n  OBSERVED — applied by this runner, checksum matches (' + observed + ')');
 
     console.log('\n' + rule);
-    if (!outstanding.length && !edited.length) {
-        console.log('  Nothing outstanding, nothing edited.'
+    if (!outstanding.length && !edited.length && !assumedFailing.length) {
+        console.log('  Nothing outstanding, nothing edited, no verification failing.'
             + (assumed.length ? ' ' + assumed.length + ' of the ' + onDisk.length
-                + ' are assumptions, above.' : ''));
+                + ' are assumptions (' + assumedVerified.length + ' re-verified, '
+                + assumedLegacy.length + ' legacy), above.' : ''));
     } else {
-        console.log('  ' + outstanding.length + ' outstanding, ' + edited.length + ' edited.');
+        console.log('  ' + outstanding.length + ' outstanding, ' + edited.length + ' edited, '
+            + assumedFailing.length + ' with a failing verification.');
     }
     console.log('');
 
-    process.exit(outstanding.length || edited.length ? 1 : 0);
+    process.exit(outstanding.length || edited.length || assumedFailing.length ? 1 : 0);
 }
 
 if (readOnlyQuery) {

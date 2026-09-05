@@ -116,7 +116,7 @@ if [ -f .env.local ]; then
         echo >&2
         echo "pre-push: NOTE — the test database is behind this checkout." >&2
         echo >&2
-        sed -n '/OUTSTANDING/,/^$/p;/EDITED SINCE/,/^$/p' /tmp/gg-pre-push-status.log >&2
+        sed -n '/OUTSTANDING/,/^$/p;/EDITED SINCE/,/^$/p;/VERIFICATION NOW FAILS/,/^$/p' /tmp/gg-pre-push-status.log >&2
         echo "  This is a note, not a refusal. Your push went ahead." >&2
         echo "  Production is NOT checked here — run it yourself before merging:" >&2
         echo "      node scripts/migrate.mjs --target prod --status" >&2
