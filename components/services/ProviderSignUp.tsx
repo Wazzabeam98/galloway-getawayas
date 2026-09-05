@@ -2494,22 +2494,17 @@ function ApplicationForm() {
                         <h1 className={'font-extrabold tracking-tight text-slate-900 [text-wrap:balance] text-3xl sm:text-4xl '
                             + ((step === 'trade' || step === 'g_subtype') ? 'mb-10 text-center' : 'mb-8')}>
                             {step === 'trade'
-                                ? 'What will you offer guests staying nearby?'
+                                ? 'What experience are you offering guests?'
                                 : stepMeta.title}
                         </h1>
                     )}
 
-            {/* Read before the questions rather than under them. It used to
-                narrate the step as well — "you are back on step 5 of 5" — which
-                explained something the step counter above already says, in more
-                words than the reassurance is worth. */}
-            {restored && !providerId && (
-                <div className="rounded-xl border border-emerald-300 bg-emerald-50 px-4 py-3 mb-5">
-                    <p className="text-sm text-emerald-900">
-                        Your details have been saved.
-                    </p>
-                </div>
-            )}
+            {/* The "your details have been saved" banner used to sit here on
+                every step. It restored with a draft — so it showed before
+                anything had been typed — and it repeated on each screen, which
+                read as noise rather than reassurance. The draft still saves
+                (that behaviour is untouched); it just no longer announces
+                itself on every page. */}
 
             {/* Sent, and waiting on us. */}
             {status === 'pending_review' && (
