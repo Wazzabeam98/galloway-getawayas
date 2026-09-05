@@ -24,17 +24,14 @@ type Choice = {
     href: string;
     title: string;
     Icon: typeof Home;
-    // The 3D illustration that fills the tile's art zone. The glyph (Icon) is
-    // the fallback if the image is ever missing.
-    art?: string;
 };
 
 // One palette across all three — the brand emerald — so the tiles read as a
 // set, not three unrelated colours. The glyph stays the only colour on screen.
 const CHOICES: Choice[] = [
-    { key: 'home', href: '/addhome', title: 'List a home or holiday let', Icon: Home, art: '/illustrations/fork-home.png' },
-    { key: 'guest', href: '/services/join?trade=guest', title: 'Host a guest experience', Icon: Sparkles, art: '/illustrations/fork-guest.png' },
-    { key: 'service', href: '/services/join', title: 'Offer a service', Icon: Wrench, art: '/illustrations/fork-service.png' },
+    { key: 'home', href: '/addhome', title: 'List a home or holiday let', Icon: Home },
+    { key: 'guest', href: '/services/join?trade=guest', title: 'Host a guest experience', Icon: Sparkles },
+    { key: 'service', href: '/services/join', title: 'Offer a service', Icon: Wrench },
 ];
 
 export default function HostFork() {
@@ -71,7 +68,7 @@ export default function HostFork() {
                     </div>
 
                     <div className="mt-12 grid gap-5 sm:grid-cols-3">
-                        {CHOICES.map(({ key, title, Icon, art }) => {
+                        {CHOICES.map(({ key, title, Icon }) => {
                             const isOn = selected === key;
                             return (
                                 <button
@@ -92,9 +89,7 @@ export default function HostFork() {
                                         <img src="/illustrations/fork-<key>.png" alt="" className="h-full w-auto" />.
                                         The fixed height keeps all three cards' art aligned. */}
                                     <span className="flex h-28 items-center justify-center sm:h-36">
-                                        {art
-                                            ? <img src={art} alt="" className="h-full w-auto object-contain" />
-                                            : <Icon className="h-16 w-16 text-emerald-600 sm:h-24 sm:w-24" strokeWidth={1.5} aria-hidden />}
+                                        <Icon className="h-16 w-16 text-emerald-600 sm:h-24 sm:w-24" strokeWidth={1.5} aria-hidden />
                                     </span>
                                     <span className="text-lg font-semibold text-slate-900">{title}</span>
                                 </button>
