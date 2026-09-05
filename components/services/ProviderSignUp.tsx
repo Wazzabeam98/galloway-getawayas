@@ -66,6 +66,8 @@ import {
     bandsFor,
     REVIEW_WITHIN_HOURS,
     GUEST_CATEGORIES,
+    GUEST_GROUPS,
+    categoriesForGroup,
     guestCategoryByKey,
     guestCategoryIsFood,
 } from '@/lib/serviceProviders';
@@ -246,6 +248,9 @@ function ApplicationForm() {
     //
     // `guestCategory` is the picked category key (lib/serviceProviders
     // GUEST_CATEGORIES); it pre-fills custom_label and gates the food question.
+    // The top-level group picked first (GUEST_GROUPS); it decides which sub-type
+    // screen shows. 'other' has no sub-type and goes straight to the business step.
+    const [guestGroup, setGuestGroup] = useState('');
     const [guestCategory, setGuestCategory] = useState('');
     // 'comes_to_you' | 'made_to_order' | 'slot'. Pre-selected from the category,
     // confirmed by the plain "how do guests get it?" question, final say at review.
@@ -1119,8 +1124,12 @@ function ApplicationForm() {
     // which is what keeps a host's steps and validation byte-for-byte unchanged:
     // the guest steps stay off and stepForField uses the host map.
     const isGuest = audienceForTrade(trade) === 'guest';
+    // group falls back to the category's own group, so a restored draft (which
+    // saves the category, not the group) still resolves its steps correctly.
     const stepCtx: StepContext | undefined =
-        isGuest ? { category: guestCategory, shape } : undefined;
+        isGuest
+            ? { group: guestGroup || (guestCategoryByKey(guestCategory)?.group || ''), category: guestCategory, shape }
+            : undefined;
 
     const problemFor = (field: string) => {
         const where = stepForField(field, stepCtx);
@@ -1276,7 +1285,24 @@ function ApplicationForm() {
         // swapped for a non-food one must not keep a dietary note nobody sees;
         // leave what they typed, it is only shown when a food category is set.
         markVisited('trade');
+        markVisited('g_subtype');
         setStep('business');
+        scrollPanelToTop();
+    };
+
+    // The top-level group, picked on screen one. If it has a sub-type screen we
+    // go there; 'other' is alone under its group, so its lone category is set
+    // and we go straight to the business step — no screen-two of one card.
+    const chooseGroup = (key: string) => {
+        setGuestGroup(key);
+        markVisited('trade');
+        const subs = categoriesForGroup(key);
+        if (key === 'other' || subs.length <= 1) {
+            if (subs[0]) chooseGuestCategory(subs[0].key);
+            else setStep('business');
+        } else {
+            setStep('g_subtype');
+        }
         scrollPanelToTop();
     };
 
@@ -2400,14 +2426,19 @@ function ApplicationForm() {
 
                 {/* ---- the questions ---- */}
                 <div id="signup-panel" className={isGuest
-                    ? 'flex-1 w-full max-w-2xl mx-auto overflow-y-auto px-5 sm:px-6 py-10 sm:py-12'
+                    ? ('flex-1 w-full mx-auto overflow-y-auto px-5 sm:px-6 py-10 sm:py-12 '
+                        + ((step === 'trade' || step === 'g_subtype') ? 'max-w-4xl' : 'max-w-2xl'))
                     : 'flex-1 overflow-y-auto px-4 sm:px-6 py-5'}>
-                    {/* One big question a screen, /addhome-style. The category
-                        grid and the finish step carry their own headings, so
-                        they keep them. */}
-                    {isGuest && step !== 'trade' && step !== 'finish' && (
-                        <h1 className="text-3xl sm:text-4xl font-extrabold tracking-tight text-slate-900 mb-8 [text-wrap:balance]">
-                            {stepMeta.title}
+                    {/* One big question a screen. The two picker screens (group,
+                        sub-type) centre it over a row of cards, Airbnb-style; the
+                        content screens sit it left over their fields. The finish
+                        step carries its own heading, so it is left out. */}
+                    {isGuest && step !== 'finish' && (
+                        <h1 className={'font-extrabold tracking-tight text-slate-900 [text-wrap:balance] text-3xl sm:text-4xl '
+                            + ((step === 'trade' || step === 'g_subtype') ? 'mb-10 text-center' : 'mb-8')}>
+                            {step === 'trade'
+                                ? 'What experience will you offer to guests?'
+                                : stepMeta.title}
                         </h1>
                     )}
 
@@ -2522,27 +2553,25 @@ function ApplicationForm() {
                 // under a "Guest experience" header: the guest never reaches the
                 // host pickerEntries below.
                 if (audienceForTrade(trade) === 'guest') {
+                    // Screen one: five broad groups, a glyph and a name, nothing
+                    // else. The narrower choice is screen two (g_subtype). No
+                    // instructions, no Stripe line — the question carries it.
                     return (
-                        <div>
-                            <p className="text-sm text-slate-600 mb-5">
-                                Pick the one that fits best — it is a starting point, and we may adjust it
-                                when we review you. If nothing fits, choose <span className="font-medium text-slate-700">Something&nbsp;else</span>.
-                            </p>
-                            <TradeTileGrid>
-                                {GUEST_CATEGORIES.map((c) => (
-                                    <TradeTile
-                                        key={c.key}
-                                        tradeKey={c.icon}
-                                        label={c.label || 'Something else'}
-                                        hint={c.hint}
-                                        onClick={() => chooseGuestCategory(c.key)}
-                                    />
-                                ))}
-                            </TradeTileGrid>
-                            <p className="text-xs text-slate-500 mt-6">
-                                A guest can book you once we have approved you and you have connected Stripe
-                                for payouts — not the moment you sign up.
-                            </p>
+                        <div className="grid grid-cols-2 gap-3 sm:grid-cols-5">
+                            {GUEST_GROUPS.map((g) => {
+                                const Icon = TRADE_ICONS[g.icon] || Sparkles;
+                                return (
+                                    <button
+                                        key={g.key}
+                                        type="button"
+                                        onClick={() => chooseGroup(g.key)}
+                                        className="flex flex-col items-center gap-4 rounded-2xl border-2 border-slate-200 bg-white px-4 py-7 text-center transition hover:border-slate-300 focus:outline-none focus-visible:ring-2 focus-visible:ring-emerald-600"
+                                    >
+                                        <Icon className="h-10 w-10 text-emerald-600" strokeWidth={1.5} aria-hidden />
+                                        <span className="text-sm font-semibold leading-snug text-slate-900">{g.label}</span>
+                                    </button>
+                                );
+                            })}
                         </div>
                     );
                 }
@@ -2660,6 +2689,25 @@ function ApplicationForm() {
                 );
             })()}
 
+            {/* SCREEN TWO — the narrower choice under the chosen group. Text
+                cards, the name only, the card advances. Airbnb's "How would you
+                describe your experience?". Outside the fieldset: it is a picker,
+                not a field, and must not be disabled with the rest. */}
+            {onStep('g_subtype') && audienceForTrade(trade) === 'guest' && (
+                <div className="mx-auto grid max-w-2xl grid-cols-1 gap-3 sm:grid-cols-2">
+                    {categoriesForGroup(guestGroup).map((c) => (
+                        <button
+                            key={c.key}
+                            type="button"
+                            onClick={() => chooseGuestCategory(c.key)}
+                            className="rounded-2xl border-2 border-slate-200 bg-white px-5 py-6 text-center transition hover:border-slate-300 focus:outline-none focus-visible:ring-2 focus-visible:ring-emerald-600"
+                        >
+                            <span className="text-base font-semibold text-slate-900">{c.label}</span>
+                        </button>
+                    ))}
+                </div>
+            )}
+
             <fieldset disabled={locked} className={locked ? 'opacity-70' : ''}>
                 {onStep('business') && audienceForTrade(trade) === 'guest' ? (
                     // Guest identity group: the business name and the person's name
@@ -2772,7 +2820,6 @@ function ApplicationForm() {
 
                 {(audienceForTrade(trade) === 'guest' ? onStep('g_about') : onStep('business')) && (
                 <section className="mb-8">
-                    <label className="block text-sm font-semibold text-slate-900 mb-1.5">About your business</label>
                     {/* Capped to a measure rather than the window: past about
                         70 characters a line is harder to read, not easier. */}
                     <textarea
@@ -2797,10 +2844,6 @@ function ApplicationForm() {
                     for a slot. */}
                 {onStep('g_offer') && audienceForTrade(trade) === 'guest' && (
                 <section className="mb-8">
-                    <h2 className="text-sm font-semibold text-slate-900 mb-1">How do guests get what you offer?</h2>
-                    <p className="text-sm text-slate-500 mb-3">
-                        This decides what a guest sees when they book. Pick the one that is true most of the time.
-                    </p>
                     <div className="grid gap-3 sm:grid-cols-3">
                         {[
                             { v: 'comes_to_you', t: 'I come to them', d: 'At the cottage — a private chef, a massage' },
@@ -3102,12 +3145,6 @@ function ApplicationForm() {
                     to be. */}
                 {onStep('g_you') && audienceForTrade(trade) === 'guest' && (
                 <section className="mb-8">
-                    <h2 className="text-sm font-semibold text-slate-900 mb-1">A bit about you</h2>
-                    <p className="text-sm text-slate-500 mb-4">
-                        A guest is choosing who comes into the cottage they’re staying in. This is
-                        where you tell them who that is. All optional.
-                    </p>
-
                     {/* "Your name" now sits with the business name up in the
                         identity group — a guest is choosing a person as much as a
                         business, so the two names belong together. */}
@@ -4110,10 +4147,14 @@ function ApplicationForm() {
 
                 {(audienceForTrade(trade) === 'guest' ? onStep('g_area') : onStep('business')) && (
                 <section className="mb-8">
-                    <h2 className="text-sm font-semibold text-slate-900 mb-1.5">Where do you cover?</h2>
-                    <p className="text-sm text-slate-500 mb-3">
-                        A town and how far you will travel from it. Add more than one if you cover separate areas.
-                    </p>
+                    {!isGuest && (
+                        <>
+                            <h2 className="text-sm font-semibold text-slate-900 mb-1.5">Where do you cover?</h2>
+                            <p className="text-sm text-slate-500 mb-3">
+                                A town and how far you will travel from it. Add more than one if you cover separate areas.
+                            </p>
+                        </>
+                    )}
 
                     <div className="space-y-2 md:max-w-xl">
                         {areas.map((a, i) => (
