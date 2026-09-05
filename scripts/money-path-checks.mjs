@@ -26,11 +26,14 @@
 export const MONEY_PATH_CHECKS = [
     {
         file: '20260831120000_host_debt_moves_atomically.sql',
-        note: 'the payout clamp: adjust_payout_balance is SECURITY DEFINER and does greatest(0, round(...))',
-        // Whitespace-tolerant on purpose — the function text is `greatest(\n  0`,
-        // so a naive like '%greatest(0%' gives a FALSE fail. A wrong check is its
-        // own footgun.
-        check: "select count(*) > 0 from pg_proc where proname = 'adjust_payout_balance' and prosecdef and pg_get_functiondef(oid) ~ 'greatest\\(\\s*0'",
+        note: 'payout clamp AND lockdown: adjust_payout_balance is SECURITY DEFINER, does greatest(0, round(...)), and is not executable by anon or authenticated',
+        // Both halves of this migration in one check: a clamped function a
+        // signed-in stranger can call is still a hole. `has_function_privilege`
+        // is used (not aclexplode) because it correctly accounts for PUBLIC
+        // grants and defaults. Whitespace-tolerant on the clamp — the function
+        // text is `greatest(\n  0`, so a naive like '%greatest(0%' gives a FALSE
+        // fail; a wrong check is its own footgun.
+        check: "select coalesce(bool_and(p.prosecdef and pg_get_functiondef(p.oid) ~ 'greatest\\(\\s*0' and not has_function_privilege('anon', p.oid, 'execute') and not has_function_privilege('authenticated', p.oid, 'execute')), false) from pg_proc p join pg_namespace n on n.oid = p.pronamespace and n.nspname = 'public' where p.proname = 'adjust_payout_balance'",
     },
     {
         file: '20260901000000_a_payout_transfer_is_recorded_once.sql',
