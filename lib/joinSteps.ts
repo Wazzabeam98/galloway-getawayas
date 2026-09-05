@@ -27,9 +27,34 @@ import {
     offerableSchemes,
     asksAboutSkills,
     asksAboutFuel,
+    audienceForTrade,
+    guestCategoryIsFood,
 } from '@/lib/serviceProviders';
 
-export type StepKey = 'trade' | 'business' | 'credentials' | 'prices' | 'finish';
+// The host trades keep 'trade' | 'business' | 'credentials' | 'prices' |
+// 'finish'. The guest experience used to collapse ALL of its application into
+// 'business' (one long scroll); it is now split into its own screens, each a
+// 'g_' key. The guest keys are gated on the category and the booking shape, and
+// they are OFF entirely unless the component passes a StepContext — so a guest
+// with no context still sees the old trade/business/finish, and no host trade
+// ever gains one. See stepApplies.
+export type StepKey =
+    | 'trade' | 'business'
+    | 'g_about' | 'g_offer' | 'g_menu' | 'g_avail' | 'g_you' | 'g_diet' | 'g_area' | 'g_checks' | 'g_contact'
+    | 'credentials' | 'prices' | 'finish';
+
+// The guest-only steps, in flow order.
+const GUEST_STEP_KEYS: StepKey[] = [
+    'g_about', 'g_offer', 'g_menu', 'g_avail', 'g_you', 'g_diet', 'g_area', 'g_checks', 'g_contact',
+];
+
+// What a guest's later steps branch on. Both come from earlier answers —
+// the category (its `food` flag) and the booking shape — never from a
+// hand-coded per-category list.
+export interface StepContext {
+    category?: string | null;
+    shape?: string | null;
+}
 
 export interface Step {
     key: StepKey;
@@ -42,6 +67,18 @@ export interface Step {
 const ALL_STEPS: Step[] = [
     { key: 'trade', label: 'Trade', title: 'What do you do?' },
     { key: 'business', label: 'Business', title: 'Your business' },
+    // The guest experience, split out of the old single 'business' step. Each
+    // is one question a screen; which of them a given guest sees is decided by
+    // stepApplies from the category and shape.
+    { key: 'g_about', label: 'About', title: 'Tell guests what you do' },
+    { key: 'g_offer', label: 'How', title: 'How do guests get it?' },
+    { key: 'g_menu', label: 'Prices', title: 'What you offer, and what it costs' },
+    { key: 'g_avail', label: 'When', title: 'When can guests book?' },
+    { key: 'g_you', label: 'You', title: 'A bit about you' },
+    { key: 'g_diet', label: 'Dietary', title: 'What can you cater for?' },
+    { key: 'g_area', label: 'Area', title: 'How far will you travel?' },
+    { key: 'g_checks', label: 'Checks', title: 'A few checks before we list you' },
+    { key: 'g_contact', label: 'Contact', title: 'Where can we reach you?' },
     // Not "Registration". Registration and skills never co-occur across the
     // trade list — the electrician and plumber give numbers, the handyman gives
     // skills, nobody does both — so a step called Registration was wrong for
@@ -58,16 +95,52 @@ const ALL_STEPS: Step[] = [
 //
 // Written as one function per step rather than a table, because each answer is
 // a different question and a table would hide that behind a column of trues.
-export function stepApplies(step: StepKey, trade: string): boolean {
+export function stepApplies(step: StepKey, trade: string, ctx?: StepContext): boolean {
     const key = String(trade || '');
 
     // Always. This is where the trade is chosen, so it cannot depend on one
     // having been chosen.
     if (step === 'trade') return true;
 
-    // Always. Every business has a name, an email, something to say about
-    // itself and somewhere it works.
+    // Always. Every business has a name and someone behind it.
     if (step === 'business') return true;
+
+    // The guest-experience steps. Two gates before any per-step rule:
+    //   1. only the guest audience has them — a host trade never does;
+    //   2. only when a context is supplied — the component opts in by passing
+    //      one, so a guest with no context still sees trade/business/finish
+    //      (the old single-step flow) and nothing breaks mid-migration.
+    if (GUEST_STEP_KEYS.indexOf(step) !== -1) {
+        if (audienceForTrade(key) !== 'guest') return false;
+        if (!ctx) return false;
+
+        const shape = ctx.shape || null;
+        switch (step) {
+            // Asked of every guest.
+            case 'g_about':
+            case 'g_offer':
+            case 'g_menu':
+            case 'g_you':
+            case 'g_checks':
+            case 'g_contact':
+                return true;
+            // A schedule only where there is one: a slot is booked into a time,
+            // a made-to-order needs a lead time. Someone who comes to the guest
+            // (comes_to_you) arranges it on the enquiry, so no schedule screen.
+            case 'g_avail':
+                return shape === 'slot' || shape === 'made_to_order';
+            // Dietary only for the food categories (chef, baking, hampers,
+            // tastings), by the category's own `food` flag. A sauna never sees it.
+            case 'g_diet':
+                return guestCategoryIsFood(ctx.category);
+            // How far they travel only when they travel — they come to you on a
+            // slot, so a sauna has no coverage question.
+            case 'g_area':
+                return shape === 'comes_to_you' || shape === 'made_to_order';
+            default:
+                return false;
+        }
+    }
 
     if (step === 'credentials') {
         // Gas and oil are asked before the number is, so the question counts
@@ -110,42 +183,43 @@ export function stepApplies(step: StepKey, trade: string): boolean {
     return true;
 }
 
-// The steps this trade actually has, in order.
-export function stepsFor(trade: string): Step[] {
-    return ALL_STEPS.filter((s) => stepApplies(s.key, trade));
+// The steps this trade actually has, in order. `ctx` carries the guest's
+// category and shape; it is ignored for host trades and may be omitted.
+export function stepsFor(trade: string, ctx?: StepContext): Step[] {
+    return ALL_STEPS.filter((s) => stepApplies(s.key, trade, ctx));
 }
 
 // Where a step sits in the indicator, counting only the steps that exist.
 // One-based, because it is shown to a person. Zero when the step is not part
 // of this trade's flow at all.
-export function stepNumber(trade: string, step: StepKey): number {
-    return stepsFor(trade).findIndex((s) => s.key === step) + 1;
+export function stepNumber(trade: string, step: StepKey, ctx?: StepContext): number {
+    return stepsFor(trade, ctx).findIndex((s) => s.key === step) + 1;
 }
 
-export function stepCount(trade: string): number {
-    return stepsFor(trade).length;
+export function stepCount(trade: string, ctx?: StepContext): number {
+    return stepsFor(trade, ctx).length;
 }
 
 // Moving about.
 //
 // Both return the step you are already on when there is nowhere to go, so a
 // caller never has to hold a special case for the ends.
-export function nextStep(trade: string, from: StepKey): StepKey {
-    const steps = stepsFor(trade);
+export function nextStep(trade: string, from: StepKey, ctx?: StepContext): StepKey {
+    const steps = stepsFor(trade, ctx);
     const at = steps.findIndex((s) => s.key === from);
     if (at === -1 || at === steps.length - 1) return from;
     return steps[at + 1].key;
 }
 
-export function previousStep(trade: string, from: StepKey): StepKey {
-    const steps = stepsFor(trade);
+export function previousStep(trade: string, from: StepKey, ctx?: StepContext): StepKey {
+    const steps = stepsFor(trade, ctx);
     const at = steps.findIndex((s) => s.key === from);
     if (at <= 0) return from;
     return steps[at - 1].key;
 }
 
-export function isLastStep(trade: string, step: StepKey): boolean {
-    const steps = stepsFor(trade);
+export function isLastStep(trade: string, step: StepKey, ctx?: StepContext): boolean {
+    const steps = stepsFor(trade, ctx);
     return steps.length > 0 && steps[steps.length - 1].key === step;
 }
 
@@ -155,8 +229,8 @@ export function isLastStep(trade: string, step: StepKey): boolean {
 // trade to cleaner, and step 4 no longer exists. Rather than land them on a
 // blank panel or throw, this falls back to the last step the trade does have,
 // which is where their work actually got to.
-export function resolveStep(trade: string, wanted: string | null | undefined): StepKey {
-    const steps = stepsFor(trade);
+export function resolveStep(trade: string, wanted: string | null | undefined, ctx?: StepContext): StepKey {
+    const steps = stepsFor(trade, ctx);
     const found = steps.filter((s) => s.key === wanted)[0];
     if (found) return found.key;
 
@@ -189,6 +263,19 @@ const STEP_FIELDS: Record<StepKey, string[]> = {
         // The cleaner's per-hour route.
         'billable_hourly_rate', 'covered_bands',
     ],
+    // The guest steps' field ownership is filled in with the render + validation
+    // slice, where stepForField also becomes context-aware (several fields —
+    // description, contact_email, areas — move off 'business' for a guest). Empty
+    // for now: the component does not yet drive these steps, so nothing maps here.
+    g_about: [],
+    g_offer: [],
+    g_menu: [],
+    g_avail: [],
+    g_you: [],
+    g_diet: [],
+    g_area: [],
+    g_checks: [],
+    g_contact: [],
     finish: [],
 };
 
@@ -219,9 +306,10 @@ export function problemsOnStep(problems: Problem[] | null | undefined, step: Ste
 // somebody there rather than telling them to go and look.
 export function firstStepWithProblem(
     trade: string,
-    problems: Problem[] | null | undefined
+    problems: Problem[] | null | undefined,
+    ctx?: StepContext
 ): StepKey | null {
-    for (const step of stepsFor(trade)) {
+    for (const step of stepsFor(trade, ctx)) {
         if (problemsOnStep(problems, step.key).length > 0) return step.key;
     }
     return null;
