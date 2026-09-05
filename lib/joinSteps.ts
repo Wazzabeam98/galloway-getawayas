@@ -28,7 +28,6 @@ import {
     asksAboutSkills,
     asksAboutFuel,
     audienceForTrade,
-    guestCategoryIsFood,
     checksFor,
 } from '@/lib/serviceProviders';
 
@@ -41,13 +40,20 @@ import {
 // ever gains one. See stepApplies.
 export type StepKey =
     | 'trade' | 'g_subtype' | 'business'
-    | 'g_about' | 'g_offer' | 'g_menu' | 'g_avail' | 'g_you' | 'g_diet' | 'g_area' | 'g_checks' | 'g_contact'
+    | 'g_you' | 'g_creds' | 'g_about' | 'g_menu' | 'g_expect' | 'g_photos' | 'g_area' | 'g_checks' | 'g_contact'
     | 'credentials' | 'prices' | 'finish';
 
-// The guest-only steps, in flow order.
+// The guest-only steps, in flow order. Rebuilt against Airbnb's host-an-
+// experience flow (Sep 2026): the booking shape is inferred from the category
+// and never asked (the old g_offer is gone), availability folds into the
+// where-and-when step (the old g_avail), dietary folds into "what guests can
+// expect" (the old g_diet), and three screens Airbnb has and we lacked are
+// added — expertise/qualifications (g_creds), what-to-expect (g_expect) and a
+// real photos step (g_photos). The business name now rides on g_about, so a
+// guest never sees the standalone 'business' step.
 const GUEST_STEP_KEYS: StepKey[] = [
     'g_subtype',
-    'g_about', 'g_offer', 'g_menu', 'g_avail', 'g_you', 'g_diet', 'g_area', 'g_checks', 'g_contact',
+    'g_you', 'g_creds', 'g_about', 'g_menu', 'g_expect', 'g_photos', 'g_area', 'g_checks', 'g_contact',
 ];
 
 // What a guest's steps branch on, all from earlier answers: the top-level group
@@ -73,16 +79,19 @@ const ALL_STEPS: Step[] = [
     // (Airbnb's "How would you describe your experience?"). Off for 'other'.
     { key: 'g_subtype', label: 'Type', title: 'How would you describe it?' },
     { key: 'business', label: 'Business', title: 'Your business' },
-    // The guest experience, split out of the old single 'business' step. Each
-    // is one question a screen; which of them a given guest sees is decided by
-    // stepApplies from the category and shape.
-    { key: 'g_about', label: 'About', title: 'Tell guests what you do' },
-    { key: 'g_offer', label: 'How', title: 'How do guests get it?' },
-    { key: 'g_menu', label: 'Prices', title: 'What you offer, and what it costs' },
-    { key: 'g_avail', label: 'When', title: 'When can guests book?' },
-    { key: 'g_you', label: 'You', title: 'A bit about you' },
-    { key: 'g_diet', label: 'Dietary', title: 'What can you cater for?' },
-    { key: 'g_area', label: 'Area', title: 'How far will you travel?' },
+    // The guest experience, one question a screen, rebuilt to Airbnb's order:
+    // momentum first (how long you've done it), then the trust that sells it
+    // (expertise), then the listing itself, its price, what a guest gets, the
+    // photos, where and when, the safety checks and how to reach you. Which of
+    // them a given guest sees is decided by stepApplies from the category and
+    // shape; the standalone 'business' step above is host-only.
+    { key: 'g_you', label: 'You', title: 'How long have you been doing this?' },
+    { key: 'g_creds', label: 'Expertise', title: 'What makes you the person to do it?' },
+    { key: 'g_about', label: 'About', title: 'Name it, and tell guests what it is' },
+    { key: 'g_menu', label: 'Price', title: 'What you offer, and what it costs' },
+    { key: 'g_expect', label: 'Details', title: 'What can a guest expect?' },
+    { key: 'g_photos', label: 'Photos', title: 'Show guests what it looks like' },
+    { key: 'g_area', label: 'Where', title: 'Where, and when, can guests get it?' },
     { key: 'g_checks', label: 'Checks', title: 'A few checks before we list you' },
     { key: 'g_contact', label: 'Contact', title: 'Where can we reach you?' },
     // Not "Registration". Registration and skills never co-occur across the
@@ -108,8 +117,14 @@ export function stepApplies(step: StepKey, trade: string, ctx?: StepContext): bo
     // having been chosen.
     if (step === 'trade') return true;
 
-    // Always. Every business has a name and someone behind it.
-    if (step === 'business') return true;
+    // Every host business has a name and someone behind it, on its own step.
+    // A guest carries the name on g_about ("Name it, and tell guests what it
+    // is"), so once the guest split is on (a context is passed) the standalone
+    // business step falls away for them — otherwise they'd name it twice.
+    if (step === 'business') {
+        if (audienceForTrade(key) === 'guest' && ctx) return false;
+        return true;
+    }
 
     // The guest-experience steps. Two gates before any per-step rule:
     //   1. only the guest audience has them — a host trade never does;
@@ -126,11 +141,16 @@ export function stepApplies(step: StepKey, trade: string, ctx?: StepContext): bo
             // is alone under its group, so it goes straight to the business step.
             case 'g_subtype':
                 return !!ctx.group && ctx.group !== 'other';
-            // Asked of every guest.
-            case 'g_about':
-            case 'g_offer':
-            case 'g_menu':
+            // Asked of every guest: how long they've done it and a line about
+            // them (g_you), their expertise (g_creds), the listing name and
+            // description (g_about), the price (g_menu), what a guest can expect
+            // (g_expect), the photos (g_photos) and how to reach them (g_contact).
             case 'g_you':
+            case 'g_creds':
+            case 'g_about':
+            case 'g_menu':
+            case 'g_expect':
+            case 'g_photos':
             case 'g_contact':
                 return true;
             // The checks sub-flow: the declarations this category has to
@@ -140,20 +160,14 @@ export function stepApplies(step: StepKey, trade: string, ctx?: StepContext): bo
             // nothing to ask, rather than a hand-set true.
             case 'g_checks':
                 return checksFor(ctx.category).length > 0;
-            // A schedule only where there is one: a slot is booked into a time,
-            // a made-to-order needs a lead time. Someone who comes to the guest
-            // (comes_to_you) arranges it on the enquiry, so no schedule screen.
-            case 'g_avail':
-                return shape === 'slot' || shape === 'made_to_order';
-            // Dietary only for the food categories (chef, baking, hampers,
-            // tastings), by the category's own `food` flag. A sauna never sees it.
-            case 'g_diet':
-                return guestCategoryIsFood(ctx.category);
-            // Every guest needs a location — submitProblems requires at least one
-            // area for anyone, and the marketplace has to know where they are.
-            // The wording adapts (how far will you travel vs where is it), but
-            // the step is always there; a slot that skipped it would strand the
-            // provider on an areas error with no step to fix it on.
+            // Where and when, in one step. Every guest needs a location —
+            // submitProblems requires at least one area for anyone, and the
+            // marketplace has to know where they are. The wording adapts (how
+            // far will you travel vs where is it), and the shape decides whether
+            // a schedule shows inside it: a slot picks weekly hours, a
+            // made-to-order sets a lead time, a comes-to-you arranges it on the
+            // enquiry. The step is always there so nobody is stranded on an
+            // areas or availability error with no screen to fix it on.
             case 'g_area':
                 return true;
             default:
@@ -287,12 +301,12 @@ const STEP_FIELDS: Record<StepKey, string[]> = {
     // description, contact_email, areas — move off 'business' for a guest). Empty
     // for now: the component does not yet drive these steps, so nothing maps here.
     g_subtype: [],
-    g_about: [],
-    g_offer: [],
-    g_menu: [],
-    g_avail: [],
     g_you: [],
-    g_diet: [],
+    g_creds: [],
+    g_about: [],
+    g_menu: [],
+    g_expect: [],
+    g_photos: [],
     g_area: [],
     g_checks: [],
     g_contact: [],
@@ -307,10 +321,11 @@ const STEP_FIELDS: Record<StepKey, string[]> = {
 // a guest, which is the whole reason stepForField takes a context.
 const GUEST_STEP_FIELDS: Partial<Record<StepKey, string[]>> = {
     trade: ['trade', 'audience'],
-    business: ['business_name'],
-    g_about: ['description'],
-    g_avail: ['availability'],
-    g_area: ['areas'],
+    // The name rides on g_about now, beside the description — a guest has no
+    // standalone business step.
+    g_about: ['business_name', 'description'],
+    // Location and the weekly hours both live on the where-and-when step.
+    g_area: ['areas', 'availability'],
     g_contact: ['contact_email', 'contact_phone'],
 };
 
@@ -407,8 +422,10 @@ export function openingStep(state: OpeningState): StepKey | null {
 
     // A trade in the URL means step one is already answered — they came back
     // through a link, or they have a saved record — so opening on the picker
-    // would make them answer it twice.
-    return state.trade ? 'business' : 'trade';
+    // would make them answer it twice. A guest has no business step; their
+    // first content screen is g_you.
+    if (!state.trade) return 'trade';
+    return audienceForTrade(state.trade) === 'guest' ? 'g_you' : 'business';
 }
 
 // What counts as already seen when opening there. Everything up to and
