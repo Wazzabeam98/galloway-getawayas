@@ -131,22 +131,29 @@ The required-address rule (`addressBlockerForPublish`, lib/listingRules.ts) retu
 
 # Follow-up (2026-09-05): builds + the live sign-up walk
 
-## Live provider sign-up walk — a fresh sauna owner is stopped at step one
+## Live provider sign-up walk — corrected (2026-09-05)
 
-I opened `/services/join` on the preview as a fresh person. The page is titled **"Join as a trade"**, and step 1 ("What do you do?") offers only: **Cleaning · Waste removal · Gardening & grounds · Window cleaning · Maintenance & repairs.** There is **no experience/sauna/chef/activity category at all.**
+**RETRACTED:** my first write-up said "a sauna owner can't sign up — `/services/join` offers only trades." That was wrong. I reached `/services/join` **directly**, which is by design the trades branch of the flow. The public fork is at **`/business`**: "Get work from holiday lets" → `/services/join`, "Sell guest experiences" → `/services/join?trade=guest`. Both work; Liam has walked them. There is no dead end for an experience provider *when they enter through `/business`*.
 
-So the friction the code didn't show is the worst kind: **a sauna owner can't sign up.** They land on the join page, see five trades that aren't them, and leave — before typing a thing. The guest-experience grid *exists* in `TradeTiles` (there's a chef icon and a "grid a guest provider starts from" comment) and the whole guest flow exists in `ProviderSignUp`, but **nothing public routes to it** — guest providers are currently only created by hand / seed. Per your own note ("branch sign-up by audience — you scope the questions first"), I did **not** build the guest entry; this confirms it's the missing piece, and it's the highest-leverage one: no chef or sauna owner reaches us self-serve today.
+**The real bug, once I looked for it (per Liam):** several links back into the flow point at **bare `/services/join`** with no `?trade=`. Because the join page's existing-provider resume keys on `?trade=` (`.eq('trade', tradeFromUrl)`), a bare link shows the **trades grid** and resumes nothing — and the trades grid has no guest option, so an *experience* provider following one is dropped into a page that isn't theirs and can't get back to their own record. Every one of these is reachable by a guest provider:
 
-Because of that, I couldn't complete a real sauna account + emailed link end to end — there's no door to walk through. What I *did* verify:
-- The downstream guest-slot flow (reachable via a direct `?trade=` link / the edit flow) now **can't finish with an empty calendar** (below), so once an entry exists the silent-invisible failure is already closed.
-- The email/finish mechanism is shared with the trades flow (`/services/join/finish/[token]` + `FinishForm`, with a `resend-verification` path) — a real person who closes the tab at the email step is lost unless they return and resend. That drop-off is common to every provider and worth a "we've emailed you — didn't arrive? resend" screen state.
+| Link | Was | Now |
+|---|---|---|
+| Admin decision emails ×4 (approve / decline / changes) | bare | `?trade=provider.trade` |
+| Stripe Connect refresh + return URLs | bare | carry `?trade=` |
+| "You already have an account" apply email | bare | carry `?trade=` (added `trade` to the apply select + email helper) |
+| Finish page — "already claimed → Sign in" | bare | `?trade=application.trade` |
+| `FinishForm` post-finish redirect | bare `?finished=1` | `?trade=…&finished=1` |
+| `removeDraft` (undo a wrong pick) | bare | guest → `?trade=guest`, trade → grid |
+| Dashboard "No business here yet → List your business" | bare | **`/business`** (fresh start, no known audience → the fork) |
+| Finish page — "link not recognised → Set up a business" | bare | **`/business`** (fresh start) |
 
-**If you want the real trades account + email walk** (same finish/email leg a guest would hit), say so and I'll drive a cleaner sign-up through to the inbox — but the sauna-owner answer is upstream of that: there's no experience category to pick.
+Two of them are *fresh starts* with no known audience, so they correctly go to the fork `/business`, not to a trade-keyed join. The rest carry the provider's own trade so the flow **resumes** their record instead of showing the grid. Nav/footer were already clean — the footer's "Set up a business" points at `/business`.
 
-**Three ways a real person could break it:**
-1. A sauna owner opens `/services/join`, sees only trades, and never comes back.
-2. Someone reaches the guest flow by a shared `?trade=` link, fills it, then closes the tab on the "check your email" step and never clicks the link.
-3. A guest provider created by hand (no self-serve) has no obvious way to edit their own hours later — "Edit your listing" reopens the same flow, which is fine, but they have to know it's there.
+**Three ways a real person could still break it:**
+1. A brand-new experience provider who is handed a bare `/services/join` link *from outside the site* (a forwarded old email pre-dating this fix, a bookmark) still lands on the trades grid. The fix covers every link we generate from here on; it can't reach links already in someone's inbox.
+2. Someone reaches the guest flow, fills it, then closes the tab on the "check your email" step and never clicks the link — the finish/email drop-off is common to every provider and still worth a "we've emailed you — didn't arrive? resend" screen state.
+3. A provider whose `trade` value is somehow blank (bad seed / hand-created row) gets `?trade=` empty and still sees the grid — the `|| ''` guards against a crash, not against a missing trade upstream.
 
 ## Built this follow-up (branch `overnight/marketplace-and-card`, preview only)
 
@@ -155,4 +162,19 @@ Because of that, I couldn't complete a real sauna account + emailed link end to 
 - **Allergies (guest side).** Common-allergen **tick-box chips** (Nuts, Peanuts, Gluten, Dairy, Eggs, Fish, Shellfish, Soya, Sesame) at the point of booking, combined with the free-text field into one line the provider reads. The chef-declares-what-they-handle side is left until you have a real chef.
 - **Cancelled + overdue-deposit states.** A cancelled booking now shows **"Cancelled — £X refunded"** (or "No refund due" / "Nothing was paid") instead of "Total £X · Show breakdown" that read as a bill. A deposit past its due date reads **"overdue"** and "This was due on {date} and is taken automatically — pay now to settle it", not a future "due {past date}".
 
-**Still your call (unchanged):** the guest-experience sign-up entry (scope the questions); finer categories for generic MCCs; the chef-declares-allergens side.
+- **Trade-aware links back into `/services/join`** (the table above) — every link an experience provider can follow now resumes their record instead of the trades grid.
+- **`/business` trades card reworded — PLACEHOLDER pending your pick.** Currently reads "Get work from holiday lets" (option A below). Guest card untouched.
+
+### Trades card wording — pick one of each (guest card stays as is)
+
+**Heading** (was "Work for property owners"):
+- **A.** Get work from holiday lets *(in the preview now)*
+- **B.** Pick up work from local cottages
+- **C.** Get leads from self-catering owners
+
+**Supporting line** (was "…Owners find you by the areas you cover and ask you for work."):
+- **A.** …Cottage owners across your area find you by the work you do and send the job your way. *(in the preview now)*
+- **B.** …The jobs come to you — owners near you find you by the areas you cover and get in touch.
+- **C.** …Owners of self-catering lets nearby find you by what you do and bring you the work.
+
+**Still your call (unchanged):** the trades-card wording (pick above); the guest-experience sign-up entry (scope the questions); finer categories for generic MCCs; the chef-declares-allergens side.
