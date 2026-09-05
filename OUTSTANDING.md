@@ -134,23 +134,42 @@ Parked, not to be coded until the solicitor has ruled. Goes to them **with** the
 host-terms / agent-or-principal question (CLAUDE.md §4), because it turns on the
 same retention basis.
 
-The one thing to know: today the schema `ON DELETE CASCADE`s a guest's bookings
-when their profile is deleted, which would silently destroy a paid upcoming stay
-and strand the money (proven on test, night of 3→4 Sep — `bookings.guest_id →
-CASCADE`, `payments.booking_id → SET NULL`). So a naive "delete my account"
-button is dangerous. **No such button exists yet — do not add one until this is
-settled.**
+The one thing to know: today the schema `ON DELETE CASCADE`s far more than one
+booking when a profile is deleted, and a schema-wide FK sweep (night of 4→5 Sep)
+shows the same shape is **not just guest-side**:
+
+- `bookings.guest_id → CASCADE` — delete a guest, their bookings vanish
+  (proven on test 3→4 Sep); `payments.booking_id`/`payouts.booking_id → SET NULL`
+  orphan the money record.
+- `listings.host_id → CASCADE` — delete a **host** and **all their listings go,
+  and with them every guest's booking on those listings** (via `bookings.host_id
+  → CASCADE`), plus door codes, arrival secrets and reviews. Wider blast radius
+  than guest deletion.
+- `payouts.host_id → SET NULL` — delete a host and the payout rows lose **which
+  host was paid**: the financial audit trail is severed while the money row
+  stays.
+- `reviews.reviewer_id / reviewee_id → CASCADE` and `messages.sender_id /
+  recipient_id → CASCADE` — deleting any profile erases reviews (reputation) and
+  messages (**dispute evidence**).
+
+So a naive "delete my account" button — guest **or** host — silently destroys
+money trail, access, reputation and evidence. **No such button exists yet — do
+not add one until this is settled.**
 
 The likely answer is **anonymise + retain, not delete**: the privacy policy
 already promises 6-year retention of booking and payment records, and UK GDPR
 Art 17(3) switches erasure off for data kept under a legal obligation — so
 "delete me" means strip the identity and keep the (restricted) financial record,
-with money resolved first for anyone mid-stay. Full scope, the schema changes it
-implies, and the denormalised-PII gotcha are written up in
-`OVERNIGHT-REPORT-2026-09-04.md` (§ "ERASURE DESIGN SCOPE") on branch
-`audit/overnight-2026-09-04`. Questions for the solicitor: does the 6-year basis
-cover both booking and payment records; are guest messages retained as dispute
-evidence; do host and guest erasure differ.
+with money resolved first for anyone mid-stay. Every `→ profiles CASCADE` and the
+`payouts.host_id → SET NULL` above then wants the same `RESTRICT`/anonymise
+treatment — the FK change-list is bigger than one column. Full scope, the schema
+changes it implies, and the denormalised-PII gotcha (PII snapshotted onto
+`service_orders` / `booking_guests` / `service_enquiries`, which a profile scrub
+misses) are written up in `OVERNIGHT-REPORT-2026-09-04.md` (§ "ERASURE DESIGN
+SCOPE") and the host-side FK sweep in `OVERNIGHT-REPORT-2026-09-05.md`. Questions
+for the solicitor: does the 6-year basis cover both booking and payment records;
+are guest messages retained as dispute evidence; do host and guest erasure differ
+(a host carries listings + payouts, so more is retained).
 
 ---
 
