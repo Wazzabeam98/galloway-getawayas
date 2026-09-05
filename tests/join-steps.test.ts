@@ -465,3 +465,66 @@ test('a guest with no category yet opens on the picker, not the business step', 
         [],
     );
 });
+
+// --- the guest-experience split -------------------------------------------
+//
+// The guest is the one trade 'guest'. Its later steps branch on the category
+// (its food flag) and the booking shape, passed in a StepContext. Without a
+// context the split stays off, so the flow is exactly what it was before —
+// this is what lets the component adopt it a piece at a time without breaking.
+
+const gkeys = (ctx: any) => stepsFor('guest', ctx).map((s: any) => s.key);
+
+test('a guest with no context still sees the old three steps', () => {
+    // The migration safety net: no context, no split.
+    assert.deepEqual(stepsFor('guest').map((s: any) => s.key), ['trade', 'business', 'finish']);
+});
+
+test('a chef (food, comes to them) is split, with no schedule step', () => {
+    // comes_to_you is arranged on the enquiry, so there is no "when" screen;
+    // it is food, so dietary shows; they travel, so coverage shows.
+    assert.deepEqual(
+        gkeys({ category: 'chef', shape: 'comes_to_you' }),
+        ['trade', 'business', 'g_about', 'g_offer', 'g_menu', 'g_you', 'g_diet', 'g_area', 'g_checks', 'g_contact', 'finish'],
+    );
+    assert.equal(stepApplies('g_avail', 'guest', { category: 'chef', shape: 'comes_to_you' }), false);
+});
+
+test('a cake maker (food, made to order) gains a lead-time and a coverage step', () => {
+    assert.deepEqual(
+        gkeys({ category: 'baking', shape: 'made_to_order' }),
+        ['trade', 'business', 'g_about', 'g_offer', 'g_menu', 'g_avail', 'g_you', 'g_diet', 'g_area', 'g_checks', 'g_contact', 'finish'],
+    );
+});
+
+test('a sauna owner (not food, slot) has a schedule but no dietary or coverage', () => {
+    const ctx = { category: 'wellness', shape: 'slot' };
+    assert.deepEqual(
+        gkeys(ctx),
+        ['trade', 'business', 'g_about', 'g_offer', 'g_menu', 'g_avail', 'g_you', 'g_checks', 'g_contact', 'finish'],
+    );
+    assert.equal(stepApplies('g_diet', 'guest', ctx), false, 'not food -> no dietary');
+    assert.equal(stepApplies('g_area', 'guest', ctx), false, 'they come to you -> no coverage');
+});
+
+test('the guest split never touches a host trade', () => {
+    const ctx = { category: 'chef', shape: 'comes_to_you' };
+    // A guest context passed to a plumber changes nothing about the plumber.
+    assert.deepEqual(
+        stepsFor('plumber', ctx).map((s: any) => s.key),
+        stepsFor('plumber').map((s: any) => s.key),
+    );
+    for (const k of ['g_about', 'g_offer', 'g_menu', 'g_avail', 'g_you', 'g_diet', 'g_area', 'g_checks', 'g_contact']) {
+        assert.equal(stepApplies(k as any, 'plumber', ctx), false, k + ' is off for a host trade');
+    }
+});
+
+test('guest movement and the last step honour the context', () => {
+    const ctx = { category: 'wellness', shape: 'slot' };
+    assert.equal(nextStep('guest', 'g_offer', ctx), 'g_menu');
+    assert.equal(previousStep('guest', 'g_menu', ctx), 'g_offer');
+    assert.equal(isLastStep('guest', 'finish', ctx), true);
+    assert.equal(isLastStep('guest', 'g_contact', ctx), false);
+    // A step the context has switched off resolves back to a real one.
+    assert.equal(resolveStep('guest', 'g_diet', ctx), 'finish');
+});
