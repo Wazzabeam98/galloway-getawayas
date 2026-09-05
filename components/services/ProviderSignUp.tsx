@@ -70,6 +70,7 @@ import {
     categoriesForGroup,
     guestCategoryByKey,
     guestCategoryIsFood,
+    checksFor,
 } from '@/lib/serviceProviders';
 import {
     stepsFor,
@@ -263,6 +264,10 @@ function ApplicationForm() {
     const [slotPrivate, setSlotPrivate] = useState<boolean | null>(null);
     const [slotCapacity, setSlotCapacity] = useState('');
     const [slotLength, setSlotLength] = useState('');
+    // The declarations they've confirmed on the checks screen, keyed by check
+    // (lib/serviceProviders GUEST_CHECKS). Non-blocking — recorded for the owner
+    // to weigh at review, never a gate on Next or submit.
+    const [declarations, setDeclarations] = useState<Record<string, boolean>>({});
     // The weekly opening hours — one row per open period. day is 0..6 (0=Sunday).
     const [schedule, setSchedule] = useState<Array<{ day: number; open: string; close: string }>>([]);
     // Dates taken off (block-a-date), as 'yyyy-mm-dd' keys.
@@ -374,7 +379,7 @@ function ApplicationForm() {
                 // it is inherited from another one they hold.
                 const { data: existing } = await supabase
                     .from('service_providers')
-                    .select('id, business_name, trade, description, sms_opt_out, audience, photos, logo, status, review_note, callout_fee, hourly_rate, callout_waived, does_gas, does_oil, kind, pricing_choice, billable_hourly_rate, covered_bands, provider_name, based_line, headshot, dietary_note, custom_label, shape, lead_time_days, slot_length_minutes, slot_capacity')
+                    .select('id, business_name, trade, description, sms_opt_out, audience, photos, logo, status, review_note, callout_fee, hourly_rate, callout_waived, does_gas, does_oil, kind, pricing_choice, billable_hourly_rate, covered_bands, provider_name, based_line, headshot, dietary_note, custom_label, shape, lead_time_days, slot_length_minutes, slot_capacity, declarations')
                     .eq('owner_id', session.user.id)
                     .eq('trade', tradeFromUrl)
                     .maybeSingle();
@@ -460,6 +465,11 @@ function ApplicationForm() {
                         // ('other') marks "already past the picker" without claiming
                         // a food category it isn't.
                         setGuestCategory(byLabel ? byLabel.key : 'other');
+                        // Their declarations, so a returning provider sees what
+                        // they already confirmed rather than a blank checks screen.
+                        if (ex.declarations && typeof ex.declarations === 'object') {
+                            setDeclarations(ex.declarations as Record<string, boolean>);
+                        }
                     }
 
                     // A slot's weekly hours and days off.
@@ -687,6 +697,7 @@ function ApplicationForm() {
             // so a guest who picked a category but typed nothing still lands past
             // the picker rather than being asked to choose it again.
             if (d.guestCategory) setGuestCategory(d.guestCategory);
+            if (d.declarations && typeof d.declarations === 'object') setDeclarations(d.declarations);
             if (d.shape) setShape(d.shape);
             if (d.leadTimeDays) setLeadTimeDays(d.leadTimeDays);
             if (d.slotPrivate !== undefined && d.slotPrivate !== null) setSlotPrivate(d.slotPrivate === true);
@@ -813,6 +824,8 @@ function ApplicationForm() {
                     // The category, the inferred shape and its own fields.
                     guestCategory, shape, leadTimeDays,
                     slotPrivate, slotCapacity, slotLength, schedule, blockedDates,
+                    // The checks they've ticked so far.
+                    declarations,
                 })
             );
         } catch (err) {
@@ -828,6 +841,7 @@ function ApplicationForm() {
         items, providerName, basedLine, headshot,
         guestCategory, shape, leadTimeDays,
         slotPrivate, slotCapacity, slotLength, schedule, blockedDates,
+        declarations,
     ]);
 
     // Which registration boxes this application shows at all. An electrician
@@ -1598,6 +1612,12 @@ function ApplicationForm() {
             const n = Math.floor(Number(String(v || '').trim()));
             return String(v || '').trim() !== '' && Number.isFinite(n) ? Math.max(min, n) : null;
         };
+        // The declarations, as a record of exactly the checks this category was
+        // asked and whether each was confirmed — not the raw state, which could
+        // carry a stale tick from a category they backed out of. So the owner
+        // reads a true picture at review: what we put to them, and their answer.
+        const confirmed: Record<string, boolean> = {};
+        for (const check of checksFor(guestCategory)) confirmed[check.key] = !!declarations[check.key];
         return {
             ...(cat && cat.label && status !== 'approved' ? { custom_label: cat.label } : {}),
             shape: shape || 'made_to_order',
@@ -1605,6 +1625,7 @@ function ApplicationForm() {
             lead_time_days: isMTO ? (num(leadTimeDays, 0) ?? 0) : 0,
             slot_length_minutes: isSlot ? num(slotLength, 15) : null,
             slot_capacity: isSlot ? (slotPrivate === false ? num(slotCapacity, 1) : 1) : null,
+            declarations: confirmed,
         };
     };
 
@@ -4204,6 +4225,58 @@ function ApplicationForm() {
                     {problemFor('areas') && (
                         <p data-problem className="text-sm text-rose-700 mt-2">{problemFor('areas')!.message}</p>
                     )}
+                </section>
+                )}
+
+                {/* THE CHECKS — the declarations this category confirms before
+                    we list it. The set is computed from the category (checksFor),
+                    so a chef sees food registration and allergens, a sauna sees
+                    its heat-and-cold statement, and everyone sees insurance and
+                    an accuracy line. Non-blocking: a box left unticked never
+                    stops Next or send — the owner weighs it at review. The big
+                    title above already asks the question, so this is just the
+                    list. */}
+                {onStep('g_checks') && audienceForTrade(trade) === 'guest' && (
+                <section className="mb-8">
+                    <p className="text-sm text-slate-500 mb-5 [text-wrap:balance]">
+                        Tick each one you can confirm. It helps guests book with confidence — none of it is shown publicly.
+                    </p>
+                    <div className="space-y-3">
+                        {checksFor(guestCategory).map((check) => {
+                            const on = !!declarations[check.key];
+                            return (
+                                <button
+                                    key={check.key}
+                                    type="button"
+                                    role="checkbox"
+                                    aria-checked={on}
+                                    onClick={() => setDeclarations((prev) => ({ ...prev, [check.key]: !prev[check.key] }))}
+                                    className={
+                                        'flex w-full items-start gap-4 rounded-2xl border-2 px-5 py-4 text-left transition '
+                                        + 'focus:outline-none focus-visible:ring-2 focus-visible:ring-emerald-600 '
+                                        + (on ? 'border-emerald-600 bg-emerald-50/60' : 'border-slate-200 hover:border-slate-300')
+                                    }
+                                >
+                                    <span
+                                        aria-hidden
+                                        className={
+                                            'mt-0.5 flex h-6 w-6 flex-none items-center justify-center rounded-md border-2 transition '
+                                            + (on ? 'border-emerald-600 bg-emerald-600 text-white' : 'border-slate-300 bg-white text-transparent')
+                                        }
+                                    >
+                                        <Check className="h-4 w-4" strokeWidth={3} />
+                                    </span>
+                                    <span className="min-w-0">
+                                        <span className="block text-sm font-semibold text-slate-900">{check.label}</span>
+                                        {check.hint && <span className="mt-0.5 block text-xs text-slate-500">{check.hint}</span>}
+                                    </span>
+                                </button>
+                            );
+                        })}
+                    </div>
+                    <p className="mt-5 text-xs text-slate-500">
+                        You can carry on without ticking every box — we may just ask you about it before you go live.
+                    </p>
                 </section>
                 )}
 

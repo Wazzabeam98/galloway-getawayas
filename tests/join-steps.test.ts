@@ -34,7 +34,7 @@ const {
 const {
     TRADES, submitProblems, planForTrade,
     capabilityFor, pricedOfferingsFor, showsRates, extrasFor, bandsFor,
-    asksAboutFuel, asksAboutSkills, offerableSchemes,
+    asksAboutFuel, asksAboutSkills, offerableSchemes, checksFor,
 } = require('@/lib/serviceProviders');
 
 const keys = (trade: string) => stepsFor(trade).map((s: any) => s.key);
@@ -482,10 +482,11 @@ test('a guest with no context still sees the old three steps', () => {
 
 test('a chef (food, comes to them) is split, with a sub-type screen and no schedule', () => {
     // The food group has a sub-type screen (g_subtype); comes_to_you needs no
-    // "when"; it is food, so dietary shows; they travel, so coverage shows.
+    // "when"; it is food, so dietary shows; they travel, so coverage shows; and
+    // everyone confirms their checks (g_checks) before the contact step.
     assert.deepEqual(
         gkeys({ group: 'food', category: 'chef', shape: 'comes_to_you' }),
-        ['trade', 'g_subtype', 'business', 'g_about', 'g_offer', 'g_menu', 'g_you', 'g_diet', 'g_area', 'g_contact', 'finish'],
+        ['trade', 'g_subtype', 'business', 'g_about', 'g_offer', 'g_menu', 'g_you', 'g_diet', 'g_area', 'g_checks', 'g_contact', 'finish'],
     );
     assert.equal(stepApplies('g_avail', 'guest', { group: 'food', category: 'chef', shape: 'comes_to_you' }), false);
 });
@@ -493,7 +494,7 @@ test('a chef (food, comes to them) is split, with a sub-type screen and no sched
 test('a cake maker (food, made to order) gains a lead-time and a coverage step', () => {
     assert.deepEqual(
         gkeys({ group: 'food', category: 'baking', shape: 'made_to_order' }),
-        ['trade', 'g_subtype', 'business', 'g_about', 'g_offer', 'g_menu', 'g_avail', 'g_you', 'g_diet', 'g_area', 'g_contact', 'finish'],
+        ['trade', 'g_subtype', 'business', 'g_about', 'g_offer', 'g_menu', 'g_avail', 'g_you', 'g_diet', 'g_area', 'g_checks', 'g_contact', 'finish'],
     );
 });
 
@@ -501,12 +502,39 @@ test('a sauna owner (not food, slot) has a schedule and a location, but no dieta
     const ctx = { group: 'wellness', category: 'sauna', shape: 'slot' };
     assert.deepEqual(
         gkeys(ctx),
-        ['trade', 'g_subtype', 'business', 'g_about', 'g_offer', 'g_menu', 'g_avail', 'g_you', 'g_area', 'g_contact', 'finish'],
+        ['trade', 'g_subtype', 'business', 'g_about', 'g_offer', 'g_menu', 'g_avail', 'g_you', 'g_area', 'g_checks', 'g_contact', 'finish'],
     );
     assert.equal(stepApplies('g_diet', 'guest', ctx), false, 'not food -> no dietary');
     // Location is required of everyone (submitProblems needs an area), so a slot
     // keeps g_area — it just asks "where is it" rather than "how far will you go".
     assert.equal(stepApplies('g_area', 'guest', ctx), true, 'a slot still needs a location');
+});
+
+test('every guest confirms their checks, and the set is chosen for the category', () => {
+    // g_checks is on for every guest — at least the two universal declarations
+    // (insurance, accuracy). A food category adds its own; "Something else",
+    // which has no category, still gets the universal pair.
+    for (const ctx of [
+        { group: 'food', category: 'chef', shape: 'comes_to_you' },
+        { group: 'wellness', category: 'sauna', shape: 'slot' },
+        { group: 'other', category: 'other', shape: null },
+    ]) {
+        assert.equal(stepApplies('g_checks', 'guest', ctx), true, JSON.stringify(ctx) + ' has a checks step');
+    }
+    // A chef is asked more than a bare "Something else": the food declarations
+    // sit on top of the universal pair.
+    const chefChecks = checksFor('chef').map((c: any) => c.key);
+    const otherChecks = checksFor('other').map((c: any) => c.key);
+    assert.deepEqual(otherChecks, ['insurance', 'accurate'], 'other gets only the universal pair');
+    assert.equal(chefChecks.includes('food_registered'), true, 'a chef confirms food registration');
+    assert.equal(chefChecks.includes('allergens'), true, 'a chef confirms allergens');
+    assert.equal(chefChecks.length > otherChecks.length, true, 'a chef is asked more than "something else"');
+    // A tasting is the only food category that confirms an alcohol licence.
+    assert.equal(checksFor('tastings').some((c: any) => c.key === 'alcohol'), true, 'a tasting confirms alcohol');
+    assert.equal(checksFor('chef').some((c: any) => c.key === 'alcohol'), false, 'a chef does not');
+    // A sauna confirms its heat-and-cold statement; a chef never sees it.
+    assert.equal(checksFor('sauna').some((c: any) => c.key === 'sauna_safe'), true);
+    assert.equal(checksFor('chef').some((c: any) => c.key === 'sauna_safe'), false);
 });
 
 test('the something-else group skips the sub-type screen', () => {
@@ -515,7 +543,7 @@ test('the something-else group skips the sub-type screen', () => {
     assert.equal(stepApplies('g_subtype', 'guest', ctx), false, 'other has no sub-type');
     assert.deepEqual(
         gkeys(ctx),
-        ['trade', 'business', 'g_about', 'g_offer', 'g_menu', 'g_you', 'g_area', 'g_contact', 'finish'],
+        ['trade', 'business', 'g_about', 'g_offer', 'g_menu', 'g_you', 'g_area', 'g_checks', 'g_contact', 'finish'],
     );
 });
 
@@ -526,7 +554,7 @@ test('the guest split never touches a host trade', () => {
         stepsFor('plumber', ctx).map((s: any) => s.key),
         stepsFor('plumber').map((s: any) => s.key),
     );
-    for (const k of ['g_subtype', 'g_about', 'g_offer', 'g_menu', 'g_avail', 'g_you', 'g_diet', 'g_area', 'g_contact']) {
+    for (const k of ['g_subtype', 'g_about', 'g_offer', 'g_menu', 'g_avail', 'g_you', 'g_diet', 'g_area', 'g_checks', 'g_contact']) {
         assert.equal(stepApplies(k as any, 'plumber', ctx), false, k + ' is off for a host trade');
     }
 });
