@@ -2,11 +2,11 @@
 
 export const dynamic = 'force-dynamic';
 
-import { useEffect, useRef, useState } from 'react';
+import { useEffect, useState } from 'react';
 import { createClientComponentClient } from '@supabase/auth-helpers-nextjs';
 import { useRouter, useSearchParams } from 'next/navigation';
 import Logo from '@/components/base/Logo';
-import { HomeIcon, ChevronRightIcon, ChevronLeftIcon, Trees, Waves, Compass, Building2, Sparkles, Minus, Plus, Check, Link2, Loader2, Snowflake, Package, Refrigerator, Thermometer, Droplet, UtensilsCrossed, Tv, RotateCw, Wifi, Coffee, Wind, Shirt, Zap, Baby, Briefcase, Car, Dumbbell, Bath, Flame, Armchair, Umbrella, Anchor, AlertTriangle, BellRing, Feather, Users, Gem, MapPin, Maximize2, PawPrint, KeyRound, Lock, DoorOpen, Hash } from 'lucide-react';
+import { HomeIcon, ChevronLeftIcon, Trees, Waves, Compass, Building2, Sparkles, Minus, Plus, Check, Snowflake, Package, Refrigerator, Thermometer, Droplet, UtensilsCrossed, Tv, RotateCw, Wifi, Coffee, Wind, Shirt, Zap, Baby, Briefcase, Car, Dumbbell, Bath, Flame, Armchair, Umbrella, Anchor, AlertTriangle, BellRing, Feather, Users, Gem, MapPin, Maximize2, PawPrint, KeyRound, Lock, DoorOpen, Hash } from 'lucide-react';
 import LoginModel from '@/components/auth/LoginModel';
 import { categories } from '@/config/categories';
 import Env from '@/config/Env';
@@ -21,19 +21,16 @@ import {
     firstPublishProblem as firstProblemIn,
 } from '@/lib/listingRules';
 
-// What the autocomplete route hands back. Deliberately just these two — the
-// full address is only fetched once the host has actually picked a suggestion,
-// so a search costs one lookup, not one per result.
-interface AddressSuggestion {
-    id: string;
-    address: string;
-}
-
 export default function AddHome() {
     const [loading, setLoading] = useState(true);
     const [session, setSession] = useState<any>(null);
     const [userName, setUserName] = useState('');
-    const [showListingForm, setShowListingForm] = useState(false);
+    // The flow opens straight on the wizard's first step ("Which of these best
+    // describes your place?"). There used to be a landing screen before it — a
+    // postcode/street lookup and an import-from-Airbnb box — but the address is
+    // collected properly at step 3 (and coordinates are geocoded from the
+    // postcode server-side on save), so the landing screen only sat in the way.
+    const [showListingForm, setShowListingForm] = useState(true);
     
     // Listing form state
     const [title, setTitle] = useState('');
@@ -156,35 +153,22 @@ export default function AddHome() {
 
     const ICON_MAP: Record<string, any> = { Home: HomeIcon, Trees, Waves, Compass, Building2, Sparkles };
 
-    // Address search & modal state
-    const [addressQuery, setAddressQuery] = useState('');
-    const [suggestions, setSuggestions] = useState<AddressSuggestion[]>([]);
-    const [isModalOpen, setIsModalOpen] = useState(false);
+    // The address, collected on step 3 of the wizard. `flat` and `propertyName`
+    // are no longer given their own boxes (they were only on the removed landing
+    // modal) but are kept here so buildStreetAddress on save keeps its shape — a
+    // host who has a flat or a house name folds it into the street line.
     const [flat, setFlat] = useState('');
-    const [propertyName, setPropertyName] = useState('');
+    const [propertyName] = useState('');
     const [street, setStreet] = useState('');
     const [postcode, setPostcode] = useState('');
-    const [addressLoading, setAddressLoading] = useState(false);
-    const [addressError, setAddressError] = useState('');
 
     // There used to be a `locality` box as well as the Region box on step 3,
     // both holding the county. Picking a search result filled both, so the
     // county appeared twice. One field now — `state` — shown on both screens.
 
-    // Import-from-listing-link state
-    const [importUrl, setImportUrl] = useState('');
-    const [importLoading, setImportLoading] = useState(false);
-    const [importError, setImportError] = useState('');
-    const [importNote, setImportNote] = useState('');
-
     const router = useRouter();
     const searchParams = useSearchParams();
     const supabase = createClientComponentClient();
-    const debounceRef = useRef<ReturnType<typeof setTimeout> | null>(null);
-    // Bumped on every search. A response whose number is no longer the current
-    // one is a slow earlier request arriving late, and is dropped — otherwise
-    // it overwrites the results for what the host has since typed.
-    const searchSeq = useRef(0);
     const [draftId, setDraftId] = useState<string | null>(null);
     const [savingDraft, setSavingDraft] = useState(false);
 
@@ -299,59 +283,6 @@ export default function AddHome() {
         } finally {
             setSavingDraft(false);
         }
-    };
-
-    // getAddress.io charges per lookup, so this waits until the host has
-    // stopped typing rather than firing on every keystroke. Both calls go
-    // through our own routes — the API key travels in the query string, so a
-    // direct call from here would put it in the network tab.
-    const handleAddressChange = (e: React.ChangeEvent<HTMLInputElement>) => {
-        const value = e.target.value;
-        setAddressQuery(value);
-        setAddressError('');
-
-        if (debounceRef.current) clearTimeout(debounceRef.current);
-
-        // Two characters match most of the country and cost a lookup to find
-        // that out.
-        if (value.trim().length < 3) {
-            setSuggestions([]);
-            setAddressLoading(false);
-            return;
-        }
-
-        setAddressLoading(true);
-        const seq = searchSeq.current + 1;
-        searchSeq.current = seq;
-
-        debounceRef.current = setTimeout(async () => {
-            try {
-                const response = await fetch(
-                    `/api/address/autocomplete?q=${encodeURIComponent(value.trim())}`
-                );
-                const data = await response.json();
-
-                // A later search has already been sent — this reply is stale.
-                if (searchSeq.current !== seq) return;
-
-                if (!response.ok || !data.ok) {
-                    setSuggestions([]);
-                    setAddressError(data.error || 'Address search is unavailable just now.');
-                    return;
-                }
-
-                // No whitelist of town names here. The old version asked for ten
-                // results and then threw away anything not naming one of ten
-                // towns, which is why the list came back nearly empty.
-                setSuggestions(data.suggestions || []);
-            } catch {
-                if (searchSeq.current !== seq) return;
-                setSuggestions([]);
-                setAddressError('Address search is unavailable just now.');
-            } finally {
-                if (searchSeq.current === seq) setAddressLoading(false);
-            }
-        }, 300);
     };
 
     const [processingPhotos, setProcessingPhotos] = useState(false);
@@ -571,144 +502,6 @@ export default function AddHome() {
         }
     };
 
-    const handleImportListing = async () => {
-        setImportError('');
-        setImportNote('');
-        if (!importUrl.trim()) {
-            setImportError('Paste an Airbnb or Booking.com listing link first.');
-            return;
-        }
-
-        setImportLoading(true);
-        try {
-            const res = await fetch('/api/import-listing', {
-                method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({ url: importUrl.trim() }),
-            });
-            const data = await res.json();
-
-            if (!res.ok) {
-                setImportError(data.error || 'Could not import that listing.');
-                return;
-            }
-
-            const grabbed: string[] = [];
-            if (data.title) {
-                // Airbnb/Booking titles often look like:
-                // "Townhouse in Dumfries and Galloway · ★5.0 · 3 bedrooms · 3 beds · 2 bathrooms"
-                // Pull the counts out for the capacity step, then use just the
-                // leading location/name part as the actual listing title.
-                const bedroomsMatch = data.title.match(/(\d+)\s*bedroom/i);
-                const bedsMatch = data.title.match(/(\d+)\s*beds\b/i);
-                const bathroomsMatch = data.title.match(/([\d.]+)\s*bathroom/i);
-                const guestsMatch = data.title.match(/(\d+)\s*guests?\b/i);
-
-                if (bedroomsMatch) setBedrooms(Number(bedroomsMatch[1]));
-                if (bedsMatch) setBeds(Number(bedsMatch[1]));
-                if (bathroomsMatch) setBathrooms(Math.round(Number(bathroomsMatch[1])));
-                if (guestsMatch) setGuests(Number(guestsMatch[1]));
-
-                const cleanTitle = data.title.split('·')[0].trim();
-                setTitle(cleanTitle || data.title);
-                grabbed.push('title');
-                if (bedroomsMatch || bedsMatch || bathroomsMatch) grabbed.push('room counts');
-            }
-            if (data.description) { setDescription(data.description); grabbed.push('description'); }
-
-            // The photo is fetched through our own server because the browser
-            // cannot turn a cross-origin image into a File.
-            //
-            // A failure here does not block the title and description we did
-            // get — but it is SAID now. This used to be `if (imgRes.ok)` with
-            // nothing on the else, and the route it calls did not exist, so
-            // every import 404'd here and simply arrived without a cover
-            // photo. An empty photo slot looks exactly like an empty photo
-            // slot, so nobody ever reported it.
-            let photoProblem = '';
-            if (data.image) {
-                try {
-                    const imgRes = await fetch(`/api/import-listing/image?url=${encodeURIComponent(data.image)}`);
-                    if (imgRes.ok) {
-                        const blob = await imgRes.blob();
-                        const file = new File([blob], 'imported-cover.jpg', { type: blob.type || 'image/jpeg' });
-                        setPhotos((prev) => [file, ...prev]);
-                        setCoverIndex(0);
-                        grabbed.push('cover photo');
-                    } else {
-                        const problem = await imgRes.json().catch(() => ({}));
-                        photoProblem = problem.error || 'the cover photo could not be fetched';
-                    }
-                } catch (err) {
-                    photoProblem = 'the cover photo could not be fetched';
-                }
-            }
-
-            if (grabbed.length === 0) {
-                setImportError('That page didn\'t have any details we could read.');
-                return;
-            }
-
-            setImportNote(
-                `Imported ${grabbed.join(', ')} from ${data.source}.`
-                + (photoProblem ? ` We could not bring the photo across — ${photoProblem}. Add photos yourself at the photos step.` : '')
-                + ' Everything else still needs filling in — review each step as you go.'
-            );
-            setShowListingForm(true);
-        } catch {
-            setImportError('Something went wrong reaching that link.');
-        } finally {
-            setImportLoading(false);
-        }
-    };
-
-    // The second lookup, once the host has actually chosen an address. Each
-    // getAddress field goes to exactly one box — the old version had two
-    // fallbacks that fired on nearly every postcode search, dropping the
-    // postcode into the street box and the county into the town box, and then
-    // wrote the county into a second box on top of that.
-    const handleSelectSuggestion = async (place: AddressSuggestion) => {
-        setAddressQuery(place.address);
-        setSuggestions([]);
-        setAddressError('');
-        setAddressLoading(true);
-
-        // Nothing types after a pick, so cancel any search still pending and
-        // retire its sequence number.
-        if (debounceRef.current) clearTimeout(debounceRef.current);
-        searchSeq.current = searchSeq.current + 1;
-
-        try {
-            const response = await fetch(`/api/address/get?id=${encodeURIComponent(place.id)}`);
-            const data = await response.json();
-
-            if (!response.ok || !data.ok) {
-                setAddressError(data.error || 'Could not load that address.');
-                return;
-            }
-
-            const a = data.address;
-
-            setFlat(a.flat || '');
-            setStreet(a.street || '');
-            setCity(a.town || '');
-            // Not a.county — getAddress returns the historic postal county here
-            // ("Kirkcudbrightshire"), and `location` has to read the same way as
-            // the listings that already exist. Editable in the box either way.
-            setState(DEFAULT_REGION);
-            setPostcode(a.postcode || '');
-            setCountry('United Kingdom');
-            setLatitude(typeof a.latitude === 'number' ? a.latitude : null);
-            setLongitude(typeof a.longitude === 'number' ? a.longitude : null);
-
-            setIsModalOpen(true);
-        } catch {
-            setAddressError('Could not load that address.');
-        } finally {
-            setAddressLoading(false);
-        }
-    };
-
     if (loading) {
         return (
             <div className="flex flex-col items-center justify-center min-h-[80vh] space-y-4">
@@ -738,8 +531,10 @@ export default function AddHome() {
     if (showListingForm) {
         const goBack = () => {
             setFormError('');
+            // Back on the first step leaves the flow. There is no longer a
+            // landing screen behind it, so this returns to the dashboard.
             if (step > 1) setStep(step - 1);
-            else setShowListingForm(false);
+            else router.push('/dashboard');
         };
 
         const goNext = () => {
@@ -795,7 +590,7 @@ export default function AddHome() {
                             {savingDraft ? 'Saving...' : 'Save & finish later'}
                         </button>
                         <button
-                            onClick={() => setShowListingForm(false)}
+                            onClick={() => router.push('/dashboard')}
                             className="text-sm font-semibold underline text-slate-600 hover:text-black"
                         >
                             Back to dashboard
@@ -877,6 +672,10 @@ export default function AddHome() {
                                 : 'Where is your place? Guests only ever see the town and region.'}
                         </p>
                         <div className="space-y-4">
+                            <div>
+                                <label className="text-xs text-slate-500 font-semibold uppercase">Flat, floor or building <span className="normal-case text-slate-400 font-normal">(if applicable)</span></label>
+                                <input type="text" value={flat} onChange={(e) => setFlat(e.target.value)} placeholder="e.g. Flat 2, or The Old Coach House" className="w-full p-3 border rounded-xl mt-1" />
+                            </div>
                             <div>
                                 <label className="text-xs text-slate-500 font-semibold uppercase">Street address</label>
                                 <input type="text" value={street} onChange={(e) => setStreet(e.target.value)} className="w-full p-3 border rounded-xl mt-1" />
@@ -1301,224 +1100,7 @@ export default function AddHome() {
         );
     }
 
-    return (
-        <main className="grid grid-cols-1 lg:grid-cols-2 items-center px-8 lg:px-20 py-10 gap-12 max-w-7xl mx-auto w-full">
-            <div className="space-y-6 relative">
-                <h1 className="text-4xl lg:text-5xl font-extrabold text-slate-900 tracking-tight leading-tight">
-                    Set up your Galloway Getaways listing
-                </h1>
-                <p className="text-slate-600 text-lg">
-                    It’s easy to create a great listing – let’s start with your address.
-                </p>
-
-                <div className="border rounded-2xl p-5 max-w-lg bg-slate-50">
-                    <div className="flex items-center text-sm font-semibold text-slate-800 mb-2">
-                        <Link2 className="w-4 h-4 mr-2" /> Already listed elsewhere?
-                    </div>
-                    <p className="text-xs text-slate-500 mb-3">
-                        Paste your Airbnb or Booking.com listing link and we'll try to pull in the title, description and cover photo. Airbnb often blocks this, so it doesn't always work — Booking.com is more reliable. Anything we can't grab, you'll fill in yourself.
-                    </p>
-                    <div className="flex gap-2">
-                        <input
-                            type="text"
-                            value={importUrl}
-                            onChange={(e) => setImportUrl(e.target.value)}
-                            placeholder="https://www.airbnb.co.uk/rooms/..."
-                            className="flex-1 p-2.5 border rounded-xl text-sm outline-none focus:border-slate-900"
-                        />
-                        <button
-                            type="button"
-                            onClick={handleImportListing}
-                            disabled={importLoading}
-                            className="px-4 py-2 bg-slate-900 hover:bg-black text-white text-sm font-semibold rounded-xl transition disabled:opacity-60 flex items-center"
-                        >
-                            {importLoading ? <Loader2 className="w-4 h-4 animate-spin" /> : 'Import'}
-                        </button>
-                    </div>
-                    {importError && <p className="text-red-600 text-xs mt-2">{importError}</p>}
-                    {importNote && <p className="text-green-700 text-xs mt-2">{importNote}</p>}
-                </div>
-
-                <div className="relative max-w-lg">
-                    <div className="flex items-center border-2 border-slate-300 hover:border-slate-400 focus-within:border-slate-900 rounded-full px-5 py-4 shadow-sm transition bg-white">
-                        <svg className="w-5 h-5 text-slate-400 mr-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z" />
-                        </svg>
-                        <input
-                            type="text"
-                            placeholder="Start typing a postcode or street (e.g. DG6 4JS, Millburn Street)"
-                            value={addressQuery}
-                            onChange={handleAddressChange}
-                            className="w-full outline-none text-slate-800 placeholder-slate-400 text-base bg-transparent"
-                        />
-                        {addressLoading && <div className="text-xs text-slate-400 animate-pulse ml-2">Searching...</div>}
-                    </div>
-
-                    {addressError && <p className="text-red-600 text-xs mt-2 ml-2">{addressError}</p>}
-
-                    {suggestions.length > 0 && (
-                        <ul className="absolute left-0 right-0 mt-2 bg-white border border-slate-200 rounded-2xl shadow-xl overflow-hidden z-30 max-h-60 overflow-y-auto">
-                            {suggestions.map((item) => (
-                                <li
-                                    key={item.id}
-                                    onClick={() => handleSelectSuggestion(item)}
-                                    className="px-5 py-3 hover:bg-slate-100 cursor-pointer text-slate-700 text-sm flex items-center space-x-3 border-b last:border-none"
-                                >
-                                    <svg className="w-4 h-4 text-slate-400 flex-shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M17.657 16.657L13.414 20.9a1.998 1.998 0 01-2.827 0l-4.244-4.243a8 8 0 1111.314 0z" />
-                                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M15 11a3 3 0 11-6 0 3 3 0 016 0z" />
-                                    </svg>
-                                    <span className="truncate">{item.address}</span>
-                                </li>
-                            ))}
-                        </ul>
-                    )}
-                </div>
-
-                <div 
-                    onClick={() => setShowListingForm(true)}
-                    className="flex items-center justify-between p-4 border rounded-2xl shadow-sm hover:shadow-md transition cursor-pointer bg-white group max-w-lg mt-6"
-                >
-                    <div className="flex items-center space-x-4">
-                        <div className="p-3 bg-slate-100 rounded-xl group-hover:bg-emerald-50 transition">
-                            <HomeIcon className="w-6 h-6 text-slate-700 group-hover:text-emerald-700" />
-                        </div>
-                        <span className="font-semibold text-base text-slate-800">Or skip to manual listing form</span>
-                    </div>
-                    <ChevronRightIcon className="w-5 h-5 text-slate-400 group-hover:text-slate-800" />
-                </div>
-            </div>
-
-            <div className="relative w-full h-[480px] rounded-3xl overflow-hidden shadow-2xl">
-                <img 
-                    src="/images/garden.avif" 
-                    alt="Property Garden with Hot Tub" 
-                    className="w-full h-full object-cover"
-                />
-            </div>
-
-            {isModalOpen && (
-                <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 px-4">
-                    <div className="bg-white rounded-3xl max-w-xl w-full p-6 relative shadow-2xl max-h-[90vh] overflow-y-auto">
-                        <div className="flex items-center justify-between pb-4 border-b mb-6">
-                            <button 
-                                onClick={() => setIsModalOpen(false)}
-                                className="text-slate-500 hover:text-black text-xl font-bold"
-                            >
-                                &larr;
-                            </button>
-                            <h2 className="text-lg font-bold text-slate-900">Confirm your address</h2>
-                            <button 
-                                onClick={() => setIsModalOpen(false)}
-                                className="text-slate-400 hover:text-slate-600 font-bold text-xl"
-                            >
-                                &times;
-                            </button>
-                        </div>
-
-                        {/* Every box is labelled. They used to be identified by
-                            placeholder alone, which vanishes the moment a box has
-                            anything in it — so a wrongly-filled box could only be
-                            identified by emptying it. */}
-                        <div className="space-y-4">
-                            <div>
-                                <label htmlFor="addr-country" className="text-xs text-slate-500 font-semibold uppercase">Country / region</label>
-                                <input
-                                    id="addr-country"
-                                    type="text"
-                                    placeholder="United Kingdom"
-                                    value={country}
-                                    onChange={(e) => setCountry(e.target.value)}
-                                    className="w-full p-3 border rounded-xl text-sm text-slate-800 placeholder-slate-400 mt-1 bg-white font-medium"
-                                />
-                            </div>
-                            <div>
-                                <label htmlFor="addr-flat" className="text-xs text-slate-500 font-semibold uppercase">Flat, floor or building</label>
-                                <input
-                                    id="addr-flat"
-                                    type="text"
-                                    placeholder="If applicable"
-                                    value={flat}
-                                    onChange={(e) => setFlat(e.target.value)}
-                                    className="w-full p-3 border rounded-xl text-sm text-slate-800 placeholder-slate-400 mt-1"
-                                />
-                            </div>
-                            <div>
-                                <label htmlFor="addr-property-name" className="text-xs text-slate-500 font-semibold uppercase">Property name</label>
-                                <input
-                                    id="addr-property-name"
-                                    type="text"
-                                    placeholder="If applicable"
-                                    value={propertyName}
-                                    onChange={(e) => setPropertyName(e.target.value)}
-                                    className="w-full p-3 border rounded-xl text-sm text-slate-800 placeholder-slate-400 mt-1"
-                                />
-                            </div>
-                            <div>
-                                <label htmlFor="addr-street" className="text-xs text-slate-500 font-semibold uppercase">Street address</label>
-                                <input
-                                    id="addr-street"
-                                    type="text"
-                                    placeholder="e.g. 18 Dovecroft"
-                                    value={street}
-                                    onChange={(e) => setStreet(e.target.value)}
-                                    className="w-full p-3 border rounded-xl text-sm text-slate-800 placeholder-slate-400 mt-1 font-medium"
-                                />
-                            </div>
-                            <div>
-                                <label htmlFor="addr-city" className="text-xs text-slate-500 font-semibold uppercase">Town / city</label>
-                                <input
-                                    id="addr-city"
-                                    type="text"
-                                    placeholder="e.g. Kirkcudbright"
-                                    value={city}
-                                    onChange={(e) => setCity(e.target.value)}
-                                    className="w-full p-3 border rounded-xl text-sm text-slate-800 placeholder-slate-400 mt-1 font-medium"
-                                />
-                            </div>
-                            <div>
-                                <label htmlFor="addr-region" className="text-xs text-slate-500 font-semibold uppercase">Region</label>
-                                <input
-                                    id="addr-region"
-                                    type="text"
-                                    placeholder="e.g. Dumfries and Galloway"
-                                    value={state}
-                                    onChange={(e) => setState(e.target.value)}
-                                    className="w-full p-3 border rounded-xl text-sm text-slate-800 placeholder-slate-400 mt-1"
-                                />
-                            </div>
-                            <div>
-                                <label htmlFor="addr-postcode" className="text-xs text-slate-500 font-semibold uppercase">Postcode</label>
-                                <input
-                                    id="addr-postcode"
-                                    type="text"
-                                    placeholder="e.g. DG6 4JS"
-                                    value={postcode}
-                                    onChange={(e) => setPostcode(e.target.value)}
-                                    className="w-full p-3 border rounded-xl text-sm text-slate-800 placeholder-slate-400 mt-1 font-medium"
-                                />
-                            </div>
-                        </div>
-
-                        <p className="text-xs text-slate-500 mt-4">
-                            Guests only ever see <span className="font-medium text-slate-700">{buildLocation(city, state) || 'your town and region'}</span>.
-                            The street address is never shown publicly.
-                        </p>
-
-                        <div className="mt-8 pt-4 border-t flex justify-end">
-                            <button
-                                onClick={() => {
-                                    setIsModalOpen(false);
-                                    setShowListingForm(true);
-                                }}
-                                className="w-full py-4 bg-slate-900 hover:bg-black text-white font-bold rounded-xl transition"
-                            >
-                                Next
-                            </button>
-                        </div>
-                    </div>
-                </div>
-            )}
-        </main>
-    );
+    // Unreachable for a signed-in host: the wizard above always renders. Kept
+    // as a typed fallback so every code path returns.
+    return null;
 }

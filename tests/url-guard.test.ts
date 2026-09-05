@@ -309,13 +309,10 @@ test('the image route guards, verifies and bounds what it fetches', () => {
     assert.match(code, /MAX_BYTES/, 'it must bound the size it will proxy');
 });
 
-test('the client no longer swallows a failed cover photo', () => {
-    const fs = require('fs');
-    const path = require('path');
-    const body = fs.readFileSync(
-        path.resolve(__dirname, '..', '..', 'app/addhome/page.tsx'),
-        'utf8'
-    );
-    assert.match(body, /photoProblem/,
-        'a photo that did not arrive has to be said out loud — an empty slot looks like an empty slot');
-});
+// There used to be a test here asserting app/addhome/page.tsx says a failed
+// cover-photo fetch out loud (the `photoProblem` handling). The import-from-a-
+// listing-link feature was removed from the /addhome flow along with its
+// landing screen, so the client no longer fetches a cover photo at all and
+// there is nothing left to swallow. The server routes it used
+// (/api/import-listing and .../image) still exist and are still guarded by the
+// tests above; only the client caller is gone.
