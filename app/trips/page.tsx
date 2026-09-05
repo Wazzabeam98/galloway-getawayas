@@ -313,6 +313,9 @@ export default function TripsPage() {
         const payRefunded = Number(b.amount_refunded || 0);
         const payRemaining = Number(b.balance_amount || 0);
         const breakdownOpen = !!openBreakdown[b.id];
+        // A deposit whose balance date has passed — it's collected automatically,
+        // so it reads as "overdue / taken automatically", never a future "due".
+        const balanceOverdue = !!b.balance_due_date && String(b.balance_due_date) < todayIso;
 
         // The promoted experiences entry (overnight proposal). A compact banner
         // that leads to the marketplace for this stay; placed high by ?exp=.
@@ -438,7 +441,18 @@ export default function TripsPage() {
                                 <div className="mt-1 font-mono text-sm tracking-wide text-slate-900">{confirmationNumber(b.id)}</div>
                             </div>
                         )}
-                        {!b.sharedWithMe && (
+                        {!b.sharedWithMe && b.status === 'cancelled' ? (
+                            // A cancelled booking is not money owed — say what
+                            // happened, not "Total £X" that reads as a bill.
+                            <div>
+                                <div className="text-[11px] font-semibold uppercase tracking-wide text-slate-500">Cancelled</div>
+                                <div className="mt-1 text-sm font-medium text-slate-900">
+                                    {payRefunded > 0
+                                        ? '£' + payRefunded.toFixed(2) + ' refunded'
+                                        : payPaid > 0 ? 'No refund due' : 'Nothing was paid'}
+                                </div>
+                            </div>
+                        ) : !b.sharedWithMe && (
                             <div>
                                 <div className="text-[11px] font-semibold uppercase tracking-wide text-slate-500">Total</div>
                                 <div className="mt-1 text-sm font-medium text-slate-900">£{b.total_price}</div>
@@ -485,7 +499,7 @@ export default function TripsPage() {
                                 )}
                                 {payRemaining > 0 && (
                                     <div className="flex items-baseline justify-between font-medium text-amber-800">
-                                        <span>Still to pay{b.balance_due_date ? ' · due ' + b.balance_due_date : ''}</span>
+                                        <span>Still to pay{b.balance_due_date ? (balanceOverdue ? ' · overdue' : ' · due ' + b.balance_due_date) : ''}</span>
                                         <span className="tabular-nums">£{payRemaining.toFixed(2)}</span>
                                     </div>
                                 )}
@@ -706,7 +720,9 @@ export default function TripsPage() {
                         </div>
                         <p className="text-xs text-amber-800 mt-0.5">
                             {b.balance_due_date
-                                ? 'This is taken from your card automatically on ' + b.balance_due_date + '. You can pay it sooner if you prefer.'
+                                ? (balanceOverdue
+                                    ? 'This was due on ' + b.balance_due_date + ' and is taken from your card automatically — pay now to settle it.'
+                                    : 'This is taken from your card automatically on ' + b.balance_due_date + '. You can pay it sooner if you prefer.')
                                 : 'You can settle this at any time.'}
                         </p>
                         <button

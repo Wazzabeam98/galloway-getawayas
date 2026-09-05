@@ -2245,6 +2245,13 @@ export interface ProviderDraft {
     pricing_choice?: string | null;
     billable_hourly_rate?: any;
     covered_bands?: string[] | null;
+
+    // A guest slot provider must set weekly hours, or they finish sign-up
+    // invisible: with no availability nothing generates bookable sessions and
+    // the shop drops them. shape says whether hours even apply; scheduleCount is
+    // how many weekly rows they've added.
+    shape?: string | null;
+    scheduleCount?: number;
 }
 
 export interface Problem {
@@ -2293,6 +2300,16 @@ export function submitProblems(draft: ProviderDraft): Problem[] {
         problems.push({
             field: 'areas',
             message: 'Add at least one area you cover, so we know who to show you to.',
+        });
+    }
+
+    // A guest slot provider with no weekly hours would finish sign-up and then
+    // be invisible — no availability, no sessions, dropped from the shop, with
+    // no error to tell them why. Require at least one row before they can send.
+    if (draft.audience === 'guest' && draft.shape === 'slot' && !(Number(draft.scheduleCount) > 0)) {
+        problems.push({
+            field: 'availability',
+            message: 'Add your weekly hours so guests can book a time — without them your listing can’t be booked.',
         });
     }
 

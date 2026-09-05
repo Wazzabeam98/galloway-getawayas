@@ -846,6 +846,8 @@ function ApplicationForm() {
         pricing_choice: pricingChoice,
         billable_hourly_rate: billableHourlyRate,
         covered_bands: coveredBands,
+        shape,
+        scheduleCount: schedule.length,
     });
 
     // One block of £ boxes for a pricing structure. Nothing computes from
@@ -1219,6 +1221,9 @@ function ApplicationForm() {
         if (!to || to === step) return;
 
         setStep(to);
+        // If the outstanding thing is the weekly hours, open that block so the
+        // provider actually sees it — it's a collapsed section otherwise.
+        if (problems.some((p) => p.field === 'availability')) setOpenGroup('availability');
         scrollPanelToTop();
         showFirstProblem();
 
