@@ -3122,7 +3122,11 @@ function ApplicationForm() {
                 );
             })()}
 
-            <fieldset disabled={locked} className={(locked ? 'opacity-70' : '')
+            {/* min-w-0 defeats the <fieldset> quirk: a fieldset defaults to
+                min-inline-size:min-content and will not shrink to its container,
+                so a wide nowrap child (a truncated row summary) pushed it past
+                the panel on a narrow screen and threw the centred content off. */}
+            <fieldset disabled={locked} className={'min-w-0 ' + (locked ? 'opacity-70' : '')
                 /* On the years opener the fieldset fills the panel below the
                    question so its one section can centre vertically. */
                 + (isGuest && step === 'g_you' ? ' flex-1 flex flex-col' : '')}>
