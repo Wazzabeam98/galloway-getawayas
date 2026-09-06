@@ -37,15 +37,15 @@ export const GUEST_SCREEN_COPY = {
     optionalSuffix: '(optional)',
 
     // Row: your title — one field, no caption, a 0/40 counter.
-    titleRowLabel: 'Your title',
-    titleRowPrompt: 'How you’d describe what you do',
+    titleRowLabel: 'Intro',
+    titleRowPrompt: 'Add your professional title',
     titleModalTitle: 'Add your professional title',
     titlePlaceholder: 'Chef and restaurant owner',
 
     // Row: qualifications. Required for the four safety categories (no
     // suffix, gates Next), optional everywhere else (the suffix shows).
     qualsRowLabel: 'Qualifications',
-    qualsRowPrompt: 'What qualifies you to do this',
+    qualsRowPrompt: 'Add your training and qualifications',
     qualsModalTitle: 'Training and qualifications',
     qualsPlaceholder: 'Trained at Leiths, ten years in restaurant kitchens, Level 3 Food Hygiene. Say what qualifies you — a guest chooses you on this.',
     qualsRequiredNote: 'A guest is putting their safety in your hands, so for this kind of experience we do need it.',
