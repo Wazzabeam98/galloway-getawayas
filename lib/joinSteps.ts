@@ -63,7 +63,7 @@ export type StepKey =
 // naming and describing (g_about), then the Finish wrap-up (checks, contact,
 // account). The set of keys is unchanged — only their order moved.
 const GUEST_STEP_KEYS: StepKey[] = [
-    'g_subtype', 'g_verify',
+    'g_verify', 'g_subtype',
     'g_you', 'g_creds', 'g_area', 'g_photos', 'g_menu', 'g_expect', 'g_about', 'g_checks', 'g_contact',
 ];
 
@@ -92,17 +92,16 @@ export interface Step {
 }
 
 const ALL_STEPS: Step[] = [
+    // The verify-your-email gate is the guest's FIRST screen — before the
+    // category picker, before anything. Picking "Host a guest experience" on
+    // the fork lands them here; nothing comes before the account. Guest-only
+    // and off once a session exists, so a host trade still opens on 'trade' and
+    // a returning applicant skips straight past. See stepApplies / openingStep.
+    { key: 'g_verify', label: 'Account', title: 'Verify your email to carry on' },
     { key: 'trade', label: 'Trade', title: 'What do you do?' },
     // A guest's second screen: the narrower choices under the group they picked
     // (Airbnb's "How would you describe your experience?"). Off for 'other'.
     { key: 'g_subtype', label: 'Type', title: 'How would you describe it?' },
-    // The verify-your-email gate, straight after the category pick. This is
-    // where a guest's account is made — an emailed one-time code, so the rest of
-    // the wizard runs signed in. Off once a session exists (a returning
-    // applicant), and off for host trades. Sits before the rail, like the
-    // pickers: the flow branches on the category, so the rail can't be drawn
-    // until it and this are behind them.
-    { key: 'g_verify', label: 'Account', title: 'Verify your email to carry on' },
     { key: 'business', label: 'Business', title: 'Your business' },
     // The guest experience, one question a screen, in Airbnb's order (see
     // GUEST_STEP_KEYS for the reasoning): About you (years, expertise), then
@@ -168,11 +167,11 @@ export function stepApplies(step: StepKey, trade: string, ctx?: StepContext): bo
             // is alone under its group, so it goes straight to the business step.
             case 'g_subtype':
                 return !!ctx.group && ctx.group !== 'other';
-            // The verify-your-email gate. Every guest passes through it EXCEPT
-            // one who is already signed in — a returning applicant, or anyone
-            // whose session resolved before they reached it. It carries no
-            // category or shape gate: making the account is the same question
-            // whatever they're listing.
+            // The verify-your-email gate — the guest's FIRST screen, before the
+            // category picker. Every guest passes through it EXCEPT one who is
+            // already signed in (a returning applicant). No category or shape
+            // gate, because it runs before either is picked: making the account
+            // is the same question whatever they go on to list.
             case 'g_verify':
                 return !ctx.hasSession;
             // The years opener (g_you) and the expertise screen (g_creds) are
@@ -502,6 +501,10 @@ export interface OpeningState {
     // the guest's version of step one and is not yet answered. When true, open on
     // the picker (the category grid) rather than skipping it as an answered trade.
     guestNeedsCategory?: boolean;
+    // Whether a verified session already exists. A guest with none opens on the
+    // verify gate — the first screen, before the category picker. Nothing comes
+    // before the account.
+    hasSession?: boolean;
 }
 
 export function openingStep(state: OpeningState): StepKey | null {
@@ -513,6 +516,11 @@ export function openingStep(state: OpeningState): StepKey | null {
     if (state.lodged) return 'finish';
 
     if (state.restored) return null;
+
+    // A guest who is not signed in opens on the verify gate — the first screen,
+    // before the category picker. This is ahead of the category check below: the
+    // account comes before anything they might pick.
+    if (audienceForTrade(state.trade) === 'guest' && !state.hasSession) return 'g_verify';
 
     // A guest whose trade is set but whose category is not has still not
     // answered step one — the category grid is their picker. Send them to it.
@@ -532,7 +540,9 @@ export function openingStep(state: OpeningState): StepKey | null {
 export function openingVisited(state: OpeningState): StepKey[] | null {
     const step = openingStep(state);
     if (step === null) return null;
-    if (step === 'trade') return [];
+    // The verify gate and the trade picker are both the first thing a person
+    // sees on their respective flows, so nothing is behind them yet.
+    if (step === 'g_verify' || step === 'trade') return [];
     if (step === 'finish') return stepsFor(state.trade).map((s) => s.key);
     return ['trade'];
 }
