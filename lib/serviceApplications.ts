@@ -42,6 +42,55 @@ export const RESEND_CEILING = 5;
 /** Minimum gap between re-sends of the same application. */
 export const RESEND_COOLDOWN_SECONDS = 60;
 
+// TWO LISTS, ONE FOR THE PAYLOAD AND ONE FOR THE COLUMN WRITE.
+//
+// An application arrives from a stranger, so what it may set is a whitelist, not
+// a blacklist: the platform's own fields (status, owner_id, commission_rate,
+// approved_digest, …) are never on either list.
+//
+// The split matters because the two sinks are different shapes. The application
+// is STORED in service_applications.payload, which is jsonb and holds anything
+// with no migration — so everything the wizard collects goes in. It is later
+// WRITTEN to service_providers columns at /finish, and only real columns may go
+// there. `declarations` is a real column (written at /finish); the six guest
+// content answers are NOT columns yet, so they ride in the jsonb payload only
+// and are materialised when the guest_details column lands.
+//
+// This is the fix for the bug where pick(incoming, PROVIDER_COLUMNS) at intake
+// stripped the content fields and the declarations before anything was stored,
+// discarding what the guest had just filled in.
+
+/** The service_providers columns an application may set — the /finish column write. */
+export const PROVIDER_COLUMNS = [
+    'business_name', 'trade', 'description', 'contact_email', 'contact_phone', 'sms_opt_out',
+    'audience', 'photos', 'logo', 'does_gas', 'does_oil',
+    'callout_fee', 'hourly_rate', 'callout_waived',
+    'pricing_choice', 'billable_hourly_rate', 'covered_bands',
+    'experience_price',
+    'provider_name', 'based_line', 'headshot',
+    'dietary_note',
+    'custom_label', 'shape', 'exclusive_per_date',
+    'lead_time_days', 'slot_length_minutes', 'slot_capacity',
+    // A real jsonb column: the per-category declarations the guest confirmed.
+    'declarations',
+];
+
+/** The guest content answers — no column yet, so jsonb payload only, materialised later. */
+export const GUEST_CONTENT_KEYS = [
+    'years_experience', 'professional_title', 'qualifications',
+    'what_to_expect', 'whats_included', 'what_to_bring',
+];
+
+/** What may be stored in the jsonb application payload: the columns plus the content answers. */
+export const APPLICATION_PAYLOAD_KEYS = [...PROVIDER_COLUMNS, ...GUEST_CONTENT_KEYS];
+
+/** Keep only the named keys from a row (whitelist). */
+export function pickColumns(row: any, columns: string[]): Record<string, any> {
+    const out: Record<string, any> = {};
+    for (const c of columns) if (row && row[c] !== undefined) out[c] = row[c];
+    return out;
+}
+
 export interface ApplicationRow {
     id: string;
     email: string;

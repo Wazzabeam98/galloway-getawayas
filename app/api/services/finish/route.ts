@@ -3,7 +3,7 @@ import { adminClient } from '@/lib/supabaseAdmin';
 import { logError } from '@/lib/logError';
 import { announceSubmission } from '@/lib/serviceSubmittedAlert';
 import { audienceForTrade } from '@/lib/serviceProviders';
-import { hashToken, linkExpired, ApplicationRow } from '@/lib/serviceApplications';
+import { hashToken, linkExpired, ApplicationRow, PROVIDER_COLUMNS, pickColumns } from '@/lib/serviceApplications';
 
 export const dynamic = 'force-dynamic';
 
@@ -115,7 +115,12 @@ export async function POST(req: Request) {
         const { data: provider, error: rowError } = await admin
             .from('service_providers')
             .insert({
-                ...incoming,
+                // Narrowed to real columns: the stored payload also carries the
+                // guest content answers (years, qualifications, what-to-expect…),
+                // which have no column yet and must not reach the insert. They
+                // stay in service_applications.payload until the guest_details
+                // column lands, then materialise from there.
+                ...pickColumns(incoming, PROVIDER_COLUMNS),
                 owner_id: owner,
                 audience: audienceForTrade(row.trade),
                 trade: row.trade,
