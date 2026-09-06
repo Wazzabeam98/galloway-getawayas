@@ -222,11 +222,15 @@ function HubRow({ filled, label, suffix, prompt, summary, onOpen }: {
     );
 }
 
-// The sub-flow modal a hub row opens: quiet the way Airbnb's is — centred, a
-// title, an X, the one thing to fill in, and a Save that returns to the hub.
-// The body (borderless input, a counter where there's a limit) is passed in, so
-// this shell is reusable across the sub-flows. Fields edit live component state,
-// so Save and the X both just close; the draft is already saving as they type.
+// The sub-flow modal a hub row opens, styled to match Airbnb's: a large centred
+// card, a big heading, then a single borderless field floating in a lot of white
+// space (the field is passed in as children — no box, no fill, just placeholder
+// and cursor, with a centred counter where there's a limit), and Save bottom
+// right, disabled until something is typed. The X closes without saving.
+//
+// One field per modal is what keeps it this clean, so each sub-flow holds just
+// one thing. Fields edit live component state, so Save and the X both just
+// close; the draft is already saving as they type.
 function SubFlowModal({ open, title, onClose, saveLabel, saveDisabled, children }: {
     open: boolean;
     title: string;
@@ -237,21 +241,23 @@ function SubFlowModal({ open, title, onClose, saveLabel, saveDisabled, children 
 }) {
     if (!open) return null;
     return (
-        <div className="fixed inset-0 z-[70] flex items-end justify-center bg-slate-900/30 p-0 sm:items-center sm:p-4"
+        <div className="fixed inset-0 z-[70] flex items-end justify-center bg-slate-900/40 p-0 sm:items-center sm:p-6"
             onClick={onClose}>
-            <div className="w-full rounded-t-3xl bg-white p-6 shadow-xl sm:max-w-lg sm:rounded-3xl sm:p-8"
+            <div className="flex max-h-[92vh] w-full flex-col rounded-t-3xl bg-white shadow-xl sm:max-w-2xl sm:rounded-3xl"
                 onClick={(e) => e.stopPropagation()}>
-                <div className="relative mb-6 flex items-center justify-center">
-                    <h2 className="px-8 text-center text-lg font-bold text-slate-900 [text-wrap:balance]">{title}</h2>
+                <div className="flex justify-end px-5 pt-5 sm:px-8 sm:pt-8">
                     <button type="button" onClick={onClose} aria-label="Close"
-                        className="absolute right-0 flex h-8 w-8 items-center justify-center rounded-full text-slate-500 hover:bg-slate-100">
-                        <X className="h-4 w-4" />
+                        className="flex h-9 w-9 items-center justify-center rounded-full text-slate-500 hover:bg-slate-100">
+                        <X className="h-5 w-5" />
                     </button>
                 </div>
-                {children}
-                <div className="mt-8 flex justify-end">
+                <div className="flex-1 overflow-y-auto px-6 pb-6 sm:px-14">
+                    <h2 className="text-center text-2xl font-extrabold tracking-tight text-slate-900 [text-wrap:balance] sm:text-3xl">{title}</h2>
+                    <div className="py-12 sm:py-20">{children}</div>
+                </div>
+                <div className="flex justify-end border-t border-slate-100 px-6 py-4 sm:px-8">
                     <button type="button" onClick={onClose} disabled={saveDisabled}
-                        className={'rounded-full px-6 py-2.5 text-sm font-semibold transition '
+                        className={'rounded-full px-7 py-2.5 text-sm font-semibold transition '
                             + (saveDisabled
                                 ? 'cursor-not-allowed bg-slate-200 text-slate-400'
                                 : 'bg-emerald-700 text-white hover:bg-emerald-800')}>
@@ -417,7 +423,7 @@ function ApplicationForm() {
     const [whatToBring, setWhatToBring] = useState('');
     const [uploadingPhotos, setUploadingPhotos] = useState(false);
     // Which expertise-hub sub-flow modal is open, if any.
-    const [expertiseModal, setExpertiseModal] = useState<'intro' | 'quals' | 'recognition' | null>(null);
+    const [expertiseModal, setExpertiseModal] = useState<'title' | 'line' | 'quals' | 'endorsements' | null>(null);
     // The photo circle at the top of the hub opens the file picker directly (via
     // this ref), and once a photo is set it offers replace/remove through a small
     // menu rather than reopening the Intro form.
@@ -3271,20 +3277,25 @@ function ApplicationForm() {
                     hub itself stays clean. Built on the reusable HubRow /
                     SubFlowModal primitives, which later screens will want too. */}
                 {onStep('g_creds') && isGuest && (() => {
-                    const introFilled = !!(professionalTitle.trim() || basedLine.trim() || headshot);
-                    const introSummary = professionalTitle.trim() || basedLine.trim() || (headshot ? 'Photo added' : '');
+                    const titleFilled = professionalTitle.trim() !== '';
+                    const lineFilled = basedLine.trim() !== '';
                     const qualsFilled = qualifications.trim() !== '';
                     const recognitionFilled = recognition.trim() !== '';
-                    const modalInput = 'w-full rounded-xl border-0 bg-slate-50 px-4 py-3 text-slate-900 placeholder:text-slate-400 focus:outline-none focus:ring-2 focus:ring-emerald-600';
+                    // Borderless fields for the sub-flow modals: no box, no fill,
+                    // centred, in a lot of white space. Counter/note centred under.
+                    const bigInput = 'w-full bg-transparent text-center text-2xl text-slate-900 placeholder:text-slate-300 focus:outline-none';
+                    const bigArea = 'w-full resize-none bg-transparent text-center text-xl leading-relaxed text-slate-900 placeholder:text-slate-300 focus:outline-none';
+                    const counter = 'mt-5 text-center text-sm text-slate-400';
+                    const modalNote = 'mt-5 text-center text-sm text-slate-500';
                     return (
                     <section className="mb-8 md:max-w-xl md:mx-auto">
-                        {/* The host photo, centred. A neutral circle before a
+                        {/* The host photo, centred — the only place it lives now,
+                            so it has no row of its own. A neutral circle before a
                             photo, the headshot after. Tapping it opens the file
                             picker directly the first time; once a photo is set,
                             tapping offers replace/remove. A small badge overlaps
                             the bottom-right — a plus before, a pencil after — so
-                            it reads as tappable. The same headshot state feeds the
-                            photo field in the Intro modal, so the two stay in sync. */}
+                            it reads as tappable. */}
                         <div className="flex flex-col items-center text-center">
                             <div className="relative h-24 w-24">
                                 <button type="button" aria-label={headshot ? 'Change your photo' : 'Add a photo of you'}
@@ -3326,17 +3337,27 @@ function ApplicationForm() {
                             </p>
                         </div>
 
-                        {/* Three rows, borderless with air between them, the way
-                            Airbnb's read: Intro, Qualifications, Recognition. Only
-                            Qualifications (and only for the required categories)
-                            gates Next; Intro and Recognition never do. */}
+                        {/* Four borderless rows with air between them: Your title,
+                            A line about you, Qualifications, Endorsements. Each opens
+                            its own single-field modal. Only Qualifications (and only
+                            for the required categories) gates Next. The photo lives
+                            on the circle above, so it has no row. */}
                         <div className="mt-10 space-y-6">
                             <HubRow
-                                filled={introFilled}
-                                label={GUEST_SCREEN_COPY.introRowLabel}
-                                prompt={GUEST_SCREEN_COPY.introRowPrompt}
-                                summary={introSummary}
-                                onOpen={() => setExpertiseModal('intro')}
+                                filled={titleFilled}
+                                label={GUEST_SCREEN_COPY.titleRowLabel}
+                                suffix={GUEST_SCREEN_COPY.optionalSuffix}
+                                prompt={GUEST_SCREEN_COPY.titleRowPrompt}
+                                summary={professionalTitle.trim()}
+                                onOpen={() => setExpertiseModal('title')}
+                            />
+                            <HubRow
+                                filled={lineFilled}
+                                label={GUEST_SCREEN_COPY.lineRowLabel}
+                                suffix={GUEST_SCREEN_COPY.optionalSuffix}
+                                prompt={GUEST_SCREEN_COPY.lineRowPrompt}
+                                summary={basedLine.trim()}
+                                onOpen={() => setExpertiseModal('line')}
                             />
                             <HubRow
                                 filled={qualsFilled}
@@ -3352,98 +3373,82 @@ function ApplicationForm() {
                                 suffix={GUEST_SCREEN_COPY.optionalSuffix}
                                 prompt={GUEST_SCREEN_COPY.recognitionRowPrompt}
                                 summary={recognition.trim()}
-                                onOpen={() => setExpertiseModal('recognition')}
+                                onOpen={() => setExpertiseModal('endorsements')}
                             />
                         </div>
 
-                        {/* ---- Intro sub-flow: title, short line, photo ---- */}
+                        {/* ---- Your title ---- */}
                         <SubFlowModal
-                            open={expertiseModal === 'intro'}
-                            title={GUEST_SCREEN_COPY.introModalTitle}
+                            open={expertiseModal === 'title'}
+                            title={GUEST_SCREEN_COPY.titleModalTitle}
                             onClose={() => setExpertiseModal(null)}
                             saveLabel={GUEST_SCREEN_COPY.save}
+                            saveDisabled={!professionalTitle.trim()}
                         >
-                            <div className="space-y-5">
-                                <div>
-                                    <div className="mb-2 flex items-baseline justify-between">
-                                        <label className="text-xs font-medium text-slate-500">{GUEST_SCREEN_COPY.titleLabel}</label>
-                                        <span className="text-xs text-slate-400">{professionalTitle.length}/40</span>
-                                    </div>
-                                    <input
-                                        type="text"
-                                        value={professionalTitle}
-                                        onChange={(e) => setProfessionalTitle(e.target.value.slice(0, 40))}
-                                        placeholder={GUEST_SCREEN_COPY.titlePlaceholder}
-                                        className={modalInput}
-                                    />
-                                </div>
-                                <div>
-                                    <label className="mb-2 block text-xs font-medium text-slate-500">{GUEST_SCREEN_COPY.aboutLineLabel}</label>
-                                    <input
-                                        type="text"
-                                        value={basedLine}
-                                        onChange={(e) => setBasedLine(e.target.value)}
-                                        placeholder={GUEST_SCREEN_COPY.aboutLinePlaceholder}
-                                        className={modalInput}
-                                    />
-                                </div>
-                                <div>
-                                    <label className="mb-2 block text-xs font-medium text-slate-500">{GUEST_SCREEN_COPY.photoLabel}</label>
-                                    <div className="flex items-center gap-3">
-                                        {headshot && (
-                                            <img src={getImageUrl(headshot)} alt="" className="h-16 w-16 rounded-full object-cover" />
-                                        )}
-                                        <label className="inline-flex cursor-pointer items-center gap-2 rounded-xl border-2 border-dashed border-slate-300 px-4 py-2.5 text-sm text-slate-600 hover:border-slate-400">
-                                            <Plus className="h-4 w-4" />
-                                            {uploadingHeadshot ? 'Uploading…' : headshot ? 'Replace' : 'Add a photo'}
-                                            <input type="file" accept="image/png, image/jpeg" onChange={uploadHeadshot}
-                                                className="hidden" disabled={uploadingHeadshot} />
-                                        </label>
-                                        {headshot && (
-                                            <button type="button" onClick={() => setHeadshot(null)}
-                                                className="inline-flex items-center gap-1.5 rounded-xl border border-slate-300 px-4 py-2.5 text-sm text-slate-600 hover:border-slate-500">
-                                                <X className="h-3.5 w-3.5" /> Remove
-                                            </button>
-                                        )}
-                                    </div>
-                                </div>
-                            </div>
+                            <input
+                                type="text"
+                                value={professionalTitle}
+                                onChange={(e) => setProfessionalTitle(e.target.value.slice(0, 40))}
+                                placeholder={GUEST_SCREEN_COPY.titlePlaceholder}
+                                className={bigInput}
+                            />
+                            <p className={counter}>{professionalTitle.length}/40</p>
                         </SubFlowModal>
 
-                        {/* ---- Training and qualifications sub-flow ---- */}
+                        {/* ---- A line about you ---- */}
+                        <SubFlowModal
+                            open={expertiseModal === 'line'}
+                            title={GUEST_SCREEN_COPY.lineModalTitle}
+                            onClose={() => setExpertiseModal(null)}
+                            saveLabel={GUEST_SCREEN_COPY.save}
+                            saveDisabled={!basedLine.trim()}
+                        >
+                            <input
+                                type="text"
+                                value={basedLine}
+                                onChange={(e) => setBasedLine(e.target.value.slice(0, 80))}
+                                placeholder={GUEST_SCREEN_COPY.aboutLinePlaceholder}
+                                className={bigInput}
+                            />
+                            <p className={counter}>{basedLine.length}/80</p>
+                        </SubFlowModal>
+
+                        {/* ---- Qualifications (keeps its note for required cats) ---- */}
                         <SubFlowModal
                             open={expertiseModal === 'quals'}
                             title={GUEST_SCREEN_COPY.qualsModalTitle}
                             onClose={() => setExpertiseModal(null)}
                             saveLabel={GUEST_SCREEN_COPY.save}
+                            saveDisabled={!qualifications.trim()}
                         >
                             <textarea
                                 value={qualifications}
                                 onChange={(e) => setQualifications(e.target.value)}
-                                rows={5}
+                                rows={4}
                                 placeholder={GUEST_SCREEN_COPY.qualsPlaceholder}
-                                className="w-full rounded-xl border-0 bg-slate-50 px-4 py-3 text-slate-900 placeholder:text-slate-400 focus:outline-none focus:ring-2 focus:ring-emerald-600"
+                                className={bigArea}
                             />
-                            <p className="mt-3 text-sm text-slate-500">
+                            <p className={modalNote}>
                                 {catQualsRequired ? GUEST_SCREEN_COPY.qualsRequiredNote : GUEST_SCREEN_COPY.qualsOptionalNote}
                             </p>
                         </SubFlowModal>
 
-                        {/* ---- Recognition sub-flow: always optional ---- */}
+                        {/* ---- Endorsements: always optional ---- */}
                         <SubFlowModal
-                            open={expertiseModal === 'recognition'}
+                            open={expertiseModal === 'endorsements'}
                             title={GUEST_SCREEN_COPY.recognitionModalTitle}
                             onClose={() => setExpertiseModal(null)}
                             saveLabel={GUEST_SCREEN_COPY.save}
+                            saveDisabled={!recognition.trim()}
                         >
                             <textarea
                                 value={recognition}
                                 onChange={(e) => setRecognition(e.target.value)}
                                 rows={4}
                                 placeholder={GUEST_SCREEN_COPY.recognitionPlaceholder}
-                                className="w-full rounded-xl border-0 bg-slate-50 px-4 py-3 text-slate-900 placeholder:text-slate-400 focus:outline-none focus:ring-2 focus:ring-emerald-600"
+                                className={bigArea}
                             />
-                            <p className="mt-3 text-sm text-slate-500">{GUEST_SCREEN_COPY.recognitionNote}</p>
+                            <p className={modalNote}>{GUEST_SCREEN_COPY.recognitionNote}</p>
                         </SubFlowModal>
                     </section>
                     );
