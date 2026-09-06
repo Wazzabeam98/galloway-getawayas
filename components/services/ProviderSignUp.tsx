@@ -423,7 +423,7 @@ function ApplicationForm() {
     const [whatToBring, setWhatToBring] = useState('');
     const [uploadingPhotos, setUploadingPhotos] = useState(false);
     // Which expertise-hub sub-flow modal is open, if any.
-    const [expertiseModal, setExpertiseModal] = useState<'title' | 'line' | 'quals' | 'endorsements' | null>(null);
+    const [expertiseModal, setExpertiseModal] = useState<'title' | 'quals' | 'endorsements' | null>(null);
     // The photo circle at the top of the hub opens the file picker directly (via
     // this ref), and once a photo is set it offers replace/remove through a small
     // menu rather than reopening the Intro form.
@@ -3281,8 +3281,11 @@ function ApplicationForm() {
                     hub itself stays clean. Built on the reusable HubRow /
                     SubFlowModal primitives, which later screens will want too. */}
                 {onStep('g_creds') && isGuest && (() => {
-                    const titleFilled = professionalTitle.trim() !== '';
-                    const lineFilled = basedLine.trim() !== '';
+                    // The title row now covers both the title and the line about
+                    // you (folded back into one modal). Filled if either is set;
+                    // the summary shows the title, falling back to the line.
+                    const titleFilled = professionalTitle.trim() !== '' || basedLine.trim() !== '';
+                    const titleSummary = professionalTitle.trim() || basedLine.trim();
                     const qualsFilled = qualifications.trim() !== '';
                     const recognitionFilled = recognition.trim() !== '';
                     // Borderless fields for the sub-flow modals: no box, no fill,
@@ -3341,27 +3344,19 @@ function ApplicationForm() {
                             </p>
                         </div>
 
-                        {/* Four borderless rows with air between them: Your title,
-                            A line about you, Qualifications, Endorsements. Each opens
-                            its own single-field modal. Only Qualifications (and only
-                            for the required categories) gates Next. The photo lives
-                            on the circle above, so it has no row. */}
+                        {/* Three borderless rows with air between them: Your title
+                            (which also holds a line about you), Qualifications,
+                            Endorsements. Each opens its own modal. Only
+                            Qualifications (and only for the required categories)
+                            gates Next. The photo lives on the circle above. */}
                         <div className="mt-10 space-y-6">
                             <HubRow
                                 filled={titleFilled}
                                 label={GUEST_SCREEN_COPY.titleRowLabel}
                                 suffix={GUEST_SCREEN_COPY.optionalSuffix}
                                 prompt={GUEST_SCREEN_COPY.titleRowPrompt}
-                                summary={professionalTitle.trim()}
+                                summary={titleSummary}
                                 onOpen={() => setExpertiseModal('title')}
-                            />
-                            <HubRow
-                                filled={lineFilled}
-                                label={GUEST_SCREEN_COPY.lineRowLabel}
-                                suffix={GUEST_SCREEN_COPY.optionalSuffix}
-                                prompt={GUEST_SCREEN_COPY.lineRowPrompt}
-                                summary={basedLine.trim()}
-                                onOpen={() => setExpertiseModal('line')}
                             />
                             <HubRow
                                 filled={qualsFilled}
@@ -3381,40 +3376,45 @@ function ApplicationForm() {
                             />
                         </div>
 
-                        {/* ---- Your title ---- */}
+                        {/* ---- Your title + a line about you (two fields, one
+                            modal). Each borderless with its own quiet label and
+                            counter, generous space between them. Save is enabled
+                            once at least one has something in it. ---- */}
                         <SubFlowModal
                             open={expertiseModal === 'title'}
                             title={GUEST_SCREEN_COPY.titleModalTitle}
                             onClose={() => setExpertiseModal(null)}
                             saveLabel={GUEST_SCREEN_COPY.save}
-                            saveDisabled={!professionalTitle.trim()}
+                            saveDisabled={!professionalTitle.trim() && !basedLine.trim()}
                         >
-                            <input
-                                type="text"
-                                value={professionalTitle}
-                                onChange={(e) => setProfessionalTitle(e.target.value.slice(0, 40))}
-                                placeholder={GUEST_SCREEN_COPY.titlePlaceholder}
-                                className={bigInput}
-                            />
-                            <p className={counter}>{professionalTitle.length}/40</p>
-                        </SubFlowModal>
-
-                        {/* ---- A line about you ---- */}
-                        <SubFlowModal
-                            open={expertiseModal === 'line'}
-                            title={GUEST_SCREEN_COPY.lineModalTitle}
-                            onClose={() => setExpertiseModal(null)}
-                            saveLabel={GUEST_SCREEN_COPY.save}
-                            saveDisabled={!basedLine.trim()}
-                        >
-                            <input
-                                type="text"
-                                value={basedLine}
-                                onChange={(e) => setBasedLine(e.target.value.slice(0, 80))}
-                                placeholder={GUEST_SCREEN_COPY.aboutLinePlaceholder}
-                                className={bigInput}
-                            />
-                            <p className={counter}>{basedLine.length}/80</p>
+                            <div className="space-y-12">
+                                <div>
+                                    <label className="mb-3 block text-center text-xs font-medium text-slate-500">
+                                        {GUEST_SCREEN_COPY.titleFieldLabel}
+                                    </label>
+                                    <input
+                                        type="text"
+                                        value={professionalTitle}
+                                        onChange={(e) => setProfessionalTitle(e.target.value.slice(0, 40))}
+                                        placeholder={GUEST_SCREEN_COPY.titlePlaceholder}
+                                        className={bigInput}
+                                    />
+                                    <p className={counter}>{professionalTitle.length}/40</p>
+                                </div>
+                                <div>
+                                    <label className="mb-3 block text-center text-xs font-medium text-slate-500">
+                                        {GUEST_SCREEN_COPY.lineFieldLabel}
+                                    </label>
+                                    <input
+                                        type="text"
+                                        value={basedLine}
+                                        onChange={(e) => setBasedLine(e.target.value.slice(0, 80))}
+                                        placeholder={GUEST_SCREEN_COPY.aboutLinePlaceholder}
+                                        className={bigInput}
+                                    />
+                                    <p className={counter}>{basedLine.length}/80</p>
+                                </div>
+                            </div>
                         </SubFlowModal>
 
                         {/* ---- Qualifications (keeps its note for required cats) ---- */}
