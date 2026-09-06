@@ -537,12 +537,14 @@ test('expertise is asked where the person is the draw, but never for a product o
         assert.equal(stepApplies('g_creds', 'guest', ctx), true, JSON.stringify(ctx) + ' is asked for expertise');
         assert.equal(stepApplies('g_photos', 'guest', ctx), true, JSON.stringify(ctx) + ' has a photos step');
     }
-    // Skipped: the two made-to-order products AND the sauna — nobody books a hot
-    // barrel for the owner's years. All keep a photos step, which sells them.
+    // Skipped: the made-to-order products, the sauna, and the crafts — nobody
+    // books a hot barrel or a pottery class for the owner's years. All keep a
+    // photos step, which sells them.
     for (const ctx of [
         { group: 'food', category: 'baking', shape: 'made_to_order' },
         { group: 'food', category: 'hampers', shape: 'made_to_order' },
         { group: 'wellness', category: 'sauna', shape: 'slot' },
+        { group: 'crafts', category: 'pottery', shape: 'slot' },
     ]) {
         assert.equal(stepApplies('g_you', 'guest', ctx), false, JSON.stringify(ctx) + ' skips years');
         assert.equal(stepApplies('g_creds', 'guest', ctx), false, JSON.stringify(ctx) + ' skips expertise');
@@ -595,17 +597,19 @@ test('years and qualifications are required only where physical safety is at sta
     assert.equal(guestQualificationsRequired('chef'), false, 'a chef is not forced to hold a qualification');
     assert.equal(guestAsksExpertise('chef'), true);
 
-    // The optional middle — asked, never forced.
-    for (const c of ['tastings', 'pottery', 'painting', 'workshops', 'other']) {
+    // The optional middle — asked, never forced. Tastings stays here: the host's
+    // knowledge IS the product at a tasting, so we ask (optionally). 'other' is
+    // the catch-all.
+    for (const c of ['tastings', 'other']) {
         assert.equal(guestYearsRequired(c), false, c + ' does not force years');
         assert.equal(guestQualificationsRequired(c), false, c + ' does not force qualifications');
         assert.equal(guestAsksExpertise(c), true, c + ' is still asked, optionally');
     }
 
-    // Skipped entirely: the products, and the sauna — the years and expertise
-    // screens never appear, because the answer changes neither the booking nor
-    // the approval.
-    for (const c of ['baking', 'hampers', 'sauna']) {
+    // Skipped entirely: the products, the sauna, and the crafts — the years and
+    // expertise screens never appear, because the answer changes neither the
+    // booking nor the approval. A guest books a pot from the photo of the pot.
+    for (const c of ['baking', 'hampers', 'sauna', 'pottery', 'painting', 'workshops']) {
         assert.equal(guestAsksExpertise(c), false, c + ' skips the years and expertise screens');
         assert.equal(guestYearsRequired(c), false);
     }
