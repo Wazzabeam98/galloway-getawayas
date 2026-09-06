@@ -78,6 +78,39 @@ export const GUEST_SCREEN_COPY = {
     // rather than an "optional, skip it". Placeholder wording, rewritten at the end.
     expertiseFootnote: 'What you write here is what a guest reads when they’re choosing you.',
 
+    // The price screen (g_menu) — rebuilt as a hub: a centred question, then each
+    // priced thing as a borderless row (name + price + thumbnail), an add row at
+    // the bottom, and a per-item sub-flow of one question a screen. The payout is
+    // a quiet "You keep £X" line that expands to the maths. Copy only — the
+    // pricing model (units, commission) is unchanged.
+    menuHeading: 'What you offer, and what it costs',
+    menuSubtext: 'Add each thing a guest can book.',
+    menuHeadingSlot: 'Your session, and what it costs',
+    menuSubtextSlot: 'One session, priced the way you set it up.',
+    menuAddRow: 'Add an item',
+    menuRowPrompt: 'Name it and set a price',
+    menuUntitled: 'Untitled item',
+    menuSlotRowLabel: 'Your session',
+
+    // The per-item sub-flow, one thing a screen (Airbnb's itinerary shape).
+    menuNameTitle: 'What are you offering?',
+    menuNamePlaceholder: 'Five-course tasting menu',
+    menuNameTitleSlot: 'Name your session',
+    menuNamePlaceholderSlot: 'Lochside sauna session',
+    menuPriceTitle: 'What does it cost?',
+    menuPriceTypeLabel: 'How this is priced',
+    menuDescTitle: 'Add a short description',
+    menuDescPlaceholder: 'A line about what’s included.',
+    menuPhotoTitle: 'Add a photo',
+    menuPhotoPrompt: 'A real photo of the food or the setting sells it best.',
+    menuNext: 'Next',
+
+    // The payout, presented Airbnb-style: calm by default, the maths on request.
+    payoutKeepLine: 'You keep',       // rendered as "You keep £X"
+    payoutRowPrice: 'Price',
+    payoutRowCommission: 'Our commission',
+    payoutRowKeep: 'You keep',
+
     // The photos screen. The gate is one photo, but the copy pushes for more —
     // a listing with several gets booked more, and someone who has no usable
     // photos finds that out here rather than after writing everything.
