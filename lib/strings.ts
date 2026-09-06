@@ -29,8 +29,8 @@ export const GUEST_SCREEN_COPY = {
 
     // The expertise screen — a hub (Airbnb-style): a photo, a heading and a line
     // of subtext, then three rows that each open a small sub-flow modal.
-    expertiseHeading: 'What makes you the person to do it?',
-    expertiseSubtext: 'Guests choose a person as much as a service — this is where you give them a reason to choose you.',
+    expertiseHeading: 'Tell guests about yourself',
+    expertiseSubtext: 'A few lines about who you are and what you do.',
 
     // The "(optional)" suffix, in lighter grey beside a row label. Used on the
     // qualifications row where it isn't required, and always on recognition.
