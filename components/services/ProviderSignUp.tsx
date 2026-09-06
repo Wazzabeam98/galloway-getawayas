@@ -118,12 +118,15 @@ const draftKey = (trade: string) => 'gg.provider-draft.' + trade;
 // and it is stored (see the years case in the footer's onNext). Shown solid
 // black; the host nudges or types to change it.
 const YEARS_DEFAULT = 5;
-// The max-guests stepper starts low on purpose. For a shared slot the number
-// becomes sellable seats (via sessionCapacity), so tapping straight through
-// must never oversell — a shared slot holds at least two, so 2 is at or below
-// any real capacity. The descriptive cases (a private slot, a comes-to-you
-// chef) just start low and get bumped, with no seat consequence.
-const CAPACITY_DEFAULT = 2;
+// The max-guests default follows the shape, the way the wording does. For a
+// SLOT the number becomes sellable seats (via sessionCapacity), so it starts
+// low — a shared slot holds at least two, so 2 is at or below any real capacity
+// and tapping straight through can never oversell. For COMES-TO-YOU it is purely
+// descriptive (no seat consequence), so a chef who taps through should say a
+// realistic group size rather than two and filter herself out of every group
+// booking; 6 is a sensible dinner party.
+const CAPACITY_DEFAULT_SLOT = 2;
+const CAPACITY_DEFAULT_TRAVEL = 6;
 
 // A −/+ stepper with a big display number, in the register Airbnb use for every
 // count in their host flow (a guest picks a number by nudging it, not by typing
@@ -4217,7 +4220,7 @@ function ApplicationForm() {
                     <p className="mb-10 text-sm text-slate-500 [text-wrap:balance]">
                         {shape === 'comes_to_you' ? GUEST_SCREEN_COPY.capacitySubtextTravel : GUEST_SCREEN_COPY.capacitySubtextVenue}
                     </p>
-                    <NumberStepper value={maxGuests} onChange={setMaxGuests} min={1} max={60} suggestion={CAPACITY_DEFAULT} size="lg" solid suffix={GUEST_SCREEN_COPY.capacitySuffix} />
+                    <NumberStepper value={maxGuests} onChange={setMaxGuests} min={1} max={60} suggestion={shape === 'comes_to_you' ? CAPACITY_DEFAULT_TRAVEL : CAPACITY_DEFAULT_SLOT} size="lg" solid suffix={GUEST_SCREEN_COPY.capacitySuffix} />
                 </section>
                 )}
 
@@ -5803,7 +5806,7 @@ function ApplicationForm() {
                             if (isGuest && step === 'g_you' && !yearsDoing.trim()) setYearsDoing(String(YEARS_DEFAULT));
                             // Same rule for max guests: an untouched pass stores
                             // the shown default; a loaded value is left as it is.
-                            if (isGuest && step === 'g_capacity' && !maxGuests.trim()) setMaxGuests(String(CAPACITY_DEFAULT));
+                            if (isGuest && step === 'g_capacity' && !maxGuests.trim()) setMaxGuests(String(shape === 'comes_to_you' ? CAPACITY_DEFAULT_TRAVEL : CAPACITY_DEFAULT_SLOT));
                             goNext();
                         };
                         return (
