@@ -190,26 +190,24 @@ const GUEST_QUALS_REQUIRED = ['outdoors', 'water', 'massage', 'yoga'];
 // in case a formal qualification should be required there instead.)
 const GUEST_YEARS_REQUIRED = ['outdoors', 'water', 'massage', 'yoga', 'chef', 'tastings', 'cooking'];
 
-// Categories that skip the years + expertise screens even though they aren't a
-// made-to-order product. The test is "does the answer change whether a guest
-// books, or whether we'd approve them?" — if not, don't ask.
-//   - sauna: nobody books a hot barrel by the water for the owner's years or
-//     credentials; it's booked because it's warm, clean and well-sited, and the
-//     sauna-safety declaration covers what matters.
-//   - the crafts (pottery, painting, make-your-own workshops): a guest books
-//     these off the photos of the work, not a years count or a certificate.
+// Sauna is the ONLY sub-type that skips the years and expertise screens: nobody
+// books a hot barrel by the water for the owner's CV, and its heat-and-cold
+// declaration covers what matters. The crafts (pottery, painting, workshops) and
+// made-to-order food (Food to order) were cut too for a while, then brought
+// back — a potter or a cake maker has a track record and a story worth showing —
+// so they get both screens again (years asked, qualifications optional).
+//
 // This is ONLY about the years/qualifications screens. The safety-check map
 // (GUEST_CHECKS / checksFor) is untouched — a sauna still declares its heat and
 // cold safety, and the crafts still declare safe tools and kiln.
-const GUEST_EXPERTISE_SKIP = ['sauna', 'pottery', 'painting', 'workshops'];
+const GUEST_EXPERTISE_SKIP = ['sauna'];
 
-// Whether the years + expertise screens are shown at all. Off for a made-to-
-// order product and for the skip list above; on for everyone else (including
-// "Something else", where they stay optional).
+// Whether the years + expertise screens are shown at all. Off for the skip list
+// above (just sauna); on for everyone else, including made-to-order food and
+// "Something else".
 export function guestAsksExpertise(category: string | null | undefined): boolean {
     const c = guestCategoryByKey(category);
     if (!c) return true;
-    if (c.shape === 'made_to_order') return false;
     return GUEST_EXPERTISE_SKIP.indexOf(c.key) === -1;
 }
 

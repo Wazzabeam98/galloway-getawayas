@@ -77,7 +77,7 @@ export const PROVIDER_COLUMNS = [
 
 /** The guest content answers — no column yet, so jsonb payload only, materialised later. */
 export const GUEST_CONTENT_KEYS = [
-    'years_experience', 'professional_title', 'qualifications',
+    'years_experience', 'professional_title', 'qualifications', 'recognition',
     'what_to_expect', 'whats_included', 'what_to_bring',
 ];
 

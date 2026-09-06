@@ -195,22 +195,26 @@ function NumberStepper({
 // empty, a check once filled), a bold label with a grey one-line description
 // beside it, and a chevron on the right. Tapping it opens that thing's sub-flow.
 // Reusable — the same pattern is wanted on later screens.
-function HubRow({ filled, label, prompt, summary, onOpen }: {
+function HubRow({ filled, label, suffix, prompt, summary, onOpen }: {
     filled: boolean;
     label: string;
+    // An "(optional)" style suffix rendered after the label in lighter grey.
+    suffix?: string;
     prompt: string;
     summary?: string | null;
     onOpen: () => void;
 }) {
     return (
         <button type="button" onClick={onOpen}
-            className="flex w-full items-center gap-4 rounded-2xl border border-slate-200 px-4 py-4 text-left transition hover:border-slate-300 focus:outline-none focus-visible:ring-2 focus-visible:ring-emerald-600">
-            <span aria-hidden className={'flex h-10 w-10 flex-none items-center justify-center rounded-xl border transition '
+            className="flex w-full items-center gap-4 rounded-2xl px-2 py-3 text-left transition hover:bg-slate-50 focus:outline-none focus-visible:ring-2 focus-visible:ring-emerald-600">
+            <span aria-hidden className={'flex h-11 w-11 flex-none items-center justify-center rounded-xl border transition '
                 + (filled ? 'border-emerald-600 bg-emerald-600 text-white' : 'border-slate-300 bg-slate-50 text-slate-500')}>
                 {filled ? <Check className="h-5 w-5" strokeWidth={2.5} /> : <Plus className="h-5 w-5" />}
             </span>
             <span className="min-w-0 flex-1">
-                <span className="block font-semibold text-slate-900">{label}</span>
+                <span className="block font-semibold text-slate-900">
+                    {label}{suffix && <span className="font-normal text-slate-400"> {suffix}</span>}
+                </span>
                 <span className="block truncate text-sm text-slate-500">{filled && summary ? summary : prompt}</span>
             </span>
             <ChevronRight className="h-5 w-5 flex-none text-slate-400" />
@@ -407,12 +411,13 @@ function ApplicationForm() {
     const [yearsDoing, setYearsDoing] = useState('');
     const [professionalTitle, setProfessionalTitle] = useState('');
     const [qualifications, setQualifications] = useState('');
+    const [recognition, setRecognition] = useState('');
     const [whatToExpect, setWhatToExpect] = useState('');
     const [whatIncluded, setWhatIncluded] = useState('');
     const [whatToBring, setWhatToBring] = useState('');
     const [uploadingPhotos, setUploadingPhotos] = useState(false);
     // Which expertise-hub sub-flow modal is open, if any.
-    const [expertiseModal, setExpertiseModal] = useState<'about' | 'quals' | null>(null);
+    const [expertiseModal, setExpertiseModal] = useState<'intro' | 'quals' | 'recognition' | null>(null);
 
     // --- Guest experience: category, shape, and the shape's own fields -------
     //
@@ -876,6 +881,7 @@ function ApplicationForm() {
             if (d.yearsDoing) setYearsDoing(d.yearsDoing);
             if (d.professionalTitle) setProfessionalTitle(d.professionalTitle);
             if (d.qualifications) setQualifications(d.qualifications);
+            if (d.recognition) setRecognition(d.recognition);
             if (d.whatToExpect) setWhatToExpect(d.whatToExpect);
             if (d.whatIncluded) setWhatIncluded(d.whatIncluded);
             if (d.whatToBring) setWhatToBring(d.whatToBring);
@@ -1008,7 +1014,7 @@ function ApplicationForm() {
                     // headshot is a storage path like the photos.
                     items, providerName, basedLine, headshot, dietaryNote,
                     // The Airbnb-shaped content answers.
-                    yearsDoing, professionalTitle, qualifications,
+                    yearsDoing, professionalTitle, qualifications, recognition,
                     whatToExpect, whatIncluded, whatToBring,
                     // The category, the inferred shape and its own fields.
                     guestCategory, shape, leadTimeDays,
@@ -1028,7 +1034,7 @@ function ApplicationForm() {
         doesGas, doesOil, registrations, calloutWaived, skills,
         photos, logo, buildingType, panes,
         items, providerName, basedLine, headshot, dietaryNote,
-        yearsDoing, professionalTitle, qualifications,
+        yearsDoing, professionalTitle, qualifications, recognition,
         whatToExpect, whatIncluded, whatToBring,
         guestCategory, shape, leadTimeDays,
         slotPrivate, slotCapacity, slotLength, schedule, blockedDates,
@@ -1951,6 +1957,7 @@ function ApplicationForm() {
             years_experience: t(yearsDoing),
             professional_title: t(professionalTitle),
             qualifications: t(qualifications),
+            recognition: t(recognition),
             what_to_expect: t(whatToExpect),
             whats_included: t(whatIncluded),
             what_to_bring: t(whatToBring),
@@ -3259,17 +3266,18 @@ function ApplicationForm() {
                     hub itself stays clean. Built on the reusable HubRow /
                     SubFlowModal primitives, which later screens will want too. */}
                 {onStep('g_creds') && isGuest && (() => {
-                    const aboutFilled = !!(professionalTitle.trim() || basedLine.trim() || headshot);
-                    const aboutSummary = professionalTitle.trim() || basedLine.trim() || (headshot ? 'Photo added' : '');
+                    const introFilled = !!(professionalTitle.trim() || basedLine.trim() || headshot);
+                    const introSummary = professionalTitle.trim() || basedLine.trim() || (headshot ? 'Photo added' : '');
                     const qualsFilled = qualifications.trim() !== '';
+                    const recognitionFilled = recognition.trim() !== '';
                     const modalInput = 'w-full rounded-xl border-0 bg-slate-50 px-4 py-3 text-slate-900 placeholder:text-slate-400 focus:outline-none focus:ring-2 focus:ring-emerald-600';
                     return (
                     <section className="mb-8 md:max-w-xl md:mx-auto">
                         {/* The host photo, centred. It shows the headshot once one
                             is added, a neutral circle before — and taps through to
-                            the About you sub-flow, where the photo is set. */}
+                            the Intro sub-flow, where the photo is set. */}
                         <div className="flex flex-col items-center text-center">
-                            <button type="button" onClick={() => setExpertiseModal('about')} aria-label="About you"
+                            <button type="button" onClick={() => setExpertiseModal('intro')} aria-label="Intro"
                                 className="flex h-24 w-24 items-center justify-center overflow-hidden rounded-full bg-slate-100 text-slate-400 transition hover:opacity-90 focus:outline-none focus-visible:ring-2 focus-visible:ring-emerald-600">
                                 {headshot
                                     ? <img src={getImageUrl(headshot)} alt="" className="h-full w-full object-cover" />
@@ -3283,29 +3291,40 @@ function ApplicationForm() {
                             </p>
                         </div>
 
-                        <div className="mt-8 space-y-3">
+                        {/* Three rows, borderless with air between them, the way
+                            Airbnb's read: Intro, Qualifications, Recognition. Only
+                            Qualifications (and only for the required categories)
+                            gates Next; Intro and Recognition never do. */}
+                        <div className="mt-10 space-y-6">
                             <HubRow
-                                filled={aboutFilled}
-                                label={GUEST_SCREEN_COPY.aboutRowLabel}
-                                prompt={GUEST_SCREEN_COPY.aboutRowPrompt}
-                                summary={aboutSummary}
-                                onOpen={() => setExpertiseModal('about')}
+                                filled={introFilled}
+                                label={GUEST_SCREEN_COPY.introRowLabel}
+                                prompt={GUEST_SCREEN_COPY.introRowPrompt}
+                                summary={introSummary}
+                                onOpen={() => setExpertiseModal('intro')}
                             />
                             <HubRow
                                 filled={qualsFilled}
                                 label={GUEST_SCREEN_COPY.qualsRowLabel}
+                                suffix={catQualsRequired ? undefined : GUEST_SCREEN_COPY.optionalSuffix}
                                 prompt={GUEST_SCREEN_COPY.qualsRowPrompt}
                                 summary={qualifications.trim()}
                                 onOpen={() => setExpertiseModal('quals')}
                             />
-                            {/* Room for a third row here, deliberately not invented
-                                — awaiting Liam's call on what it should be. */}
+                            <HubRow
+                                filled={recognitionFilled}
+                                label={GUEST_SCREEN_COPY.recognitionRowLabel}
+                                suffix={GUEST_SCREEN_COPY.optionalSuffix}
+                                prompt={GUEST_SCREEN_COPY.recognitionRowPrompt}
+                                summary={recognition.trim()}
+                                onOpen={() => setExpertiseModal('recognition')}
+                            />
                         </div>
 
-                        {/* ---- About you sub-flow: title, short line, photo ---- */}
+                        {/* ---- Intro sub-flow: title, short line, photo ---- */}
                         <SubFlowModal
-                            open={expertiseModal === 'about'}
-                            title={GUEST_SCREEN_COPY.aboutModalTitle}
+                            open={expertiseModal === 'intro'}
+                            title={GUEST_SCREEN_COPY.introModalTitle}
                             onClose={() => setExpertiseModal(null)}
                             saveLabel={GUEST_SCREEN_COPY.save}
                         >
@@ -3373,6 +3392,23 @@ function ApplicationForm() {
                             <p className="mt-3 text-sm text-slate-500">
                                 {catQualsRequired ? GUEST_SCREEN_COPY.qualsRequiredNote : GUEST_SCREEN_COPY.qualsOptionalNote}
                             </p>
+                        </SubFlowModal>
+
+                        {/* ---- Recognition sub-flow: always optional ---- */}
+                        <SubFlowModal
+                            open={expertiseModal === 'recognition'}
+                            title={GUEST_SCREEN_COPY.recognitionModalTitle}
+                            onClose={() => setExpertiseModal(null)}
+                            saveLabel={GUEST_SCREEN_COPY.save}
+                        >
+                            <textarea
+                                value={recognition}
+                                onChange={(e) => setRecognition(e.target.value)}
+                                rows={4}
+                                placeholder={GUEST_SCREEN_COPY.recognitionPlaceholder}
+                                className="w-full rounded-xl border-0 bg-slate-50 px-4 py-3 text-slate-900 placeholder:text-slate-400 focus:outline-none focus:ring-2 focus:ring-emerald-600"
+                            />
+                            <p className="mt-3 text-sm text-slate-500">{GUEST_SCREEN_COPY.recognitionNote}</p>
                         </SubFlowModal>
                     </section>
                     );
@@ -5190,7 +5226,9 @@ function ApplicationForm() {
                         <p className="text-sm font-medium text-amber-700 pr-1">{stepMissing}</p>
                     )}
                     {stepIsOptional && (
-                        <p className="text-sm text-slate-400 pr-1">Optional — you can skip this</p>
+                        <p className="text-sm text-slate-400 pr-1">
+                            {step === 'g_creds' ? GUEST_SCREEN_COPY.expertiseFootnote : 'Optional — you can skip this'}
+                        </p>
                     )}
 
                     <div className="flex-1" />
