@@ -72,7 +72,6 @@ import {
     guestCategoryIsFood,
     guestAsksExpertise,
     guestQualificationsRequired,
-    guestYearsRequired,
     checksFor,
     DEFAULT_SERVICE_COMMISSION,
 } from '@/lib/serviceProviders';
@@ -125,7 +124,7 @@ const draftKey = (trade: string) => 'gg.provider-draft.' + trade;
 // one of these can't be passed until it is non-empty (gated in the footer). The
 // value stays a string to match the fields it replaced.
 function NumberStepper({
-    value, onChange, min = 0, max = 999, step = 1, suffix, suggestion, size = 'md',
+    value, onChange, min = 0, max = 999, step = 1, suffix, suggestion, size = 'md', solid = false,
 }: {
     value: string;
     onChange: (v: string) => void;
@@ -137,40 +136,49 @@ function NumberStepper({
     // 'lg' is the whole-screen years opener: a huge display numeral and larger
     // buttons. 'md' is the inline count on the where-and-when step.
     size?: 'md' | 'lg';
+    // solid: show the number in solid black from load — the suggestion is a
+    // starting position, not a greyed placeholder, and there is no visual
+    // difference between touched and untouched. It STILL stores nothing until
+    // touched: the parent value stays empty until a nudge or a type commits, so
+    // an untouched starting number never reaches the draft or the record. The
+    // years opener uses this; the slot counts keep the greyed-suggestion style.
+    solid?: boolean;
 }) {
     const has = String(value).trim() !== '' && Number.isFinite(Number(value));
     const shown = has ? Number(value) : (suggestion ?? min);
     const commit = (n: number) => onChange(String(Math.max(min, Math.min(max, Math.round(n)))));
-    // Untouched: the first nudge adopts the suggestion rather than moving off it.
-    const nudge = (dir: number) => (has ? commit(shown + dir * step) : commit(suggestion ?? min));
+    // solid: a nudge always MOVES from the shown starting position and commits
+    // (tap + goes up, tap − goes down), because the number is already visible.
+    // greyed: the first nudge ADOPTS the suggestion, then moves.
+    const nudge = (dir: number) => ((solid || has) ? commit(shown + dir * step) : commit(suggestion ?? min));
 
     const lg = size === 'lg';
     const circle =
-        (lg ? 'h-12 w-12 ' : 'h-11 w-11 ')
+        (lg ? 'h-16 w-16 ' : 'h-11 w-11 ')
         + 'flex flex-none items-center justify-center rounded-full border border-slate-300 '
         + 'text-slate-600 transition hover:border-slate-500 focus:outline-none focus-visible:ring-2 '
         + 'focus-visible:ring-emerald-600 disabled:opacity-40 disabled:hover:border-slate-300';
-    const glyph = lg ? 'h-5 w-5' : 'h-4 w-4';
+    const glyph = lg ? 'h-6 w-6' : 'h-4 w-4';
     const numberField = lg
-        ? 'w-40 bg-transparent text-center text-7xl font-extrabold tabular-nums text-slate-900 placeholder:font-extrabold placeholder:text-slate-300 focus:outline-none [appearance:textfield] [&::-webkit-outer-spin-button]:appearance-none [&::-webkit-inner-spin-button]:appearance-none'
+        ? 'w-44 bg-transparent text-center text-8xl sm:text-9xl font-extrabold tabular-nums text-slate-900 placeholder:font-extrabold placeholder:text-slate-300 focus:outline-none [appearance:textfield] [&::-webkit-outer-spin-button]:appearance-none [&::-webkit-inner-spin-button]:appearance-none'
         : 'w-16 bg-transparent text-center text-4xl font-extrabold tabular-nums text-slate-900 placeholder:font-extrabold placeholder:text-slate-300 focus:outline-none [appearance:textfield] [&::-webkit-outer-spin-button]:appearance-none [&::-webkit-inner-spin-button]:appearance-none';
 
     return (
-        <div className={'flex items-center ' + (lg ? 'gap-6' : 'gap-4')}>
+        <div className={'flex items-center ' + (lg ? 'gap-8 sm:gap-10' : 'gap-4')}>
             <button type="button" onClick={() => nudge(-1)} disabled={has && shown <= min}
                 aria-label="Decrease" className={circle}>
-                <Minus className={glyph} strokeWidth={2.25} />
+                <Minus className={glyph} strokeWidth={2} />
             </button>
             <input
                 type="number" inputMode="numeric" aria-label="Amount"
-                value={has ? String(shown) : ''}
-                placeholder={suggestion !== undefined ? String(suggestion) : ''}
+                value={solid ? String(shown) : (has ? String(shown) : '')}
+                placeholder={solid ? undefined : (suggestion !== undefined ? String(suggestion) : '')}
                 onChange={(e) => onChange(e.target.value)}
                 className={numberField}
             />
             <button type="button" onClick={() => nudge(1)} disabled={has && shown >= max}
                 aria-label="Increase" className={circle}>
-                <Plus className={glyph} strokeWidth={2.25} />
+                <Plus className={glyph} strokeWidth={2} />
             </button>
             {suffix && <span className="text-sm text-slate-500">{suffix}</span>}
         </div>
@@ -1275,18 +1283,18 @@ function ApplicationForm() {
     // looks like one she has to fill. Pickers (trade, g_subtype) and the
     // finish step carry their own affordances and are left out here.
     // Whether this guest's category requires years and/or qualifications before
-    // Next — the four safety categories require both, a private chef requires
-    // years only, everyone else who's asked can leave them blank.
-    const catYearsRequired = isGuest && guestYearsRequired(guestCategory);
+    // Qualifications gate: required only for the four safety categories.
     const catQualsRequired = isGuest && guestQualificationsRequired(guestCategory);
 
-    // g_menu, g_expect and g_checks are always skippable; g_you and g_creds are
-    // skippable only when this category doesn't require them.
+    // g_menu, g_expect and g_checks are always skippable. g_you is NEVER
+    // skippable: the years screen shows a starting number (5), so a host could
+    // otherwise walk past it thinking that number is their answer when nothing
+    // was stored — it must be touched. g_creds is skippable unless this category
+    // requires qualifications.
     const OPTIONAL_GUEST_STEPS: StepKey[] = ['g_menu', 'g_expect', 'g_checks'];
     const stepIsPicker = step === 'trade' || step === 'g_subtype';
     const stepIsOptional = isGuest && !stepIsPicker && (
         OPTIONAL_GUEST_STEPS.indexOf(step) !== -1
-        || (step === 'g_you' && !catYearsRequired)
         || (step === 'g_creds' && !catQualsRequired)
     );
 
@@ -1309,8 +1317,8 @@ function ApplicationForm() {
         : null;
 
     const guestExtraMissing: string | null = isGuest
-        ? (step === 'g_you' && catYearsRequired && !yearsDoing.trim()
-            ? 'Add how long you’ve been doing this.'
+        ? (step === 'g_you' && !yearsDoing.trim()
+            ? GUEST_SCREEN_COPY.yearsMissing
             : step === 'g_creds' && catQualsRequired && !qualifications.trim()
                 ? 'Add your training or qualifications — for this kind of experience it’s required.'
                 : step === 'g_photos' && photos.length === 0
@@ -2708,7 +2716,12 @@ function ApplicationForm() {
                             ? 'max-w-5xl pt-20 pb-10 sm:pt-28 sm:pb-12'
                             : step === 'g_subtype'
                                 ? 'max-w-3xl py-10 sm:py-12'
-                                : 'max-w-2xl py-10 sm:py-12'))
+                                /* The years opener is a flex column so its
+                                   stepper can centre in the space under the
+                                   question rather than sit high with a void. */
+                                : step === 'g_you'
+                                    ? 'max-w-2xl py-10 sm:py-12 flex flex-col'
+                                    : 'max-w-2xl py-10 sm:py-12'))
                     : 'flex-1 overflow-y-auto px-4 sm:px-6 py-5'}>
                     {/* One big question a screen. The picker screens (group,
                         sub-type) and the years opener centre it — over the cards
@@ -3017,7 +3030,10 @@ function ApplicationForm() {
                 );
             })()}
 
-            <fieldset disabled={locked} className={locked ? 'opacity-70' : ''}>
+            <fieldset disabled={locked} className={(locked ? 'opacity-70' : '')
+                /* On the years opener the fieldset fills the panel below the
+                   question so its one section can centre vertically. */
+                + (isGuest && step === 'g_you' ? ' flex-1 flex flex-col' : '')}>
                 {/* The standalone business step is host-only now. A guest names
                     the experience on g_about ("Name it, and tell guests what it
                     is"), beside the description, so they never answer it twice. */}
@@ -3504,8 +3520,8 @@ function ApplicationForm() {
                     still take them), and it shows a suggestion but stores nothing
                     until touched — the same rule as the where-and-when counts. */}
                 {onStep('g_you') && audienceForTrade(trade) === 'guest' && (
-                <section className="mb-8 flex flex-col items-center py-10 sm:py-16">
-                    <NumberStepper value={yearsDoing} onChange={setYearsDoing} min={0} max={70} suggestion={5} size="lg" />
+                <section className="flex-1 flex flex-col items-center justify-center">
+                    <NumberStepper value={yearsDoing} onChange={setYearsDoing} min={0} max={70} suggestion={5} size="lg" solid />
                 </section>
                 )}
 
@@ -5070,7 +5086,7 @@ function ApplicationForm() {
                         const disabled = isGuest && (
                             step === 'trade' ? !guestGroup
                             : step === 'g_subtype' ? !guestCategory
-                            : step === 'g_you' ? (catYearsRequired && !yearsDoing.trim())
+                            : step === 'g_you' ? !yearsDoing.trim()
                             : step === 'g_creds' ? (catQualsRequired && !qualifications.trim())
                             : step === 'g_photos' ? photos.length === 0
                             : step === 'g_area' ? (stepProblems.length > 0 || !!whereMissing)

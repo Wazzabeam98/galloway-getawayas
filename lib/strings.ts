@@ -26,6 +26,9 @@ export const GUEST_SCREEN_COPY = {
     // The years opener — one question, one number, Airbnb-style. The unit lives
     // in the question, so the stepper shows no label and no suffix.
     yearsQuestion: 'How many years have you been doing this?',
+    // The gate under a greyed Next until the host has actually set the number —
+    // the shown starting number is not an answer until they touch it.
+    yearsMissing: 'Add how long you’ve been doing this.',
     // The short line and the photo of the provider — moved off the years screen
     // onto the expertise screen, where the person's story belongs.
     aboutLineLabel: 'A short line about you',
