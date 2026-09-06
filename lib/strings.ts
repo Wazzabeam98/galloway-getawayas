@@ -36,16 +36,14 @@ export const GUEST_SCREEN_COPY = {
     // optional row; the only sometimes-required one is qualifications.
     optionalSuffix: '(optional)',
 
-    // Row: your title. Its own modal, one field.
+    // Row: your title — its modal holds two fields, the title and a line about
+    // you, each with a quiet label above it. The row summary shows the title.
     titleRowLabel: 'Your title',
-    titleRowPrompt: 'How you’d describe what you do',
+    titleRowPrompt: 'Your role, and a line about you',
     titleModalTitle: 'Add your title',
+    titleFieldLabel: 'Title',
     titlePlaceholder: 'Private chef',
-
-    // Row: a line about you. Its own modal, one field.
-    lineRowLabel: 'A line about you',
-    lineRowPrompt: 'A sentence a guest reads first',
-    lineModalTitle: 'Add a line about you',
+    lineFieldLabel: 'A line about you',
     aboutLinePlaceholder: 'Kirkcudbright · cooking since 2019',
 
     // Row: qualifications. Required for the four safety categories (no
@@ -62,9 +60,9 @@ export const GUEST_SCREEN_COPY = {
 
     // Row three: endorsements — always optional, never gates Next.
     recognitionRowLabel: 'Endorsements',
-    recognitionRowPrompt: 'Awards, career highlights, anything you’ve been recognised for.',
+    recognitionRowPrompt: 'Anything you’ve been recognised for.',
     recognitionModalTitle: 'Endorsements',
-    recognitionPlaceholder: 'An award you’ve won, a mention in the local press, or a career highlight.',
+    recognitionPlaceholder: 'A mention in the local press, or anything else you’ve been recognised for.',
     recognitionNote: 'Optional — anything that helps a guest choose you.',
 
     // Shown in the footer of the expertise hub when nothing is required — a nudge
