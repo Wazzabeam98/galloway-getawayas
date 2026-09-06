@@ -111,6 +111,12 @@ interface AreaRow {
 // it on. Per trade, because somebody can be part-way through two.
 const draftKey = (trade: string) => 'gg.provider-draft.' + trade;
 
+// The number the years opener shows from load. It is the accepted answer, not a
+// placeholder: someone whose real answer is this presses Next straight through
+// and it is stored (see the years case in the footer's onNext). Shown solid
+// black; the host nudges or types to change it.
+const YEARS_DEFAULT = 5;
+
 // A −/+ stepper with a big display number, in the register Airbnb use for every
 // count in their host flow (a guest picks a number by nudging it, not by typing
 // into a small box). Used for the counts on the where-and-when step — session
@@ -1317,13 +1323,11 @@ function ApplicationForm() {
         : null;
 
     const guestExtraMissing: string | null = isGuest
-        ? (step === 'g_you' && !yearsDoing.trim()
-            ? GUEST_SCREEN_COPY.yearsMissing
-            : step === 'g_creds' && catQualsRequired && !qualifications.trim()
-                ? 'Add your training or qualifications — for this kind of experience it’s required.'
-                : step === 'g_photos' && photos.length === 0
-                    ? 'Add at least one photo — a listing without one doesn’t sell.'
-                    : whereMissing)
+        ? (step === 'g_creds' && catQualsRequired && !qualifications.trim()
+            ? 'Add your training or qualifications — for this kind of experience it’s required.'
+            : step === 'g_photos' && photos.length === 0
+                ? 'Add at least one photo — a listing without one doesn’t sell.'
+                : whereMissing)
         : null;
 
     // The one thing missing on a required step, phrased for a person. Shown in
@@ -3521,7 +3525,7 @@ function ApplicationForm() {
                     until touched — the same rule as the where-and-when counts. */}
                 {onStep('g_you') && audienceForTrade(trade) === 'guest' && (
                 <section className="flex-1 flex flex-col items-center justify-center">
-                    <NumberStepper value={yearsDoing} onChange={setYearsDoing} min={0} max={70} suggestion={5} size="lg" solid />
+                    <NumberStepper value={yearsDoing} onChange={setYearsDoing} min={0} max={70} suggestion={YEARS_DEFAULT} size="lg" solid />
                 </section>
                 )}
 
@@ -5086,7 +5090,8 @@ function ApplicationForm() {
                         const disabled = isGuest && (
                             step === 'trade' ? !guestGroup
                             : step === 'g_subtype' ? !guestCategory
-                            : step === 'g_you' ? !yearsDoing.trim()
+                            // g_you has no gate: Next is enabled from load. The
+                            // shown number is the accepted answer, stored on Next.
                             : step === 'g_creds' ? (catQualsRequired && !qualifications.trim())
                             : step === 'g_photos' ? photos.length === 0
                             : step === 'g_area' ? (stepProblems.length > 0 || !!whereMissing)
@@ -5095,6 +5100,9 @@ function ApplicationForm() {
                         const onNext = () => {
                             if (isGuest && step === 'trade') return advanceFromGroup();
                             if (isGuest && step === 'g_subtype') return advanceFromSubtype();
+                            // Pass the years screen without touching it: the shown
+                            // number is the answer they accepted, so store it now.
+                            if (isGuest && step === 'g_you' && !yearsDoing.trim()) setYearsDoing(String(YEARS_DEFAULT));
                             goNext();
                         };
                         return (
