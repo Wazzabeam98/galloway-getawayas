@@ -25,7 +25,7 @@ export interface CategoryCopy {
 export const GUEST_SCREEN_COPY = {
     // The years opener — one question, one number, Airbnb-style. The unit lives
     // in the question, so the stepper shows no label and no suffix.
-    yearsQuestion: 'How long have you been doing this?',
+    yearsQuestion: 'How many years have you been doing this?',
 
     // The named sections the flow is grouped into, Airbnb-style, shown as an
     // eyebrow above each screen's question and as a left rail on wide screens.
