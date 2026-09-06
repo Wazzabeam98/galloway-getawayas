@@ -29,6 +29,8 @@ const {
     firstStepWithProblem,
     openingStep,
     openingVisited,
+    sectionsFor,
+    sectionForStep,
 } = require('@/lib/joinSteps');
 
 const {
@@ -482,15 +484,20 @@ test('a guest with no context still sees the old three steps', () => {
     assert.deepEqual(stepsFor('guest').map((s: any) => s.key), ['trade', 'business', 'finish']);
 });
 
-// The rebuilt twelve (Sep 2026). The booking shape is inferred from the
-// category and never a step; availability folds into g_area; dietary folds into
-// g_expect; the business step is host-only (the name rides on g_about). So every
-// category that has a sub-type walks the same twelve keys — what differs between
-// a chef, a cake maker and a sauna is what renders INSIDE g_area and g_expect,
-// not which steps exist.
+// The rebuilt twelve, reordered to Airbnb's sequence (Sep 2026). About you
+// first (g_you, g_creds), then Location (g_area) straight after, then Photos
+// (g_photos) BEFORE the writing — you describe your kitchen better having just
+// uploaded photos of it, and anyone without usable photos finds out early —
+// then Pricing (g_menu), Details (g_expect), the naming/describing (g_about)
+// near the end, and the Finish wrap-up (g_checks, g_contact, finish). The
+// booking shape is inferred from the category and never a step; availability
+// folds into g_area; dietary folds into g_expect; the business step is host-
+// only (the name rides on g_about). So every category that has a sub-type walks
+// the same twelve keys — what differs between a chef, a cake maker and a sauna
+// is what renders INSIDE g_area and g_expect, not which steps exist.
 const TWELVE = [
-    'trade', 'g_subtype', 'g_you', 'g_creds', 'g_about', 'g_menu',
-    'g_expect', 'g_photos', 'g_area', 'g_checks', 'g_contact', 'finish',
+    'trade', 'g_subtype', 'g_you', 'g_creds', 'g_area', 'g_photos',
+    'g_menu', 'g_expect', 'g_about', 'g_checks', 'g_contact', 'finish',
 ];
 
 test('a chef (food, comes to them) walks the twelve, and never sees the business step', () => {
@@ -615,7 +622,7 @@ test('the something-else group skips the sub-type screen', () => {
     // The twelve minus the sub-type screen — eleven.
     assert.deepEqual(
         gkeys(ctx),
-        ['trade', 'g_you', 'g_creds', 'g_about', 'g_menu', 'g_expect', 'g_photos', 'g_area', 'g_checks', 'g_contact', 'finish'],
+        ['trade', 'g_you', 'g_creds', 'g_area', 'g_photos', 'g_menu', 'g_expect', 'g_about', 'g_checks', 'g_contact', 'finish'],
     );
 });
 
@@ -640,4 +647,52 @@ test('guest movement and the last step honour the context', () => {
     // The business step is off for a guest-with-context, so it resolves back to
     // a real one rather than stranding them.
     assert.equal(resolveStep('guest', 'business', ctx), 'finish');
+});
+
+// --- the named sections (the progress rail) --------------------------------
+//
+// The flow is grouped into named sections, not a "Step 5 of 12" count. The rail
+// and the per-screen eyebrow both read from sectionsFor / sectionForStep, so
+// they can't disagree about the flow.
+
+test('the guest flow is seven named sections, in Airbnb order', () => {
+    const ctx = { group: 'food', category: 'chef', shape: 'comes_to_you' };
+    const secs = sectionsFor('guest', ctx);
+    assert.deepEqual(secs.map((s: any) => s.key),
+        ['about', 'location', 'photos', 'pricing', 'details', 'experience', 'finish']);
+    // About you pairs the years screen and the expertise hub; every other
+    // content section is a single screen; Finish gathers the wrap-up.
+    assert.deepEqual(secs.find((s: any) => s.key === 'about').steps, ['g_you', 'g_creds']);
+    assert.deepEqual(secs.find((s: any) => s.key === 'finish').steps, ['g_checks', 'g_contact', 'finish']);
+    // The rail jumps to a section's first live step.
+    assert.equal(secs.find((s: any) => s.key === 'location').firstStep, 'g_area');
+});
+
+test('a section with no screens drops out of the rail entirely', () => {
+    // The sauna skips BOTH the years screen and the expertise hub, so its About
+    // you section has nothing in it — and a section with no live steps drops
+    // out rather than sitting in the rail as a dead label. So the sauna's rail
+    // is six sections, opening at Location.
+    const sauna = sectionsFor('guest', { group: 'wellness', category: 'sauna', shape: 'slot' });
+    assert.equal(sauna.some((s: any) => s.key === 'about'), false, 'sauna has no About you section');
+    assert.deepEqual(sauna.map((s: any) => s.key),
+        ['location', 'photos', 'pricing', 'details', 'experience', 'finish']);
+});
+
+test('the two pickers sit before the rail, in no section', () => {
+    // The flow branches on the group and the sub-type, so the rail can't be
+    // drawn until they're answered — and listing them would imply you can change
+    // category mid-flow and invalidate everything after it.
+    assert.equal(sectionForStep('trade'), null);
+    assert.equal(sectionForStep('g_subtype'), null);
+    // A content screen carries its section; About you covers the first two.
+    assert.equal(sectionForStep('g_you').key, 'about');
+    assert.equal(sectionForStep('g_creds').key, 'about');
+    assert.equal(sectionForStep('g_about').key, 'experience');
+});
+
+test('a host trade has no rail', () => {
+    // The rail is guest-only. A plumber (or a guest with no context) gets none.
+    assert.deepEqual(sectionsFor('plumber', { group: 'x', category: 'y', shape: null }), []);
+    assert.deepEqual(sectionsFor('guest'), []);
 });

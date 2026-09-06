@@ -27,6 +27,19 @@ export const GUEST_SCREEN_COPY = {
     // in the question, so the stepper shows no label and no suffix.
     yearsQuestion: 'How long have you been doing this?',
 
+    // The named sections the flow is grouped into, Airbnb-style, shown as an
+    // eyebrow above each screen's question and as a left rail on wide screens.
+    // The two pickers (group, sub-type) precede the rail and carry no section —
+    // the flow branches on them, so the rail can't be drawn until they're
+    // answered. Checks, contact and the account screen fold into one Finish.
+    sectionAboutYou: 'About you',
+    sectionLocation: 'Location',
+    sectionPhotos: 'Photos',
+    sectionPricing: 'Pricing',
+    sectionDetails: 'Details',
+    sectionExperience: 'Experience',
+    sectionFinish: 'Finish',
+
     // The expertise screen — a hub (Airbnb-style): a photo, a heading and a line
     // of subtext, then rows that each open their own single-field sub-flow modal.
     expertiseHeading: 'Tell guests about yourself',
@@ -64,6 +77,12 @@ export const GUEST_SCREEN_COPY = {
     // Shown in the footer of the expertise hub when nothing is required — a nudge
     // rather than an "optional, skip it". Placeholder wording, rewritten at the end.
     expertiseFootnote: 'What you write here is what a guest reads when they’re choosing you.',
+
+    // The photos screen. The gate is one photo, but the copy pushes for more —
+    // a listing with several gets booked more, and someone who has no usable
+    // photos finds that out here rather than after writing everything.
+    photosLede: 'Real photos of the food, the room, the view — not a logo. The first one leads your listing.',
+    photosMore: 'One photo is enough to list — but listings with several get booked more, so add a few if you can.',
 
     // Sub-flow modal.
     save: 'Save',
