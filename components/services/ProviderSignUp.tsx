@@ -1,6 +1,6 @@
 'use client';
 
-import { Suspense, useEffect, useState } from 'react';
+import { Suspense, useEffect, useRef, useState } from 'react';
 import Link from 'next/link';
 import { useRouter, useSearchParams } from 'next/navigation';
 import { createClientComponentClient } from '@supabase/auth-helpers-nextjs';
@@ -9,7 +9,7 @@ import { toast } from 'react-toastify';
 import {
     Sparkles, Wrench, Trees, Droplet, ChefHat, Cake, ShoppingBasket, Trash2,
     Plus, Minus, X, ChevronLeft, ChevronRight, Check, Zap, Hammer, Paintbrush, Home,
-    ImagePlus, User,
+    ImagePlus, User, Pencil,
 } from 'lucide-react';
 import { TradeTile, TradeTileGrid, TRADE_ICONS, GROUP_ICONS } from '@/components/services/TradeTiles';
 import { compressImage } from '@/lib/compressImage';
@@ -418,6 +418,11 @@ function ApplicationForm() {
     const [uploadingPhotos, setUploadingPhotos] = useState(false);
     // Which expertise-hub sub-flow modal is open, if any.
     const [expertiseModal, setExpertiseModal] = useState<'intro' | 'quals' | 'recognition' | null>(null);
+    // The photo circle at the top of the hub opens the file picker directly (via
+    // this ref), and once a photo is set it offers replace/remove through a small
+    // menu rather than reopening the Intro form.
+    const headshotInputRef = useRef<HTMLInputElement>(null);
+    const [photoMenuOpen, setPhotoMenuOpen] = useState(false);
 
     // --- Guest experience: category, shape, and the shape's own fields -------
     //
@@ -3273,16 +3278,46 @@ function ApplicationForm() {
                     const modalInput = 'w-full rounded-xl border-0 bg-slate-50 px-4 py-3 text-slate-900 placeholder:text-slate-400 focus:outline-none focus:ring-2 focus:ring-emerald-600';
                     return (
                     <section className="mb-8 md:max-w-xl md:mx-auto">
-                        {/* The host photo, centred. It shows the headshot once one
-                            is added, a neutral circle before — and taps through to
-                            the Intro sub-flow, where the photo is set. */}
+                        {/* The host photo, centred. A neutral circle before a
+                            photo, the headshot after. Tapping it opens the file
+                            picker directly the first time; once a photo is set,
+                            tapping offers replace/remove. A small badge overlaps
+                            the bottom-right — a plus before, a pencil after — so
+                            it reads as tappable. The same headshot state feeds the
+                            photo field in the Intro modal, so the two stay in sync. */}
                         <div className="flex flex-col items-center text-center">
-                            <button type="button" onClick={() => setExpertiseModal('intro')} aria-label="Intro"
-                                className="flex h-24 w-24 items-center justify-center overflow-hidden rounded-full bg-slate-100 text-slate-400 transition hover:opacity-90 focus:outline-none focus-visible:ring-2 focus-visible:ring-emerald-600">
-                                {headshot
-                                    ? <img src={getImageUrl(headshot)} alt="" className="h-full w-full object-cover" />
-                                    : <User className="h-10 w-10" strokeWidth={1.5} />}
-                            </button>
+                            <div className="relative h-24 w-24">
+                                <button type="button" aria-label={headshot ? 'Change your photo' : 'Add a photo of you'}
+                                    onClick={() => (headshot ? setPhotoMenuOpen((o) => !o) : headshotInputRef.current?.click())}
+                                    className="flex h-24 w-24 items-center justify-center overflow-hidden rounded-full bg-slate-100 text-slate-400 transition hover:opacity-90 focus:outline-none focus-visible:ring-2 focus-visible:ring-emerald-600">
+                                    {headshot
+                                        ? <img src={getImageUrl(headshot)} alt="" className="h-full w-full object-cover" />
+                                        : <User className="h-10 w-10" strokeWidth={1.5} />}
+                                </button>
+                                <span aria-hidden
+                                    className="pointer-events-none absolute bottom-0 right-0 flex h-7 w-7 items-center justify-center rounded-full border-2 border-white bg-emerald-700 text-white shadow-sm">
+                                    {headshot ? <Pencil className="h-3.5 w-3.5" /> : <Plus className="h-4 w-4" strokeWidth={2.5} />}
+                                </span>
+                                {photoMenuOpen && (
+                                    <>
+                                        <div className="fixed inset-0 z-[65]" onClick={() => setPhotoMenuOpen(false)} />
+                                        <div className="absolute left-1/2 top-full z-[66] mt-3 w-44 -translate-x-1/2 overflow-hidden rounded-2xl border border-slate-200 bg-white py-1 text-left shadow-lg">
+                                            <button type="button"
+                                                onClick={() => { setPhotoMenuOpen(false); headshotInputRef.current?.click(); }}
+                                                className="block w-full px-4 py-2.5 text-sm text-slate-700 hover:bg-slate-50">
+                                                {uploadingHeadshot ? 'Uploading…' : 'Replace photo'}
+                                            </button>
+                                            <button type="button"
+                                                onClick={() => { setPhotoMenuOpen(false); setHeadshot(null); }}
+                                                className="block w-full px-4 py-2.5 text-sm text-rose-600 hover:bg-slate-50">
+                                                Remove photo
+                                            </button>
+                                        </div>
+                                    </>
+                                )}
+                                <input ref={headshotInputRef} type="file" accept="image/png, image/jpeg"
+                                    className="hidden" onChange={uploadHeadshot} disabled={uploadingHeadshot} />
+                            </div>
                             <h1 className="mt-6 text-2xl font-extrabold tracking-tight text-slate-900 [text-wrap:balance] sm:text-3xl">
                                 {GUEST_SCREEN_COPY.expertiseHeading}
                             </h1>
