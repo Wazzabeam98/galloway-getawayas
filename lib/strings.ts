@@ -49,7 +49,7 @@ export const GUEST_SCREEN_COPY = {
     qualsModalTitle: 'Training and qualifications',
     qualsPlaceholder: 'Trained at Leiths, ten years in restaurant kitchens, Level 3 Food Hygiene. Say what qualifies you — a guest chooses you on this.',
     qualsRequiredNote: 'A guest is putting their safety in your hands, so for this kind of experience we do need it.',
-    qualsOptionalNote: 'A guest chooses you partly on this, so it’s worth a line.',
+    qualsOptionalNote: 'Anything you’ve trained in or worked at — it all helps.',
     // The gate under a greyed Next on the hub when a required qualification is
     // still missing.
     qualsGate: 'Add your training or qualifications — for this kind of experience it’s required.',
