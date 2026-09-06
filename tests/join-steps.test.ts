@@ -449,24 +449,36 @@ test('what counts as seen matches where they land', () => {
     assert.equal(Array.isArray(seen) && seen.indexOf('finish') !== -1, true);
 });
 
-test('a guest with no category yet opens on the picker, not the business step', () => {
-    // The trade ('guest') is already in the URL, but the category is the guest's
-    // version of step one and has not been answered.
+test('a guest with no session opens on the verify gate, before the picker', () => {
+    // The account moved to the very front. Trade ('guest') is in the URL, but
+    // with no session the first screen is g_verify — ahead of the category
+    // picker, whatever else is or isn't answered.
     assert.equal(
         openingStep({ hydrated: true, restored: false, lodged: false, trade: 'guest', guestNeedsCategory: true }),
-        'trade',
+        'g_verify',
     );
-    // Once a category is picked (or a returning provider is loaded), the flag is
-    // false and they go on to their first content screen — g_you, not the
-    // business step, which is host-only now.
     assert.equal(
         openingStep({ hydrated: true, restored: false, lodged: false, trade: 'guest', guestNeedsCategory: false }),
-        'g_you',
+        'g_verify',
+        'still the gate first, even with a category already picked',
     );
-    // The picker is what they have seen when they land there.
+    // Nothing is behind the gate when they land on it.
     assert.deepEqual(
         openingVisited({ hydrated: true, restored: false, lodged: false, trade: 'guest', guestNeedsCategory: true }),
         [],
+    );
+});
+
+test('a signed-in guest skips the gate — the picker if no category, else the first content screen', () => {
+    // A returning applicant, already signed in: the gate is behind them, so they
+    // open on the category picker (no category yet) or straight on the content.
+    assert.equal(
+        openingStep({ hydrated: true, restored: false, lodged: false, trade: 'guest', guestNeedsCategory: true, hasSession: true }),
+        'trade',
+    );
+    assert.equal(
+        openingStep({ hydrated: true, restored: false, lodged: false, trade: 'guest', guestNeedsCategory: false, hasSession: true }),
+        'g_you',
     );
 });
 
@@ -485,20 +497,22 @@ test('a guest with no context still sees the old three steps', () => {
 });
 
 // The rebuilt flow, reordered to Airbnb's sequence and with the account gate
-// moved to the front (Sep 2026). After the category pick comes g_verify — the
-// verify-your-email gate that makes the account, so the rest of the wizard runs
-// signed in — then About you (g_you, g_creds), Location (g_area) straight after,
-// Photos (g_photos) BEFORE the writing (you describe your kitchen better having
-// just uploaded photos of it, and anyone without usable photos finds out
-// early), then Pricing (g_menu), Details (g_expect), the naming/describing
-// (g_about) near the end, and the Finish wrap-up (g_checks, g_contact, finish).
-// The booking shape is inferred from the category and never a step; availability
-// folds into g_area; dietary folds into g_expect; the business step is host-
-// only (the name rides on g_about). So an anonymous applicant who has a sub-type
-// walks these thirteen keys — g_verify included, because they have no session
-// yet. A signed-in applicant skips g_verify (see the test below).
+// moved to the VERY FRONT (Sep 2026). g_verify — the verify-your-email gate that
+// makes the account — is the first screen of all, before the category picker:
+// picking "Host a guest experience" on the fork lands them straight on it, and
+// nothing comes before the account. Then the picker ('trade' group grid),
+// g_subtype, and the content: About you (g_you, g_creds), Location (g_area)
+// straight after, Photos (g_photos) BEFORE the writing (you describe your
+// kitchen better having just uploaded photos of it), Pricing (g_menu), Details
+// (g_expect), the naming/describing (g_about) near the end, and the Finish
+// wrap-up (g_checks, g_contact, finish). The booking shape is inferred from the
+// category and never a step; availability folds into g_area; dietary folds into
+// g_expect; the business step is host-only (the name rides on g_about). So an
+// anonymous applicant with a sub-type walks these thirteen keys — g_verify
+// leading, because they have no session yet. A signed-in applicant skips
+// g_verify (see the test below).
 const THIRTEEN = [
-    'trade', 'g_subtype', 'g_verify', 'g_you', 'g_creds', 'g_area', 'g_photos',
+    'g_verify', 'trade', 'g_subtype', 'g_you', 'g_creds', 'g_area', 'g_photos',
     'g_menu', 'g_expect', 'g_about', 'g_checks', 'g_contact', 'finish',
 ];
 
@@ -509,13 +523,13 @@ test('a chef (food, comes to them) walks the thirteen, and never sees the busine
     assert.equal(stepApplies('business', 'guest', ctx), false, 'a guest names it on g_about, not a business step');
 });
 
-test('the verify gate is there for an anonymous applicant and gone once signed in', () => {
-    // The account moved to the front: an applicant with no session verifies
-    // their email right after the category pick, and the rest runs authenticated.
-    // A returning applicant who is already signed in never sees the gate.
+test('the verify gate leads the flow for an anonymous applicant and is gone once signed in', () => {
+    // The account moved to the very front: an applicant with no session verifies
+    // their email before the category picker, and everything after runs
+    // authenticated. A returning applicant who is already signed in never sees it.
     const anon = { group: 'food', category: 'chef', shape: 'comes_to_you' };
     assert.equal(stepApplies('g_verify', 'guest', anon), true, 'anonymous applicant must verify');
-    assert.equal(gkeys(anon).indexOf('g_verify'), 2, 'the gate sits straight after the sub-type pick');
+    assert.equal(gkeys(anon).indexOf('g_verify'), 0, 'the gate is the very first screen, before the picker');
 
     const signedIn = { ...anon, hasSession: true };
     assert.equal(stepApplies('g_verify', 'guest', signedIn), false, 'a signed-in applicant skips it');
@@ -636,11 +650,11 @@ test('the something-else group skips the sub-type screen', () => {
     // 'other' is alone under its group, so there is no screen two to show.
     const ctx = { group: 'other', category: 'other', shape: null };
     assert.equal(stepApplies('g_subtype', 'guest', ctx), false, 'other has no sub-type');
-    // The thirteen minus the sub-type screen — the verify gate still comes first
-    // among the content, straight after the (single) category is set.
+    // The thirteen minus the sub-type screen — the verify gate still leads, then
+    // the picker, then straight into the content.
     assert.deepEqual(
         gkeys(ctx),
-        ['trade', 'g_verify', 'g_you', 'g_creds', 'g_area', 'g_photos', 'g_menu', 'g_expect', 'g_about', 'g_checks', 'g_contact', 'finish'],
+        ['g_verify', 'trade', 'g_you', 'g_creds', 'g_area', 'g_photos', 'g_menu', 'g_expect', 'g_about', 'g_checks', 'g_contact', 'finish'],
     );
 });
 

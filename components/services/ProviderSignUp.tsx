@@ -828,7 +828,10 @@ function ApplicationForm() {
         // time this runs on hydrate, restoreDraft has already put back any saved
         // category, so this reads the real answer.
         const guestNeedsCategory = audienceForTrade(tradeFromUrl) === 'guest' && !guestCategory && !providerId;
-        const openState = { hydrated, restored, lodged, trade: tradeFromUrl, guestNeedsCategory };
+        // A guest with no session opens on the verify gate, before the picker.
+        // Session is set inside the same load() that flips `hydrated`, so it is
+        // already known by the time this runs.
+        const openState = { hydrated, restored, lodged, trade: tradeFromUrl, guestNeedsCategory, hasSession: !!session };
         const opening = openingStep(openState);
         if (opening === null) return;
 
@@ -1675,17 +1678,13 @@ function ApplicationForm() {
     // category is a made-to-order product, which skips the years and expertise
     // screens, so it opens on g_about instead. There is no standalone business
     // step for a guest any more; the name rides on g_about.
-    // Where a guest goes after the category pick. If they are not signed in
-    // yet — the normal first-time applicant — that is the verify-your-email gate,
-    // which makes their account so the rest of the wizard runs authenticated.
-    // Once a session exists (a returning applicant, or straight after they
-    // verify), it is the first real content screen: the years opener, or
-    // g_about for a made-to-order product that skips the years and expertise
-    // screens.
-    const firstContentAfterVerify = (category: string): StepKey =>
-        guestAsksExpertise(category) ? 'g_you' : 'g_about';
+    // Where a guest goes after the category pick — the first real content
+    // screen: the years opener, or g_about for a made-to-order product that
+    // skips the years and expertise screens. The account is already made by
+    // now (verify is the first screen of all, before the picker), so there is
+    // no auth detour here.
     const firstGuestContentStep = (category: string): StepKey =>
-        !session ? 'g_verify' : firstContentAfterVerify(category);
+        guestAsksExpertise(category) ? 'g_you' : 'g_about';
 
     const advanceFromGroup = () => {
         const subs = categoriesForGroup(guestGroup);
@@ -2280,14 +2279,15 @@ function ApplicationForm() {
             setOtpError((error && error.message) || 'That code did not work. Check it and try again.');
             return;
         }
-        // Signed in. The address they verified is the one to reach them on, so it
-        // pre-fills the contact field. Then move to the first real content
-        // screen — done in the same action, because setting the session drops
-        // g_verify from the flow and we must not be left standing on a step that
-        // no longer exists.
+        // Signed in. The address they verified is the one to reach them on, so
+        // it pre-fills the contact field. Then move to the category picker —
+        // verify is the first screen now, so the picker is what comes next.
+        // Done in the same action, because setting the session drops g_verify
+        // from the flow and we must not be left standing on a step that no
+        // longer exists.
         setSession(data.session);
         if (!contactEmail.trim()) setContactEmail(email);
-        setStep(firstContentAfterVerify(guestCategory));
+        setStep('trade');
         scrollPanelToTop();
     };
 
