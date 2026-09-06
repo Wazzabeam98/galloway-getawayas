@@ -76,6 +76,7 @@ import {
     checksFor,
     DEFAULT_SERVICE_COMMISSION,
 } from '@/lib/serviceProviders';
+import { GUEST_SCREEN_COPY } from '@/lib/strings';
 import {
     stepsFor,
     stepNumber,
@@ -124,7 +125,7 @@ const draftKey = (trade: string) => 'gg.provider-draft.' + trade;
 // one of these can't be passed until it is non-empty (gated in the footer). The
 // value stays a string to match the fields it replaced.
 function NumberStepper({
-    value, onChange, min = 0, max = 999, step = 1, suffix, suggestion,
+    value, onChange, min = 0, max = 999, step = 1, suffix, suggestion, size = 'md',
 }: {
     value: string;
     onChange: (v: string) => void;
@@ -133,6 +134,9 @@ function NumberStepper({
     step?: number;
     suffix?: string;
     suggestion?: number;
+    // 'lg' is the whole-screen years opener: a huge display numeral and larger
+    // buttons. 'md' is the inline count on the where-and-when step.
+    size?: 'md' | 'lg';
 }) {
     const has = String(value).trim() !== '' && Number.isFinite(Number(value));
     const shown = has ? Number(value) : (suggestion ?? min);
@@ -140,27 +144,33 @@ function NumberStepper({
     // Untouched: the first nudge adopts the suggestion rather than moving off it.
     const nudge = (dir: number) => (has ? commit(shown + dir * step) : commit(suggestion ?? min));
 
+    const lg = size === 'lg';
     const circle =
-        'flex h-11 w-11 flex-none items-center justify-center rounded-full border border-slate-300 '
+        (lg ? 'h-12 w-12 ' : 'h-11 w-11 ')
+        + 'flex flex-none items-center justify-center rounded-full border border-slate-300 '
         + 'text-slate-600 transition hover:border-slate-500 focus:outline-none focus-visible:ring-2 '
         + 'focus-visible:ring-emerald-600 disabled:opacity-40 disabled:hover:border-slate-300';
+    const glyph = lg ? 'h-5 w-5' : 'h-4 w-4';
+    const numberField = lg
+        ? 'w-40 bg-transparent text-center text-7xl font-extrabold tabular-nums text-slate-900 placeholder:font-extrabold placeholder:text-slate-300 focus:outline-none [appearance:textfield] [&::-webkit-outer-spin-button]:appearance-none [&::-webkit-inner-spin-button]:appearance-none'
+        : 'w-16 bg-transparent text-center text-4xl font-extrabold tabular-nums text-slate-900 placeholder:font-extrabold placeholder:text-slate-300 focus:outline-none [appearance:textfield] [&::-webkit-outer-spin-button]:appearance-none [&::-webkit-inner-spin-button]:appearance-none';
 
     return (
-        <div className="flex items-center gap-4">
+        <div className={'flex items-center ' + (lg ? 'gap-6' : 'gap-4')}>
             <button type="button" onClick={() => nudge(-1)} disabled={has && shown <= min}
                 aria-label="Decrease" className={circle}>
-                <Minus className="h-4 w-4" strokeWidth={2.25} />
+                <Minus className={glyph} strokeWidth={2.25} />
             </button>
             <input
                 type="number" inputMode="numeric" aria-label="Amount"
                 value={has ? String(shown) : ''}
                 placeholder={suggestion !== undefined ? String(suggestion) : ''}
                 onChange={(e) => onChange(e.target.value)}
-                className="w-16 bg-transparent text-center text-4xl font-extrabold tabular-nums text-slate-900 placeholder:font-extrabold placeholder:text-slate-300 focus:outline-none [appearance:textfield] [&::-webkit-outer-spin-button]:appearance-none [&::-webkit-inner-spin-button]:appearance-none"
+                className={numberField}
             />
             <button type="button" onClick={() => nudge(1)} disabled={has && shown >= max}
                 aria-label="Increase" className={circle}>
-                <Plus className="h-4 w-4" strokeWidth={2.25} />
+                <Plus className={glyph} strokeWidth={2.25} />
             </button>
             {suffix && <span className="text-sm text-slate-500">{suffix}</span>}
         </div>
@@ -2700,13 +2710,14 @@ function ApplicationForm() {
                                 ? 'max-w-3xl py-10 sm:py-12'
                                 : 'max-w-2xl py-10 sm:py-12'))
                     : 'flex-1 overflow-y-auto px-4 sm:px-6 py-5'}>
-                    {/* One big question a screen. The two picker screens (group,
-                        sub-type) centre it over a row of cards, Airbnb-style; the
-                        content screens sit it left over their fields. The finish
-                        step carries its own heading, so it is left out. */}
+                    {/* One big question a screen. The picker screens (group,
+                        sub-type) and the years opener centre it — over the cards
+                        for the pickers, over the big stepper for the years, both
+                        Airbnb-style; the other content screens sit it left over
+                        their fields. The finish step carries its own heading. */}
                     {isGuest && step !== 'finish' && (
                         <h1 className={'font-extrabold tracking-tight text-slate-900 [text-wrap:balance] text-3xl sm:text-4xl '
-                            + ((step === 'trade' || step === 'g_subtype') ? 'mb-10 text-center' : 'mb-8')}>
+                            + ((step === 'trade' || step === 'g_subtype' || step === 'g_you') ? 'mb-10 text-center' : 'mb-8')}>
                             {step === 'trade'
                                 ? 'What experience are you offering guests?'
                                 : stepMeta.title}
@@ -3182,6 +3193,51 @@ function ApplicationForm() {
                             ? 'A guest is putting their safety in your hands, so for this kind of experience we do need it.'
                             : 'Not required — but it’s what a guest weighs you on, so it’s worth a line if you have one.'}
                     </p>
+
+                    {/* Moved here off the years screen: the short line and the
+                        photo of the provider. They belong with the expertise —
+                        Airbnb's version of this screen leads with a photo of the
+                        host. Both optional. */}
+                    <label className="mt-6 block text-xs font-medium text-slate-500 mb-2">
+                        {GUEST_SCREEN_COPY.aboutLineLabel} <span className="text-slate-400">(optional)</span>
+                    </label>
+                    <input
+                        type="text"
+                        value={basedLine}
+                        onChange={(e) => setBasedLine(e.target.value)}
+                        placeholder={GUEST_SCREEN_COPY.aboutLinePlaceholder}
+                        className="w-full rounded-xl border border-slate-300 px-4 py-3 mb-6 focus:outline-none focus:ring-2 focus:ring-emerald-700"
+                    />
+
+                    <label className="block text-xs font-medium text-slate-500 mb-2">
+                        {GUEST_SCREEN_COPY.photoLabel} <span className="text-slate-400">(optional)</span>
+                    </label>
+                    <div className="flex items-center gap-3">
+                        {headshot && (
+                            <img src={getImageUrl(headshot)} alt="" className="w-16 h-16 rounded-full object-cover" />
+                        )}
+                        <label className="inline-flex items-center gap-2 rounded-xl border-2 border-dashed border-slate-300 px-4 py-2.5 cursor-pointer text-sm text-slate-600 hover:border-slate-400">
+                            <Plus className="w-4 h-4" />
+                            {uploadingHeadshot ? 'Uploading…' : headshot ? 'Replace' : 'Add a photo'}
+                            <input
+                                type="file"
+                                accept="image/png, image/jpeg"
+                                onChange={uploadHeadshot}
+                                className="hidden"
+                                disabled={uploadingHeadshot}
+                            />
+                        </label>
+                        {headshot && (
+                            <button
+                                type="button"
+                                onClick={() => setHeadshot(null)}
+                                className="inline-flex items-center gap-1.5 rounded-xl border border-slate-300 px-4 py-2.5 text-sm text-slate-600 hover:border-slate-500"
+                            >
+                                <X className="w-3.5 h-3.5" />
+                                Remove
+                            </button>
+                        )}
+                    </div>
                 </section>
                 )}
 
@@ -3439,62 +3495,17 @@ function ApplicationForm() {
                     earns its place, the rest fill in trust. Deliberately no
                     vetting badges — nothing here is checked, so nothing claims
                     to be. */}
+                {/* THE YEARS OPENER — one question, one number, nothing else, the
+                    way Airbnb do it. The question is the centred H1 above; here is
+                    just the big centred stepper with air around it. The short line
+                    and the photo of the provider moved to the expertise screen
+                    (g_creds), where the person's story belongs. Two rules: it goes
+                    down to zero (a business started this year has none and we'd
+                    still take them), and it shows a suggestion but stores nothing
+                    until touched — the same rule as the where-and-when counts. */}
                 {onStep('g_you') && audienceForTrade(trade) === 'guest' && (
-                <section className="mb-8">
-                    {/* The momentum-first opener, Airbnb-style: a number with a
-                        sensible default is the easiest question there is, so it's
-                        the first content screen. "Your name" sits with the business
-                        name over on g_about. */}
-                    <label className="block text-xs font-medium text-slate-500 mb-2">
-                        Years doing this {!catYearsRequired && <span className="text-slate-400">(optional)</span>}
-                    </label>
-                    <div className="flex items-center gap-2 mb-6">
-                        <input
-                            type="number" min="0" step="1" inputMode="numeric"
-                            value={yearsDoing}
-                            onChange={(e) => setYearsDoing(e.target.value)}
-                            placeholder="5"
-                            className="w-24 rounded-xl border border-slate-300 px-4 py-3 focus:outline-none focus:ring-2 focus:ring-emerald-700"
-                        />
-                        <span className="text-sm text-slate-600">years</span>
-                    </div>
-
-                    <label className="block text-xs font-medium text-slate-500 mb-2">A short line about you</label>
-                    <input
-                        type="text"
-                        value={basedLine}
-                        onChange={(e) => setBasedLine(e.target.value)}
-                        placeholder="Kirkcudbright · cooking since 2019"
-                        className="w-full md:max-w-md rounded-xl border border-slate-300 px-4 py-3 mb-6 focus:outline-none focus:ring-2 focus:ring-emerald-700"
-                    />
-
-                    <label className="block text-xs font-medium text-slate-500 mb-2">A photo of you</label>
-                    <div className="flex items-center gap-3">
-                        {headshot && (
-                            <img src={getImageUrl(headshot)} alt="" className="w-16 h-16 rounded-full object-cover" />
-                        )}
-                        <label className="inline-flex items-center gap-2 rounded-xl border-2 border-dashed border-slate-300 px-4 py-2.5 cursor-pointer text-sm text-slate-600 hover:border-slate-400">
-                            <Plus className="w-4 h-4" />
-                            {uploadingHeadshot ? 'Uploading…' : headshot ? 'Replace' : 'Add a photo'}
-                            <input
-                                type="file"
-                                accept="image/png, image/jpeg"
-                                onChange={uploadHeadshot}
-                                className="hidden"
-                                disabled={uploadingHeadshot}
-                            />
-                        </label>
-                        {headshot && (
-                            <button
-                                type="button"
-                                onClick={() => setHeadshot(null)}
-                                className="inline-flex items-center gap-1.5 rounded-xl border border-slate-300 px-4 py-2.5 text-sm text-slate-600 hover:border-slate-500"
-                            >
-                                <X className="w-3.5 h-3.5" />
-                                Remove
-                            </button>
-                        )}
-                    </div>
+                <section className="mb-8 flex flex-col items-center py-10 sm:py-16">
+                    <NumberStepper value={yearsDoing} onChange={setYearsDoing} min={0} max={70} suggestion={5} size="lg" />
                 </section>
                 )}
 

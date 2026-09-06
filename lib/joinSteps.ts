@@ -31,6 +31,7 @@ import {
     checksFor,
     guestAsksExpertise,
 } from '@/lib/serviceProviders';
+import { GUEST_SCREEN_COPY } from '@/lib/strings';
 
 // The host trades keep 'trade' | 'business' | 'credentials' | 'prices' |
 // 'finish'. The guest experience used to collapse ALL of its application into
@@ -86,7 +87,7 @@ const ALL_STEPS: Step[] = [
     // photos, where and when, the safety checks and how to reach you. Which of
     // them a given guest sees is decided by stepApplies from the category and
     // shape; the standalone 'business' step above is host-only.
-    { key: 'g_you', label: 'You', title: 'How long have you been doing this?' },
+    { key: 'g_you', label: 'You', title: GUEST_SCREEN_COPY.yearsQuestion },
     { key: 'g_creds', label: 'Expertise', title: 'What makes you the person to do it?' },
     { key: 'g_about', label: 'About', title: 'Name it, and tell guests what it is' },
     { key: 'g_menu', label: 'Price', title: 'What you offer, and what it costs' },

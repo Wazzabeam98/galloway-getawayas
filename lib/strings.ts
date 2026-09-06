@@ -19,6 +19,20 @@ export interface CategoryCopy {
     hint: string;
 }
 
+// Guest wizard screen copy. Moved here as each screen is touched (the years
+// opener and the two fields that moved off it, Sep 2026); the rest still reads
+// from the step model and inline until reworded.
+export const GUEST_SCREEN_COPY = {
+    // The years opener — one question, one number, Airbnb-style. The unit lives
+    // in the question, so the stepper shows no label and no suffix.
+    yearsQuestion: 'How many years have you been doing this?',
+    // The short line and the photo of the provider — moved off the years screen
+    // onto the expertise screen, where the person's story belongs.
+    aboutLineLabel: 'A short line about you',
+    aboutLinePlaceholder: 'Kirkcudbright · cooking since 2019',
+    photoLabel: 'A photo of you',
+};
+
 // The Food & drink sub-types. Keyed by the category key in GUEST_CATEGORIES.
 //   - chef        a chef comes to the cottage (comes-to-you)
 //   - food_order  made and collected or dropped off — the old Cakes & baking and
