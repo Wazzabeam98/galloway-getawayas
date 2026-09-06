@@ -25,7 +25,7 @@ export interface CategoryCopy {
 export const GUEST_SCREEN_COPY = {
     // The years opener — one question, one number, Airbnb-style. The unit lives
     // in the question, so the stepper shows no label and no suffix.
-    yearsQuestion: 'How many years have you been doing this?',
+    yearsQuestion: 'How long have you been doing this?',
     // The short line and the photo of the provider — moved off the years screen
     // onto the expertise screen, where the person's story belongs.
     aboutLineLabel: 'A short line about you',
