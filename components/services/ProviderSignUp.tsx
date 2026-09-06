@@ -1525,9 +1525,10 @@ function ApplicationForm() {
     // requires qualifications.
     const OPTIONAL_GUEST_STEPS: StepKey[] = ['g_menu', 'g_expect', 'g_checks'];
     const stepIsPicker = step === 'trade' || step === 'g_subtype';
+    // g_creds is no longer skippable for anyone: the professional title is now
+    // required for every category (qualifications on top for the safety four).
     const stepIsOptional = isGuest && !stepIsPicker && (
         OPTIONAL_GUEST_STEPS.indexOf(step) !== -1
-        || (step === 'g_creds' && !catQualsRequired)
     );
 
     // Three guest steps can be required without a submitProblems field of their
@@ -1549,7 +1550,9 @@ function ApplicationForm() {
         : null;
 
     const guestExtraMissing: string | null = isGuest
-        ? (step === 'g_creds' && catQualsRequired && !qualifications.trim()
+        ? (step === 'g_creds' && !professionalTitle.trim()
+            ? GUEST_SCREEN_COPY.titleGate
+            : step === 'g_creds' && catQualsRequired && !qualifications.trim()
             ? GUEST_SCREEN_COPY.qualsGate
             : step === 'g_photos' && photos.length === 0
                 ? 'Add at least one photo — a listing without one doesn’t sell.'
@@ -3636,7 +3639,6 @@ function ApplicationForm() {
                             <HubRow
                                 filled={titleFilled}
                                 label={GUEST_SCREEN_COPY.titleRowLabel}
-                                suffix={GUEST_SCREEN_COPY.optionalSuffix}
                                 prompt={GUEST_SCREEN_COPY.titleRowPrompt}
                                 summary={titleSummary}
                                 onOpen={() => setExpertiseModal('title')}
@@ -5746,7 +5748,7 @@ function ApplicationForm() {
                             : step === 'g_subtype' ? !guestCategory
                             // g_you has no gate: Next is enabled from load. The
                             // shown number is the accepted answer, stored on Next.
-                            : step === 'g_creds' ? (catQualsRequired && !qualifications.trim())
+                            : step === 'g_creds' ? (!professionalTitle.trim() || (catQualsRequired && !qualifications.trim()))
                             : step === 'g_photos' ? photos.length === 0
                             : step === 'g_area' ? (stepProblems.length > 0 || !!whereMissing)
                             : stepProblems.length > 0
