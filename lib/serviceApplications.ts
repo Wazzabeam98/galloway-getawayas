@@ -52,9 +52,11 @@ export const RESEND_COOLDOWN_SECONDS = 60;
 // is STORED in service_applications.payload, which is jsonb and holds anything
 // with no migration — so everything the wizard collects goes in. It is later
 // WRITTEN to service_providers columns at /finish, and only real columns may go
-// there. `declarations` is a real column (written at /finish); the six guest
-// content answers are NOT columns yet, so they ride in the jsonb payload only
-// and are materialised when the guest_details column lands.
+// there. `declarations` and now `guest_details` are real columns (written at
+// /finish). The six guest content answers historically had no column and rode
+// in the jsonb payload only; they now have the guest_details column
+// (20260906143712), which the signed-in wizard writes directly and the apply
+// path still carries through the payload for the anonymous case.
 //
 // This is the fix for the bug where pick(incoming, PROVIDER_COLUMNS) at intake
 // stripped the content fields and the declarations before anything was stored,
@@ -73,6 +75,10 @@ export const PROVIDER_COLUMNS = [
     'lead_time_days', 'slot_length_minutes', 'slot_capacity',
     // A real jsonb column: the per-category declarations the guest confirmed.
     'declarations',
+    // A real jsonb column (20260906143712): the guest's content answers in their
+    // own words. The signed-in wizard writes it directly; it is whitelisted here
+    // so it also survives the anonymous apply→finish path unchanged.
+    'guest_details',
 ];
 
 /** The guest content answers — no column yet, so jsonb payload only, materialised later. */
