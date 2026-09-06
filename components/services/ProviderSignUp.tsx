@@ -8,7 +8,7 @@ import { supabaseEmailFlow } from '@/lib/supabaseEmailFlow';
 import { toast } from 'react-toastify';
 import {
     Sparkles, Wrench, Trees, Droplet, ChefHat, Cake, ShoppingBasket, Trash2,
-    Plus, Minus, X, ChevronLeft, ChevronRight, Check, Zap, Hammer, Paintbrush, Home,
+    Plus, Minus, X, ChevronLeft, ChevronRight, ChevronDown, Check, Zap, Hammer, Paintbrush, Home,
     ImagePlus, User, Pencil,
 } from 'lucide-react';
 import { TradeTile, TradeTileGrid, TRADE_ICONS, GROUP_ICONS } from '@/components/services/TradeTiles';
@@ -197,7 +197,7 @@ function NumberStepper({
 // empty, a check once filled), a bold label with a grey one-line description
 // beside it, and a chevron on the right. Tapping it opens that thing's sub-flow.
 // Reusable — the same pattern is wanted on later screens.
-function HubRow({ filled, label, suffix, prompt, summary, onOpen }: {
+function HubRow({ filled, label, suffix, prompt, summary, onOpen, thumb }: {
     filled: boolean;
     label: string;
     // An "(optional)" style suffix rendered after the label in lighter grey.
@@ -205,14 +205,24 @@ function HubRow({ filled, label, suffix, prompt, summary, onOpen }: {
     prompt: string;
     summary?: string | null;
     onOpen: () => void;
+    // A resolved image URL. When set, the leading square shows the photo instead
+    // of the plus/check glyph — a menu item sells on its picture, so the row
+    // carries a thumbnail the way Airbnb's itinerary rows do.
+    thumb?: string | null;
 }) {
     return (
         <button type="button" onClick={onOpen}
             className="flex w-full items-center gap-4 rounded-2xl px-2 py-3 text-left transition hover:bg-slate-50 focus:outline-none focus-visible:ring-2 focus-visible:ring-emerald-600">
+            {thumb ? (
+                <span className="h-11 w-11 flex-none overflow-hidden rounded-xl bg-slate-100">
+                    <img src={thumb} alt="" className="h-full w-full object-cover" />
+                </span>
+            ) : (
             <span aria-hidden className={'flex h-11 w-11 flex-none items-center justify-center rounded-xl border transition '
                 + (filled ? 'border-emerald-600 bg-emerald-600 text-white' : 'border-slate-300 bg-slate-50 text-slate-500')}>
                 {filled ? <Check className="h-5 w-5" strokeWidth={2.5} /> : <Plus className="h-5 w-5" />}
             </span>
+            )}
             <span className="min-w-0 flex-1">
                 <span className="block font-semibold text-slate-900">
                     {label}{suffix && <span className="font-normal text-slate-400"> {suffix}</span>}
@@ -233,7 +243,7 @@ function HubRow({ filled, label, suffix, prompt, summary, onOpen }: {
 //
 // One field per modal is what keeps it this clean. Fields edit live component
 // state, so Save and the X both just close; the draft saves as they type.
-function SubFlowModal({ open, title, onClose, saveLabel, saveDisabled, note, children }: {
+function SubFlowModal({ open, title, onClose, saveLabel, saveDisabled, note, children, onSave, onBack, onRemove }: {
     open: boolean;
     title: string;
     onClose: () => void;
@@ -241,6 +251,16 @@ function SubFlowModal({ open, title, onClose, saveLabel, saveDisabled, note, chi
     saveDisabled?: boolean;
     note?: React.ReactNode;
     children: React.ReactNode;
+    // The primary button's action. Defaults to onClose (the single-field case,
+    // where the field edits live state and there is nothing to do but close).
+    // A stepped sub-flow passes onSave to advance to the next step instead.
+    onSave?: () => void;
+    // When set, a back chevron shows top-left — a stepped sub-flow uses it to
+    // go to the previous step. The single-field modals leave it unset.
+    onBack?: () => void;
+    // When set, a quiet Remove link shows bottom-left — for a row that can be
+    // deleted (a menu item), matching Airbnb's Edit/Remove on an itinerary row.
+    onRemove?: () => void;
 }) {
     if (!open) return null;
     return (
@@ -248,7 +268,13 @@ function SubFlowModal({ open, title, onClose, saveLabel, saveDisabled, note, chi
             onClick={onClose}>
             <div className="flex max-h-[92vh] min-h-[62vh] w-full flex-col rounded-t-3xl bg-white shadow-xl sm:max-h-[88vh] sm:min-h-[34rem] sm:max-w-2xl sm:rounded-3xl"
                 onClick={(e) => e.stopPropagation()}>
-                <div className="flex justify-end px-5 pt-5 sm:px-8 sm:pt-8">
+                <div className="flex items-center justify-between px-5 pt-5 sm:px-8 sm:pt-8">
+                    {onBack ? (
+                        <button type="button" onClick={onBack} aria-label="Back"
+                            className="flex h-9 w-9 items-center justify-center rounded-full text-slate-500 hover:bg-slate-100">
+                            <ChevronLeft className="h-5 w-5" />
+                        </button>
+                    ) : <span className="h-9 w-9" />}
                     <button type="button" onClick={onClose} aria-label="Close"
                         className="flex h-9 w-9 items-center justify-center rounded-full text-slate-500 hover:bg-slate-100">
                         <X className="h-5 w-5" />
@@ -261,8 +287,15 @@ function SubFlowModal({ open, title, onClose, saveLabel, saveDisabled, note, chi
                     <div className="flex flex-1 flex-col justify-center py-10">{children}</div>
                     {note && <p className="text-center text-sm text-slate-500 [text-wrap:balance]">{note}</p>}
                 </div>
-                <div className="flex justify-end border-t border-slate-100 px-6 py-4 sm:px-8">
-                    <button type="button" onClick={onClose} disabled={saveDisabled}
+                <div className="flex items-center border-t border-slate-100 px-6 py-4 sm:px-8">
+                    {onRemove && (
+                        <button type="button" onClick={onRemove}
+                            className="text-sm font-semibold text-rose-600 hover:text-rose-700">
+                            Remove
+                        </button>
+                    )}
+                    <div className="flex-1" />
+                    <button type="button" onClick={onSave || onClose} disabled={saveDisabled}
                         className={'rounded-full px-7 py-2.5 text-sm font-semibold transition '
                             + (saveDisabled
                                 ? 'cursor-not-allowed bg-slate-200 text-slate-400'
@@ -408,6 +441,14 @@ function ApplicationForm() {
     // Which item row is uploading a photo, by index, so only that row shows a
     // spinner rather than all of them.
     const [uploadingItem, setUploadingItem] = useState<number | null>(null);
+
+    // The price screen's per-item sub-flow (g_menu), rebuilt as a hub. `menuIndex`
+    // is which item's sub-flow is open (null = the hub list); `menuStep` walks the
+    // one-thing-a-screen sub-flow (0 name, 1 price+type, 2 description, 3 photo);
+    // `payoutOpen` toggles the quiet "You keep £X" line into its maths card.
+    const [menuIndex, setMenuIndex] = useState<number | null>(null);
+    const [menuStep, setMenuStep] = useState(0);
+    const [payoutOpen, setPayoutOpen] = useState(false);
 
     // Who they are, for a guest trade only. A guest is choosing someone to come
     // into the cottage they are staying in, so the listing carries a bit of the
@@ -3022,11 +3063,11 @@ function ApplicationForm() {
                         have no section, so it shows nothing there. */}
                     {isGuest && currentSection && (
                         <p className={'text-xs font-bold uppercase tracking-[0.12em] text-emerald-700 mb-3 '
-                            + ((step === 'g_you' || step === 'g_creds') ? 'text-center' : '')}>
+                            + ((step === 'g_you' || step === 'g_creds' || step === 'g_menu') ? 'text-center' : '')}>
                             {currentSection.label}
                         </p>
                     )}
-                    {isGuest && step !== 'finish' && step !== 'g_creds' && (
+                    {isGuest && step !== 'finish' && step !== 'g_creds' && step !== 'g_menu' && (
                         <h1 className={'font-extrabold tracking-tight text-slate-900 [text-wrap:balance] text-3xl sm:text-4xl '
                             + ((step === 'trade' || step === 'g_subtype' || step === 'g_you') ? 'mb-10 text-center' : 'mb-8')}>
                             {step === 'trade'
@@ -3656,126 +3697,223 @@ function ApplicationForm() {
                     menu renders as a single price on the card, so the chef's
                     "one thing, one price" reads exactly as it should. */}
                 {onStep('g_menu') && audienceForTrade(trade) === 'guest' && (() => {
-                    // A slot is one session offering, not a menu — a sauna owner
-                    // sells "the sauna", not a list. So a slot shows a single row
-                    // with no "add another", and its price unit is read off the
-                    // private/shared answer below rather than picked here. The two
-                    // request shapes keep the full menu with a per-item unit.
+                    // Rebuilt to the flow's craft: a centred question, then each
+                    // priced thing as a borderless HubRow (name + price + a photo
+                    // thumbnail), an add row at the bottom, and a per-item sub-flow
+                    // of one question a screen (name → price+type → description →
+                    // photo), the same shape as Airbnb's itinerary. The pricing
+                    // MODEL is unchanged — the same units and the same commission,
+                    // only the presentation. A slot is one session offering (a
+                    // sauna owner sells "the sauna", not a list), so it shows a
+                    // single row with no add and its price unit read off the
+                    // private/shared answer rather than picked here.
                     const isSlot = shape === 'slot';
                     const blank = { id: undefined as string | undefined, name: '', description: '', price: '', unit: 'flat', image: null as string | null };
-                    const rows = isSlot ? [items[0] || blank] : (items.length ? items : [blank]);
-                    const setRow = (i: number, field: 'name' | 'description' | 'price' | 'unit', val: string) =>
-                        setItems(rows.map((r, j) => (j === i ? { ...r, [field]: val } : r)));
-                    const addRow = () => setItems([...rows, { ...blank }]);
-                    const removeRow = (i: number) => { const next = rows.filter((_, j) => j !== i); setItems(next); };
 
-                    // Provider-facing wording for each unit. 'flat' leads because a
-                    // single set price is the commonest and the simplest to read.
                     const UNIT_WORD: Record<string, string> = {
                         flat: 'One set price', person: 'Per person', night: 'Per night',
                         hour: 'Per hour', ticket: 'Per ticket', item: 'Per item',
                     };
+                    const unitWord = (r: { unit: string }) => isSlot
+                        ? (slotPrivate === false ? 'per person' : slotPrivate === true ? 'for the session' : '')
+                        : (UNIT_WORD[r.unit || 'flat'] || '');
+                    const rowSummary = (r: { price: string; unit: string }) => {
+                        const p = String(r.price || '').trim();
+                        return p !== '' && Number(p) > 0
+                            ? '£' + p + (unitWord(r) ? ' · ' + unitWord(r) : '')
+                            : GUEST_SCREEN_COPY.menuRowPrompt;
+                    };
 
-                    const namePh = isSlot ? 'e.g. Lochside sauna session' : 'What you’re offering';
-                    // The big question ("What you offer, and what it costs")
-                    // carries this screen — no nested sub-heading, no paragraph.
-                    // Each priced thing is one card; the quiet field labels are
-                    // all the naming a person needs.
+                    const rows = isSlot ? (items.length ? [items[0]] : []) : items;
+                    const setField = (i: number, field: 'name' | 'description' | 'price' | 'unit', val: string) =>
+                        setItems((prev) => prev.map((r, j) => (j === i ? { ...r, [field]: val } : r)));
+
+                    const openEdit = (i: number) => { setMenuIndex(i); setMenuStep(0); setPayoutOpen(false); };
+                    const openAdd = () => { setItems((prev) => [...prev, { ...blank }]); setMenuIndex(items.length); setMenuStep(0); setPayoutOpen(false); };
+                    const openSlot = () => { if (!items.length) setItems([{ ...blank }]); setMenuIndex(0); setMenuStep(0); setPayoutOpen(false); };
+                    // A blank abandoned by cancelling an add (no name and no price)
+                    // is dropped on close, so a cancelled add leaves nothing behind.
+                    const closeItem = () => {
+                        setItems((prev) => prev.filter((r) => String(r.name || '').trim() !== '' || String(r.price || '').trim() !== ''));
+                        setMenuIndex(null);
+                    };
+                    const removeItem = (i: number) => { setItems((prev) => prev.filter((_, j) => j !== i)); setMenuIndex(null); };
+
+                    const it = menuIndex !== null ? items[menuIndex] : null;
+                    const nameFilled = !!it && String(it.name || '').trim() !== '';
+                    const priceNum = it ? (Number(it.price) || 0) : 0;
+                    const priceFilled = priceNum > 0;
+                    const LAST = 3;
+
+                    // The borderless fields shared with the expertise hub sub-flow.
+                    const fieldWrap = 'relative border-b border-slate-200 pb-2 transition-colors focus-within:border-slate-400';
+                    const bigInput = 'w-full bg-transparent text-center text-2xl text-slate-900 placeholder:text-slate-300 focus:outline-none';
+                    const bigArea = 'w-full resize-none bg-transparent text-center text-xl leading-relaxed text-slate-900 placeholder:text-slate-300 focus:outline-none';
+
+                    const keep = priceNum * (1 - DEFAULT_SERVICE_COMMISSION);
+                    const commission = priceNum * DEFAULT_SERVICE_COMMISSION;
+
                     return (
-                        <section className="mb-8">
-                            <div className="space-y-3">
-                                {rows.map((it, i) => (
-                                    <div key={it.id || i} className="rounded-xl border border-slate-200 p-3">
-                                        <div className="flex items-start gap-3">
-                                            {/* The item's own photo — the picture the
-                                                card sells on, so it is sized like the
-                                                thing it is, not a thumbnail beside the
-                                                fields. It shows the photo once it's on. */}
-                                            <label className="relative flex-none w-24 h-24 rounded-xl border-2 border-dashed border-slate-300 overflow-hidden cursor-pointer hover:border-emerald-400 bg-slate-50 flex flex-col items-center justify-center gap-1 text-center">
-                                                {it.image ? (
-                                                    <img src={getImageUrl(it.image)} alt="" className="w-full h-full object-cover" />
-                                                ) : (
-                                                    <>
-                                                        <ImagePlus className="w-6 h-6 text-slate-400" strokeWidth={1.5} />
-                                                        <span className="text-[11px] leading-tight text-slate-500 px-1">
-                                                            {uploadingItem === i ? 'Uploading…' : 'Add photo'}
-                                                        </span>
-                                                    </>
-                                                )}
-                                                <input type="file" accept="image/*" className="sr-only"
-                                                    onChange={(e) => uploadItemPhoto(i, e)} />
-                                            </label>
+                        <section className="mb-8 md:max-w-xl md:mx-auto">
+                            <div className="text-center">
+                                <h1 className="text-2xl font-extrabold tracking-tight text-slate-900 [text-wrap:balance] sm:text-3xl">
+                                    {isSlot ? GUEST_SCREEN_COPY.menuHeadingSlot : GUEST_SCREEN_COPY.menuHeading}
+                                </h1>
+                                <p className="mt-2 text-sm text-slate-500 [text-wrap:balance]">
+                                    {isSlot ? GUEST_SCREEN_COPY.menuSubtextSlot : GUEST_SCREEN_COPY.menuSubtext}
+                                </p>
+                            </div>
 
-                                            <div className="min-w-0 flex-1">
-                                                <label className="block text-xs font-medium text-slate-500 mb-1">{isSlot ? 'Session name' : 'Name'}</label>
-                                                <div className="flex items-start gap-2">
-                                                    <input
-                                                        type="text" value={it.name}
-                                                        onChange={(e) => setRow(i, 'name', e.target.value)}
-                                                        placeholder={namePh}
-                                                        className="flex-1 min-w-0 rounded-lg border border-slate-300 px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-emerald-700"
-                                                    />
-                                                    {!isSlot && rows.length > 1 && (
-                                                        <button type="button" onClick={() => removeRow(i)} aria-label="Remove item"
-                                                            className="mt-1 rounded-md p-1 text-slate-400 hover:text-slate-700">
-                                                            <X className="w-4 h-4" />
-                                                        </button>
-                                                    )}
-                                                </div>
-                                                <label className="block text-xs font-medium text-slate-500 mt-2 mb-1">Price</label>
-                                                <div className="flex items-center gap-2">
-                                                    <span className="text-slate-500 text-sm">£</span>
-                                                    <input
-                                                        type="number" min="0" step="0.01" inputMode="decimal" value={it.price}
-                                                        onChange={(e) => setRow(i, 'price', e.target.value)}
-                                                        placeholder="45"
-                                                        className="w-24 rounded-lg border border-slate-300 px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-emerald-700"
-                                                    />
-                                                    {isSlot ? (
-                                                        <span className="text-xs text-slate-500">
-                                                            {slotPrivate === false ? 'per person' : slotPrivate === true ? 'for the session' : ''}
-                                                        </span>
-                                                    ) : (
+                            <div className="mt-8 space-y-1">
+                                {isSlot ? (
+                                    <HubRow
+                                        filled={rows.length > 0 && String(rows[0].name || '').trim() !== ''}
+                                        thumb={rows[0] && rows[0].image ? getImageUrl(rows[0].image) : null}
+                                        label={(rows[0] && rows[0].name.trim()) || GUEST_SCREEN_COPY.menuSlotRowLabel}
+                                        prompt={GUEST_SCREEN_COPY.menuRowPrompt}
+                                        summary={rows.length ? rowSummary(rows[0]) : null}
+                                        onOpen={openSlot}
+                                    />
+                                ) : (
+                                    <>
+                                        {rows.map((r, i) => (
+                                            <HubRow
+                                                key={r.id || i}
+                                                filled
+                                                thumb={r.image ? getImageUrl(r.image) : null}
+                                                label={r.name.trim() || GUEST_SCREEN_COPY.menuUntitled}
+                                                prompt={GUEST_SCREEN_COPY.menuRowPrompt}
+                                                summary={rowSummary(r)}
+                                                onOpen={() => openEdit(i)}
+                                            />
+                                        ))}
+                                        <HubRow
+                                            filled={false}
+                                            label={GUEST_SCREEN_COPY.menuAddRow}
+                                            prompt={GUEST_SCREEN_COPY.menuRowPrompt}
+                                            onOpen={openAdd}
+                                        />
+                                    </>
+                                )}
+                            </div>
+
+                            {it && menuIndex !== null && (
+                                <SubFlowModal
+                                    open
+                                    title={
+                                        menuStep === 0 ? (isSlot ? GUEST_SCREEN_COPY.menuNameTitleSlot : GUEST_SCREEN_COPY.menuNameTitle)
+                                            : menuStep === 1 ? GUEST_SCREEN_COPY.menuPriceTitle
+                                                : menuStep === 2 ? GUEST_SCREEN_COPY.menuDescTitle
+                                                    : GUEST_SCREEN_COPY.menuPhotoTitle
+                                    }
+                                    onClose={closeItem}
+                                    onBack={menuStep > 0 ? () => setMenuStep((s) => s - 1) : undefined}
+                                    onRemove={!isSlot ? () => removeItem(menuIndex) : undefined}
+                                    saveLabel={menuStep === LAST ? GUEST_SCREEN_COPY.save : GUEST_SCREEN_COPY.menuNext}
+                                    saveDisabled={(menuStep === 0 && !nameFilled) || (menuStep === 1 && !priceFilled)}
+                                    onSave={menuStep === LAST ? closeItem : () => setMenuStep((s) => s + 1)}
+                                    note={menuStep === LAST ? GUEST_SCREEN_COPY.menuPhotoPrompt : undefined}
+                                >
+                                    {menuStep === 0 && (
+                                        <div className={fieldWrap}>
+                                            <input
+                                                type="text" value={it.name}
+                                                onChange={(e) => setField(menuIndex, 'name', e.target.value)}
+                                                placeholder={isSlot ? GUEST_SCREEN_COPY.menuNamePlaceholderSlot : GUEST_SCREEN_COPY.menuNamePlaceholder}
+                                                className={bigInput}
+                                            />
+                                        </div>
+                                    )}
+                                    {menuStep === 1 && (
+                                        <div>
+                                            <div className={fieldWrap + ' flex items-center justify-center gap-1'}>
+                                                <span className="text-2xl text-slate-400">£</span>
+                                                <input
+                                                    type="number" min="0" step="0.01" inputMode="decimal" value={it.price}
+                                                    onChange={(e) => setField(menuIndex, 'price', e.target.value)}
+                                                    placeholder="45"
+                                                    className="w-32 bg-transparent text-center text-2xl text-slate-900 placeholder:text-slate-300 focus:outline-none"
+                                                />
+                                            </div>
+                                            {/* Price type — the same dropdown and the same
+                                                options as before (model unchanged). A slot
+                                                derives it from the private/shared answer. */}
+                                            <div className="mt-6 flex justify-center">
+                                                {isSlot ? (
+                                                    unitWord(it) ? <span className="text-sm text-slate-500">Priced {unitWord(it)}</span> : null
+                                                ) : (
+                                                    <label className="flex items-center gap-2 text-sm text-slate-500">
+                                                        {GUEST_SCREEN_COPY.menuPriceTypeLabel}
                                                         <select
                                                             value={it.unit || 'flat'}
-                                                            onChange={(e) => setRow(i, 'unit', e.target.value)}
-                                                            aria-label="How this is priced"
-                                                            className="flex-1 min-w-0 rounded-lg border border-slate-300 px-2 py-2 text-sm bg-white focus:outline-none focus:ring-2 focus:ring-emerald-700"
+                                                            onChange={(e) => setField(menuIndex, 'unit', e.target.value)}
+                                                            aria-label={GUEST_SCREEN_COPY.menuPriceTypeLabel}
+                                                            className="rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm text-slate-900 focus:outline-none focus:ring-2 focus:ring-emerald-700"
                                                         >
                                                             {ORDER_UNITS.map((u) => (
                                                                 <option key={u} value={u}>{UNIT_WORD[u]}</option>
                                                             ))}
                                                         </select>
-                                                    )}
-                                                </div>
-                                                {/* The payout, live as they type — Airbnb shows
-                                                    "You earn £34" beside the price, so the "what
-                                                    do I actually keep?" doubt never sits under
-                                                    the decision. Our commission is the 10% in
-                                                    DEFAULT_SERVICE_COMMISSION. */}
-                                                {Number(it.price) > 0 && (
-                                                    <p className="mt-1.5 text-xs text-emerald-700">
-                                                        You keep £{(Number(it.price) * (1 - DEFAULT_SERVICE_COMMISSION)).toFixed(2)}
-                                                        <span className="text-slate-400"> · we take {Math.round(DEFAULT_SERVICE_COMMISSION * 100)}%</span>
-                                                    </p>
+                                                    </label>
                                                 )}
                                             </div>
+                                            {/* The payout, presented the way Airbnb's is:
+                                                a quiet "You keep £X" line, calm by default,
+                                                the maths only when the chevron is tapped. */}
+                                            {priceFilled && (
+                                                <div className="mt-8 flex flex-col items-center">
+                                                    <button type="button" onClick={() => setPayoutOpen((o) => !o)}
+                                                        aria-expanded={payoutOpen}
+                                                        className="inline-flex items-center gap-1 text-sm font-medium text-slate-600 hover:text-slate-800">
+                                                        {GUEST_SCREEN_COPY.payoutKeepLine} £{keep.toFixed(2)}
+                                                        <ChevronDown className={'h-4 w-4 transition-transform ' + (payoutOpen ? 'rotate-180' : '')} />
+                                                    </button>
+                                                    {payoutOpen && (
+                                                        <div className="mt-3 w-full max-w-xs rounded-2xl border border-slate-200 p-4 text-sm">
+                                                            <div className="flex justify-between py-1">
+                                                                <span className="text-slate-500">{GUEST_SCREEN_COPY.payoutRowPrice}</span>
+                                                                <span className="text-slate-900">£{priceNum.toFixed(2)}</span>
+                                                            </div>
+                                                            <div className="flex justify-between py-1">
+                                                                <span className="text-slate-500">{GUEST_SCREEN_COPY.payoutRowCommission} ({Math.round(DEFAULT_SERVICE_COMMISSION * 100)}%)</span>
+                                                                <span className="text-slate-900">−£{commission.toFixed(2)}</span>
+                                                            </div>
+                                                            <div className="mt-1 flex justify-between border-t border-slate-100 pt-2 font-semibold">
+                                                                <span className="text-slate-900">{GUEST_SCREEN_COPY.payoutRowKeep}</span>
+                                                                <span className="text-slate-900">£{keep.toFixed(2)}</span>
+                                                            </div>
+                                                        </div>
+                                                    )}
+                                                </div>
+                                            )}
                                         </div>
-                                        <label className="block text-xs font-medium text-slate-500 mt-3 mb-1">Description</label>
-                                        <input
-                                            type="text" value={it.description}
-                                            onChange={(e) => setRow(i, 'description', e.target.value)}
-                                            placeholder={isSlot ? 'What to expect, what to bring' : 'A short line about it'}
-                                            className="w-full rounded-lg border border-slate-300 px-3 py-2 text-sm text-slate-600 focus:outline-none focus:ring-2 focus:ring-emerald-700"
-                                        />
-                                    </div>
-                                ))}
-                            </div>
-                            {!isSlot && (
-                                <button type="button" onClick={addRow}
-                                    className="mt-3 inline-flex items-center gap-2 rounded-xl border-2 border-dashed border-slate-300 px-4 py-2.5 text-sm text-slate-600 hover:border-slate-400">
-                                    <Plus className="w-4 h-4" /> Add another
-                                </button>
+                                    )}
+                                    {menuStep === 2 && (
+                                        <div className={fieldWrap}>
+                                            <textarea
+                                                value={it.description} rows={3}
+                                                onChange={(e) => setField(menuIndex, 'description', e.target.value)}
+                                                placeholder={GUEST_SCREEN_COPY.menuDescPlaceholder}
+                                                className={bigArea}
+                                            />
+                                        </div>
+                                    )}
+                                    {menuStep === LAST && (
+                                        <div className="flex flex-col items-center">
+                                            <label className="relative flex h-40 w-40 cursor-pointer flex-col items-center justify-center gap-2 overflow-hidden rounded-2xl border-2 border-dashed border-slate-300 bg-slate-50 text-center hover:border-emerald-400">
+                                                {it.image ? (
+                                                    <img src={getImageUrl(it.image)} alt="" className="h-full w-full object-cover" />
+                                                ) : (
+                                                    <>
+                                                        <ImagePlus className="h-8 w-8 text-slate-400" strokeWidth={1.5} />
+                                                        <span className="text-xs text-slate-500">{uploadingItem === menuIndex ? 'Uploading…' : 'Add photo'}</span>
+                                                    </>
+                                                )}
+                                                <input type="file" accept="image/*" className="sr-only" onChange={(e) => uploadItemPhoto(menuIndex, e)} />
+                                            </label>
+                                        </div>
+                                    )}
+                                </SubFlowModal>
                             )}
                         </section>
                     );
