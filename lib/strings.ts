@@ -28,25 +28,27 @@ export const GUEST_SCREEN_COPY = {
     yearsQuestion: 'How long have you been doing this?',
 
     // The expertise screen — a hub (Airbnb-style): a photo, a heading and a line
-    // of subtext, then three rows that each open a small sub-flow modal.
+    // of subtext, then rows that each open their own single-field sub-flow modal.
     expertiseHeading: 'Tell guests about yourself',
     expertiseSubtext: 'A few lines about who you are and what you do.',
 
-    // The "(optional)" suffix, in lighter grey beside a row label. Used on the
-    // qualifications row where it isn't required, and always on recognition.
+    // The "(optional)" suffix, in lighter grey beside a row label. On every
+    // optional row; the only sometimes-required one is qualifications.
     optionalSuffix: '(optional)',
 
-    // Row one: Intro — the title, the short line and the photo, in one modal.
-    introRowLabel: 'Intro',
-    introRowPrompt: 'Your title and a line about you',
-    introModalTitle: 'Intro',
-    titleLabel: 'Your title',
+    // Row: your title. Its own modal, one field.
+    titleRowLabel: 'Your title',
+    titleRowPrompt: 'How you’d describe what you do',
+    titleModalTitle: 'Add your title',
     titlePlaceholder: 'Private chef',
-    aboutLineLabel: 'A short line about you',
-    aboutLinePlaceholder: 'Kirkcudbright · cooking since 2019',
-    photoLabel: 'A photo of you',
 
-    // Row two: qualifications. Required for the four safety categories (no
+    // Row: a line about you. Its own modal, one field.
+    lineRowLabel: 'A line about you',
+    lineRowPrompt: 'A sentence a guest reads first',
+    lineModalTitle: 'Add a line about you',
+    aboutLinePlaceholder: 'Kirkcudbright · cooking since 2019',
+
+    // Row: qualifications. Required for the four safety categories (no
     // suffix, gates Next), optional everywhere else (the suffix shows).
     qualsRowLabel: 'Qualifications',
     qualsRowPrompt: 'What qualifies you to do this',
