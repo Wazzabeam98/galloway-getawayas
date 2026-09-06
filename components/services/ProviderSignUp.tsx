@@ -3148,6 +3148,21 @@ function ApplicationForm() {
                                 : stepMeta.title}
                         </h1>
                     )}
+                    {/* Max guests renders its heading here, at the top, exactly
+                        where the years question sits (same classes, same spacing
+                        after the eyebrow), so the two questions line up. Its
+                        wording is shape-aware, so it can't ride the generic h1
+                        above. The stepper alone fills the centred space below. */}
+                    {isGuest && step === 'g_capacity' && (
+                        <>
+                            <h1 className="font-extrabold tracking-tight text-slate-900 [text-wrap:balance] text-3xl sm:text-4xl text-center mb-2">
+                                {shape === 'comes_to_you' ? GUEST_SCREEN_COPY.capacityHeadingTravel : GUEST_SCREEN_COPY.capacityHeadingVenue}
+                            </h1>
+                            <p className="text-center text-sm text-slate-500 [text-wrap:balance] mb-10">
+                                {shape === 'comes_to_you' ? GUEST_SCREEN_COPY.capacitySubtextTravel : GUEST_SCREEN_COPY.capacitySubtextVenue}
+                            </p>
+                        </>
+                    )}
 
             {/* The "your details have been saved" banner used to sit here on
                 every step. It restored with a draft — so it showed before
@@ -4213,13 +4228,7 @@ function ApplicationForm() {
                     it's what the space holds. For a shared slot this becomes
                     sellable seats, so the default is deliberately low. */}
                 {onStep('g_capacity') && isGuest && (
-                <section className="flex-1 flex flex-col items-center justify-center text-center">
-                    <h1 className="mb-2 text-3xl font-extrabold tracking-tight text-slate-900 [text-wrap:balance] sm:text-4xl">
-                        {shape === 'comes_to_you' ? GUEST_SCREEN_COPY.capacityHeadingTravel : GUEST_SCREEN_COPY.capacityHeadingVenue}
-                    </h1>
-                    <p className="mb-10 text-sm text-slate-500 [text-wrap:balance]">
-                        {shape === 'comes_to_you' ? GUEST_SCREEN_COPY.capacitySubtextTravel : GUEST_SCREEN_COPY.capacitySubtextVenue}
-                    </p>
+                <section className="flex-1 flex flex-col items-center justify-center">
                     <NumberStepper value={maxGuests} onChange={setMaxGuests} min={1} max={60} suggestion={shape === 'comes_to_you' ? CAPACITY_DEFAULT_TRAVEL : CAPACITY_DEFAULT_SLOT} size="lg" solid suffix={GUEST_SCREEN_COPY.capacitySuffix} />
                 </section>
                 )}
