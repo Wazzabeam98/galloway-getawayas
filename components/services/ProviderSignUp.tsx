@@ -89,6 +89,8 @@ import {
     problemsOnStep,
     firstStepWithProblem,
     stepForField,
+    sectionsFor,
+    sectionForStep,
     StepKey,
     StepContext,
 } from '@/lib/joinSteps';
@@ -1366,6 +1368,61 @@ function ApplicationForm() {
     const stepMeta = steps.filter((x) => x.key === step)[0] || steps[0];
     const onStep = (key: StepKey) => step === key;
 
+    // ---- the named sections (the guest progress rail) --------------------
+    //
+    // Airbnb groups the flow into a handful of named sections rather than a
+    // "Step 5 of 12" count. sectionsFor gives the ones this guest walks, in
+    // order; the eyebrow at the top of each screen and the desktop rail read
+    // from the same source, so they can't disagree about the flow.
+    const flowSections = sectionsFor(trade, stepCtx);
+    const currentSection = sectionForStep(step);
+    const stepIndexInFlow = steps.findIndex((x) => x.key === step);
+    // A section is done when its last live step sits before the current one;
+    // active when the current step is one of its own; ahead otherwise.
+    const sectionStatus = (sec: { steps: StepKey[] }): 'done' | 'active' | 'ahead' => {
+        if (sec.steps.indexOf(step) !== -1) return 'active';
+        const lastIdx = Math.max(...sec.steps.map((k) => steps.findIndex((x) => x.key === k)));
+        return lastIdx > -1 && lastIdx < stepIndexInFlow ? 'done' : 'ahead';
+    };
+
+    // A one-line summary of what a completed section holds, for the rail — the
+    // way Airbnb shows "12 years", "4 photos" under each done section. All
+    // read-only from state; empty ones just show nothing.
+    const sectionSummary = (key: string): string => {
+        switch (key) {
+            case 'about': {
+                const y = yearsDoing.trim();
+                return y ? `${y} ${y === '1' ? 'year' : 'years'}` : '';
+            }
+            case 'location': {
+                if (areas.length === 1) return String(areas[0].town || '').trim() || '1 area';
+                if (areas.length > 1) return `${areas.length} areas`;
+                if (shape === 'made_to_order' && leadTimeDays.trim()) {
+                    const d = leadTimeDays.trim();
+                    return `${d} ${d === '1' ? 'day' : 'days'}’ notice`;
+                }
+                return '';
+            }
+            case 'photos':
+                return photos.length ? `${photos.length} ${photos.length === 1 ? 'photo' : 'photos'}` : '';
+            case 'pricing': {
+                const priced = items
+                    .map((it) => Number(String(it.price || '').replace(/[^0-9.]/g, '')))
+                    .filter((n) => n > 0);
+                if (!priced.length) return '';
+                return `From £${Math.min(...priced)}`;
+            }
+            case 'details':
+                return whatToExpect.trim() ? 'Added' : '';
+            case 'experience':
+                return businessName.trim();
+            case 'finish':
+                return contactEmail.trim();
+            default:
+                return '';
+        }
+    };
+
     // What is wrong on the step in front of them, which is all Next is
     // allowed to care about. A missing price must not stop somebody getting
     // past their business name.
@@ -1508,6 +1565,17 @@ function ApplicationForm() {
         // also why Back must never be a router call: that would remount this
         // and lose the lot.
         setStep(to);
+        scrollPanelToTop();
+    };
+
+    // Jump straight to a step from the rail — the named sections behind you are
+    // clickable navigation back to what you already did. Like Back, it validates
+    // nothing and clears nothing (every field is component state and stays as it
+    // was); the rail only ever offers a completed section as a target, so there
+    // is nothing ahead to leap over.
+    const goToStep = (key: StepKey) => {
+        if (key === step) return;
+        setStep(key);
         scrollPanelToTop();
     };
 
@@ -2682,9 +2750,12 @@ function ApplicationForm() {
             }>
 
                 {isGuest ? (
-                    /* Guest takeover top bar — Back top-left, brand, a way out,
-                       and a subtle unlabelled progress bar. No ten labelled
-                       segments; the question itself carries the step. */
+                    /* Guest takeover top bar — Back top-left, brand, a way out.
+                       No step count and no per-screen segments any more: the
+                       flow is named sections now (the left rail on wide screens,
+                       the section eyebrow at the top of each screen on a phone),
+                       so a "Step 5 of 12" here would be the very thing they
+                       replace. */
                     <div className="shrink-0 border-b border-slate-100 px-4 sm:px-8">
                         <div className="flex h-16 items-center justify-between gap-3">
                             {(position > 1 || openGroup) ? (
@@ -2701,18 +2772,6 @@ function ApplicationForm() {
                                 <X className="w-5 h-5" />
                             </Link>
                         </div>
-                        {chosen && (
-                            <div className="pb-3">
-                                <div className="flex items-center gap-1" role="progressbar" aria-valuenow={position} aria-valuemin={1} aria-valuemax={total} aria-label={'Step ' + position + ' of ' + total}>
-                                    {steps.map((s, i) => (
-                                        <div key={s.key} className={'h-1 flex-1 rounded-full transition-colors ' + (i + 1 <= position ? 'bg-emerald-600' : 'bg-slate-200')} />
-                                    ))}
-                                </div>
-                                {/* The number, said plainly — a bar alone just
-                                    creeps and never tells you how much is left. */}
-                                <p className="mt-2 text-xs font-medium text-slate-500">Step {position} of {total}</p>
-                            </div>
-                        )}
                     </div>
                 ) : (
                 <div className="shrink-0 border-b border-slate-200 px-4 sm:px-6 pt-4 pb-3">
@@ -2798,6 +2857,51 @@ function ApplicationForm() {
 
                 )}
 
+                {/* For a guest, a two-column body on wide screens: the named-
+                    section rail on the left, the scrolling question column on
+                    the right. Below lg the rail is hidden and the section name
+                    rides as an eyebrow at the top of each screen instead. A host
+                    trade keeps its single column (`contents` adds no wrapper). */}
+                <div className={isGuest ? 'flex-1 flex min-h-0 overflow-hidden' : 'contents'}>
+                    {isGuest && currentSection && flowSections.length > 0 && (
+                        <nav aria-label="Sections" className="hidden lg:flex w-72 shrink-0 flex-col gap-0.5 overflow-y-auto border-r border-slate-100 px-6 py-12">
+                            {flowSections.map((sec) => {
+                                const st = sectionStatus(sec);
+                                const summary = st === 'done' ? sectionSummary(sec.key) : '';
+                                const clickable = st === 'done';
+                                return (
+                                    <button
+                                        key={sec.key}
+                                        type="button"
+                                        disabled={!clickable}
+                                        onClick={() => clickable && goToStep(sec.firstStep)}
+                                        aria-current={st === 'active' ? 'step' : undefined}
+                                        className={'group flex items-start gap-3 rounded-xl px-3 py-2.5 text-left transition '
+                                            + (clickable ? 'hover:bg-slate-50 cursor-pointer' : 'cursor-default')}
+                                    >
+                                        <span className={'mt-0.5 flex h-5 w-5 shrink-0 items-center justify-center rounded-full text-[11px] font-bold '
+                                            + (st === 'done' ? 'bg-emerald-600 text-white'
+                                                : st === 'active' ? 'border-2 border-emerald-600 text-emerald-700'
+                                                    : 'border-2 border-slate-200 text-slate-300')}>
+                                            {st === 'done' ? <Check className="h-3 w-3" strokeWidth={3} /> : null}
+                                        </span>
+                                        <span className="min-w-0">
+                                            <span className={'block text-sm '
+                                                + (st === 'active' ? 'font-bold text-slate-900'
+                                                    : st === 'done' ? 'font-semibold text-slate-700'
+                                                        : 'font-medium text-slate-400')}>
+                                                {sec.label}
+                                            </span>
+                                            {summary && (
+                                                <span className="mt-0.5 block truncate text-xs text-slate-400">{summary}</span>
+                                            )}
+                                        </span>
+                                    </button>
+                                );
+                            })}
+                        </nav>
+                    )}
+
                 {/* ---- the questions ---- */}
                 <div id="signup-panel" className={isGuest
                     ? ('flex-1 w-full mx-auto overflow-y-auto px-5 sm:px-6 '
@@ -2819,6 +2923,16 @@ function ApplicationForm() {
                         for the pickers, over the big stepper for the years, both
                         Airbnb-style; the other content screens sit it left over
                         their fields. The finish step carries its own heading. */}
+                    {/* The section name, at the top of every screen inside a
+                        section — the mobile stand-in for the rail, and a quiet
+                        anchor on desktop too. The pickers (trade, g_subtype)
+                        have no section, so it shows nothing there. */}
+                    {isGuest && currentSection && (
+                        <p className={'text-xs font-bold uppercase tracking-[0.12em] text-emerald-700 mb-3 '
+                            + ((step === 'g_you' || step === 'g_creds') ? 'text-center' : '')}>
+                            {currentSection.label}
+                        </p>
+                    )}
                     {isGuest && step !== 'finish' && step !== 'g_creds' && (
                         <h1 className={'font-extrabold tracking-tight text-slate-900 [text-wrap:balance] text-3xl sm:text-4xl '
                             + ((step === 'trade' || step === 'g_subtype' || step === 'g_you') ? 'mb-10 text-center' : 'mb-8')}>
@@ -3792,7 +3906,10 @@ function ApplicationForm() {
                         </label>
                     </div>
                     <p className="mt-3 text-sm text-slate-500">
-                        Real photos of the food, the room, the view — not a logo. The first one leads your listing.
+                        {GUEST_SCREEN_COPY.photosLede}
+                    </p>
+                    <p className="mt-1.5 text-sm font-medium text-slate-600">
+                        {GUEST_SCREEN_COPY.photosMore}
                     </p>
                 </section>
                 )}
@@ -5212,6 +5329,7 @@ function ApplicationForm() {
             )}
 
                 </div>{/* /the questions */}
+                </div>{/* /the two-column body (rail + questions) */}
 
                 {/* ---- footer: Back, and the way on ----
                     Fixed to the bottom of the modal rather than sitting under

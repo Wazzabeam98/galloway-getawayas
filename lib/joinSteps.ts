@@ -53,9 +53,18 @@ export type StepKey =
 // added — expertise/qualifications (g_creds), what-to-expect (g_expect) and a
 // real photos step (g_photos). The business name now rides on g_about, so a
 // guest never sees the standalone 'business' step.
+// Reordered to Airbnb's host-an-experience sequence (Sep 2026): About you
+// first (years, expertise), then Location straight after — it matters more for
+// us than for them, a chef in Carlisle should learn we only cover Dumfries &
+// Galloway before writing anything — then Photos BEFORE the writing, because
+// someone who's just uploaded photos of their kitchen writes a far better
+// description than someone staring at an empty box, and anyone without usable
+// photos finds out early. Then Pricing, Details, and only near the end the
+// naming and describing (g_about), then the Finish wrap-up (checks, contact,
+// account). The set of keys is unchanged — only their order moved.
 const GUEST_STEP_KEYS: StepKey[] = [
     'g_subtype',
-    'g_you', 'g_creds', 'g_about', 'g_menu', 'g_expect', 'g_photos', 'g_area', 'g_checks', 'g_contact',
+    'g_you', 'g_creds', 'g_area', 'g_photos', 'g_menu', 'g_expect', 'g_about', 'g_checks', 'g_contact',
 ];
 
 // What a guest's steps branch on, all from earlier answers: the top-level group
@@ -81,19 +90,21 @@ const ALL_STEPS: Step[] = [
     // (Airbnb's "How would you describe your experience?"). Off for 'other'.
     { key: 'g_subtype', label: 'Type', title: 'How would you describe it?' },
     { key: 'business', label: 'Business', title: 'Your business' },
-    // The guest experience, one question a screen, rebuilt to Airbnb's order:
-    // momentum first (how long you've done it), then the trust that sells it
-    // (expertise), then the listing itself, its price, what a guest gets, the
-    // photos, where and when, the safety checks and how to reach you. Which of
-    // them a given guest sees is decided by stepApplies from the category and
-    // shape; the standalone 'business' step above is host-only.
+    // The guest experience, one question a screen, in Airbnb's order (see
+    // GUEST_STEP_KEYS for the reasoning): About you (years, expertise), then
+    // Location, then Photos before the writing, then Pricing and Details, then
+    // the naming/describing near the end, then the Finish wrap-up. Which of them
+    // a given guest sees is decided by stepApplies from the category and shape;
+    // the standalone 'business' step above is host-only. The `label` is the old
+    // per-dot label, now superseded by the named sections (see GUEST_SECTIONS);
+    // it is kept for the host trades and harmless for guests.
     { key: 'g_you', label: 'You', title: GUEST_SCREEN_COPY.yearsQuestion },
     { key: 'g_creds', label: 'Expertise', title: GUEST_SCREEN_COPY.expertiseHeading },
-    { key: 'g_about', label: 'About', title: 'Name it, and tell guests what it is' },
+    { key: 'g_area', label: 'Where', title: 'Where, and when, can guests get it?' },
+    { key: 'g_photos', label: 'Photos', title: 'Show guests what it looks like' },
     { key: 'g_menu', label: 'Price', title: 'What you offer, and what it costs' },
     { key: 'g_expect', label: 'Details', title: 'What can a guest expect?' },
-    { key: 'g_photos', label: 'Photos', title: 'Show guests what it looks like' },
-    { key: 'g_area', label: 'Where', title: 'Where, and when, can guests get it?' },
+    { key: 'g_about', label: 'About', title: 'Name it, and tell guests what it is' },
     { key: 'g_checks', label: 'Checks', title: 'A few checks before we list you' },
     { key: 'g_contact', label: 'Contact', title: 'Where can we reach you?' },
     // Not "Registration". Registration and skills never co-occur across the
@@ -227,6 +238,64 @@ export function stepApplies(step: StepKey, trade: string, ctx?: StepContext): bo
 // category and shape; it is ignored for host trades and may be omitted.
 export function stepsFor(trade: string, ctx?: StepContext): Step[] {
     return ALL_STEPS.filter((s) => stepApplies(s.key, trade, ctx));
+}
+
+// ---------------------------------------------------------------------------
+// NAMED SECTIONS (the guest progress rail)
+//
+// Airbnb shows a handful of named sections, not a "Step 5 of 12" count. The
+// guest flow groups its screens the same way: a couple of screens can share a
+// section (About you is the years screen and the expertise hub; Finish is the
+// checks, the contact and the account screen), and a section renders only when
+// at least one of its steps applies to this guest — the same rule that governs
+// the steps themselves, so the rail can never name a section nobody reaches.
+//
+// The two pickers (trade, g_subtype) precede the rail and belong to no section:
+// the flow BRANCHES on those two answers, so the rail can't sensibly be drawn
+// until they're made, and listing them as jump-back targets would imply you can
+// change category mid-flow and invalidate everything after it.
+// ---------------------------------------------------------------------------
+
+const GUEST_SECTIONS: { key: string; label: string; steps: StepKey[] }[] = [
+    { key: 'about', label: GUEST_SCREEN_COPY.sectionAboutYou, steps: ['g_you', 'g_creds'] },
+    { key: 'location', label: GUEST_SCREEN_COPY.sectionLocation, steps: ['g_area'] },
+    { key: 'photos', label: GUEST_SCREEN_COPY.sectionPhotos, steps: ['g_photos'] },
+    { key: 'pricing', label: GUEST_SCREEN_COPY.sectionPricing, steps: ['g_menu'] },
+    { key: 'details', label: GUEST_SCREEN_COPY.sectionDetails, steps: ['g_expect'] },
+    { key: 'experience', label: GUEST_SCREEN_COPY.sectionExperience, steps: ['g_about'] },
+    { key: 'finish', label: GUEST_SCREEN_COPY.sectionFinish, steps: ['g_checks', 'g_contact', 'finish'] },
+];
+
+export interface FlowSection {
+    key: string;
+    label: string;
+    // The steps of this section that this guest actually has, in flow order.
+    steps: StepKey[];
+    // Where clicking the section in the rail takes them: its first live step.
+    firstStep: StepKey;
+}
+
+// The sections this guest actually walks, in order, each carrying only the
+// steps that apply. Empty for a host trade or a guest with no context (the
+// rail is guest-only) — callers fall back to the old indicator in that case.
+export function sectionsFor(trade: string, ctx?: StepContext): FlowSection[] {
+    if (audienceForTrade(String(trade || '')) !== 'guest' || !ctx) return [];
+    const present = stepsFor(trade, ctx).map((s) => s.key);
+    const out: FlowSection[] = [];
+    for (const sec of GUEST_SECTIONS) {
+        const steps = sec.steps.filter((k) => present.indexOf(k) !== -1);
+        if (steps.length > 0) out.push({ key: sec.key, label: sec.label, steps, firstStep: steps[0] });
+    }
+    return out;
+}
+
+// The section a given step sits in, or null for the pre-rail pickers. Used for
+// the eyebrow at the top of each screen.
+export function sectionForStep(step: StepKey): { key: string; label: string } | null {
+    for (const sec of GUEST_SECTIONS) {
+        if (sec.steps.indexOf(step) !== -1) return { key: sec.key, label: sec.label };
+    }
+    return null;
 }
 
 // Where a step sits in the indicator, counting only the steps that exist.
