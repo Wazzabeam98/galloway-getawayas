@@ -60,9 +60,9 @@ export const GUEST_SCREEN_COPY = {
 
     // Row three: endorsements — always optional, never gates Next.
     recognitionRowLabel: 'Endorsements',
-    recognitionRowPrompt: 'Who’s recommended you, or had you back.',
+    recognitionRowPrompt: 'Awards, career highlights, anything you’ve been recognised for.',
     recognitionModalTitle: 'Endorsements',
-    recognitionPlaceholder: 'A guest who had you back, a local business you work with, or someone who’ll vouch for you.',
+    recognitionPlaceholder: 'An award you’ve won, a mention in the local press, or a career highlight.',
     recognitionNote: 'Optional — anything that helps a guest choose you.',
 
     // Shown in the footer of the expertise hub when nothing is required — a nudge
