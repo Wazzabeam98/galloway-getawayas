@@ -3407,11 +3407,12 @@ function ApplicationForm() {
                             <div className={fieldWrap}>
                                 <textarea
                                     value={qualifications}
-                                    onChange={(e) => setQualifications(e.target.value)}
+                                    onChange={(e) => setQualifications(e.target.value.slice(0, 150))}
                                     rows={4}
                                     placeholder={GUEST_SCREEN_COPY.qualsPlaceholder}
-                                    className={bigArea}
+                                    className={bigArea + ' pr-12'}
                                 />
+                                <span className={counterField}>{qualifications.length}/150</span>
                             </div>
                         </SubFlowModal>
 
