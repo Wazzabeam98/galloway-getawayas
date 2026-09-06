@@ -350,6 +350,19 @@ function ApplicationForm() {
     const [acctError, setAcctError] = useState('');
     const [acctConsent, setAcctConsent] = useState(false);
     const [checkYourEmail, setCheckYourEmail] = useState(false);
+
+    // The verify-your-email gate (g_verify). A guest signs in up front with a
+    // one-time code, so the rest of the wizard runs authenticated. `otpEmail` is
+    // the address; `otpSent` flips once a code is on its way and reveals the
+    // code field; `otpCode` is what they type back; `otpBusy`/`otpError` drive
+    // the button and the message. Verifying makes (or signs into) the account,
+    // which is the anti-squatting point: no session exists until the code proves
+    // they receive mail at that address.
+    const [otpEmail, setOtpEmail] = useState('');
+    const [otpSent, setOtpSent] = useState(false);
+    const [otpCode, setOtpCode] = useState('');
+    const [otpBusy, setOtpBusy] = useState(false);
+    const [otpError, setOtpError] = useState('');
     // The application is in. Not "an email is on its way and you must come
     // back" — that shape is gone; see lodgeApplication.
     const [lodged, setLodged] = useState(false);
@@ -580,7 +593,7 @@ function ApplicationForm() {
                 // it is inherited from another one they hold.
                 const { data: existing } = await supabase
                     .from('service_providers')
-                    .select('id, business_name, trade, description, sms_opt_out, audience, photos, logo, status, review_note, callout_fee, hourly_rate, callout_waived, does_gas, does_oil, kind, pricing_choice, billable_hourly_rate, covered_bands, provider_name, based_line, headshot, dietary_note, custom_label, shape, lead_time_days, slot_length_minutes, slot_capacity, declarations')
+                    .select('id, business_name, trade, description, sms_opt_out, audience, photos, logo, status, review_note, callout_fee, hourly_rate, callout_waived, does_gas, does_oil, kind, pricing_choice, billable_hourly_rate, covered_bands, provider_name, based_line, headshot, dietary_note, custom_label, shape, lead_time_days, slot_length_minutes, slot_capacity, declarations, guest_details')
                     .eq('owner_id', session.user.id)
                     .eq('trade', tradeFromUrl)
                     .maybeSingle();
@@ -670,6 +683,18 @@ function ApplicationForm() {
                         if (ex.declarations && typeof ex.declarations === 'object') {
                             setDeclarations(ex.declarations as Record<string, boolean>);
                         }
+                        // Their content answers in their own words — the seven
+                        // fields that now live in the guest_details jsonb column
+                        // (20260906143712). A returning provider edits what they
+                        // wrote rather than a blank form.
+                        const gd = (ex.guest_details && typeof ex.guest_details === 'object') ? ex.guest_details : {};
+                        if (gd.years_experience) setYearsDoing(String(gd.years_experience));
+                        if (gd.professional_title) setProfessionalTitle(String(gd.professional_title));
+                        if (gd.qualifications) setQualifications(String(gd.qualifications));
+                        if (gd.recognition) setRecognition(String(gd.recognition));
+                        if (gd.what_to_expect) setWhatToExpect(String(gd.what_to_expect));
+                        if (gd.whats_included) setWhatIncluded(String(gd.whats_included));
+                        if (gd.what_to_bring) setWhatToBring(String(gd.what_to_bring));
                     }
 
                     // A slot's weekly hours and days off.
@@ -1353,7 +1378,7 @@ function ApplicationForm() {
     // saves the category, not the group) still resolves its steps correctly.
     const stepCtx: StepContext | undefined =
         isGuest
-            ? { group: guestGroup || (guestCategoryByKey(guestCategory)?.group || ''), category: guestCategory, shape }
+            ? { group: guestGroup || (guestCategoryByKey(guestCategory)?.group || ''), category: guestCategory, shape, hasSession: !!session }
             : undefined;
 
     const problemFor = (field: string) => {
@@ -1650,8 +1675,17 @@ function ApplicationForm() {
     // category is a made-to-order product, which skips the years and expertise
     // screens, so it opens on g_about instead. There is no standalone business
     // step for a guest any more; the name rides on g_about.
-    const firstGuestContentStep = (category: string): StepKey =>
+    // Where a guest goes after the category pick. If they are not signed in
+    // yet — the normal first-time applicant — that is the verify-your-email gate,
+    // which makes their account so the rest of the wizard runs authenticated.
+    // Once a session exists (a returning applicant, or straight after they
+    // verify), it is the first real content screen: the years opener, or
+    // g_about for a made-to-order product that skips the years and expertise
+    // screens.
+    const firstContentAfterVerify = (category: string): StepKey =>
         guestAsksExpertise(category) ? 'g_you' : 'g_about';
+    const firstGuestContentStep = (category: string): StepKey =>
+        !session ? 'g_verify' : firstContentAfterVerify(category);
 
     const advanceFromGroup = () => {
         const subs = categoriesForGroup(guestGroup);
@@ -2203,6 +2237,60 @@ function ApplicationForm() {
         setResending(false);
     };
 
+    // The verify-your-email gate. Send a one-time code, then verify it. Uses the
+    // MAIN client (not supabaseEmailFlow, which is deliberately session-less for
+    // the lodge flow) so verifyOtp writes a real session the rest of the wizard
+    // reads.
+    const sendOtp = async () => {
+        const email = otpEmail.trim();
+        if (!email || email.indexOf('@') === -1) {
+            setOtpError('Enter the email address we should send your code to.');
+            return;
+        }
+        setOtpBusy(true);
+        setOtpError('');
+        // shouldCreateUser makes the account on first verify; a returning
+        // applicant is signed into their existing one by the same code. Either
+        // way nothing exists until the code is entered — the anti-squatting
+        // point the old emailed-link flow was built around, kept.
+        const { error } = await supabase.auth.signInWithOtp({
+            email,
+            options: { shouldCreateUser: true },
+        });
+        setOtpBusy(false);
+        if (error) {
+            setOtpError(error.message);
+            return;
+        }
+        setOtpSent(true);
+    };
+
+    const verifyOtp = async () => {
+        const email = otpEmail.trim();
+        const token = otpCode.trim();
+        if (!token) {
+            setOtpError('Enter the code from your email.');
+            return;
+        }
+        setOtpBusy(true);
+        setOtpError('');
+        const { data, error } = await supabase.auth.verifyOtp({ email, token, type: 'email' });
+        setOtpBusy(false);
+        if (error || !data.session) {
+            setOtpError((error && error.message) || 'That code did not work. Check it and try again.');
+            return;
+        }
+        // Signed in. The address they verified is the one to reach them on, so it
+        // pre-fills the contact field. Then move to the first real content
+        // screen — done in the same action, because setting the session drops
+        // g_verify from the flow and we must not be left standing on a step that
+        // no longer exists.
+        setSession(data.session);
+        if (!contactEmail.trim()) setContactEmail(email);
+        setStep(firstContentAfterVerify(guestCategory));
+        scrollPanelToTop();
+    };
+
     const lodgeApplication = async () => {
         const email = contactEmail.trim();
         setAccountExists(false);
@@ -2343,6 +2431,11 @@ function ApplicationForm() {
             provider_name: audienceForTrade(trade) === 'guest' ? (providerName.trim() || null) : null,
             dietary_note: audienceForTrade(trade) === 'guest' ? (dietaryNote.trim() || null) : null,
             headshot: audienceForTrade(trade) === 'guest' ? headshot : null,
+            // The seven content answers now have a home on the row (the
+            // guest_details jsonb column, 20260906143712), so the signed-in
+            // wizard writes them here rather than only in the anonymous apply
+            // payload. Null for a host trade, which has none of them.
+            guest_details: audienceForTrade(trade) === 'guest' ? guestContentFields() : null,
             photos,
             logo,
             does_gas: asksAboutFuel(trade) ? doesGas : false,
@@ -3815,6 +3908,94 @@ function ApplicationForm() {
                     down to zero (a business started this year has none and we'd
                     still take them), and it shows a suggestion but stores nothing
                     until touched — the same rule as the where-and-when counts. */}
+                {/* VERIFY YOUR EMAIL — the account gate, straight after the
+                    category pick. A one-time code, so the rest of the wizard runs
+                    signed in: photos upload, everything saves to the database, and
+                    the finish screen is a real submit. No password here — the code
+                    is the proof, and it is what stops anyone building on an address
+                    they don't control. */}
+                {onStep('g_verify') && isGuest && (
+                <section className="mb-8 md:max-w-md">
+                    <p className="text-slate-600 [text-wrap:pretty]">
+                        We’ll email you a code to confirm this address. Enter it and you’re in —
+                        everything you add from here is saved to your account as you go.
+                    </p>
+
+                    <div className="mt-8 space-y-5">
+                        <div>
+                            <label htmlFor="otp-email" className="block text-xs font-medium text-slate-500 mb-2">
+                                Your email
+                            </label>
+                            <input
+                                id="otp-email"
+                                type="email"
+                                inputMode="email"
+                                autoComplete="email"
+                                value={otpEmail}
+                                onChange={(e) => setOtpEmail(e.target.value)}
+                                disabled={otpSent}
+                                placeholder="you@example.com"
+                                className="w-full rounded-xl border border-slate-300 px-4 py-3 focus:outline-none focus:ring-2 focus:ring-emerald-700 disabled:bg-slate-50 disabled:text-slate-500"
+                            />
+                        </div>
+
+                        {!otpSent ? (
+                            <button
+                                type="button"
+                                onClick={sendOtp}
+                                disabled={otpBusy || !otpEmail.trim()}
+                                className={'w-full rounded-full px-6 py-3 text-sm font-semibold transition '
+                                    + (otpBusy || !otpEmail.trim()
+                                        ? 'bg-slate-200 text-slate-400 cursor-not-allowed'
+                                        : 'bg-emerald-700 hover:bg-emerald-800 text-white')}
+                            >
+                                {otpBusy ? 'Sending…' : 'Email me a code'}
+                            </button>
+                        ) : (
+                            <>
+                                <div>
+                                    <label htmlFor="otp-code" className="block text-xs font-medium text-slate-500 mb-2">
+                                        The code we emailed you
+                                    </label>
+                                    <input
+                                        id="otp-code"
+                                        type="text"
+                                        inputMode="numeric"
+                                        autoComplete="one-time-code"
+                                        value={otpCode}
+                                        onChange={(e) => setOtpCode(e.target.value.replace(/[^0-9]/g, '').slice(0, 8))}
+                                        placeholder="123456"
+                                        className="w-full rounded-xl border border-slate-300 px-4 py-3 text-center text-2xl tracking-[0.3em] focus:outline-none focus:ring-2 focus:ring-emerald-700"
+                                    />
+                                </div>
+                                <button
+                                    type="button"
+                                    onClick={verifyOtp}
+                                    disabled={otpBusy || !otpCode.trim()}
+                                    className={'w-full rounded-full px-6 py-3 text-sm font-semibold transition '
+                                        + (otpBusy || !otpCode.trim()
+                                            ? 'bg-slate-200 text-slate-400 cursor-not-allowed'
+                                            : 'bg-emerald-700 hover:bg-emerald-800 text-white')}
+                                >
+                                    {otpBusy ? 'Checking…' : 'Verify and carry on'}
+                                </button>
+                                <p className="text-sm text-slate-500">
+                                    No code yet? Check spam, or{' '}
+                                    <button type="button" onClick={sendOtp} disabled={otpBusy}
+                                        className="font-semibold text-emerald-700 hover:text-emerald-800 underline disabled:opacity-60">
+                                        send another
+                                    </button>.
+                                </p>
+                            </>
+                        )}
+
+                        {otpError && (
+                            <p data-problem className="text-sm text-rose-700">{otpError}</p>
+                        )}
+                    </div>
+                </section>
+                )}
+
                 {onStep('g_you') && audienceForTrade(trade) === 'guest' && (
                 <section className="flex-1 flex flex-col items-center justify-center">
                     <NumberStepper value={yearsDoing} onChange={setYearsDoing} min={0} max={70} suggestion={YEARS_DEFAULT} size="lg" solid />
@@ -5384,7 +5565,7 @@ function ApplicationForm() {
                         The last step has no Next either -- it has send, which
                         is already in the panel above with the words about what
                         it does. */}
-                    {!lastStep && (step !== 'trade' || isGuest) && (() => {
+                    {!lastStep && step !== 'g_verify' && (step !== 'trade' || isGuest) && (() => {
                         const disabled = isGuest && (
                             step === 'trade' ? !guestGroup
                             : step === 'g_subtype' ? !guestCategory

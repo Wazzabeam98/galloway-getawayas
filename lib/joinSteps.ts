@@ -41,7 +41,7 @@ import { GUEST_SCREEN_COPY } from '@/lib/strings';
 // with no context still sees the old trade/business/finish, and no host trade
 // ever gains one. See stepApplies.
 export type StepKey =
-    | 'trade' | 'g_subtype' | 'business'
+    | 'trade' | 'g_subtype' | 'g_verify' | 'business'
     | 'g_you' | 'g_creds' | 'g_about' | 'g_menu' | 'g_expect' | 'g_photos' | 'g_area' | 'g_checks' | 'g_contact'
     | 'credentials' | 'prices' | 'finish';
 
@@ -63,7 +63,7 @@ export type StepKey =
 // naming and describing (g_about), then the Finish wrap-up (checks, contact,
 // account). The set of keys is unchanged — only their order moved.
 const GUEST_STEP_KEYS: StepKey[] = [
-    'g_subtype',
+    'g_subtype', 'g_verify',
     'g_you', 'g_creds', 'g_area', 'g_photos', 'g_menu', 'g_expect', 'g_about', 'g_checks', 'g_contact',
 ];
 
@@ -74,6 +74,13 @@ export interface StepContext {
     group?: string | null;
     category?: string | null;
     shape?: string | null;
+    // Whether a verified session already exists. The guest flow now signs the
+    // applicant in up front (email OTP), right after the category pick, so the
+    // rest of the wizard runs authenticated — photos upload, everything saves to
+    // the database, and the finish screen is a real submit. The verify step
+    // (g_verify) only exists while there is NO session: a returning applicant
+    // who is already signed in never sees it.
+    hasSession?: boolean;
 }
 
 export interface Step {
@@ -89,6 +96,13 @@ const ALL_STEPS: Step[] = [
     // A guest's second screen: the narrower choices under the group they picked
     // (Airbnb's "How would you describe your experience?"). Off for 'other'.
     { key: 'g_subtype', label: 'Type', title: 'How would you describe it?' },
+    // The verify-your-email gate, straight after the category pick. This is
+    // where a guest's account is made — an emailed one-time code, so the rest of
+    // the wizard runs signed in. Off once a session exists (a returning
+    // applicant), and off for host trades. Sits before the rail, like the
+    // pickers: the flow branches on the category, so the rail can't be drawn
+    // until it and this are behind them.
+    { key: 'g_verify', label: 'Account', title: 'Verify your email to carry on' },
     { key: 'business', label: 'Business', title: 'Your business' },
     // The guest experience, one question a screen, in Airbnb's order (see
     // GUEST_STEP_KEYS for the reasoning): About you (years, expertise), then
@@ -154,6 +168,13 @@ export function stepApplies(step: StepKey, trade: string, ctx?: StepContext): bo
             // is alone under its group, so it goes straight to the business step.
             case 'g_subtype':
                 return !!ctx.group && ctx.group !== 'other';
+            // The verify-your-email gate. Every guest passes through it EXCEPT
+            // one who is already signed in — a returning applicant, or anyone
+            // whose session resolved before they reached it. It carries no
+            // category or shape gate: making the account is the same question
+            // whatever they're listing.
+            case 'g_verify':
+                return !ctx.hasSession;
             // The years opener (g_you) and the expertise screen (g_creds) are
             // shown for everyone EXCEPT a made-to-order product — you're buying a
             // cake or a hamper, not the maker, so we don't ask about the person.
@@ -377,6 +398,7 @@ const STEP_FIELDS: Record<StepKey, string[]> = {
     // description, contact_email, areas — move off 'business' for a guest). Empty
     // for now: the component does not yet drive these steps, so nothing maps here.
     g_subtype: [],
+    g_verify: [],
     g_you: [],
     g_creds: [],
     g_about: [],
