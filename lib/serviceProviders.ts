@@ -7,6 +7,7 @@
 
 import { blockedSkills, SkillRow } from '@/lib/serviceSkills';
 import { townKey } from '@/lib/places';
+import { GUEST_CATEGORY_COPY } from '@/lib/strings';
 
 // Nobody searches for "maintenance". They search for a plumber.
 //
@@ -117,10 +118,15 @@ export const GUEST_GROUPS: GuestGroup[] = [
 // a slot. Wellness and Arts split into three each so their group leads to a
 // real screen-two rather than a lone card.
 export const GUEST_CATEGORIES: GuestCategory[] = [
-    { key: 'chef', group: 'food', label: 'Private chef & catering', hint: 'Dinners cooked at the cottage, grazing tables', icon: 'chef', food: true, shape: 'comes_to_you' },
-    { key: 'baking', group: 'food', label: 'Cakes & baking', hint: 'Celebration cakes, tray bakes, fresh bread', icon: 'cake', food: true, shape: 'made_to_order' },
-    { key: 'hampers', group: 'food', label: 'Hampers & local produce', hint: 'Welcome hampers, fresh fish, veg boxes', icon: 'hamper', food: true, shape: 'made_to_order' },
-    { key: 'tastings', group: 'food', label: 'Drinks & tastings', hint: 'Whisky, gin and wine tastings', icon: 'tasting', food: true, shape: 'slot' },
+    // Food & drink, four sub-types. The labels live in lib/strings.ts so the
+    // wording can be rewritten in one pass; the key, icon, food flag and shape
+    // are the logic and stay here. "Food to order" is the old Cakes & baking and
+    // Hampers merged — same shape, same skipped screens, same declarations, so
+    // which one it is is asked further down, not forked here.
+    { key: 'chef', group: 'food', label: GUEST_CATEGORY_COPY.chef.label, hint: GUEST_CATEGORY_COPY.chef.hint, icon: 'chef', food: true, shape: 'comes_to_you' },
+    { key: 'food_order', group: 'food', label: GUEST_CATEGORY_COPY.food_order.label, hint: GUEST_CATEGORY_COPY.food_order.hint, icon: 'hamper', food: true, shape: 'made_to_order' },
+    { key: 'tastings', group: 'food', label: GUEST_CATEGORY_COPY.tastings.label, hint: GUEST_CATEGORY_COPY.tastings.hint, icon: 'tasting', food: true, shape: 'slot' },
+    { key: 'cooking', group: 'food', label: GUEST_CATEGORY_COPY.cooking.label, hint: GUEST_CATEGORY_COPY.cooking.hint, icon: 'chef', food: true, shape: 'slot' },
     { key: 'outdoors', group: 'outdoors', label: 'Guided outdoors', hint: 'Walks, wild swimming, fishing, foraging, dark skies', icon: 'outdoors', food: false, shape: 'slot' },
     { key: 'water', group: 'outdoors', label: 'On the water', hint: 'Kayaking, paddleboarding, boat trips', icon: 'water', food: false, shape: 'slot' },
     { key: 'massage', group: 'wellness', label: 'Massage & treatments', hint: 'Massage, reflexology, beauty', icon: 'wellness', food: false, shape: 'slot' },
@@ -177,7 +183,12 @@ export function guestCategoryIsFood(key: string | null | undefined): boolean {
 // Keyed off the category (and its inferred shape for the made-to-order skip), so
 // the wizard, its Next gate and any later review all read the same rule.
 const GUEST_QUALS_REQUIRED = ['outdoors', 'water', 'massage', 'yoga'];
-const GUEST_YEARS_REQUIRED = ['outdoors', 'water', 'massage', 'yoga', 'chef'];
+// Years required, qualifications optional, for the food experiences where the
+// person is the draw: the private chef in your kitchen, the tasting host whose
+// knowledge is the product, and the cooking class where you're paying to be
+// taught. (Cooking class is treated the same as the other two — flagged to Liam
+// in case a formal qualification should be required there instead.)
+const GUEST_YEARS_REQUIRED = ['outdoors', 'water', 'massage', 'yoga', 'chef', 'tastings', 'cooking'];
 
 // Categories that skip the years + expertise screens even though they aren't a
 // made-to-order product. The test is "does the answer change whether a guest
