@@ -1844,6 +1844,27 @@ function ApplicationForm() {
         };
     };
 
+    // The Airbnb-shaped content answers, for the APPLICATION PAYLOAD ONLY.
+    //
+    // Deliberately NOT part of guestProviderFields: that is spread into the
+    // signed-in column write as well, and none of these six has a column yet, so
+    // sending them there would fail the insert. They ride only in the apply
+    // route's jsonb payload (service_applications.payload), which needs no
+    // migration to hold them — and are materialised to columns later, when the
+    // guest_details column lands. Empty stays null so the stored object is clean.
+    const guestContentFields = (): Record<string, string | null> => {
+        if (audienceForTrade(trade) !== 'guest') return {};
+        const t = (v: string) => (String(v || '').trim() || null);
+        return {
+            years_experience: t(yearsDoing),
+            professional_title: t(professionalTitle),
+            qualifications: t(qualifications),
+            what_to_expect: t(whatToExpect),
+            whats_included: t(whatIncluded),
+            what_to_bring: t(whatToBring),
+        };
+    };
+
     // The weekly opening hours and days off, as child rows for the slot tables.
     // Only meaningful for a slot; empty for every other shape.
     const guestScheduleRows = () => {
@@ -1859,6 +1880,9 @@ function ApplicationForm() {
     const applicationRows = (now: Date) => {
         const provider: any = {
             ...guestProviderFields(),
+            // The content answers ride only here, in the application payload —
+            // never in the signed-in column write (they have no columns yet).
+            ...guestContentFields(),
             business_name: businessName.trim(),
             trade,
             description: description.trim(),
