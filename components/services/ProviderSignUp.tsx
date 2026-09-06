@@ -113,13 +113,18 @@ const draftKey = (trade: string) => 'gg.provider-draft.' + trade;
 
 // A −/+ stepper with a big display number, in the register Airbnb use for every
 // count in their host flow (a guest picks a number by nudging it, not by typing
-// into a small box). Used here for the counts that always have a value and a
-// sensible default — a session length, a group size, days of notice — where a
-// blank would be a worse answer than a number. The value stays a string to match
-// the fields it replaced, so nothing downstream (the draft, the write, the
-// validation) has to change. Empty means "not set yet" and shows the min.
+// into a small box). Used for the counts on the where-and-when step — session
+// length, group size, days of notice.
+//
+// NOTHING PERSISTS UNTIL THE HOST TOUCHES IT. `value` empty is "not set yet":
+// the stepper shows `suggestion` greyed as a hint, but the stored value stays
+// empty — so the draft and the record carry nothing the host didn't choose. The
+// first nudge adopts the suggestion (a real value now), and typing sets any
+// number directly; either way the value becomes the host's. The step that holds
+// one of these can't be passed until it is non-empty (gated in the footer). The
+// value stays a string to match the fields it replaced.
 function NumberStepper({
-    value, onChange, min = 0, max = 999, step = 1, suffix,
+    value, onChange, min = 0, max = 999, step = 1, suffix, suggestion,
 }: {
     value: string;
     onChange: (v: string) => void;
@@ -127,10 +132,13 @@ function NumberStepper({
     max?: number;
     step?: number;
     suffix?: string;
+    suggestion?: number;
 }) {
-    const parsed = Number(String(value).trim());
-    const current = String(value).trim() !== '' && Number.isFinite(parsed) ? parsed : min;
-    const commit = (n: number) => onChange(String(Math.max(min, Math.min(max, n))));
+    const has = String(value).trim() !== '' && Number.isFinite(Number(value));
+    const shown = has ? Number(value) : (suggestion ?? min);
+    const commit = (n: number) => onChange(String(Math.max(min, Math.min(max, Math.round(n)))));
+    // Untouched: the first nudge adopts the suggestion rather than moving off it.
+    const nudge = (dir: number) => (has ? commit(shown + dir * step) : commit(suggestion ?? min));
 
     const circle =
         'flex h-11 w-11 flex-none items-center justify-center rounded-full border border-slate-300 '
@@ -138,15 +146,19 @@ function NumberStepper({
         + 'focus-visible:ring-emerald-600 disabled:opacity-40 disabled:hover:border-slate-300';
 
     return (
-        <div className="flex items-center gap-5">
-            <button type="button" onClick={() => commit(current - step)} disabled={current <= min}
+        <div className="flex items-center gap-4">
+            <button type="button" onClick={() => nudge(-1)} disabled={has && shown <= min}
                 aria-label="Decrease" className={circle}>
                 <Minus className="h-4 w-4" strokeWidth={2.25} />
             </button>
-            <span className="min-w-[2ch] text-center text-4xl font-extrabold tabular-nums text-slate-900">
-                {current}
-            </span>
-            <button type="button" onClick={() => commit(current + step)} disabled={current >= max}
+            <input
+                type="number" inputMode="numeric" aria-label="Amount"
+                value={has ? String(shown) : ''}
+                placeholder={suggestion !== undefined ? String(suggestion) : ''}
+                onChange={(e) => onChange(e.target.value)}
+                className="w-16 bg-transparent text-center text-4xl font-extrabold tabular-nums text-slate-900 placeholder:font-extrabold placeholder:text-slate-300 focus:outline-none [appearance:textfield] [&::-webkit-outer-spin-button]:appearance-none [&::-webkit-inner-spin-button]:appearance-none"
+            />
+            <button type="button" onClick={() => nudge(1)} disabled={has && shown >= max}
                 aria-label="Increase" className={circle}>
                 <Plus className="h-4 w-4" strokeWidth={2.25} />
             </button>
@@ -331,11 +343,13 @@ function ApplicationForm() {
     // private → the whole session for one group (capacity 1, flat price); shared
     // → several people join (a "how many fit?" capacity, per-person price).
     const [slotPrivate, setSlotPrivate] = useState<boolean | null>(null);
-    // Sensible starting counts so the stepper shows a real value that also
-    // saves (a blank behind a displayed number would save nothing). The
-    // provider nudges from here; a returning record or draft overrides them.
-    const [slotCapacity, setSlotCapacity] = useState('8');
-    const [slotLength, setSlotLength] = useState('60');
+    // Empty until the host actually sets them. The stepper shows a suggested
+    // number, but nothing persists — to the draft or the record — until they
+    // touch the control, and the where-and-when step can't be passed until they
+    // have. A number on a live listing has to be one the host chose, never one
+    // we assumed; a blank stored value is the honest "not set yet".
+    const [slotCapacity, setSlotCapacity] = useState('');
+    const [slotLength, setSlotLength] = useState('');
     // The declarations they've confirmed on the checks screen, keyed by check
     // (lib/serviceProviders GUEST_CHECKS). Non-blocking — recorded for the owner
     // to weigh at review, never a gate on Next or submit.
@@ -1270,6 +1284,20 @@ function ApplicationForm() {
     // own — years and qualifications (only for the categories that need them)
     // and at least one photo (always). They gate Next on the spot, the same way
     // the pickers do, with a plain line saying what to add.
+    // The counts on the where-and-when step only display a suggestion until the
+    // host touches them, so the step can't be passed until each one that applies
+    // has a real value. (The area and weekly-hours requirements come through
+    // stepProblems, below.)
+    const whereMissing: string | null = isGuest && step === 'g_area'
+        ? (shape === 'slot'
+            ? (!slotLength.trim() ? 'Set how long each session is.'
+                : slotPrivate === false && !slotCapacity.trim() ? 'Set how many people fit.'
+                    : null)
+            : shape === 'made_to_order'
+                ? (!leadTimeDays.trim() ? 'Set how much notice you need.' : null)
+                : null)
+        : null;
+
     const guestExtraMissing: string | null = isGuest
         ? (step === 'g_you' && catYearsRequired && !yearsDoing.trim()
             ? 'Add how long you’ve been doing this.'
@@ -1277,7 +1305,7 @@ function ApplicationForm() {
                 ? 'Add your training or qualifications — for this kind of experience it’s required.'
                 : step === 'g_photos' && photos.length === 0
                     ? 'Add at least one photo — a listing without one doesn’t sell.'
-                    : null)
+                    : whereMissing)
         : null;
 
     // The one thing missing on a required step, phrased for a person. Shown in
@@ -3274,7 +3302,7 @@ function ApplicationForm() {
                 {onStep('g_area') && audienceForTrade(trade) === 'guest' && shape === 'made_to_order' && (
                 <section className="mb-8">
                     <label className="block text-xs font-medium text-slate-500 mb-3">How much notice do you need?</label>
-                    <NumberStepper value={leadTimeDays} onChange={setLeadTimeDays} min={0} max={90} suffix="days’ notice" />
+                    <NumberStepper value={leadTimeDays} onChange={setLeadTimeDays} min={0} max={90} suggestion={2} suffix="days’ notice" />
                 </section>
                 )}
 
@@ -3323,12 +3351,12 @@ function ApplicationForm() {
                                 {slotPrivate === false && (
                                     <div>
                                         <label className="block text-xs font-medium text-slate-500 mb-3">How many fit?</label>
-                                        <NumberStepper value={slotCapacity} onChange={setSlotCapacity} min={1} max={60} suffix="people" />
+                                        <NumberStepper value={slotCapacity} onChange={setSlotCapacity} min={1} max={60} suggestion={8} suffix="people" />
                                     </div>
                                 )}
                                 <div>
                                     <label className="block text-xs font-medium text-slate-500 mb-3">How long is each session?</label>
-                                    <NumberStepper value={slotLength} onChange={setSlotLength} min={15} max={480} step={15} suffix="minutes" />
+                                    <NumberStepper value={slotLength} onChange={setSlotLength} min={15} max={480} step={15} suggestion={60} suffix="minutes" />
                                 </div>
                             </div>
 
@@ -5010,6 +5038,7 @@ function ApplicationForm() {
                             : step === 'g_you' ? (catYearsRequired && !yearsDoing.trim())
                             : step === 'g_creds' ? (catQualsRequired && !qualifications.trim())
                             : step === 'g_photos' ? photos.length === 0
+                            : step === 'g_area' ? (stepProblems.length > 0 || !!whereMissing)
                             : stepProblems.length > 0
                         );
                         const onNext = () => {

@@ -180,12 +180,17 @@ const GUEST_QUALS_REQUIRED = ['outdoors', 'water', 'massage', 'yoga'];
 const GUEST_YEARS_REQUIRED = ['outdoors', 'water', 'massage', 'yoga', 'chef'];
 
 // Categories that skip the years + expertise screens even though they aren't a
-// made-to-order product. A sauna is the case that named the rule: nobody books
-// a hot barrel by the water for the owner's years or credentials — they book it
-// because it's warm, clean and well-sited, and the sauna-safety declaration
-// already covers what matters. The test is "does the answer change whether a
-// guest books, or whether we'd approve them?" — if not, don't ask.
-const GUEST_EXPERTISE_SKIP = ['sauna'];
+// made-to-order product. The test is "does the answer change whether a guest
+// books, or whether we'd approve them?" — if not, don't ask.
+//   - sauna: nobody books a hot barrel by the water for the owner's years or
+//     credentials; it's booked because it's warm, clean and well-sited, and the
+//     sauna-safety declaration covers what matters.
+//   - the crafts (pottery, painting, make-your-own workshops): a guest books
+//     these off the photos of the work, not a years count or a certificate.
+// This is ONLY about the years/qualifications screens. The safety-check map
+// (GUEST_CHECKS / checksFor) is untouched — a sauna still declares its heat and
+// cold safety, and the crafts still declare safe tools and kiln.
+const GUEST_EXPERTISE_SKIP = ['sauna', 'pottery', 'painting', 'workshops'];
 
 // Whether the years + expertise screens are shown at all. Off for a made-to-
 // order product and for the skip list above; on for everyone else (including
