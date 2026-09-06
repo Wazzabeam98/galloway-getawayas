@@ -58,11 +58,11 @@ export const GUEST_SCREEN_COPY = {
     // still missing.
     qualsGate: 'Add your training or qualifications — for this kind of experience it’s required.',
 
-    // Row three: recognition — always optional, never gates Next.
-    recognitionRowLabel: 'Recognition',
-    recognitionRowPrompt: 'Press, an award, or a career highlight',
-    recognitionModalTitle: 'Recognition',
-    recognitionPlaceholder: 'Featured in the Galloway Gazette; Taste of Dumfries & Galloway finalist 2024.',
+    // Row three: endorsements — always optional, never gates Next.
+    recognitionRowLabel: 'Endorsements',
+    recognitionRowPrompt: 'Who’s recommended you, or had you back.',
+    recognitionModalTitle: 'Endorsements',
+    recognitionPlaceholder: 'A guest who had you back, a local business you work with, or someone who’ll vouch for you.',
     recognitionNote: 'Optional — anything that helps a guest choose you.',
 
     // Shown in the footer of the expertise hub when nothing is required — a nudge
