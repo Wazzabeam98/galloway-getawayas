@@ -52,6 +52,9 @@ export const GUEST_SCREEN_COPY = {
     // Row: your title — one field, no caption, a 0/40 counter.
     titleRowLabel: 'Intro',
     titleRowPrompt: 'Add your professional title',
+    // The gate under a greyed Next when the (now required) professional title is
+    // still empty — shown for every category.
+    titleGate: 'Add your professional title — it’s the first thing a guest reads.',
     titleModalTitle: 'Add your professional title',
     titlePlaceholder: 'Chef and restaurant owner',
 
