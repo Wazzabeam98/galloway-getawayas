@@ -26,11 +26,38 @@ export const GUEST_SCREEN_COPY = {
     // The years opener — one question, one number, Airbnb-style. The unit lives
     // in the question, so the stepper shows no label and no suffix.
     yearsQuestion: 'How long have you been doing this?',
-    // The short line and the photo of the provider — moved off the years screen
-    // onto the expertise screen, where the person's story belongs.
+
+    // The expertise screen — a hub (Airbnb-style): a photo, a heading and a line
+    // of subtext, then rows that each open a small sub-flow modal.
+    expertiseHeading: 'What makes you the person to do it?',
+    expertiseSubtext: 'Guests choose a person as much as a service — this is where you give them a reason to choose you.',
+
+    // Row one: about you — the title, the short line and the photo, in one modal.
+    aboutRowLabel: 'About you',
+    aboutRowPrompt: 'Your title, a line about you, and a photo',
+    aboutModalTitle: 'About you',
+    titleLabel: 'Your title',
+    titlePlaceholder: 'Private chef',
+    // The short line and the photo of the provider — collected in the About you
+    // sub-flow, where the person's story belongs.
     aboutLineLabel: 'A short line about you',
     aboutLinePlaceholder: 'Kirkcudbright · cooking since 2019',
     photoLabel: 'A photo of you',
+
+    // Row two: training and qualifications. Required for chef; the note that used
+    // to sit on the hub now lives inside this sub-flow.
+    qualsRowLabel: 'Training and qualifications',
+    qualsRowPrompt: 'What qualifies you to do this',
+    qualsModalTitle: 'Training and qualifications',
+    qualsPlaceholder: 'Trained at Leiths, ten years in restaurant kitchens, Level 3 Food Hygiene. Say what qualifies you — a guest chooses you on this.',
+    qualsRequiredNote: 'A guest is putting their safety in your hands, so for this kind of experience we do need it.',
+    qualsOptionalNote: 'Not required — but it’s what a guest weighs you on, so it’s worth a line if you have one.',
+    // The gate under a greyed Next on the hub when a required qualification is
+    // still missing.
+    qualsGate: 'Add your training or qualifications — for this kind of experience it’s required.',
+
+    // Sub-flow modal.
+    save: 'Save',
 };
 
 // The Food & drink sub-types. Keyed by the category key in GUEST_CATEGORIES.
