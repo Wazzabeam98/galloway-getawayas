@@ -225,25 +225,26 @@ function HubRow({ filled, label, suffix, prompt, summary, onOpen }: {
 // The sub-flow modal a hub row opens, styled to match Airbnb's: a large centred
 // card, a big heading, then a single borderless field floating in a lot of white
 // space (the field is passed in as children — no box, no fill, just placeholder
-// and cursor, with a centred counter where there's a limit), and Save bottom
-// right, disabled until something is typed. The X closes without saving.
+// and cursor). An optional helper `note` sits at the bottom of the body, just
+// above the Save row rather than under the field. Save bottom right, disabled
+// until something is typed; the X closes without saving.
 //
-// One field per modal is what keeps it this clean, so each sub-flow holds just
-// one thing. Fields edit live component state, so Save and the X both just
-// close; the draft is already saving as they type.
-function SubFlowModal({ open, title, onClose, saveLabel, saveDisabled, children }: {
+// One field per modal is what keeps it this clean. Fields edit live component
+// state, so Save and the X both just close; the draft saves as they type.
+function SubFlowModal({ open, title, onClose, saveLabel, saveDisabled, note, children }: {
     open: boolean;
     title: string;
     onClose: () => void;
     saveLabel: string;
     saveDisabled?: boolean;
+    note?: React.ReactNode;
     children: React.ReactNode;
 }) {
     if (!open) return null;
     return (
         <div className="fixed inset-0 z-[70] flex items-end justify-center bg-slate-900/40 p-0 sm:items-center sm:p-6"
             onClick={onClose}>
-            <div className="flex max-h-[92vh] w-full flex-col rounded-t-3xl bg-white shadow-xl sm:max-w-2xl sm:rounded-3xl"
+            <div className="flex max-h-[92vh] min-h-[62vh] w-full flex-col rounded-t-3xl bg-white shadow-xl sm:max-h-[88vh] sm:min-h-[34rem] sm:max-w-2xl sm:rounded-3xl"
                 onClick={(e) => e.stopPropagation()}>
                 <div className="flex justify-end px-5 pt-5 sm:px-8 sm:pt-8">
                     <button type="button" onClick={onClose} aria-label="Close"
@@ -251,9 +252,12 @@ function SubFlowModal({ open, title, onClose, saveLabel, saveDisabled, children 
                         <X className="h-5 w-5" />
                     </button>
                 </div>
-                <div className="flex-1 overflow-y-auto px-6 pb-6 sm:px-14">
+                <div className="flex flex-1 flex-col overflow-y-auto px-6 pb-3 sm:px-14">
                     <h2 className="text-center text-2xl font-extrabold tracking-tight text-slate-900 [text-wrap:balance] sm:text-3xl">{title}</h2>
-                    <div className="py-12 sm:py-20">{children}</div>
+                    {/* The field floats in the middle white space; the note (if
+                        any) is pushed to the bottom, just above the Save row. */}
+                    <div className="flex flex-1 flex-col justify-center py-10">{children}</div>
+                    {note && <p className="text-center text-sm text-slate-500 [text-wrap:balance]">{note}</p>}
                 </div>
                 <div className="flex justify-end border-t border-slate-100 px-6 py-4 sm:px-8">
                     <button type="button" onClick={onClose} disabled={saveDisabled}
@@ -396,7 +400,6 @@ function ApplicationForm() {
     // actually write — plus a photo of them, and their gallery, which is the
     // listing. All optional.
     const [providerName, setProviderName] = useState('');
-    const [basedLine, setBasedLine] = useState('');
     const [dietaryNote, setDietaryNote] = useState('');
     const [headshot, setHeadshot] = useState<string | null>(null);
     const [uploadingHeadshot, setUploadingHeadshot] = useState(false);
@@ -637,7 +640,6 @@ function ApplicationForm() {
                     }
 
                     setProviderName((existing as any).provider_name || '');
-                    setBasedLine((existing as any).based_line || '');
                     setDietaryNote((existing as any).dietary_note || '');
                     setHeadshot((existing as any).headshot || null);
 
@@ -886,7 +888,6 @@ function ApplicationForm() {
             if (d.areas) setAreas(d.areas);
             if (Array.isArray(d.items) && d.items.length) setItems(d.items);
             if (d.providerName) setProviderName(d.providerName);
-            if (d.basedLine) setBasedLine(d.basedLine);
             if (d.dietaryNote) setDietaryNote(d.dietaryNote);
             if (d.headshot) setHeadshot(d.headshot);
             if (d.yearsDoing) setYearsDoing(d.yearsDoing);
@@ -1023,7 +1024,7 @@ function ApplicationForm() {
                     photos, logo, buildingType, panes,
                     // The guest-trade fields: the price, and who they are. The
                     // headshot is a storage path like the photos.
-                    items, providerName, basedLine, headshot, dietaryNote,
+                    items, providerName, headshot, dietaryNote,
                     // The Airbnb-shaped content answers.
                     yearsDoing, professionalTitle, qualifications, recognition,
                     whatToExpect, whatIncluded, whatToBring,
@@ -1044,7 +1045,7 @@ function ApplicationForm() {
         pricingChoice, billableHourlyRate, coveredBands,
         doesGas, doesOil, registrations, calloutWaived, skills,
         photos, logo, buildingType, panes,
-        items, providerName, basedLine, headshot, dietaryNote,
+        items, providerName, headshot, dietaryNote,
         yearsDoing, professionalTitle, qualifications, recognition,
         whatToExpect, whatIncluded, whatToBring,
         guestCategory, shape, leadTimeDays,
@@ -2004,7 +2005,6 @@ function ApplicationForm() {
             // come into their cottage, so the listing carries a bit of the
             // person. Null for a host trade, where a logo and a trade say enough.
             provider_name: audienceForTrade(trade) === 'guest' ? (providerName.trim() || null) : null,
-            based_line: audienceForTrade(trade) === 'guest' ? (basedLine.trim() || null) : null,
             dietary_note: audienceForTrade(trade) === 'guest' ? (dietaryNote.trim() || null) : null,
             headshot: audienceForTrade(trade) === 'guest' ? headshot : null,
             photos,
@@ -2273,7 +2273,6 @@ function ApplicationForm() {
             // come into their cottage, so the listing carries a bit of the
             // person. Null for a host trade, where a logo and a trade say enough.
             provider_name: audienceForTrade(trade) === 'guest' ? (providerName.trim() || null) : null,
-            based_line: audienceForTrade(trade) === 'guest' ? (basedLine.trim() || null) : null,
             dietary_note: audienceForTrade(trade) === 'guest' ? (dietaryNote.trim() || null) : null,
             headshot: audienceForTrade(trade) === 'guest' ? headshot : null,
             photos,
@@ -3281,19 +3280,18 @@ function ApplicationForm() {
                     hub itself stays clean. Built on the reusable HubRow /
                     SubFlowModal primitives, which later screens will want too. */}
                 {onStep('g_creds') && isGuest && (() => {
-                    // The title row now covers both the title and the line about
-                    // you (folded back into one modal). Filled if either is set;
-                    // the summary shows the title, falling back to the line.
-                    const titleFilled = professionalTitle.trim() !== '' || basedLine.trim() !== '';
-                    const titleSummary = professionalTitle.trim() || basedLine.trim();
+                    const titleFilled = professionalTitle.trim() !== '';
+                    const titleSummary = professionalTitle.trim();
                     const qualsFilled = qualifications.trim() !== '';
                     const recognitionFilled = recognition.trim() !== '';
                     // Borderless fields for the sub-flow modals: no box, no fill,
-                    // centred, in a lot of white space. Counter/note centred under.
-                    const bigInput = 'w-full bg-transparent text-center text-2xl text-slate-900 placeholder:text-slate-300 focus:outline-none';
+                    // centred, floating in white space, with a quiet underline. The
+                    // counter (where there's a limit) sits at the right-hand end of
+                    // the field's line, just above the underline — not centred below.
+                    const fieldWrap = 'relative border-b border-slate-200 pb-2 transition-colors focus-within:border-slate-400';
+                    const bigInput = 'w-full bg-transparent pr-12 text-center text-2xl text-slate-900 placeholder:text-slate-300 focus:outline-none';
                     const bigArea = 'w-full resize-none bg-transparent text-center text-xl leading-relaxed text-slate-900 placeholder:text-slate-300 focus:outline-none';
-                    const counter = 'mt-5 text-center text-sm text-slate-400';
-                    const modalNote = 'mt-5 text-center text-sm text-slate-500';
+                    const counterField = 'pointer-events-none absolute bottom-1 right-0 text-xs text-slate-400';
                     return (
                     <section className="mb-8 md:max-w-xl md:mx-auto">
                         {/* The host photo, centred — the only place it lives now,
@@ -3376,83 +3374,65 @@ function ApplicationForm() {
                             />
                         </div>
 
-                        {/* ---- Your title + a line about you (two fields, one
-                            modal). Each borderless with its own quiet label and
-                            counter, generous space between them. Save is enabled
-                            once at least one has something in it. ---- */}
+                        {/* ---- Your professional title: one borderless field,
+                            no caption, counter at the right above the underline. ---- */}
                         <SubFlowModal
                             open={expertiseModal === 'title'}
                             title={GUEST_SCREEN_COPY.titleModalTitle}
                             onClose={() => setExpertiseModal(null)}
                             saveLabel={GUEST_SCREEN_COPY.save}
-                            saveDisabled={!professionalTitle.trim() && !basedLine.trim()}
+                            saveDisabled={!professionalTitle.trim()}
                         >
-                            <div className="space-y-12">
-                                <div>
-                                    <label className="mb-3 block text-center text-xs font-medium text-slate-500">
-                                        {GUEST_SCREEN_COPY.titleFieldLabel}
-                                    </label>
-                                    <input
-                                        type="text"
-                                        value={professionalTitle}
-                                        onChange={(e) => setProfessionalTitle(e.target.value.slice(0, 40))}
-                                        placeholder={GUEST_SCREEN_COPY.titlePlaceholder}
-                                        className={bigInput}
-                                    />
-                                    <p className={counter}>{professionalTitle.length}/40</p>
-                                </div>
-                                <div>
-                                    <label className="mb-3 block text-center text-xs font-medium text-slate-500">
-                                        {GUEST_SCREEN_COPY.lineFieldLabel}
-                                    </label>
-                                    <input
-                                        type="text"
-                                        value={basedLine}
-                                        onChange={(e) => setBasedLine(e.target.value.slice(0, 80))}
-                                        placeholder={GUEST_SCREEN_COPY.aboutLinePlaceholder}
-                                        className={bigInput}
-                                    />
-                                    <p className={counter}>{basedLine.length}/80</p>
-                                </div>
+                            <div className={fieldWrap}>
+                                <input
+                                    type="text"
+                                    value={professionalTitle}
+                                    onChange={(e) => setProfessionalTitle(e.target.value.slice(0, 40))}
+                                    placeholder={GUEST_SCREEN_COPY.titlePlaceholder}
+                                    className={bigInput}
+                                />
+                                <span className={counterField}>{professionalTitle.length}/40</span>
                             </div>
                         </SubFlowModal>
 
-                        {/* ---- Qualifications (keeps its note for required cats) ---- */}
+                        {/* ---- Qualifications (note sits just above Save) ---- */}
                         <SubFlowModal
                             open={expertiseModal === 'quals'}
                             title={GUEST_SCREEN_COPY.qualsModalTitle}
                             onClose={() => setExpertiseModal(null)}
                             saveLabel={GUEST_SCREEN_COPY.save}
                             saveDisabled={!qualifications.trim()}
+                            note={catQualsRequired ? GUEST_SCREEN_COPY.qualsRequiredNote : GUEST_SCREEN_COPY.qualsOptionalNote}
                         >
-                            <textarea
-                                value={qualifications}
-                                onChange={(e) => setQualifications(e.target.value)}
-                                rows={4}
-                                placeholder={GUEST_SCREEN_COPY.qualsPlaceholder}
-                                className={bigArea}
-                            />
-                            <p className={modalNote}>
-                                {catQualsRequired ? GUEST_SCREEN_COPY.qualsRequiredNote : GUEST_SCREEN_COPY.qualsOptionalNote}
-                            </p>
+                            <div className={fieldWrap}>
+                                <textarea
+                                    value={qualifications}
+                                    onChange={(e) => setQualifications(e.target.value)}
+                                    rows={4}
+                                    placeholder={GUEST_SCREEN_COPY.qualsPlaceholder}
+                                    className={bigArea}
+                                />
+                            </div>
                         </SubFlowModal>
 
-                        {/* ---- Endorsements: always optional ---- */}
+                        {/* ---- Endorsements: always optional (note above Save) ---- */}
                         <SubFlowModal
                             open={expertiseModal === 'endorsements'}
                             title={GUEST_SCREEN_COPY.recognitionModalTitle}
                             onClose={() => setExpertiseModal(null)}
                             saveLabel={GUEST_SCREEN_COPY.save}
                             saveDisabled={!recognition.trim()}
+                            note={GUEST_SCREEN_COPY.recognitionNote}
                         >
-                            <textarea
-                                value={recognition}
-                                onChange={(e) => setRecognition(e.target.value)}
-                                rows={4}
-                                placeholder={GUEST_SCREEN_COPY.recognitionPlaceholder}
-                                className={bigArea}
-                            />
-                            <p className={modalNote}>{GUEST_SCREEN_COPY.recognitionNote}</p>
+                            <div className={fieldWrap}>
+                                <textarea
+                                    value={recognition}
+                                    onChange={(e) => setRecognition(e.target.value)}
+                                    rows={4}
+                                    placeholder={GUEST_SCREEN_COPY.recognitionPlaceholder}
+                                    className={bigArea}
+                                />
+                            </div>
                         </SubFlowModal>
                     </section>
                     );

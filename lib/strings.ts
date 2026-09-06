@@ -36,15 +36,11 @@ export const GUEST_SCREEN_COPY = {
     // optional row; the only sometimes-required one is qualifications.
     optionalSuffix: '(optional)',
 
-    // Row: your title — its modal holds two fields, the title and a line about
-    // you, each with a quiet label above it. The row summary shows the title.
+    // Row: your title — one field, no caption, a 0/40 counter.
     titleRowLabel: 'Your title',
-    titleRowPrompt: 'Your role, and a line about you',
-    titleModalTitle: 'Add your title',
-    titleFieldLabel: 'Title',
-    titlePlaceholder: 'Private chef',
-    lineFieldLabel: 'A line about you',
-    aboutLinePlaceholder: 'Kirkcudbright · cooking since 2019',
+    titleRowPrompt: 'How you’d describe what you do',
+    titleModalTitle: 'Add your professional title',
+    titlePlaceholder: 'Chef and restaurant owner',
 
     // Row: qualifications. Required for the four safety categories (no
     // suffix, gates Next), optional everywhere else (the suffix shows).
@@ -53,7 +49,7 @@ export const GUEST_SCREEN_COPY = {
     qualsModalTitle: 'Training and qualifications',
     qualsPlaceholder: 'Trained at Leiths, ten years in restaurant kitchens, Level 3 Food Hygiene. Say what qualifies you — a guest chooses you on this.',
     qualsRequiredNote: 'A guest is putting their safety in your hands, so for this kind of experience we do need it.',
-    qualsOptionalNote: 'Not required — but it’s what a guest weighs you on, so it’s worth a line if you have one.',
+    qualsOptionalNote: 'A guest chooses you partly on this, so it’s worth a line.',
     // The gate under a greyed Next on the hub when a required qualification is
     // still missing.
     qualsGate: 'Add your training or qualifications — for this kind of experience it’s required.',
