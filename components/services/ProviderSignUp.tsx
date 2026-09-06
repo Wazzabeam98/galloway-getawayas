@@ -118,6 +118,12 @@ const draftKey = (trade: string) => 'gg.provider-draft.' + trade;
 // and it is stored (see the years case in the footer's onNext). Shown solid
 // black; the host nudges or types to change it.
 const YEARS_DEFAULT = 5;
+// The max-guests stepper starts low on purpose. For a shared slot the number
+// becomes sellable seats (via sessionCapacity), so tapping straight through
+// must never oversell — a shared slot holds at least two, so 2 is at or below
+// any real capacity. The descriptive cases (a private slot, a comes-to-you
+// chef) just start low and get bumped, with no seat consequence.
+const CAPACITY_DEFAULT = 2;
 
 // A −/+ stepper with a big display number, in the register Airbnb use for every
 // count in their host flow (a guest picks a number by nudging it, not by typing
@@ -521,15 +527,18 @@ function ApplicationForm() {
     // Made-to-order only: notice needed, in days ("how much notice do you need?").
     const [leadTimeDays, setLeadTimeDays] = useState('');
     // Slot only. `slotPrivate` is the private/shared answer (null until asked):
-    // private → the whole session for one group (capacity 1, flat price); shared
-    // → several people join (a "how many fit?" capacity, per-person price).
+    // private → the whole session for one group (sells as one booking, flat
+    // price); shared → several people join (per-person price, seats = capacity).
+    // It is inferred on load from the session item's UNIT, not the capacity
+    // number, so a private slot can hold many yet still sell whole.
     const [slotPrivate, setSlotPrivate] = useState<boolean | null>(null);
-    // Empty until the host actually sets them. The stepper shows a suggested
-    // number, but nothing persists — to the draft or the record — until they
-    // touch the control, and the where-and-when step can't be passed until they
-    // have. A number on a live listing has to be one the host chose, never one
-    // we assumed; a blank stored value is the honest "not set yet".
-    const [slotCapacity, setSlotCapacity] = useState('');
+    // Maximum guests — the group size. Asked on its own screen in the Pricing
+    // section (g_capacity). For a slot it is written to the slot_capacity column
+    // (a shared slot sells that many seats via sessionCapacity; a private slot
+    // records it but still sells whole); for a comes-to-you chef it rides in the
+    // guest_details jsonb. Blank until set; the stepper shows a low default and
+    // stores the shown value on an untouched pass, like the years screen.
+    const [maxGuests, setMaxGuests] = useState('');
     const [slotLength, setSlotLength] = useState('');
     // The declarations they've confirmed on the checks screen, keyed by check
     // (lib/serviceProviders GUEST_CHECKS). Non-blocking — recorded for the owner
@@ -721,9 +730,20 @@ function ApplicationForm() {
                     if (ex.shape) setShape(ex.shape);
                     if (ex.lead_time_days) setLeadTimeDays(String(ex.lead_time_days));
                     if (ex.slot_length_minutes) setSlotLength(String(ex.slot_length_minutes));
+                    // Capacity loads into the max-guests screen from the stored
+                    // column (authoritative for existing slot listings, so an
+                    // edit shows what they set rather than the stepper default).
                     if (ex.slot_capacity !== null && ex.slot_capacity !== undefined) {
-                        setSlotCapacity(String(ex.slot_capacity));
-                        setSlotPrivate(Number(ex.slot_capacity) <= 1);
+                        setMaxGuests(String(ex.slot_capacity));
+                    }
+                    // Private vs shared comes from the session item's UNIT, not
+                    // the capacity number — a private slot can hold six yet sell
+                    // whole, so capacity no longer implies the answer. Slots are
+                    // single-item with a uniform unit, but read it as "any
+                    // per-person item ⇒ shared" so a stray can't mis-load it.
+                    if (ex.shape === 'slot') {
+                        const anyPerson = (itemRows || []).some((r: any) => String(r.unit) === 'person');
+                        setSlotPrivate(!anyPerson);
                     }
                     if (audienceForTrade(existing.trade || tradeFromUrl) === 'guest') {
                         const byLabel = GUEST_CATEGORIES.filter((c) => c.label && c.label === ex.custom_label)[0];
@@ -748,6 +768,11 @@ function ApplicationForm() {
                         if (gd.what_to_expect) setWhatToExpect(String(gd.what_to_expect));
                         if (gd.whats_included) setWhatIncluded(String(gd.whats_included));
                         if (gd.what_to_bring) setWhatToBring(String(gd.what_to_bring));
+                        // Max guests for a comes-to-you chef rides here (a slot's
+                        // is loaded from slot_capacity above). Only set it when the
+                        // column didn't already provide it, so a slot keeps its
+                        // authoritative value.
+                        if (ex.shape !== 'slot' && gd.max_guests) setMaxGuests(String(gd.max_guests));
                     }
 
                     // A slot's weekly hours and days off.
@@ -988,7 +1013,7 @@ function ApplicationForm() {
             if (d.shape) setShape(d.shape);
             if (d.leadTimeDays) setLeadTimeDays(d.leadTimeDays);
             if (d.slotPrivate !== undefined && d.slotPrivate !== null) setSlotPrivate(d.slotPrivate === true);
-            if (d.slotCapacity) setSlotCapacity(d.slotCapacity);
+            if (d.maxGuests) setMaxGuests(d.maxGuests);
             if (d.slotLength) setSlotLength(d.slotLength);
             if (Array.isArray(d.schedule)) setSchedule(d.schedule);
             if (Array.isArray(d.blockedDates)) setBlockedDates(d.blockedDates);
@@ -1113,7 +1138,7 @@ function ApplicationForm() {
                     whatToExpect, whatIncluded, whatToBring,
                     // The category, the inferred shape and its own fields.
                     guestCategory, shape, leadTimeDays,
-                    slotPrivate, slotCapacity, slotLength, schedule, blockedDates,
+                    slotPrivate, maxGuests, slotLength, schedule, blockedDates,
                     // The checks they've ticked so far.
                     declarations,
                 })
@@ -1132,7 +1157,7 @@ function ApplicationForm() {
         yearsDoing, professionalTitle, qualifications, recognition,
         whatToExpect, whatIncluded, whatToBring,
         guestCategory, shape, leadTimeDays,
-        slotPrivate, slotCapacity, slotLength, schedule, blockedDates,
+        slotPrivate, maxGuests, slotLength, schedule, blockedDates,
         declarations,
     ]);
 
@@ -1541,9 +1566,7 @@ function ApplicationForm() {
     // stepProblems, below.)
     const whereMissing: string | null = isGuest && step === 'g_area'
         ? (shape === 'slot'
-            ? (!slotLength.trim() ? 'Set how long each session is.'
-                : slotPrivate === false && !slotCapacity.trim() ? 'Set how many people fit.'
-                    : null)
+            ? (!slotLength.trim() ? 'Set how long each session is.' : null)
             : shape === 'made_to_order'
                 ? (!leadTimeDays.trim() ? 'Set how much notice you need.' : null)
                 : null)
@@ -2106,7 +2129,11 @@ function ApplicationForm() {
             exclusive_per_date: shape === 'comes_to_you',
             lead_time_days: isMTO ? (num(leadTimeDays, 0) ?? 0) : 0,
             slot_length_minutes: isSlot ? num(slotLength, 15) : null,
-            slot_capacity: isSlot ? (slotPrivate === false ? num(slotCapacity, 1) : 1) : null,
+            // Max guests → slot_capacity for a slot (drives sellable seats for a
+            // shared/per-person slot via sessionCapacity; a private/flat slot
+            // records it but still sells whole). Written from the one maxGuests
+            // state, so it can never disagree with the jsonb copy below.
+            slot_capacity: isSlot ? (num(maxGuests, 1) ?? 1) : null,
             declarations: confirmed,
         };
     };
@@ -2130,6 +2157,9 @@ function ApplicationForm() {
             what_to_expect: t(whatToExpect),
             whats_included: t(whatIncluded),
             what_to_bring: t(whatToBring),
+            // Max guests rides here for every category that has it (a slot ALSO
+            // writes slot_capacity, from the same state, so the two agree).
+            max_guests: t(maxGuests),
         };
     };
 
@@ -3088,7 +3118,7 @@ function ApplicationForm() {
                                 /* The years opener is a flex column so its
                                    stepper can centre in the space under the
                                    question rather than sit high with a void. */
-                                : step === 'g_you'
+                                : (step === 'g_you' || step === 'g_capacity')
                                     ? 'max-w-2xl py-10 sm:py-12 flex flex-col'
                                     : 'max-w-2xl py-10 sm:py-12'))
                     : 'flex-1 overflow-y-auto px-4 sm:px-6 py-5'}>
@@ -3103,11 +3133,11 @@ function ApplicationForm() {
                         have no section, so it shows nothing there. */}
                     {isGuest && currentSection && (
                         <p className={'text-xs font-bold uppercase tracking-[0.12em] text-emerald-700 mb-3 '
-                            + ((step === 'g_you' || step === 'g_creds' || step === 'g_menu') ? 'text-center' : '')}>
+                            + ((step === 'g_you' || step === 'g_creds' || step === 'g_menu' || step === 'g_capacity') ? 'text-center' : '')}>
                             {currentSection.label}
                         </p>
                     )}
-                    {isGuest && step !== 'finish' && step !== 'g_creds' && step !== 'g_menu' && (
+                    {isGuest && step !== 'finish' && step !== 'g_creds' && step !== 'g_menu' && step !== 'g_capacity' && (
                         <h1 className={'font-extrabold tracking-tight text-slate-900 [text-wrap:balance] text-3xl sm:text-4xl '
                             + ((step === 'trade' || step === 'g_subtype' || step === 'g_you') ? 'mb-10 text-center' : 'mb-8')}>
                             {step === 'trade'
@@ -3416,7 +3446,7 @@ function ApplicationForm() {
             <fieldset disabled={locked} className={'min-w-0 ' + (locked ? 'opacity-70' : '')
                 /* On the years opener the fieldset fills the panel below the
                    question so its one section can centre vertically. */
-                + (isGuest && step === 'g_you' ? ' flex-1 flex flex-col' : '')}>
+                + (isGuest && (step === 'g_you' || step === 'g_capacity') ? ' flex-1 flex flex-col' : '')}>
                 {/* The standalone business step is host-only now. A guest names
                     the experience on g_about ("Name it, and tell guests what it
                     is"), beside the description, so they never answer it twice. */}
@@ -4009,17 +4039,12 @@ function ApplicationForm() {
                                 </div>
                             </div>
 
-                            <div className="grid gap-4 sm:grid-cols-2 mb-6">
-                                {slotPrivate === false && (
-                                    <div>
-                                        <label className="block text-xs font-medium text-slate-500 mb-3">How many fit?</label>
-                                        <NumberStepper value={slotCapacity} onChange={setSlotCapacity} min={1} max={60} suggestion={8} suffix="people" />
-                                    </div>
-                                )}
-                                <div>
-                                    <label className="block text-xs font-medium text-slate-500 mb-3">How long is each session?</label>
-                                    <NumberStepper value={slotLength} onChange={setSlotLength} min={15} max={480} step={15} suggestion={60} suffix="minutes" />
-                                </div>
+                            {/* Capacity has moved to its own screen in the Pricing
+                                section (g_capacity); this screen keeps only the
+                                session length and the weekly hours. */}
+                            <div className="mb-6">
+                                <label className="block text-xs font-medium text-slate-500 mb-3">How long is each session?</label>
+                                <NumberStepper value={slotLength} onChange={setSlotLength} min={15} max={480} step={15} suggestion={60} suffix="minutes" />
                             </div>
 
                             {/* The weekly hours — a day toggles open, and shows an
@@ -4176,6 +4201,23 @@ function ApplicationForm() {
                 {onStep('g_you') && audienceForTrade(trade) === 'guest' && (
                 <section className="flex-1 flex flex-col items-center justify-center">
                     <NumberStepper value={yearsDoing} onChange={setYearsDoing} min={0} max={70} suggestion={YEARS_DEFAULT} size="lg" solid />
+                </section>
+                )}
+
+                {/* MAXIMUM GUESTS — one centred question, the big stepper, worded
+                    by shape. Where the provider travels (comes_to_you) it's the
+                    largest group they'll take; where guests come to them (slot)
+                    it's what the space holds. For a shared slot this becomes
+                    sellable seats, so the default is deliberately low. */}
+                {onStep('g_capacity') && isGuest && (
+                <section className="flex-1 flex flex-col items-center justify-center text-center">
+                    <h1 className="mb-2 text-3xl font-extrabold tracking-tight text-slate-900 [text-wrap:balance] sm:text-4xl">
+                        {shape === 'comes_to_you' ? GUEST_SCREEN_COPY.capacityHeadingTravel : GUEST_SCREEN_COPY.capacityHeadingVenue}
+                    </h1>
+                    <p className="mb-10 text-sm text-slate-500 [text-wrap:balance]">
+                        {shape === 'comes_to_you' ? GUEST_SCREEN_COPY.capacitySubtextTravel : GUEST_SCREEN_COPY.capacitySubtextVenue}
+                    </p>
+                    <NumberStepper value={maxGuests} onChange={setMaxGuests} min={1} max={60} suggestion={CAPACITY_DEFAULT} size="lg" solid suffix={GUEST_SCREEN_COPY.capacitySuffix} />
                 </section>
                 )}
 
@@ -5759,6 +5801,9 @@ function ApplicationForm() {
                             // Pass the years screen without touching it: the shown
                             // number is the answer they accepted, so store it now.
                             if (isGuest && step === 'g_you' && !yearsDoing.trim()) setYearsDoing(String(YEARS_DEFAULT));
+                            // Same rule for max guests: an untouched pass stores
+                            // the shown default; a loaded value is left as it is.
+                            if (isGuest && step === 'g_capacity' && !maxGuests.trim()) setMaxGuests(String(CAPACITY_DEFAULT));
                             goNext();
                         };
                         return (

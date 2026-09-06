@@ -81,6 +81,17 @@ export const GUEST_SCREEN_COPY = {
     // rather than an "optional, skip it". Placeholder wording, rewritten at the end.
     expertiseFootnote: 'What you write here is what a guest reads when they’re choosing you.',
 
+    // The maximum-guests screen (g_capacity), first in the Pricing section. One
+    // centred question, one number, the big stepper. Worded by shape: where the
+    // provider travels to the guest the room is the guest's problem, so it's the
+    // largest group they'll take; where guests come to them it's what the space
+    // or session holds. For a shared slot this number becomes sellable seats.
+    capacityHeadingTravel: 'What’s the largest group you’ll take?',
+    capacitySubtextTravel: 'The room is the guest’s to sort — this is just how many you’ll cook for or work with.',
+    capacityHeadingVenue: 'How many can it hold?',
+    capacitySubtextVenue: 'The most guests your space or session fits at once.',
+    capacitySuffix: 'guests',
+
     // The price screen (g_menu) — rebuilt as a hub: a centred question, then each
     // priced thing as a borderless row (name + price + thumbnail), an add row at
     // the bottom, and a per-item sub-flow of one question a screen. The payout is

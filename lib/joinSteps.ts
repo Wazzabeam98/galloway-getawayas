@@ -42,7 +42,7 @@ import { GUEST_SCREEN_COPY } from '@/lib/strings';
 // ever gains one. See stepApplies.
 export type StepKey =
     | 'trade' | 'g_subtype' | 'g_verify' | 'business'
-    | 'g_you' | 'g_creds' | 'g_about' | 'g_menu' | 'g_expect' | 'g_photos' | 'g_area' | 'g_checks' | 'g_contact'
+    | 'g_you' | 'g_creds' | 'g_about' | 'g_capacity' | 'g_menu' | 'g_expect' | 'g_photos' | 'g_area' | 'g_checks' | 'g_contact'
     | 'credentials' | 'prices' | 'finish';
 
 // The guest-only steps, in flow order. Rebuilt against Airbnb's host-an-
@@ -64,7 +64,7 @@ export type StepKey =
 // account). The set of keys is unchanged — only their order moved.
 const GUEST_STEP_KEYS: StepKey[] = [
     'g_verify', 'g_subtype',
-    'g_you', 'g_creds', 'g_area', 'g_photos', 'g_menu', 'g_expect', 'g_about', 'g_checks', 'g_contact',
+    'g_you', 'g_creds', 'g_area', 'g_photos', 'g_capacity', 'g_menu', 'g_expect', 'g_about', 'g_checks', 'g_contact',
 ];
 
 // What a guest's steps branch on, all from earlier answers: the top-level group
@@ -115,6 +115,11 @@ const ALL_STEPS: Step[] = [
     { key: 'g_creds', label: 'Expertise', title: GUEST_SCREEN_COPY.expertiseHeading },
     { key: 'g_area', label: 'Where', title: 'Where, and when, can guests get it?' },
     { key: 'g_photos', label: 'Photos', title: 'Show guests what it looks like' },
+    // The Pricing section opens with the capacity question (Airbnb's order),
+    // then the priced offerings. Shown only where a group size is meaningful —
+    // comes-to-you and slot — so a made-to-order product (cakes, hampers) and
+    // 'other' skip it. The heading is worded per shape in the form.
+    { key: 'g_capacity', label: 'Guests', title: 'How many guests?' },
     { key: 'g_menu', label: 'Price', title: 'What you offer, and what it costs' },
     { key: 'g_expect', label: 'Details', title: 'What can a guest expect?' },
     { key: 'g_about', label: 'About', title: 'Name it, and tell guests what it is' },
@@ -191,6 +196,12 @@ export function stepApplies(step: StepKey, trade: string, ctx?: StepContext): bo
             case 'g_photos':
             case 'g_contact':
                 return true;
+            // Maximum guests. Only where a group size means something: the
+            // provider travels to the guest (comes_to_you) or the guests come to
+            // a session (slot). A made-to-order product has no guests, and
+            // 'other' has no shape, so both skip it.
+            case 'g_capacity':
+                return shape === 'comes_to_you' || shape === 'slot';
             // The checks sub-flow: the declarations this category has to
             // confirm. Always at least the two universal ones (insurance and
             // accuracy), so it is on for every guest — but computed from
@@ -280,7 +291,7 @@ const GUEST_SECTIONS: { key: string; label: string; steps: StepKey[] }[] = [
     { key: 'about', label: GUEST_SCREEN_COPY.sectionAboutYou, steps: ['g_you', 'g_creds'] },
     { key: 'location', label: GUEST_SCREEN_COPY.sectionLocation, steps: ['g_area'] },
     { key: 'photos', label: GUEST_SCREEN_COPY.sectionPhotos, steps: ['g_photos'] },
-    { key: 'pricing', label: GUEST_SCREEN_COPY.sectionPricing, steps: ['g_menu'] },
+    { key: 'pricing', label: GUEST_SCREEN_COPY.sectionPricing, steps: ['g_capacity', 'g_menu'] },
     { key: 'details', label: GUEST_SCREEN_COPY.sectionDetails, steps: ['g_expect'] },
     { key: 'experience', label: GUEST_SCREEN_COPY.sectionExperience, steps: ['g_about'] },
     { key: 'finish', label: GUEST_SCREEN_COPY.sectionFinish, steps: ['g_checks', 'g_contact', 'finish'] },
@@ -401,6 +412,7 @@ const STEP_FIELDS: Record<StepKey, string[]> = {
     g_you: [],
     g_creds: [],
     g_about: [],
+    g_capacity: [],
     g_menu: [],
     g_expect: [],
     g_photos: [],

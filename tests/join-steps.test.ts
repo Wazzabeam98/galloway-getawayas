@@ -516,11 +516,21 @@ const THIRTEEN = [
     'g_menu', 'g_expect', 'g_about', 'g_checks', 'g_contact', 'finish',
 ];
 
-test('a chef (food, comes to them) walks the thirteen, and never sees the business step', () => {
+// A comes-to-you or slot category also has a max-guests step (g_capacity) at the
+// head of the Pricing section, just before g_menu. A made-to-order product
+// (cakes, hampers) and 'other' have no guest count, so they keep the thirteen.
+const withCapacity = (keys: string[]) => {
+    const out = keys.slice();
+    out.splice(out.indexOf('g_menu'), 0, 'g_capacity');
+    return out;
+};
+
+test('a chef (food, comes to them) walks the flow, with a capacity step, and never sees the business step', () => {
     const ctx = { group: 'food', category: 'chef', shape: 'comes_to_you' };
-    assert.deepEqual(gkeys(ctx), THIRTEEN);
+    assert.deepEqual(gkeys(ctx), withCapacity(THIRTEEN));
     // The old "how do guests get it?" screen is gone — the shape is inferred.
     assert.equal(stepApplies('business', 'guest', ctx), false, 'a guest names it on g_about, not a business step');
+    assert.equal(stepApplies('g_capacity', 'guest', ctx), true, 'a chef sets a largest group');
 });
 
 test('the verify gate leads the flow for an anonymous applicant and is gone once signed in', () => {
@@ -534,8 +544,9 @@ test('the verify gate leads the flow for an anonymous applicant and is gone once
     const signedIn = { ...anon, hasSession: true };
     assert.equal(stepApplies('g_verify', 'guest', signedIn), false, 'a signed-in applicant skips it');
     assert.equal(gkeys(signedIn).indexOf('g_verify'), -1, 'the gate is not in a signed-in flow');
-    // Everything else is unchanged — the signed-in flow is the thirteen minus g_verify.
-    assert.deepEqual(gkeys(signedIn), THIRTEEN.filter((k) => k !== 'g_verify'));
+    // Everything else is unchanged — the signed-in flow is the thirteen (plus
+    // the chef's capacity step) minus g_verify.
+    assert.deepEqual(gkeys(signedIn), withCapacity(THIRTEEN).filter((k) => k !== 'g_verify'));
 });
 
 test('a cake maker (made to order) gets the years and expertise screens too', () => {
@@ -547,11 +558,14 @@ test('a cake maker (made to order) gets the years and expertise screens too', ()
     assert.deepEqual(gkeys(ctx), THIRTEEN);
     assert.equal(stepApplies('g_you', 'guest', ctx), true, 'years asked');
     assert.equal(stepApplies('g_creds', 'guest', ctx), true, 'expertise asked');
+    // Cakes and hampers have no guests, so no max-guests step.
+    assert.equal(stepApplies('g_capacity', 'guest', ctx), false, 'made-to-order skips the capacity step');
 });
 
-test('a yoga instructor (not food, slot) walks the same thirteen, with dietary folded away', () => {
+test('a yoga instructor (not food, slot) walks the flow, with a capacity step and dietary folded away', () => {
     const ctx = { group: 'wellness', category: 'yoga', shape: 'slot' };
-    assert.deepEqual(gkeys(ctx), THIRTEEN);
+    assert.deepEqual(gkeys(ctx), withCapacity(THIRTEEN));
+    assert.equal(stepApplies('g_capacity', 'guest', ctx), true, 'a slot sets how many the space holds');
     // Dietary is no longer a step — it renders inside g_expect for a food
     // category only, so a yoga class simply never sees that field.
     assert.equal(stepApplies('g_area', 'guest', ctx), true, 'a slot still needs a location, on the where-and-when step');
@@ -665,7 +679,7 @@ test('the guest split never touches a host trade', () => {
         stepsFor('plumber', ctx).map((s: any) => s.key),
         stepsFor('plumber').map((s: any) => s.key),
     );
-    for (const k of ['g_subtype', 'g_verify', 'g_you', 'g_creds', 'g_about', 'g_menu', 'g_expect', 'g_photos', 'g_area', 'g_checks', 'g_contact']) {
+    for (const k of ['g_subtype', 'g_verify', 'g_you', 'g_creds', 'g_about', 'g_capacity', 'g_menu', 'g_expect', 'g_photos', 'g_area', 'g_checks', 'g_contact']) {
         assert.equal(stepApplies(k as any, 'plumber', ctx), false, k + ' is off for a host trade');
     }
 });
@@ -695,6 +709,8 @@ test('the guest flow is seven named sections, in Airbnb order', () => {
     // About you pairs the years screen and the expertise hub; every other
     // content section is a single screen; Finish gathers the wrap-up.
     assert.deepEqual(secs.find((s: any) => s.key === 'about').steps, ['g_you', 'g_creds']);
+    // Pricing leads with the capacity step, then the priced offerings.
+    assert.deepEqual(secs.find((s: any) => s.key === 'pricing').steps, ['g_capacity', 'g_menu']);
     assert.deepEqual(secs.find((s: any) => s.key === 'finish').steps, ['g_checks', 'g_contact', 'finish']);
     // The rail jumps to a section's first live step.
     assert.equal(secs.find((s: any) => s.key === 'location').firstStep, 'g_area');
