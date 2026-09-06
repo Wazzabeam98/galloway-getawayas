@@ -450,6 +450,18 @@ function ApplicationForm() {
     const [menuStep, setMenuStep] = useState(0);
     const [payoutOpen, setPayoutOpen] = useState(false);
 
+    // The section rail collapses to an icon-only strip, Airbnb-style. Kept in
+    // state so it stays as you move between screens (steps are the same mounted
+    // component), and mirrored to localStorage so it survives a reload too.
+    const [railCollapsed, setRailCollapsed] = useState<boolean>(() => {
+        try { return localStorage.getItem('gg.rail-collapsed') === '1'; } catch { return false; }
+    });
+    const toggleRail = () => setRailCollapsed((v) => {
+        const next = !v;
+        try { localStorage.setItem('gg.rail-collapsed', next ? '1' : '0'); } catch { /* private mode */ }
+        return next;
+    });
+
     // Who they are, for a guest trade only. A guest is choosing someone to come
     // into the cottage they are staying in, so the listing carries a bit of the
     // person and not only the price. A name and a line is what a real chef will
@@ -2998,41 +3010,66 @@ function ApplicationForm() {
                     trade keeps its single column (`contents` adds no wrapper). */}
                 <div className={isGuest ? 'flex-1 flex min-h-0 overflow-hidden' : 'contents'}>
                     {isGuest && currentSection && flowSections.length > 0 && (
-                        <nav aria-label="Sections" className="hidden lg:flex w-72 shrink-0 flex-col gap-0.5 overflow-y-auto border-r border-slate-100 px-6 py-12">
-                            {flowSections.map((sec) => {
-                                const st = sectionStatus(sec);
-                                const summary = st === 'done' ? sectionSummary(sec.key) : '';
-                                const clickable = st === 'done';
-                                return (
-                                    <button
-                                        key={sec.key}
-                                        type="button"
-                                        disabled={!clickable}
-                                        onClick={() => clickable && goToStep(sec.firstStep)}
-                                        aria-current={st === 'active' ? 'step' : undefined}
-                                        className={'group flex items-start gap-3 rounded-xl px-3 py-2.5 text-left transition '
-                                            + (clickable ? 'hover:bg-slate-50 cursor-pointer' : 'cursor-default')}
-                                    >
-                                        <span className={'mt-0.5 flex h-5 w-5 shrink-0 items-center justify-center rounded-full text-[11px] font-bold '
-                                            + (st === 'done' ? 'bg-emerald-600 text-white'
-                                                : st === 'active' ? 'border-2 border-emerald-600 text-emerald-700'
-                                                    : 'border-2 border-slate-200 text-slate-300')}>
-                                            {st === 'done' ? <Check className="h-3 w-3" strokeWidth={3} /> : null}
-                                        </span>
-                                        <span className="min-w-0">
-                                            <span className={'block text-sm '
-                                                + (st === 'active' ? 'font-bold text-slate-900'
-                                                    : st === 'done' ? 'font-semibold text-slate-700'
-                                                        : 'font-medium text-slate-400')}>
-                                                {sec.label}
+                        <nav aria-label="Sections"
+                            className={'hidden lg:flex shrink-0 flex-col overflow-y-auto border-r border-slate-100 py-12 transition-[width] duration-300 ease-out '
+                                + (railCollapsed ? 'w-20 px-3' : 'w-72 px-6')}>
+                            <div className={'flex flex-col ' + (railCollapsed ? 'gap-1' : 'gap-0.5')}>
+                                {flowSections.map((sec) => {
+                                    const st = sectionStatus(sec);
+                                    const summary = st === 'done' ? sectionSummary(sec.key) : '';
+                                    const clickable = st === 'done';
+                                    return (
+                                        <button
+                                            key={sec.key}
+                                            type="button"
+                                            disabled={!clickable}
+                                            onClick={() => clickable && goToStep(sec.firstStep)}
+                                            aria-current={st === 'active' ? 'step' : undefined}
+                                            // On the collapsed strip the label is gone, so
+                                            // the name rides as a native hover tooltip.
+                                            title={railCollapsed ? sec.label : undefined}
+                                            className={'group flex rounded-xl transition '
+                                                + (railCollapsed ? 'items-center justify-center p-2 ' : 'items-start gap-3 px-3 py-2.5 text-left ')
+                                                + (clickable ? 'hover:bg-slate-50 cursor-pointer' : 'cursor-default')}
+                                        >
+                                            <span className={'flex h-5 w-5 shrink-0 items-center justify-center rounded-full text-[11px] font-bold '
+                                                + (railCollapsed ? '' : 'mt-0.5 ')
+                                                + (st === 'done' ? 'bg-emerald-600 text-white'
+                                                    : st === 'active' ? 'border-2 border-emerald-600 text-emerald-700'
+                                                        : 'border-2 border-slate-200 text-slate-300')}>
+                                                {st === 'done' ? <Check className="h-3 w-3" strokeWidth={3} /> : null}
                                             </span>
-                                            {summary && (
-                                                <span className="mt-0.5 block truncate text-xs text-slate-400">{summary}</span>
+                                            {!railCollapsed && (
+                                                <span className="min-w-0">
+                                                    <span className={'block text-sm '
+                                                        + (st === 'active' ? 'font-bold text-slate-900'
+                                                            : st === 'done' ? 'font-semibold text-slate-700'
+                                                                : 'font-medium text-slate-400')}>
+                                                        {sec.label}
+                                                    </span>
+                                                    {summary && (
+                                                        <span className="mt-0.5 block truncate text-xs text-slate-400">{summary}</span>
+                                                    )}
+                                                </span>
                                             )}
-                                        </span>
-                                    </button>
-                                );
-                            })}
+                                        </button>
+                                    );
+                                })}
+                            </div>
+                            {/* Collapse / expand control, pinned to the bottom of the
+                                rail. The chevron points the way the rail will move:
+                                left to fold it away, right to open it back up. */}
+                            <button
+                                type="button"
+                                onClick={toggleRail}
+                                aria-label={railCollapsed ? 'Expand sections' : 'Collapse sections'}
+                                className={'mt-auto flex items-center rounded-xl py-2.5 text-slate-500 transition hover:bg-slate-50 hover:text-slate-800 '
+                                    + (railCollapsed ? 'justify-center px-2' : 'gap-2 px-3')}
+                            >
+                                {railCollapsed
+                                    ? <ChevronRight className="h-5 w-5" />
+                                    : <><ChevronLeft className="h-5 w-5" /><span className="text-sm font-medium">Collapse</span></>}
+                            </button>
                         </nav>
                     )}
 
