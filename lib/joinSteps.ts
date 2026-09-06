@@ -88,7 +88,7 @@ const ALL_STEPS: Step[] = [
     // them a given guest sees is decided by stepApplies from the category and
     // shape; the standalone 'business' step above is host-only.
     { key: 'g_you', label: 'You', title: GUEST_SCREEN_COPY.yearsQuestion },
-    { key: 'g_creds', label: 'Expertise', title: 'What makes you the person to do it?' },
+    { key: 'g_creds', label: 'Expertise', title: GUEST_SCREEN_COPY.expertiseHeading },
     { key: 'g_about', label: 'About', title: 'Name it, and tell guests what it is' },
     { key: 'g_menu', label: 'Price', title: 'What you offer, and what it costs' },
     { key: 'g_expect', label: 'Details', title: 'What can a guest expect?' },

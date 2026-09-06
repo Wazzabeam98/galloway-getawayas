@@ -9,7 +9,7 @@ import { toast } from 'react-toastify';
 import {
     Sparkles, Wrench, Trees, Droplet, ChefHat, Cake, ShoppingBasket, Trash2,
     Plus, Minus, X, ChevronLeft, ChevronRight, Check, Zap, Hammer, Paintbrush, Home,
-    ImagePlus,
+    ImagePlus, User,
 } from 'lucide-react';
 import { TradeTile, TradeTileGrid, TRADE_ICONS, GROUP_ICONS } from '@/components/services/TradeTiles';
 import { compressImage } from '@/lib/compressImage';
@@ -191,6 +191,74 @@ function NumberStepper({
     );
 }
 
+// A collapsed hub row, Airbnb-style: a square button on the left (a plus when
+// empty, a check once filled), a bold label with a grey one-line description
+// beside it, and a chevron on the right. Tapping it opens that thing's sub-flow.
+// Reusable — the same pattern is wanted on later screens.
+function HubRow({ filled, label, prompt, summary, onOpen }: {
+    filled: boolean;
+    label: string;
+    prompt: string;
+    summary?: string | null;
+    onOpen: () => void;
+}) {
+    return (
+        <button type="button" onClick={onOpen}
+            className="flex w-full items-center gap-4 rounded-2xl border border-slate-200 px-4 py-4 text-left transition hover:border-slate-300 focus:outline-none focus-visible:ring-2 focus-visible:ring-emerald-600">
+            <span aria-hidden className={'flex h-10 w-10 flex-none items-center justify-center rounded-xl border transition '
+                + (filled ? 'border-emerald-600 bg-emerald-600 text-white' : 'border-slate-300 bg-slate-50 text-slate-500')}>
+                {filled ? <Check className="h-5 w-5" strokeWidth={2.5} /> : <Plus className="h-5 w-5" />}
+            </span>
+            <span className="min-w-0 flex-1">
+                <span className="block font-semibold text-slate-900">{label}</span>
+                <span className="block truncate text-sm text-slate-500">{filled && summary ? summary : prompt}</span>
+            </span>
+            <ChevronRight className="h-5 w-5 flex-none text-slate-400" />
+        </button>
+    );
+}
+
+// The sub-flow modal a hub row opens: quiet the way Airbnb's is — centred, a
+// title, an X, the one thing to fill in, and a Save that returns to the hub.
+// The body (borderless input, a counter where there's a limit) is passed in, so
+// this shell is reusable across the sub-flows. Fields edit live component state,
+// so Save and the X both just close; the draft is already saving as they type.
+function SubFlowModal({ open, title, onClose, saveLabel, saveDisabled, children }: {
+    open: boolean;
+    title: string;
+    onClose: () => void;
+    saveLabel: string;
+    saveDisabled?: boolean;
+    children: React.ReactNode;
+}) {
+    if (!open) return null;
+    return (
+        <div className="fixed inset-0 z-[70] flex items-end justify-center bg-slate-900/30 p-0 sm:items-center sm:p-4"
+            onClick={onClose}>
+            <div className="w-full rounded-t-3xl bg-white p-6 shadow-xl sm:max-w-lg sm:rounded-3xl sm:p-8"
+                onClick={(e) => e.stopPropagation()}>
+                <div className="relative mb-6 flex items-center justify-center">
+                    <h2 className="px-8 text-center text-lg font-bold text-slate-900 [text-wrap:balance]">{title}</h2>
+                    <button type="button" onClick={onClose} aria-label="Close"
+                        className="absolute right-0 flex h-8 w-8 items-center justify-center rounded-full text-slate-500 hover:bg-slate-100">
+                        <X className="h-4 w-4" />
+                    </button>
+                </div>
+                {children}
+                <div className="mt-8 flex justify-end">
+                    <button type="button" onClick={onClose} disabled={saveDisabled}
+                        className={'rounded-full px-6 py-2.5 text-sm font-semibold transition '
+                            + (saveDisabled
+                                ? 'cursor-not-allowed bg-slate-200 text-slate-400'
+                                : 'bg-emerald-700 text-white hover:bg-emerald-800')}>
+                        {saveLabel}
+                    </button>
+                </div>
+            </div>
+        </div>
+    );
+}
+
 function ApplicationForm() {
     const router = useRouter();
     const params = useSearchParams();
@@ -343,6 +411,8 @@ function ApplicationForm() {
     const [whatIncluded, setWhatIncluded] = useState('');
     const [whatToBring, setWhatToBring] = useState('');
     const [uploadingPhotos, setUploadingPhotos] = useState(false);
+    // Which expertise-hub sub-flow modal is open, if any.
+    const [expertiseModal, setExpertiseModal] = useState<'about' | 'quals' | null>(null);
 
     // --- Guest experience: category, shape, and the shape's own fields -------
     //
@@ -1324,7 +1394,7 @@ function ApplicationForm() {
 
     const guestExtraMissing: string | null = isGuest
         ? (step === 'g_creds' && catQualsRequired && !qualifications.trim()
-            ? 'Add your training or qualifications — for this kind of experience it’s required.'
+            ? GUEST_SCREEN_COPY.qualsGate
             : step === 'g_photos' && photos.length === 0
                 ? 'Add at least one photo — a listing without one doesn’t sell.'
                 : whereMissing)
@@ -2732,7 +2802,7 @@ function ApplicationForm() {
                         for the pickers, over the big stepper for the years, both
                         Airbnb-style; the other content screens sit it left over
                         their fields. The finish step carries its own heading. */}
-                    {isGuest && step !== 'finish' && (
+                    {isGuest && step !== 'finish' && step !== 'g_creds' && (
                         <h1 className={'font-extrabold tracking-tight text-slate-900 [text-wrap:balance] text-3xl sm:text-4xl '
                             + ((step === 'trade' || step === 'g_subtype' || step === 'g_you') ? 'mb-10 text-center' : 'mb-8')}>
                             {step === 'trade'
@@ -3181,85 +3251,132 @@ function ApplicationForm() {
                     used to sit under it now adapts silently: the price unit on
                     g_menu, and the schedule on the where-and-when step. */}
 
-                {/* EXPERTISE — the screen Airbnb has and we lacked, and the whole
-                    pitch: a real chef, checked by a person. A short professional
-                    title, then the qualifications, which are REQUIRED (the footer
-                    gates Next on them) because if they're optional most leave them
-                    blank and every listing reads the same. None of it is a badge —
-                    nothing here is verified yet, so nothing claims to be. */}
-                {onStep('g_creds') && isGuest && (
-                <section className="mb-8 md:max-w-xl">
-                    <label className="block text-xs font-medium text-slate-500 mb-2">Your title <span className="text-slate-400">(optional)</span></label>
-                    <input
-                        type="text"
-                        value={professionalTitle}
-                        onChange={(e) => setProfessionalTitle(e.target.value.slice(0, 40))}
-                        placeholder="Private chef"
-                        className="w-full rounded-xl border border-slate-300 px-4 py-3 mb-6 focus:outline-none focus:ring-2 focus:ring-emerald-700"
-                    />
-
-                    <label className="block text-xs font-medium text-slate-500 mb-2">
-                        Your training and qualifications {!catQualsRequired && <span className="text-slate-400">(optional)</span>}
-                    </label>
-                    <textarea
-                        value={qualifications}
-                        onChange={(e) => setQualifications(e.target.value)}
-                        rows={4}
-                        placeholder="Trained at Leiths, ten years in restaurant kitchens, Level 3 Food Hygiene. Say what qualifies you — a guest chooses you on this."
-                        className="w-full rounded-xl border border-slate-300 px-4 py-3 focus:outline-none focus:ring-2 focus:ring-emerald-700"
-                    />
-                    <p className="mt-2 text-sm text-slate-500">
-                        {catQualsRequired
-                            ? 'A guest is putting their safety in your hands, so for this kind of experience we do need it.'
-                            : 'Not required — but it’s what a guest weighs you on, so it’s worth a line if you have one.'}
-                    </p>
-
-                    {/* Moved here off the years screen: the short line and the
-                        photo of the provider. They belong with the expertise —
-                        Airbnb's version of this screen leads with a photo of the
-                        host. Both optional. */}
-                    <label className="mt-6 block text-xs font-medium text-slate-500 mb-2">
-                        {GUEST_SCREEN_COPY.aboutLineLabel} <span className="text-slate-400">(optional)</span>
-                    </label>
-                    <input
-                        type="text"
-                        value={basedLine}
-                        onChange={(e) => setBasedLine(e.target.value)}
-                        placeholder={GUEST_SCREEN_COPY.aboutLinePlaceholder}
-                        className="w-full rounded-xl border border-slate-300 px-4 py-3 mb-6 focus:outline-none focus:ring-2 focus:ring-emerald-700"
-                    />
-
-                    <label className="block text-xs font-medium text-slate-500 mb-2">
-                        {GUEST_SCREEN_COPY.photoLabel} <span className="text-slate-400">(optional)</span>
-                    </label>
-                    <div className="flex items-center gap-3">
-                        {headshot && (
-                            <img src={getImageUrl(headshot)} alt="" className="w-16 h-16 rounded-full object-cover" />
-                        )}
-                        <label className="inline-flex items-center gap-2 rounded-xl border-2 border-dashed border-slate-300 px-4 py-2.5 cursor-pointer text-sm text-slate-600 hover:border-slate-400">
-                            <Plus className="w-4 h-4" />
-                            {uploadingHeadshot ? 'Uploading…' : headshot ? 'Replace' : 'Add a photo'}
-                            <input
-                                type="file"
-                                accept="image/png, image/jpeg"
-                                onChange={uploadHeadshot}
-                                className="hidden"
-                                disabled={uploadingHeadshot}
-                            />
-                        </label>
-                        {headshot && (
-                            <button
-                                type="button"
-                                onClick={() => setHeadshot(null)}
-                                className="inline-flex items-center gap-1.5 rounded-xl border border-slate-300 px-4 py-2.5 text-sm text-slate-600 hover:border-slate-500"
-                            >
-                                <X className="w-3.5 h-3.5" />
-                                Remove
+                {/* EXPERTISE — a hub, Airbnb-style, not a form. A photo of the
+                    host at the top, a heading and a line of subtext, then rows
+                    that each open a small sub-flow modal. The qualifications row
+                    is the one that gates Next for a chef; its "putting their
+                    safety in your hands" note lives inside that modal now, so the
+                    hub itself stays clean. Built on the reusable HubRow /
+                    SubFlowModal primitives, which later screens will want too. */}
+                {onStep('g_creds') && isGuest && (() => {
+                    const aboutFilled = !!(professionalTitle.trim() || basedLine.trim() || headshot);
+                    const aboutSummary = professionalTitle.trim() || basedLine.trim() || (headshot ? 'Photo added' : '');
+                    const qualsFilled = qualifications.trim() !== '';
+                    const modalInput = 'w-full rounded-xl border-0 bg-slate-50 px-4 py-3 text-slate-900 placeholder:text-slate-400 focus:outline-none focus:ring-2 focus:ring-emerald-600';
+                    return (
+                    <section className="mb-8 md:max-w-xl md:mx-auto">
+                        {/* The host photo, centred. It shows the headshot once one
+                            is added, a neutral circle before — and taps through to
+                            the About you sub-flow, where the photo is set. */}
+                        <div className="flex flex-col items-center text-center">
+                            <button type="button" onClick={() => setExpertiseModal('about')} aria-label="About you"
+                                className="flex h-24 w-24 items-center justify-center overflow-hidden rounded-full bg-slate-100 text-slate-400 transition hover:opacity-90 focus:outline-none focus-visible:ring-2 focus-visible:ring-emerald-600">
+                                {headshot
+                                    ? <img src={getImageUrl(headshot)} alt="" className="h-full w-full object-cover" />
+                                    : <User className="h-10 w-10" strokeWidth={1.5} />}
                             </button>
-                        )}
-                    </div>
-                </section>
-                )}
+                            <h1 className="mt-6 text-2xl font-extrabold tracking-tight text-slate-900 [text-wrap:balance] sm:text-3xl">
+                                {GUEST_SCREEN_COPY.expertiseHeading}
+                            </h1>
+                            <p className="mt-2 text-sm text-slate-500 [text-wrap:balance]">
+                                {GUEST_SCREEN_COPY.expertiseSubtext}
+                            </p>
+                        </div>
+
+                        <div className="mt-8 space-y-3">
+                            <HubRow
+                                filled={aboutFilled}
+                                label={GUEST_SCREEN_COPY.aboutRowLabel}
+                                prompt={GUEST_SCREEN_COPY.aboutRowPrompt}
+                                summary={aboutSummary}
+                                onOpen={() => setExpertiseModal('about')}
+                            />
+                            <HubRow
+                                filled={qualsFilled}
+                                label={GUEST_SCREEN_COPY.qualsRowLabel}
+                                prompt={GUEST_SCREEN_COPY.qualsRowPrompt}
+                                summary={qualifications.trim()}
+                                onOpen={() => setExpertiseModal('quals')}
+                            />
+                            {/* Room for a third row here, deliberately not invented
+                                — awaiting Liam's call on what it should be. */}
+                        </div>
+
+                        {/* ---- About you sub-flow: title, short line, photo ---- */}
+                        <SubFlowModal
+                            open={expertiseModal === 'about'}
+                            title={GUEST_SCREEN_COPY.aboutModalTitle}
+                            onClose={() => setExpertiseModal(null)}
+                            saveLabel={GUEST_SCREEN_COPY.save}
+                        >
+                            <div className="space-y-5">
+                                <div>
+                                    <div className="mb-2 flex items-baseline justify-between">
+                                        <label className="text-xs font-medium text-slate-500">{GUEST_SCREEN_COPY.titleLabel}</label>
+                                        <span className="text-xs text-slate-400">{professionalTitle.length}/40</span>
+                                    </div>
+                                    <input
+                                        type="text"
+                                        value={professionalTitle}
+                                        onChange={(e) => setProfessionalTitle(e.target.value.slice(0, 40))}
+                                        placeholder={GUEST_SCREEN_COPY.titlePlaceholder}
+                                        className={modalInput}
+                                    />
+                                </div>
+                                <div>
+                                    <label className="mb-2 block text-xs font-medium text-slate-500">{GUEST_SCREEN_COPY.aboutLineLabel}</label>
+                                    <input
+                                        type="text"
+                                        value={basedLine}
+                                        onChange={(e) => setBasedLine(e.target.value)}
+                                        placeholder={GUEST_SCREEN_COPY.aboutLinePlaceholder}
+                                        className={modalInput}
+                                    />
+                                </div>
+                                <div>
+                                    <label className="mb-2 block text-xs font-medium text-slate-500">{GUEST_SCREEN_COPY.photoLabel}</label>
+                                    <div className="flex items-center gap-3">
+                                        {headshot && (
+                                            <img src={getImageUrl(headshot)} alt="" className="h-16 w-16 rounded-full object-cover" />
+                                        )}
+                                        <label className="inline-flex cursor-pointer items-center gap-2 rounded-xl border-2 border-dashed border-slate-300 px-4 py-2.5 text-sm text-slate-600 hover:border-slate-400">
+                                            <Plus className="h-4 w-4" />
+                                            {uploadingHeadshot ? 'Uploading…' : headshot ? 'Replace' : 'Add a photo'}
+                                            <input type="file" accept="image/png, image/jpeg" onChange={uploadHeadshot}
+                                                className="hidden" disabled={uploadingHeadshot} />
+                                        </label>
+                                        {headshot && (
+                                            <button type="button" onClick={() => setHeadshot(null)}
+                                                className="inline-flex items-center gap-1.5 rounded-xl border border-slate-300 px-4 py-2.5 text-sm text-slate-600 hover:border-slate-500">
+                                                <X className="h-3.5 w-3.5" /> Remove
+                                            </button>
+                                        )}
+                                    </div>
+                                </div>
+                            </div>
+                        </SubFlowModal>
+
+                        {/* ---- Training and qualifications sub-flow ---- */}
+                        <SubFlowModal
+                            open={expertiseModal === 'quals'}
+                            title={GUEST_SCREEN_COPY.qualsModalTitle}
+                            onClose={() => setExpertiseModal(null)}
+                            saveLabel={GUEST_SCREEN_COPY.save}
+                        >
+                            <textarea
+                                value={qualifications}
+                                onChange={(e) => setQualifications(e.target.value)}
+                                rows={5}
+                                placeholder={GUEST_SCREEN_COPY.qualsPlaceholder}
+                                className="w-full rounded-xl border-0 bg-slate-50 px-4 py-3 text-slate-900 placeholder:text-slate-400 focus:outline-none focus:ring-2 focus:ring-emerald-600"
+                            />
+                            <p className="mt-3 text-sm text-slate-500">
+                                {catQualsRequired ? GUEST_SCREEN_COPY.qualsRequiredNote : GUEST_SCREEN_COPY.qualsOptionalNote}
+                            </p>
+                        </SubFlowModal>
+                    </section>
+                    );
+                })()}
 
                 {/* WHAT THEY OFFER, AND FOR HOW MUCH.
                     One model for everyone now — no preset trade to frame it by.
