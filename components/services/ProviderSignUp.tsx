@@ -647,7 +647,7 @@ function ApplicationForm() {
                 // able to see what they are signing up for, and fill it in,
                 // before being asked for anything.
                 if (!session) {
-                    restoreDraft();
+                    restoreDraft(null);
                     return;
                 }
 
@@ -877,7 +877,9 @@ function ApplicationForm() {
                 } else {
                     // Signed in, nothing saved for this trade — so anything
                     // they typed before signing in is still the newest thing.
-                    restoreDraft();
+                    // Pass the freshly-fetched session so the restore knows they
+                    // are signed in (the state hasn't updated within this run).
+                    restoreDraft(session);
                     setContactEmail((prev) => prev || session.user.email || '');
                 }
 
@@ -962,7 +964,10 @@ function ApplicationForm() {
     // a cleaner.
     const chosen = tradeFromUrl !== '';
 
-    const restoreDraft = () => {
+    // `sessionArg` is passed by load() because the component `session` state has
+    // not updated yet inside that same synchronous run — reading it here would
+    // see a stale null and mis-resolve a signed-in user onto the verify gate.
+    const restoreDraft = (sessionArg: any = null) => {
         // Nothing has been picked, so there is no draft to come back to: the
         // key would be the empty one, and the only thing ever written under it
         // is the blank form. Restoring that told a first-time visitor "we kept
@@ -1084,7 +1089,7 @@ function ApplicationForm() {
                     // as a live step during restore, and a signed-in applicant
                     // with any saved draft is resolved onto the email screen they
                     // should never see. A signed-in user has no g_verify step.
-                    ? { category: d.guestCategory, shape: d.shape, hasSession: !!session }
+                    ? { category: d.guestCategory, shape: d.shape, hasSession: !!sessionArg }
                     : undefined;
             const landing = resolveStep(restoreTrade, d.step, restoreCtx);
             setStep(landing);
