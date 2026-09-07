@@ -549,6 +549,19 @@ test('the verify gate leads the flow for an anonymous applicant and is gone once
     assert.deepEqual(gkeys(signedIn), withCapacity(THIRTEEN).filter((k) => k !== 'g_verify'));
 });
 
+test('a signed-in applicant is never resolved onto the verify gate by a restored draft', () => {
+    // The bug: the restore path resolved a saved step with a context that left
+    // hasSession out, so g_verify counted as a live step and a signed-in user
+    // with any draft landed on the email screen. With the session carried, the
+    // gate is not a step for them, so a draft saved on it resolves to a real one.
+    const signedIn = { group: 'food', category: 'chef', shape: 'comes_to_you', hasSession: true };
+    assert.equal(stepsFor('guest', signedIn).some((s: any) => s.key === 'g_verify'), false);
+    assert.notEqual(resolveStep('guest', 'g_verify', signedIn), 'g_verify');
+    // Anonymous is unchanged — the gate is still a real step it can rest on.
+    const anon = { group: 'food', category: 'chef', shape: 'comes_to_you' };
+    assert.equal(resolveStep('guest', 'g_verify', anon), 'g_verify');
+});
+
 test('a cake maker (made to order) gets the years and expertise screens too', () => {
     // Made-to-order food was cut from these screens for a while, then brought
     // back: a cake maker has a track record and a story worth showing. So it
