@@ -1079,7 +1079,12 @@ function ApplicationForm() {
             const restoreTrade = d.trade || tradeFromUrl;
             const restoreCtx: StepContext | undefined =
                 audienceForTrade(restoreTrade) === 'guest'
-                    ? { category: d.guestCategory, shape: d.shape }
+                    // hasSession MUST be carried here, not just in the opening
+                    // context: without it the verify-email gate (g_verify) counts
+                    // as a live step during restore, and a signed-in applicant
+                    // with any saved draft is resolved onto the email screen they
+                    // should never see. A signed-in user has no g_verify step.
+                    ? { category: d.guestCategory, shape: d.shape, hasSession: !!session }
                     : undefined;
             const landing = resolveStep(restoreTrade, d.step, restoreCtx);
             setStep(landing);
