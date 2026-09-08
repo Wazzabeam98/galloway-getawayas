@@ -37,7 +37,7 @@ export const GUEST_SCREEN_COPY = {
     sectionPhotos: 'Photos',
     sectionPricing: 'Pricing',
     sectionDetails: 'Details',
-    sectionExperience: 'Experience',
+    sectionExperience: 'Name & description',
     sectionFinish: 'Finish',
 
     // The expertise screen — a hub (Airbnb-style): a photo, a heading and a line
@@ -48,6 +48,15 @@ export const GUEST_SCREEN_COPY = {
     // The "(optional)" suffix, in lighter grey beside a row label. On every
     // optional row; the only sometimes-required one is qualifications.
     optionalSuffix: '(optional)',
+
+    // Row: your name — the person's name, moved here from the naming screen so
+    // it sits with the headshot and title (all three are the person). Prefilled
+    // from the profile for a signed-in user; the only personal name we get from
+    // an anonymous applicant.
+    nameRowLabel: 'Your name',
+    nameRowPrompt: 'The name guests see',
+    nameModalTitle: 'What’s your name?',
+    namePlaceholder: 'Rosa',
 
     // Row: your title — one field, no caption, a 0/40 counter.
     titleRowLabel: 'Intro',
