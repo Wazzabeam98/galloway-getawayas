@@ -546,7 +546,7 @@ function ApplicationForm() {
     const [detailModal, setDetailModal] = useState<'expect' | 'dietary' | null>(null);
     const [uploadingPhotos, setUploadingPhotos] = useState(false);
     // Which expertise-hub sub-flow modal is open, if any.
-    const [expertiseModal, setExpertiseModal] = useState<'title' | 'quals' | 'endorsements' | null>(null);
+    const [expertiseModal, setExpertiseModal] = useState<'name' | 'title' | 'quals' | 'endorsements' | null>(null);
     // The photo circle at the top of the hub opens the file picker directly (via
     // this ref), and once a photo is set it offers replace/remove through a small
     // menu rather than reopening the Intro form.
@@ -3714,36 +3714,25 @@ function ApplicationForm() {
 
                 {(audienceForTrade(trade) === 'guest' ? onStep('g_about') : onStep('business')) && (
                 <section className="mb-8">
-                    {/* A guest names the experience here, beside the description —
-                        the business name and the person's name together, since a
-                        guest is choosing a person as much as a business. A host set
+                    {/* A guest names the listing here, beside the description —
+                        both are "what this is". The person's name is not asked
+                        here: it belongs to the person, so it lives on the About
+                        you expertise hub beside the headshot and title. A host set
                         the name on the business step above, so they only see the
                         description. */}
                     {isGuest && (
-                        <div className="grid gap-4 sm:grid-cols-2 md:max-w-xl mb-6">
-                            <div>
-                                <label className="block text-xs font-medium text-slate-500 mb-2">What it’s called</label>
-                                <input
-                                    type="text"
-                                    value={businessName}
-                                    onChange={(e) => setBusinessName(e.target.value)}
-                                    placeholder="Solway Suppers"
-                                    className="w-full rounded-xl border border-slate-300 px-3.5 py-3 focus:outline-none focus:ring-2 focus:ring-emerald-700"
-                                />
-                                {problemFor('business_name') && (
-                                    <p data-problem className="text-sm text-rose-700 mt-1.5">{problemFor('business_name')!.message}</p>
-                                )}
-                            </div>
-                            <div>
-                                <label className="block text-xs font-medium text-slate-500 mb-2">Your name</label>
-                                <input
-                                    type="text"
-                                    value={providerName}
-                                    onChange={(e) => setProviderName(e.target.value)}
-                                    placeholder="Rosa"
-                                    className="w-full rounded-xl border border-slate-300 px-3.5 py-3 focus:outline-none focus:ring-2 focus:ring-emerald-700"
-                                />
-                            </div>
+                        <div className="md:max-w-xl mb-6">
+                            <label className="block text-xs font-medium text-slate-500 mb-2">What it’s called</label>
+                            <input
+                                type="text"
+                                value={businessName}
+                                onChange={(e) => setBusinessName(e.target.value)}
+                                placeholder="Solway Suppers"
+                                className="w-full rounded-xl border border-slate-300 px-3.5 py-3 focus:outline-none focus:ring-2 focus:ring-emerald-700"
+                            />
+                            {problemFor('business_name') && (
+                                <p data-problem className="text-sm text-rose-700 mt-1.5">{problemFor('business_name')!.message}</p>
+                            )}
                         </div>
                     )}
 
@@ -3844,12 +3833,21 @@ function ApplicationForm() {
                             </p>
                         </div>
 
-                        {/* Three borderless rows with air between them: Your title
-                            (which also holds a line about you), Qualifications,
+                        {/* Borderless rows with air between them: Your name, Your
+                            title (which also holds a line about you), Qualifications,
                             Endorsements. Each opens its own modal. Only
                             Qualifications (and only for the required categories)
-                            gates Next. The photo lives on the circle above. */}
+                            gates Next. The photo lives on the circle above — name,
+                            title and photo are the person, gathered in one place. */}
                         <div className="mt-10 space-y-6">
+                            <HubRow
+                                filled={providerName.trim() !== ''}
+                                label={GUEST_SCREEN_COPY.nameRowLabel}
+                                suffix={GUEST_SCREEN_COPY.optionalSuffix}
+                                prompt={GUEST_SCREEN_COPY.nameRowPrompt}
+                                summary={providerName.trim()}
+                                onOpen={() => setExpertiseModal('name')}
+                            />
                             <HubRow
                                 filled={titleFilled}
                                 label={GUEST_SCREEN_COPY.titleRowLabel}
@@ -3874,6 +3872,28 @@ function ApplicationForm() {
                                 onOpen={() => setExpertiseModal('endorsements')}
                             />
                         </div>
+
+                        {/* ---- Your name: one borderless field. Prefilled from the
+                            profile at load for a signed-in user (displayName), so
+                            they confirm rather than type it fresh; blank for an
+                            anonymous applicant, where it is the only personal name
+                            we get. ---- */}
+                        <SubFlowModal
+                            open={expertiseModal === 'name'}
+                            title={GUEST_SCREEN_COPY.nameModalTitle}
+                            onClose={() => setExpertiseModal(null)}
+                            saveLabel={GUEST_SCREEN_COPY.save}
+                        >
+                            <div className={fieldWrap}>
+                                <input
+                                    type="text"
+                                    value={providerName}
+                                    onChange={(e) => setProviderName(e.target.value)}
+                                    placeholder={GUEST_SCREEN_COPY.namePlaceholder}
+                                    className={bigInput}
+                                />
+                            </div>
+                        </SubFlowModal>
 
                         {/* ---- Your professional title: one borderless field,
                             no caption, counter at the right above the underline. ---- */}
