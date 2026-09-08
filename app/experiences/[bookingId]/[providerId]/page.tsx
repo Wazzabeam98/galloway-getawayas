@@ -6,6 +6,7 @@ import { adminClient } from '@/lib/supabaseAdmin';
 import { guestExperiencesOpen } from '@/lib/serviceOrders';
 import { loadMarketplace, pickProvider } from '@/lib/experiencesData';
 import { shapeCue } from '@/lib/serviceSlots';
+import { dietaryOptionLabel } from '@/lib/serviceProviders';
 import { itemPriceLabel, unitPhrase, cancellationSentence, coverageLabel } from '@/components/marketplace/present';
 import { MapPin } from 'lucide-react';
 import BookingPanel from '@/components/marketplace/BookingPanel';
@@ -139,9 +140,28 @@ export default async function ListingPage(
                         {p.isFood && (
                             <div className="mt-8 rounded-2xl border border-slate-200 bg-white p-4">
                                 <h3 className="text-sm font-semibold text-slate-900">Allergies &amp; dietary</h3>
-                                {p.dietary_note ? (
-                                    <p className="mt-1 whitespace-pre-line text-sm leading-relaxed text-slate-600">{p.dietary_note}</p>
+                                {(p.dietary_options.length > 0 || p.dietary_note) ? (
+                                    <>
+                                        {/* What they can cater for, as chips — a
+                                            capability, read alongside the note, which
+                                            is where the caveats live. */}
+                                        {p.dietary_options.length > 0 && (
+                                            <ul className="mt-2 flex flex-wrap gap-2">
+                                                {p.dietary_options.map((k) => (
+                                                    <li key={k} className="rounded-full bg-emerald-50 px-3 py-1 text-xs font-medium text-emerald-800 ring-1 ring-emerald-200">
+                                                        {dietaryOptionLabel(k)}
+                                                    </li>
+                                                ))}
+                                            </ul>
+                                        )}
+                                        {p.dietary_note ? (
+                                            <p className="mt-3 whitespace-pre-line text-sm leading-relaxed text-slate-600">{p.dietary_note}</p>
+                                        ) : null}
+                                    </>
                                 ) : (
+                                    /* Silence is the failure mode: when they've said
+                                       nothing at all — no chips, no note — say THAT
+                                       plainly and point the guest at the allergy field. */
                                     <p className="mt-1 text-sm leading-relaxed text-slate-500">
                                         {who} hasn’t said what they can cater for. Add any allergy or dietary need when
                                         you book{p.shape === 'slot'
