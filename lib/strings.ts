@@ -137,6 +137,20 @@ export const GUEST_SCREEN_COPY = {
     payoutRowCommission: 'Our commission',
     payoutRowKeep: 'You keep',
 
+    // The Details screen (g_expect), rebuilt as a hub — one thing at a time in a
+    // sub-flow, no stacked boxes. "What happens" is shown on the experience page;
+    // dietary is food-only and shown too (What's included / What a guest brings
+    // were cut — the item description and price already cover them).
+    expectRowLabel: 'What happens',
+    expectRowPrompt: 'Walk a guest through it, start to finish',
+    expectModalTitle: 'What happens?',
+    expectPlaceholder: 'I arrive at 6, cook three courses while you relax, serve at the table and clear everything away by 9.',
+    dietaryRowLabel: 'Dietary',
+    dietaryRowPrompt: 'What you can cater for',
+    dietaryModalTitle: 'What can you cater for?',
+    dietaryPlaceholder: 'Gluten-free and dairy-free with a day’s notice; not a nut-free kitchen.',
+    dietaryModalNote: 'Leave it blank and your listing tells guests you haven’t said, so they know to ask.',
+
     // The location screen, for a travelling (comes-to-you) provider. Radii are
     // gone: coverage is a fixed list of regions the provider ticks, and it is
     // informational now — a signal on the listing, not a filter that hides

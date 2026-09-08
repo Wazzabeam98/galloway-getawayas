@@ -31,6 +31,9 @@ export interface MpProvider {
     // What a food business can cater for, in their own words; null when they
     // haven't said, which the listing shows plainly rather than staying silent.
     dietary_note: string | null;
+    // The provider's own walk-through of the experience, from guest_details jsonb.
+    // Displayed on the experience page; null when they didn't write one.
+    what_happens: string | null;
     description: string | null;
     shape: string;
     priceFrom: number;
@@ -94,7 +97,7 @@ export async function loadMarketplace(
 
     const { data: rows } = await admin
         .from('service_providers')
-        .select('id, business_name, provider_name, based_line, headshot, trade, custom_label, stripe_mcc, description, status, stripe_payouts_enabled, shape, slot_length_minutes, slot_capacity, cancellation_window_hours, lead_time_days, dietary_note')
+        .select('id, business_name, provider_name, based_line, headshot, trade, custom_label, stripe_mcc, description, status, stripe_payouts_enabled, shape, slot_length_minutes, slot_capacity, cancellation_window_hours, lead_time_days, dietary_note, guest_details')
         .eq('audience', 'guest').eq('status', 'approved').eq('stripe_payouts_enabled', true);
 
     const ids = (rows || []).map((r: any) => r.id);
@@ -172,6 +175,7 @@ export async function loadMarketplace(
             category: guestCategory(p),
             isFood: isFoodProvider(p),
             dietary_note: p.dietary_note || null,
+            what_happens: (p.guest_details && p.guest_details.what_to_expect) || null,
             description: p.description,
             shape,
             priceFrom: Math.min(...items.map((i: MpItem) => i.price)),

@@ -527,18 +527,18 @@ function ApplicationForm() {
     //   - professionalTitle a short professional title ("Private chef")
     //   - qualifications    training and credentials — REQUIRED, the whole pitch
     //   - whatToExpect      what actually happens, so a guest knows what they get
-    //   - whatIncluded      what's provided
-    //   - whatToBring       what a guest brings themselves
-    // Held in component state and the local-storage draft so the flow works and
-    // survives a reload; wiring them to their own columns (and the admin review
-    // of them) is the follow-up that lands with the held declarations migration.
+    // "What's included" and "What a guest brings" used to live here too; they
+    // were cut — dark data the listing never showed, and the item description and
+    // price already cover them. `whatToExpect` is now DISPLAYED on the experience
+    // page (guest_details.what_to_expect → experiencesData), so it earns its keep.
     const [yearsDoing, setYearsDoing] = useState('');
     const [professionalTitle, setProfessionalTitle] = useState('');
     const [qualifications, setQualifications] = useState('');
     const [recognition, setRecognition] = useState('');
     const [whatToExpect, setWhatToExpect] = useState('');
-    const [whatIncluded, setWhatIncluded] = useState('');
-    const [whatToBring, setWhatToBring] = useState('');
+    // Which Details (g_expect) sub-flow is open — one field at a time, borderless,
+    // like the rest of the flow: 'expect' for What happens, 'dietary' (food only).
+    const [detailModal, setDetailModal] = useState<'expect' | 'dietary' | null>(null);
     const [uploadingPhotos, setUploadingPhotos] = useState(false);
     // Which expertise-hub sub-flow modal is open, if any.
     const [expertiseModal, setExpertiseModal] = useState<'title' | 'quals' | 'endorsements' | null>(null);
@@ -816,8 +816,6 @@ function ApplicationForm() {
                         if (gd.qualifications) setQualifications(String(gd.qualifications));
                         if (gd.recognition) setRecognition(String(gd.recognition));
                         if (gd.what_to_expect) setWhatToExpect(String(gd.what_to_expect));
-                        if (gd.whats_included) setWhatIncluded(String(gd.whats_included));
-                        if (gd.what_to_bring) setWhatToBring(String(gd.what_to_bring));
                         // Max guests for a comes-to-you chef rides here (a slot's
                         // is loaded from slot_capacity above). Only set it when the
                         // column didn't already provide it, so a slot keeps its
@@ -1058,8 +1056,6 @@ function ApplicationForm() {
             if (d.qualifications) setQualifications(d.qualifications);
             if (d.recognition) setRecognition(d.recognition);
             if (d.whatToExpect) setWhatToExpect(d.whatToExpect);
-            if (d.whatIncluded) setWhatIncluded(d.whatIncluded);
-            if (d.whatToBring) setWhatToBring(d.whatToBring);
             // The category, shape and its fields. Set before the filledIn check
             // so a guest who picked a category but typed nothing still lands past
             // the picker rather than being asked to choose it again.
@@ -1195,7 +1191,7 @@ function ApplicationForm() {
                     items, providerName, headshot, dietaryNote,
                     // The Airbnb-shaped content answers.
                     yearsDoing, professionalTitle, qualifications, recognition,
-                    whatToExpect, whatIncluded, whatToBring,
+                    whatToExpect,
                     // The category, the inferred shape and its own fields.
                     guestCategory, shape, leadTimeDays,
                     slotPrivate, maxGuests, slotLength, schedule, blockedDates,
@@ -1215,7 +1211,7 @@ function ApplicationForm() {
         photos, logo, buildingType, panes,
         items, providerName, headshot, dietaryNote,
         yearsDoing, professionalTitle, qualifications, recognition,
-        whatToExpect, whatIncluded, whatToBring,
+        whatToExpect,
         guestCategory, shape, leadTimeDays,
         slotPrivate, maxGuests, slotLength, schedule, blockedDates,
         declarations,
@@ -1579,7 +1575,7 @@ function ApplicationForm() {
                 return `From £${Math.min(...priced)}`;
             }
             case 'details':
-                return whatToExpect.trim() ? 'Added' : '';
+                return (whatToExpect.trim() || dietaryNote.trim()) ? 'Added' : '';
             case 'experience':
                 return businessName.trim();
             case 'finish':
@@ -2265,8 +2261,6 @@ function ApplicationForm() {
             qualifications: t(qualifications),
             recognition: t(recognition),
             what_to_expect: t(whatToExpect),
-            whats_included: t(whatIncluded),
-            what_to_bring: t(whatToBring),
             // Max guests rides here for every category that has it (a slot ALSO
             // writes slot_capacity, from the same state, so the two agree).
             max_guests: t(maxGuests),
@@ -4398,61 +4392,82 @@ function ApplicationForm() {
                 </section>
                 )}
 
-                {/* WHAT A GUEST CAN EXPECT — Airbnb's itinerary and what's-included
-                    steps, folded into one screen for us: what actually happens,
-                    what's provided, and what a guest brings. Dietary rides here too
-                    for a food category (guestCategoryIsFood), so a chef answers it
-                    in context rather than on a screen of its own. All optional — a
-                    fuller listing sells better, but none of it blocks a booking. */}
-                {onStep('g_expect') && isGuest && (
-                <section className="mb-8 md:max-w-xl space-y-6">
-                    <div>
-                        <label className="block text-xs font-medium text-slate-500 mb-2">What happens</label>
-                        <textarea
-                            value={whatToExpect}
-                            onChange={(e) => setWhatToExpect(e.target.value)}
-                            rows={3}
-                            placeholder="I arrive at 6, cook three courses while you relax, serve at the table and clear everything away by 9."
-                            className="w-full rounded-xl border border-slate-300 px-4 py-3 focus:outline-none focus:ring-2 focus:ring-emerald-700"
-                        />
-                    </div>
-                    <div>
-                        <label className="block text-xs font-medium text-slate-500 mb-2">What’s included</label>
-                        <textarea
-                            value={whatIncluded}
-                            onChange={(e) => setWhatIncluded(e.target.value)}
-                            rows={2}
-                            placeholder="All ingredients, my own pans and knives, and the washing up."
-                            className="w-full rounded-xl border border-slate-300 px-4 py-3 focus:outline-none focus:ring-2 focus:ring-emerald-700"
-                        />
-                    </div>
-                    <div>
-                        <label className="block text-xs font-medium text-slate-500 mb-2">What a guest brings <span className="text-slate-400">(if anything)</span></label>
-                        <textarea
-                            value={whatToBring}
-                            onChange={(e) => setWhatToBring(e.target.value)}
-                            rows={2}
-                            placeholder="Just their own drinks — the kitchen and dining table at the cottage is all I need."
-                            className="w-full rounded-xl border border-slate-300 px-4 py-3 focus:outline-none focus:ring-2 focus:ring-emerald-700"
-                        />
-                    </div>
-                    {guestCategoryIsFood(guestCategory) && (
-                        <div>
-                            <label className="block text-xs font-medium text-slate-500 mb-2">Dietary — what you can cater for</label>
-                            <textarea
-                                value={dietaryNote}
-                                onChange={(e) => setDietaryNote(e.target.value)}
-                                rows={2}
-                                placeholder="Gluten-free and dairy-free with a day’s notice; not a nut-free kitchen."
-                                className="w-full rounded-xl border border-slate-300 px-4 py-3 focus:outline-none focus:ring-2 focus:ring-emerald-700"
+                {/* WHAT A GUEST CAN EXPECT — rebuilt to the flow's own craft: no
+                    stacked bordered textareas. A hub of borderless rows, each
+                    opening a one-field sub-flow (the same pattern as the expertise
+                    and price screens). Two questions survive: "What happens" (now
+                    DISPLAYED on the listing) and, for a food category, dietary
+                    (also displayed). "What's included" and "What a guest brings"
+                    were cut — the item description and price already carry them.
+                    All optional; none blocks a booking. */}
+                {onStep('g_expect') && isGuest && (() => {
+                    const fieldWrap = 'relative border-b border-slate-200 pb-2 transition-colors focus-within:border-slate-400';
+                    const bigArea = 'w-full resize-none bg-transparent text-center text-xl leading-relaxed text-slate-900 placeholder:text-slate-300 focus:outline-none';
+                    const isFoodCat = guestCategoryIsFood(guestCategory);
+                    return (
+                    <section className="mb-8 md:max-w-xl md:mx-auto">
+                        <div className="mt-6 space-y-6">
+                            <HubRow
+                                filled={whatToExpect.trim() !== ''}
+                                label={GUEST_SCREEN_COPY.expectRowLabel}
+                                suffix={GUEST_SCREEN_COPY.optionalSuffix}
+                                prompt={GUEST_SCREEN_COPY.expectRowPrompt}
+                                summary={whatToExpect.trim()}
+                                onOpen={() => setDetailModal('expect')}
                             />
-                            <p className="mt-2 text-sm text-slate-500">
-                                Leave it blank and your listing tells guests you haven&rsquo;t said, so they know to ask.
-                            </p>
+                            {isFoodCat && (
+                                <HubRow
+                                    filled={dietaryNote.trim() !== ''}
+                                    label={GUEST_SCREEN_COPY.dietaryRowLabel}
+                                    suffix={GUEST_SCREEN_COPY.optionalSuffix}
+                                    prompt={GUEST_SCREEN_COPY.dietaryRowPrompt}
+                                    summary={dietaryNote.trim()}
+                                    onOpen={() => setDetailModal('dietary')}
+                                />
+                            )}
                         </div>
-                    )}
-                </section>
-                )}
+
+                        {/* ---- What happens: one borderless field. ---- */}
+                        <SubFlowModal
+                            open={detailModal === 'expect'}
+                            title={GUEST_SCREEN_COPY.expectModalTitle}
+                            onClose={() => setDetailModal(null)}
+                            saveLabel={GUEST_SCREEN_COPY.save}
+                        >
+                            <div className={fieldWrap}>
+                                <textarea
+                                    value={whatToExpect}
+                                    onChange={(e) => setWhatToExpect(e.target.value)}
+                                    rows={4}
+                                    placeholder={GUEST_SCREEN_COPY.expectPlaceholder}
+                                    className={bigArea}
+                                />
+                            </div>
+                        </SubFlowModal>
+
+                        {/* ---- Dietary (food only), note above Save. ---- */}
+                        {isFoodCat && (
+                            <SubFlowModal
+                                open={detailModal === 'dietary'}
+                                title={GUEST_SCREEN_COPY.dietaryModalTitle}
+                                onClose={() => setDetailModal(null)}
+                                saveLabel={GUEST_SCREEN_COPY.save}
+                                note={GUEST_SCREEN_COPY.dietaryModalNote}
+                            >
+                                <div className={fieldWrap}>
+                                    <textarea
+                                        value={dietaryNote}
+                                        onChange={(e) => setDietaryNote(e.target.value)}
+                                        rows={3}
+                                        placeholder={GUEST_SCREEN_COPY.dietaryPlaceholder}
+                                        className={bigArea}
+                                    />
+                                </div>
+                            </SubFlowModal>
+                        )}
+                    </section>
+                    );
+                })()}
 
                 {/* PHOTOS — a real, required step, the way Airbnb makes it (they
                     ask for five; we ask for at least one, gated in the footer). A

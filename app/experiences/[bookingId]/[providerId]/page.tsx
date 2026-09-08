@@ -93,6 +93,16 @@ export default async function ListingPage(
                             <p className="mt-6 whitespace-pre-line text-[15px] leading-relaxed text-slate-700">{p.description}</p>
                         ) : null}
 
+                        {/* What happens — the provider's own walk-through of the
+                            experience, start to finish. Only shown when they wrote
+                            one; the description and the menu carry the rest. */}
+                        {p.what_happens ? (
+                            <div className="mt-8">
+                                <h2 className="text-sm font-semibold uppercase tracking-wide text-slate-500">What happens</h2>
+                                <p className="mt-2 whitespace-pre-line text-[15px] leading-relaxed text-slate-700">{p.what_happens}</p>
+                            </div>
+                        ) : null}
+
                         {/* The menu — the whole list, each with its photo, for a
                             provider that makes things. A slot's single offering is
                             shown in the panel with its times, so it isn't repeated
