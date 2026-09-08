@@ -113,7 +113,18 @@ export const GUEST_SCREEN_COPY = {
     menuNamePlaceholderSlot: 'Lochside sauna session',
     menuPriceTitle: 'What does it cost?',
     menuPricePlaceholder: '45',        // the big numeral's placeholder — an example price
-    menuPriceTypeLabel: 'How this is priced',
+    menuPriceTypeLabel: 'How this is priced',   // the current-choice row on the price step
+    menuPriceTypeTitle: 'How is this priced?',  // the basis picker's heading
+    // The six pricing bases, in ORDER_UNITS order. The labels live here so the
+    // wording is changed in one place; the keys are the logic and stay in code.
+    priceUnitLabels: {
+        flat: 'One set price',
+        person: 'Per person',
+        night: 'Per night',
+        hour: 'Per hour',
+        ticket: 'Per ticket',
+        item: 'Per item',
+    } as Record<string, string>,
     menuDescTitle: 'Add a short description',
     menuDescPlaceholder: 'A line about what’s included.',
     menuPhotoTitle: 'Add a photo',

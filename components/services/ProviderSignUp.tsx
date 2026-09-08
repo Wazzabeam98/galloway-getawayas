@@ -492,6 +492,10 @@ function ApplicationForm() {
     const [menuIndex, setMenuIndex] = useState<number | null>(null);
     const [menuStep, setMenuStep] = useState(0);
     const [payoutOpen, setPayoutOpen] = useState(false);
+    // The pricing-basis picker (the "How this is priced" sub-flow), opened from a
+    // row on the price step — the last native <select> on this flow, replaced with
+    // the coverage-picker pattern so it reads like the rest of the screen.
+    const [unitPickerOpen, setUnitPickerOpen] = useState(false);
 
     // The section rail collapses to an icon-only strip, Airbnb-style. Kept in
     // state so it stays as you move between screens (steps are the same mounted
@@ -3919,10 +3923,7 @@ function ApplicationForm() {
                     const isSlot = shape === 'slot';
                     const blank = { id: undefined as string | undefined, name: '', description: '', price: '', unit: 'flat', image: null as string | null };
 
-                    const UNIT_WORD: Record<string, string> = {
-                        flat: 'One set price', person: 'Per person', night: 'Per night',
-                        hour: 'Per hour', ticket: 'Per ticket', item: 'Per item',
-                    };
+                    const UNIT_WORD: Record<string, string> = GUEST_SCREEN_COPY.priceUnitLabels;
                     const unitWord = (r: { unit: string }) => isSlot
                         ? (slotPrivate === false ? 'per person' : slotPrivate === true ? 'for the session' : '')
                         : (UNIT_WORD[r.unit || 'flat'] || '');
@@ -4054,26 +4055,58 @@ function ApplicationForm() {
                                                     className="w-48 bg-transparent text-center text-6xl font-extrabold tabular-nums text-slate-900 placeholder:font-extrabold placeholder:text-slate-300 focus:outline-none [appearance:textfield] [&::-webkit-outer-spin-button]:appearance-none [&::-webkit-inner-spin-button]:appearance-none sm:text-7xl"
                                                 />
                                             </div>
-                                            {/* Price type — the same dropdown and the same
-                                                options as before (model unchanged). A slot
-                                                derives it from the private/shared answer. */}
-                                            <div className="mt-6 flex justify-center">
+                                            {/* Price type — the same options and the same
+                                                model as before, but no native <select>: a
+                                                current-choice HubRow that opens a sub-flow of
+                                                selectable rows, matching the coverage picker.
+                                                A slot derives it from the private/shared
+                                                answer, so it just states the basis. */}
+                                            <div className="mt-8">
                                                 {isSlot ? (
-                                                    unitWord(it) ? <span className="text-sm text-slate-500">Priced {unitWord(it)}</span> : null
+                                                    unitWord(it)
+                                                        ? <p className="text-center text-sm text-slate-500">Priced {unitWord(it)}</p>
+                                                        : null
                                                 ) : (
-                                                    <label className="flex items-center gap-2 text-sm text-slate-500">
-                                                        {GUEST_SCREEN_COPY.menuPriceTypeLabel}
-                                                        <select
-                                                            value={it.unit || 'flat'}
-                                                            onChange={(e) => setField(menuIndex, 'unit', e.target.value)}
-                                                            aria-label={GUEST_SCREEN_COPY.menuPriceTypeLabel}
-                                                            className="rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm text-slate-900 focus:outline-none focus:ring-2 focus:ring-emerald-700"
+                                                    <>
+                                                        <div className="mx-auto max-w-sm">
+                                                            <HubRow
+                                                                filled
+                                                                label={GUEST_SCREEN_COPY.menuPriceTypeLabel}
+                                                                prompt=""
+                                                                summary={UNIT_WORD[it.unit || 'flat']}
+                                                                onOpen={() => setUnitPickerOpen(true)}
+                                                            />
+                                                        </div>
+                                                        <SubFlowModal
+                                                            open={unitPickerOpen}
+                                                            title={GUEST_SCREEN_COPY.menuPriceTypeTitle}
+                                                            onClose={() => setUnitPickerOpen(false)}
+                                                            saveLabel={GUEST_SCREEN_COPY.save}
                                                         >
-                                                            {ORDER_UNITS.map((u) => (
-                                                                <option key={u} value={u}>{UNIT_WORD[u]}</option>
-                                                            ))}
-                                                        </select>
-                                                    </label>
+                                                            <div role="radiogroup" aria-label={GUEST_SCREEN_COPY.menuPriceTypeLabel} className="mx-auto w-full max-w-md space-y-2">
+                                                                {ORDER_UNITS.map((u) => {
+                                                                    const on = (it.unit || 'flat') === u;
+                                                                    return (
+                                                                        <button
+                                                                            key={u}
+                                                                            type="button"
+                                                                            role="radio"
+                                                                            aria-checked={on}
+                                                                            onClick={() => { setField(menuIndex, 'unit', u); setUnitPickerOpen(false); }}
+                                                                            className={'flex w-full items-center gap-3 rounded-2xl border px-4 py-3.5 text-left transition '
+                                                                                + (on ? 'border-emerald-600 bg-emerald-50 ring-1 ring-emerald-600' : 'border-slate-200 hover:border-emerald-400')}
+                                                                        >
+                                                                            <span className={'flex h-6 w-6 flex-none items-center justify-center rounded-full border transition '
+                                                                                + (on ? 'border-emerald-600 bg-emerald-600 text-white' : 'border-slate-300 text-transparent')}>
+                                                                                <Check className="h-4 w-4" strokeWidth={3} />
+                                                                            </span>
+                                                                            <span className="font-semibold text-slate-900">{UNIT_WORD[u]}</span>
+                                                                        </button>
+                                                                    );
+                                                                })}
+                                                            </div>
+                                                        </SubFlowModal>
+                                                    </>
                                                 )}
                                             </div>
                                             {/* The payout, presented the way Airbnb's is:
