@@ -3243,7 +3243,9 @@ function ApplicationForm() {
                                    keep the generic title. */
                                 : (step === 'g_area' && shape !== 'slot' && shape !== 'made_to_order')
                                     ? GUEST_SCREEN_COPY.locationHeadingTravel
-                                    : stepMeta.title}
+                                    : step === 'g_photos'
+                                        ? GUEST_SCREEN_COPY.photosHeading
+                                        : stepMeta.title}
                         </h1>
                     )}
                     {/* Max guests renders its heading here, at the top, exactly
