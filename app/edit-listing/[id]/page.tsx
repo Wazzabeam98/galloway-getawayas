@@ -11,7 +11,7 @@ import { categories } from '@/config/categories';
 import Env from '@/config/Env';
 import { generateRandomNumber, getImageUrl, timeInputValue } from '@/lib/utils';
 import { toast } from 'react-toastify';
-import { rateFor } from '@/lib/fees';
+import { rateFor, feeAmount, netOfFee } from '@/lib/fees';
 import { buildLocation, splitLocation, DEFAULT_REGION } from '@/lib/places';
 import { buildStreetAddress, tidyPostcode } from '@/lib/address';
 import { fromRow, newProblems, publishProblems } from '@/lib/listingRules';
@@ -1018,11 +1018,11 @@ export default function EditListing() {
                                         </div>
                                         <div className="flex justify-between text-slate-600 mb-1">
                                             <span>Host fee ({HOST_FEE_PERCENT}%)</span>
-                                            <span className="font-medium text-slate-900">− £{(Number(price) * HOST_FEE_PERCENT / 100).toFixed(2)}</span>
+                                            <span className="font-medium text-slate-900">− £{feeAmount(Number(price), HOST_FEE_PERCENT).toFixed(2)}</span>
                                         </div>
                                         <div className="flex justify-between pt-1 border-t border-slate-200">
                                             <span className="font-semibold text-slate-900">You receive</span>
-                                            <span className="font-bold text-emerald-700">£{(Number(price) * (1 - HOST_FEE_PERCENT / 100)).toFixed(2)}</span>
+                                            <span className="font-bold text-emerald-700">£{netOfFee(Number(price), HOST_FEE_PERCENT).toFixed(2)}</span>
                                         </div>
                                     </div>
                                 )}
