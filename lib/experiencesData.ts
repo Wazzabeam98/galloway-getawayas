@@ -7,7 +7,7 @@
 // the bookable sessions inside the stay folded in.
 
 import { isLiveToGuests, mccForProvider, isFoodProvider, normaliseUnit } from '@/lib/serviceOrders';
-import { guestCategory } from '@/lib/serviceProviders';
+import { guestCategory, knownDietaryOptions } from '@/lib/serviceProviders';
 import { shapeOf, generateSessions, sessionCapacity, seatsLeft } from '@/lib/serviceSlots';
 import { getImageUrl } from '@/lib/utils';
 import { shiftDayKey } from '@/lib/dayKey';
@@ -178,7 +178,7 @@ export async function loadMarketplace(
             category: guestCategory(p),
             isFood: isFoodProvider(p),
             dietary_note: p.dietary_note || null,
-            dietary_options: (p.guest_details && Array.isArray(p.guest_details.dietary_options)) ? p.guest_details.dietary_options : [],
+            dietary_options: knownDietaryOptions((p.guest_details && Array.isArray(p.guest_details.dietary_options)) ? p.guest_details.dietary_options : []),
             what_happens: (p.guest_details && p.guest_details.what_to_expect) || null,
             description: p.description,
             shape,
