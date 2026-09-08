@@ -48,3 +48,6 @@ next-env.d.ts
 /playwright-report
 /blob-report
 /.playwright
+
+# Local-only licensed evaluation comps (iStock comp licence: evaluation only, NOT public). Never commit/push/deploy.
+public/images/experience-placeholders/comp-*
