@@ -325,6 +325,15 @@ function SubFlowModal({ open, title, onClose, saveLabel, saveDisabled, note, chi
 // the section is identifiable by position and hover label. Numbers were the
 // obvious alternative and are wrong here: the flow is not a fixed sequence (a
 // sauna skips About you), so a numbered rail would read 1, 3, 4.
+// The two placeholder photographs on the empty Photos screen, shown as an
+// overlapping, opposing-tilt pair (Airbnb's composition). These are stand-ins —
+// see public/images/experience-placeholders/README.md — swap the files or repoint
+// these paths at real local-business photos. Portrait 4:5 to match the frames.
+const PHOTO_PLACEHOLDERS = [
+    { src: '/images/experience-placeholders/sauna.svg', alt: 'Placeholder: a wood-fired barrel sauna' },
+    { src: '/images/experience-placeholders/dining.svg', alt: 'Placeholder: a table of food' },
+];
+
 const SECTION_ICONS: Record<string, React.ComponentType<any>> = {
     about: User,
     location: MapPin,
@@ -4396,33 +4405,77 @@ function ApplicationForm() {
                     which already saves, loads and feeds the listing. */}
                 {onStep('g_photos') && isGuest && (
                 <section className="mb-8">
-                    <div className="grid grid-cols-2 sm:grid-cols-3 gap-3 md:max-w-xl">
-                        {photos.map((p, i) => (
-                            <div key={p || i} className="relative aspect-square rounded-xl overflow-hidden border border-slate-200 bg-slate-50">
-                                <img src={getImageUrl(p)} alt="" className="w-full h-full object-cover" />
-                                <button
-                                    type="button"
-                                    onClick={() => setPhotos((prev) => prev.filter((_, j) => j !== i))}
-                                    aria-label="Remove photo"
-                                    className="absolute top-1.5 right-1.5 rounded-full bg-black/55 p-1 text-white hover:bg-black/75"
-                                >
-                                    <X className="w-3.5 h-3.5" />
-                                </button>
+                    {photos.length === 0 ? (
+                        <>
+                            {/* Empty state, Airbnb's composition: heading and
+                                subtext (above), then two photographs overlapping
+                                with an opposing tilt, then the Add button directly
+                                beneath. The pair are placeholders — see
+                                PHOTO_PLACEHOLDERS. */}
+                            <p className="text-sm text-slate-500">
+                                {GUEST_SCREEN_COPY.photosLede}
+                            </p>
+                            <p className="mt-1.5 text-sm font-medium text-slate-600">
+                                {GUEST_SCREEN_COPY.photosMore}
+                            </p>
+
+                            {/* overflow-visible + generous padding so the tilt and
+                                the shadow never clip. */}
+                            <div className="mt-8 mb-7 flex justify-center overflow-visible">
+                                <div className="relative flex items-center justify-center">
+                                    <img
+                                        src={PHOTO_PLACEHOLDERS[0].src}
+                                        alt={PHOTO_PLACEHOLDERS[0].alt}
+                                        className="w-28 sm:w-36 aspect-[4/5] object-cover rounded-2xl bg-slate-100 ring-4 ring-white shadow-xl -rotate-6 translate-y-2"
+                                    />
+                                    <img
+                                        src={PHOTO_PLACEHOLDERS[1].src}
+                                        alt={PHOTO_PLACEHOLDERS[1].alt}
+                                        className="-ml-7 w-28 sm:w-36 aspect-[4/5] object-cover rounded-2xl bg-slate-100 ring-4 ring-white shadow-xl rotate-6 -translate-y-2"
+                                    />
+                                </div>
                             </div>
-                        ))}
-                        <label className="aspect-square rounded-xl border-2 border-dashed border-slate-300 hover:border-emerald-400 bg-white cursor-pointer flex flex-col items-center justify-center gap-1.5 text-center text-slate-500">
-                            <ImagePlus className="w-6 h-6 text-slate-400" strokeWidth={1.5} />
-                            <span className="text-xs px-2">{uploadingPhotos ? 'Uploading…' : 'Add photos'}</span>
-                            <input type="file" accept="image/*" multiple className="sr-only"
-                                onChange={uploadGalleryPhotos} disabled={uploadingPhotos} />
-                        </label>
-                    </div>
-                    <p className="mt-3 text-sm text-slate-500">
-                        {GUEST_SCREEN_COPY.photosLede}
-                    </p>
-                    <p className="mt-1.5 text-sm font-medium text-slate-600">
-                        {GUEST_SCREEN_COPY.photosMore}
-                    </p>
+
+                            <div className="flex justify-center">
+                                <label className="inline-flex cursor-pointer items-center gap-2 rounded-full border border-slate-900 bg-white px-6 py-3 text-sm font-semibold text-slate-900 transition hover:bg-slate-50">
+                                    <ImagePlus className="h-5 w-5" strokeWidth={1.75} />
+                                    <span>{uploadingPhotos ? 'Uploading…' : 'Add photos'}</span>
+                                    <input type="file" accept="image/*" multiple className="sr-only"
+                                        onChange={uploadGalleryPhotos} disabled={uploadingPhotos} />
+                                </label>
+                            </div>
+                        </>
+                    ) : (
+                        <>
+                            <div className="grid grid-cols-2 sm:grid-cols-3 gap-3 md:max-w-xl">
+                                {photos.map((p, i) => (
+                                    <div key={p || i} className="relative aspect-square rounded-xl overflow-hidden border border-slate-200 bg-slate-50">
+                                        <img src={getImageUrl(p)} alt="" className="w-full h-full object-cover" />
+                                        <button
+                                            type="button"
+                                            onClick={() => setPhotos((prev) => prev.filter((_, j) => j !== i))}
+                                            aria-label="Remove photo"
+                                            className="absolute top-1.5 right-1.5 rounded-full bg-black/55 p-1 text-white hover:bg-black/75"
+                                        >
+                                            <X className="w-3.5 h-3.5" />
+                                        </button>
+                                    </div>
+                                ))}
+                                <label className="aspect-square rounded-xl border-2 border-dashed border-slate-300 hover:border-emerald-400 bg-white cursor-pointer flex flex-col items-center justify-center gap-1.5 text-center text-slate-500">
+                                    <ImagePlus className="w-6 h-6 text-slate-400" strokeWidth={1.5} />
+                                    <span className="text-xs px-2">{uploadingPhotos ? 'Uploading…' : 'Add photos'}</span>
+                                    <input type="file" accept="image/*" multiple className="sr-only"
+                                        onChange={uploadGalleryPhotos} disabled={uploadingPhotos} />
+                                </label>
+                            </div>
+                            <p className="mt-3 text-sm text-slate-500">
+                                {GUEST_SCREEN_COPY.photosLede}
+                            </p>
+                            <p className="mt-1.5 text-sm font-medium text-slate-600">
+                                {GUEST_SCREEN_COPY.photosMore}
+                            </p>
+                        </>
+                    )}
                 </section>
                 )}
 
