@@ -153,6 +153,26 @@ export const GUEST_SCREEN_COPY = {
     save: 'Save',
 };
 
+// The tradesman (host-trade) location screen, rebuilt in the guest flow's craft:
+// borderless rows + a sub-flow modal, one row per area. Unlike the guest side,
+// the model is unchanged — a town from the known list plus a radius, because the
+// radius is a live precision filter behind the directory (five regions would be
+// too coarse). Restricting to the known list also fixes a latent bug: a
+// free-typed off-list town got centre 0,0 and so never matched the directory,
+// i.e. it was invisible. Only towns with real coordinates can be picked now.
+export const HOST_LOCATION_COPY = {
+    heading: 'Where do you cover?',
+    subtext: 'The towns you work in and how far you travel from each. Add more than one if you cover separate areas.',
+    addRow: 'Add an area',
+    addPrompt: 'Pick a town and how far you travel',
+    modalTitle: 'Where do you cover?',
+    townLabel: 'Which town?',
+    radiusLabel: 'How far will you travel from it?',
+    radiusSuffix: 'miles',
+    // Composed as "within 10 miles" on a chosen row.
+    rowWithin: 'within',
+};
+
 // The Food & drink sub-types. Keyed by the category key in GUEST_CATEGORIES.
 //   - chef        a chef comes to the cottage (comes-to-you)
 //   - food_order  made and collected or dropped off — the old Cakes & baking and
