@@ -284,6 +284,17 @@ export function dietaryOptionLabel(key: string): string {
     return DIETARY_OPTIONS.filter((o) => o.key === key)[0]?.label || key;
 }
 
+/**
+ * Keep only the dietary keys the catalogue still knows, in catalogue order — so
+ * a key retired from DIETARY_OPTIONS (an old seed, or any future change) is
+ * silently dropped rather than rendered as a raw string, and the listing never
+ * has to trust what was stored.
+ */
+export function knownDietaryOptions(keys: string[]): string[] {
+    const has = new Set(keys);
+    return DIETARY_OPTIONS.filter((o) => has.has(o.key)).map((o) => o.key);
+}
+
 export const GUEST_CHECKS: GuestCheck[] = [
     // Universal — asked of every guest experience.
     {
