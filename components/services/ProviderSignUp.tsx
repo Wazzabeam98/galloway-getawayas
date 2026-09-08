@@ -76,6 +76,7 @@ import {
     checksFor,
     DEFAULT_SERVICE_COMMISSION,
 } from '@/lib/serviceProviders';
+import { serviceCommission } from '@/lib/pricing';
 import { GUEST_SCREEN_COPY, GUEST_REGIONS, GUEST_COVERAGE_ALL_KEY, HOST_LOCATION_COPY } from '@/lib/strings';
 import { PhotoEditorGrid } from './PhotoEditorGrid';
 import {
@@ -3958,8 +3959,12 @@ function ApplicationForm() {
                     const bigInput = 'w-full bg-transparent text-center text-2xl text-slate-900 placeholder:text-slate-300 focus:outline-none';
                     const bigArea = 'w-full resize-none bg-transparent text-center text-xl leading-relaxed text-slate-900 placeholder:text-slate-300 focus:outline-none';
 
-                    const keep = priceNum * (1 - DEFAULT_SERVICE_COMMISSION);
-                    const commission = priceNum * DEFAULT_SERVICE_COMMISSION;
+                    // The payout maths is the SAME one the order actually uses
+                    // (lib/pricing.serviceCommission, rounded to the penny) rather
+                    // than a fresh multiply, so the "You keep" figure matches what
+                    // the provider is really paid.
+                    const commission = serviceCommission(priceNum, DEFAULT_SERVICE_COMMISSION);
+                    const keep = Math.max(0, priceNum - commission);
 
                     return (
                         <section className="mb-8 md:max-w-xl md:mx-auto">
@@ -4034,13 +4039,19 @@ function ApplicationForm() {
                                     )}
                                     {menuStep === 1 && (
                                         <div>
-                                            <div className={fieldWrap + ' flex items-center justify-center gap-1'}>
-                                                <span className="text-2xl text-slate-400">£</span>
+                                            {/* A big numeral you TYPE into — no spinner
+                                                arrows (nobody sets £45 by nudging up from
+                                                zero) and no box; the number is the thing
+                                                you see, the £ sits quietly at its baseline.
+                                                Airbnb's price register. */}
+                                            <div className="flex items-baseline justify-center gap-2">
+                                                <span className="text-4xl font-extrabold text-slate-400 sm:text-5xl">£</span>
                                                 <input
                                                     type="number" min="0" step="0.01" inputMode="decimal" value={it.price}
                                                     onChange={(e) => setField(menuIndex, 'price', e.target.value)}
-                                                    placeholder="45"
-                                                    className="w-32 bg-transparent text-center text-2xl text-slate-900 placeholder:text-slate-300 focus:outline-none"
+                                                    placeholder={GUEST_SCREEN_COPY.menuPricePlaceholder}
+                                                    aria-label={GUEST_SCREEN_COPY.menuPriceTitle}
+                                                    className="w-48 bg-transparent text-center text-6xl font-extrabold tabular-nums text-slate-900 placeholder:font-extrabold placeholder:text-slate-300 focus:outline-none [appearance:textfield] [&::-webkit-outer-spin-button]:appearance-none [&::-webkit-inner-spin-button]:appearance-none sm:text-7xl"
                                                 />
                                             </div>
                                             {/* Price type — the same dropdown and the same
