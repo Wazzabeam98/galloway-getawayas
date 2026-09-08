@@ -149,10 +149,10 @@ export const GUEST_SCREEN_COPY = {
     // deliberately different, so this line is NOT wired to the Next gate.
     photosHeading: 'Add photos of your experience',
     photosAsk: 'Add at least 3 photos.',
-    // Shown above the editable grid once photos exist. On the guest side order
-    // and lead are the same thing (no separate cover), so the line says so
-    // plainly rather than borrowing the host editor's "cover photo" wording.
-    photosReorderHint: 'Drag to reorder — the first photo leads your listing.',
+    // Shown above the editable grid once photos exist. Order and cover are the
+    // same thing on the guest side — the first photo is the cover — so the line
+    // says exactly that; dragging to the front is how you set it.
+    photosReorderHint: 'Drag to reorder — the first photo is your cover.',
 
     // Sub-flow modal.
     save: 'Save',
