@@ -51,20 +51,20 @@ export type StepKey =
 // where-and-when step (the old g_avail), dietary folds into "what guests can
 // expect" (the old g_diet), and three screens Airbnb has and we lacked are
 // added — expertise/qualifications (g_creds), what-to-expect (g_expect) and a
-// real photos step (g_photos). The business name now rides on g_about, so a
-// guest never sees the standalone 'business' step.
-// Reordered to Airbnb's host-an-experience sequence (Sep 2026): About you
-// first (years, expertise), then Location straight after — it matters more for
-// us than for them, a chef in Carlisle should learn we only cover Dumfries &
-// Galloway before writing anything — then Photos BEFORE the writing, because
-// someone who's just uploaded photos of their kitchen writes a far better
-// description than someone staring at an empty box, and anyone without usable
-// photos finds out early. Then Pricing, Details, and only near the end the
-// naming and describing (g_about), then the Finish wrap-up (checks, contact,
-// account). The set of keys is unchanged — only their order moved.
+// real photos step (g_photos). The business name is a name-only step (g_about,
+// "What's it called?") right after the sub-type pick — it is the listing title
+// and is required at submit, so it is captured up front; a guest never sees the
+// standalone 'business' step.
+// Reordered to Airbnb's host-an-experience sequence (Sep 2026): sub-type, then
+// the name, then About you (years, expertise), then Location straight after —
+// it matters more for us than for them, a chef in Carlisle should learn we only
+// cover Dumfries & Galloway before writing anything — then Photos, Pricing,
+// Details, and the Finish wrap-up (checks, contact, account). The description is
+// gone from the guest path — "what happens" (Details) and the item descriptions
+// cover it — so the naming screen is just the name.
 const GUEST_STEP_KEYS: StepKey[] = [
-    'g_verify', 'g_subtype',
-    'g_you', 'g_creds', 'g_area', 'g_photos', 'g_capacity', 'g_menu', 'g_expect', 'g_about', 'g_checks', 'g_contact',
+    'g_verify', 'g_subtype', 'g_about',
+    'g_you', 'g_creds', 'g_area', 'g_photos', 'g_capacity', 'g_menu', 'g_expect', 'g_checks', 'g_contact',
 ];
 
 // What a guest's steps branch on, all from earlier answers: the top-level group
@@ -122,7 +122,7 @@ const ALL_STEPS: Step[] = [
     { key: 'g_capacity', label: 'Guests', title: 'How many guests?' },
     { key: 'g_menu', label: 'Price', title: 'What you offer, and what it costs' },
     { key: 'g_expect', label: 'Details', title: 'What can a guest expect?' },
-    { key: 'g_about', label: 'About', title: 'Name it, and tell guests what it is' },
+    { key: 'g_about', label: 'Name', title: 'What’s it called?' },
     { key: 'g_checks', label: 'Checks', title: 'A few checks before we list you' },
     { key: 'g_contact', label: 'Contact', title: 'Where can we reach you?' },
     // Not "Registration". Registration and skills never co-occur across the
@@ -293,7 +293,6 @@ const GUEST_SECTIONS: { key: string; label: string; steps: StepKey[] }[] = [
     { key: 'photos', label: GUEST_SCREEN_COPY.sectionPhotos, steps: ['g_photos'] },
     { key: 'pricing', label: GUEST_SCREEN_COPY.sectionPricing, steps: ['g_capacity', 'g_menu'] },
     { key: 'details', label: GUEST_SCREEN_COPY.sectionDetails, steps: ['g_expect'] },
-    { key: 'experience', label: GUEST_SCREEN_COPY.sectionExperience, steps: ['g_about'] },
     { key: 'finish', label: GUEST_SCREEN_COPY.sectionFinish, steps: ['g_checks', 'g_contact', 'finish'] },
 ];
 
@@ -430,9 +429,9 @@ const STEP_FIELDS: Record<StepKey, string[]> = {
 // a guest, which is the whole reason stepForField takes a context.
 const GUEST_STEP_FIELDS: Partial<Record<StepKey, string[]>> = {
     trade: ['trade', 'audience'],
-    // The name rides on g_about now, beside the description — a guest has no
-    // standalone business step.
-    g_about: ['business_name', 'description'],
+    // The name is its own step (g_about, right after the sub-type) — a guest has
+    // no standalone business step, and no description field (it was cut).
+    g_about: ['business_name'],
     // Location and the weekly hours both live on the where-and-when step.
     g_area: ['areas', 'availability'],
     g_contact: ['contact_email', 'contact_phone'],
@@ -541,9 +540,9 @@ export function openingStep(state: OpeningState): StepKey | null {
     // A trade in the URL means step one is already answered — they came back
     // through a link, or they have a saved record — so opening on the picker
     // would make them answer it twice. A guest has no business step; their
-    // first content screen is g_you.
+    // first content screen is the name step (g_about).
     if (!state.trade) return 'trade';
-    return audienceForTrade(state.trade) === 'guest' ? 'g_you' : 'business';
+    return audienceForTrade(state.trade) === 'guest' ? 'g_about' : 'business';
 }
 
 // What counts as already seen when opening there. Everything up to and

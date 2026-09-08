@@ -477,8 +477,10 @@ test('a signed-in guest skips the gate — the picker if no category, else the f
         'trade',
     );
     assert.equal(
+        // The name step (g_about, "What's it called?") is the first content
+        // screen now — right after the sub-type, ahead of About you.
         openingStep({ hydrated: true, restored: false, lodged: false, trade: 'guest', guestNeedsCategory: false, hasSession: true }),
-        'g_you',
+        'g_about',
     );
 });
 
@@ -714,11 +716,14 @@ test('guest movement and the last step honour the context', () => {
 // and the per-screen eyebrow both read from sectionsFor / sectionForStep, so
 // they can't disagree about the flow.
 
-test('the guest flow is seven named sections, in Airbnb order', () => {
+test('the guest flow is six named sections, in Airbnb order', () => {
     const ctx = { group: 'food', category: 'chef', shape: 'comes_to_you' };
     const secs = sectionsFor('guest', ctx);
+    // The old "Experience" section is gone: its only screen was the naming step,
+    // which is now a pre-rail name-only step (g_about) and its description field
+    // was cut. What is left is six sections.
     assert.deepEqual(secs.map((s: any) => s.key),
-        ['about', 'location', 'photos', 'pricing', 'details', 'experience', 'finish']);
+        ['about', 'location', 'photos', 'pricing', 'details', 'finish']);
     // About you pairs the years screen and the expertise hub; every other
     // content section is a single screen; Finish gathers the wrap-up.
     assert.deepEqual(secs.find((s: any) => s.key === 'about').steps, ['g_you', 'g_creds']);
@@ -737,10 +742,10 @@ test('a section with no screens drops out of the rail entirely', () => {
     const sauna = sectionsFor('guest', { group: 'wellness', category: 'sauna', shape: 'slot' });
     assert.equal(sauna.some((s: any) => s.key === 'about'), false, 'sauna has no About you section');
     assert.deepEqual(sauna.map((s: any) => s.key),
-        ['location', 'photos', 'pricing', 'details', 'experience', 'finish']);
+        ['location', 'photos', 'pricing', 'details', 'finish']);
 });
 
-test('the two pickers sit before the rail, in no section', () => {
+test('the pickers and the name step sit before the rail, in no section', () => {
     // The flow branches on the group and the sub-type, so the rail can't be
     // drawn until they're answered — and listing them would imply you can change
     // category mid-flow and invalidate everything after it.
@@ -749,10 +754,12 @@ test('the two pickers sit before the rail, in no section', () => {
     // The verify-email gate is pre-rail too — the rail begins once the account
     // exists, at About you.
     assert.equal(sectionForStep('g_verify'), null);
+    // The name step (g_about) sits right after the sub-type, before the rail
+    // begins — it belongs to no section, like the pickers it follows.
+    assert.equal(sectionForStep('g_about'), null);
     // A content screen carries its section; About you covers the first two.
     assert.equal(sectionForStep('g_you').key, 'about');
     assert.equal(sectionForStep('g_creds').key, 'about');
-    assert.equal(sectionForStep('g_about').key, 'experience');
 });
 
 test('a host trade has no rail', () => {

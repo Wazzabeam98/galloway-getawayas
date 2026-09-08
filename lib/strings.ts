@@ -37,7 +37,6 @@ export const GUEST_SCREEN_COPY = {
     sectionPhotos: 'Photos',
     sectionPricing: 'Pricing',
     sectionDetails: 'Details',
-    sectionExperience: 'Name & description',
     sectionFinish: 'Finish',
 
     // The expertise screen — a hub (Airbnb-style): a photo, a heading and a line
