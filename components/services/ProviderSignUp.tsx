@@ -3242,17 +3242,17 @@ function ApplicationForm() {
                         have no section, so it shows nothing there. */}
                     {isGuest && currentSection && (
                         <p className={'text-xs font-bold uppercase tracking-[0.12em] text-emerald-700 mb-3 '
-                            + ((step === 'g_you' || step === 'g_creds' || step === 'g_menu' || step === 'g_capacity') ? 'text-center' : '')}>
+                            + ((step === 'g_you' || step === 'g_creds' || step === 'g_menu' || step === 'g_capacity' || step === 'g_photos') ? 'text-center' : '')}>
                             {currentSection.label}
                         </p>
                     )}
                     {isGuest && step !== 'finish' && step !== 'g_creds' && step !== 'g_menu' && step !== 'g_capacity' && (
                         <h1 className={'font-extrabold tracking-tight text-slate-900 [text-wrap:balance] text-3xl sm:text-4xl '
                             + ((step === 'trade' || step === 'g_subtype' || step === 'g_you') ? 'mb-10 text-center'
-                                /* g_photos: tight gap so "Add at least 3 photos."
-                                   reads as a subtitle under the heading, not a
-                                   stranded paragraph. */
-                                : step === 'g_photos' ? 'mb-2'
+                                /* g_photos is centred (this screen only, to match
+                                   Airbnb) with a tight gap so "Add at least 3 photos."
+                                   reads as a subtitle, not a stranded paragraph. */
+                                : step === 'g_photos' ? 'mb-2 text-center'
                                     : 'mb-8')}>
                             {step === 'trade'
                                 ? 'What experience are you offering guests?'
@@ -4420,7 +4420,7 @@ function ApplicationForm() {
                     {/* The screen instruction sits under the heading in both states
                         — it asks for three; the Next gate stays at one (they differ
                         on purpose), so this line is NOT wired to the gate. */}
-                    <p className="text-base text-slate-600">
+                    <p className="text-center text-base text-slate-600">
                         {GUEST_SCREEN_COPY.photosAsk}
                     </p>
 
@@ -4435,14 +4435,15 @@ function ApplicationForm() {
 
                                 The composition (size, ±5° tilt, overlap, stagger,
                                 outlined button) is the agreed commit-90a3c20 version,
-                                reduced ~10–15% via PHOTO_CARD_SIZE. Two things from the
-                                alignment fix are KEPT, deliberately, and are not part
-                                of that revert: it is LEFT-ALIGNED to the heading
-                                (justify-start), and the panel no longer slides when the
-                                rail toggles (the right-side spacer that mirrors the
-                                rail). overflow-visible so the tilt and shadow never
-                                clip. Do not adjust the composition again unless asked. */}
-                            <div className="mt-8 mb-6 flex justify-start overflow-visible">
+                                reduced ~10–15% via PHOTO_CARD_SIZE. This screen is
+                                CENTRED (justify-center) to match Airbnb — the eyebrow,
+                                heading, subtitle, photos and button share one axis. The
+                                anti-slide fix is kept: the panel centres in the full
+                                body width (the right-side spacer mirrors the rail), so
+                                the centre axis is the viewport centre in both rail
+                                states. overflow-visible so the tilt/shadow never clip.
+                                Do not adjust the composition again unless asked. */}
+                            <div className="mt-16 mb-6 flex justify-center overflow-visible">
                                 <div className="relative flex items-center">
                                     <img
                                         src={EXPERIENCE_PHOTOS[0].src}
@@ -4457,7 +4458,7 @@ function ApplicationForm() {
                                 </div>
                             </div>
 
-                            <div className="flex justify-start">
+                            <div className="flex justify-center">
                                 <label className="inline-flex cursor-pointer items-center gap-2 rounded-full border border-slate-900 bg-white px-6 py-3 text-sm font-semibold text-slate-900 transition hover:bg-slate-50">
                                     <ImagePlus className="h-5 w-5" strokeWidth={1.75} />
                                     <span>{uploadingPhotos ? 'Uploading…' : 'Add photos'}</span>
