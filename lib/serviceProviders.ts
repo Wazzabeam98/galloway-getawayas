@@ -7,7 +7,7 @@
 
 import { blockedSkills, SkillRow } from '@/lib/serviceSkills';
 import { townKey } from '@/lib/places';
-import { GUEST_CATEGORY_COPY } from '@/lib/strings';
+import { GUEST_CATEGORY_COPY, GUEST_SCREEN_COPY } from '@/lib/strings';
 
 // Nobody searches for "maintenance". They search for a plumber.
 //
@@ -2500,7 +2500,12 @@ export function submitProblems(draft: ProviderDraft): Problem[] {
     if (!draft.areaCount) {
         problems.push({
             field: 'areas',
-            message: 'Add at least one area you cover, so we know who to show you to.',
+            // A guest's coverage is informational (it does not filter who sees
+            // them), so the host line "so we know who to show you to" would be
+            // false for them; the guest wording says what it is really for.
+            message: draft.audience === 'guest'
+                ? GUEST_SCREEN_COPY.locationAreaGate
+                : 'Add at least one area you cover, so we know who to show you to.',
         });
     }
 

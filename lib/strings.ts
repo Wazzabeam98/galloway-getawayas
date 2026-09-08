@@ -125,6 +125,24 @@ export const GUEST_SCREEN_COPY = {
     payoutRowCommission: 'Our commission',
     payoutRowKeep: 'You keep',
 
+    // The location screen, for a travelling (comes-to-you) provider. Radii are
+    // gone: coverage is a fixed list of regions the provider ticks, and it is
+    // informational now — a signal on the listing, not a filter that hides
+    // anyone — so the wording says "guests see this", not "who we show you to".
+    // The slot and made-to-order shapes keep the generic step title, which
+    // carries a real "when" (a schedule, a notice period); only the traveller,
+    // who has no when, gets this where-only heading.
+    locationHeadingTravel: 'Which parts of Dumfries & Galloway do you cover?',
+    locationSubtextTravel: 'Pick the areas you’ll travel to — guests see this on your listing.',
+    locationAddRow: 'Add an area',
+    locationAddPrompt: 'Pick a region you cover',
+    locationPickerTitle: 'Where do you cover?',
+    locationPickerDone: 'Done',
+    // The gate under a greyed Next when no area is picked. Guest wording; the
+    // host trades keep their own "who to show you to" line, which is still true
+    // for them because their coverage does filter.
+    locationAreaGate: 'Add at least one area you cover — guests see it on your listing.',
+
     // The photos screen. The gate is one photo, but the copy pushes for more —
     // a listing with several gets booked more, and someone who has no usable
     // photos finds that out here rather than after writing everything.
@@ -161,3 +179,34 @@ export const GUEST_CATEGORY_COPY: Record<string, CategoryCopy> = {
         hint: 'Learn to cook a dish or a menu, hands-on',
     },
 };
+
+// The coverage regions a travelling provider ticks. A single level — regions
+// only, never towns — for three reasons: coverage is informational now (it does
+// not filter who a guest sees), so town precision buys nothing; a flat region
+// list makes the containment trap impossible by construction (you cannot tick
+// both "Kirkcudbright" and "The Stewartry" if towns are not in the list); and it
+// reads cleanly on a listing. The boundary is hard at Dumfries & Galloway — a
+// border chef still shows to every D&G cottage regardless, so a cross-border
+// option would be a signal with no audience until Cumbrian cottages list.
+//
+// "All of Dumfries & Galloway" is pinned first and is mutually exclusive with
+// the individual regions: choosing it clears the individual picks, and choosing
+// an individual clears it. The hints name the towns each region holds, so a
+// provider recognises which one is theirs without the towns being tickable.
+export interface RegionCopy {
+    key: string;
+    label: string;
+    hint: string;
+}
+
+/** The key of the "everywhere" option, handled specially by the picker. */
+export const GUEST_COVERAGE_ALL_KEY = 'all';
+
+export const GUEST_REGIONS: RegionCopy[] = [
+    { key: 'all', label: 'All of Dumfries & Galloway', hint: 'You travel anywhere in the region' },
+    { key: 'rhins', label: 'The Rhins', hint: 'Stranraer, Portpatrick' },
+    { key: 'machars', label: 'The Machars', hint: 'Wigtown, Whithorn, Newton Stewart' },
+    { key: 'stewartry', label: 'The Stewartry', hint: 'Kirkcudbright, Castle Douglas, Gatehouse, Dalbeattie' },
+    { key: 'nithsdale', label: 'Dumfries & Nithsdale', hint: 'Dumfries, Thornhill' },
+    { key: 'annandale', label: 'Annandale & Eskdale', hint: 'Annan, Lockerbie, Moffat, Langholm' },
+];
