@@ -267,16 +267,17 @@ export interface DietaryOption {
 }
 
 export const DIETARY_OPTIONS: DietaryOption[] = [
-    { key: 'gluten_free', label: 'Gluten-free' },
-    { key: 'dairy_free', label: 'Dairy-free' },
     { key: 'vegetarian', label: 'Vegetarian' },
     { key: 'vegan', label: 'Vegan' },
-    // Two independent ticks: the chef saying she'll accommodate allergies /
+    { key: 'gluten_free', label: 'Gluten-free' },
+    // One combined tick: the chef saying she'll accommodate allergies and
     // intolerances AT ALL, not which ones — the guest picks their specific
     // allergens at booking, and the note carries the caveats and notice.
-    { key: 'food_allergies', label: 'Food allergies' },
-    { key: 'food_intolerances', label: 'Food intolerances' },
-    { key: 'low_sugar', label: 'Low-sugar / diabetic-friendly' },
+    // Nothing is ticked by default: a tick has to mean she chose it, so an
+    // unticked box reads as "won't work around them", which a guest needs to
+    // see before booking. Dairy-free and low-sugar were dropped — the note
+    // covers those.
+    { key: 'food_allergies_intolerances', label: 'Food allergies and intolerances' },
 ];
 
 /** The label for a stored dietary key, or the key itself if it is unknown. */

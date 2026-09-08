@@ -15,9 +15,10 @@ installAliases();
 const { knownDietaryOptions, DIETARY_OPTIONS } = require('@/lib/serviceProviders');
 
 test('a retired key is dropped, known keys survive', () => {
-    // 'halal' and 'nut_aware' were removed from the catalogue.
-    const out = knownDietaryOptions(['gluten_free', 'halal', 'vegan', 'nut_aware']);
-    assert.deepEqual(out, ['gluten_free', 'vegan']);
+    // 'dairy_free', 'food_allergies' and 'nut_aware' have all been removed from
+    // the catalogue over successive changes; only the live keys come through.
+    const out = knownDietaryOptions(['dairy_free', 'vegan', 'food_allergies', 'gluten_free', 'nut_aware']);
+    assert.deepEqual(out, ['vegan', 'gluten_free']);
 });
 
 test('unknown junk never comes through', () => {
