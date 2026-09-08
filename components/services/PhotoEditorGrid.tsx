@@ -1,134 +1,164 @@
 'use client';
 
-import { useState } from 'react';
-import { Star, X, ImagePlus, ChevronLeft, ChevronRight } from 'lucide-react';
+import { useEffect, useRef, useState } from 'react';
+import { X, ImagePlus } from 'lucide-react';
 
 export interface PhotoEditorItem {
-    /** Stable key for React (the guest passes the storage path). */
+    /** Stable key for React and for tracking the dragged item across reorders
+     *  (the guest passes the storage path). */
     key: string;
     /** A ready-to-render image URL — the caller resolves storage paths. */
     src: string;
 }
 
-// The photo grid the host listing editor has — add, drag-to-reorder, choose the
-// lead, delete — extracted so the guest sign-up screen reuses the interactions
-// rather than growing a second copy. Deliberately model-agnostic: it renders
-// resolved src strings and reports every action by index, so the caller keeps
-// ownership of the data (the guest uploads immediately and stores paths). The
-// controls are always visible rather than hover-gated, because this screen is
-// used on a phone as often as a desktop. Reordering is offered two ways for the
-// same reason: drag-and-drop for a mouse, and explicit move-left/right buttons on
-// each tile for touch (HTML5 drag never fires on a touchscreen, so drag alone
-// would leave a phone user unable to reorder at all).
+// The photo grid the host listing editor has — add, reorder, delete — extracted
+// so the guest sign-up screen reuses the interactions rather than growing a
+// second copy. Model-agnostic: it renders resolved src strings and reports every
+// action by index, so the caller keeps ownership of the data (the guest uploads
+// immediately and stores paths).
 //
-// `leadIndex` is a plain prop, not baked in: on the guest side the lead simply
-// IS the first photo (order and lead are the same thing), so onSetLead moves a
-// photo to the front and leadIndex stays 0 — the instruction copy says so
-// plainly rather than borrowing the host's separate-cover wording.
+// COVER IS THE FIRST PHOTO. There is no separate cover control — dragging a
+// photo to the front makes it the cover, on any device. The old star was only a
+// workaround for touch drag not working; now that reorder works under touch, it
+// is gone.
+//
+// REORDER WORKS ON MOUSE, TOUCH AND KEYBOARD. It is built on Pointer Events
+// (which, unlike HTML5 drag, fire identically for mouse, touch and pen) plus
+// arrow-key handling for accessibility — no drag-and-drop dependency for one
+// short grid. `touch-action: none` on a tile lets a touch drag it instead of
+// scrolling the page; elementFromPoint finds the tile under the pointer and the
+// list reorders live as it passes.
 export function PhotoEditorGrid({
     items,
-    leadIndex = 0,
     onReorder,
     onRemove,
-    onSetLead,
     onAdd,
     uploading,
     addLabel = 'Add photos',
     instruction,
 }: {
     items: PhotoEditorItem[];
-    leadIndex?: number;
     onReorder: (from: number, to: number) => void;
     onRemove: (index: number) => void;
-    onSetLead: (index: number) => void;
     onAdd: (e: React.ChangeEvent<HTMLInputElement>) => void;
     uploading?: boolean;
     addLabel?: string;
     instruction?: string;
 }) {
-    const [dragIndex, setDragIndex] = useState<number | null>(null);
-    const [overIndex, setOverIndex] = useState<number | null>(null);
+    // The key of the photo currently being dragged (null when idle). Keyed, not
+    // indexed, because the list reorders under the pointer mid-drag, so the
+    // dragged item's index keeps changing. Held in a ref as well as state: the
+    // move handler must read it synchronously (a pointermove can arrive before a
+    // state update has flushed), while the state drives the dimmed-tile styling.
+    const dragKeyRef = useRef<string | null>(null);
+    const [dragKey, setDragKey] = useState<string | null>(null);
+    // After a keyboard move the list reorders and React would drop focus; this
+    // re-focuses the moved tile so arrow-repeat keeps working.
+    const [focusKey, setFocusKey] = useState<string | null>(null);
+    const tileRefs = useRef<Map<string, HTMLDivElement>>(new Map());
+
+    useEffect(() => {
+        if (!focusKey) return;
+        tileRefs.current.get(focusKey)?.focus();
+        setFocusKey(null);
+    }, [focusKey, items]);
+
+    const indexOfKey = (key: string) => items.findIndex((it) => it.key === key);
+
+    // The tile under the pointer, by its data-photo-index. Ignores the pointer's
+    // own tile and anything outside the grid.
+    const tileIndexAt = (x: number, y: number): number | null => {
+        const el = document.elementFromPoint(x, y);
+        const tile = el && (el as HTMLElement).closest('[data-photo-index]');
+        if (!tile) return null;
+        const n = Number((tile as HTMLElement).dataset.photoIndex);
+        return Number.isInteger(n) ? n : null;
+    };
+
+    const onPointerDown = (e: React.PointerEvent<HTMLDivElement>, i: number) => {
+        // Let the delete button and the add input behave normally.
+        if ((e.target as HTMLElement).closest('[data-role="remove"], input, label')) return;
+        // Primary button / single touch only.
+        if (e.button != null && e.button > 0) return;
+        // Capture keeps pointermove/up on this tile as the finger passes over
+        // others; a failure (odd pointer id) must not abort the drag.
+        try { (e.currentTarget as HTMLElement).setPointerCapture?.(e.pointerId); } catch { /* not fatal */ }
+        dragKeyRef.current = items[i].key;
+        setDragKey(items[i].key);
+    };
+
+    const onPointerMove = (e: React.PointerEvent<HTMLDivElement>) => {
+        const key = dragKeyRef.current;
+        if (!key) return;
+        e.preventDefault();
+        const from = indexOfKey(key);
+        if (from < 0) return;
+        const to = tileIndexAt(e.clientX, e.clientY);
+        if (to != null && to !== from) onReorder(from, to);
+    };
+
+    const endDrag = () => { dragKeyRef.current = null; setDragKey(null); };
+
+    const onKeyDown = (e: React.KeyboardEvent<HTMLDivElement>, i: number) => {
+        if (e.key === 'ArrowLeft' || e.key === 'ArrowUp') {
+            if (i > 0) { e.preventDefault(); onReorder(i, i - 1); setFocusKey(items[i].key); }
+        } else if (e.key === 'ArrowRight' || e.key === 'ArrowDown') {
+            if (i < items.length - 1) { e.preventDefault(); onReorder(i, i + 1); setFocusKey(items[i].key); }
+        } else if (e.key === 'Delete' || e.key === 'Backspace') {
+            e.preventDefault(); onRemove(i);
+        }
+    };
 
     return (
         <div>
             {instruction && <p className="mb-3 text-sm text-slate-500">{instruction}</p>}
             <div className="grid grid-cols-2 gap-3 sm:grid-cols-3 md:max-w-xl">
                 {items.map((item, i) => {
-                    const isLead = i === leadIndex;
+                    const isCover = i === 0;
+                    const isDragging = dragKey === item.key;
                     return (
                         <div
                             key={item.key}
-                            draggable
-                            onDragStart={() => setDragIndex(i)}
-                            onDragEnter={() => { if (dragIndex !== null && dragIndex !== i) setOverIndex(i); }}
-                            onDragOver={(e) => e.preventDefault()}
-                            onDrop={() => { if (dragIndex !== null) onReorder(dragIndex, i); setDragIndex(null); setOverIndex(null); }}
-                            onDragEnd={() => { setDragIndex(null); setOverIndex(null); }}
-                            className={'group relative aspect-square cursor-grab overflow-hidden rounded-xl border-2 bg-slate-50 transition active:cursor-grabbing '
-                                + (isLead ? 'border-emerald-600 ' : 'border-slate-200 ')
-                                + (overIndex === i ? 'scale-95 ring-2 ring-slate-900 ' : '')
-                                + (dragIndex === i ? 'opacity-40 ' : '')}
+                            ref={(el) => { if (el) tileRefs.current.set(item.key, el); else tileRefs.current.delete(item.key); }}
+                            data-photo-index={i}
+                            tabIndex={0}
+                            role="button"
+                            aria-label={`Photo ${i + 1} of ${items.length}${isCover ? ' (cover)' : ''}. Arrow keys reorder — the first photo is the cover. Delete removes.`}
+                            onPointerDown={(e) => onPointerDown(e, i)}
+                            onPointerMove={onPointerMove}
+                            onPointerUp={endDrag}
+                            onPointerCancel={endDrag}
+                            onKeyDown={(e) => onKeyDown(e, i)}
+                            style={{ touchAction: 'none' }}
+                            className={'group relative aspect-square touch-none select-none overflow-hidden rounded-xl border-2 bg-slate-50 transition '
+                                + 'cursor-grab active:cursor-grabbing focus:outline-none focus-visible:ring-2 focus-visible:ring-emerald-600 focus-visible:ring-offset-1 '
+                                + (isCover ? 'border-emerald-600 ' : 'border-slate-200 ')
+                                + (isDragging ? 'opacity-40 ' : '')}
                         >
                             {/* eslint-disable-next-line @next/next/no-img-element */}
                             <img
                                 src={item.src}
-                                alt={isLead ? 'Lead photo' : `Photo ${i + 1}`}
+                                alt={isCover ? 'Cover photo' : `Photo ${i + 1}`}
+                                draggable={false}
                                 className="pointer-events-none h-full w-full object-cover"
                             />
 
-                            {/* Make-lead / lead indicator, top-left. */}
-                            <button
-                                type="button"
-                                onClick={() => onSetLead(i)}
-                                aria-label={isLead ? 'Leads your listing' : 'Make this the first photo'}
-                                title={isLead ? 'Leads your listing' : 'Make this the first photo'}
-                                className={'absolute left-1.5 top-1.5 flex h-7 w-7 items-center justify-center rounded-full shadow-sm transition '
-                                    + (isLead ? 'bg-emerald-600 text-white' : 'bg-white/90 text-slate-700 hover:bg-white')}
-                            >
-                                <Star className="h-4 w-4" fill={isLead ? 'currentColor' : 'none'} strokeWidth={2} />
-                            </button>
+                            {isCover && (
+                                <span className="absolute left-1.5 top-1.5 rounded-full bg-emerald-600 px-2 py-0.5 text-[11px] font-semibold text-white shadow-sm">
+                                    Cover
+                                </span>
+                            )}
 
                             {/* Remove, top-right. */}
                             <button
                                 type="button"
+                                data-role="remove"
                                 onClick={() => onRemove(i)}
                                 aria-label="Remove photo"
                                 className="absolute right-1.5 top-1.5 flex h-7 w-7 items-center justify-center rounded-full bg-black/55 text-white shadow-sm transition hover:bg-black/75"
                             >
                                 <X className="h-3.5 w-3.5" strokeWidth={2.5} />
                             </button>
-
-                            {isLead && (
-                                <span className="absolute bottom-1.5 left-1.5 rounded-full bg-emerald-600 px-2 py-0.5 text-[11px] font-semibold text-white">
-                                    Leads
-                                </span>
-                            )}
-
-                            {/* Move left / right — the touch path for reordering,
-                                paired with the desktop drag above. Disabled at the
-                                ends rather than hidden, so the pair doesn't jump. */}
-                            <div className="absolute bottom-1.5 right-1.5 flex gap-1">
-                                <button
-                                    type="button"
-                                    onClick={() => onReorder(i, i - 1)}
-                                    disabled={i === 0}
-                                    aria-label="Move photo earlier"
-                                    title="Move earlier"
-                                    className="flex h-7 w-7 items-center justify-center rounded-full bg-black/55 text-white shadow-sm transition hover:bg-black/75 disabled:cursor-not-allowed disabled:opacity-30"
-                                >
-                                    <ChevronLeft className="h-4 w-4" strokeWidth={2.5} />
-                                </button>
-                                <button
-                                    type="button"
-                                    onClick={() => onReorder(i, i + 1)}
-                                    disabled={i === items.length - 1}
-                                    aria-label="Move photo later"
-                                    title="Move later"
-                                    className="flex h-7 w-7 items-center justify-center rounded-full bg-black/55 text-white shadow-sm transition hover:bg-black/75 disabled:cursor-not-allowed disabled:opacity-30"
-                                >
-                                    <ChevronRight className="h-4 w-4" strokeWidth={2.5} />
-                                </button>
-                            </div>
                         </div>
                     );
                 })}

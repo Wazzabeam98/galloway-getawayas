@@ -4448,26 +4448,18 @@ function ApplicationForm() {
                             </div>
                         </>
                     ) : (
-                        // Their own photos: the shared editor grid (drag to reorder,
-                        // star to make a photo the lead, delete, add). Immediate
-                        // upload is kept — photos are already stored paths — so the
-                        // callbacks just reorder/trim the array. Lead is the first
-                        // photo, so onSetLead moves the picked one to the front.
+                        // Their own photos: the shared editor grid (drag to reorder
+                        // on mouse/touch/keyboard, delete, add). Immediate upload is
+                        // kept — photos are already stored paths — so the callbacks
+                        // just reorder/trim the array. The cover is the first photo,
+                        // set by dragging to the front; no separate control.
                         <div className="mt-6">
                             <PhotoEditorGrid
                                 items={photos.map((p) => ({ key: p, src: getImageUrl(p) }))}
-                                leadIndex={0}
                                 onReorder={(from, to) => setPhotos((prev) => {
                                     const next = [...prev];
                                     const [moved] = next.splice(from, 1);
                                     next.splice(to, 0, moved);
-                                    return next;
-                                })}
-                                onSetLead={(i) => setPhotos((prev) => {
-                                    if (i <= 0) return prev;
-                                    const next = [...prev];
-                                    const [moved] = next.splice(i, 1);
-                                    next.unshift(moved);
                                     return next;
                                 })}
                                 onRemove={(i) => setPhotos((prev) => prev.filter((_, j) => j !== i))}
