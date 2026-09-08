@@ -271,9 +271,11 @@ export const DIETARY_OPTIONS: DietaryOption[] = [
     { key: 'dairy_free', label: 'Dairy-free' },
     { key: 'vegetarian', label: 'Vegetarian' },
     { key: 'vegan', label: 'Vegan' },
-    { key: 'nut_aware', label: 'Nut allergy aware' },
-    { key: 'halal', label: 'Halal' },
-    { key: 'kosher', label: 'Kosher' },
+    // Two independent ticks: the chef saying she'll accommodate allergies /
+    // intolerances AT ALL, not which ones — the guest picks their specific
+    // allergens at booking, and the note carries the caveats and notice.
+    { key: 'food_allergies', label: 'Food allergies' },
+    { key: 'food_intolerances', label: 'Food intolerances' },
     { key: 'low_sugar', label: 'Low-sugar / diabetic-friendly' },
 ];
 

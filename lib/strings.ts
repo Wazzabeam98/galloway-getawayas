@@ -149,7 +149,7 @@ export const GUEST_SCREEN_COPY = {
     dietaryRowPrompt: 'What you can cater for',
     dietaryModalTitle: 'What can you cater for?',
     dietaryNoteLabel: 'In your own words',   // the always-visible note under the ticks
-    dietaryPlaceholder: 'Gluten-free and dairy-free with a day’s notice; not a nut-free kitchen.',
+    dietaryPlaceholder: 'Which ones, anything you can’t work around, and how much notice you need — a guest needs to know before they book.',
     dietaryModalNote: 'Leave it blank and your listing tells guests you haven’t said, so they know to ask.',
 
     // The location screen, for a travelling (comes-to-you) provider. Radii are
