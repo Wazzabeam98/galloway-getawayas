@@ -248,6 +248,40 @@ export interface GuestCheck {
     applies: (category: GuestCategory | null) => boolean;
 }
 
+// DIETARY OPTIONS — what a food provider can cater for, as ticks.
+//
+// A tick reads as "can cater for", not "provides" — a capability, weighed with
+// the free-text note beside it (dietary_note), which is where the caveats live
+// ("gluten-free with a day's notice, not a nut-free kitchen"). That is why there
+// is no "nut-free" tick: a positive nut-free tick reads as a guaranteed nut-free
+// kitchen, the one claim that could hurt someone, so nut allergies are handled
+// as awareness plus whatever the note says. "Other allergies on request" is not
+// a tick either — it is just the note in tick form.
+//
+// The keys are stored in guest_details.dietary_options (jsonb, no column of
+// their own); the labels live here so the wizard, the listing and the review
+// queue read one source — the same shape as GUEST_CHECKS above.
+export interface DietaryOption {
+    key: string;
+    label: string;
+}
+
+export const DIETARY_OPTIONS: DietaryOption[] = [
+    { key: 'gluten_free', label: 'Gluten-free' },
+    { key: 'dairy_free', label: 'Dairy-free' },
+    { key: 'vegetarian', label: 'Vegetarian' },
+    { key: 'vegan', label: 'Vegan' },
+    { key: 'nut_aware', label: 'Nut allergy aware' },
+    { key: 'halal', label: 'Halal' },
+    { key: 'kosher', label: 'Kosher' },
+    { key: 'low_sugar', label: 'Low-sugar / diabetic-friendly' },
+];
+
+/** The label for a stored dietary key, or the key itself if it is unknown. */
+export function dietaryOptionLabel(key: string): string {
+    return DIETARY_OPTIONS.filter((o) => o.key === key)[0]?.label || key;
+}
+
 export const GUEST_CHECKS: GuestCheck[] = [
     // Universal — asked of every guest experience.
     {

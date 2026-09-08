@@ -74,6 +74,7 @@ import {
     guestAsksExpertise,
     guestQualificationsRequired,
     checksFor,
+    DIETARY_OPTIONS,
     DEFAULT_SERVICE_COMMISSION,
 } from '@/lib/serviceProviders';
 import { serviceCommission } from '@/lib/pricing';
@@ -516,6 +517,10 @@ function ApplicationForm() {
     // listing. All optional.
     const [providerName, setProviderName] = useState('');
     const [dietaryNote, setDietaryNote] = useState('');
+    // What a food provider can cater for, as ticks (keys from DIETARY_OPTIONS).
+    // Rides in guest_details.dietary_options (jsonb, no column); the note above
+    // carries the caveats the ticks can't. Food categories only.
+    const [dietaryOptions, setDietaryOptions] = useState<string[]>([]);
     const [headshot, setHeadshot] = useState<string | null>(null);
     const [uploadingHeadshot, setUploadingHeadshot] = useState(false);
 
@@ -816,6 +821,7 @@ function ApplicationForm() {
                         if (gd.qualifications) setQualifications(String(gd.qualifications));
                         if (gd.recognition) setRecognition(String(gd.recognition));
                         if (gd.what_to_expect) setWhatToExpect(String(gd.what_to_expect));
+                        if (Array.isArray(gd.dietary_options)) setDietaryOptions(gd.dietary_options as string[]);
                         // Max guests for a comes-to-you chef rides here (a slot's
                         // is loaded from slot_capacity above). Only set it when the
                         // column didn't already provide it, so a slot keeps its
@@ -1050,6 +1056,7 @@ function ApplicationForm() {
             if (Array.isArray(d.items) && d.items.length) setItems(d.items);
             if (d.providerName) setProviderName(d.providerName);
             if (d.dietaryNote) setDietaryNote(d.dietaryNote);
+            if (Array.isArray(d.dietaryOptions)) setDietaryOptions(d.dietaryOptions);
             if (d.headshot) setHeadshot(d.headshot);
             if (d.yearsDoing) setYearsDoing(d.yearsDoing);
             if (d.professionalTitle) setProfessionalTitle(d.professionalTitle);
@@ -1188,7 +1195,7 @@ function ApplicationForm() {
                     photos, logo, buildingType, panes,
                     // The guest-trade fields: the price, and who they are. The
                     // headshot is a storage path like the photos.
-                    items, providerName, headshot, dietaryNote,
+                    items, providerName, headshot, dietaryNote, dietaryOptions,
                     // The Airbnb-shaped content answers.
                     yearsDoing, professionalTitle, qualifications, recognition,
                     whatToExpect,
@@ -1209,7 +1216,7 @@ function ApplicationForm() {
         pricingChoice, billableHourlyRate, coveredBands,
         doesGas, doesOil, registrations, calloutWaived, skills,
         photos, logo, buildingType, panes,
-        items, providerName, headshot, dietaryNote,
+        items, providerName, headshot, dietaryNote, dietaryOptions,
         yearsDoing, professionalTitle, qualifications, recognition,
         whatToExpect,
         guestCategory, shape, leadTimeDays,
@@ -2252,7 +2259,7 @@ function ApplicationForm() {
     // route's jsonb payload (service_applications.payload), which needs no
     // migration to hold them — and are materialised to columns later, when the
     // guest_details column lands. Empty stays null so the stored object is clean.
-    const guestContentFields = (): Record<string, string | null> => {
+    const guestContentFields = (): Record<string, string | string[] | null> => {
         if (audienceForTrade(trade) !== 'guest') return {};
         const t = (v: string) => (String(v || '').trim() || null);
         return {
@@ -2261,6 +2268,11 @@ function ApplicationForm() {
             qualifications: t(qualifications),
             recognition: t(recognition),
             what_to_expect: t(whatToExpect),
+            // What the food provider can cater for, as ticks. An array of keys
+            // (DIETARY_OPTIONS), or null when nothing is ticked — the caveats
+            // live in the dietary_note column, not here. Empty stays null so a
+            // blank answer still reads as "hasn't said" on the listing.
+            dietary_options: dietaryOptions.length ? dietaryOptions : null,
             // Max guests rides here for every category that has it (a slot ALSO
             // writes slot_capacity, from the same state, so the two agree).
             max_guests: t(maxGuests),
@@ -4404,6 +4416,15 @@ function ApplicationForm() {
                     const fieldWrap = 'relative border-b border-slate-200 pb-2 transition-colors focus-within:border-slate-400';
                     const bigArea = 'w-full resize-none bg-transparent text-center text-xl leading-relaxed text-slate-900 placeholder:text-slate-300 focus:outline-none';
                     const isFoodCat = guestCategoryIsFood(guestCategory);
+                    const toggleDietary = (k: string) => setDietaryOptions((prev) =>
+                        prev.includes(k) ? prev.filter((x) => x !== k) : [...prev, k]);
+                    // The row reads back the ticks (in catalogue order) and flags a
+                    // note; either alone counts as filled. A blank row still prompts.
+                    const dietaryLabels = DIETARY_OPTIONS.filter((o) => dietaryOptions.includes(o.key)).map((o) => o.label);
+                    const dietarySummary = dietaryLabels.length
+                        ? dietaryLabels.join(', ') + (dietaryNote.trim() ? ' · note added' : '')
+                        : dietaryNote.trim();
+                    const dietaryFilled = dietaryLabels.length > 0 || dietaryNote.trim() !== '';
                     return (
                     <section className="mb-8 md:max-w-xl md:mx-auto">
                         <div className="mt-6 space-y-6">
@@ -4417,11 +4438,11 @@ function ApplicationForm() {
                             />
                             {isFoodCat && (
                                 <HubRow
-                                    filled={dietaryNote.trim() !== ''}
+                                    filled={dietaryFilled}
                                     label={GUEST_SCREEN_COPY.dietaryRowLabel}
                                     suffix={GUEST_SCREEN_COPY.optionalSuffix}
                                     prompt={GUEST_SCREEN_COPY.dietaryRowPrompt}
-                                    summary={dietaryNote.trim()}
+                                    summary={dietarySummary}
                                     onOpen={() => setDetailModal('dietary')}
                                 />
                             )}
@@ -4445,7 +4466,11 @@ function ApplicationForm() {
                             </div>
                         </SubFlowModal>
 
-                        {/* ---- Dietary (food only), note above Save. ---- */}
+                        {/* ---- Dietary (food only): tick what you CAN CATER FOR —
+                            a capability, not a promise — with the note always
+                            visible beneath, since a chef who caters for none of
+                            the listed options still needs somewhere to say what she
+                            can do, and that caveat is the one that matters most. ---- */}
                         {isFoodCat && (
                             <SubFlowModal
                                 open={detailModal === 'dietary'}
@@ -4454,14 +4479,40 @@ function ApplicationForm() {
                                 saveLabel={GUEST_SCREEN_COPY.save}
                                 note={GUEST_SCREEN_COPY.dietaryModalNote}
                             >
-                                <div className={fieldWrap}>
-                                    <textarea
-                                        value={dietaryNote}
-                                        onChange={(e) => setDietaryNote(e.target.value)}
-                                        rows={3}
-                                        placeholder={GUEST_SCREEN_COPY.dietaryPlaceholder}
-                                        className={bigArea}
-                                    />
+                                <div className="mx-auto w-full max-w-md">
+                                    <div role="group" aria-label={GUEST_SCREEN_COPY.dietaryModalTitle} className="space-y-2">
+                                        {DIETARY_OPTIONS.map((o) => {
+                                            const on = dietaryOptions.includes(o.key);
+                                            return (
+                                                <button
+                                                    key={o.key}
+                                                    type="button"
+                                                    onClick={() => toggleDietary(o.key)}
+                                                    aria-pressed={on}
+                                                    className={'flex w-full items-center gap-3 rounded-2xl border px-4 py-3 text-left transition '
+                                                        + (on ? 'border-emerald-600 bg-emerald-50 ring-1 ring-emerald-600' : 'border-slate-200 hover:border-emerald-400')}
+                                                >
+                                                    <span className={'flex h-6 w-6 flex-none items-center justify-center rounded-md border transition '
+                                                        + (on ? 'border-emerald-600 bg-emerald-600 text-white' : 'border-slate-300 text-transparent')}>
+                                                        <Check className="h-4 w-4" strokeWidth={3} />
+                                                    </span>
+                                                    <span className="font-medium text-slate-900">{o.label}</span>
+                                                </button>
+                                            );
+                                        })}
+                                    </div>
+                                    {/* The note — always visible, never revealed by a
+                                        tick. The ticks are the shape; this is the honesty. */}
+                                    <div className="mt-6">
+                                        <label className="mb-2 block text-xs font-medium text-slate-500">{GUEST_SCREEN_COPY.dietaryNoteLabel}</label>
+                                        <textarea
+                                            value={dietaryNote}
+                                            onChange={(e) => setDietaryNote(e.target.value)}
+                                            rows={3}
+                                            placeholder={GUEST_SCREEN_COPY.dietaryPlaceholder}
+                                            className="w-full rounded-xl border border-slate-200 px-4 py-3 text-slate-900 placeholder:text-slate-300 focus:outline-none focus:ring-2 focus:ring-emerald-600"
+                                        />
+                                    </div>
                                 </div>
                             </SubFlowModal>
                         )}

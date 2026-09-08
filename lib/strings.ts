@@ -148,6 +148,7 @@ export const GUEST_SCREEN_COPY = {
     dietaryRowLabel: 'Dietary',
     dietaryRowPrompt: 'What you can cater for',
     dietaryModalTitle: 'What can you cater for?',
+    dietaryNoteLabel: 'In your own words',   // the always-visible note under the ticks
     dietaryPlaceholder: 'Gluten-free and dairy-free with a day’s notice; not a nut-free kitchen.',
     dietaryModalNote: 'Leave it blank and your listing tells guests you haven’t said, so they know to ask.',
 
