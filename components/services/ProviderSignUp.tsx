@@ -77,6 +77,7 @@ import {
     DEFAULT_SERVICE_COMMISSION,
 } from '@/lib/serviceProviders';
 import { GUEST_SCREEN_COPY, GUEST_REGIONS, GUEST_COVERAGE_ALL_KEY, HOST_LOCATION_COPY } from '@/lib/strings';
+import { PhotoEditorGrid } from './PhotoEditorGrid';
 import {
     stepsFor,
     stepNumber,
@@ -3144,7 +3145,7 @@ function ApplicationForm() {
                     {isGuest && currentSection && flowSections.length > 0 && (
                         <nav aria-label="Sections"
                             className={'hidden lg:flex shrink-0 flex-col overflow-y-auto border-r border-slate-100 py-12 transition-[width] duration-300 ease-out '
-                                + (railCollapsed ? 'w-12 px-2' : 'w-72 px-6')}>
+                                + (railCollapsed ? 'w-16 px-2' : 'w-72 px-6')}>
                             <div className={'flex flex-col ' + (railCollapsed ? 'gap-1' : 'gap-0.5')}>
                                 {flowSections.map((sec) => {
                                     const st = sectionStatus(sec);
@@ -4406,25 +4407,22 @@ function ApplicationForm() {
                     which already saves, loads and feeds the listing. */}
                 {onStep('g_photos') && isGuest && (
                 <section className="mb-8">
+                    {/* The screen instruction sits under the heading in both states
+                        — it asks for three; the Next gate stays at one (they differ
+                        on purpose), so this line is NOT wired to the gate. */}
+                    <p className="text-base text-slate-600">
+                        {GUEST_SCREEN_COPY.photosAsk}
+                    </p>
+
                     {photos.length === 0 ? (
                         <>
-                            {/* Empty state, Airbnb's composition: heading and one
-                                line, then the two photographs overlapping with an
-                                opposing tilt, then the Add button directly beneath —
-                                see EXPERIENCE_PHOTOS. The line asks for three; the
-                                Next gate stays at one (they differ on purpose), so
-                                this line is NOT wired to the gate. */}
-                            <p className="text-base text-slate-600">
-                                {GUEST_SCREEN_COPY.photosAsk}
-                            </p>
-
-                            {/* The photographs carry the screen now the subtext is
-                                gone: larger cards, an opposing ~5° tilt so they read
-                                as placed, and a small stagger — the front card sits
-                                a little lower — so they read as two photographs, not
-                                two panels. overflow-visible + margins so the tilt and
-                                shadow never clip, and the spacing holds the heading,
-                                line, photos and button as one balanced group. */}
+                            {/* Empty-state invitation: the two stock photographs as
+                                an overlapping, opposing-tilt pair (see EXPERIENCE_PHOTOS),
+                                then the Add button beneath. This is only the invitation
+                                — the moment a provider adds one of their own, the pair
+                                gives way to the editable grid below (stock photos should
+                                not sit alongside someone's own). Larger cards + margins
+                                so the tilt and shadow never clip. */}
                             <div className="mt-10 mb-9 flex justify-center overflow-visible">
                                 <div className="relative flex items-center justify-center">
                                     <img
@@ -4450,32 +4448,34 @@ function ApplicationForm() {
                             </div>
                         </>
                     ) : (
-                        <>
-                            <div className="grid grid-cols-2 sm:grid-cols-3 gap-3 md:max-w-xl">
-                                {photos.map((p, i) => (
-                                    <div key={p || i} className="relative aspect-square rounded-xl overflow-hidden border border-slate-200 bg-slate-50">
-                                        <img src={getImageUrl(p)} alt="" className="w-full h-full object-cover" />
-                                        <button
-                                            type="button"
-                                            onClick={() => setPhotos((prev) => prev.filter((_, j) => j !== i))}
-                                            aria-label="Remove photo"
-                                            className="absolute top-1.5 right-1.5 rounded-full bg-black/55 p-1 text-white hover:bg-black/75"
-                                        >
-                                            <X className="w-3.5 h-3.5" />
-                                        </button>
-                                    </div>
-                                ))}
-                                <label className="aspect-square rounded-xl border-2 border-dashed border-slate-300 hover:border-emerald-400 bg-white cursor-pointer flex flex-col items-center justify-center gap-1.5 text-center text-slate-500">
-                                    <ImagePlus className="w-6 h-6 text-slate-400" strokeWidth={1.5} />
-                                    <span className="text-xs px-2">{uploadingPhotos ? 'Uploading…' : 'Add photos'}</span>
-                                    <input type="file" accept="image/*" multiple className="sr-only"
-                                        onChange={uploadGalleryPhotos} disabled={uploadingPhotos} />
-                                </label>
-                            </div>
-                            <p className="mt-3 text-sm text-slate-500">
-                                {GUEST_SCREEN_COPY.photosAsk}
-                            </p>
-                        </>
+                        // Their own photos: the shared editor grid (drag to reorder,
+                        // star to make a photo the lead, delete, add). Immediate
+                        // upload is kept — photos are already stored paths — so the
+                        // callbacks just reorder/trim the array. Lead is the first
+                        // photo, so onSetLead moves the picked one to the front.
+                        <div className="mt-6">
+                            <PhotoEditorGrid
+                                items={photos.map((p) => ({ key: p, src: getImageUrl(p) }))}
+                                leadIndex={0}
+                                onReorder={(from, to) => setPhotos((prev) => {
+                                    const next = [...prev];
+                                    const [moved] = next.splice(from, 1);
+                                    next.splice(to, 0, moved);
+                                    return next;
+                                })}
+                                onSetLead={(i) => setPhotos((prev) => {
+                                    if (i <= 0) return prev;
+                                    const next = [...prev];
+                                    const [moved] = next.splice(i, 1);
+                                    next.unshift(moved);
+                                    return next;
+                                })}
+                                onRemove={(i) => setPhotos((prev) => prev.filter((_, j) => j !== i))}
+                                onAdd={uploadGalleryPhotos}
+                                uploading={uploadingPhotos}
+                                instruction={GUEST_SCREEN_COPY.photosReorderHint}
+                            />
+                        </div>
                     )}
                 </section>
                 )}
