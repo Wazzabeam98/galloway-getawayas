@@ -83,8 +83,11 @@ export async function announceSubmission(provider: any): Promise<AnnounceResult>
         .filter((r: any) => !registrationVerified(r))
         .map((r: any) => schemeLabel(String(r.scheme || '')) + ' ' + String(r.number || ''));
 
+    // A guest covers named regions, not a radius from a town, so the "+ N miles"
+    // that reads right for a tradesman would be a bare "+ 0 miles" for them.
+    const isGuest = provider.audience === 'guest';
     const covers = (areas || []).length
-        ? (areas || []).map((a: any) => escapeHtml(a.label) + ' + ' + Number(a.radius_miles) + ' miles').join('<br>')
+        ? (areas || []).map((a: any) => escapeHtml(a.label) + (isGuest ? '' : ' + ' + Number(a.radius_miles) + ' miles')).join('<br>')
         : '<span style="color:#b91c1c;">nowhere</span>';
 
     // A re-submission after a decline is a new submission: it is exactly

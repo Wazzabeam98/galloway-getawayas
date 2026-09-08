@@ -17,6 +17,17 @@ export function fromPriceLabel(p: MpProvider): string {
     return (p.items.length > 1 ? 'from ' + money : money) + suffix;
 }
 
+/** The regions a provider covers, read as one line: "The Stewartry", "The
+ *  Rhins & The Machars", "A, B & C". Null when they've listed none, so the card
+ *  shows nothing rather than an empty marker. */
+export function coverageLabel(p: MpProvider): string | null {
+    const a = (p.areas || []).filter(Boolean);
+    if (!a.length) return null;
+    if (a.length === 1) return a[0];
+    if (a.length === 2) return a[0] + ' & ' + a[1];
+    return a.slice(0, -1).join(', ') + ' & ' + a[a.length - 1];
+}
+
 /** The per-item price as the guest reads it on a listing: "£30 pp", "£45". */
 export function itemPriceLabel(price: number, unit: string): string {
     const money = '£' + (Number.isInteger(price) ? String(price) : price.toFixed(2));

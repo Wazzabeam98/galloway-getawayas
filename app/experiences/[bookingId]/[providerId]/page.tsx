@@ -6,7 +6,8 @@ import { adminClient } from '@/lib/supabaseAdmin';
 import { guestExperiencesOpen } from '@/lib/serviceOrders';
 import { loadMarketplace, pickProvider } from '@/lib/experiencesData';
 import { shapeCue } from '@/lib/serviceSlots';
-import { itemPriceLabel, unitPhrase, cancellationSentence } from '@/components/marketplace/present';
+import { itemPriceLabel, unitPhrase, cancellationSentence, coverageLabel } from '@/components/marketplace/present';
+import { MapPin } from 'lucide-react';
 import BookingPanel from '@/components/marketplace/BookingPanel';
 
 export const dynamic = 'force-dynamic';
@@ -80,6 +81,13 @@ export default async function ListingPage(
                                 {shapeCue(p.shape)}
                             </span>
                         </div>
+
+                        {coverageLabel(p) ? (
+                            <p className="mt-4 flex items-center gap-1.5 text-sm text-slate-500">
+                                <MapPin className="h-4 w-4 flex-none" aria-hidden />
+                                <span>Covers {coverageLabel(p)}</span>
+                            </p>
+                        ) : null}
 
                         {p.description ? (
                             <p className="mt-6 whitespace-pre-line text-[15px] leading-relaxed text-slate-700">{p.description}</p>

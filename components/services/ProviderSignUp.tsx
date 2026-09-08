@@ -10,6 +10,7 @@ import {
     Sparkles, Wrench, Trees, Droplet, ChefHat, Cake, ShoppingBasket, Trash2,
     Plus, Minus, X, ChevronLeft, ChevronRight, ChevronDown, Check, Zap, Hammer, Paintbrush, Home,
     ImagePlus, User, Pencil,
+    MapPin, Tag, ListChecks, Flag, Image as ImageIcon,
 } from 'lucide-react';
 import { TradeTile, TradeTileGrid, TRADE_ICONS, GROUP_ICONS } from '@/components/services/TradeTiles';
 import { compressImage } from '@/lib/compressImage';
@@ -75,7 +76,7 @@ import {
     checksFor,
     DEFAULT_SERVICE_COMMISSION,
 } from '@/lib/serviceProviders';
-import { GUEST_SCREEN_COPY } from '@/lib/strings';
+import { GUEST_SCREEN_COPY, GUEST_REGIONS, GUEST_COVERAGE_ALL_KEY } from '@/lib/strings';
 import {
     stepsFor,
     stepNumber,
@@ -316,6 +317,23 @@ function SubFlowModal({ open, title, onClose, saveLabel, saveDisabled, note, chi
         </div>
     );
 }
+
+// The rail's per-section icon. The circle carries state by colour (done fills
+// emerald, active rings emerald, upcoming is grey); the glyph inside says which
+// section it is, so a collapsed strip is legible and no circle is ever bare.
+// A done section swaps its icon for a check — completion reads at a glance, and
+// the section is identifiable by position and hover label. Numbers were the
+// obvious alternative and are wrong here: the flow is not a fixed sequence (a
+// sauna skips About you), so a numbered rail would read 1, 3, 4.
+const SECTION_ICONS: Record<string, React.ComponentType<any>> = {
+    about: User,
+    location: MapPin,
+    photos: ImageIcon,
+    pricing: Tag,
+    details: ListChecks,
+    experience: Sparkles,
+    finish: Flag,
+};
 
 function ApplicationForm() {
     const router = useRouter();
@@ -589,6 +607,8 @@ function ApplicationForm() {
     const [skillsListOpen, setSkillsListOpen] = useState(false);
     // Whether the list is showing everything or the first handful.
     const [allTagsOpen, setAllTagsOpen] = useState(false);
+    // The coverage-region picker modal on the guest location screen.
+    const [areaPickerOpen, setAreaPickerOpen] = useState(false);
     // Every existing tag, for the type-ahead. That list IS the mechanism:
     // somebody offered "bricklaying" takes it, and somebody offered nothing
     // types "brick laying".
@@ -2009,6 +2029,30 @@ function ApplicationForm() {
         setAreas((prev) => [...prev, { town: next.label, radius_miles: 10 }]);
     };
 
+    // Guest coverage is a fixed list of regions, ticked in the picker. A region
+    // is stored as an area row whose `town` holds the region label and whose
+    // radius is 0 — nothing reads radius on the guest path any more (coverage is
+    // informational, the coversPoint filter is gone), so 0 is a value no one
+    // consults, not a distance. "All of Dumfries & Galloway" is mutually
+    // exclusive with the individual regions: picking it clears the rest, and
+    // picking an individual clears it.
+    const ALL_REGION_LABEL = GUEST_REGIONS.filter((r) => r.key === GUEST_COVERAGE_ALL_KEY)[0].label;
+    const areasHasAll = areas.some((a) => a.town === ALL_REGION_LABEL);
+    const regionHint = (label: string) => GUEST_REGIONS.filter((r) => r.label === label)[0]?.hint || '';
+    const regionPicked = (label: string) => areas.some((a) => a.town === label);
+    const toggleRegion = (r: { key: string; label: string }) => {
+        if (r.key === GUEST_COVERAGE_ALL_KEY) {
+            setAreas((prev) => (prev.some((a) => a.town === r.label) ? [] : [{ town: r.label, radius_miles: 0 }]));
+            return;
+        }
+        setAreas((prev) => {
+            const withoutAll = prev.filter((a) => a.town !== ALL_REGION_LABEL);
+            return withoutAll.some((a) => a.town === r.label)
+                ? withoutAll.filter((a) => a.town !== r.label)
+                : [...withoutAll, { town: r.label, radius_miles: 0 }];
+        });
+    };
+
     // Making the account out of what they have already typed.
     //
     // Their contact email is the account email: asking for a second address at
@@ -3078,12 +3122,16 @@ function ApplicationForm() {
                                                 + (railCollapsed ? 'items-center justify-center p-2 ' : 'items-start gap-3 px-3 py-2.5 text-left ')
                                                 + (clickable ? 'hover:bg-slate-50 cursor-pointer' : 'cursor-default')}
                                         >
-                                            <span className={'flex h-5 w-5 shrink-0 items-center justify-center rounded-full text-[11px] font-bold '
+                                            <span className={'flex h-6 w-6 shrink-0 items-center justify-center rounded-full '
                                                 + (railCollapsed ? '' : 'mt-0.5 ')
                                                 + (st === 'done' ? 'bg-emerald-600 text-white'
                                                     : st === 'active' ? 'border-2 border-emerald-600 text-emerald-700'
-                                                        : 'border-2 border-slate-200 text-slate-300')}>
-                                                {st === 'done' ? <Check className="h-3 w-3" strokeWidth={3} /> : null}
+                                                        : 'border-2 border-slate-200 text-slate-400')}>
+                                                {(() => {
+                                                    if (st === 'done') return <Check className="h-3.5 w-3.5" strokeWidth={3} />;
+                                                    const Ic = SECTION_ICONS[sec.key];
+                                                    return Ic ? <Ic className="h-3.5 w-3.5" strokeWidth={2.25} /> : null;
+                                                })()}
                                             </span>
                                             {!railCollapsed && (
                                                 <span className="min-w-0">
@@ -3155,7 +3203,15 @@ function ApplicationForm() {
                             + ((step === 'trade' || step === 'g_subtype' || step === 'g_you') ? 'mb-10 text-center' : 'mb-8')}>
                             {step === 'trade'
                                 ? 'What experience are you offering guests?'
-                                : stepMeta.title}
+                                /* The g_area step title carries a "when" that is
+                                   real for a slot (a schedule) and made-to-order
+                                   (a notice period) but false for a traveller,
+                                   who is only asked where. So the travelling
+                                   shape gets a where-only heading; the others
+                                   keep the generic title. */
+                                : (step === 'g_area' && shape !== 'slot' && shape !== 'made_to_order')
+                                    ? GUEST_SCREEN_COPY.locationHeadingTravel
+                                    : stepMeta.title}
                         </h1>
                     )}
                     {/* Max guests renders its heading here, at the top, exactly
@@ -5286,74 +5342,148 @@ function ApplicationForm() {
                         </>
                     )}
 
-                    {/* The location question adapts to the inferred shape rather
-                        than asking a fixed venue "how far will you travel?" — the
-                        complaint the whole rebuild started from. A slot happens
-                        somewhere fixed; a chef travels to the cottage. */}
-                    {isGuest && (
-                        <label className="block text-xs font-medium text-slate-500 mb-2">
-                            {shape === 'slot'
-                                ? 'Where does it take place?'
-                                : shape === 'made_to_order'
-                                    ? 'Where are you based, and how far will you deliver?'
-                                    : 'How far will you travel?'}
-                        </label>
-                    )}
-
-                    {/* Free text with the known towns as suggestions — a chef in
-                        a village that isn't on the list can just type it, rather
-                        than being trapped by a fixed dropdown. */}
-                    <datalist id="coverage-towns">
-                        {COVERAGE_TOWNS.map((t) => (
-                            <option key={t.key} value={t.label} />
-                        ))}
-                    </datalist>
-                    <div className="space-y-2 md:max-w-xl">
-                        {areas.map((a, i) => (
-                            <div key={i} className="flex items-center gap-2">
-                                <input
-                                    type="text"
-                                    list="coverage-towns"
-                                    value={a.town}
-                                    aria-label="Town"
-                                    placeholder="Type a town or village"
-                                    onChange={(e) => setAreas((prev) => prev.map((x, j) => (j === i ? { ...x, town: e.target.value } : x)))}
-                                    className="flex-1 min-w-0 rounded-xl border border-slate-300 px-3 py-2.5 focus:outline-none focus:ring-2 focus:ring-emerald-700"
-                                />
-                                <select
-                                    value={a.radius_miles}
-                                    aria-label="Distance covered"
-                                    onChange={(e) => setAreas((prev) => prev.map((x, j) => (j === i ? { ...x, radius_miles: Number(e.target.value) } : x)))}
-                                    className="rounded-xl border border-slate-300 px-3 py-2.5 focus:outline-none focus:ring-2 focus:ring-emerald-700"
-                                >
-                                    {[5, 10, 15, 20, 30, 50].map((m) => (
-                                        <option key={m} value={m}>within {m} miles</option>
-                                    ))}
-                                </select>
+                    {/* HOST TRADES keep the town-and-radius model. Their coverage
+                        genuinely filters the directory, so a mileage radius from a
+                        named town is the right question, and the free-text box with
+                        the known towns as suggestions lets a tradesman in a village
+                        off the list still type it. */}
+                    {!isGuest && (
+                        <>
+                            <datalist id="coverage-towns">
+                                {COVERAGE_TOWNS.map((t) => (
+                                    <option key={t.key} value={t.label} />
+                                ))}
+                            </datalist>
+                            <div className="space-y-2 md:max-w-xl">
+                                {areas.map((a, i) => (
+                                    <div key={i} className="flex items-center gap-2">
+                                        <input
+                                            type="text"
+                                            list="coverage-towns"
+                                            value={a.town}
+                                            aria-label="Town"
+                                            placeholder="Type a town or village"
+                                            onChange={(e) => setAreas((prev) => prev.map((x, j) => (j === i ? { ...x, town: e.target.value } : x)))}
+                                            className="flex-1 min-w-0 rounded-xl border border-slate-300 px-3 py-2.5 focus:outline-none focus:ring-2 focus:ring-emerald-700"
+                                        />
+                                        <select
+                                            value={a.radius_miles}
+                                            aria-label="Distance covered"
+                                            onChange={(e) => setAreas((prev) => prev.map((x, j) => (j === i ? { ...x, radius_miles: Number(e.target.value) } : x)))}
+                                            className="rounded-xl border border-slate-300 px-3 py-2.5 focus:outline-none focus:ring-2 focus:ring-emerald-700"
+                                        >
+                                            {[5, 10, 15, 20, 30, 50].map((m) => (
+                                                <option key={m} value={m}>within {m} miles</option>
+                                            ))}
+                                        </select>
+                                        <button
+                                            type="button"
+                                            onClick={() => setAreas((prev) => prev.filter((_, j) => j !== i))}
+                                            aria-label={'Remove ' + a.town}
+                                            className="shrink-0 w-10 h-10 rounded-full border border-slate-300 flex items-center justify-center text-slate-500 hover:border-slate-500"
+                                        >
+                                            <X className="w-4 h-4" />
+                                        </button>
+                                    </div>
+                                ))}
+                            </div>
+                            {areas.length < COVERAGE_TOWNS.length && (
                                 <button
                                     type="button"
-                                    onClick={() => setAreas((prev) => prev.filter((_, j) => j !== i))}
-                                    aria-label={'Remove ' + a.town}
-                                    className="shrink-0 w-10 h-10 rounded-full border border-slate-300 flex items-center justify-center text-slate-500 hover:border-slate-500"
+                                    onClick={addArea}
+                                    className="mt-3 inline-flex items-center gap-1.5 text-sm font-semibold text-emerald-700 hover:text-emerald-800"
                                 >
-                                    <X className="w-4 h-4" />
+                                    <Plus className="w-4 h-4" /> Add an area
                                 </button>
-                            </div>
-                        ))}
-                    </div>
-
-                    {areas.length < COVERAGE_TOWNS.length && (
-                        <button
-                            type="button"
-                            onClick={addArea}
-                            className="mt-3 inline-flex items-center gap-1.5 text-sm font-semibold text-emerald-700 hover:text-emerald-800"
-                        >
-                            <Plus className="w-4 h-4" /> Add an area
-                        </button>
+                            )}
+                            {problemFor('areas') && (
+                                <p data-problem className="text-sm text-rose-700 mt-2">{problemFor('areas')!.message}</p>
+                            )}
+                        </>
                     )}
 
-                    {problemFor('areas') && (
-                        <p data-problem className="text-sm text-rose-700 mt-2">{problemFor('areas')!.message}</p>
+                    {/* GUEST providers pick regions from a fixed list — no radii,
+                        no free text, no spelling drift. Coverage is informational
+                        now, so this is a signal on the listing rather than a
+                        filter. Built in the flow's own craft: each chosen region a
+                        quiet borderless row, an add row at the bottom, both opening
+                        the same tick-list picker. The slot and made-to-order shapes
+                        carry their real "when" (schedule, notice) in their own
+                        blocks above; this screen is only the where. */}
+                    {isGuest && (
+                        <>
+                            {shape === 'slot' || shape === 'made_to_order' ? (
+                                <label className="block text-xs font-medium text-slate-500 mb-3">
+                                    {shape === 'slot'
+                                        ? 'Where does it take place?'
+                                        : 'Which parts of Dumfries & Galloway do you deliver to?'}
+                                </label>
+                            ) : (
+                                <p className="text-sm text-slate-500 mb-4 md:max-w-xl">
+                                    {GUEST_SCREEN_COPY.locationSubtextTravel}
+                                </p>
+                            )}
+
+                            <div className="space-y-1 md:max-w-xl">
+                                {areas.map((a, i) => (
+                                    <HubRow
+                                        key={i}
+                                        filled
+                                        label={a.town}
+                                        prompt=""
+                                        summary={regionHint(a.town)}
+                                        onOpen={() => setAreaPickerOpen(true)}
+                                    />
+                                ))}
+                                {!areasHasAll && (
+                                    <HubRow
+                                        filled={false}
+                                        label={GUEST_SCREEN_COPY.locationAddRow}
+                                        prompt={GUEST_SCREEN_COPY.locationAddPrompt}
+                                        onOpen={() => setAreaPickerOpen(true)}
+                                    />
+                                )}
+                            </div>
+
+                            {problemFor('areas') && (
+                                <p data-problem className="text-sm text-rose-700 mt-3">
+                                    {GUEST_SCREEN_COPY.locationAreaGate}
+                                </p>
+                            )}
+
+                            <SubFlowModal
+                                open={areaPickerOpen}
+                                title={GUEST_SCREEN_COPY.locationPickerTitle}
+                                onClose={() => setAreaPickerOpen(false)}
+                                saveLabel={GUEST_SCREEN_COPY.locationPickerDone}
+                                saveDisabled={areas.length === 0}
+                            >
+                                <div className="mx-auto w-full max-w-md space-y-2">
+                                    {GUEST_REGIONS.map((r) => {
+                                        const on = regionPicked(r.label);
+                                        return (
+                                            <button
+                                                key={r.key}
+                                                type="button"
+                                                onClick={() => toggleRegion(r)}
+                                                aria-pressed={on}
+                                                className={'flex w-full items-center gap-3 rounded-2xl border px-4 py-3 text-left transition '
+                                                    + (on ? 'border-emerald-600 bg-emerald-50 ring-1 ring-emerald-600' : 'border-slate-200 hover:border-emerald-400')}
+                                            >
+                                                <span className={'flex h-6 w-6 flex-none items-center justify-center rounded-md border transition '
+                                                    + (on ? 'border-emerald-600 bg-emerald-600 text-white' : 'border-slate-300 text-transparent')}>
+                                                    <Check className="h-4 w-4" strokeWidth={3} />
+                                                </span>
+                                                <span className="min-w-0">
+                                                    <span className="block font-semibold text-slate-900">{r.label}</span>
+                                                    <span className="block text-sm text-slate-500">{r.hint}</span>
+                                                </span>
+                                            </button>
+                                        );
+                                    })}
+                                </div>
+                            </SubFlowModal>
+                        </>
                     )}
                 </section>
                 )}
