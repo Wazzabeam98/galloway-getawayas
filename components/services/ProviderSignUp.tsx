@@ -325,13 +325,13 @@ function SubFlowModal({ open, title, onClose, saveLabel, saveDisabled, note, chi
 // the section is identifiable by position and hover label. Numbers were the
 // obvious alternative and are wrong here: the flow is not a fixed sequence (a
 // sauna skips About you), so a numbered rail would read 1, 3, 4.
-// The two placeholder photographs on the empty Photos screen, shown as an
-// overlapping, opposing-tilt pair (Airbnb's composition). These are stand-ins —
-// see public/images/experience-placeholders/README.md — swap the files or repoint
-// these paths at real local-business photos. Portrait 4:5 to match the frames.
+// The two photographs on the empty Photos screen, shown as an overlapping,
+// opposing-tilt pair (Airbnb's composition). Licensed iStock stock (see
+// public/images/experience-placeholders/README.md for asset ids and credits),
+// web-sized to 800x1000 4:5 to match the frames. Swap the files or repoint here.
 const PHOTO_PLACEHOLDERS = [
-    { src: '/images/experience-placeholders/sauna.svg', alt: 'Placeholder: a wood-fired barrel sauna' },
-    { src: '/images/experience-placeholders/dining.svg', alt: 'Placeholder: a table of food' },
+    { src: '/images/experience-placeholders/sauna.jpg', alt: 'A wood-fired sauna bucket in warm light' },
+    { src: '/images/experience-placeholders/loaf.jpg', alt: 'A rustic sourdough loaf on a wooden table' },
 ];
 
 const SECTION_ICONS: Record<string, React.ComponentType<any>> = {
@@ -4422,16 +4422,21 @@ function ApplicationForm() {
                             {/* overflow-visible + generous padding so the tilt and
                                 the shadow never clip. */}
                             <div className="mt-8 mb-7 flex justify-center overflow-visible">
+                                {/* Bigger cards that carry the screen (Airbnb-scale),
+                                    an opposing ~5° tilt so they read as placed, and a
+                                    small vertical stagger — the front card sits a
+                                    little lower — so they read as two photographs
+                                    rather than two aligned panels. */}
                                 <div className="relative flex items-center justify-center">
                                     <img
                                         src={PHOTO_PLACEHOLDERS[0].src}
                                         alt={PHOTO_PLACEHOLDERS[0].alt}
-                                        className="w-28 sm:w-36 aspect-[4/5] object-cover rounded-2xl bg-slate-100 ring-4 ring-white shadow-xl -rotate-6 translate-y-2"
+                                        className="w-40 sm:w-60 aspect-[4/5] object-cover rounded-2xl bg-slate-100 ring-4 ring-white shadow-xl -rotate-5"
                                     />
                                     <img
                                         src={PHOTO_PLACEHOLDERS[1].src}
                                         alt={PHOTO_PLACEHOLDERS[1].alt}
-                                        className="-ml-7 w-28 sm:w-36 aspect-[4/5] object-cover rounded-2xl bg-slate-100 ring-4 ring-white shadow-xl rotate-6 -translate-y-2"
+                                        className="-ml-8 sm:-ml-12 w-40 sm:w-60 aspect-[4/5] object-cover rounded-2xl bg-slate-100 ring-4 ring-white shadow-xl rotate-5 translate-y-3"
                                     />
                                 </div>
                             </div>

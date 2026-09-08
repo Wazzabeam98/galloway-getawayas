@@ -1,21 +1,17 @@
-# Experience photo placeholders — SWAP THESE
+# Experience photos (guest sign-up Photos screen)
 
-These two files are **placeholders**, shown as the overlapping/tilted graphic on the
-guest sign-up Photos screen (`g_photos`) when a provider has added no photos yet.
+The two photographs shown as the overlapping pair on the empty guest Photos
+screen (`g_photos`), when a provider has added none of their own yet. Wired via
+the `PHOTO_PLACEHOLDERS` constant in `components/services/ProviderSignUp.tsx`.
 
-- `sauna.svg` — stands in for a wood-fired barrel sauna, outdoors.
-- `dining.svg` — stands in for a table of food / cooking.
+- `sauna.jpg` — wood-fired sauna bucket. iStock asset 2227248597 (credit: Burak Sür).
+- `loaf.jpg` — rustic sourdough loaf. iStock asset 2191545033 (credit: muratkoc).
 
-They are hand-drawn SVGs (the image-generation tool wasn't available when they were
-made), deliberately captioned "PLACEHOLDER" so they can't be mistaken for final art.
+Both are licensed (standard iStock licence, purchased Sep 2026). The files here
+are web-sized derivatives of the XXL originals: cropped to the card's 4:5
+portrait (the sauna offset-cropped onto the bucket, the loaf centred), resized to
+800×1000 and saved at JPEG quality 80. Keep the full-resolution originals with
+the other licence records, not in the repo.
 
-## To replace with real photographs
-
-1. Drop real photos of local businesses into this folder.
-2. Update the two `src` paths in the composition — search `experience-placeholders`
-   in `components/services/ProviderSignUp.tsx` (constant `PHOTO_PLACEHOLDERS`).
-   Either keep these filenames (overwrite `sauna.svg` / `dining.svg`) or point the
-   constant at the new filenames/extensions (e.g. `sauna.jpg`).
-
-Portrait framing (~4:5) matches the layout; use warm, natural light and a Dumfries &
-Galloway setting so the two read as one consistent set.
+To change either photo, replace the file (same name, 4:5 portrait) or repoint the
+constant.
