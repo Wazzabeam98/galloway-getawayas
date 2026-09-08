@@ -14,7 +14,7 @@ import {
 } from 'lucide-react';
 import { TradeTile, TradeTileGrid, TRADE_ICONS, GROUP_ICONS } from '@/components/services/TradeTiles';
 import { compressImage } from '@/lib/compressImage';
-import { getImageUrl, generateRandomNumber } from '@/lib/utils';
+import { getImageUrl, generateRandomNumber, displayName } from '@/lib/utils';
 import { ORDER_UNITS } from '@/lib/serviceOrders';
 import Env from '@/config/Env';
 import {
@@ -933,6 +933,23 @@ function ApplicationForm() {
                     restoreDraft(session);
                     setContactEmail((prev) => prev || session.user.email || '');
                 }
+
+                // Prefill "Your name" from the profile we already hold, so a
+                // signed-in host confirms it rather than typing it fresh. Only
+                // fills when nothing better is already set (an existing provider
+                // row's provider_name, or a draft, both applied above win via the
+                // functional update), and only with a name the profile is willing
+                // to show: displayName() returns '' when a private full name has
+                // no preferred name, and we never seed that. A true anonymous
+                // applicant has no usable profile name here, so the field stays
+                // the empty typed box — the only personal name we get from them.
+                const { data: prof } = await supabase
+                    .from('profiles')
+                    .select('full_name, preferred_name, show_full_name')
+                    .eq('id', session.user.id)
+                    .maybeSingle();
+                const known = displayName(prof, '');
+                if (known) setProviderName((prev) => (prev.trim() ? prev : known));
 
             } catch (err) {
                 // Nothing to show them but the empty form; a stuck spinner is
@@ -2144,7 +2161,13 @@ function ApplicationForm() {
                 email: email,
                 password: acctPassword,
                 options: {
-                    data: { name: businessName.trim() },
+                    // The PERSON's name, never the business. full_name is the
+                    // shared personal field the whole site reads for bylines,
+                    // messages and trip cards, so the business name must never
+                    // reach it. Blank when we have no personal name (a trade, or
+                    // a guest who skipped "Your name") — the trigger then seeds an
+                    // empty full_name rather than something wrong.
+                    data: providerName.trim() ? { name: providerName.trim() } : {},
                     // Straight back to this form, with the trade, so a
                     // confirmed address lands on the thing they were doing
                     // rather than on the home page.
@@ -2187,9 +2210,17 @@ function ApplicationForm() {
             // UPDATE, NOT UPSERT — see components/auth/SignupModel.tsx for
             // why. The row already exists; the upsert needed SELECT on email
             // and had been failing since 20260828234003.
-            await supabase.from('profiles')
-                .update({ full_name: businessName.trim() })
-                .eq('id', data.session.user.id);
+            //
+            // full_name is seeded from the PERSON's name if we have one, never
+            // the business. The trigger already wrote it from the signUp metadata
+            // above; this is belt-and-braces for the personal name, and a no-op
+            // when there is none rather than a write of the business name.
+            const personalName = providerName.trim();
+            if (personalName) {
+                await supabase.from('profiles')
+                    .update({ full_name: personalName })
+                    .eq('id', data.session.user.id);
+            }
 
             setSession(data.session);
             return data.session;
@@ -2521,7 +2552,10 @@ function ApplicationForm() {
                 headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify({
                     email,
-                    name: businessName.trim(),
+                    // The applicant's own name (never the business) — it becomes
+                    // profiles.full_name when the account is made at /finish. Null
+                    // when we have none, so full_name is left blank, not wrong.
+                    name: providerName.trim() || null,
                     ...rows,
                 }),
             });

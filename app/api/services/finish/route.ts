@@ -102,8 +102,13 @@ export async function POST(req: Request) {
 
         const owner = made.user.id;
 
+        // full_name is the PERSON's name (row.name), or blank — never the
+        // business name. business_name belongs on service_providers; the shared
+        // profile the whole site reads for bylines and messages must not carry
+        // it. Nothing on production has run this flow, so there is nothing to
+        // repair — this just stops it happening to the first real applicant.
         await admin.from('profiles').upsert(
-            { id: owner, email: row.email, full_name: row.name || row.business_name, is_host: false },
+            { id: owner, email: row.email, full_name: row.name || null, is_host: false },
             { onConflict: 'id' }
         );
 
