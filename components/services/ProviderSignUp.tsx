@@ -335,10 +335,10 @@ const EXPERIENCE_PHOTOS = [
     { src: '/images/experience-photos/loaf.jpg', alt: 'A rustic sourdough loaf on a wooden table' },
 ];
 
-// The empty-Photos composition card size — a DECIDED value. Do not change it
-// without an explicit request. (History: drifted w-28/36/40/60/64, settled at
-// w-40 sm:w-60, then halved to this on request.)
-const PHOTO_CARD_SIZE = 'w-20 sm:w-32';
+// The empty-Photos composition card size — the AGREED value. Do not change the
+// composition (this size, the tilt, overlap, stagger or button) again unless
+// asked. This is the commit-90a3c20 size (w-40 sm:w-60) reduced ~10–15%.
+const PHOTO_CARD_SIZE = 'w-36 sm:w-52';
 
 const SECTION_ICONS: Record<string, React.ComponentType<any>> = {
     about: User,
@@ -4433,31 +4433,32 @@ function ApplicationForm() {
                                 to the editable grid below (stock photos should not sit
                                 alongside someone's own).
 
-                                LEFT-ALIGNED to the heading (justify-start), not centred:
-                                the content column narrows when the rail expands, so a
-                                centred pair would shift right of the heading and appear
-                                to move. items-start + a real margin-top on the front
-                                card gives the stack its vertical offset (front sits
-                                lower); the overlap is a negative margin. Size is the
-                                decided PHOTO_CARD_SIZE. overflow-visible so the tilt and
-                                shadow never clip. */}
+                                The composition (size, ±5° tilt, overlap, stagger,
+                                outlined button) is the agreed commit-90a3c20 version,
+                                reduced ~10–15% via PHOTO_CARD_SIZE. Two things from the
+                                alignment fix are KEPT, deliberately, and are not part
+                                of that revert: it is LEFT-ALIGNED to the heading
+                                (justify-start), and the panel no longer slides when the
+                                rail toggles (the right-side spacer that mirrors the
+                                rail). overflow-visible so the tilt and shadow never
+                                clip. Do not adjust the composition again unless asked. */}
                             <div className="mt-8 mb-6 flex justify-start overflow-visible">
-                                <div className="relative flex items-start">
+                                <div className="relative flex items-center">
                                     <img
                                         src={EXPERIENCE_PHOTOS[0].src}
                                         alt={EXPERIENCE_PHOTOS[0].alt}
-                                        className={PHOTO_CARD_SIZE + ' aspect-[4/5] object-cover rounded-2xl bg-slate-100 ring-4 ring-white shadow-xl -rotate-[9deg]'}
+                                        className={PHOTO_CARD_SIZE + ' aspect-[4/5] object-cover rounded-2xl bg-slate-100 ring-4 ring-white shadow-xl -rotate-5'}
                                     />
                                     <img
                                         src={EXPERIENCE_PHOTOS[1].src}
                                         alt={EXPERIENCE_PHOTOS[1].alt}
-                                        className={'-ml-14 sm:-ml-20 mt-8 sm:mt-12 ' + PHOTO_CARD_SIZE + ' aspect-[4/5] object-cover rounded-2xl bg-slate-100 ring-4 ring-white shadow-xl rotate-[9deg]'}
+                                        className={'-ml-8 sm:-ml-12 translate-y-3 ' + PHOTO_CARD_SIZE + ' aspect-[4/5] object-cover rounded-2xl bg-slate-100 ring-4 ring-white shadow-xl rotate-5'}
                                     />
                                 </div>
                             </div>
 
                             <div className="flex justify-start">
-                                <label className="inline-flex cursor-pointer items-center gap-2 rounded-full bg-emerald-700 px-6 py-3 text-sm font-semibold text-white transition hover:bg-emerald-800">
+                                <label className="inline-flex cursor-pointer items-center gap-2 rounded-full border border-slate-900 bg-white px-6 py-3 text-sm font-semibold text-slate-900 transition hover:bg-slate-50">
                                     <ImagePlus className="h-5 w-5" strokeWidth={1.75} />
                                     <span>{uploadingPhotos ? 'Uploading…' : 'Add photos'}</span>
                                     <input type="file" accept="image/*" multiple className="sr-only"
