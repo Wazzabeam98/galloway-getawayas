@@ -335,6 +335,11 @@ const EXPERIENCE_PHOTOS = [
     { src: '/images/experience-photos/loaf.jpg', alt: 'A rustic sourdough loaf on a wooden table' },
 ];
 
+// The empty-Photos composition card size — a DECIDED value. It drifted through
+// w-28 / w-36 / w-40 / w-60 / w-64 over a day of iterations; this is the settled
+// size (mobile / ≥sm). Do not change it without an explicit request.
+const PHOTO_CARD_SIZE = 'w-40 sm:w-60';
+
 const SECTION_ICONS: Record<string, React.ComponentType<any>> = {
     about: User,
     location: MapPin,
@@ -4421,30 +4426,38 @@ function ApplicationForm() {
 
                     {photos.length === 0 ? (
                         <>
-                            {/* Empty-state invitation: the two stock photographs as
-                                an overlapping, opposing-tilt pair (see EXPERIENCE_PHOTOS),
-                                then the Add button beneath. This is only the invitation
-                                — the moment a provider adds one of their own, the pair
-                                gives way to the editable grid below (stock photos should
-                                not sit alongside someone's own). Larger cards + margins
-                                so the tilt and shadow never clip. */}
-                            <div className="mt-10 mb-9 flex justify-center overflow-visible">
-                                <div className="relative flex items-center justify-center">
+                            {/* Empty-state invitation: the two stock photographs as an
+                                overlapping, opposing-tilt pair (see EXPERIENCE_PHOTOS),
+                                then the Add button close beneath. Only the invitation —
+                                the moment a provider adds their own, the pair gives way
+                                to the editable grid below (stock photos should not sit
+                                alongside someone's own).
+
+                                LEFT-ALIGNED to the heading (justify-start), not centred:
+                                the content column narrows when the rail expands, so a
+                                centred pair would shift right of the heading and appear
+                                to move. items-start + a real margin-top on the front
+                                card gives the stack its vertical offset (front sits
+                                lower); the overlap is a negative margin. Size is the
+                                decided PHOTO_CARD_SIZE. overflow-visible so the tilt and
+                                shadow never clip. */}
+                            <div className="mt-8 mb-6 flex justify-start overflow-visible">
+                                <div className="relative flex items-start">
                                     <img
                                         src={EXPERIENCE_PHOTOS[0].src}
                                         alt={EXPERIENCE_PHOTOS[0].alt}
-                                        className="w-40 sm:w-60 aspect-[4/5] object-cover rounded-2xl bg-slate-100 ring-4 ring-white shadow-xl -rotate-5"
+                                        className={PHOTO_CARD_SIZE + ' aspect-[4/5] object-cover rounded-2xl bg-slate-100 ring-4 ring-white shadow-xl -rotate-5'}
                                     />
                                     <img
                                         src={EXPERIENCE_PHOTOS[1].src}
                                         alt={EXPERIENCE_PHOTOS[1].alt}
-                                        className="-ml-8 sm:-ml-12 w-40 sm:w-60 aspect-[4/5] object-cover rounded-2xl bg-slate-100 ring-4 ring-white shadow-xl rotate-5 translate-y-3"
+                                        className={'-ml-14 sm:-ml-20 mt-8 sm:mt-12 ' + PHOTO_CARD_SIZE + ' aspect-[4/5] object-cover rounded-2xl bg-slate-100 ring-4 ring-white shadow-xl rotate-5'}
                                     />
                                 </div>
                             </div>
 
-                            <div className="flex justify-center">
-                                <label className="inline-flex cursor-pointer items-center gap-2 rounded-full border border-slate-900 bg-white px-6 py-3 text-sm font-semibold text-slate-900 transition hover:bg-slate-50">
+                            <div className="flex justify-start">
+                                <label className="inline-flex cursor-pointer items-center gap-2 rounded-full bg-emerald-700 px-6 py-3 text-sm font-semibold text-white transition hover:bg-emerald-800">
                                     <ImagePlus className="h-5 w-5" strokeWidth={1.75} />
                                     <span>{uploadingPhotos ? 'Uploading…' : 'Add photos'}</span>
                                     <input type="file" accept="image/*" multiple className="sr-only"
