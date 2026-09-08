@@ -158,6 +158,36 @@ test('opening the link makes the account and lodges the application', async () =
     assert.equal(announced.length, 1, 'NOW the directors are told');
 });
 
+/* ----------------------------------- the business name never becomes a person
+
+   profiles.full_name is the shared personal field the whole site reads for
+   bylines, messages and trip cards. The provider flow used to write the
+   business name into it, so an applicant ended up named "Kirkcudbright Joinery"
+   everywhere a person should be. These lock the fix: the account is named with
+   the person, or left blank — never the business. */
+
+test('the account is named with the applicant, never the business name', async () => {
+    // LIVE.name is the person ("Morag Kerr"); business_name is the business.
+    const { route, inserted } = load(LIVE);
+    await route.POST(call(GOOD));
+
+    const profile = inserted.profiles[0];
+    assert.equal(profile.full_name, 'Morag Kerr');
+    assert.notEqual(profile.full_name, LIVE.business_name,
+        'the business name must never reach the shared personal field');
+});
+
+test('with no personal name, full_name is left blank rather than the business name', async () => {
+    // A trade, or a guest who skipped "Your name": nothing personal to store.
+    const noName = { ...LIVE, name: null };
+    const { route, inserted } = load(noName);
+    await route.POST(call(GOOD));
+
+    const profile = inserted.profiles[0];
+    assert.equal(profile.full_name ?? null, null, 'blank, not the business name');
+    assert.notEqual(profile.full_name, noName.business_name);
+});
+
 test('the account is created CONFIRMED, because the link is the proof', async () => {
     const { route, created } = load(LIVE);
     await route.POST(call(GOOD));
