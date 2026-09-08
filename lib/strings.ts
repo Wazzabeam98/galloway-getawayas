@@ -112,6 +112,7 @@ export const GUEST_SCREEN_COPY = {
     menuNameTitleSlot: 'Name your session',
     menuNamePlaceholderSlot: 'Lochside sauna session',
     menuPriceTitle: 'What does it cost?',
+    menuPricePlaceholder: '45',        // the big numeral's placeholder — an example price
     menuPriceTypeLabel: 'How this is priced',
     menuDescTitle: 'Add a short description',
     menuDescPlaceholder: 'A line about what’s included.',
