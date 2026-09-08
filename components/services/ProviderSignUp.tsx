@@ -1600,8 +1600,6 @@ function ApplicationForm() {
             }
             case 'details':
                 return (whatToExpect.trim() || dietaryNote.trim()) ? 'Added' : '';
-            case 'experience':
-                return businessName.trim();
             case 'finish':
                 return contactEmail.trim();
             default:
@@ -1834,17 +1832,11 @@ function ApplicationForm() {
     // Next on screen one. A group with real sub-types opens screen two; 'other'
     // (alone under its group) skips it — its lone category is set and we go
     // straight to the business step, no screen-two of one card.
-    // A guest's first content screen is the years opener (g_you) — unless the
-    // category is a made-to-order product, which skips the years and expertise
-    // screens, so it opens on g_about instead. There is no standalone business
-    // step for a guest any more; the name rides on g_about.
-    // Where a guest goes after the category pick — the first real content
-    // screen: the years opener, or g_about for a made-to-order product that
-    // skips the years and expertise screens. The account is already made by
-    // now (verify is the first screen of all, before the picker), so there is
-    // no auth detour here.
-    const firstGuestContentStep = (category: string): StepKey =>
-        guestAsksExpertise(category) ? 'g_you' : 'g_about';
+    // Where a guest goes after the category pick: the name step (g_about, "What's
+    // it called?") for everyone — it is the first content screen now, right after
+    // the sub-type, before About you. The account is already made by now (verify
+    // is the first screen of all, before the picker), so there is no auth detour.
+    const firstGuestContentStep = (_category: string): StepKey => 'g_about';
 
     const advanceFromGroup = () => {
         const subs = categoriesForGroup(guestGroup);
@@ -3714,14 +3706,14 @@ function ApplicationForm() {
 
                 {(audienceForTrade(trade) === 'guest' ? onStep('g_about') : onStep('business')) && (
                 <section className="mb-8">
-                    {/* A guest names the listing here, beside the description —
-                        both are "what this is". The person's name is not asked
-                        here: it belongs to the person, so it lives on the About
-                        you expertise hub beside the headshot and title. A host set
-                        the name on the business step above, so they only see the
-                        description. */}
-                    {isGuest && (
-                        <div className="md:max-w-xl mb-6">
+                    {/* GUEST: name only. The person's name lives on the About-you
+                        hub; "what happens" (Details) and the item descriptions
+                        carry the rest, so there is no description here — a third
+                        prose box was asking the same thing a third time.
+                        HOST/TRADE: the business description, unchanged (their name
+                        is the standalone business step above). */}
+                    {isGuest ? (
+                        <div className="md:max-w-xl">
                             <label className="block text-xs font-medium text-slate-500 mb-2">What it’s called</label>
                             <input
                                 type="text"
@@ -3734,24 +3726,21 @@ function ApplicationForm() {
                                 <p data-problem className="text-sm text-rose-700 mt-1.5">{problemFor('business_name')!.message}</p>
                             )}
                         </div>
-                    )}
-
-                    {isGuest && (
-                        <label className="block text-xs font-medium text-slate-500 mb-2">Describe it for a guest</label>
-                    )}
-                    {/* Capped to a measure rather than the window: past about
-                        70 characters a line is harder to read, not easier. */}
-                    <textarea
-                        value={description}
-                        onChange={(e) => setDescription(e.target.value)}
-                        rows={5}
-                        placeholder={isGuest
-                            ? 'A private, five-course dinner cooked at your cottage using Galloway produce — you sit down, I bring it all and clear up after.'
-                            : 'What do you offer? Describe your business.'}
-                        className="w-full md:max-w-xl rounded-xl border border-slate-300 px-4 py-3 focus:outline-none focus:ring-2 focus:ring-emerald-700"
-                    />
-                    {problemFor('description') && (
-                        <p data-problem className="text-sm text-rose-700 mt-1.5">{problemFor('description')!.message}</p>
+                    ) : (
+                        <>
+                            {/* Capped to a measure rather than the window: past
+                                about 70 characters a line is harder to read. */}
+                            <textarea
+                                value={description}
+                                onChange={(e) => setDescription(e.target.value)}
+                                rows={5}
+                                placeholder="What do you offer? Describe your business."
+                                className="w-full md:max-w-xl rounded-xl border border-slate-300 px-4 py-3 focus:outline-none focus:ring-2 focus:ring-emerald-700"
+                            />
+                            {problemFor('description') && (
+                                <p data-problem className="text-sm text-rose-700 mt-1.5">{problemFor('description')!.message}</p>
+                            )}
+                        </>
                     )}
                 </section>
                 )}
