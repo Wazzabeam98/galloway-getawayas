@@ -23,6 +23,7 @@ import Link from 'next/link';
 import { cancellationPosition } from '@/lib/cancellationView';
 import { ukLongDate, londonDayKey } from '@/lib/dayKey';
 import { upcomingUntilCheckout, liveForGuestCard, stayCountdown } from '@/lib/bookingWindows';
+import { compareTripsByStart } from '@/lib/bookingOrder';
 
 interface Booking {
     id: string;
@@ -264,10 +265,13 @@ export default function TripsPage() {
     // London calendar day keeps it upcoming through the whole checkout day.
     const isOver = (b: Booking) => !liveForGuestCard(b, today);
 
-    // Nearest first at the top, so the next stay is the first thing read.
+    // Nearest first at the top, so the next stay is the first thing read. The
+    // shared total comparator (check-in, then check-out, then id) settles a
+    // same-day tie the same way every time — the top card can't flip between
+    // two stays that start on the same date.
     const upcoming = bookings
         .filter((b) => !isOver(b))
-        .sort((a, b) => (a.check_in < b.check_in ? -1 : 1));
+        .sort(compareTripsByStart);
 
     // Most recent first below, so the stay just finished heads the old ones.
     const past = bookings
