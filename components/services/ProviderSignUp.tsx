@@ -3243,7 +3243,12 @@ function ApplicationForm() {
                     )}
                     {isGuest && step !== 'finish' && step !== 'g_creds' && step !== 'g_menu' && step !== 'g_capacity' && (
                         <h1 className={'font-extrabold tracking-tight text-slate-900 [text-wrap:balance] text-3xl sm:text-4xl '
-                            + ((step === 'trade' || step === 'g_subtype' || step === 'g_you') ? 'mb-10 text-center' : 'mb-8')}>
+                            + ((step === 'trade' || step === 'g_subtype' || step === 'g_you') ? 'mb-10 text-center'
+                                /* g_photos: tight gap so "Add at least 3 photos."
+                                   reads as a subtitle under the heading, not a
+                                   stranded paragraph. */
+                                : step === 'g_photos' ? 'mb-2'
+                                    : 'mb-8')}>
                             {step === 'trade'
                                 ? 'What experience are you offering guests?'
                                 /* The g_area step title carries a "when" that is
@@ -4428,12 +4433,12 @@ function ApplicationForm() {
                                     <img
                                         src={EXPERIENCE_PHOTOS[0].src}
                                         alt={EXPERIENCE_PHOTOS[0].alt}
-                                        className="w-40 sm:w-64 aspect-[4/5] object-cover rounded-2xl bg-slate-100 ring-4 ring-white shadow-xl -rotate-5"
+                                        className="w-40 sm:w-60 aspect-[4/5] object-cover rounded-2xl bg-slate-100 ring-4 ring-white shadow-xl -rotate-5"
                                     />
                                     <img
                                         src={EXPERIENCE_PHOTOS[1].src}
                                         alt={EXPERIENCE_PHOTOS[1].alt}
-                                        className="-ml-8 sm:-ml-12 w-40 sm:w-64 aspect-[4/5] object-cover rounded-2xl bg-slate-100 ring-4 ring-white shadow-xl rotate-5 translate-y-3"
+                                        className="-ml-8 sm:-ml-12 w-40 sm:w-60 aspect-[4/5] object-cover rounded-2xl bg-slate-100 ring-4 ring-white shadow-xl rotate-5 translate-y-3"
                                     />
                                 </div>
                             </div>
