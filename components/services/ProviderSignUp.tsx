@@ -327,11 +327,11 @@ function SubFlowModal({ open, title, onClose, saveLabel, saveDisabled, note, chi
 // sauna skips About you), so a numbered rail would read 1, 3, 4.
 // The two photographs on the empty Photos screen, shown as an overlapping,
 // opposing-tilt pair (Airbnb's composition). Licensed iStock stock (see
-// public/images/experience-placeholders/README.md for asset ids and credits),
+// public/images/experience-photos/README.md for asset ids and credits),
 // web-sized to 800x1000 4:5 to match the frames. Swap the files or repoint here.
-const PHOTO_PLACEHOLDERS = [
-    { src: '/images/experience-placeholders/sauna.jpg', alt: 'A wood-fired sauna bucket in warm light' },
-    { src: '/images/experience-placeholders/loaf.jpg', alt: 'A rustic sourdough loaf on a wooden table' },
+const EXPERIENCE_PHOTOS = [
+    { src: '/images/experience-photos/sauna.jpg', alt: 'A wood-fired sauna bucket in warm light' },
+    { src: '/images/experience-photos/loaf.jpg', alt: 'A rustic sourdough loaf on a wooden table' },
 ];
 
 const SECTION_ICONS: Record<string, React.ComponentType<any>> = {
@@ -1621,14 +1621,15 @@ function ApplicationForm() {
                 : null)
         : null;
 
+    // g_photos deliberately shows no footer message: the on-screen line asks for
+    // three, the Next gate quietly holds at one, and we don't restate either in
+    // the footer. The gate itself lives in the Next-disabled computation.
     const guestExtraMissing: string | null = isGuest
         ? (step === 'g_creds' && !professionalTitle.trim()
             ? GUEST_SCREEN_COPY.titleGate
             : step === 'g_creds' && catQualsRequired && !qualifications.trim()
             ? GUEST_SCREEN_COPY.qualsGate
-            : step === 'g_photos' && photos.length === 0
-                ? 'Add at least one photo — a listing without one doesn’t sell.'
-                : whereMissing)
+            : whereMissing)
         : null;
 
     // The one thing missing on a required step, phrased for a person. Shown in
@@ -3143,7 +3144,7 @@ function ApplicationForm() {
                     {isGuest && currentSection && flowSections.length > 0 && (
                         <nav aria-label="Sections"
                             className={'hidden lg:flex shrink-0 flex-col overflow-y-auto border-r border-slate-100 py-12 transition-[width] duration-300 ease-out '
-                                + (railCollapsed ? 'w-20 px-3' : 'w-72 px-6')}>
+                                + (railCollapsed ? 'w-12 px-2' : 'w-72 px-6')}>
                             <div className={'flex flex-col ' + (railCollapsed ? 'gap-1' : 'gap-0.5')}>
                                 {flowSections.map((sec) => {
                                     const st = sectionStatus(sec);
@@ -4407,36 +4408,34 @@ function ApplicationForm() {
                 <section className="mb-8">
                     {photos.length === 0 ? (
                         <>
-                            {/* Empty state, Airbnb's composition: heading and
-                                subtext (above), then two photographs overlapping
-                                with an opposing tilt, then the Add button directly
-                                beneath. The pair are placeholders — see
-                                PHOTO_PLACEHOLDERS. */}
-                            <p className="text-sm text-slate-500">
-                                {GUEST_SCREEN_COPY.photosLede}
-                            </p>
-                            <p className="mt-1.5 text-sm font-medium text-slate-600">
-                                {GUEST_SCREEN_COPY.photosMore}
+                            {/* Empty state, Airbnb's composition: heading and one
+                                line, then the two photographs overlapping with an
+                                opposing tilt, then the Add button directly beneath —
+                                see EXPERIENCE_PHOTOS. The line asks for three; the
+                                Next gate stays at one (they differ on purpose), so
+                                this line is NOT wired to the gate. */}
+                            <p className="text-base text-slate-600">
+                                {GUEST_SCREEN_COPY.photosAsk}
                             </p>
 
-                            {/* overflow-visible + generous padding so the tilt and
-                                the shadow never clip. */}
-                            <div className="mt-8 mb-7 flex justify-center overflow-visible">
-                                {/* Bigger cards that carry the screen (Airbnb-scale),
-                                    an opposing ~5° tilt so they read as placed, and a
-                                    small vertical stagger — the front card sits a
-                                    little lower — so they read as two photographs
-                                    rather than two aligned panels. */}
+                            {/* The photographs carry the screen now the subtext is
+                                gone: larger cards, an opposing ~5° tilt so they read
+                                as placed, and a small stagger — the front card sits
+                                a little lower — so they read as two photographs, not
+                                two panels. overflow-visible + margins so the tilt and
+                                shadow never clip, and the spacing holds the heading,
+                                line, photos and button as one balanced group. */}
+                            <div className="mt-10 mb-9 flex justify-center overflow-visible">
                                 <div className="relative flex items-center justify-center">
                                     <img
-                                        src={PHOTO_PLACEHOLDERS[0].src}
-                                        alt={PHOTO_PLACEHOLDERS[0].alt}
-                                        className="w-40 sm:w-60 aspect-[4/5] object-cover rounded-2xl bg-slate-100 ring-4 ring-white shadow-xl -rotate-5"
+                                        src={EXPERIENCE_PHOTOS[0].src}
+                                        alt={EXPERIENCE_PHOTOS[0].alt}
+                                        className="w-40 sm:w-64 aspect-[4/5] object-cover rounded-2xl bg-slate-100 ring-4 ring-white shadow-xl -rotate-5"
                                     />
                                     <img
-                                        src={PHOTO_PLACEHOLDERS[1].src}
-                                        alt={PHOTO_PLACEHOLDERS[1].alt}
-                                        className="-ml-8 sm:-ml-12 w-40 sm:w-60 aspect-[4/5] object-cover rounded-2xl bg-slate-100 ring-4 ring-white shadow-xl rotate-5 translate-y-3"
+                                        src={EXPERIENCE_PHOTOS[1].src}
+                                        alt={EXPERIENCE_PHOTOS[1].alt}
+                                        className="-ml-8 sm:-ml-12 w-40 sm:w-64 aspect-[4/5] object-cover rounded-2xl bg-slate-100 ring-4 ring-white shadow-xl rotate-5 translate-y-3"
                                     />
                                 </div>
                             </div>
@@ -4474,10 +4473,7 @@ function ApplicationForm() {
                                 </label>
                             </div>
                             <p className="mt-3 text-sm text-slate-500">
-                                {GUEST_SCREEN_COPY.photosLede}
-                            </p>
-                            <p className="mt-1.5 text-sm font-medium text-slate-600">
-                                {GUEST_SCREEN_COPY.photosMore}
+                                {GUEST_SCREEN_COPY.photosAsk}
                             </p>
                         </>
                     )}
