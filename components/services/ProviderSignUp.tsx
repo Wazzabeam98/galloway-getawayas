@@ -76,7 +76,7 @@ import {
     checksFor,
     DEFAULT_SERVICE_COMMISSION,
 } from '@/lib/serviceProviders';
-import { GUEST_SCREEN_COPY, GUEST_REGIONS, GUEST_COVERAGE_ALL_KEY } from '@/lib/strings';
+import { GUEST_SCREEN_COPY, GUEST_REGIONS, GUEST_COVERAGE_ALL_KEY, HOST_LOCATION_COPY } from '@/lib/strings';
 import {
     stepsFor,
     stepNumber,
@@ -609,6 +609,13 @@ function ApplicationForm() {
     const [allTagsOpen, setAllTagsOpen] = useState(false);
     // The coverage-region picker modal on the guest location screen.
     const [areaPickerOpen, setAreaPickerOpen] = useState(false);
+    // The town+radius sub-flow on the tradesman location screen. editIndex null
+    // means adding a new area; otherwise it edits areas[editIndex]. The draft
+    // holds the modal's working values so Save commits and the X discards.
+    const [areaModalOpen, setAreaModalOpen] = useState(false);
+    const [areaEditIndex, setAreaEditIndex] = useState<number | null>(null);
+    const [areaDraftTown, setAreaDraftTown] = useState('');
+    const [areaDraftRadius, setAreaDraftRadius] = useState<number>(10);
     // Every existing tag, for the type-ahead. That list IS the mechanism:
     // somebody offered "bricklaying" takes it, and somebody offered nothing
     // types "brick laying".
@@ -2022,11 +2029,36 @@ function ApplicationForm() {
         router.push(trade === 'guest' ? '/services/join?trade=guest' : '/services/join');
     };
 
-    const addArea = () => {
-        const used = areas.map((a) => a.town);
-        const next = COVERAGE_TOWNS.filter((t) => used.indexOf(t.label) === -1)[0];
-        if (!next) return;
-        setAreas((prev) => [...prev, { town: next.label, radius_miles: 10 }]);
+    // The tradesman area sub-flow: open to add (null) or to edit a row, commit
+    // the draft on Save, drop the row on Remove. The model is unchanged — a town
+    // from the known list plus a radius — so existing rows load and re-save
+    // exactly as before and the directory filter keeps working.
+    const openHostArea = (index: number | null) => {
+        if (index === null) {
+            setAreaEditIndex(null);
+            setAreaDraftTown('');
+            setAreaDraftRadius(10);
+        } else {
+            const a = areas[index];
+            setAreaEditIndex(index);
+            setAreaDraftTown(a?.town || '');
+            setAreaDraftRadius(Number(a?.radius_miles) || 10);
+        }
+        setAreaModalOpen(true);
+    };
+    const saveHostArea = () => {
+        const town = areaDraftTown.trim();
+        if (!town) return;
+        const row = { town, radius_miles: Number(areaDraftRadius) || 10 };
+        setAreas((prev) => (areaEditIndex === null
+            ? [...prev, row]
+            : prev.map((x, j) => (j === areaEditIndex ? row : x))));
+        setAreaModalOpen(false);
+    };
+    const removeHostArea = () => {
+        if (areaEditIndex === null) return;
+        setAreas((prev) => prev.filter((_, j) => j !== areaEditIndex));
+        setAreaModalOpen(false);
     };
 
     // Guest coverage is a fixed list of regions, ticked in the picker. A region
@@ -5333,72 +5365,86 @@ function ApplicationForm() {
 
                 {(audienceForTrade(trade) === 'guest' ? onStep('g_area') : onStep('business')) && (
                 <section className="mb-8">
+                    {/* HOST TRADES keep the town-and-radius model — the radius is a
+                        live precision filter behind the directory, and five regions
+                        would be too coarse for it — but it's captured in the guest
+                        flow's craft now: borderless rows, an add row, a sub-flow
+                        modal that picks a town from the known list and a radius.
+                        Restricting to the known list also fixes the old free-text
+                        trap where an off-list town got centre 0,0 and never matched
+                        the directory. The data model is unchanged, so existing rows
+                        load and re-save exactly as before. */}
                     {!isGuest && (
                         <>
-                            <h2 className="text-sm font-semibold text-slate-900 mb-1.5">Where do you cover?</h2>
-                            <p className="text-sm text-slate-500 mb-3">
-                                A town and how far you will travel from it. Add more than one if you cover separate areas.
-                            </p>
-                        </>
-                    )}
+                            <h2 className="text-sm font-semibold text-slate-900 mb-1.5">{HOST_LOCATION_COPY.heading}</h2>
+                            <p className="text-sm text-slate-500 mb-4">{HOST_LOCATION_COPY.subtext}</p>
 
-                    {/* HOST TRADES keep the town-and-radius model. Their coverage
-                        genuinely filters the directory, so a mileage radius from a
-                        named town is the right question, and the free-text box with
-                        the known towns as suggestions lets a tradesman in a village
-                        off the list still type it. */}
-                    {!isGuest && (
-                        <>
-                            <datalist id="coverage-towns">
-                                {COVERAGE_TOWNS.map((t) => (
-                                    <option key={t.key} value={t.label} />
-                                ))}
-                            </datalist>
-                            <div className="space-y-2 md:max-w-xl">
+                            <div className="space-y-1 md:max-w-xl">
                                 {areas.map((a, i) => (
-                                    <div key={i} className="flex items-center gap-2">
-                                        <input
-                                            type="text"
-                                            list="coverage-towns"
-                                            value={a.town}
-                                            aria-label="Town"
-                                            placeholder="Type a town or village"
-                                            onChange={(e) => setAreas((prev) => prev.map((x, j) => (j === i ? { ...x, town: e.target.value } : x)))}
-                                            className="flex-1 min-w-0 rounded-xl border border-slate-300 px-3 py-2.5 focus:outline-none focus:ring-2 focus:ring-emerald-700"
-                                        />
-                                        <select
-                                            value={a.radius_miles}
-                                            aria-label="Distance covered"
-                                            onChange={(e) => setAreas((prev) => prev.map((x, j) => (j === i ? { ...x, radius_miles: Number(e.target.value) } : x)))}
-                                            className="rounded-xl border border-slate-300 px-3 py-2.5 focus:outline-none focus:ring-2 focus:ring-emerald-700"
-                                        >
-                                            {[5, 10, 15, 20, 30, 50].map((m) => (
-                                                <option key={m} value={m}>within {m} miles</option>
-                                            ))}
-                                        </select>
-                                        <button
-                                            type="button"
-                                            onClick={() => setAreas((prev) => prev.filter((_, j) => j !== i))}
-                                            aria-label={'Remove ' + a.town}
-                                            className="shrink-0 w-10 h-10 rounded-full border border-slate-300 flex items-center justify-center text-slate-500 hover:border-slate-500"
-                                        >
-                                            <X className="w-4 h-4" />
-                                        </button>
-                                    </div>
+                                    <HubRow
+                                        key={i}
+                                        filled
+                                        label={a.town}
+                                        prompt=""
+                                        summary={HOST_LOCATION_COPY.rowWithin + ' ' + Number(a.radius_miles) + ' ' + HOST_LOCATION_COPY.radiusSuffix}
+                                        onOpen={() => openHostArea(i)}
+                                    />
                                 ))}
+                                <HubRow
+                                    filled={false}
+                                    label={HOST_LOCATION_COPY.addRow}
+                                    prompt={HOST_LOCATION_COPY.addPrompt}
+                                    onOpen={() => openHostArea(null)}
+                                />
                             </div>
-                            {areas.length < COVERAGE_TOWNS.length && (
-                                <button
-                                    type="button"
-                                    onClick={addArea}
-                                    className="mt-3 inline-flex items-center gap-1.5 text-sm font-semibold text-emerald-700 hover:text-emerald-800"
-                                >
-                                    <Plus className="w-4 h-4" /> Add an area
-                                </button>
-                            )}
+
                             {problemFor('areas') && (
-                                <p data-problem className="text-sm text-rose-700 mt-2">{problemFor('areas')!.message}</p>
+                                <p data-problem className="text-sm text-rose-700 mt-3">{problemFor('areas')!.message}</p>
                             )}
+
+                            <SubFlowModal
+                                open={areaModalOpen}
+                                title={HOST_LOCATION_COPY.modalTitle}
+                                onClose={() => setAreaModalOpen(false)}
+                                saveLabel={GUEST_SCREEN_COPY.save}
+                                saveDisabled={!areaDraftTown.trim()}
+                                onSave={saveHostArea}
+                                onRemove={areaEditIndex !== null ? removeHostArea : undefined}
+                            >
+                                <div className="mx-auto w-full max-w-md">
+                                    <label className="mb-2 block text-xs font-medium text-slate-500">{HOST_LOCATION_COPY.townLabel}</label>
+                                    <div className="space-y-2">
+                                        {COVERAGE_TOWNS.map((t) => {
+                                            const on = areaDraftTown === t.label;
+                                            return (
+                                                <button key={t.key} type="button" onClick={() => setAreaDraftTown(t.label)} aria-pressed={on}
+                                                    className={'flex w-full items-center gap-3 rounded-2xl border px-4 py-3 text-left transition '
+                                                        + (on ? 'border-emerald-600 bg-emerald-50 ring-1 ring-emerald-600' : 'border-slate-200 hover:border-emerald-400')}>
+                                                    <span className={'flex h-5 w-5 flex-none items-center justify-center rounded-full border transition '
+                                                        + (on ? 'border-emerald-600 bg-emerald-600 text-white' : 'border-slate-300 text-transparent')}>
+                                                        <Check className="h-3 w-3" strokeWidth={3} />
+                                                    </span>
+                                                    <span className="font-semibold text-slate-900">{t.label}</span>
+                                                </button>
+                                            );
+                                        })}
+                                    </div>
+
+                                    <label className="mb-2 mt-6 block text-xs font-medium text-slate-500">{HOST_LOCATION_COPY.radiusLabel}</label>
+                                    <div className="flex flex-wrap gap-2">
+                                        {[5, 10, 15, 20, 30, 50].map((m) => {
+                                            const on = Number(areaDraftRadius) === m;
+                                            return (
+                                                <button key={m} type="button" onClick={() => setAreaDraftRadius(m)} aria-pressed={on}
+                                                    className={'rounded-full border px-4 py-2 text-sm font-semibold transition '
+                                                        + (on ? 'border-emerald-600 bg-emerald-600 text-white' : 'border-slate-300 text-slate-700 hover:border-emerald-400')}>
+                                                    {m} {HOST_LOCATION_COPY.radiusSuffix}
+                                                </button>
+                                            );
+                                        })}
+                                    </div>
+                                </div>
+                            </SubFlowModal>
                         </>
                     )}
 
