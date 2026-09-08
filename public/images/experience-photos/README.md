@@ -2,7 +2,7 @@
 
 The two photographs shown as the overlapping pair on the empty guest Photos
 screen (`g_photos`), when a provider has added none of their own yet. Wired via
-the `PHOTO_PLACEHOLDERS` constant in `components/services/ProviderSignUp.tsx`.
+the `EXPERIENCE_PHOTOS` constant in `components/services/ProviderSignUp.tsx`.
 
 - `sauna.jpg` — wood-fired sauna bucket. iStock asset 2227248597 (credit: Burak Sür).
 - `loaf.jpg` — rustic sourdough loaf. iStock asset 2191545033 (credit: muratkoc).

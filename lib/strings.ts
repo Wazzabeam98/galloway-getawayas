@@ -144,12 +144,11 @@ export const GUEST_SCREEN_COPY = {
     locationAreaGate: 'Add at least one area you cover — guests see it on your listing.',
 
     // The photos screen. An instruction, not a slogan — it names the task rather
-    // than describing the outcome. The gate is one photo, but the copy pushes for
-    // more: a listing with several gets booked more, and someone who has no usable
-    // photos finds that out here rather than after writing everything.
+    // than describing the outcome. The single line asks for three (what makes a
+    // decent listing) but the gate stays at one photo — the ask and the gate are
+    // deliberately different, so this line is NOT wired to the Next gate.
     photosHeading: 'Add photos of your experience',
-    photosLede: 'Real photos of the food, the room, the view — not a logo. The first one leads your listing.',
-    photosMore: 'One photo is enough to list — but listings with several get booked more, so add a few if you can.',
+    photosAsk: 'Add at least 3 photos.',
 
     // Sub-flow modal.
     save: 'Save',
