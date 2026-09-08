@@ -335,10 +335,10 @@ const EXPERIENCE_PHOTOS = [
     { src: '/images/experience-photos/loaf.jpg', alt: 'A rustic sourdough loaf on a wooden table' },
 ];
 
-// The empty-Photos composition card size — a DECIDED value. It drifted through
-// w-28 / w-36 / w-40 / w-60 / w-64 over a day of iterations; this is the settled
-// size (mobile / ≥sm). Do not change it without an explicit request.
-const PHOTO_CARD_SIZE = 'w-40 sm:w-60';
+// The empty-Photos composition card size — a DECIDED value. Do not change it
+// without an explicit request. (History: drifted w-28/36/40/60/64, settled at
+// w-40 sm:w-60, then halved to this on request.)
+const PHOTO_CARD_SIZE = 'w-20 sm:w-32';
 
 const SECTION_ICONS: Record<string, React.ComponentType<any>> = {
     about: User,
@@ -4446,12 +4446,12 @@ function ApplicationForm() {
                                     <img
                                         src={EXPERIENCE_PHOTOS[0].src}
                                         alt={EXPERIENCE_PHOTOS[0].alt}
-                                        className={PHOTO_CARD_SIZE + ' aspect-[4/5] object-cover rounded-2xl bg-slate-100 ring-4 ring-white shadow-xl -rotate-5'}
+                                        className={PHOTO_CARD_SIZE + ' aspect-[4/5] object-cover rounded-2xl bg-slate-100 ring-4 ring-white shadow-xl -rotate-[9deg]'}
                                     />
                                     <img
                                         src={EXPERIENCE_PHOTOS[1].src}
                                         alt={EXPERIENCE_PHOTOS[1].alt}
-                                        className={'-ml-14 sm:-ml-20 mt-8 sm:mt-12 ' + PHOTO_CARD_SIZE + ' aspect-[4/5] object-cover rounded-2xl bg-slate-100 ring-4 ring-white shadow-xl rotate-5'}
+                                        className={'-ml-14 sm:-ml-20 mt-8 sm:mt-12 ' + PHOTO_CARD_SIZE + ' aspect-[4/5] object-cover rounded-2xl bg-slate-100 ring-4 ring-white shadow-xl rotate-[9deg]'}
                                     />
                                 </div>
                             </div>
@@ -5993,6 +5993,20 @@ function ApplicationForm() {
             )}
 
                 </div>{/* /the questions */}
+
+                {/* A right-side spacer mirroring the rail's width. The panel
+                    centres its content (mx-auto) within the space BETWEEN the rail
+                    and this spacer; with the spacer matching the rail, that space
+                    is the full body width minus 2×rail, so the content's centre —
+                    and therefore its left edge — is independent of the rail width.
+                    Without it the panel centres in the rail-left-only space and the
+                    whole column slides by half the rail's width change every time
+                    the rail collapses/expands. Hidden below lg, like the rail. */}
+                {isGuest && currentSection && flowSections.length > 0 && (
+                    <div aria-hidden
+                        className={'hidden lg:block shrink-0 transition-[width] duration-300 ease-out '
+                            + (railCollapsed ? 'w-16' : 'w-72')} />
+                )}
                 </div>{/* /the two-column body (rail + questions) */}
 
                 {/* ---- footer: Back, and the way on ----
