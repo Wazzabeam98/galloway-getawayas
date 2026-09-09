@@ -4397,7 +4397,7 @@ function ApplicationForm() {
                                 value={otpName}
                                 onChange={(e) => setOtpName(e.target.value)}
                                 disabled={otpSent}
-                                placeholder="Rosa Muir"
+                                placeholder={GUEST_SCREEN_COPY.verifyNamePlaceholder}
                                 className="w-full rounded-xl border border-slate-300 px-4 py-3 focus:outline-none focus:ring-2 focus:ring-emerald-700 disabled:bg-slate-50 disabled:text-slate-500"
                             />
                         </div>
@@ -4413,7 +4413,7 @@ function ApplicationForm() {
                                 value={otpEmail}
                                 onChange={(e) => setOtpEmail(e.target.value)}
                                 disabled={otpSent}
-                                placeholder="you@example.com"
+                                placeholder={GUEST_SCREEN_COPY.verifyEmailPlaceholder}
                                 className="w-full rounded-xl border border-slate-300 px-4 py-3 focus:outline-none focus:ring-2 focus:ring-emerald-700 disabled:bg-slate-50 disabled:text-slate-500"
                             />
                         </div>
