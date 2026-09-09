@@ -197,9 +197,7 @@ const GUEST_YEARS_REQUIRED = ['outdoors', 'water', 'massage', 'yoga', 'chef', 't
 // back — a potter or a cake maker has a track record and a story worth showing —
 // so they get both screens again (years asked, qualifications optional).
 //
-// This is ONLY about the years/qualifications screens. The safety-check map
-// (GUEST_CHECKS / checksFor) is untouched — a sauna still declares its heat and
-// cold safety, and the crafts still declare safe tools and kiln.
+// This is ONLY about the years/qualifications screens.
 const GUEST_EXPERTISE_SKIP = ['sauna'];
 
 // Whether the years + expertise screens are shown at all. Off for the skip list
@@ -241,13 +239,6 @@ export function guestYearsRequired(category: string | null | undefined): boolean
 // `applies` is a predicate over the chosen category (null when unpicked or
 // "Something else"), so the set a given provider sees is computed, never a
 // hand-maintained per-category list that would drift from GUEST_CATEGORIES.
-export interface GuestCheck {
-    key: string;
-    label: string;   // the statement the provider confirms
-    hint?: string;   // the supporting line under it
-    applies: (category: GuestCategory | null) => boolean;
-}
-
 // DIETARY OPTIONS — what a food provider can cater for, as ticks.
 //
 // A tick reads as "can cater for", not "provides" — a capability, weighed with
@@ -260,7 +251,7 @@ export interface GuestCheck {
 //
 // The keys are stored in guest_details.dietary_options (jsonb, no column of
 // their own); the labels live here so the wizard, the listing and the review
-// queue read one source — the same shape as GUEST_CHECKS above.
+// queue read one source.
 export interface DietaryOption {
     key: string;
     label: string;
@@ -296,31 +287,12 @@ export function knownDietaryOptions(keys: string[]): string[] {
     return DIETARY_OPTIONS.filter((o) => has.has(o.key)).map((o) => o.key);
 }
 
-// One confirmation for every guest experience, whatever the category. The old
-// per-category catalogue (insurance, food registration, allergens, alcohol,
-// sauna heat, water safety, …) collapsed to this single responsibility
-// statement (Sep 2026): a provider is a third party responsible for their own
-// insurance, permits and licences, and the specifics moved into the terms and
-// conditions rather than a wall of tickboxes. Worded as a confirmation of
-// responsibility, NOT an indemnity — a promise to cover liability is a contract
-// term and belongs in the T&Cs, not here. Kept as a one-entry catalogue (rather
-// than a bare constant) so the storage shape is unchanged: guestProviderFields
-// still builds `declarations` by looping checksFor, now writing a single
-// `{ responsibility: true }`.
-export const GUEST_CHECKS: GuestCheck[] = [
-    {
-        key: 'responsibility',
-        label: GUEST_SCREEN_COPY.responsibilityConfirm,
-        applies: () => true,
-    },
-];
-
-// The checks a given category must confirm. Now one — the responsibility
-// confirmation, asked of every guest experience regardless of category.
-export function checksFor(category: string | null | undefined): GuestCheck[] {
-    const c = guestCategoryByKey(category);
-    return GUEST_CHECKS.filter((k) => k.applies(c));
-}
+// The per-category checks catalogue and its single-confirmation successor were
+// both retired (Sep 2026): the provider now agrees to the terms and conditions
+// on the finish screen. What they agreed to, and when, is recorded in the
+// `declarations` jsonb (terms_version + terms_agreed_at) — the acceptance store,
+// no longer a set of tickboxes. The terms text is the single source in
+// lib/providerTerms.ts.
 
 // A heading on the picker, not a thing anybody is.
 //
