@@ -431,6 +431,12 @@ function ApplicationForm() {
     const [acctBusy, setAcctBusy] = useState(false);
     const [acctError, setAcctError] = useState('');
     const [acctConsent, setAcctConsent] = useState(false);
+    // The single responsibility confirmation on the finish screen (it replaced
+    // the per-category checks). The tick itself is held in `declarations`
+    // under the 'responsibility' key, so guestProviderFields writes it like any
+    // other check; this is only the error shown when a guest presses send
+    // without it. Required to send — see the save() guard and the gated button.
+    const [responsibilityError, setResponsibilityError] = useState('');
     const [checkYourEmail, setCheckYourEmail] = useState(false);
 
     // The verify-your-email gate (g_verify). A guest signs in up front with a
@@ -1628,12 +1634,13 @@ function ApplicationForm() {
     // Qualifications gate: required only for the four safety categories.
     const catQualsRequired = isGuest && guestQualificationsRequired(guestCategory);
 
-    // g_menu, g_expect and g_checks are always skippable. g_you is NEVER
-    // skippable: the years screen shows a starting number (5), so a host could
-    // otherwise walk past it thinking that number is their answer when nothing
-    // was stored — it must be touched. g_creds is skippable unless this category
-    // requires qualifications.
-    const OPTIONAL_GUEST_STEPS: StepKey[] = ['g_menu', 'g_expect', 'g_checks'];
+    // g_menu and g_expect are always skippable. g_you is NEVER skippable: the
+    // years screen shows a starting number (5), so a host could otherwise walk
+    // past it thinking that number is their answer when nothing was stored — it
+    // must be touched. g_creds is skippable unless this category requires
+    // qualifications. (The old g_checks is gone — its one confirmation moved to
+    // the finish screen and is required there, not skippable.)
+    const OPTIONAL_GUEST_STEPS: StepKey[] = ['g_menu', 'g_expect'];
     const stepIsPicker = step === 'trade' || step === 'g_subtype';
     // g_creds is no longer skippable for anyone: the professional title is now
     // required for every category (qualifications on top for the safety four).
@@ -2645,6 +2652,18 @@ function ApplicationForm() {
     };
 
     const save = async (submit: boolean) => {
+        // The responsibility confirmation gates send for a guest — someone who
+        // won't confirm they carry their own insurance, permits and licences
+        // should not go live. Checked before the account/validation branches so
+        // it applies whichever submit path they are on. Not a submitProblems
+        // field: it lives on the finish screen, so its own error shows there.
+        if (submit && isGuest && !declarations['responsibility']) {
+            setTouchedSubmit(true);
+            setResponsibilityError(GUEST_SCREEN_COPY.responsibilityGate);
+            goToFirstProblem();
+            return;
+        }
+
         let active: any = session;
 
         // No detour. The details they have entered make the account, and the
@@ -5805,59 +5824,14 @@ function ApplicationForm() {
                 </section>
                 )}
 
-                {/* THE CHECKS — the declarations this category confirms before
-                    we list it. The set is computed from the category (checksFor),
-                    so a chef sees food registration and allergens, a sauna sees
-                    its heat-and-cold statement, and everyone sees insurance and
-                    an accuracy line. Non-blocking: a box left unticked never
-                    stops Next or send — the owner weighs it at review. The big
-                    title above already asks the question, so this is just the
-                    list. */}
-                {onStep('g_checks') && audienceForTrade(trade) === 'guest' && (
-                <section className="mb-8">
-                    <p className="text-sm text-slate-500 mb-5 [text-wrap:balance]">
-                        Tick each one you can confirm. It helps guests book with confidence — none of it is shown publicly.
-                    </p>
-                    <div className="space-y-3">
-                        {checksFor(guestCategory).map((check) => {
-                            const on = !!declarations[check.key];
-                            return (
-                                <button
-                                    key={check.key}
-                                    type="button"
-                                    role="checkbox"
-                                    aria-checked={on}
-                                    onClick={() => setDeclarations((prev) => ({ ...prev, [check.key]: !prev[check.key] }))}
-                                    className={
-                                        'flex w-full items-start gap-4 rounded-2xl border-2 px-5 py-4 text-left transition '
-                                        + 'focus:outline-none focus-visible:ring-2 focus-visible:ring-emerald-600 '
-                                        + (on ? 'border-emerald-600 bg-emerald-50/60' : 'border-slate-200 hover:border-slate-300')
-                                    }
-                                >
-                                    <span
-                                        aria-hidden
-                                        className={
-                                            'mt-0.5 flex h-6 w-6 flex-none items-center justify-center rounded-md border-2 transition '
-                                            + (on ? 'border-emerald-600 bg-emerald-600 text-white' : 'border-slate-300 bg-white text-transparent')
-                                        }
-                                    >
-                                        <Check className="h-4 w-4" strokeWidth={3} />
-                                    </span>
-                                    <span className="min-w-0">
-                                        <span className="block text-sm font-semibold text-slate-900">{check.label}</span>
-                                        {check.hint && <span className="mt-0.5 block text-xs text-slate-500">{check.hint}</span>}
-                                    </span>
-                                </button>
-                            );
-                        })}
-                    </div>
-                    <p className="mt-5 text-xs text-slate-500">
-                        You can carry on without ticking every box — we may just ask you about it before you go live.
-                    </p>
-                </section>
-                )}
-
-                {(audienceForTrade(trade) === 'guest' ? onStep('g_contact') : onStep('business')) && (
+                {/* Host/trade contact details (name/email/phone) live on the
+                    'business' step. A guest experience has no contact step: they
+                    signed in up front, so the account address is their contact
+                    address (written from the session at submit), the phone lives
+                    on their account profile, and the single responsibility
+                    confirmation that replaced the old checks is folded onto the
+                    finish screen below. So this section is host/trade only. */}
+                {audienceForTrade(trade) !== 'guest' && onStep('business') && (
                 <section className="mb-8 grid sm:grid-cols-2 gap-4">
                     <div>
                         <label className="block text-xs font-medium text-slate-500 mb-2">
@@ -6006,6 +5980,43 @@ function ApplicationForm() {
                 below, and changing the address is a button rather than an
                 instruction, because the field is two steps back and telling
                 somebody to go and find it is how they give up. */}
+            {/* The one confirmation that replaced the per-category checks, folded
+                onto the finish screen as a tickbox above submit (the standard
+                shape). Guest-only, and REQUIRED to send — the save() guard and
+                the gated button both hold on it. The tick lives in
+                `declarations.responsibility`, so guestProviderFields writes it
+                like any check. Worded as a confirmation of responsibility, not an
+                indemnity — the liability terms are in the T&Cs, not here. */}
+            {onStep('finish') && isGuest && !locked && !lodged && (
+                <section className="mb-8">
+                    <label
+                        className={
+                            'flex items-start gap-3 rounded-2xl border-2 px-5 py-4 cursor-pointer transition '
+                            + 'focus-within:ring-2 focus-within:ring-emerald-600 '
+                            + (declarations['responsibility']
+                                ? 'border-emerald-600 bg-emerald-50/60'
+                                : 'border-slate-200 hover:border-slate-300')
+                        }
+                    >
+                        <input
+                            type="checkbox"
+                            checked={!!declarations['responsibility']}
+                            onChange={(e) => {
+                                setDeclarations((prev) => ({ ...prev, responsibility: e.target.checked }));
+                                setResponsibilityError('');
+                            }}
+                            className="mt-0.5 w-4 h-4 rounded border-slate-300 shrink-0"
+                        />
+                        <span className="text-sm text-slate-800">
+                            {GUEST_SCREEN_COPY.responsibilityConfirm}
+                        </span>
+                    </label>
+                    {responsibilityError && (
+                        <p data-problem className="text-sm text-rose-700 mt-2">{responsibilityError}</p>
+                    )}
+                </section>
+            )}
+
             {onStep('finish') && accountExists && !lodged && (
                 <div className="rounded-2xl border-2 border-amber-500 bg-amber-50 p-5 mb-8">
                     <p className="font-semibold text-amber-900">
@@ -6319,7 +6330,11 @@ function ApplicationForm() {
                         <button
                             type="button"
                             onClick={() => save(true)}
-                            disabled={saving || acctBusy}
+                            // A guest must confirm responsibility before send. The
+                            // save() guard enforces it too; disabling the button
+                            // makes it visible, with the box and its gate line
+                            // right above on the finish screen.
+                            disabled={saving || acctBusy || (isGuest && !declarations['responsibility'])}
                             className="min-w-0 rounded-full bg-emerald-700 hover:bg-emerald-800 text-white px-5 sm:px-6 py-2.5 text-sm font-semibold transition disabled:opacity-60"
                         >
                             <span className="block truncate">
