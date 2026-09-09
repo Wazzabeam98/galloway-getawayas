@@ -3378,7 +3378,13 @@ function ApplicationForm() {
                                    question rather than sit high with a void. */
                                 : (step === 'g_you' || step === 'g_capacity')
                                     ? 'max-w-2xl py-10 sm:py-12 flex flex-col'
-                                    : 'max-w-2xl py-10 sm:py-12'))
+                                    /* Finish is wider than the other content
+                                       screens: the summary and the terms sit side
+                                       by side on a large screen and use the space,
+                                       rather than a half-width column. */
+                                    : step === 'finish'
+                                        ? 'max-w-5xl py-10 sm:py-12'
+                                        : 'max-w-2xl py-10 sm:py-12'))
                     : 'flex-1 overflow-y-auto px-4 sm:px-6 py-5'}>
                     {/* One big question a screen. The picker screens (group,
                         sub-type) and the years opener centre it — over the cards
@@ -6033,26 +6039,31 @@ function ApplicationForm() {
                     [GUEST_SCREEN_COPY.finishSummaryPhotos, String((photos || []).length)],
                 ];
                 return (
-                <section className="mb-8 space-y-6">
-                    {/* Five quiet lines: what they're about to submit, so the
-                        agreement sits next to the thing being agreed. */}
-                    <div>
+                <section className="mb-8 lg:grid lg:grid-cols-3 lg:gap-10 lg:items-start">
+                    {/* Five quiet lines: what they're about to submit. On a large
+                        screen it sits to the left of the terms and stays put
+                        (sticky) while the terms scroll past; on a phone it stacks
+                        above them. */}
+                    <div className="mb-8 lg:mb-0 lg:sticky lg:top-4">
                         <h2 className="text-xs font-semibold uppercase tracking-wide text-slate-500 mb-3">
                             {GUEST_SCREEN_COPY.finishSummaryHeading}
                         </h2>
                         <dl className="rounded-2xl border border-slate-200 divide-y divide-slate-100">
                             {rows.map(([label, value]) => (
                                 <div key={label} className="flex gap-4 px-4 py-2.5 text-sm">
-                                    <dt className="w-32 shrink-0 text-slate-500">{label}</dt>
+                                    <dt className="w-28 shrink-0 text-slate-500">{label}</dt>
                                     <dd className="min-w-0 text-slate-900 break-words">{value}</dd>
                                 </div>
                             ))}
                         </dl>
                     </div>
 
-                    {/* The terms, scrollable. No scroll gate on the box below. */}
-                    <div>
-                        <div className="max-h-72 overflow-y-auto rounded-2xl border border-slate-200 p-5 text-sm text-slate-700 space-y-4">
+                    {/* The terms run at FULL LENGTH — no inner scroll box. The page
+                        (the signup panel) does the scrolling, so there is one
+                        scrollbar, not two fighting each other, and the agree box
+                        below is reached by scrolling the page like everything else. */}
+                    <div className="lg:col-span-2">
+                        <div className="rounded-2xl border border-slate-200 p-5 sm:p-6 text-sm text-slate-700 space-y-4">
                             {PROVIDER_TERMS.draftNotice && (
                                 <p className="rounded-lg border border-amber-200 bg-amber-50 px-3 py-2 text-xs font-semibold text-amber-800">
                                     {PROVIDER_TERMS.draftNotice}
@@ -6198,11 +6209,13 @@ function ApplicationForm() {
                 </div>
             )}
 
-            {onStep('finish') && !locked && !lodged && (
+            {/* "Save and finish later" now lives in the footer, on the same line
+                as the send button (see the footer below). What stays here is the
+                live-business note, and — signed out — the reassurance that the
+                form is safe on the device. The block renders only when it has
+                something to say, so an empty divider never shows. */}
+            {onStep('finish') && !locked && !lodged && (status === 'approved' || !session) && (
                 <div className="border-t border-slate-200 pt-6">
-                    {/* A live business is not re-applying. One button, and it
-                        says what it does — and the consequence is stated
-                        before they press it rather than discovered after. */}
                     {status === 'approved' ? (
                         <>
                             <p className="text-sm text-slate-600 mb-4">
@@ -6217,27 +6230,11 @@ function ApplicationForm() {
                         </>
                     ) : (
                         <div className="flex flex-wrap items-center gap-3">
-                            {/* The button that sends this is in the modal
-                                footer with Back, where every other step keeps
-                                its forward action. What stays here is the
-                                wording that only makes sense beside the form.
-
-                                "Save and finish later" is a promise that needs
-                                somewhere to save TO. Signed out there is no
-                                such place, and it used to open the login wall
-                                — so it says what actually happens instead: the
-                                form is in this browser and will be here when
-                                they come back. */}
-                            {session ? (
-                                <button
-                                    type="button"
-                                    onClick={() => save(false)}
-                                    disabled={saving}
-                                    className="rounded-full border border-slate-300 px-6 py-3 font-semibold text-slate-700 hover:border-slate-500 transition disabled:opacity-60"
-                                >
-                                    Save and finish later
-                                </button>
-                            ) : (
+                            {/* Signed out there is nowhere to save TO, so instead
+                                of a button this says what actually happens: the
+                                form is in this browser and will be here when they
+                                come back. */}
+                            {(
                                 <p className="text-sm text-slate-500">
                                     Everything you have typed stays on this device, so you can close
                                     this and come back to it.
@@ -6246,43 +6243,45 @@ function ApplicationForm() {
                         </div>
                     )}
 
-                    {/* Only a draft, and only one they have actually started.
-                        Nothing is recoverable afterwards, so it asks first. */}
-                    {status === 'draft' && providerId && (
-                        <div className="mt-8 pt-6 border-t border-slate-200">
-                            {!confirmRemove ? (
+                </div>
+            )}
+
+            {/* Only a draft, and only one they have actually started. Its own
+                block (not nested in the note above), so a signed-in returning
+                draft can still remove it. */}
+            {onStep('finish') && !locked && !lodged && status === 'draft' && providerId && (
+                <div className="mt-8 pt-6 border-t border-slate-200">
+                    {!confirmRemove ? (
+                        <button
+                            type="button"
+                            onClick={() => setConfirmRemove(true)}
+                            className="text-sm font-semibold text-rose-700 hover:text-rose-800 underline"
+                        >
+                            Remove this
+                        </button>
+                    ) : (
+                        <div>
+                            <p className="text-sm text-slate-700 mb-3">
+                                Remove this {tradeLabel(trade).toLowerCase()} application? Everything you have
+                                filled in goes with it, and it cannot be got back.
+                            </p>
+                            <div className="flex flex-wrap gap-3">
                                 <button
                                     type="button"
-                                    onClick={() => setConfirmRemove(true)}
-                                    className="text-sm font-semibold text-rose-700 hover:text-rose-800 underline"
+                                    onClick={removeDraft}
+                                    disabled={removing}
+                                    className="rounded-full bg-rose-700 hover:bg-rose-800 text-white px-5 py-2.5 text-sm font-semibold transition disabled:opacity-60"
                                 >
-                                    Remove this
+                                    {removing ? 'Removing…' : 'Remove for good'}
                                 </button>
-                            ) : (
-                                <div>
-                                    <p className="text-sm text-slate-700 mb-3">
-                                        Remove this {tradeLabel(trade).toLowerCase()} application? Everything you have
-                                        filled in goes with it, and it cannot be got back.
-                                    </p>
-                                    <div className="flex flex-wrap gap-3">
-                                        <button
-                                            type="button"
-                                            onClick={removeDraft}
-                                            disabled={removing}
-                                            className="rounded-full bg-rose-700 hover:bg-rose-800 text-white px-5 py-2.5 text-sm font-semibold transition disabled:opacity-60"
-                                        >
-                                            {removing ? 'Removing…' : 'Remove for good'}
-                                        </button>
-                                        <button
-                                            type="button"
-                                            onClick={() => setConfirmRemove(false)}
-                                            className="rounded-full border border-slate-300 px-5 py-2.5 text-sm font-semibold text-slate-700"
-                                        >
-                                            Keep it
-                                        </button>
-                                    </div>
-                                </div>
-                            )}
+                                <button
+                                    type="button"
+                                    onClick={() => setConfirmRemove(false)}
+                                    className="rounded-full border border-slate-300 px-5 py-2.5 text-sm font-semibold text-slate-700"
+                                >
+                                    Keep it
+                                </button>
+                            </div>
                         </div>
                     )}
                 </div>
@@ -6334,6 +6333,22 @@ function ApplicationForm() {
                             Back
                         </Link>
                     ))}
+
+                    {/* "Save and finish later" sits at the left of the footer on
+                        the finish step, on the same line as the send button, rather
+                        than floating in the content where it was easy to miss. Only
+                        when signed in (there is somewhere to save to) and not a live
+                        business re-applying. */}
+                    {onStep('finish') && !locked && !lodged && status !== 'approved' && session && (
+                        <button
+                            type="button"
+                            onClick={() => save(false)}
+                            disabled={saving}
+                            className="shrink-0 rounded-full border border-slate-300 px-4 sm:px-5 py-2.5 text-sm font-semibold text-slate-700 hover:border-slate-500 transition disabled:opacity-60"
+                        >
+                            Save and finish later
+                        </button>
+                    )}
 
                     {/* A required guest step says exactly what is missing beside
                         the greyed Next; a skippable one says so. Either way the
