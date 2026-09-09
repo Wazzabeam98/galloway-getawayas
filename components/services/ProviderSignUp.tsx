@@ -439,6 +439,9 @@ function ApplicationForm() {
     // see the save() guard and the gated button. `termsError` is the gate message.
     const [termsAgreed, setTermsAgreed] = useState(false);
     const [termsError, setTermsError] = useState('');
+    // The terms open in a modal from the agree line, so the finish screen itself
+    // stays a preview of what they're submitting rather than a wall of terms.
+    const [termsModalOpen, setTermsModalOpen] = useState(false);
     // The listing title for the finish-screen summary. Derived from the account
     // (resolveGuestTitleNow is async), so it is loaded into state when the finish
     // screen is reached rather than computed inline.
@@ -3378,12 +3381,12 @@ function ApplicationForm() {
                                    question rather than sit high with a void. */
                                 : (step === 'g_you' || step === 'g_capacity')
                                     ? 'max-w-2xl py-10 sm:py-12 flex flex-col'
-                                    /* Finish is wider than the other content
-                                       screens: the summary and the terms sit side
-                                       by side on a large screen and use the space,
-                                       rather than a half-width column. */
+                                    /* Finish is the widest content screen: it is a
+                                       full-width preview of the listing about to be
+                                       submitted, so it uses the space rather than
+                                       sitting in a half-width column. */
                                     : step === 'finish'
-                                        ? 'max-w-5xl py-10 sm:py-12'
+                                        ? 'max-w-6xl py-10 sm:py-12'
                                         : 'max-w-2xl py-10 sm:py-12'))
                     : 'flex-1 overflow-y-auto px-4 sm:px-6 py-5'}>
                     {/* One big question a screen. The picker screens (group,
@@ -6008,14 +6011,14 @@ function ApplicationForm() {
                 below, and changing the address is a button rather than an
                 instruction, because the field is two steps back and telling
                 somebody to go and find it is how they give up. */}
-            {/* The finish screen for a guest: a short summary of what they're
-                submitting, then the provider terms in a scrollable panel, then the
-                agree box. REQUIRED to send — the save() guard and the gated button
-                both hold on `termsAgreed`. The terms TEXT is the single source in
-                lib/providerTerms.ts; the acceptance is recorded in the declarations
-                jsonb with its version + timestamp (guestProviderFields). No scroll
-                gate: the panel is the opportunity to read; forcing a scroll is
-                friction, not consent. */}
+            {/* The finish screen for a guest: a full-width PREVIEW of what they're
+                submitting — cover photo, name, category, price, coverage, and what
+                they wrote — so their last impression after ten screens is their own
+                listing, not a wall of terms. Beneath it the terms are ONE line: a
+                tickbox with the terms behind a link that opens them in a modal.
+                REQUIRED to send — the save() guard and the gated button both hold
+                on `termsAgreed`; the acceptance (version + timestamp) is recorded
+                in the declarations jsonb (guestProviderFields). */}
             {onStep('finish') && isGuest && !locked && !lodged && (() => {
                 const catLabel = guestCategoryByKey(guestCategory)?.label || GUEST_SCREEN_COPY.finishSummaryCategory;
                 const priceVal = (items || [])
@@ -6024,52 +6027,136 @@ function ApplicationForm() {
                     .join(', ') || '—';
                 // A guest's areas hold the region label in `town` (set from
                 // GUEST_REGIONS when a region is picked), so read that directly.
-                const whereVal = (areas || []).map((a) => a.town).filter(Boolean).join(', ');
+                const coverageVal = (areas || []).map((a) => a.town).filter(Boolean).join(', ') || '—';
                 const whenVal = shape === 'slot'
                     ? `${(schedule || []).length} weekly time${(schedule || []).length === 1 ? '' : 's'}`
                     : shape === 'made_to_order'
                         ? `${String(leadTimeDays || '0').trim()} days’ notice`
                         : 'arranged per booking';
-                const whereWhen = [whereVal || '—', whenVal].filter(Boolean).join(' · ');
-                const rows: [string, string][] = [
-                    [GUEST_SCREEN_COPY.finishSummaryTitle, summaryTitle || '—'],
-                    [GUEST_SCREEN_COPY.finishSummaryCategory, catLabel],
+                const cover = (photos || [])[0] ? getImageUrl((photos || [])[0]) : null;
+                const facts: [string, string][] = [
                     [GUEST_SCREEN_COPY.finishSummaryPrice, priceVal],
-                    [GUEST_SCREEN_COPY.finishSummaryWhere, whereWhen],
+                    [GUEST_SCREEN_COPY.finishSummaryCoverage, coverageVal],
+                    [GUEST_SCREEN_COPY.finishSummaryWhen, whenVal],
                     [GUEST_SCREEN_COPY.finishSummaryPhotos, String((photos || []).length)],
                 ];
+                const wrote: [string, string][] = ([
+                    [GUEST_SCREEN_COPY.finishWroteTitle, professionalTitle.trim()],
+                    [GUEST_SCREEN_COPY.finishWroteExpect, whatToExpect.trim()],
+                    [GUEST_SCREEN_COPY.finishWroteQuals, qualifications.trim()],
+                    [GUEST_SCREEN_COPY.finishWroteDietary, dietaryNote.trim()],
+                ] as [string, string][]).filter(([, v]) => v);
                 return (
-                <section className="mb-8 lg:grid lg:grid-cols-3 lg:gap-10 lg:items-start">
-                    {/* Five quiet lines: what they're about to submit. On a large
-                        screen it sits to the left of the terms and stays put
-                        (sticky) while the terms scroll past; on a phone it stacks
-                        above them. */}
-                    <div className="mb-8 lg:mb-0 lg:sticky lg:top-4">
-                        <h2 className="text-xs font-semibold uppercase tracking-wide text-slate-500 mb-3">
-                            {GUEST_SCREEN_COPY.finishSummaryHeading}
-                        </h2>
-                        <dl className="rounded-2xl border border-slate-200 divide-y divide-slate-100">
-                            {rows.map(([label, value]) => (
-                                <div key={label} className="flex gap-4 px-4 py-2.5 text-sm">
-                                    <dt className="w-28 shrink-0 text-slate-500">{label}</dt>
-                                    <dd className="min-w-0 text-slate-900 break-words">{value}</dd>
+                <section className="mb-8">
+                    <h2 className="text-xs font-semibold uppercase tracking-wide text-slate-500 mb-3">
+                        {GUEST_SCREEN_COPY.finishSummaryHeading}
+                    </h2>
+
+                    {/* The preview card — reads as the listing about to be reviewed,
+                        their last chance to spot a mistake before sending. */}
+                    <div className="overflow-hidden rounded-3xl border border-slate-200">
+                        {cover ? (
+                            // eslint-disable-next-line @next/next/no-img-element
+                            <img src={cover} alt="" className="h-56 w-full object-cover sm:h-72" />
+                        ) : (
+                            <div className="flex h-40 w-full items-center justify-center bg-slate-100 text-sm text-slate-400">
+                                No cover photo yet
+                            </div>
+                        )}
+                        <div className="p-6 sm:p-8">
+                            <h3 className="text-2xl font-bold text-slate-900 [text-wrap:balance] sm:text-3xl">
+                                {summaryTitle || '—'}
+                            </h3>
+                            <p className="mt-1 text-slate-500">{catLabel}</p>
+
+                            <dl className="mt-6 grid grid-cols-2 gap-x-8 gap-y-4 lg:grid-cols-4">
+                                {facts.map(([label, value]) => (
+                                    <div key={label}>
+                                        <dt className="text-xs font-medium uppercase tracking-wide text-slate-400">{label}</dt>
+                                        <dd className="mt-0.5 text-sm text-slate-900 break-words">{value}</dd>
+                                    </div>
+                                ))}
+                            </dl>
+
+                            {wrote.length > 0 && (
+                                <div className="mt-8 space-y-5 border-t border-slate-100 pt-6">
+                                    {wrote.map(([label, value]) => (
+                                        <div key={label}>
+                                            <dt className="text-xs font-medium uppercase tracking-wide text-slate-400">{label}</dt>
+                                            <dd className="mt-1 whitespace-pre-line text-sm text-slate-700 [text-wrap:pretty]">{value}</dd>
+                                        </div>
+                                    ))}
                                 </div>
-                            ))}
-                        </dl>
+                            )}
+                        </div>
                     </div>
 
-                    {/* The terms run at FULL LENGTH — no inner scroll box. The page
-                        (the signup panel) does the scrolling, so there is one
-                        scrollbar, not two fighting each other, and the agree box
-                        below is reached by scrolling the page like everything else. */}
-                    <div className="lg:col-span-2">
-                        <div className="rounded-2xl border border-slate-200 p-5 sm:p-6 text-sm text-slate-700 space-y-4">
+                    {/* The terms, one line: a tickbox with the terms behind a link.
+                        The link is a button INSIDE the label — clicking it opens the
+                        modal and does not toggle the box (an interactive descendant
+                        doesn't fire the label's control). */}
+                    <div className="mt-6">
+                        <div className="flex items-start gap-3">
+                            <input
+                                id="agree-terms"
+                                type="checkbox"
+                                checked={termsAgreed}
+                                onChange={(e) => { setTermsAgreed(e.target.checked); setTermsError(''); }}
+                                className="mt-0.5 h-4 w-4 shrink-0 rounded border-slate-300"
+                            />
+                            <label htmlFor="agree-terms" className="text-sm text-slate-800">
+                                {GUEST_SCREEN_COPY.termsAgreePrefix}{' '}
+                                <button
+                                    type="button"
+                                    onClick={(e) => { e.preventDefault(); setTermsModalOpen(true); }}
+                                    className="font-semibold text-emerald-700 underline hover:text-emerald-800"
+                                >
+                                    {GUEST_SCREEN_COPY.termsLinkText}
+                                </button>.
+                                <span className="mt-0.5 block text-xs text-slate-400">
+                                    Version {PROVIDER_TERMS.version}
+                                </span>
+                            </label>
+                        </div>
+                        {termsError && (
+                            <p data-problem className="mt-2 text-sm text-rose-700">{termsError}</p>
+                        )}
+                    </div>
+                </section>
+                );
+            })()}
+
+            {/* The terms modal: the full terms in a scrollable panel with a close
+                button. No scroll-to-bottom gate. Opened from the agree line. */}
+            {termsModalOpen && (
+                <div
+                    className="fixed inset-0 z-50 flex items-end justify-center bg-slate-900/40 sm:items-center sm:p-6"
+                    role="dialog"
+                    aria-modal="true"
+                    aria-label={PROVIDER_TERMS.title}
+                    onClick={() => setTermsModalOpen(false)}
+                >
+                    <div
+                        className="flex max-h-[85vh] w-full flex-col rounded-t-3xl bg-white shadow-xl sm:max-w-2xl sm:rounded-3xl"
+                        onClick={(e) => e.stopPropagation()}
+                    >
+                        <div className="flex items-center justify-between border-b border-slate-100 px-5 py-4 sm:px-6">
+                            <h3 className="text-base font-bold text-slate-900">{PROVIDER_TERMS.title}</h3>
+                            <button
+                                type="button"
+                                onClick={() => setTermsModalOpen(false)}
+                                aria-label={GUEST_SCREEN_COPY.termsModalClose}
+                                className="rounded-full p-1.5 text-slate-500 transition hover:bg-slate-100 hover:text-slate-800"
+                            >
+                                <X className="h-5 w-5" />
+                            </button>
+                        </div>
+                        <div className="space-y-4 overflow-y-auto px-5 py-5 text-sm text-slate-700 sm:px-6">
                             {PROVIDER_TERMS.draftNotice && (
                                 <p className="rounded-lg border border-amber-200 bg-amber-50 px-3 py-2 text-xs font-semibold text-amber-800">
                                     {PROVIDER_TERMS.draftNotice}
                                 </p>
                             )}
-                            <h3 className="text-base font-bold text-slate-900">{PROVIDER_TERMS.title}</h3>
                             {PROVIDER_TERMS.sections.map((sec) => (
                                 <div key={sec.heading} className="space-y-1.5">
                                     <h4 className="font-semibold text-slate-900">{sec.heading}</h4>
@@ -6077,36 +6164,9 @@ function ApplicationForm() {
                                 </div>
                             ))}
                         </div>
-
-                        <label
-                            className={
-                                'mt-4 flex items-start gap-3 rounded-2xl border-2 px-5 py-4 cursor-pointer transition '
-                                + 'focus-within:ring-2 focus-within:ring-emerald-600 '
-                                + (termsAgreed
-                                    ? 'border-emerald-600 bg-emerald-50/60'
-                                    : 'border-slate-200 hover:border-slate-300')
-                            }
-                        >
-                            <input
-                                type="checkbox"
-                                checked={termsAgreed}
-                                onChange={(e) => { setTermsAgreed(e.target.checked); setTermsError(''); }}
-                                className="mt-0.5 w-4 h-4 rounded border-slate-300 shrink-0"
-                            />
-                            <span className="text-sm text-slate-800">
-                                {GUEST_SCREEN_COPY.termsAgreeLabel}
-                                <span className="mt-0.5 block text-xs text-slate-400">
-                                    Version {PROVIDER_TERMS.version}
-                                </span>
-                            </span>
-                        </label>
-                        {termsError && (
-                            <p data-problem className="text-sm text-rose-700 mt-2">{termsError}</p>
-                        )}
                     </div>
-                </section>
-                );
-            })()}
+                </div>
+            )}
 
             {onStep('finish') && accountExists && !lodged && (
                 <div className="rounded-2xl border-2 border-amber-500 bg-amber-50 p-5 mb-8">

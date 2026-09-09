@@ -54,16 +54,25 @@ export const GUEST_SCREEN_COPY = {
     // The terms TEXT lives in lib/providerTerms.ts (one source); only the UI chrome
     // copy is here.
     finishSummaryHeading: 'What you’re submitting',
-    finishSummaryTitle: 'Listing',
-    finishSummaryCategory: 'Experience',
+    finishSummaryCategory: 'Experience',   // fallback if the category has no label
     finishSummaryPrice: 'Price',
-    finishSummaryWhere: 'Where and when',
+    finishSummaryCoverage: 'Coverage',
+    finishSummaryWhen: 'When',
     finishSummaryPhotos: 'Photos',
-    // The agree box beneath the summary. Required to send — someone who won't
-    // agree to the terms shouldn't be listed. No scroll gate: the modal is the
-    // opportunity to read; forcing a scroll is friction, not consent.
-    termsAgreeLabel: 'I have read and agree to the provider terms and conditions.',
+    // The written answers, previewed on the finish screen — their last look before
+    // it goes for review.
+    finishWroteTitle: 'Your title',
+    finishWroteExpect: 'What to expect',
+    finishWroteQuals: 'Qualifications',
+    finishWroteDietary: 'Dietary',
+    // The agree line beneath the preview: a tickbox with the terms behind a link
+    // that opens them in a modal. Required to send — someone who won't agree
+    // shouldn't be listed. No scroll gate in the modal: it's the opportunity to
+    // read; forcing a scroll is friction, not consent.
+    termsAgreePrefix: 'I have read and agree to the',
+    termsLinkText: 'provider terms and conditions',
     termsGate: 'Agree to the provider terms and conditions before you send.',
+    termsModalClose: 'Close',
 
     // The expertise screen — a hub (Airbnb-style): a photo, a heading and a line
     // of subtext, then rows that each open their own single-field sub-flow modal.
