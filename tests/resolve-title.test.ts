@@ -9,7 +9,7 @@ import { installAliases } from './helpers/stub';
 
 installAliases();
 
-const { resolveTitle } = require('@/lib/utils');
+const { resolveTitle, backfillName } = require('@/lib/utils');
 
 test('a trading name wins when set', () => {
     assert.equal(
@@ -44,4 +44,22 @@ test('a blank trading name does not win over the name', () => {
         resolveTitle({ full_name: 'Rosa Muir', trading_name: '   ', show_full_name: true }, ''),
         'Rosa Muir',
     );
+});
+
+// backfillName closes the returning-applicant-with-no-name case: a typed name
+// fills an empty profile, but never overwrites an existing name or writes blank.
+
+test('an empty account name is filled from the typed name', () => {
+    assert.equal(backfillName('', 'Rosa Muir'), 'Rosa Muir');
+    assert.equal(backfillName(null, 'Rosa Muir'), 'Rosa Muir');
+    assert.equal(backfillName('   ', 'Rosa Muir'), 'Rosa Muir');
+});
+
+test('an existing account name is never overwritten', () => {
+    assert.equal(backfillName('Rosa Muir', 'Someone Else'), null);
+});
+
+test('a blank typed name never writes over an empty profile', () => {
+    assert.equal(backfillName('', '   '), null);
+    assert.equal(backfillName(null, ''), null);
 });

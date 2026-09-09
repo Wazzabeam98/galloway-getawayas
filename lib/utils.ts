@@ -75,6 +75,20 @@ export function resolveTitle(
   return displayName(profile, fallback);
 }
 
+// The name to write to a profile that has none, or null to leave it be.
+//
+// A name typed at the account step is applied by Supabase only when the account
+// is CREATED. A RETURNING applicant already has an account, so their typed name
+// is ignored there — and if that account was made before names were captured,
+// its full_name is empty and the derived listing title comes out blank. This
+// closes that: after verifying, an empty full_name is filled from the typed
+// name. It never overwrites a name already set, and never writes an empty one.
+export function backfillName(existingFullName: string | null | undefined, typed: string): string | null {
+    if ((existingFullName || '').trim()) return null;
+    const name = (typed || '').trim();
+    return name || null;
+}
+
 // The counterparty's FIRST name, honouring the same switch as displayName.
 //
 // Where two people message each other — a guest and their host — a first name

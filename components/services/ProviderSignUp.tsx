@@ -14,7 +14,7 @@ import {
 } from 'lucide-react';
 import { TradeTile, TradeTileGrid, TRADE_ICONS, GROUP_ICONS } from '@/components/services/TradeTiles';
 import { compressImage } from '@/lib/compressImage';
-import { getImageUrl, generateRandomNumber, resolveTitle } from '@/lib/utils';
+import { getImageUrl, generateRandomNumber, resolveTitle, backfillName } from '@/lib/utils';
 import { ORDER_UNITS } from '@/lib/serviceOrders';
 import Env from '@/config/Env';
 import {
@@ -2521,12 +2521,25 @@ function ApplicationForm() {
             setOtpError((error && error.message) || 'That code did not work. Check it and try again.');
             return;
         }
-        // Signed in. The address they verified is the one to reach them on, so
-        // it pre-fills the contact field. Then move to the category picker —
-        // verify is the first screen now, so the picker is what comes next.
-        // Done in the same action, because setting the session drops g_verify
-        // from the flow and we must not be left standing on a step that no
-        // longer exists.
+        // Signed in. A NEW account already has the typed name (Supabase applied
+        // the sign-up metadata on creation). A RETURNING one does not — the
+        // metadata is ignored for an existing user — so if that account has no
+        // name yet, fill it from what they typed. backfillName never overwrites
+        // an existing name and never writes an empty one, so this is a no-op for
+        // everyone but the returning-with-no-name case it exists to close.
+        const { data: prof } = await supabase
+            .from('profiles').select('full_name').eq('id', data.session.user.id).maybeSingle();
+        const fill = backfillName(prof?.full_name, otpName);
+        if (fill) {
+            await supabase.from('profiles')
+                .update({ full_name: fill }).eq('id', data.session.user.id);
+        }
+
+        // The address they verified is the one to reach them on, so it pre-fills
+        // the contact field. Then move to the category picker — verify is the
+        // first screen now, so the picker is what comes next. Done in the same
+        // action, because setting the session drops g_verify from the flow and we
+        // must not be left standing on a step that no longer exists.
         setSession(data.session);
         if (!contactEmail.trim()) setContactEmail(email);
         setStep('trade');
@@ -4335,7 +4348,7 @@ function ApplicationForm() {
                     <div className="mt-8 space-y-5">
                         <div>
                             <label htmlFor="otp-name" className="block text-xs font-medium text-slate-500 mb-2">
-                                Your name
+                                Your name <span className="text-slate-400">(optional)</span>
                             </label>
                             {/* Captured here, at the account step, because it is
                                 account information — it becomes your listing title,
@@ -4373,9 +4386,14 @@ function ApplicationForm() {
                             <button
                                 type="button"
                                 onClick={sendOtp}
-                                disabled={otpBusy || !otpEmail.trim() || !otpName.trim()}
+                                // Email alone unlocks the code. The name must not
+                                // block a stranger on the first screen — it's the
+                                // cheapest place to give up. Blank is no worse than
+                                // before; it's captured at creation when given, and
+                                // can be set later otherwise.
+                                disabled={otpBusy || !otpEmail.trim()}
                                 className={'w-full rounded-full px-6 py-3 text-sm font-semibold transition '
-                                    + (otpBusy || !otpEmail.trim() || !otpName.trim()
+                                    + (otpBusy || !otpEmail.trim()
                                         ? 'bg-slate-200 text-slate-400 cursor-not-allowed'
                                         : 'bg-emerald-700 hover:bg-emerald-800 text-white')}
                             >
