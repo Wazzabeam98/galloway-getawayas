@@ -39,13 +39,21 @@ export const GUEST_SCREEN_COPY = {
     sectionDetails: 'Details',
     sectionFinish: 'Finish',
 
-    // The single responsibility confirmation, folded onto the finish screen (it
-    // replaced the per-category checks). Worded as a confirmation of
-    // responsibility, NOT an indemnity — the liability terms belong in the T&Cs
-    // the solicitor is drafting, not a tickbox. Required to send: someone who
-    // won't confirm it shouldn't be listed.
-    responsibilityConfirm: 'I’m responsible for my own insurance, permits and licences, and for meeting the laws that apply to what I offer.',
-    responsibilityGate: 'Confirm you’re responsible for your own insurance, permits and licences before you send.',
+    // The finish screen: a short summary of what they're submitting, then the
+    // provider terms in a scrollable panel, then the agree box. The terms TEXT
+    // lives in lib/providerTerms.ts (one source, swap-in-one-place); only the UI
+    // chrome copy is here.
+    finishSummaryHeading: 'What you’re submitting',
+    finishSummaryTitle: 'Listing',
+    finishSummaryCategory: 'Experience',
+    finishSummaryPrice: 'Price',
+    finishSummaryWhere: 'Where and when',
+    finishSummaryPhotos: 'Photos',
+    // The agree box beneath the terms panel. Required to send — someone who
+    // won't agree to the terms shouldn't be listed. No scroll gate: the panel is
+    // the opportunity to read; forcing a scroll is friction, not consent.
+    termsAgreeLabel: 'I have read and agree to the provider terms and conditions.',
+    termsGate: 'Agree to the provider terms and conditions before you send.',
 
     // The expertise screen — a hub (Airbnb-style): a photo, a heading and a line
     // of subtext, then rows that each open their own single-field sub-flow modal.

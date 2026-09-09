@@ -73,11 +73,11 @@ import {
     guestCategoryIsFood,
     guestAsksExpertise,
     guestQualificationsRequired,
-    checksFor,
     DIETARY_OPTIONS,
     DEFAULT_SERVICE_COMMISSION,
 } from '@/lib/serviceProviders';
 import { serviceCommission } from '@/lib/pricing';
+import { PROVIDER_TERMS, PROVIDER_TERMS_VERSION } from '@/lib/providerTerms';
 import { GUEST_SCREEN_COPY, GUEST_REGIONS, GUEST_COVERAGE_ALL_KEY, HOST_LOCATION_COPY } from '@/lib/strings';
 import { PhotoEditorGrid } from './PhotoEditorGrid';
 import {
@@ -431,12 +431,18 @@ function ApplicationForm() {
     const [acctBusy, setAcctBusy] = useState(false);
     const [acctError, setAcctError] = useState('');
     const [acctConsent, setAcctConsent] = useState(false);
-    // The single responsibility confirmation on the finish screen (it replaced
-    // the per-category checks). The tick itself is held in `declarations`
-    // under the 'responsibility' key, so guestProviderFields writes it like any
-    // other check; this is only the error shown when a guest presses send
-    // without it. Required to send — see the save() guard and the gated button.
-    const [responsibilityError, setResponsibilityError] = useState('');
+    // The provider terms agreement on the finish screen (it replaced the single
+    // responsibility tickbox, which replaced the per-category checks). `termsAgreed`
+    // is the agree box; on submit it is recorded in the `declarations` jsonb as
+    // { terms_version, terms_agreed_at } — the version they agreed to and when, so
+    // a bare boolean can't hide that the text has moved on since. Required to send:
+    // see the save() guard and the gated button. `termsError` is the gate message.
+    const [termsAgreed, setTermsAgreed] = useState(false);
+    const [termsError, setTermsError] = useState('');
+    // The listing title for the finish-screen summary. Derived from the account
+    // (resolveGuestTitleNow is async), so it is loaded into state when the finish
+    // screen is reached rather than computed inline.
+    const [summaryTitle, setSummaryTitle] = useState('');
     const [checkYourEmail, setCheckYourEmail] = useState(false);
 
     // The verify-your-email gate (g_verify). A guest signs in up front with a
@@ -598,10 +604,11 @@ function ApplicationForm() {
     // stores the shown value on an untouched pass, like the years screen.
     const [maxGuests, setMaxGuests] = useState('');
     const [slotLength, setSlotLength] = useState('');
-    // The declarations they've confirmed on the checks screen, keyed by check
-    // (lib/serviceProviders GUEST_CHECKS). Non-blocking — recorded for the owner
-    // to weigh at review, never a gate on Next or submit.
-    const [declarations, setDeclarations] = useState<Record<string, boolean>>({});
+    // The declarations jsonb, loaded from a returning provider's row. It now holds
+    // the terms acceptance ({ terms_version, terms_agreed_at }), so values are not
+    // all booleans — kept only to derive whether they've agreed to the CURRENT
+    // terms version on return (see the load below).
+    const [declarations, setDeclarations] = useState<Record<string, any>>({});
     // The weekly opening hours — one row per open period. day is 0..6 (0=Sunday).
     const [schedule, setSchedule] = useState<Array<{ day: number; open: string; close: string }>>([]);
     // Dates taken off (block-a-date), as 'yyyy-mm-dd' keys.
@@ -830,10 +837,13 @@ function ApplicationForm() {
                         // ('other') marks "already past the picker" without claiming
                         // a food category it isn't.
                         setGuestCategory(byLabel ? byLabel.key : 'other');
-                        // Their declarations, so a returning provider sees what
-                        // they already confirmed rather than a blank checks screen.
+                        // Their declarations, which now hold the terms acceptance.
+                        // Pre-tick the agree box only if they already agreed to the
+                        // CURRENT terms version — if the terms have moved on since,
+                        // the box starts unticked so they agree to the new text.
                         if (ex.declarations && typeof ex.declarations === 'object') {
-                            setDeclarations(ex.declarations as Record<string, boolean>);
+                            setDeclarations(ex.declarations as Record<string, any>);
+                            setTermsAgreed((ex.declarations as any).terms_version === PROVIDER_TERMS_VERSION);
                         }
                         // Their content answers in their own words — the seven
                         // fields that now live in the guest_details jsonb column
@@ -2269,12 +2279,14 @@ function ApplicationForm() {
             const n = Math.floor(Number(String(v || '').trim()));
             return String(v || '').trim() !== '' && Number.isFinite(n) ? Math.max(min, n) : null;
         };
-        // The declarations, as a record of exactly the checks this category was
-        // asked and whether each was confirmed — not the raw state, which could
-        // carry a stale tick from a category they backed out of. So the owner
-        // reads a true picture at review: what we put to them, and their answer.
-        const confirmed: Record<string, boolean> = {};
-        for (const check of checksFor(guestCategory)) confirmed[check.key] = !!declarations[check.key];
+        // The terms acceptance, recorded in the declarations jsonb: which version
+        // of the terms they agreed to and when. Not a bare boolean — the version
+        // stamp makes a stale agreement obvious if the text later changes. Written
+        // only when they've agreed (the send gate guarantees they have); the
+        // timestamp is the moment of submit.
+        const acceptance: Record<string, string> = termsAgreed
+            ? { terms_version: PROVIDER_TERMS_VERSION, terms_agreed_at: new Date().toISOString() }
+            : {};
         return {
             ...(cat && cat.label && status !== 'approved' ? { custom_label: cat.label } : {}),
             shape: shape || 'made_to_order',
@@ -2286,7 +2298,7 @@ function ApplicationForm() {
             // records it but still sells whole). Written from the one maxGuests
             // state, so it can never disagree with the jsonb copy below.
             slot_capacity: isSlot ? (num(maxGuests, 1) ?? 1) : null,
-            declarations: confirmed,
+            declarations: acceptance,
         };
     };
 
@@ -2348,6 +2360,17 @@ function ApplicationForm() {
         if (!te && t) trading = (t as any).trading_name || null;
         return resolveTitle(prof ? { ...(prof as any), trading_name: trading } : null, '');
     };
+
+    // Load the listing title for the finish-screen summary once they reach it.
+    // Derived from the account (async), so it can't be computed inline in the
+    // summary; fetched when the finish step is shown and a session exists.
+    useEffect(() => {
+        if (!isGuest || step !== 'finish' || !session || summaryTitle) return;
+        let cancelled = false;
+        resolveGuestTitleNow().then((title) => { if (!cancelled) setSummaryTitle(title); });
+        return () => { cancelled = true; };
+        // eslint-disable-next-line react-hooks/exhaustive-deps
+    }, [isGuest, step, session]);
 
     const applicationRows = (now: Date, title: string) => {
         const provider: any = {
@@ -2652,14 +2675,13 @@ function ApplicationForm() {
     };
 
     const save = async (submit: boolean) => {
-        // The responsibility confirmation gates send for a guest — someone who
-        // won't confirm they carry their own insurance, permits and licences
-        // should not go live. Checked before the account/validation branches so
-        // it applies whichever submit path they are on. Not a submitProblems
-        // field: it lives on the finish screen, so its own error shows there.
-        if (submit && isGuest && !declarations['responsibility']) {
+        // Agreeing to the terms gates send for a guest — someone who won't agree
+        // should not go live. Checked before the account/validation branches so it
+        // applies whichever submit path they are on. Not a submitProblems field:
+        // it lives on the finish screen, so its own error shows there.
+        if (submit && isGuest && !termsAgreed) {
             setTouchedSubmit(true);
-            setResponsibilityError(GUEST_SCREEN_COPY.responsibilityGate);
+            setTermsError(GUEST_SCREEN_COPY.termsGate);
             goToFirstProblem();
             return;
         }
@@ -5980,42 +6002,100 @@ function ApplicationForm() {
                 below, and changing the address is a button rather than an
                 instruction, because the field is two steps back and telling
                 somebody to go and find it is how they give up. */}
-            {/* The one confirmation that replaced the per-category checks, folded
-                onto the finish screen as a tickbox above submit (the standard
-                shape). Guest-only, and REQUIRED to send — the save() guard and
-                the gated button both hold on it. The tick lives in
-                `declarations.responsibility`, so guestProviderFields writes it
-                like any check. Worded as a confirmation of responsibility, not an
-                indemnity — the liability terms are in the T&Cs, not here. */}
-            {onStep('finish') && isGuest && !locked && !lodged && (
-                <section className="mb-8">
-                    <label
-                        className={
-                            'flex items-start gap-3 rounded-2xl border-2 px-5 py-4 cursor-pointer transition '
-                            + 'focus-within:ring-2 focus-within:ring-emerald-600 '
-                            + (declarations['responsibility']
-                                ? 'border-emerald-600 bg-emerald-50/60'
-                                : 'border-slate-200 hover:border-slate-300')
-                        }
-                    >
-                        <input
-                            type="checkbox"
-                            checked={!!declarations['responsibility']}
-                            onChange={(e) => {
-                                setDeclarations((prev) => ({ ...prev, responsibility: e.target.checked }));
-                                setResponsibilityError('');
-                            }}
-                            className="mt-0.5 w-4 h-4 rounded border-slate-300 shrink-0"
-                        />
-                        <span className="text-sm text-slate-800">
-                            {GUEST_SCREEN_COPY.responsibilityConfirm}
-                        </span>
-                    </label>
-                    {responsibilityError && (
-                        <p data-problem className="text-sm text-rose-700 mt-2">{responsibilityError}</p>
-                    )}
+            {/* The finish screen for a guest: a short summary of what they're
+                submitting, then the provider terms in a scrollable panel, then the
+                agree box. REQUIRED to send — the save() guard and the gated button
+                both hold on `termsAgreed`. The terms TEXT is the single source in
+                lib/providerTerms.ts; the acceptance is recorded in the declarations
+                jsonb with its version + timestamp (guestProviderFields). No scroll
+                gate: the panel is the opportunity to read; forcing a scroll is
+                friction, not consent. */}
+            {onStep('finish') && isGuest && !locked && !lodged && (() => {
+                const catLabel = guestCategoryByKey(guestCategory)?.label || GUEST_SCREEN_COPY.finishSummaryCategory;
+                const priceVal = (items || [])
+                    .filter((i) => String(i.price || '').trim())
+                    .map((i) => '£' + String(i.price).trim())
+                    .join(', ') || '—';
+                // A guest's areas hold the region label in `town` (set from
+                // GUEST_REGIONS when a region is picked), so read that directly.
+                const whereVal = (areas || []).map((a) => a.town).filter(Boolean).join(', ');
+                const whenVal = shape === 'slot'
+                    ? `${(schedule || []).length} weekly time${(schedule || []).length === 1 ? '' : 's'}`
+                    : shape === 'made_to_order'
+                        ? `${String(leadTimeDays || '0').trim()} days’ notice`
+                        : 'arranged per booking';
+                const whereWhen = [whereVal || '—', whenVal].filter(Boolean).join(' · ');
+                const rows: [string, string][] = [
+                    [GUEST_SCREEN_COPY.finishSummaryTitle, summaryTitle || '—'],
+                    [GUEST_SCREEN_COPY.finishSummaryCategory, catLabel],
+                    [GUEST_SCREEN_COPY.finishSummaryPrice, priceVal],
+                    [GUEST_SCREEN_COPY.finishSummaryWhere, whereWhen],
+                    [GUEST_SCREEN_COPY.finishSummaryPhotos, String((photos || []).length)],
+                ];
+                return (
+                <section className="mb-8 space-y-6">
+                    {/* Five quiet lines: what they're about to submit, so the
+                        agreement sits next to the thing being agreed. */}
+                    <div>
+                        <h2 className="text-xs font-semibold uppercase tracking-wide text-slate-500 mb-3">
+                            {GUEST_SCREEN_COPY.finishSummaryHeading}
+                        </h2>
+                        <dl className="rounded-2xl border border-slate-200 divide-y divide-slate-100">
+                            {rows.map(([label, value]) => (
+                                <div key={label} className="flex gap-4 px-4 py-2.5 text-sm">
+                                    <dt className="w-32 shrink-0 text-slate-500">{label}</dt>
+                                    <dd className="min-w-0 text-slate-900 break-words">{value}</dd>
+                                </div>
+                            ))}
+                        </dl>
+                    </div>
+
+                    {/* The terms, scrollable. No scroll gate on the box below. */}
+                    <div>
+                        <div className="max-h-72 overflow-y-auto rounded-2xl border border-slate-200 p-5 text-sm text-slate-700 space-y-4">
+                            {PROVIDER_TERMS.draftNotice && (
+                                <p className="rounded-lg border border-amber-200 bg-amber-50 px-3 py-2 text-xs font-semibold text-amber-800">
+                                    {PROVIDER_TERMS.draftNotice}
+                                </p>
+                            )}
+                            <h3 className="text-base font-bold text-slate-900">{PROVIDER_TERMS.title}</h3>
+                            {PROVIDER_TERMS.sections.map((sec) => (
+                                <div key={sec.heading} className="space-y-1.5">
+                                    <h4 className="font-semibold text-slate-900">{sec.heading}</h4>
+                                    {sec.body.map((p, i) => <p key={i}>{p}</p>)}
+                                </div>
+                            ))}
+                        </div>
+
+                        <label
+                            className={
+                                'mt-4 flex items-start gap-3 rounded-2xl border-2 px-5 py-4 cursor-pointer transition '
+                                + 'focus-within:ring-2 focus-within:ring-emerald-600 '
+                                + (termsAgreed
+                                    ? 'border-emerald-600 bg-emerald-50/60'
+                                    : 'border-slate-200 hover:border-slate-300')
+                            }
+                        >
+                            <input
+                                type="checkbox"
+                                checked={termsAgreed}
+                                onChange={(e) => { setTermsAgreed(e.target.checked); setTermsError(''); }}
+                                className="mt-0.5 w-4 h-4 rounded border-slate-300 shrink-0"
+                            />
+                            <span className="text-sm text-slate-800">
+                                {GUEST_SCREEN_COPY.termsAgreeLabel}
+                                <span className="mt-0.5 block text-xs text-slate-400">
+                                    Version {PROVIDER_TERMS.version}
+                                </span>
+                            </span>
+                        </label>
+                        {termsError && (
+                            <p data-problem className="text-sm text-rose-700 mt-2">{termsError}</p>
+                        )}
+                    </div>
                 </section>
-            )}
+                );
+            })()}
 
             {onStep('finish') && accountExists && !lodged && (
                 <div className="rounded-2xl border-2 border-amber-500 bg-amber-50 p-5 mb-8">
@@ -6330,11 +6410,11 @@ function ApplicationForm() {
                         <button
                             type="button"
                             onClick={() => save(true)}
-                            // A guest must confirm responsibility before send. The
+                            // A guest must agree to the terms before send. The
                             // save() guard enforces it too; disabling the button
-                            // makes it visible, with the box and its gate line
-                            // right above on the finish screen.
-                            disabled={saving || acctBusy || (isGuest && !declarations['responsibility'])}
+                            // makes it visible, with the agree box and its gate
+                            // line right above on the finish screen.
+                            disabled={saving || acctBusy || (isGuest && !termsAgreed)}
                             className="min-w-0 rounded-full bg-emerald-700 hover:bg-emerald-800 text-white px-5 sm:px-6 py-2.5 text-sm font-semibold transition disabled:opacity-60"
                         >
                             <span className="block truncate">

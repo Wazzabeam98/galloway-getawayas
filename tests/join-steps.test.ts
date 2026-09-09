@@ -36,7 +36,7 @@ const {
 const {
     TRADES, submitProblems, planForTrade,
     capabilityFor, pricedOfferingsFor, showsRates, extrasFor, bandsFor,
-    asksAboutFuel, asksAboutSkills, offerableSchemes, checksFor,
+    asksAboutFuel, asksAboutSkills, offerableSchemes,
     guestAsksExpertise, guestQualificationsRequired, guestYearsRequired,
 } = require('@/lib/serviceProviders');
 
@@ -621,22 +621,11 @@ test('expertise and years are asked of every category except the sauna', () => {
     assert.equal(stepApplies('g_photos', 'guest', sauna), true, 'sauna still has photos');
 });
 
-test('every guest confirms one responsibility statement, whatever the category', () => {
-    // The per-category catalogue (insurance, food registration, allergens,
-    // alcohol, sauna heat, water safety, …) collapsed to a SINGLE responsibility
-    // confirmation (Sep 2026): a provider is a third party responsible for their
-    // own insurance, permits and licences, and the specifics moved into the T&Cs.
-    // There is no g_checks step any more — the one box is folded onto the finish
-    // screen — so checksFor returns exactly one entry, the same for every
-    // category, and guestProviderFields still writes it into declarations.
-    for (const cat of ['chef', 'sauna', 'tastings', 'water', 'other', null]) {
-        assert.deepEqual(
-            checksFor(cat).map((c: any) => c.key),
-            ['responsibility'],
-            JSON.stringify(cat) + ' confirms exactly the one responsibility statement',
-        );
-    }
-});
+// The per-category checks catalogue and its single-confirmation successor were
+// both retired: a guest now agrees to the provider terms on the finish screen,
+// recorded in the declarations jsonb (terms_version + terms_agreed_at). That
+// acceptance lives in the component, not the pure step model, so it has no test
+// here; the gating and the recorded stamp are covered live and by typecheck.
 
 test('years and qualifications are required only where physical safety is at stake', () => {
     // The line, category by category (Sep 2026). The four where a guide holds
