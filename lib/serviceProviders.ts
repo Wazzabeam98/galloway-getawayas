@@ -296,77 +296,27 @@ export function knownDietaryOptions(keys: string[]): string[] {
     return DIETARY_OPTIONS.filter((o) => has.has(o.key)).map((o) => o.key);
 }
 
+// One confirmation for every guest experience, whatever the category. The old
+// per-category catalogue (insurance, food registration, allergens, alcohol,
+// sauna heat, water safety, …) collapsed to this single responsibility
+// statement (Sep 2026): a provider is a third party responsible for their own
+// insurance, permits and licences, and the specifics moved into the terms and
+// conditions rather than a wall of tickboxes. Worded as a confirmation of
+// responsibility, NOT an indemnity — a promise to cover liability is a contract
+// term and belongs in the T&Cs, not here. Kept as a one-entry catalogue (rather
+// than a bare constant) so the storage shape is unchanged: guestProviderFields
+// still builds `declarations` by looping checksFor, now writing a single
+// `{ responsibility: true }`.
 export const GUEST_CHECKS: GuestCheck[] = [
-    // Universal — asked of every guest experience.
     {
-        key: 'insurance',
-        label: 'I hold public liability insurance for what I offer.',
-        hint: 'Cover for a guest who is hurt, or whose property is damaged, while you host them.',
+        key: 'responsibility',
+        label: GUEST_SCREEN_COPY.responsibilityConfirm,
         applies: () => true,
-    },
-    {
-        key: 'accurate',
-        label: "Everything I've described here is accurate, and I'll keep it up to date.",
-        hint: 'What a guest reads is what they get.',
-        applies: () => true,
-    },
-    // Food & drink — a food business in Scotland must register with its council.
-    {
-        key: 'food_registered',
-        label: 'I am registered as a food business with my local council.',
-        hint: 'Free, and required before you sell food. Dumfries & Galloway Council registers you — allow 28 days.',
-        applies: (c) => !!c && c.food,
-    },
-    {
-        key: 'allergens',
-        label: 'I can give guests full allergen information for what I make.',
-        hint: 'The fourteen named allergens, on request and labelled on anything pre-packed.',
-        applies: (c) => !!c && c.food,
-    },
-    // Alcohol — pouring at a tasting needs a licence.
-    {
-        key: 'alcohol',
-        label: 'I hold the licence to serve alcohol, or guests supply their own.',
-        hint: 'A tasting where you pour needs a personal or occasional licence.',
-        applies: (c) => !!c && c.key === 'tastings',
-    },
-    // Outdoors & water — leading people into the outdoors.
-    {
-        key: 'outdoor_trained',
-        label: 'I am trained and equipped to lead this activity safely.',
-        hint: 'The right qualification for what you run, and a plan for when conditions turn.',
-        applies: (c) => !!c && c.group === 'outdoors',
-    },
-    {
-        key: 'water_safety',
-        label: 'I carry the water-safety kit, and I check conditions before every session.',
-        hint: 'Tides, water temperature, and a way to get someone out.',
-        applies: (c) => !!c && c.key === 'water',
-    },
-    // Wellness — heat, cold water, and hands-on treatment.
-    {
-        key: 'sauna_safe',
-        label: 'My sauna and cold-water setup is maintained, and guests get clear safety guidance.',
-        hint: 'Ventilation, a way out from the inside, and who should not use it.',
-        applies: (c) => !!c && c.key === 'sauna',
-    },
-    {
-        key: 'treatment_qualified',
-        label: 'I am qualified and insured for the treatments I give.',
-        hint: 'Trained to give massage, reflexology or beauty treatments to the public.',
-        applies: (c) => !!c && c.key === 'massage',
-    },
-    // Arts & crafts — tools, kilns and materials around guests.
-    {
-        key: 'equipment_safe',
-        label: 'My tools, kiln and materials are safe for guests to use under supervision.',
-        applies: (c) => !!c && c.group === 'crafts',
     },
 ];
 
-// The checks a given category must confirm, in order. An unknown / unpicked /
-// "Something else" category (c === null) still gets the two universal ones, so
-// every guest experience has a checks screen with something on it.
+// The checks a given category must confirm. Now one — the responsibility
+// confirmation, asked of every guest experience regardless of category.
 export function checksFor(category: string | null | undefined): GuestCheck[] {
     const c = guestCategoryByKey(category);
     return GUEST_CHECKS.filter((k) => k.applies(c));
@@ -2539,7 +2489,11 @@ export function submitProblems(draft: ProviderDraft): Problem[] {
         });
     }
 
-    if (!email || email.indexOf('@') === -1) {
+    // A host/trade types the address we reach them on. A guest experience does
+    // not: they signed in up front, so their contact address IS their account
+    // address, set from the session at submit — asking again was a re-ask, and
+    // requiring it here would block every guest on a field they no longer see.
+    if (audienceForTrade(draft.trade || '') !== 'guest' && (!email || email.indexOf('@') === -1)) {
         problems.push({
             field: 'contact_email',
             message: 'Add an email address we can reach you on about jobs.',

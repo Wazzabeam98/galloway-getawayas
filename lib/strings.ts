@@ -49,6 +49,14 @@ export const GUEST_SCREEN_COPY = {
     // as a filled-in value.
     verifyEmailPlaceholder: 'you@example.com',
 
+    // The single responsibility confirmation, folded onto the finish screen (it
+    // replaced the per-category checks). Worded as a confirmation of
+    // responsibility, NOT an indemnity — the liability terms belong in the T&Cs
+    // the solicitor is drafting, not a tickbox. Required to send: someone who
+    // won't confirm it shouldn't be listed.
+    responsibilityConfirm: 'I’m responsible for my own insurance, permits and licences, and for meeting the laws that apply to what I offer.',
+    responsibilityGate: 'Confirm you’re responsible for your own insurance, permits and licences before you send.',
+
     // The expertise screen — a hub (Airbnb-style): a photo, a heading and a line
     // of subtext, then rows that each open their own single-field sub-flow modal.
     expertiseHeading: 'Tell guests about yourself',

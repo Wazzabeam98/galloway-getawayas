@@ -28,7 +28,6 @@ import {
     asksAboutSkills,
     asksAboutFuel,
     audienceForTrade,
-    checksFor,
     guestAsksExpertise,
 } from '@/lib/serviceProviders';
 import { GUEST_SCREEN_COPY } from '@/lib/strings';
@@ -42,7 +41,7 @@ import { GUEST_SCREEN_COPY } from '@/lib/strings';
 // ever gains one. See stepApplies.
 export type StepKey =
     | 'trade' | 'g_subtype' | 'g_verify' | 'business'
-    | 'g_you' | 'g_creds' | 'g_about' | 'g_capacity' | 'g_menu' | 'g_expect' | 'g_photos' | 'g_area' | 'g_checks' | 'g_contact'
+    | 'g_you' | 'g_creds' | 'g_about' | 'g_capacity' | 'g_menu' | 'g_expect' | 'g_photos' | 'g_area'
     | 'credentials' | 'prices' | 'finish';
 
 // The guest-only steps, in flow order. Rebuilt against Airbnb's host-an-
@@ -60,10 +59,13 @@ export type StepKey =
 // (years, expertise), then Location straight after — it matters more for us than
 // for them, a chef in Carlisle should learn we only cover Dumfries & Galloway
 // before writing anything — then Photos, Pricing, Details, and the Finish
-// wrap-up (checks, contact, account).
+// screen (the account, with a single responsibility confirmation folded in).
+// There is no standalone checks step (collapsed to one confirmation that lives
+// on the finish screen) and no contact step (a guest signs in up front, so the
+// account address is the contact address, and the phone lives on the profile).
 const GUEST_STEP_KEYS: StepKey[] = [
     'g_verify', 'g_subtype',
-    'g_you', 'g_creds', 'g_area', 'g_photos', 'g_capacity', 'g_menu', 'g_expect', 'g_checks', 'g_contact',
+    'g_you', 'g_creds', 'g_area', 'g_photos', 'g_capacity', 'g_menu', 'g_expect',
 ];
 
 // What a guest's steps branch on, all from earlier answers: the top-level group
@@ -121,8 +123,6 @@ const ALL_STEPS: Step[] = [
     { key: 'g_capacity', label: 'Guests', title: 'How many guests?' },
     { key: 'g_menu', label: 'Price', title: 'What you offer, and what it costs' },
     { key: 'g_expect', label: 'Details', title: 'What can a guest expect?' },
-    { key: 'g_checks', label: 'Checks', title: 'A few checks before we list you' },
-    { key: 'g_contact', label: 'Contact', title: 'Where can we reach you?' },
     // Not "Registration". Registration and skills never co-occur across the
     // trade list — the electrician and plumber give numbers, the handyman gives
     // skills, nobody does both — so a step called Registration was wrong for
@@ -186,12 +186,13 @@ export function stepApplies(step: StepKey, trade: string, ctx?: StepContext): bo
             case 'g_creds':
                 return guestAsksExpertise(ctx.category);
             // Asked of every guest: the price (g_menu), what a guest can expect
-            // (g_expect), the photos (g_photos) and how to reach them (g_contact).
-            // There is no naming step — the title is derived from the account.
+            // (g_expect) and the photos (g_photos). There is no naming step (the
+            // title is derived from the account), no contact step (the account
+            // address is the contact address) and no checks step (collapsed to
+            // one confirmation on the finish screen).
             case 'g_menu':
             case 'g_expect':
             case 'g_photos':
-            case 'g_contact':
                 return true;
             // Maximum guests. Only where a group size means something: the
             // provider travels to the guest (comes_to_you) or the guests come to
@@ -199,13 +200,6 @@ export function stepApplies(step: StepKey, trade: string, ctx?: StepContext): bo
             // 'other' has no shape, so both skip it.
             case 'g_capacity':
                 return shape === 'comes_to_you' || shape === 'slot';
-            // The checks sub-flow: the declarations this category has to
-            // confirm. Always at least the two universal ones (insurance and
-            // accuracy), so it is on for every guest — but computed from
-            // checksFor so it would fall away by itself if a category ever had
-            // nothing to ask, rather than a hand-set true.
-            case 'g_checks':
-                return checksFor(ctx.category).length > 0;
             // Where and when, in one step. Every guest needs a location —
             // submitProblems requires at least one area for anyone, and the
             // marketplace has to know where they are. The wording adapts (how
@@ -273,8 +267,9 @@ export function stepsFor(trade: string, ctx?: StepContext): Step[] {
 //
 // Airbnb shows a handful of named sections, not a "Step 5 of 12" count. The
 // guest flow groups its screens the same way: a couple of screens can share a
-// section (About you is the years screen and the expertise hub; Finish is the
-// checks, the contact and the account screen), and a section renders only when
+// section (About you is the years screen and the expertise hub; Finish is now
+// the single account screen, with a responsibility confirmation folded in), and
+// a section renders only when
 // at least one of its steps applies to this guest — the same rule that governs
 // the steps themselves, so the rail can never name a section nobody reaches.
 //
@@ -290,7 +285,10 @@ const GUEST_SECTIONS: { key: string; label: string; steps: StepKey[] }[] = [
     { key: 'photos', label: GUEST_SCREEN_COPY.sectionPhotos, steps: ['g_photos'] },
     { key: 'pricing', label: GUEST_SCREEN_COPY.sectionPricing, steps: ['g_capacity', 'g_menu'] },
     { key: 'details', label: GUEST_SCREEN_COPY.sectionDetails, steps: ['g_expect'] },
-    { key: 'finish', label: GUEST_SCREEN_COPY.sectionFinish, steps: ['g_checks', 'g_contact', 'finish'] },
+    // Finish is now a single screen: the account, with one responsibility
+    // confirmation folded in above submit. The old checks and contact steps that
+    // shared this section are gone.
+    { key: 'finish', label: GUEST_SCREEN_COPY.sectionFinish, steps: ['finish'] },
 ];
 
 export interface FlowSection {
@@ -413,8 +411,6 @@ const STEP_FIELDS: Record<StepKey, string[]> = {
     g_expect: [],
     g_photos: [],
     g_area: [],
-    g_checks: [],
-    g_contact: [],
     finish: [],
 };
 
@@ -430,7 +426,9 @@ const GUEST_STEP_FIELDS: Partial<Record<StepKey, string[]>> = {
     // submit, not asked, so it belongs to no step's Next.
     // Location and the weekly hours both live on the where-and-when step.
     g_area: ['areas', 'availability'],
-    g_contact: ['contact_email', 'contact_phone'],
+    // No contact step: contact_email is derived from the account at submit (so
+    // submitProblems no longer raises it for a guest) and the phone lives on the
+    // profile — neither belongs to a step's Next.
 };
 
 // Which step an error belongs on. With a guest context, the guest map is used
