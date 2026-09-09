@@ -716,7 +716,12 @@ function ApplicationForm() {
                 // it is inherited from another one they hold.
                 const { data: existing, error: existingError } = await supabase
                     .from('service_providers')
-                    .select('id, business_name, trade, description, sms_opt_out, audience, photos, logo, status, review_note, callout_fee, hourly_rate, callout_waived, does_gas, does_oil, kind, pricing_choice, billable_hourly_rate, covered_bands, provider_name, based_line, headshot, dietary_note, custom_label, shape, lead_time_days, slot_length_minutes, slot_capacity, declarations, guest_details')
+                    // based_line and provider_name are deliberately absent: the
+                    // wizard doesn't use them (based_line is derived server-side;
+                    // provider_name was retired with the "Your name" field), and
+                    // selecting a column the authenticated role can't read 403s
+                    // the whole load. They stay revoked.
+                    .select('id, business_name, trade, description, sms_opt_out, audience, photos, logo, status, review_note, callout_fee, hourly_rate, callout_waived, does_gas, does_oil, kind, pricing_choice, billable_hourly_rate, covered_bands, headshot, dietary_note, custom_label, shape, lead_time_days, slot_length_minutes, slot_capacity, declarations, guest_details')
                     .eq('owner_id', session.user.id)
                     .eq('trade', tradeFromUrl)
                     .maybeSingle();
@@ -785,7 +790,6 @@ function ApplicationForm() {
                         })));
                     }
 
-                    setProviderName((existing as any).provider_name || '');
                     setDietaryNote((existing as any).dietary_note || '');
                     setHeadshot((existing as any).headshot || null);
 

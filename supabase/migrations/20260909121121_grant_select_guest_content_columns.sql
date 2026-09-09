@@ -14,12 +14,35 @@
 -- The public listing was unaffected because it reads via the service role,
 -- which bypasses grants.
 --
--- Grant SELECT so a signed-in provider can read their own row (RLS still limits
--- WHICH rows). Both are listing content — a professional title, qualifications,
--- what-happens, dietary, the confirmed declarations — not secrets; the service
--- role already reads them for the shop.
+-- A sweep of every column added since the allow-list switch found the gap is
+-- wider: the provider sign-up wizard's own-provider load reads several columns
+-- the `authenticated` role can't select. Each one below is granted because the
+-- signed-in OWNER reads it to repopulate their form (RLS still limits WHICH
+-- rows). It is NOT a blanket grant of every ungranted column — audit fields
+-- (category_assigned_at/by), the service-role-only booking fields
+-- (cancellation_window_hours, exclusive_per_date), and unread legacy fields
+-- (experience_price) stay revoked, and based_line / provider_name were dropped
+-- from the wizard's select rather than granted because it never used them.
+--
+--   declarations, guest_details  — the content answers, restored for editing
+--   custom_label                 — reverse-maps the chosen category on reopen
+--   dietary_note                 — the dietary note, restored
+--   headshot                     — the provider's photo, restored
+--   shape                        — the booking shape, drives the per-shape fields
+--   lead_time_days               — made-to-order notice, restored
+--   slot_length_minutes,
+--   slot_capacity                — the slot's length and size, restored
 
-grant select (declarations), select (guest_details)
+grant
+    select (declarations),
+    select (guest_details),
+    select (custom_label),
+    select (dietary_note),
+    select (headshot),
+    select (shape),
+    select (lead_time_days),
+    select (slot_length_minutes),
+    select (slot_capacity)
     on table "public"."service_providers" to "authenticated";
 
 -- PostgREST caches the schema/grants; without this the change 403s until reload.
