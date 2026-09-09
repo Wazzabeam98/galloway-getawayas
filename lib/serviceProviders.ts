@@ -2519,7 +2519,12 @@ export function submitProblems(draft: ProviderDraft): Problem[] {
     const description = (draft.description || '').trim();
     const email = (draft.contact_email || '').trim();
 
-    if (name.length < 2) {
+    // A host trades under a business name and must give one. A guest experience
+    // is a person: the title is derived from the account name (or a trading name
+    // set in account settings) at submit, never typed, so there is nothing to
+    // require here — and requiring it would block every guest on an empty field
+    // that no longer exists.
+    if (audienceForTrade(draft.trade || '') !== 'guest' && name.length < 2) {
         problems.push({ field: 'business_name', message: 'Add the name of your business.' });
     }
 

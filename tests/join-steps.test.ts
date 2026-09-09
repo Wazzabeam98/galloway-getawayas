@@ -477,10 +477,11 @@ test('a signed-in guest skips the gate — the picker if no category, else the f
         'trade',
     );
     assert.equal(
-        // The name step (g_about, "What's it called?") is the first content
-        // screen now — right after the sub-type, ahead of About you.
+        // No naming step any more — the first content screen is the About-you
+        // opener (g_you); resolveStep drops it to the next live step for a
+        // category that skips the expertise screens.
         openingStep({ hydrated: true, restored: false, lodged: false, trade: 'guest', guestNeedsCategory: false, hasSession: true }),
-        'g_about',
+        'g_you',
     );
 });
 
@@ -513,9 +514,11 @@ test('a guest with no context still sees the old three steps', () => {
 // anonymous applicant with a sub-type walks these thirteen keys — g_verify
 // leading, because they have no session yet. A signed-in applicant skips
 // g_verify (see the test below).
-const THIRTEEN = [
+// No naming step (g_about) any more: a guest experience is a person, so the
+// listing title is their account name, derived at submit — never asked.
+const TWELVE = [
     'g_verify', 'trade', 'g_subtype', 'g_you', 'g_creds', 'g_area', 'g_photos',
-    'g_menu', 'g_expect', 'g_about', 'g_checks', 'g_contact', 'finish',
+    'g_menu', 'g_expect', 'g_checks', 'g_contact', 'finish',
 ];
 
 // A comes-to-you or slot category also has a max-guests step (g_capacity) at the
@@ -529,7 +532,7 @@ const withCapacity = (keys: string[]) => {
 
 test('a chef (food, comes to them) walks the flow, with a capacity step, and never sees the business step', () => {
     const ctx = { group: 'food', category: 'chef', shape: 'comes_to_you' };
-    assert.deepEqual(gkeys(ctx), withCapacity(THIRTEEN));
+    assert.deepEqual(gkeys(ctx), withCapacity(TWELVE));
     // The old "how do guests get it?" screen is gone — the shape is inferred.
     assert.equal(stepApplies('business', 'guest', ctx), false, 'a guest names it on g_about, not a business step');
     assert.equal(stepApplies('g_capacity', 'guest', ctx), true, 'a chef sets a largest group');
@@ -548,7 +551,7 @@ test('the verify gate leads the flow for an anonymous applicant and is gone once
     assert.equal(gkeys(signedIn).indexOf('g_verify'), -1, 'the gate is not in a signed-in flow');
     // Everything else is unchanged — the signed-in flow is the thirteen (plus
     // the chef's capacity step) minus g_verify.
-    assert.deepEqual(gkeys(signedIn), withCapacity(THIRTEEN).filter((k) => k !== 'g_verify'));
+    assert.deepEqual(gkeys(signedIn), withCapacity(TWELVE).filter((k) => k !== 'g_verify'));
 });
 
 test('a signed-in applicant is never resolved onto the verify gate by a restored draft', () => {
@@ -570,7 +573,7 @@ test('a cake maker (made to order) gets the years and expertise screens too', ()
     // walks the full flow now, with g_you and g_creds. The lead time it needs
     // lives inside the where-and-when step, not a screen of its own.
     const ctx = { group: 'food', category: 'food_order', shape: 'made_to_order' };
-    assert.deepEqual(gkeys(ctx), THIRTEEN);
+    assert.deepEqual(gkeys(ctx), TWELVE);
     assert.equal(stepApplies('g_you', 'guest', ctx), true, 'years asked');
     assert.equal(stepApplies('g_creds', 'guest', ctx), true, 'expertise asked');
     // Cakes and hampers have no guests, so no max-guests step.
@@ -579,7 +582,7 @@ test('a cake maker (made to order) gets the years and expertise screens too', ()
 
 test('a yoga instructor (not food, slot) walks the flow, with a capacity step and dietary folded away', () => {
     const ctx = { group: 'wellness', category: 'yoga', shape: 'slot' };
-    assert.deepEqual(gkeys(ctx), withCapacity(THIRTEEN));
+    assert.deepEqual(gkeys(ctx), withCapacity(TWELVE));
     assert.equal(stepApplies('g_capacity', 'guest', ctx), true, 'a slot sets how many the space holds');
     // Dietary is no longer a step — it renders inside g_expect for a food
     // category only, so a yoga class simply never sees that field.
@@ -683,7 +686,7 @@ test('the something-else group skips the sub-type screen', () => {
     // the picker, then straight into the content.
     assert.deepEqual(
         gkeys(ctx),
-        ['g_verify', 'trade', 'g_you', 'g_creds', 'g_area', 'g_photos', 'g_menu', 'g_expect', 'g_about', 'g_checks', 'g_contact', 'finish'],
+        ['g_verify', 'trade', 'g_you', 'g_creds', 'g_area', 'g_photos', 'g_menu', 'g_expect', 'g_checks', 'g_contact', 'finish'],
     );
 });
 
@@ -694,7 +697,7 @@ test('the guest split never touches a host trade', () => {
         stepsFor('plumber', ctx).map((s: any) => s.key),
         stepsFor('plumber').map((s: any) => s.key),
     );
-    for (const k of ['g_subtype', 'g_verify', 'g_you', 'g_creds', 'g_about', 'g_capacity', 'g_menu', 'g_expect', 'g_photos', 'g_area', 'g_checks', 'g_contact']) {
+    for (const k of ['g_subtype', 'g_verify', 'g_you', 'g_creds', 'g_capacity', 'g_menu', 'g_expect', 'g_photos', 'g_area', 'g_checks', 'g_contact']) {
         assert.equal(stepApplies(k as any, 'plumber', ctx), false, k + ' is off for a host trade');
     }
 });

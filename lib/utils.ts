@@ -61,6 +61,20 @@ export function displayName(
   return fallback;
 }
 
+// The listing TITLE for a guest experience — an individual person, not a
+// business. A trading name wins if they set one (in account settings); otherwise
+// the person's own name stands. business_name is DERIVED from this at write time
+// and re-derived when either changes, so every read site keeps reading
+// business_name unchanged. Falls back to displayName's own fallback last.
+export function resolveTitle(
+  profile: (NameProfile & { trading_name?: string | null }) | null | undefined,
+  fallback: string = "User"
+): string {
+  const trading = (profile?.trading_name || "").trim();
+  if (trading) return trading;
+  return displayName(profile, fallback);
+}
+
 // The counterparty's FIRST name, honouring the same switch as displayName.
 //
 // Where two people message each other — a guest and their host — a first name

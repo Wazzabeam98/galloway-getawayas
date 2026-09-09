@@ -12,7 +12,7 @@ import Logo from '@/components/base/Logo';
 import MessageTemplates from '@/components/account/MessageTemplates';
 import LoginModel from '@/components/auth/LoginModel';
 import { toast } from 'react-toastify';
-import { getImageUrl, formatTime } from '@/lib/utils';
+import { getImageUrl, formatTime, resolveTitle } from '@/lib/utils';
 import Env from '@/config/Env';
 import { compressImage } from '@/lib/compressImage';
 import NotificationsSection from '@/components/account/NotificationsSection';
@@ -82,13 +82,18 @@ function describeListings(ids: string[] | null | undefined): string {
 // Highlights the placeholders inside the box you actually type in.
 //
 interface Field {
-    key: 'full_name' | 'preferred_name' | 'phone' | 'residential_address';
+    key: 'full_name' | 'preferred_name' | 'trading_name' | 'phone' | 'residential_address';
     label: string;
+    hint?: string;
 }
 
 const FIELDS: Field[] = [
     { key: 'full_name', label: 'Legal name' },
     { key: 'preferred_name', label: 'Preferred name' },
+    // Optional, and never asked at sign-up: a guest experience is listed under
+    // the person's own name unless they trade under one. When set, it takes over
+    // as the listing title.
+    { key: 'trading_name', label: 'Trading name', hint: 'Optional. The name your experience is listed under, if you trade under one. Leave it blank and your listing shows under your own name.' },
     { key: 'phone', label: 'Phone number' },
 ];
 
@@ -98,7 +103,8 @@ export default function AccountSettings() {
     const [email, setEmail] = useState('');
     const [activeSection, setActiveSection] = useState('personal');
 
-    const [profile, setProfile] = useState<{ full_name: string; preferred_name: string; phone: string; residential_address: string }>({
+    const [profile, setProfile] = useState<{ full_name: string; preferred_name: string; trading_name: string; phone: string; residential_address: string }>({
+        trading_name: '',
         full_name: '',
         preferred_name: '',
         phone: '',
@@ -198,11 +204,22 @@ export default function AccountSettings() {
                     setProfile({
                         full_name: profileData.full_name || '',
                         preferred_name: profileData.preferred_name || '',
+                        trading_name: '',
                         phone: profileData.phone || '',
                         residential_address: profileData.residential_address || '',
                     });
                     setShowFullName(profileData.show_full_name !== false);
                     setAvatarUrl(profileData.avatar_url || null);
+                }
+
+                // trading_name is public (granted like full_name), so it is read
+                // straight off profiles rather than the private view. Defensive:
+                // if the column is not deployed yet the whole page must still
+                // load, so a failure just leaves it blank.
+                const { data: tn } = await supabase
+                    .from('profiles').select('trading_name').eq('id', session.user.id).maybeSingle();
+                if (tn && (tn as any).trading_name) {
+                    setProfile((prev) => ({ ...prev, trading_name: (tn as any).trading_name }));
                 }
 
                 // host_bio lives on profiles (public-readable), not on the
@@ -281,7 +298,34 @@ export default function AccountSettings() {
 
         setProfile((prev) => ({ ...prev, [field.key]: draftValue }));
         setEditingField(null);
+
+        // The listing title (service_providers.business_name) is derived from the
+        // trading name and the person's name, so a change to any of them re-derives
+        // it on the owner's guest experience. Hosts type their own business name,
+        // so only guest rows are touched.
+        if (field.key === 'trading_name' || field.key === 'full_name' || field.key === 'preferred_name') {
+            await rederiveGuestTitle({ [field.key]: draftValue });
+        }
+
         router.refresh();
+    };
+
+    // Re-derive the guest listing title from the latest name values and write it
+    // to the owner's guest experience. `next` carries the value just saved, which
+    // the profile state may not have caught up to yet.
+    const rederiveGuestTitle = async (next: Partial<{ full_name: string; preferred_name: string; trading_name: string; show_full_name: boolean }>) => {
+        if (!session?.user) return;
+        const title = resolveTitle({
+            full_name: next.full_name ?? profile.full_name,
+            preferred_name: next.preferred_name ?? profile.preferred_name,
+            trading_name: next.trading_name ?? profile.trading_name,
+            show_full_name: next.show_full_name ?? showFullName,
+        }, '');
+        if (!title) return;
+        await supabase.from('service_providers')
+            .update({ business_name: title })
+            .eq('owner_id', session.user.id)
+            .eq('audience', 'guest');
     };
 
     const saveBio = async () => {
@@ -503,6 +547,10 @@ export default function AccountSettings() {
             toast.error(error.message, { theme: 'colored' });
             return;
         }
+
+        // The switch changes what displayName returns, so a guest listed under
+        // their own name (no trading name) may need its title re-derived.
+        await rederiveGuestTitle({ show_full_name: next });
 
         toast.success('Privacy setting saved.', { theme: 'colored' });
     };
@@ -781,6 +829,9 @@ export default function AccountSettings() {
                                     <div key={field.key} className="p-5 flex items-center justify-between">
                                         <div className="flex-1">
                                             <div className="font-semibold text-slate-900 text-sm mb-1">{field.label}</div>
+                                            {field.hint ? (
+                                                <div className="text-slate-400 text-xs mb-1.5 max-w-md">{field.hint}</div>
+                                            ) : null}
                                             {editingField === field.key ? (
                                                 <input
                                                     type="text"

@@ -51,19 +51,18 @@ export type StepKey =
 // where-and-when step (the old g_avail), dietary folds into "what guests can
 // expect" (the old g_diet), and three screens Airbnb has and we lacked are
 // added — expertise/qualifications (g_creds), what-to-expect (g_expect) and a
-// real photos step (g_photos). The business name is a name-only step (g_about,
-// "What's it called?") right after the sub-type pick — it is the listing title
-// and is required at submit, so it is captured up front; a guest never sees the
-// standalone 'business' step.
-// Reordered to Airbnb's host-an-experience sequence (Sep 2026): sub-type, then
-// the name, then About you (years, expertise), then Location straight after —
-// it matters more for us than for them, a chef in Carlisle should learn we only
-// cover Dumfries & Galloway before writing anything — then Photos, Pricing,
-// Details, and the Finish wrap-up (checks, contact, account). The description is
-// gone from the guest path — "what happens" (Details) and the item descriptions
-// cover it — so the naming screen is just the name.
+// real photos step (g_photos). There is NO naming step: a guest experience is a
+// person, so the listing title is their account name (or a trading name they set
+// later in account settings), derived at submit — never asked. The name itself
+// is captured at the account step (the g_verify gate), which is account
+// information; a guest never sees the standalone 'business' step.
+// Airbnb's host-an-experience sequence (Sep 2026): sub-type, then About you
+// (years, expertise), then Location straight after — it matters more for us than
+// for them, a chef in Carlisle should learn we only cover Dumfries & Galloway
+// before writing anything — then Photos, Pricing, Details, and the Finish
+// wrap-up (checks, contact, account).
 const GUEST_STEP_KEYS: StepKey[] = [
-    'g_verify', 'g_subtype', 'g_about',
+    'g_verify', 'g_subtype',
     'g_you', 'g_creds', 'g_area', 'g_photos', 'g_capacity', 'g_menu', 'g_expect', 'g_checks', 'g_contact',
 ];
 
@@ -122,7 +121,6 @@ const ALL_STEPS: Step[] = [
     { key: 'g_capacity', label: 'Guests', title: 'How many guests?' },
     { key: 'g_menu', label: 'Price', title: 'What you offer, and what it costs' },
     { key: 'g_expect', label: 'Details', title: 'What can a guest expect?' },
-    { key: 'g_about', label: 'Name', title: 'What’s it called?' },
     { key: 'g_checks', label: 'Checks', title: 'A few checks before we list you' },
     { key: 'g_contact', label: 'Contact', title: 'Where can we reach you?' },
     // Not "Registration". Registration and skills never co-occur across the
@@ -187,10 +185,9 @@ export function stepApplies(step: StepKey, trade: string, ctx?: StepContext): bo
             case 'g_you':
             case 'g_creds':
                 return guestAsksExpertise(ctx.category);
-            // Asked of every guest: the listing name and description (g_about),
-            // the price (g_menu), what a guest can expect (g_expect), the photos
-            // (g_photos) and how to reach them (g_contact).
-            case 'g_about':
+            // Asked of every guest: the price (g_menu), what a guest can expect
+            // (g_expect), the photos (g_photos) and how to reach them (g_contact).
+            // There is no naming step — the title is derived from the account.
             case 'g_menu':
             case 'g_expect':
             case 'g_photos':
@@ -429,9 +426,8 @@ const STEP_FIELDS: Record<StepKey, string[]> = {
 // a guest, which is the whole reason stepForField takes a context.
 const GUEST_STEP_FIELDS: Partial<Record<StepKey, string[]>> = {
     trade: ['trade', 'audience'],
-    // The name is its own step (g_about, right after the sub-type) — a guest has
-    // no standalone business step, and no description field (it was cut).
-    g_about: ['business_name'],
+    // No naming step for a guest: business_name is derived from the account at
+    // submit, not asked, so it belongs to no step's Next.
     // Location and the weekly hours both live on the where-and-when step.
     g_area: ['areas', 'availability'],
     g_contact: ['contact_email', 'contact_phone'],
@@ -539,10 +535,11 @@ export function openingStep(state: OpeningState): StepKey | null {
 
     // A trade in the URL means step one is already answered — they came back
     // through a link, or they have a saved record — so opening on the picker
-    // would make them answer it twice. A guest has no business step; their
-    // first content screen is the name step (g_about).
+    // would make them answer it twice. A guest has no business step; their first
+    // content screen is the About-you opener (g_you); resolveStep drops it to the
+    // next live step for a category that skips the expertise screens.
     if (!state.trade) return 'trade';
-    return audienceForTrade(state.trade) === 'guest' ? 'g_about' : 'business';
+    return audienceForTrade(state.trade) === 'guest' ? 'g_you' : 'business';
 }
 
 // What counts as already seen when opening there. Everything up to and

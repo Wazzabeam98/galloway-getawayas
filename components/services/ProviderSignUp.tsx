@@ -14,7 +14,7 @@ import {
 } from 'lucide-react';
 import { TradeTile, TradeTileGrid, TRADE_ICONS, GROUP_ICONS } from '@/components/services/TradeTiles';
 import { compressImage } from '@/lib/compressImage';
-import { getImageUrl, generateRandomNumber, displayName } from '@/lib/utils';
+import { getImageUrl, generateRandomNumber, resolveTitle } from '@/lib/utils';
 import { ORDER_UNITS } from '@/lib/serviceOrders';
 import Env from '@/config/Env';
 import {
@@ -435,6 +435,7 @@ function ApplicationForm() {
     // the button and the message. Verifying makes (or signs into) the account,
     // which is the anti-squatting point: no session exists until the code proves
     // they receive mail at that address.
+    const [otpName, setOtpName] = useState('');
     const [otpEmail, setOtpEmail] = useState('');
     const [otpSent, setOtpSent] = useState(false);
     const [otpCode, setOtpCode] = useState('');
@@ -546,7 +547,7 @@ function ApplicationForm() {
     const [detailModal, setDetailModal] = useState<'expect' | 'dietary' | null>(null);
     const [uploadingPhotos, setUploadingPhotos] = useState(false);
     // Which expertise-hub sub-flow modal is open, if any.
-    const [expertiseModal, setExpertiseModal] = useState<'name' | 'title' | 'quals' | 'endorsements' | null>(null);
+    const [expertiseModal, setExpertiseModal] = useState<'title' | 'quals' | 'endorsements' | null>(null);
     // The photo circle at the top of the hub opens the file picker directly (via
     // this ref), and once a photo is set it offers replace/remove through a small
     // menu rather than reopening the Intro form.
@@ -934,22 +935,9 @@ function ApplicationForm() {
                     setContactEmail((prev) => prev || session.user.email || '');
                 }
 
-                // Prefill "Your name" from the profile we already hold, so a
-                // signed-in host confirms it rather than typing it fresh. Only
-                // fills when nothing better is already set (an existing provider
-                // row's provider_name, or a draft, both applied above win via the
-                // functional update), and only with a name the profile is willing
-                // to show: displayName() returns '' when a private full name has
-                // no preferred name, and we never seed that. A true anonymous
-                // applicant has no usable profile name here, so the field stays
-                // the empty typed box — the only personal name we get from them.
-                const { data: prof } = await supabase
-                    .from('profiles')
-                    .select('full_name, preferred_name, show_full_name')
-                    .eq('id', session.user.id)
-                    .maybeSingle();
-                const known = displayName(prof, '');
-                if (known) setProviderName((prev) => (prev.trim() ? prev : known));
+                // The person's name is no longer asked in the flow — it is the
+                // listing title now, derived from the account at submit (see
+                // resolveGuestTitleNow). So there is nothing to prefill here.
 
             } catch (err) {
                 // Nothing to show them but the empty form; a stuck spinner is
@@ -1832,11 +1820,13 @@ function ApplicationForm() {
     // Next on screen one. A group with real sub-types opens screen two; 'other'
     // (alone under its group) skips it — its lone category is set and we go
     // straight to the business step, no screen-two of one card.
-    // Where a guest goes after the category pick: the name step (g_about, "What's
-    // it called?") for everyone — it is the first content screen now, right after
-    // the sub-type, before About you. The account is already made by now (verify
+    // Where a guest goes after the category pick: the About-you opener (g_you) if
+    // the category asks about expertise, otherwise straight to Location (g_area),
+    // which every guest has. There is no naming step any more — the title is the
+    // account name, derived at submit. The account is already made by now (verify
     // is the first screen of all, before the picker), so there is no auth detour.
-    const firstGuestContentStep = (_category: string): StepKey => 'g_about';
+    const firstGuestContentStep = (category: string): StepKey =>
+        guestAsksExpertise(category) ? 'g_you' : 'g_area';
 
     const advanceFromGroup = () => {
         const subs = categoriesForGroup(guestGroup);
@@ -2314,13 +2304,34 @@ function ApplicationForm() {
         };
     };
 
-    const applicationRows = (now: Date) => {
+    // The listing TITLE for a guest — their account name, or a trading name if
+    // they set one in account settings. Derived here rather than asked: a guest
+    // experience is a person, not a business. Read fresh at submit — everyone is
+    // signed in by now (a host already was; an anonymous applicant through the
+    // verify gate, where their name is captured). trading_name is read
+    // defensively so this still works before the column ships (the migration
+    // lands on prod before this code).
+    const resolveGuestTitleNow = async (): Promise<string> => {
+        const { data: { session } } = await supabase.auth.getSession();
+        if (!session?.user) return '';
+        const { data: prof } = await supabase.from('profiles')
+            .select('full_name, preferred_name, show_full_name').eq('id', session.user.id).maybeSingle();
+        let trading: string | null = null;
+        const { data: t, error: te } = await supabase.from('profiles')
+            .select('trading_name').eq('id', session.user.id).maybeSingle();
+        if (!te && t) trading = (t as any).trading_name || null;
+        return resolveTitle(prof ? { ...(prof as any), trading_name: trading } : null, '');
+    };
+
+    const applicationRows = (now: Date, title: string) => {
         const provider: any = {
             ...guestProviderFields(),
             // The content answers ride only here, in the application payload —
             // never in the signed-in column write (they have no columns yet).
             ...guestContentFields(),
-            business_name: businessName.trim(),
+            // A guest's title is the person (or their trading name), derived and
+            // passed in; a host trades under the business name they typed.
+            business_name: audienceForTrade(trade) === 'guest' ? title : businessName.trim(),
             trade,
             description: description.trim(),
             contact_email: contactEmail.trim(),
@@ -2479,7 +2490,13 @@ function ApplicationForm() {
         // point the old emailed-link flow was built around, kept.
         const { error } = await supabase.auth.signInWithOtp({
             email,
-            options: { shouldCreateUser: true },
+            // The PERSON's name, captured here at the account step — it is
+            // account information, and it becomes the listing title (a guest
+            // experience is a person, not a business). Supabase writes it to
+            // raw_user_meta_data on account creation, and the add_profile_for_new_user
+            // trigger copies it into profiles.full_name. Only applied when the
+            // account is CREATED — a returning applicant keeps their existing name.
+            options: { shouldCreateUser: true, data: { name: otpName.trim() } },
         });
         setOtpBusy(false);
         if (error) {
@@ -2536,7 +2553,8 @@ function ApplicationForm() {
         setSaving(true);
         setAcctError('');
 
-        const rows = applicationRows(new Date());
+        const title = audienceForTrade(trade) === 'guest' ? await resolveGuestTitleNow() : businessName.trim();
+        const rows = applicationRows(new Date(), title);
 
         try {
             const res = await fetch('/api/services/apply', {
@@ -2643,10 +2661,14 @@ function ApplicationForm() {
 
         const now = new Date();
 
+        // A guest's title is the person (or their trading name), derived from the
+        // account; a host trades under the business name they typed.
+        const title = audienceForTrade(trade) === 'guest' ? await resolveGuestTitleNow() : businessName.trim();
+
         const payload: any = {
             ...guestProviderFields(),
             owner_id: active.user.id,
-            business_name: businessName.trim(),
+            business_name: title,
             trade,
             description: description.trim(),
             contact_email: contactEmail.trim(),
@@ -3704,43 +3726,25 @@ function ApplicationForm() {
                 {/* The trade chip is gone: it said what they picked, and the
                     modal header now says that on every step. */}
 
-                {(audienceForTrade(trade) === 'guest' ? onStep('g_about') : onStep('business')) && (
+                {/* HOST/TRADE only: the business description (their name is the
+                    standalone business step above). A guest is never asked this —
+                    there is no naming step at all now: the listing title is their
+                    account name (or a trading name they set in account settings),
+                    and "what happens" (Details) plus the item descriptions carry
+                    the rest. */}
+                {!isGuest && onStep('business') && (
                 <section className="mb-8">
-                    {/* GUEST: name only. The person's name lives on the About-you
-                        hub; "what happens" (Details) and the item descriptions
-                        carry the rest, so there is no description here — a third
-                        prose box was asking the same thing a third time.
-                        HOST/TRADE: the business description, unchanged (their name
-                        is the standalone business step above). */}
-                    {isGuest ? (
-                        <div className="md:max-w-xl">
-                            <label className="block text-xs font-medium text-slate-500 mb-2">What it’s called</label>
-                            <input
-                                type="text"
-                                value={businessName}
-                                onChange={(e) => setBusinessName(e.target.value)}
-                                placeholder="Solway Suppers"
-                                className="w-full rounded-xl border border-slate-300 px-3.5 py-3 focus:outline-none focus:ring-2 focus:ring-emerald-700"
-                            />
-                            {problemFor('business_name') && (
-                                <p data-problem className="text-sm text-rose-700 mt-1.5">{problemFor('business_name')!.message}</p>
-                            )}
-                        </div>
-                    ) : (
-                        <>
-                            {/* Capped to a measure rather than the window: past
-                                about 70 characters a line is harder to read. */}
-                            <textarea
-                                value={description}
-                                onChange={(e) => setDescription(e.target.value)}
-                                rows={5}
-                                placeholder="What do you offer? Describe your business."
-                                className="w-full md:max-w-xl rounded-xl border border-slate-300 px-4 py-3 focus:outline-none focus:ring-2 focus:ring-emerald-700"
-                            />
-                            {problemFor('description') && (
-                                <p data-problem className="text-sm text-rose-700 mt-1.5">{problemFor('description')!.message}</p>
-                            )}
-                        </>
+                    {/* Capped to a measure rather than the window: past about 70
+                        characters a line is harder to read. */}
+                    <textarea
+                        value={description}
+                        onChange={(e) => setDescription(e.target.value)}
+                        rows={5}
+                        placeholder="What do you offer? Describe your business."
+                        className="w-full md:max-w-xl rounded-xl border border-slate-300 px-4 py-3 focus:outline-none focus:ring-2 focus:ring-emerald-700"
+                    />
+                    {problemFor('description') && (
+                        <p data-problem className="text-sm text-rose-700 mt-1.5">{problemFor('description')!.message}</p>
                     )}
                 </section>
                 )}
@@ -3822,21 +3826,15 @@ function ApplicationForm() {
                             </p>
                         </div>
 
-                        {/* Borderless rows with air between them: Your name, Your
-                            title (which also holds a line about you), Qualifications,
-                            Endorsements. Each opens its own modal. Only
-                            Qualifications (and only for the required categories)
-                            gates Next. The photo lives on the circle above — name,
-                            title and photo are the person, gathered in one place. */}
+                        {/* Borderless rows: Your title (which also holds a line
+                            about you), Qualifications, Endorsements. Each opens its
+                            own modal. Only Qualifications (and only for the required
+                            categories) gates Next. The name is NOT asked here — it
+                            is the person's account name, captured at the account
+                            step and used as the listing title, so asking it again
+                            would be asking twice. Photo and title above are the
+                            rest of the person. */}
                         <div className="mt-10 space-y-6">
-                            <HubRow
-                                filled={providerName.trim() !== ''}
-                                label={GUEST_SCREEN_COPY.nameRowLabel}
-                                suffix={GUEST_SCREEN_COPY.optionalSuffix}
-                                prompt={GUEST_SCREEN_COPY.nameRowPrompt}
-                                summary={providerName.trim()}
-                                onOpen={() => setExpertiseModal('name')}
-                            />
                             <HubRow
                                 filled={titleFilled}
                                 label={GUEST_SCREEN_COPY.titleRowLabel}
@@ -3862,27 +3860,6 @@ function ApplicationForm() {
                             />
                         </div>
 
-                        {/* ---- Your name: one borderless field. Prefilled from the
-                            profile at load for a signed-in user (displayName), so
-                            they confirm rather than type it fresh; blank for an
-                            anonymous applicant, where it is the only personal name
-                            we get. ---- */}
-                        <SubFlowModal
-                            open={expertiseModal === 'name'}
-                            title={GUEST_SCREEN_COPY.nameModalTitle}
-                            onClose={() => setExpertiseModal(null)}
-                            saveLabel={GUEST_SCREEN_COPY.save}
-                        >
-                            <div className={fieldWrap}>
-                                <input
-                                    type="text"
-                                    value={providerName}
-                                    onChange={(e) => setProviderName(e.target.value)}
-                                    placeholder={GUEST_SCREEN_COPY.namePlaceholder}
-                                    className={bigInput}
-                                />
-                            </div>
-                        </SubFlowModal>
 
                         {/* ---- Your professional title: one borderless field,
                             no caption, counter at the right above the underline. ---- */}
@@ -4357,6 +4334,25 @@ function ApplicationForm() {
 
                     <div className="mt-8 space-y-5">
                         <div>
+                            <label htmlFor="otp-name" className="block text-xs font-medium text-slate-500 mb-2">
+                                Your name
+                            </label>
+                            {/* Captured here, at the account step, because it is
+                                account information — it becomes your listing title,
+                                since a guest experience is a person, not a business.
+                                Not asked again later in the flow. */}
+                            <input
+                                id="otp-name"
+                                type="text"
+                                autoComplete="name"
+                                value={otpName}
+                                onChange={(e) => setOtpName(e.target.value)}
+                                disabled={otpSent}
+                                placeholder="Rosa Muir"
+                                className="w-full rounded-xl border border-slate-300 px-4 py-3 focus:outline-none focus:ring-2 focus:ring-emerald-700 disabled:bg-slate-50 disabled:text-slate-500"
+                            />
+                        </div>
+                        <div>
                             <label htmlFor="otp-email" className="block text-xs font-medium text-slate-500 mb-2">
                                 Your email
                             </label>
@@ -4377,9 +4373,9 @@ function ApplicationForm() {
                             <button
                                 type="button"
                                 onClick={sendOtp}
-                                disabled={otpBusy || !otpEmail.trim()}
+                                disabled={otpBusy || !otpEmail.trim() || !otpName.trim()}
                                 className={'w-full rounded-full px-6 py-3 text-sm font-semibold transition '
-                                    + (otpBusy || !otpEmail.trim()
+                                    + (otpBusy || !otpEmail.trim() || !otpName.trim()
                                         ? 'bg-slate-200 text-slate-400 cursor-not-allowed'
                                         : 'bg-emerald-700 hover:bg-emerald-800 text-white')}
                             >

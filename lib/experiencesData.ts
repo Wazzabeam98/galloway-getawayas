@@ -34,6 +34,9 @@ export interface MpProvider {
     // What the provider can cater for, as keys (DIETARY_OPTIONS), from
     // guest_details jsonb. Shown as chips; the note carries the caveats.
     dietary_options: string[];
+    // The person's professional title ("Chef and restaurant owner"), from
+    // guest_details jsonb — shown beneath the title (which is now their name).
+    professional_title: string | null;
     // The provider's own walk-through of the experience, from guest_details jsonb.
     // Displayed on the experience page; null when they didn't write one.
     what_happens: string | null;
@@ -179,6 +182,7 @@ export async function loadMarketplace(
             isFood: isFoodProvider(p),
             dietary_note: p.dietary_note || null,
             dietary_options: knownDietaryOptions((p.guest_details && Array.isArray(p.guest_details.dietary_options)) ? p.guest_details.dietary_options : []),
+            professional_title: (p.guest_details && p.guest_details.professional_title) || null,
             what_happens: (p.guest_details && p.guest_details.what_to_expect) || null,
             description: p.description,
             shape,

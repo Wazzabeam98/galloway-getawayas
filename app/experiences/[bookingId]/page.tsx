@@ -103,7 +103,9 @@ function Card({ bookingId, p }: { bookingId: string; p: MpProvider }) {
                         </span>
                     )}
                     <span className="min-w-0 truncate text-xs text-slate-500">
-                        {p.provider_name && p.provider_name.trim() ? p.provider_name : p.based_line || 'Local provider'}
+                        {/* The card title is the person's name; beneath it, their
+                            professional title, then where they're based. */}
+                        {p.professional_title || p.based_line || 'Local provider'}
                     </span>
                     <VerifiedBadge />
                 </div>

@@ -73,8 +73,10 @@ export default async function ListingPage(
                                 <img src={p.headshot} alt={who} className="h-12 w-12 rounded-full object-cover ring-1 ring-slate-200" />
                             ) : null}
                             <div>
-                                {p.provider_name && p.provider_name !== p.business_name ? (
-                                    <div className="font-medium text-slate-800">{p.provider_name}</div>
+                                {/* The title (h1) is the person's name now; the
+                                    professional title sits beneath it. */}
+                                {p.professional_title ? (
+                                    <div className="font-medium text-slate-800">{p.professional_title}</div>
                                 ) : null}
                                 {p.based_line ? <div className="text-sm text-slate-500">{p.based_line}</div> : null}
                             </div>
