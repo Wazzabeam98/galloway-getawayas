@@ -135,9 +135,13 @@ export default async function AdminProviders() {
               .in('provider_id', rows.map((r: any) => r.id))).data || []
         : [];
 
-    const areasFor = (id: string) =>
-        areaRows.filter((a: any) => a.provider_id === id)
-            .map((a: any) => a.label + ' · ' + Number(a.radius_miles) + ' mi');
+    // A guest covers named regions, not a radius, so the "· N mi" that reads
+    // right for a tradesman's town would be a meaningless "· 0 mi" for them.
+    const areasFor = (id: string) => {
+        const isGuest = (rows.find((r: any) => r.id === id) || {}).audience === 'guest';
+        return areaRows.filter((a: any) => a.provider_id === id)
+            .map((a: any) => (isGuest ? a.label : a.label + ' · ' + Number(a.radius_miles) + ' mi'));
+    };
 
     // Three groups, not two. A live provider who has edited their shop window
     // is a job, but it is not the same job as an application — they are on the

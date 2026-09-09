@@ -6,7 +6,7 @@ import { useEffect, useState } from 'react';
 import { createClientComponentClient } from '@supabase/auth-helpers-nextjs';
 import Logo from '@/components/base/Logo';
 import LoginModel from '@/components/auth/LoginModel';
-import { MessageCircle, MapPin, ArrowLeft, ArrowRight, CornerDownRight, Car, KeyRound, Phone, CloudOff, XCircle, ShieldCheck, LifeBuoy } from 'lucide-react';
+import { MessageCircle, MapPin, ArrowLeft, ArrowRight, CornerDownRight, Car, KeyRound, Phone, CloudOff, XCircle, ShieldCheck, LifeBuoy, Star, Sparkles } from 'lucide-react';
 import CopyField from '@/components/arrival/CopyField';
 import DirectionsPicker from '@/components/arrival/DirectionsPicker';
 import PropertyMap from '@/components/PropertyMap';
@@ -23,6 +23,7 @@ import Link from 'next/link';
 import { cancellationPosition } from '@/lib/cancellationView';
 import { ukLongDate, londonDayKey } from '@/lib/dayKey';
 import { upcomingUntilCheckout, liveForGuestCard, stayCountdown } from '@/lib/bookingWindows';
+import { compareTripsByStart } from '@/lib/bookingOrder';
 
 interface Booking {
     id: string;
@@ -92,6 +93,13 @@ export default function TripsPage() {
     const [confirmingId, setConfirmingId] = useState<string | null>(null);
     // Which bookings have their payment breakdown expanded (under the Total).
     const [openBreakdown, setOpenBreakdown] = useState<Record<string, boolean>>({});
+    // OVERNIGHT PROPOSAL (not a shipped feature): ?exp=top or ?exp=arrival shows
+    // the experiences entry higher up the card, so its two candidate placements
+    // can be compared on one preview. No param = card unchanged.
+    const [expPlacement, setExpPlacement] = useState<string | null>(null);
+    useEffect(() => {
+        setExpPlacement(new URLSearchParams(window.location.search).get('exp'));
+    }, []);
 
     // Sends the guest to Stripe to settle what's left on a booking. Reached
     // either from the button below or from the link in a payment reminder
@@ -142,7 +150,7 @@ export default function TripsPage() {
             if (listingIds.length) {
                 const { data: listings } = await supabase
                     .from('listings')
-                    .select('id, title, images, location, cancellation_policy, check_in_time, check_in_end_time, check_out_time, events_allowed, smoking_allowed, commercial_photography_allowed, quiet_hours_enabled, quiet_hours_start, quiet_hours_end, additional_rules')
+                    .select('id, title, images, location, cancellation_policy, check_in_time, check_in_end_time, check_out_time, rating_avg, rating_count, events_allowed, smoking_allowed, commercial_photography_allowed, quiet_hours_enabled, quiet_hours_start, quiet_hours_end, additional_rules')
                     .in('id', listingIds);
                 const map: Record<string, any> = {};
                 (listings || []).forEach((l) => { map[l.id] = l; });
@@ -257,10 +265,13 @@ export default function TripsPage() {
     // London calendar day keeps it upcoming through the whole checkout day.
     const isOver = (b: Booking) => !liveForGuestCard(b, today);
 
-    // Nearest first at the top, so the next stay is the first thing read.
+    // Nearest first at the top, so the next stay is the first thing read. The
+    // shared total comparator (check-in, then check-out, then id) settles a
+    // same-day tie the same way every time — the top card can't flip between
+    // two stays that start on the same date.
     const upcoming = bookings
         .filter((b) => !isOver(b))
-        .sort((a, b) => (a.check_in < b.check_in ? -1 : 1));
+        .sort(compareTripsByStart);
 
     // Most recent first below, so the stay just finished heads the old ones.
     const past = bookings
@@ -306,6 +317,24 @@ export default function TripsPage() {
         const payRefunded = Number(b.amount_refunded || 0);
         const payRemaining = Number(b.balance_amount || 0);
         const breakdownOpen = !!openBreakdown[b.id];
+        // A deposit whose balance date has passed — it's collected automatically,
+        // so it reads as "overdue / taken automatically", never a future "due".
+        const balanceOverdue = !!b.balance_due_date && String(b.balance_due_date) < todayIso;
+
+        // The promoted experiences entry (overnight proposal). A compact banner
+        // that leads to the marketplace for this stay; placed high by ?exp=.
+        const expEntry = (
+            <Link href={`/experiences/${b.id}`} className="mt-8 flex items-center justify-between gap-3 rounded-2xl border border-emerald-200 bg-emerald-50/60 p-4 transition hover:border-emerald-300 hover:bg-emerald-50 sm:p-5">
+                <span className="flex min-w-0 items-center gap-3">
+                    <span className="flex h-10 w-10 flex-none items-center justify-center rounded-full bg-emerald-600 text-white"><Sparkles className="h-5 w-5" /></span>
+                    <span className="min-w-0">
+                        <span className="block text-sm font-semibold text-emerald-900">Make more of your stay{listing?.location ? ' near ' + publicArea(listing.location) : ''}</span>
+                        <span className="block text-xs text-emerald-700">Chefs, bakers, saunas and guided walks — booked for your dates</span>
+                    </span>
+                </span>
+                <ArrowRight className="h-5 w-5 flex-none text-emerald-600" />
+            </Link>
+        );
 
         // Directions are built server-side by the shared rule (lib/directions):
         // a real pin, or a STREET address — never the town alone, which would
@@ -356,6 +385,17 @@ export default function TripsPage() {
                         <div className="text-sm text-slate-600 mt-0.5">
                             Hosted by {hostFirstName} · {fmtDay(b.check_in)} – {fmtDay(b.check_out)}
                         </div>
+                        {/* The cottage's rating, so a guest sees its score without
+                            clicking through. Shown only once it has a public score
+                            (≥3 reviews), the same bar the listing page uses; links
+                            to the listing's reviews. */}
+                        {listing && Number(listing.rating_count) >= 3 && (
+                            <Link href={`${homeHref}#reviews`} className="mt-0.5 inline-flex items-center gap-1 text-sm hover:underline">
+                                <Star className="h-3.5 w-3.5 fill-amber-400 text-amber-400" />
+                                <span className="font-medium text-slate-900">{Number(listing.rating_avg).toFixed(1)}</span>
+                                <span className="text-slate-500">· {listing.rating_count} review{Number(listing.rating_count) === 1 ? '' : 's'}</span>
+                            </Link>
+                        )}
                         {/* Status on the LEFT now, with the phase chip; the top-right
                             is the host's Call + Message. */}
                         <div className="mt-2 flex flex-wrap items-center gap-2">
@@ -405,7 +445,18 @@ export default function TripsPage() {
                                 <div className="mt-1 font-mono text-sm tracking-wide text-slate-900">{confirmationNumber(b.id)}</div>
                             </div>
                         )}
-                        {!b.sharedWithMe && (
+                        {!b.sharedWithMe && b.status === 'cancelled' ? (
+                            // A cancelled booking is not money owed — say what
+                            // happened, not "Total £X" that reads as a bill.
+                            <div>
+                                <div className="text-[11px] font-semibold uppercase tracking-wide text-slate-500">Cancelled</div>
+                                <div className="mt-1 text-sm font-medium text-slate-900">
+                                    {payRefunded > 0
+                                        ? '£' + payRefunded.toFixed(2) + ' refunded'
+                                        : payPaid > 0 ? 'No refund due' : 'Nothing was paid'}
+                                </div>
+                            </div>
+                        ) : !b.sharedWithMe && (
                             <div>
                                 <div className="text-[11px] font-semibold uppercase tracking-wide text-slate-500">Total</div>
                                 <div className="mt-1 text-sm font-medium text-slate-900">£{b.total_price}</div>
@@ -452,7 +503,7 @@ export default function TripsPage() {
                                 )}
                                 {payRemaining > 0 && (
                                     <div className="flex items-baseline justify-between font-medium text-amber-800">
-                                        <span>Still to pay{b.balance_due_date ? ' · due ' + b.balance_due_date : ''}</span>
+                                        <span>Still to pay{b.balance_due_date ? (balanceOverdue ? ' · overdue' : ' · due ' + b.balance_due_date) : ''}</span>
                                         <span className="tabular-nums">£{payRemaining.toFixed(2)}</span>
                                     </div>
                                 )}
@@ -460,6 +511,9 @@ export default function TripsPage() {
                         </div>
                     )}
                 </div>
+
+                {/* Experiences entry — OPTION A: top of card, under the facts. */}
+                {upcomingConfirmed && expPlacement === 'top' && expEntry}
 
                 {/* The group, right under the stay details — stacked avatars and
                     the seats still to fill, so a group booking reads as one before
@@ -613,11 +667,16 @@ export default function TripsPage() {
                     </div>
                 )}
 
+                {/* Experiences entry — OPTION B: right after the arrival
+                    essentials, once the guest has their way in and where. */}
+                {upcomingConfirmed && expPlacement === 'arrival' && expEntry}
+
                 {/* Rules and instructions — the house rules, same source and
                     wording as the listing page (shared HouseRules component).
-                    CONFIRMED reservations only: a pending or unpaid booking does
-                    not render them. */}
-                {listing && b.status === 'confirmed'
+                    Confirmed, paid AND still upcoming: a pending/unpaid booking
+                    doesn't render them, and neither does a stay that's already
+                    over (upcomingConfirmed is confirmed && not-past). */}
+                {listing && upcomingConfirmed
                     && (b.payment_status === 'paid' || b.payment_status === 'deposit_paid')
                     && <HouseRules listing={listing} />}
 
@@ -665,7 +724,9 @@ export default function TripsPage() {
                         </div>
                         <p className="text-xs text-amber-800 mt-0.5">
                             {b.balance_due_date
-                                ? 'This is taken from your card automatically on ' + b.balance_due_date + '. You can pay it sooner if you prefer.'
+                                ? (balanceOverdue
+                                    ? 'This was due on ' + b.balance_due_date + ' and is taken from your card automatically — pay now to settle it.'
+                                    : 'This is taken from your card automatically on ' + b.balance_due_date + '. You can pay it sooner if you prefer.')
                                 : 'You can settle this at any time.'}
                         </p>
                         <button

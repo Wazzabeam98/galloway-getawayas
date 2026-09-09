@@ -8,6 +8,7 @@ import { liveForGuestCard, stayCountdown } from '@/lib/bookingWindows';
 import { bookingReleasesPrivateData } from '@/lib/bookingEntitlement';
 import { adminClient } from '@/lib/supabaseAdmin';
 import { directionsUrl as buildDirectionsUrl, appleDirectionsUrl } from '@/lib/directions';
+import { compareTripsByStart } from '@/lib/bookingOrder';
 import { publicArea } from '@/lib/places';
 import { partyLabel } from '@/lib/bookingDisplay';
 import ListingImage from '@/components/ListingImage';
@@ -41,9 +42,19 @@ export default async function UpcomingTrip() {
         .eq('guest_id', auth.session.user.id)
         .in('status', ['confirmed', 'pending'])
         .order('check_in', { ascending: true })
+        .order('check_out', { ascending: true })
+        .order('id', { ascending: true })
         .limit(10);
 
-    const booking = (bookings || []).find((b) => liveForGuestCard(b, now));
+    // Feature the nearest live stay. The order is settled by the shared total
+    // comparator (check-in, then check-out, then id) BEFORE the find, so a
+    // same-day tie always yields the same trip — never whatever the DB happened
+    // to return first. The .order() above asks Postgres for the same order, but
+    // the sort here is what makes it guaranteed, not incidental.
+    const booking = (bookings || [])
+        .slice()
+        .sort(compareTripsByStart)
+        .find((b) => liveForGuestCard(b, now));
     if (!booking) return null;
 
     const { data: listing } = await supabase

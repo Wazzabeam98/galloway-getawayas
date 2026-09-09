@@ -146,8 +146,8 @@ export async function POST(request: Request) {
         // here for a new one, so a stale link is never a dead end.
         const accountLink = await stripeRequest('POST', '/account_links', {
             account: accountId,
-            refresh_url: SITE_URL + '/services/join?payouts=refresh&provider=' + provider.id,
-            return_url: SITE_URL + '/services/join?payouts=done&provider=' + provider.id,
+            refresh_url: SITE_URL + '/services/join?trade=' + encodeURIComponent(provider.trade || '') + '&payouts=refresh&provider=' + provider.id,
+            return_url: SITE_URL + '/services/join?trade=' + encodeURIComponent(provider.trade || '') + '&payouts=done&provider=' + provider.id,
             type: 'account_onboarding',
             collection_options: { fields: 'eventually_due' },
         });

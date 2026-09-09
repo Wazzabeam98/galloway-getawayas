@@ -40,19 +40,19 @@ export default function GuestBookableHere(props: { listingId: string }) {
         <section className="rounded-2xl border border-slate-200 p-5">
             <h2 className="font-semibold text-slate-900">Experiences your guests can book here</h2>
             <p className="mt-1 text-sm text-slate-500">
-                Local businesses that cover this cottage. Guests book and pay them from their trip
-                page — worth a line in your welcome note.
+                Local businesses your guests can book and pay from their trip page — worth a line in
+                your welcome note.
             </p>
 
             {!open ? (
                 <p className="mt-4 text-sm text-slate-500">
-                    Coming soon. Once guest experiences open, the local businesses that cover this
-                    cottage will appear here — worth a line in your welcome note when they do.
+                    Coming soon. Once guest experiences open, the local businesses your guests can
+                    book will appear here — worth a line in your welcome note when they do.
                 </p>
             ) : providers.length === 0 ? (
                 <p className="mt-4 text-sm text-slate-500">
-                    Nothing covers this cottage yet. As local chefs, bakers and others sign up and go
-                    live, they’ll appear here.
+                    Nothing here yet. As local chefs, bakers and others sign up and go live, they’ll
+                    appear here.
                 </p>
             ) : (
                 <ul className="mt-4 space-y-3">

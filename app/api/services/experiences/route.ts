@@ -3,7 +3,7 @@ import { adminClient } from '@/lib/supabaseAdmin';
 import { cookies } from 'next/headers';
 import { NextResponse } from 'next/server';
 import { isLiveToGuests, mccForProvider, guestExperiencesOpen, normaliseUnit } from '@/lib/serviceOrders';
-import { pointForListing, coversPoint, guestCategory } from '@/lib/serviceProviders';
+import { guestCategory } from '@/lib/serviceProviders';
 import { guestMayCancelFree } from '@/lib/serviceSlots';
 import { getImageUrl } from '@/lib/utils';
 
@@ -13,8 +13,10 @@ export const dynamic = 'force-dynamic';
 //
 // Live only — approved AND payout-ready (isLiveToGuests). A guest is never
 // shown a provider we cannot take money for, because the offer would fail at
-// the checkout. And near their cottage only: coversPoint against the provider's
-// own service areas, the same geography the host shop uses.
+// the checkout. Coverage no longer narrows the list: every live D&G experience
+// is offered to every cottage, and the regions a provider covers ride along
+// only as a line on the card. (Enquiry-first sorts out the exact distance, and
+// a mileage radius was meaningless across a rural region anyway.)
 //
 // getUser(), and the booking must be the caller's own — the stay is where the
 // place and the eligible providers come from, so it is not something to accept
@@ -38,7 +40,7 @@ export async function GET(request: Request) {
         // Two ways in, and both are owner-checked. A GUEST asks by their own
         // booking (the trip page); a HOST asks by their own listing (the
         // dashboard, to see what guests can book at their cottage). Same gate,
-        // same coversPoint, so the two can never show different answers.
+        // so the two can never show different answers.
         const params = new URL(request.url).searchParams;
         const bookingId = params.get('booking') || '';
         const listingParam = params.get('listing') || '';
@@ -81,12 +83,6 @@ export async function GET(request: Request) {
             return NextResponse.json({ ok: false, error: 'Not your listing' }, { status: 403 });
         }
 
-        const point = pointForListing(listing);
-        if (!point) {
-            // No location to match against — better nothing than a wrong list.
-            return NextResponse.json({ ok: true, open: true, stay, providers: [] });
-        }
-
         // Live guest providers. "Live" now means approved + payouts on + AT
         // LEAST ONE PRICED ITEM on the menu — a provider with an empty menu has
         // nothing for a guest to buy, the same way one with no price used to.
@@ -98,16 +94,21 @@ export async function GET(request: Request) {
             .eq('stripe_payouts_enabled', true);
 
         const providerIds = (rows || []).map((r) => r.id);
+        // Coverage is now the region labels only — no centre or radius. It is
+        // informational (shown on the card so a guest knows who travels to their
+        // part of the region), not a filter: every live D&G experience is
+        // offered to every cottage, so the old coversPoint geography is gone.
         const { data: areas } = providerIds.length
             ? await admin
                 .from('service_areas')
-                .select('provider_id, centre_lat, centre_lng, radius_miles')
+                .select('provider_id, label')
                 .in('provider_id', providerIds)
             : { data: [] as any[] };
 
-        const areasByProvider: Record<string, any[]> = {};
+        const areaLabelsByProvider: Record<string, string[]> = {};
         for (const a of areas || []) {
-            (areasByProvider[a.provider_id] = areasByProvider[a.provider_id] || []).push(a);
+            if (!a.label) continue;
+            (areaLabelsByProvider[a.provider_id] = areaLabelsByProvider[a.provider_id] || []).push(a.label);
         }
 
         // The menu — active, priced items, in the order the provider set.
@@ -139,7 +140,6 @@ export async function GET(request: Request) {
             // must be kept on the strength of that assigned code.
             .filter((p) => isLiveToGuests(p) && mccForProvider(p))
             .filter((p) => (itemsByProvider[p.id] || []).length > 0)
-            .filter((p) => coversPoint(areasByProvider[p.id] || [], point.lat, point.lng))
             .map((p) => ({
                 id: p.id,
                 business_name: p.business_name,
@@ -156,6 +156,10 @@ export async function GET(request: Request) {
                 // The menu. One item for a chef, many for a baker. The card leads
                 // with the provider and a "from" price, and lists the rest.
                 items: itemsByProvider[p.id] || [],
+                // The regions this provider covers — a line on the card so the
+                // guest knows they travel to (or are based in) their part of the
+                // region. Informational, not a filter.
+                areas: areaLabelsByProvider[p.id] || [],
             }));
 
         // What the guest has already asked for on THIS stay, so the trip page

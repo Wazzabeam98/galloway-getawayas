@@ -90,7 +90,7 @@ export default async function ProviderDashboardPage() {
                     This account doesn&rsquo;t have a service business. If you run one locally — a trade for
                     property owners, or an experience for guests — you can list it.
                 </p>
-                <Link href="/services/join" className="inline-flex mt-6 items-center gap-2 font-bold text-white bg-emerald-700 hover:bg-emerald-800 rounded-xl px-5 py-3">
+                <Link href="/business" className="inline-flex mt-6 items-center gap-2 font-bold text-white bg-emerald-700 hover:bg-emerald-800 rounded-xl px-5 py-3">
                     List your business
                 </Link>
             </div>
@@ -138,7 +138,7 @@ export default async function ProviderDashboardPage() {
                     week, nothing to approve), everyone else the INBOX (requests
                     to confirm, then coming up). The payouts gate is in both. */}
                 {shapeOf(provider) === 'slot'
-                    ? <ProviderSlotDashboard providerId={provider.id} />
+                    ? <ProviderSlotDashboard providerId={provider.id} editHref={`/services/join?trade=${provider.trade}`} />
                     : <ProviderExperienceDashboard providerId={provider.id} />}
             </div>
         );

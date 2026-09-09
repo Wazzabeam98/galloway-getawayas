@@ -42,6 +42,61 @@ export const RESEND_CEILING = 5;
 /** Minimum gap between re-sends of the same application. */
 export const RESEND_COOLDOWN_SECONDS = 60;
 
+// TWO LISTS, ONE FOR THE PAYLOAD AND ONE FOR THE COLUMN WRITE.
+//
+// An application arrives from a stranger, so what it may set is a whitelist, not
+// a blacklist: the platform's own fields (status, owner_id, commission_rate,
+// approved_digest, …) are never on either list.
+//
+// The split matters because the two sinks are different shapes. The application
+// is STORED in service_applications.payload, which is jsonb and holds anything
+// with no migration — so everything the wizard collects goes in. It is later
+// WRITTEN to service_providers columns at /finish, and only real columns may go
+// there. `declarations` and now `guest_details` are real columns (written at
+// /finish). The six guest content answers historically had no column and rode
+// in the jsonb payload only; they now have the guest_details column
+// (20260906143712), which the signed-in wizard writes directly and the apply
+// path still carries through the payload for the anonymous case.
+//
+// This is the fix for the bug where pick(incoming, PROVIDER_COLUMNS) at intake
+// stripped the content fields and the declarations before anything was stored,
+// discarding what the guest had just filled in.
+
+/** The service_providers columns an application may set — the /finish column write. */
+export const PROVIDER_COLUMNS = [
+    'business_name', 'trade', 'description', 'contact_email', 'contact_phone', 'sms_opt_out',
+    'audience', 'photos', 'logo', 'does_gas', 'does_oil',
+    'callout_fee', 'hourly_rate', 'callout_waived',
+    'pricing_choice', 'billable_hourly_rate', 'covered_bands',
+    'experience_price',
+    'provider_name', 'based_line', 'headshot',
+    'dietary_note',
+    'custom_label', 'shape', 'exclusive_per_date',
+    'lead_time_days', 'slot_length_minutes', 'slot_capacity',
+    // A real jsonb column: the per-category declarations the guest confirmed.
+    'declarations',
+    // A real jsonb column (20260906143712): the guest's content answers in their
+    // own words. The signed-in wizard writes it directly; it is whitelisted here
+    // so it also survives the anonymous apply→finish path unchanged.
+    'guest_details',
+];
+
+/** The guest content answers — no column yet, so jsonb payload only, materialised later. */
+export const GUEST_CONTENT_KEYS = [
+    'years_experience', 'professional_title', 'qualifications', 'recognition',
+    'what_to_expect', 'dietary_options', 'max_guests',
+];
+
+/** What may be stored in the jsonb application payload: the columns plus the content answers. */
+export const APPLICATION_PAYLOAD_KEYS = [...PROVIDER_COLUMNS, ...GUEST_CONTENT_KEYS];
+
+/** Keep only the named keys from a row (whitelist). */
+export function pickColumns(row: any, columns: string[]): Record<string, any> {
+    const out: Record<string, any> = {};
+    for (const c of columns) if (row && row[c] !== undefined) out[c] = row[c];
+    return out;
+}
+
 export interface ApplicationRow {
     id: string;
     email: string;
@@ -145,11 +200,12 @@ export function verificationEmail(row: {
  * answered exactly that, with a 409. Both cases now look identical from
  * outside, and the difference is carried by the message only its owner can read.
  */
-export function alreadyHaveAccountEmail(row: { business_name: string }): {
+export function alreadyHaveAccountEmail(row: { business_name: string; trade?: string }): {
     subject: string;
     html: string;
 } {
     const business = escapeHtml(row.business_name || 'your business');
+    const joinUrl = SITE_URL + '/services/join?trade=' + encodeURIComponent(row.trade || '');
 
     return {
         subject: 'Finish listing ' + (row.business_name || 'your business') + ' on Galloway Getaways',
@@ -159,7 +215,7 @@ export function alreadyHaveAccountEmail(row: { business_name: string }): {
             + '<p style="margin:0 0 16px;font-size:16px;">You already have a Galloway Getaways'
                 + ' account on this address, so there is nothing to set up — sign in and it will be'
                 + ' waiting for you.</p>'
-            + button(SITE_URL + '/services/join', 'Sign in and finish')
+            + button(joinUrl, 'Sign in and finish')
             + '<p style="margin:16px 0 0;padding-top:14px;border-top:1px solid #e5e7eb;'
                 + 'font-size:14px;color:#6b7280;"><strong style="color:#111827">Did not apply?</strong>'
                 + ' Somebody has typed your address into our form. Nothing has changed about your'

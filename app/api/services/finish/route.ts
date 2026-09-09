@@ -3,7 +3,7 @@ import { adminClient } from '@/lib/supabaseAdmin';
 import { logError } from '@/lib/logError';
 import { announceSubmission } from '@/lib/serviceSubmittedAlert';
 import { audienceForTrade } from '@/lib/serviceProviders';
-import { hashToken, linkExpired, ApplicationRow } from '@/lib/serviceApplications';
+import { hashToken, linkExpired, ApplicationRow, PROVIDER_COLUMNS, pickColumns } from '@/lib/serviceApplications';
 
 export const dynamic = 'force-dynamic';
 
@@ -102,8 +102,13 @@ export async function POST(req: Request) {
 
         const owner = made.user.id;
 
+        // full_name is the PERSON's name (row.name), or blank — never the
+        // business name. business_name belongs on service_providers; the shared
+        // profile the whole site reads for bylines and messages must not carry
+        // it. Nothing on production has run this flow, so there is nothing to
+        // repair — this just stops it happening to the first real applicant.
         await admin.from('profiles').upsert(
-            { id: owner, email: row.email, full_name: row.name || row.business_name, is_host: false },
+            { id: owner, email: row.email, full_name: row.name || null, is_host: false },
             { onConflict: 'id' }
         );
 
@@ -115,7 +120,12 @@ export async function POST(req: Request) {
         const { data: provider, error: rowError } = await admin
             .from('service_providers')
             .insert({
-                ...incoming,
+                // Narrowed to real columns: the stored payload also carries the
+                // guest content answers (years, qualifications, what-to-expect…),
+                // which have no column yet and must not reach the insert. They
+                // stay in service_applications.payload until the guest_details
+                // column lands, then materialise from there.
+                ...pickColumns(incoming, PROVIDER_COLUMNS),
                 owner_id: owner,
                 audience: audienceForTrade(row.trade),
                 trade: row.trade,

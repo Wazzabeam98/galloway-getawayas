@@ -1,6 +1,6 @@
 'use client';
 
-import { Suspense, useEffect, useState } from 'react';
+import { Suspense, useEffect, useRef, useState } from 'react';
 import Link from 'next/link';
 import { useRouter, useSearchParams } from 'next/navigation';
 import { createClientComponentClient } from '@supabase/auth-helpers-nextjs';
@@ -8,12 +8,13 @@ import { supabaseEmailFlow } from '@/lib/supabaseEmailFlow';
 import { toast } from 'react-toastify';
 import {
     Sparkles, Wrench, Trees, Droplet, ChefHat, Cake, ShoppingBasket, Trash2,
-    Plus, X, ChevronLeft, ChevronRight, Check, Zap, Hammer, Paintbrush, Home,
-    ImagePlus,
+    Plus, Minus, X, ChevronLeft, ChevronRight, ChevronDown, Check, Zap, Hammer, Paintbrush, Home,
+    ImagePlus, User, Pencil,
+    MapPin, Tag, ListChecks, Flag, Image as ImageIcon,
 } from 'lucide-react';
 import { TradeTile, TradeTileGrid, TRADE_ICONS, GROUP_ICONS } from '@/components/services/TradeTiles';
 import { compressImage } from '@/lib/compressImage';
-import { getImageUrl, generateRandomNumber } from '@/lib/utils';
+import { getImageUrl, generateRandomNumber, resolveTitle, backfillName } from '@/lib/utils';
 import { ORDER_UNITS } from '@/lib/serviceOrders';
 import Env from '@/config/Env';
 import {
@@ -66,9 +67,19 @@ import {
     bandsFor,
     REVIEW_WITHIN_HOURS,
     GUEST_CATEGORIES,
+    GUEST_GROUPS,
+    categoriesForGroup,
     guestCategoryByKey,
     guestCategoryIsFood,
+    guestAsksExpertise,
+    guestQualificationsRequired,
+    checksFor,
+    DIETARY_OPTIONS,
+    DEFAULT_SERVICE_COMMISSION,
 } from '@/lib/serviceProviders';
+import { serviceCommission } from '@/lib/pricing';
+import { GUEST_SCREEN_COPY, GUEST_REGIONS, GUEST_COVERAGE_ALL_KEY, HOST_LOCATION_COPY } from '@/lib/strings';
+import { PhotoEditorGrid } from './PhotoEditorGrid';
 import {
     stepsFor,
     stepNumber,
@@ -82,7 +93,10 @@ import {
     problemsOnStep,
     firstStepWithProblem,
     stepForField,
+    sectionsFor,
+    sectionForStep,
     StepKey,
+    StepContext,
 } from '@/lib/joinSteps';
 
 const PICKER_STATUS_STYLE: Record<string, string> = {
@@ -103,6 +117,241 @@ interface AreaRow {
 // it on. Per trade, because somebody can be part-way through two.
 const draftKey = (trade: string) => 'gg.provider-draft.' + trade;
 
+// The number the years opener shows from load. It is the accepted answer, not a
+// placeholder: someone whose real answer is this presses Next straight through
+// and it is stored (see the years case in the footer's onNext). Shown solid
+// black; the host nudges or types to change it.
+const YEARS_DEFAULT = 5;
+// The max-guests default follows the shape, the way the wording does. For a
+// SLOT the number becomes sellable seats (via sessionCapacity), so it starts
+// low — a shared slot holds at least two, so 2 is at or below any real capacity
+// and tapping straight through can never oversell. For COMES-TO-YOU it is purely
+// descriptive (no seat consequence), so a chef who taps through should say a
+// realistic group size rather than two and filter herself out of every group
+// booking; 6 is a sensible dinner party.
+const CAPACITY_DEFAULT_SLOT = 2;
+const CAPACITY_DEFAULT_TRAVEL = 6;
+
+// A −/+ stepper with a big display number, in the register Airbnb use for every
+// count in their host flow (a guest picks a number by nudging it, not by typing
+// into a small box). Used for the counts on the where-and-when step — session
+// length, group size, days of notice.
+//
+// NOTHING PERSISTS UNTIL THE HOST TOUCHES IT. `value` empty is "not set yet":
+// the stepper shows `suggestion` greyed as a hint, but the stored value stays
+// empty — so the draft and the record carry nothing the host didn't choose. The
+// first nudge adopts the suggestion (a real value now), and typing sets any
+// number directly; either way the value becomes the host's. The step that holds
+// one of these can't be passed until it is non-empty (gated in the footer). The
+// value stays a string to match the fields it replaced.
+function NumberStepper({
+    value, onChange, min = 0, max = 999, step = 1, suffix, suggestion, size = 'md', solid = false,
+}: {
+    value: string;
+    onChange: (v: string) => void;
+    min?: number;
+    max?: number;
+    step?: number;
+    suffix?: string;
+    suggestion?: number;
+    // 'lg' is the whole-screen years opener: a huge display numeral and larger
+    // buttons. 'md' is the inline count on the where-and-when step.
+    size?: 'md' | 'lg';
+    // solid: show the number in solid black from load — the suggestion is a
+    // starting position, not a greyed placeholder, and there is no visual
+    // difference between touched and untouched. It STILL stores nothing until
+    // touched: the parent value stays empty until a nudge or a type commits, so
+    // an untouched starting number never reaches the draft or the record. The
+    // years opener uses this; the slot counts keep the greyed-suggestion style.
+    solid?: boolean;
+}) {
+    const has = String(value).trim() !== '' && Number.isFinite(Number(value));
+    const shown = has ? Number(value) : (suggestion ?? min);
+    const commit = (n: number) => onChange(String(Math.max(min, Math.min(max, Math.round(n)))));
+    // solid: a nudge always MOVES from the shown starting position and commits
+    // (tap + goes up, tap − goes down), because the number is already visible.
+    // greyed: the first nudge ADOPTS the suggestion, then moves.
+    const nudge = (dir: number) => ((solid || has) ? commit(shown + dir * step) : commit(suggestion ?? min));
+
+    const lg = size === 'lg';
+    const circle =
+        (lg ? 'h-16 w-16 ' : 'h-11 w-11 ')
+        + 'flex flex-none items-center justify-center rounded-full border border-slate-300 '
+        + 'text-slate-600 transition hover:border-slate-500 focus:outline-none focus-visible:ring-2 '
+        + 'focus-visible:ring-emerald-600 disabled:opacity-40 disabled:hover:border-slate-300';
+    const glyph = lg ? 'h-6 w-6' : 'h-4 w-4';
+    const numberField = lg
+        ? 'w-44 bg-transparent text-center text-8xl sm:text-9xl font-extrabold tabular-nums text-slate-900 placeholder:font-extrabold placeholder:text-slate-300 focus:outline-none [appearance:textfield] [&::-webkit-outer-spin-button]:appearance-none [&::-webkit-inner-spin-button]:appearance-none'
+        : 'w-16 bg-transparent text-center text-4xl font-extrabold tabular-nums text-slate-900 placeholder:font-extrabold placeholder:text-slate-300 focus:outline-none [appearance:textfield] [&::-webkit-outer-spin-button]:appearance-none [&::-webkit-inner-spin-button]:appearance-none';
+
+    return (
+        <div className={'flex items-center ' + (lg ? 'gap-8 sm:gap-10' : 'gap-4')}>
+            <button type="button" onClick={() => nudge(-1)} disabled={has && shown <= min}
+                aria-label="Decrease" className={circle}>
+                <Minus className={glyph} strokeWidth={2} />
+            </button>
+            <input
+                type="number" inputMode="numeric" aria-label="Amount"
+                value={solid ? String(shown) : (has ? String(shown) : '')}
+                placeholder={solid ? undefined : (suggestion !== undefined ? String(suggestion) : '')}
+                onChange={(e) => onChange(e.target.value)}
+                className={numberField}
+            />
+            <button type="button" onClick={() => nudge(1)} disabled={has && shown >= max}
+                aria-label="Increase" className={circle}>
+                <Plus className={glyph} strokeWidth={2} />
+            </button>
+            {suffix && <span className="text-sm text-slate-500">{suffix}</span>}
+        </div>
+    );
+}
+
+// A collapsed hub row, Airbnb-style: a square button on the left (a plus when
+// empty, a check once filled), a bold label with a grey one-line description
+// beside it, and a chevron on the right. Tapping it opens that thing's sub-flow.
+// Reusable — the same pattern is wanted on later screens.
+function HubRow({ filled, label, suffix, prompt, summary, onOpen, thumb }: {
+    filled: boolean;
+    label: string;
+    // An "(optional)" style suffix rendered after the label in lighter grey.
+    suffix?: string;
+    prompt: string;
+    summary?: string | null;
+    onOpen: () => void;
+    // A resolved image URL. When set, the leading square shows the photo instead
+    // of the plus/check glyph — a menu item sells on its picture, so the row
+    // carries a thumbnail the way Airbnb's itinerary rows do.
+    thumb?: string | null;
+}) {
+    return (
+        <button type="button" onClick={onOpen}
+            className="flex w-full items-center gap-4 rounded-2xl px-2 py-3 text-left transition hover:bg-slate-50 focus:outline-none focus-visible:ring-2 focus-visible:ring-emerald-600">
+            {thumb ? (
+                <span className="h-11 w-11 flex-none overflow-hidden rounded-xl bg-slate-100">
+                    <img src={thumb} alt="" className="h-full w-full object-cover" />
+                </span>
+            ) : (
+            <span aria-hidden className={'flex h-11 w-11 flex-none items-center justify-center rounded-xl border transition '
+                + (filled ? 'border-emerald-600 bg-emerald-600 text-white' : 'border-slate-300 bg-slate-50 text-slate-500')}>
+                {filled ? <Check className="h-5 w-5" strokeWidth={2.5} /> : <Plus className="h-5 w-5" />}
+            </span>
+            )}
+            <span className="min-w-0 flex-1">
+                <span className="block font-semibold text-slate-900">
+                    {label}{suffix && <span className="font-normal text-slate-400"> {suffix}</span>}
+                </span>
+                <span className="block truncate text-sm text-slate-500">{filled && summary ? summary : prompt}</span>
+            </span>
+            <ChevronRight className="h-5 w-5 flex-none text-slate-400" />
+        </button>
+    );
+}
+
+// The sub-flow modal a hub row opens, styled to match Airbnb's: a large centred
+// card, a big heading, then a single borderless field floating in a lot of white
+// space (the field is passed in as children — no box, no fill, just placeholder
+// and cursor). An optional helper `note` sits at the bottom of the body, just
+// above the Save row rather than under the field. Save bottom right, disabled
+// until something is typed; the X closes without saving.
+//
+// One field per modal is what keeps it this clean. Fields edit live component
+// state, so Save and the X both just close; the draft saves as they type.
+function SubFlowModal({ open, title, onClose, saveLabel, saveDisabled, note, children, onSave, onBack, onRemove }: {
+    open: boolean;
+    title: string;
+    onClose: () => void;
+    saveLabel: string;
+    saveDisabled?: boolean;
+    note?: React.ReactNode;
+    children: React.ReactNode;
+    // The primary button's action. Defaults to onClose (the single-field case,
+    // where the field edits live state and there is nothing to do but close).
+    // A stepped sub-flow passes onSave to advance to the next step instead.
+    onSave?: () => void;
+    // When set, a back chevron shows top-left — a stepped sub-flow uses it to
+    // go to the previous step. The single-field modals leave it unset.
+    onBack?: () => void;
+    // When set, a quiet Remove link shows bottom-left — for a row that can be
+    // deleted (a menu item), matching Airbnb's Edit/Remove on an itinerary row.
+    onRemove?: () => void;
+}) {
+    if (!open) return null;
+    return (
+        <div className="fixed inset-0 z-[70] flex items-end justify-center bg-slate-900/40 p-0 sm:items-center sm:p-6"
+            onClick={onClose}>
+            <div className="flex max-h-[92vh] min-h-[62vh] w-full flex-col rounded-t-3xl bg-white shadow-xl sm:max-h-[88vh] sm:min-h-[34rem] sm:max-w-2xl sm:rounded-3xl"
+                onClick={(e) => e.stopPropagation()}>
+                <div className="flex items-center justify-between px-5 pt-5 sm:px-8 sm:pt-8">
+                    {onBack ? (
+                        <button type="button" onClick={onBack} aria-label="Back"
+                            className="flex h-9 w-9 items-center justify-center rounded-full text-slate-500 hover:bg-slate-100">
+                            <ChevronLeft className="h-5 w-5" />
+                        </button>
+                    ) : <span className="h-9 w-9" />}
+                    <button type="button" onClick={onClose} aria-label="Close"
+                        className="flex h-9 w-9 items-center justify-center rounded-full text-slate-500 hover:bg-slate-100">
+                        <X className="h-5 w-5" />
+                    </button>
+                </div>
+                <div className="flex flex-1 flex-col overflow-y-auto px-6 pb-3 sm:px-14">
+                    <h2 className="text-center text-2xl font-extrabold tracking-tight text-slate-900 [text-wrap:balance] sm:text-3xl">{title}</h2>
+                    {/* The field floats in the middle white space; the note (if
+                        any) is pushed to the bottom, just above the Save row. */}
+                    <div className="flex flex-1 flex-col justify-center py-10">{children}</div>
+                    {note && <p className="text-center text-sm text-slate-500 [text-wrap:balance]">{note}</p>}
+                </div>
+                <div className="flex items-center border-t border-slate-100 px-6 py-4 sm:px-8">
+                    {onRemove && (
+                        <button type="button" onClick={onRemove}
+                            className="text-sm font-semibold text-rose-600 hover:text-rose-700">
+                            Remove
+                        </button>
+                    )}
+                    <div className="flex-1" />
+                    <button type="button" onClick={onSave || onClose} disabled={saveDisabled}
+                        className={'rounded-full px-7 py-2.5 text-sm font-semibold transition '
+                            + (saveDisabled
+                                ? 'cursor-not-allowed bg-slate-200 text-slate-400'
+                                : 'bg-emerald-700 text-white hover:bg-emerald-800')}>
+                        {saveLabel}
+                    </button>
+                </div>
+            </div>
+        </div>
+    );
+}
+
+// The rail's per-section icon. The circle carries state by colour (done fills
+// emerald, active rings emerald, upcoming is grey); the glyph inside says which
+// section it is, so a collapsed strip is legible and no circle is ever bare.
+// A done section swaps its icon for a check — completion reads at a glance, and
+// the section is identifiable by position and hover label. Numbers were the
+// obvious alternative and are wrong here: the flow is not a fixed sequence (a
+// sauna skips About you), so a numbered rail would read 1, 3, 4.
+// The two photographs on the empty Photos screen, shown as an overlapping,
+// opposing-tilt pair (Airbnb's composition). Licensed iStock stock (see
+// public/images/experience-photos/README.md for asset ids and credits),
+// web-sized to 800x1000 4:5 to match the frames. Swap the files or repoint here.
+const EXPERIENCE_PHOTOS = [
+    { src: '/images/experience-photos/sauna.jpg', alt: 'A wood-fired sauna bucket in warm light' },
+    { src: '/images/experience-photos/loaf.jpg', alt: 'A rustic sourdough loaf on a wooden table' },
+];
+
+// The empty-Photos composition card size — the AGREED value. Do not change the
+// composition (this size, the tilt, overlap, stagger or button) again unless
+// asked. This is the commit-90a3c20 size (w-40 sm:w-60) reduced ~10–15%.
+const PHOTO_CARD_SIZE = 'w-36 sm:w-52';
+
+const SECTION_ICONS: Record<string, React.ComponentType<any>> = {
+    about: User,
+    location: MapPin,
+    photos: ImageIcon,
+    pricing: Tag,
+    details: ListChecks,
+    experience: Sparkles,
+    finish: Flag,
+};
+
 function ApplicationForm() {
     const router = useRouter();
     const params = useSearchParams();
@@ -114,6 +363,11 @@ function ApplicationForm() {
     const supabase = createClientComponentClient();
 
     const [loading, setLoading] = useState(true);
+    // The provider load failed (not "no application yet"). A failed select used
+    // to fall through to a BLANK new-application form — a returning provider
+    // could then create a second row over their real one. So a failure is held
+    // and shown, never rendered as new.
+    const [loadFailed, setLoadFailed] = useState(false);
     const [session, setSession] = useState<any>(null);
 
     const [providerId, setProviderId] = useState<string | null>(null);
@@ -178,6 +432,20 @@ function ApplicationForm() {
     const [acctError, setAcctError] = useState('');
     const [acctConsent, setAcctConsent] = useState(false);
     const [checkYourEmail, setCheckYourEmail] = useState(false);
+
+    // The verify-your-email gate (g_verify). A guest signs in up front with a
+    // one-time code, so the rest of the wizard runs authenticated. `otpEmail` is
+    // the address; `otpSent` flips once a code is on its way and reveals the
+    // code field; `otpCode` is what they type back; `otpBusy`/`otpError` drive
+    // the button and the message. Verifying makes (or signs into) the account,
+    // which is the anti-squatting point: no session exists until the code proves
+    // they receive mail at that address.
+    const [otpName, setOtpName] = useState('');
+    const [otpEmail, setOtpEmail] = useState('');
+    const [otpSent, setOtpSent] = useState(false);
+    const [otpCode, setOtpCode] = useState('');
+    const [otpBusy, setOtpBusy] = useState(false);
+    const [otpError, setOtpError] = useState('');
     // The application is in. Not "an email is on its way and you must come
     // back" — that shape is gone; see lodgeApplication.
     const [lodged, setLodged] = useState(false);
@@ -224,16 +492,72 @@ function ApplicationForm() {
     // spinner rather than all of them.
     const [uploadingItem, setUploadingItem] = useState<number | null>(null);
 
+    // The price screen's per-item sub-flow (g_menu), rebuilt as a hub. `menuIndex`
+    // is which item's sub-flow is open (null = the hub list); `menuStep` walks the
+    // one-thing-a-screen sub-flow (0 name, 1 price+type, 2 description, 3 photo);
+    // `payoutOpen` toggles the quiet "You keep £X" line into its maths card.
+    const [menuIndex, setMenuIndex] = useState<number | null>(null);
+    const [menuStep, setMenuStep] = useState(0);
+    const [payoutOpen, setPayoutOpen] = useState(false);
+    // The pricing-basis picker (the "How this is priced" sub-flow), opened from a
+    // row on the price step — the last native <select> on this flow, replaced with
+    // the coverage-picker pattern so it reads like the rest of the screen.
+    const [unitPickerOpen, setUnitPickerOpen] = useState(false);
+
+    // The section rail collapses to an icon-only strip, Airbnb-style. Kept in
+    // state so it stays as you move between screens (steps are the same mounted
+    // component), and mirrored to localStorage so it survives a reload too.
+    const [railCollapsed, setRailCollapsed] = useState<boolean>(() => {
+        try { return localStorage.getItem('gg.rail-collapsed') === '1'; } catch { return false; }
+    });
+    const toggleRail = () => setRailCollapsed((v) => {
+        const next = !v;
+        try { localStorage.setItem('gg.rail-collapsed', next ? '1' : '0'); } catch { /* private mode */ }
+        return next;
+    });
+
     // Who they are, for a guest trade only. A guest is choosing someone to come
     // into the cottage they are staying in, so the listing carries a bit of the
     // person and not only the price. A name and a line is what a real chef will
     // actually write — plus a photo of them, and their gallery, which is the
     // listing. All optional.
     const [providerName, setProviderName] = useState('');
-    const [basedLine, setBasedLine] = useState('');
     const [dietaryNote, setDietaryNote] = useState('');
+    // What a food provider can cater for, as ticks (keys from DIETARY_OPTIONS).
+    // Rides in guest_details.dietary_options (jsonb, no column); the note above
+    // carries the caveats the ticks can't. Food categories only.
+    const [dietaryOptions, setDietaryOptions] = useState<string[]>([]);
     const [headshot, setHeadshot] = useState<string | null>(null);
     const [uploadingHeadshot, setUploadingHeadshot] = useState(false);
+
+    // --- Guest experience: the Airbnb-shaped content screens -----------------
+    //
+    // The questions that make a guest experience sell and that we need to take a
+    // booking, added when the flow was rebuilt against Airbnb's (Sep 2026):
+    //   - yearsDoing        how long they've done it (the momentum-first opener)
+    //   - professionalTitle a short professional title ("Private chef")
+    //   - qualifications    training and credentials — REQUIRED, the whole pitch
+    //   - whatToExpect      what actually happens, so a guest knows what they get
+    // "What's included" and "What a guest brings" used to live here too; they
+    // were cut — dark data the listing never showed, and the item description and
+    // price already cover them. `whatToExpect` is now DISPLAYED on the experience
+    // page (guest_details.what_to_expect → experiencesData), so it earns its keep.
+    const [yearsDoing, setYearsDoing] = useState('');
+    const [professionalTitle, setProfessionalTitle] = useState('');
+    const [qualifications, setQualifications] = useState('');
+    const [recognition, setRecognition] = useState('');
+    const [whatToExpect, setWhatToExpect] = useState('');
+    // Which Details (g_expect) sub-flow is open — one field at a time, borderless,
+    // like the rest of the flow: 'expect' for What happens, 'dietary' (food only).
+    const [detailModal, setDetailModal] = useState<'expect' | 'dietary' | null>(null);
+    const [uploadingPhotos, setUploadingPhotos] = useState(false);
+    // Which expertise-hub sub-flow modal is open, if any.
+    const [expertiseModal, setExpertiseModal] = useState<'title' | 'quals' | 'endorsements' | null>(null);
+    // The photo circle at the top of the hub opens the file picker directly (via
+    // this ref), and once a photo is set it offers replace/remove through a small
+    // menu rather than reopening the Intro form.
+    const headshotInputRef = useRef<HTMLInputElement>(null);
+    const [photoMenuOpen, setPhotoMenuOpen] = useState(false);
 
     // --- Guest experience: category, shape, and the shape's own fields -------
     //
@@ -245,6 +569,9 @@ function ApplicationForm() {
     //
     // `guestCategory` is the picked category key (lib/serviceProviders
     // GUEST_CATEGORIES); it pre-fills custom_label and gates the food question.
+    // The top-level group picked first (GUEST_GROUPS); it decides which sub-type
+    // screen shows. 'other' has no sub-type and goes straight to the business step.
+    const [guestGroup, setGuestGroup] = useState('');
     const [guestCategory, setGuestCategory] = useState('');
     // 'comes_to_you' | 'made_to_order' | 'slot'. Pre-selected from the category,
     // confirmed by the plain "how do guests get it?" question, final say at review.
@@ -252,11 +579,23 @@ function ApplicationForm() {
     // Made-to-order only: notice needed, in days ("how much notice do you need?").
     const [leadTimeDays, setLeadTimeDays] = useState('');
     // Slot only. `slotPrivate` is the private/shared answer (null until asked):
-    // private → the whole session for one group (capacity 1, flat price); shared
-    // → several people join (a "how many fit?" capacity, per-person price).
+    // private → the whole session for one group (sells as one booking, flat
+    // price); shared → several people join (per-person price, seats = capacity).
+    // It is inferred on load from the session item's UNIT, not the capacity
+    // number, so a private slot can hold many yet still sell whole.
     const [slotPrivate, setSlotPrivate] = useState<boolean | null>(null);
-    const [slotCapacity, setSlotCapacity] = useState('');
+    // Maximum guests — the group size. Asked on its own screen in the Pricing
+    // section (g_capacity). For a slot it is written to the slot_capacity column
+    // (a shared slot sells that many seats via sessionCapacity; a private slot
+    // records it but still sells whole); for a comes-to-you chef it rides in the
+    // guest_details jsonb. Blank until set; the stepper shows a low default and
+    // stores the shown value on an untouched pass, like the years screen.
+    const [maxGuests, setMaxGuests] = useState('');
     const [slotLength, setSlotLength] = useState('');
+    // The declarations they've confirmed on the checks screen, keyed by check
+    // (lib/serviceProviders GUEST_CHECKS). Non-blocking — recorded for the owner
+    // to weigh at review, never a gate on Next or submit.
+    const [declarations, setDeclarations] = useState<Record<string, boolean>>({});
     // The weekly opening hours — one row per open period. day is 0..6 (0=Sunday).
     const [schedule, setSchedule] = useState<Array<{ day: number; open: string; close: string }>>([]);
     // Dates taken off (block-a-date), as 'yyyy-mm-dd' keys.
@@ -299,6 +638,15 @@ function ApplicationForm() {
     const [skillsListOpen, setSkillsListOpen] = useState(false);
     // Whether the list is showing everything or the first handful.
     const [allTagsOpen, setAllTagsOpen] = useState(false);
+    // The coverage-region picker modal on the guest location screen.
+    const [areaPickerOpen, setAreaPickerOpen] = useState(false);
+    // The town+radius sub-flow on the tradesman location screen. editIndex null
+    // means adding a new area; otherwise it edits areas[editIndex]. The draft
+    // holds the modal's working values so Save commits and the X discards.
+    const [areaModalOpen, setAreaModalOpen] = useState(false);
+    const [areaEditIndex, setAreaEditIndex] = useState<number | null>(null);
+    const [areaDraftTown, setAreaDraftTown] = useState('');
+    const [areaDraftRadius, setAreaDraftRadius] = useState<number>(10);
     // Every existing tag, for the type-ahead. That list IS the mechanism:
     // somebody offered "bricklaying" takes it, and somebody offered nothing
     // types "brick laying".
@@ -357,7 +705,7 @@ function ApplicationForm() {
                 // able to see what they are signing up for, and fill it in,
                 // before being asked for anything.
                 if (!session) {
-                    restoreDraft();
+                    restoreDraft(null);
                     return;
                 }
 
@@ -366,12 +714,25 @@ function ApplicationForm() {
                 // and each is its own business with its own name, so this is
                 // the application for the trade they picked and nothing about
                 // it is inherited from another one they hold.
-                const { data: existing } = await supabase
+                const { data: existing, error: existingError } = await supabase
                     .from('service_providers')
-                    .select('id, business_name, trade, description, sms_opt_out, audience, photos, logo, status, review_note, callout_fee, hourly_rate, callout_waived, does_gas, does_oil, kind, pricing_choice, billable_hourly_rate, covered_bands, provider_name, based_line, headshot, dietary_note, custom_label, shape, lead_time_days, slot_length_minutes, slot_capacity')
+                    // based_line and provider_name are deliberately absent: the
+                    // wizard doesn't use them (based_line is derived server-side;
+                    // provider_name was retired with the "Your name" field), and
+                    // selecting a column the authenticated role can't read 403s
+                    // the whole load. They stay revoked.
+                    .select('id, business_name, trade, description, sms_opt_out, audience, photos, logo, status, review_note, callout_fee, hourly_rate, callout_waived, does_gas, does_oil, kind, pricing_choice, billable_hourly_rate, covered_bands, headshot, dietary_note, custom_label, shape, lead_time_days, slot_length_minutes, slot_capacity, declarations, guest_details')
                     .eq('owner_id', session.user.id)
                     .eq('trade', tradeFromUrl)
                     .maybeSingle();
+
+                // A failed read is NOT "no application yet". `existing` would be
+                // null either way, and the old code carried on into the blank
+                // new-application form — so a returning provider whose read
+                // errored (a revoked grant, a missing column mid-migration, a
+                // network blip) could file a second row over their real one.
+                // Stop and say so instead.
+                if (existingError) throw existingError;
 
                 if (existing) {
                     setProviderId(existing.id);
@@ -429,8 +790,6 @@ function ApplicationForm() {
                         })));
                     }
 
-                    setProviderName((existing as any).provider_name || '');
-                    setBasedLine((existing as any).based_line || '');
                     setDietaryNote((existing as any).dietary_note || '');
                     setHeadshot((existing as any).headshot || null);
 
@@ -444,9 +803,20 @@ function ApplicationForm() {
                     if (ex.shape) setShape(ex.shape);
                     if (ex.lead_time_days) setLeadTimeDays(String(ex.lead_time_days));
                     if (ex.slot_length_minutes) setSlotLength(String(ex.slot_length_minutes));
+                    // Capacity loads into the max-guests screen from the stored
+                    // column (authoritative for existing slot listings, so an
+                    // edit shows what they set rather than the stepper default).
                     if (ex.slot_capacity !== null && ex.slot_capacity !== undefined) {
-                        setSlotCapacity(String(ex.slot_capacity));
-                        setSlotPrivate(Number(ex.slot_capacity) <= 1);
+                        setMaxGuests(String(ex.slot_capacity));
+                    }
+                    // Private vs shared comes from the session item's UNIT, not
+                    // the capacity number — a private slot can hold six yet sell
+                    // whole, so capacity no longer implies the answer. Slots are
+                    // single-item with a uniform unit, but read it as "any
+                    // per-person item ⇒ shared" so a stray can't mis-load it.
+                    if (ex.shape === 'slot') {
+                        const anyPerson = (itemRows || []).some((r: any) => String(r.unit) === 'person');
+                        setSlotPrivate(!anyPerson);
                     }
                     if (audienceForTrade(existing.trade || tradeFromUrl) === 'guest') {
                         const byLabel = GUEST_CATEGORIES.filter((c) => c.label && c.label === ex.custom_label)[0];
@@ -454,6 +824,27 @@ function ApplicationForm() {
                         // ('other') marks "already past the picker" without claiming
                         // a food category it isn't.
                         setGuestCategory(byLabel ? byLabel.key : 'other');
+                        // Their declarations, so a returning provider sees what
+                        // they already confirmed rather than a blank checks screen.
+                        if (ex.declarations && typeof ex.declarations === 'object') {
+                            setDeclarations(ex.declarations as Record<string, boolean>);
+                        }
+                        // Their content answers in their own words — the seven
+                        // fields that now live in the guest_details jsonb column
+                        // (20260906143712). A returning provider edits what they
+                        // wrote rather than a blank form.
+                        const gd = (ex.guest_details && typeof ex.guest_details === 'object') ? ex.guest_details : {};
+                        if (gd.years_experience) setYearsDoing(String(gd.years_experience));
+                        if (gd.professional_title) setProfessionalTitle(String(gd.professional_title));
+                        if (gd.qualifications) setQualifications(String(gd.qualifications));
+                        if (gd.recognition) setRecognition(String(gd.recognition));
+                        if (gd.what_to_expect) setWhatToExpect(String(gd.what_to_expect));
+                        if (Array.isArray(gd.dietary_options)) setDietaryOptions(gd.dietary_options as string[]);
+                        // Max guests for a comes-to-you chef rides here (a slot's
+                        // is loaded from slot_capacity above). Only set it when the
+                        // column didn't already provide it, so a slot keeps its
+                        // authoritative value.
+                        if (ex.shape !== 'slot' && gd.max_guests) setMaxGuests(String(gd.max_guests));
                     }
 
                     // A slot's weekly hours and days off.
@@ -555,13 +946,21 @@ function ApplicationForm() {
                 } else {
                     // Signed in, nothing saved for this trade — so anything
                     // they typed before signing in is still the newest thing.
-                    restoreDraft();
+                    // Pass the freshly-fetched session so the restore knows they
+                    // are signed in (the state hasn't updated within this run).
+                    restoreDraft(session);
                     setContactEmail((prev) => prev || session.user.email || '');
                 }
 
+                // The person's name is no longer asked in the flow — it is the
+                // listing title now, derived from the account at submit (see
+                // resolveGuestTitleNow). So there is nothing to prefill here.
+
             } catch (err) {
-                // Nothing to show them but the empty form; a stuck spinner is
-                // worse than a form that starts blank.
+                // A blank form is worse than a stuck spinner here: it looks like a
+                // fresh application over a record we failed to read. Hold the
+                // failure and show a retry rather than rendering the form.
+                setLoadFailed(true);
                 toast.error('We could not load your details. Try refreshing.', { theme: 'colored' });
             } finally {
                 setLoading(false);
@@ -587,7 +986,10 @@ function ApplicationForm() {
         // time this runs on hydrate, restoreDraft has already put back any saved
         // category, so this reads the real answer.
         const guestNeedsCategory = audienceForTrade(tradeFromUrl) === 'guest' && !guestCategory && !providerId;
-        const openState = { hydrated, restored, lodged, trade: tradeFromUrl, guestNeedsCategory };
+        // A guest with no session opens on the verify gate, before the picker.
+        // Session is set inside the same load() that flips `hydrated`, so it is
+        // already known by the time this runs.
+        const openState = { hydrated, restored, lodged, trade: tradeFromUrl, guestNeedsCategory, hasSession: !!session, category: guestCategory };
         const opening = openingStep(openState);
         if (opening === null) return;
 
@@ -637,7 +1039,10 @@ function ApplicationForm() {
     // a cleaner.
     const chosen = tradeFromUrl !== '';
 
-    const restoreDraft = () => {
+    // `sessionArg` is passed by load() because the component `session` state has
+    // not updated yet inside that same synchronous run — reading it here would
+    // see a stale null and mis-resolve a signed-in user onto the verify gate.
+    const restoreDraft = (sessionArg: any = null) => {
         // Nothing has been picked, so there is no draft to come back to: the
         // key would be the empty one, and the only thing ever written under it
         // is the blank form. Restoring that told a first-time visitor "we kept
@@ -674,17 +1079,23 @@ function ApplicationForm() {
             if (d.areas) setAreas(d.areas);
             if (Array.isArray(d.items) && d.items.length) setItems(d.items);
             if (d.providerName) setProviderName(d.providerName);
-            if (d.basedLine) setBasedLine(d.basedLine);
             if (d.dietaryNote) setDietaryNote(d.dietaryNote);
+            if (Array.isArray(d.dietaryOptions)) setDietaryOptions(d.dietaryOptions);
             if (d.headshot) setHeadshot(d.headshot);
+            if (d.yearsDoing) setYearsDoing(d.yearsDoing);
+            if (d.professionalTitle) setProfessionalTitle(d.professionalTitle);
+            if (d.qualifications) setQualifications(d.qualifications);
+            if (d.recognition) setRecognition(d.recognition);
+            if (d.whatToExpect) setWhatToExpect(d.whatToExpect);
             // The category, shape and its fields. Set before the filledIn check
             // so a guest who picked a category but typed nothing still lands past
             // the picker rather than being asked to choose it again.
             if (d.guestCategory) setGuestCategory(d.guestCategory);
+            if (d.declarations && typeof d.declarations === 'object') setDeclarations(d.declarations);
             if (d.shape) setShape(d.shape);
             if (d.leadTimeDays) setLeadTimeDays(d.leadTimeDays);
             if (d.slotPrivate !== undefined && d.slotPrivate !== null) setSlotPrivate(d.slotPrivate === true);
-            if (d.slotCapacity) setSlotCapacity(d.slotCapacity);
+            if (d.maxGuests) setMaxGuests(d.maxGuests);
             if (d.slotLength) setSlotLength(d.slotLength);
             if (Array.isArray(d.schedule)) setSchedule(d.schedule);
             if (Array.isArray(d.blockedDates)) setBlockedDates(d.blockedDates);
@@ -742,13 +1153,25 @@ function ApplicationForm() {
             // registration step as a plumber and come back as a cleaner -- and
             // it lands them on the last step this trade does have rather than
             // on a blank panel.
-            const landing = resolveStep(d.trade || tradeFromUrl, d.step);
+            // A guest's steps depend on the category and shape from the draft,
+            // so resolve and count them with that context.
+            const restoreTrade = d.trade || tradeFromUrl;
+            const restoreCtx: StepContext | undefined =
+                audienceForTrade(restoreTrade) === 'guest'
+                    // hasSession MUST be carried here, not just in the opening
+                    // context: without it the verify-email gate (g_verify) counts
+                    // as a live step during restore, and a signed-in applicant
+                    // with any saved draft is resolved onto the email screen they
+                    // should never see. A signed-in user has no g_verify step.
+                    ? { category: d.guestCategory, shape: d.shape, hasSession: !!sessionArg }
+                    : undefined;
+            const landing = resolveStep(restoreTrade, d.step, restoreCtx);
             setStep(landing);
 
             // Everything up to where they were counts as seen, so the step
             // they are returning to shows its errors rather than looking
             // finished. Steps ahead of them stay quiet.
-            const upTo = stepsFor(d.trade || tradeFromUrl);
+            const upTo = stepsFor(restoreTrade, restoreCtx);
             const at = upTo.findIndex((x: any) => x.key === landing);
             setVisited(upTo.slice(0, at + 1).map((x: any) => x.key));
 
@@ -796,10 +1219,15 @@ function ApplicationForm() {
                     photos, logo, buildingType, panes,
                     // The guest-trade fields: the price, and who they are. The
                     // headshot is a storage path like the photos.
-                    items, providerName, basedLine, headshot, dietaryNote,
+                    items, providerName, headshot, dietaryNote, dietaryOptions,
+                    // The Airbnb-shaped content answers.
+                    yearsDoing, professionalTitle, qualifications, recognition,
+                    whatToExpect,
                     // The category, the inferred shape and its own fields.
                     guestCategory, shape, leadTimeDays,
-                    slotPrivate, slotCapacity, slotLength, schedule, blockedDates,
+                    slotPrivate, maxGuests, slotLength, schedule, blockedDates,
+                    // The checks they've ticked so far.
+                    declarations,
                 })
             );
         } catch (err) {
@@ -812,9 +1240,12 @@ function ApplicationForm() {
         pricingChoice, billableHourlyRate, coveredBands,
         doesGas, doesOil, registrations, calloutWaived, skills,
         photos, logo, buildingType, panes,
-        items, providerName, basedLine, headshot,
+        items, providerName, headshot, dietaryNote, dietaryOptions,
+        yearsDoing, professionalTitle, qualifications, recognition,
+        whatToExpect,
         guestCategory, shape, leadTimeDays,
-        slotPrivate, slotCapacity, slotLength, schedule, blockedDates,
+        slotPrivate, maxGuests, slotLength, schedule, blockedDates,
+        declarations,
     ]);
 
     // Which registration boxes this application shows at all. An electrician
@@ -846,6 +1277,8 @@ function ApplicationForm() {
         pricing_choice: pricingChoice,
         billable_hourly_rate: billableHourlyRate,
         covered_bands: coveredBands,
+        shape,
+        scheduleCount: schedule.length,
     });
 
     // One block of £ boxes for a pricing structure. Nothing computes from
@@ -1104,22 +1537,144 @@ function ApplicationForm() {
     // at once and had to go back up looking for them. Now a step answers for
     // itself on the way past, and by the time send is pressed there is
     // normally nothing left to say.
+    // The guest split is driven by a context — the category and the booking
+    // shape — passed to every joinSteps call. It is UNDEFINED for a host trade,
+    // which is what keeps a host's steps and validation byte-for-byte unchanged:
+    // the guest steps stay off and stepForField uses the host map.
+    const isGuest = audienceForTrade(trade) === 'guest';
+    // group falls back to the category's own group, so a restored draft (which
+    // saves the category, not the group) still resolves its steps correctly.
+    const stepCtx: StepContext | undefined =
+        isGuest
+            ? { group: guestGroup || (guestCategoryByKey(guestCategory)?.group || ''), category: guestCategory, shape, hasSession: !!session }
+            : undefined;
+
     const problemFor = (field: string) => {
-        const where = stepForField(field);
+        const where = stepForField(field, stepCtx);
         const shown = touchedSubmit || (where !== null && visited.indexOf(where) !== -1);
         return shown ? (problems.filter((p) => p.field === field)[0] || null) : null;
     };
 
     // ---- moving between steps --------------------------------------------
 
-    const steps = stepsFor(trade);
+    const steps = stepsFor(trade, stepCtx);
     const stepMeta = steps.filter((x) => x.key === step)[0] || steps[0];
     const onStep = (key: StepKey) => step === key;
+
+    // ---- the named sections (the guest progress rail) --------------------
+    //
+    // Airbnb groups the flow into a handful of named sections rather than a
+    // "Step 5 of 12" count. sectionsFor gives the ones this guest walks, in
+    // order; the eyebrow at the top of each screen and the desktop rail read
+    // from the same source, so they can't disagree about the flow.
+    const flowSections = sectionsFor(trade, stepCtx);
+    const currentSection = sectionForStep(step);
+    const stepIndexInFlow = steps.findIndex((x) => x.key === step);
+    // A section is done when its last live step sits before the current one;
+    // active when the current step is one of its own; ahead otherwise.
+    const sectionStatus = (sec: { steps: StepKey[] }): 'done' | 'active' | 'ahead' => {
+        if (sec.steps.indexOf(step) !== -1) return 'active';
+        const lastIdx = Math.max(...sec.steps.map((k) => steps.findIndex((x) => x.key === k)));
+        return lastIdx > -1 && lastIdx < stepIndexInFlow ? 'done' : 'ahead';
+    };
+
+    // A one-line summary of what a completed section holds, for the rail — the
+    // way Airbnb shows "12 years", "4 photos" under each done section. All
+    // read-only from state; empty ones just show nothing.
+    const sectionSummary = (key: string): string => {
+        switch (key) {
+            case 'about': {
+                const y = yearsDoing.trim();
+                return y ? `${y} ${y === '1' ? 'year' : 'years'}` : '';
+            }
+            case 'location': {
+                if (areas.length === 1) return String(areas[0].town || '').trim() || '1 area';
+                if (areas.length > 1) return `${areas.length} areas`;
+                if (shape === 'made_to_order' && leadTimeDays.trim()) {
+                    const d = leadTimeDays.trim();
+                    return `${d} ${d === '1' ? 'day' : 'days'}’ notice`;
+                }
+                return '';
+            }
+            case 'photos':
+                return photos.length ? `${photos.length} ${photos.length === 1 ? 'photo' : 'photos'}` : '';
+            case 'pricing': {
+                const priced = items
+                    .map((it) => Number(String(it.price || '').replace(/[^0-9.]/g, '')))
+                    .filter((n) => n > 0);
+                if (!priced.length) return '';
+                return `From £${Math.min(...priced)}`;
+            }
+            case 'details':
+                return (whatToExpect.trim() || dietaryNote.trim()) ? 'Added' : '';
+            case 'finish':
+                return contactEmail.trim();
+            default:
+                return '';
+        }
+    };
 
     // What is wrong on the step in front of them, which is all Next is
     // allowed to care about. A missing price must not stop somebody getting
     // past their business name.
-    const stepProblems = problemsOnStep(problems, step);
+    const stepProblems = problemsOnStep(problems, step, stepCtx);
+
+    // Which guest content steps a person can skip. Everything else with a
+    // question on it is required — and the footer says which is which, so a
+    // greyed Next is never a silent dead end and a skippable screen never
+    // looks like one she has to fill. Pickers (trade, g_subtype) and the
+    // finish step carry their own affordances and are left out here.
+    // Whether this guest's category requires years and/or qualifications before
+    // Qualifications gate: required only for the four safety categories.
+    const catQualsRequired = isGuest && guestQualificationsRequired(guestCategory);
+
+    // g_menu, g_expect and g_checks are always skippable. g_you is NEVER
+    // skippable: the years screen shows a starting number (5), so a host could
+    // otherwise walk past it thinking that number is their answer when nothing
+    // was stored — it must be touched. g_creds is skippable unless this category
+    // requires qualifications.
+    const OPTIONAL_GUEST_STEPS: StepKey[] = ['g_menu', 'g_expect', 'g_checks'];
+    const stepIsPicker = step === 'trade' || step === 'g_subtype';
+    // g_creds is no longer skippable for anyone: the professional title is now
+    // required for every category (qualifications on top for the safety four).
+    const stepIsOptional = isGuest && !stepIsPicker && (
+        OPTIONAL_GUEST_STEPS.indexOf(step) !== -1
+    );
+
+    // Three guest steps can be required without a submitProblems field of their
+    // own — years and qualifications (only for the categories that need them)
+    // and at least one photo (always). They gate Next on the spot, the same way
+    // the pickers do, with a plain line saying what to add.
+    // The counts on the where-and-when step only display a suggestion until the
+    // host touches them, so the step can't be passed until each one that applies
+    // has a real value. (The area and weekly-hours requirements come through
+    // stepProblems, below.)
+    const whereMissing: string | null = isGuest && step === 'g_area'
+        ? (shape === 'slot'
+            ? (!slotLength.trim() ? 'Set how long each session is.' : null)
+            : shape === 'made_to_order'
+                ? (!leadTimeDays.trim() ? 'Set how much notice you need.' : null)
+                : null)
+        : null;
+
+    // g_photos deliberately shows no footer message: the on-screen line asks for
+    // three, the Next gate quietly holds at one, and we don't restate either in
+    // the footer. The gate itself lives in the Next-disabled computation.
+    const guestExtraMissing: string | null = isGuest
+        ? (step === 'g_creds' && !professionalTitle.trim()
+            ? GUEST_SCREEN_COPY.titleGate
+            : step === 'g_creds' && catQualsRequired && !qualifications.trim()
+            ? GUEST_SCREEN_COPY.qualsGate
+            : whereMissing)
+        : null;
+
+    // The one thing missing on a required step, phrased for a person. Shown in
+    // the footer beside the greyed Next so she knows exactly what to add.
+    const stepMissing = guestExtraMissing
+        ? guestExtraMissing
+        : isGuest && !stepIsPicker && !stepIsOptional && stepProblems.length > 0
+            ? stepProblems[0].message
+            : null;
 
     const markVisited = (key: StepKey) =>
         setVisited((prev) => (prev.indexOf(key) === -1 ? prev.concat([key]) : prev));
@@ -1179,7 +1734,7 @@ function ApplicationForm() {
             return;
         }
 
-        const to = nextStep(trade, step);
+        const to = nextStep(trade, step, stepCtx);
         if (to === step) return;
 
         setStep(to);
@@ -1195,7 +1750,7 @@ function ApplicationForm() {
             return;
         }
 
-        const to = previousStep(trade, step);
+        const to = previousStep(trade, step, stepCtx);
         if (to === step) return;
 
         // Nothing is validated and nothing is cleared on the way back. Every
@@ -1203,6 +1758,17 @@ function ApplicationForm() {
         // also why Back must never be a router call: that would remount this
         // and lose the lot.
         setStep(to);
+        scrollPanelToTop();
+    };
+
+    // Jump straight to a step from the rail — the named sections behind you are
+    // clickable navigation back to what you already did. Like Back, it validates
+    // nothing and clears nothing (every field is component state and stays as it
+    // was); the rail only ever offers a completed section as a target, so there
+    // is nothing ahead to leap over.
+    const goToStep = (key: StepKey) => {
+        if (key === step) return;
+        setStep(key);
         scrollPanelToTop();
     };
 
@@ -1215,10 +1781,13 @@ function ApplicationForm() {
     const goToFirstProblem = () => {
         setVisited(steps.map((x) => x.key));
 
-        const to = firstStepWithProblem(trade, problems);
+        const to = firstStepWithProblem(trade, problems, stepCtx);
         if (!to || to === step) return;
 
         setStep(to);
+        // If the outstanding thing is the weekly hours, open that block so the
+        // provider actually sees it — it's a collapsed section otherwise.
+        if (problems.some((p) => p.field === 'availability')) setOpenGroup('availability');
         scrollPanelToTop();
         showFirstProblem();
 
@@ -1247,15 +1816,52 @@ function ApplicationForm() {
     // booking shape it usually is, so the next step opens on the right question
     // rather than asking it cold. The provider still confirms the shape, and the
     // owner has the final say on both — nothing here is binding.
-    const chooseGuestCategory = (key: string) => {
+    // SELECT vs ADVANCE. Both picker screens now behave the same as the fork:
+    // tapping a card selects it (an emerald outline), and the footer Next is
+    // what carries them on — never an auto-advance jump-cut.
+
+    // Screen two: select a sub-type. Records the category (a starting point,
+    // confirmed at review) and pre-selects the booking shape it usually is.
+    const selectGuestCategory = (key: string) => {
         setGuestCategory(key);
         const cat = guestCategoryByKey(key);
         if (cat && cat.shape) setShape(cat.shape);
-        // Changing category can change which shape applies, so a food category
-        // swapped for a non-food one must not keep a dietary note nobody sees;
-        // leave what they typed, it is only shown when a food category is set.
         markVisited('trade');
-        setStep('business');
+        markVisited('g_subtype');
+    };
+
+    // Screen one: select a top-level group.
+    const selectGroup = (key: string) => {
+        setGuestGroup(key);
+        markVisited('trade');
+    };
+
+    // Next on screen one. A group with real sub-types opens screen two; 'other'
+    // (alone under its group) skips it — its lone category is set and we go
+    // straight to the business step, no screen-two of one card.
+    // Where a guest goes after the category pick: the About-you opener (g_you) if
+    // the category asks about expertise, otherwise straight to Location (g_area),
+    // which every guest has. There is no naming step any more — the title is the
+    // account name, derived at submit. The account is already made by now (verify
+    // is the first screen of all, before the picker), so there is no auth detour.
+    const firstGuestContentStep = (category: string): StepKey =>
+        guestAsksExpertise(category) ? 'g_you' : 'g_area';
+
+    const advanceFromGroup = () => {
+        const subs = categoriesForGroup(guestGroup);
+        if (guestGroup === 'other' || subs.length <= 1) {
+            const key = subs[0]?.key || '';
+            if (key) selectGuestCategory(key);
+            setStep(firstGuestContentStep(key));
+        } else {
+            setStep('g_subtype');
+        }
+        scrollPanelToTop();
+    };
+
+    // Next on screen two.
+    const advanceFromSubtype = () => {
+        setStep(firstGuestContentStep(guestCategory));
         scrollPanelToTop();
     };
 
@@ -1389,6 +1995,48 @@ function ApplicationForm() {
         e.target.value = '';
     };
 
+    // A gallery photo for the guest listing — the room, the table, the view. The
+    // dedicated photos step (g_photos) that Airbnb has and we lacked. Same
+    // owner-prefixed path and compression as the headshot and item photos;
+    // appended to `photos`, which already saves and loads and is read by the
+    // listing. More than one file at a time, so a provider can add a set at once.
+    const uploadGalleryPhotos = async (e: React.ChangeEvent<HTMLInputElement>) => {
+        const files = Array.from(e.target.files || []);
+        if (!files.length) return;
+
+        if (!session) {
+            toast.info('Your photos can go on as soon as this is sent — nothing has been lost, just pick them again then.', {
+                theme: 'colored',
+            });
+            e.target.value = '';
+            return;
+        }
+
+        setUploadingPhotos(true);
+
+        for (const file of files) {
+            try {
+                const ready = await compressImage(file);
+                const path = 'providers/photo-' + session.user.id + '-' + Date.now() + '_' + generateRandomNumber() + '.jpg';
+
+                const { error } = await supabase.storage
+                    .from(Env.S3_BUCKET)
+                    .upload(path, ready, { contentType: 'image/jpeg' });
+
+                if (error) {
+                    toast.error(error.message, { theme: 'colored' });
+                } else {
+                    setPhotos((prev) => [...prev, path]);
+                }
+            } catch (err) {
+                toast.error('That image could not be read. Try a different one.', { theme: 'colored' });
+            }
+        }
+
+        setUploadingPhotos(false);
+        e.target.value = '';
+    };
+
     // Removing a draft. Drafts only: an application we are looking at, or a
     // business already on the site, is not something to throw away with a
     // button — those come off through us.
@@ -1418,14 +2066,65 @@ function ApplicationForm() {
         }
 
         toast.success('Removed.', { theme: 'colored' });
-        router.push('/services/join');
+        // Back to the right step one to re-pick: a guest re-chooses a category
+        // (only reachable via ?trade=guest), a trade re-picks off the grid.
+        router.push(trade === 'guest' ? '/services/join?trade=guest' : '/services/join');
     };
 
-    const addArea = () => {
-        const used = areas.map((a) => a.town);
-        const next = COVERAGE_TOWNS.filter((t) => used.indexOf(t.label) === -1)[0];
-        if (!next) return;
-        setAreas((prev) => [...prev, { town: next.label, radius_miles: 10 }]);
+    // The tradesman area sub-flow: open to add (null) or to edit a row, commit
+    // the draft on Save, drop the row on Remove. The model is unchanged — a town
+    // from the known list plus a radius — so existing rows load and re-save
+    // exactly as before and the directory filter keeps working.
+    const openHostArea = (index: number | null) => {
+        if (index === null) {
+            setAreaEditIndex(null);
+            setAreaDraftTown('');
+            setAreaDraftRadius(10);
+        } else {
+            const a = areas[index];
+            setAreaEditIndex(index);
+            setAreaDraftTown(a?.town || '');
+            setAreaDraftRadius(Number(a?.radius_miles) || 10);
+        }
+        setAreaModalOpen(true);
+    };
+    const saveHostArea = () => {
+        const town = areaDraftTown.trim();
+        if (!town) return;
+        const row = { town, radius_miles: Number(areaDraftRadius) || 10 };
+        setAreas((prev) => (areaEditIndex === null
+            ? [...prev, row]
+            : prev.map((x, j) => (j === areaEditIndex ? row : x))));
+        setAreaModalOpen(false);
+    };
+    const removeHostArea = () => {
+        if (areaEditIndex === null) return;
+        setAreas((prev) => prev.filter((_, j) => j !== areaEditIndex));
+        setAreaModalOpen(false);
+    };
+
+    // Guest coverage is a fixed list of regions, ticked in the picker. A region
+    // is stored as an area row whose `town` holds the region label and whose
+    // radius is 0 — nothing reads radius on the guest path any more (coverage is
+    // informational, the coversPoint filter is gone), so 0 is a value no one
+    // consults, not a distance. "All of Dumfries & Galloway" is mutually
+    // exclusive with the individual regions: picking it clears the rest, and
+    // picking an individual clears it.
+    const ALL_REGION_LABEL = GUEST_REGIONS.filter((r) => r.key === GUEST_COVERAGE_ALL_KEY)[0].label;
+    const areasHasAll = areas.some((a) => a.town === ALL_REGION_LABEL);
+    const regionHint = (label: string) => GUEST_REGIONS.filter((r) => r.label === label)[0]?.hint || '';
+    const regionPicked = (label: string) => areas.some((a) => a.town === label);
+    const toggleRegion = (r: { key: string; label: string }) => {
+        if (r.key === GUEST_COVERAGE_ALL_KEY) {
+            setAreas((prev) => (prev.some((a) => a.town === r.label) ? [] : [{ town: r.label, radius_miles: 0 }]));
+            return;
+        }
+        setAreas((prev) => {
+            const withoutAll = prev.filter((a) => a.town !== ALL_REGION_LABEL);
+            return withoutAll.some((a) => a.town === r.label)
+                ? withoutAll.filter((a) => a.town !== r.label)
+                : [...withoutAll, { town: r.label, radius_miles: 0 }];
+        });
     };
 
     // Making the account out of what they have already typed.
@@ -1463,7 +2162,13 @@ function ApplicationForm() {
                 email: email,
                 password: acctPassword,
                 options: {
-                    data: { name: businessName.trim() },
+                    // The PERSON's name, never the business. full_name is the
+                    // shared personal field the whole site reads for bylines,
+                    // messages and trip cards, so the business name must never
+                    // reach it. Blank when we have no personal name (a trade, or
+                    // a guest who skipped "Your name") — the trigger then seeds an
+                    // empty full_name rather than something wrong.
+                    data: providerName.trim() ? { name: providerName.trim() } : {},
                     // Straight back to this form, with the trade, so a
                     // confirmed address lands on the thing they were doing
                     // rather than on the home page.
@@ -1506,9 +2211,17 @@ function ApplicationForm() {
             // UPDATE, NOT UPSERT — see components/auth/SignupModel.tsx for
             // why. The row already exists; the upsert needed SELECT on email
             // and had been failing since 20260828234003.
-            await supabase.from('profiles')
-                .update({ full_name: businessName.trim() })
-                .eq('id', data.session.user.id);
+            //
+            // full_name is seeded from the PERSON's name if we have one, never
+            // the business. The trigger already wrote it from the signUp metadata
+            // above; this is belt-and-braces for the personal name, and a no-op
+            // when there is none rather than a write of the business name.
+            const personalName = providerName.trim();
+            if (personalName) {
+                await supabase.from('profiles')
+                    .update({ full_name: personalName })
+                    .eq('id', data.session.user.id);
+            }
 
             setSession(data.session);
             return data.session;
@@ -1549,13 +2262,52 @@ function ApplicationForm() {
             const n = Math.floor(Number(String(v || '').trim()));
             return String(v || '').trim() !== '' && Number.isFinite(n) ? Math.max(min, n) : null;
         };
+        // The declarations, as a record of exactly the checks this category was
+        // asked and whether each was confirmed — not the raw state, which could
+        // carry a stale tick from a category they backed out of. So the owner
+        // reads a true picture at review: what we put to them, and their answer.
+        const confirmed: Record<string, boolean> = {};
+        for (const check of checksFor(guestCategory)) confirmed[check.key] = !!declarations[check.key];
         return {
             ...(cat && cat.label && status !== 'approved' ? { custom_label: cat.label } : {}),
             shape: shape || 'made_to_order',
             exclusive_per_date: shape === 'comes_to_you',
             lead_time_days: isMTO ? (num(leadTimeDays, 0) ?? 0) : 0,
             slot_length_minutes: isSlot ? num(slotLength, 15) : null,
-            slot_capacity: isSlot ? (slotPrivate === false ? num(slotCapacity, 1) : 1) : null,
+            // Max guests → slot_capacity for a slot (drives sellable seats for a
+            // shared/per-person slot via sessionCapacity; a private/flat slot
+            // records it but still sells whole). Written from the one maxGuests
+            // state, so it can never disagree with the jsonb copy below.
+            slot_capacity: isSlot ? (num(maxGuests, 1) ?? 1) : null,
+            declarations: confirmed,
+        };
+    };
+
+    // The Airbnb-shaped content answers, for the APPLICATION PAYLOAD ONLY.
+    //
+    // Deliberately NOT part of guestProviderFields: that is spread into the
+    // signed-in column write as well, and none of these six has a column yet, so
+    // sending them there would fail the insert. They ride only in the apply
+    // route's jsonb payload (service_applications.payload), which needs no
+    // migration to hold them — and are materialised to columns later, when the
+    // guest_details column lands. Empty stays null so the stored object is clean.
+    const guestContentFields = (): Record<string, string | string[] | null> => {
+        if (audienceForTrade(trade) !== 'guest') return {};
+        const t = (v: string) => (String(v || '').trim() || null);
+        return {
+            years_experience: t(yearsDoing),
+            professional_title: t(professionalTitle),
+            qualifications: t(qualifications),
+            recognition: t(recognition),
+            what_to_expect: t(whatToExpect),
+            // What the food provider can cater for, as ticks. An array of keys
+            // (DIETARY_OPTIONS), or null when nothing is ticked — the caveats
+            // live in the dietary_note column, not here. Empty stays null so a
+            // blank answer still reads as "hasn't said" on the listing.
+            dietary_options: dietaryOptions.length ? dietaryOptions : null,
+            // Max guests rides here for every category that has it (a slot ALSO
+            // writes slot_capacity, from the same state, so the two agree).
+            max_guests: t(maxGuests),
         };
     };
 
@@ -1571,10 +2323,34 @@ function ApplicationForm() {
         };
     };
 
-    const applicationRows = (now: Date) => {
+    // The listing TITLE for a guest — their account name, or a trading name if
+    // they set one in account settings. Derived here rather than asked: a guest
+    // experience is a person, not a business. Read fresh at submit — everyone is
+    // signed in by now (a host already was; an anonymous applicant through the
+    // verify gate, where their name is captured). trading_name is read
+    // defensively so this still works before the column ships (the migration
+    // lands on prod before this code).
+    const resolveGuestTitleNow = async (): Promise<string> => {
+        const { data: { session } } = await supabase.auth.getSession();
+        if (!session?.user) return '';
+        const { data: prof } = await supabase.from('profiles')
+            .select('full_name, preferred_name, show_full_name').eq('id', session.user.id).maybeSingle();
+        let trading: string | null = null;
+        const { data: t, error: te } = await supabase.from('profiles')
+            .select('trading_name').eq('id', session.user.id).maybeSingle();
+        if (!te && t) trading = (t as any).trading_name || null;
+        return resolveTitle(prof ? { ...(prof as any), trading_name: trading } : null, '');
+    };
+
+    const applicationRows = (now: Date, title: string) => {
         const provider: any = {
             ...guestProviderFields(),
-            business_name: businessName.trim(),
+            // The content answers ride only here, in the application payload —
+            // never in the signed-in column write (they have no columns yet).
+            ...guestContentFields(),
+            // A guest's title is the person (or their trading name), derived and
+            // passed in; a host trades under the business name they typed.
+            business_name: audienceForTrade(trade) === 'guest' ? title : businessName.trim(),
             trade,
             description: description.trim(),
             contact_email: contactEmail.trim(),
@@ -1585,7 +2361,6 @@ function ApplicationForm() {
             // come into their cottage, so the listing carries a bit of the
             // person. Null for a host trade, where a logo and a trade say enough.
             provider_name: audienceForTrade(trade) === 'guest' ? (providerName.trim() || null) : null,
-            based_line: audienceForTrade(trade) === 'guest' ? (basedLine.trim() || null) : null,
             dietary_note: audienceForTrade(trade) === 'guest' ? (dietaryNote.trim() || null) : null,
             headshot: audienceForTrade(trade) === 'guest' ? headshot : null,
             photos,
@@ -1716,6 +2491,80 @@ function ApplicationForm() {
         setResending(false);
     };
 
+    // The verify-your-email gate. Send a one-time code, then verify it. Uses the
+    // MAIN client (not supabaseEmailFlow, which is deliberately session-less for
+    // the lodge flow) so verifyOtp writes a real session the rest of the wizard
+    // reads.
+    const sendOtp = async () => {
+        const email = otpEmail.trim();
+        if (!email || email.indexOf('@') === -1) {
+            setOtpError('Enter the email address we should send your code to.');
+            return;
+        }
+        setOtpBusy(true);
+        setOtpError('');
+        // shouldCreateUser makes the account on first verify; a returning
+        // applicant is signed into their existing one by the same code. Either
+        // way nothing exists until the code is entered — the anti-squatting
+        // point the old emailed-link flow was built around, kept.
+        const { error } = await supabase.auth.signInWithOtp({
+            email,
+            // The PERSON's name, captured here at the account step — it is
+            // account information, and it becomes the listing title (a guest
+            // experience is a person, not a business). Supabase writes it to
+            // raw_user_meta_data on account creation, and the add_profile_for_new_user
+            // trigger copies it into profiles.full_name. Only applied when the
+            // account is CREATED — a returning applicant keeps their existing name.
+            options: { shouldCreateUser: true, data: { name: otpName.trim() } },
+        });
+        setOtpBusy(false);
+        if (error) {
+            setOtpError(error.message);
+            return;
+        }
+        setOtpSent(true);
+    };
+
+    const verifyOtp = async () => {
+        const email = otpEmail.trim();
+        const token = otpCode.trim();
+        if (!token) {
+            setOtpError('Enter the code from your email.');
+            return;
+        }
+        setOtpBusy(true);
+        setOtpError('');
+        const { data, error } = await supabase.auth.verifyOtp({ email, token, type: 'email' });
+        setOtpBusy(false);
+        if (error || !data.session) {
+            setOtpError((error && error.message) || 'That code did not work. Check it and try again.');
+            return;
+        }
+        // Signed in. A NEW account already has the typed name (Supabase applied
+        // the sign-up metadata on creation). A RETURNING one does not — the
+        // metadata is ignored for an existing user — so if that account has no
+        // name yet, fill it from what they typed. backfillName never overwrites
+        // an existing name and never writes an empty one, so this is a no-op for
+        // everyone but the returning-with-no-name case it exists to close.
+        const { data: prof } = await supabase
+            .from('profiles').select('full_name').eq('id', data.session.user.id).maybeSingle();
+        const fill = backfillName(prof?.full_name, otpName);
+        if (fill) {
+            await supabase.from('profiles')
+                .update({ full_name: fill }).eq('id', data.session.user.id);
+        }
+
+        // The address they verified is the one to reach them on, so it pre-fills
+        // the contact field. Then move to the category picker — verify is the
+        // first screen now, so the picker is what comes next. Done in the same
+        // action, because setting the session drops g_verify from the flow and we
+        // must not be left standing on a step that no longer exists.
+        setSession(data.session);
+        if (!contactEmail.trim()) setContactEmail(email);
+        setStep('trade');
+        scrollPanelToTop();
+    };
+
     const lodgeApplication = async () => {
         const email = contactEmail.trim();
         setAccountExists(false);
@@ -1736,7 +2585,8 @@ function ApplicationForm() {
         setSaving(true);
         setAcctError('');
 
-        const rows = applicationRows(new Date());
+        const title = audienceForTrade(trade) === 'guest' ? await resolveGuestTitleNow() : businessName.trim();
+        const rows = applicationRows(new Date(), title);
 
         try {
             const res = await fetch('/api/services/apply', {
@@ -1744,7 +2594,10 @@ function ApplicationForm() {
                 headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify({
                     email,
-                    name: businessName.trim(),
+                    // The applicant's own name (never the business) — it becomes
+                    // profiles.full_name when the account is made at /finish. Null
+                    // when we have none, so full_name is left blank, not wrong.
+                    name: providerName.trim() || null,
                     ...rows,
                 }),
             });
@@ -1840,10 +2693,14 @@ function ApplicationForm() {
 
         const now = new Date();
 
+        // A guest's title is the person (or their trading name), derived from the
+        // account; a host trades under the business name they typed.
+        const title = audienceForTrade(trade) === 'guest' ? await resolveGuestTitleNow() : businessName.trim();
+
         const payload: any = {
             ...guestProviderFields(),
             owner_id: active.user.id,
-            business_name: businessName.trim(),
+            business_name: title,
             trade,
             description: description.trim(),
             contact_email: contactEmail.trim(),
@@ -1854,9 +2711,13 @@ function ApplicationForm() {
             // come into their cottage, so the listing carries a bit of the
             // person. Null for a host trade, where a logo and a trade say enough.
             provider_name: audienceForTrade(trade) === 'guest' ? (providerName.trim() || null) : null,
-            based_line: audienceForTrade(trade) === 'guest' ? (basedLine.trim() || null) : null,
             dietary_note: audienceForTrade(trade) === 'guest' ? (dietaryNote.trim() || null) : null,
             headshot: audienceForTrade(trade) === 'guest' ? headshot : null,
+            // The seven content answers now have a home on the row (the
+            // guest_details jsonb column, 20260906143712), so the signed-in
+            // wizard writes them here rather than only in the anonymous apply
+            // payload. Null for a host trade, which has none of them.
+            guest_details: audienceForTrade(trade) === 'guest' ? guestContentFields() : null,
             photos,
             logo,
             does_gas: asksAboutFuel(trade) ? doesGas : false,
@@ -2232,12 +3093,29 @@ function ApplicationForm() {
         return <div className="max-w-3xl mx-auto px-4 sm:px-6 py-16 text-slate-500">Loading…</div>;
     }
 
+    // The read failed. Never the blank form — that would invite a second row
+    // over one we could not read. Offer a retry instead.
+    if (loadFailed) {
+        return (
+            <div className="max-w-md mx-auto px-4 sm:px-6 py-16 text-center">
+                <p className="text-slate-900 font-semibold">We couldn’t load your details.</p>
+                <p className="text-sm text-slate-500 mt-1.5">
+                    Nothing has been lost — this is a problem reading your account, not your work.
+                </p>
+                <button type="button" onClick={() => window.location.reload()}
+                    className="mt-6 inline-flex items-center rounded-full bg-emerald-700 px-6 py-2.5 text-sm font-semibold text-white transition hover:bg-emerald-800">
+                    Try again
+                </button>
+            </div>
+        );
+    }
+
     const summary = statusSummary(status);
     const locked = status === 'pending_review';
 
-    const position = stepNumber(trade, step);
-    const total = stepCount(trade);
-    const lastStep = isLastStep(trade, step);
+    const position = stepNumber(trade, step, stepCtx);
+    const total = stepCount(trade, stepCtx);
+    const lastStep = isLastStep(trade, step, stepCtx);
 
     return (
         /* THE MODAL.
@@ -2252,17 +3130,42 @@ function ApplicationForm() {
            header and the buttons stay put while the questions move — on a
            phone that means the way forward is always under your thumb and
            never below the fold. */
-        <div className="fixed inset-0 z-[60] flex md:items-center md:justify-center md:p-6 bg-white md:bg-slate-900/40">
-            {/* The business step carries the most, and a guest's carries three
-                groups — so it gets a wider modal on desktop to lay them out in
-                two columns. Every other step, and the whole of a phone, is
-                unchanged. */}
-            <div className={
-                'flex flex-col w-full h-full bg-white md:h-auto md:max-h-[90vh] md:w-full md:rounded-2xl md:shadow-xl overflow-hidden '
-                + (step === 'business' && audienceForTrade(trade) === 'guest' ? 'md:max-w-4xl' : 'md:max-w-3xl')
+        <div className={isGuest
+            ? 'fixed inset-0 z-[60] flex flex-col bg-white'
+            : 'fixed inset-0 z-[60] flex md:items-center md:justify-center md:p-6 bg-white md:bg-slate-900/40'}>
+            {/* A guest gets a full-page takeover (no card, no dimmed backdrop,
+                no site header behind it) matching /addhome and the fork; a trade
+                keeps the centred modal it always had. */}
+            <div className={isGuest
+                ? 'flex flex-col w-full h-full bg-white overflow-hidden'
+                : 'flex flex-col w-full h-full bg-white md:h-auto md:max-h-[90vh] md:w-full md:rounded-2xl md:shadow-xl overflow-hidden md:max-w-3xl'
             }>
 
-                {/* ---- header: where they are, and the way out ---- */}
+                {isGuest ? (
+                    /* Guest takeover top bar — Back top-left, brand, a way out.
+                       No step count and no per-screen segments any more: the
+                       flow is named sections now (the left rail on wide screens,
+                       the section eyebrow at the top of each screen on a phone),
+                       so a "Step 5 of 12" here would be the very thing they
+                       replace. */
+                    <div className="shrink-0 border-b border-slate-100 px-4 sm:px-8">
+                        <div className="flex h-16 items-center justify-between gap-3">
+                            {(position > 1 || openGroup) ? (
+                                <button type="button" onClick={goBack} className="inline-flex items-center gap-1 rounded-full px-3 py-2 text-sm font-semibold text-slate-700 hover:bg-slate-100 transition">
+                                    <ChevronLeft className="w-5 h-5" /> Back
+                                </button>
+                            ) : (
+                                <Link href="/business" className="inline-flex items-center gap-1 rounded-full px-3 py-2 text-sm font-semibold text-slate-700 hover:bg-slate-100 transition">
+                                    <ChevronLeft className="w-5 h-5" /> Back
+                                </Link>
+                            )}
+                            <span className="text-sm font-bold tracking-tight text-slate-900">Galloway Getaways</span>
+                            <Link href="/business" aria-label="Close" className="inline-flex h-9 w-9 items-center justify-center rounded-full text-slate-500 hover:bg-slate-100 hover:text-slate-800 transition">
+                                <X className="w-5 h-5" />
+                            </Link>
+                        </div>
+                    </div>
+                ) : (
                 <div className="shrink-0 border-b border-slate-200 px-4 sm:px-6 pt-4 pb-3">
                     <div className="flex items-center justify-between gap-3">
                         <div className="min-w-0">
@@ -2344,20 +3247,158 @@ function ApplicationForm() {
                     </div>
                 </div>
 
-                {/* ---- the questions ---- */}
-                <div id="signup-panel" className="flex-1 overflow-y-auto px-4 sm:px-6 py-5">
+                )}
 
-            {/* Read before the questions rather than under them. It used to
-                narrate the step as well — "you are back on step 5 of 5" — which
-                explained something the step counter above already says, in more
-                words than the reassurance is worth. */}
-            {restored && !providerId && (
-                <div className="rounded-xl border border-emerald-300 bg-emerald-50 px-4 py-3 mb-5">
-                    <p className="text-sm text-emerald-900">
-                        Your details have been saved.
-                    </p>
-                </div>
-            )}
+                {/* For a guest, a two-column body on wide screens: the named-
+                    section rail on the left, the scrolling question column on
+                    the right. Below lg the rail is hidden and the section name
+                    rides as an eyebrow at the top of each screen instead. A host
+                    trade keeps its single column (`contents` adds no wrapper). */}
+                <div className={isGuest ? 'flex-1 flex min-h-0 overflow-hidden' : 'contents'}>
+                    {isGuest && currentSection && flowSections.length > 0 && (
+                        <nav aria-label="Sections"
+                            className={'hidden lg:flex shrink-0 flex-col overflow-y-auto border-r border-slate-100 py-12 transition-[width] duration-300 ease-out '
+                                + (railCollapsed ? 'w-16 px-2' : 'w-72 px-6')}>
+                            <div className={'flex flex-col ' + (railCollapsed ? 'gap-1' : 'gap-0.5')}>
+                                {flowSections.map((sec) => {
+                                    const st = sectionStatus(sec);
+                                    const summary = st === 'done' ? sectionSummary(sec.key) : '';
+                                    const clickable = st === 'done';
+                                    return (
+                                        <button
+                                            key={sec.key}
+                                            type="button"
+                                            disabled={!clickable}
+                                            onClick={() => clickable && goToStep(sec.firstStep)}
+                                            aria-current={st === 'active' ? 'step' : undefined}
+                                            // On the collapsed strip the label is gone, so
+                                            // the name rides as a native hover tooltip.
+                                            title={railCollapsed ? sec.label : undefined}
+                                            className={'group flex rounded-xl transition '
+                                                + (railCollapsed ? 'items-center justify-center p-2 ' : 'items-start gap-3 px-3 py-2.5 text-left ')
+                                                + (clickable ? 'hover:bg-slate-50 cursor-pointer' : 'cursor-default')}
+                                        >
+                                            <span className={'flex h-6 w-6 shrink-0 items-center justify-center rounded-full '
+                                                + (railCollapsed ? '' : 'mt-0.5 ')
+                                                + (st === 'done' ? 'bg-emerald-600 text-white'
+                                                    : st === 'active' ? 'border-2 border-emerald-600 text-emerald-700'
+                                                        : 'border-2 border-slate-200 text-slate-400')}>
+                                                {(() => {
+                                                    if (st === 'done') return <Check className="h-3.5 w-3.5" strokeWidth={3} />;
+                                                    const Ic = SECTION_ICONS[sec.key];
+                                                    return Ic ? <Ic className="h-3.5 w-3.5" strokeWidth={2.25} /> : null;
+                                                })()}
+                                            </span>
+                                            {!railCollapsed && (
+                                                <span className="min-w-0">
+                                                    <span className={'block text-sm '
+                                                        + (st === 'active' ? 'font-bold text-slate-900'
+                                                            : st === 'done' ? 'font-semibold text-slate-700'
+                                                                : 'font-medium text-slate-400')}>
+                                                        {sec.label}
+                                                    </span>
+                                                    {summary && (
+                                                        <span className="mt-0.5 block truncate text-xs text-slate-400">{summary}</span>
+                                                    )}
+                                                </span>
+                                            )}
+                                        </button>
+                                    );
+                                })}
+                            </div>
+                            {/* Collapse / expand control, pinned to the bottom of the
+                                rail. The chevron points the way the rail will move:
+                                left to fold it away, right to open it back up. */}
+                            <button
+                                type="button"
+                                onClick={toggleRail}
+                                aria-label={railCollapsed ? 'Expand sections' : 'Collapse sections'}
+                                className={'mt-auto flex items-center rounded-xl py-2.5 text-slate-500 transition hover:bg-slate-50 hover:text-slate-800 '
+                                    + (railCollapsed ? 'justify-center px-2' : 'gap-2 px-3')}
+                            >
+                                {railCollapsed
+                                    ? <ChevronRight className="h-5 w-5" />
+                                    : <><ChevronLeft className="h-5 w-5" /><span className="text-sm font-medium">Collapse</span></>}
+                            </button>
+                        </nav>
+                    )}
+
+                {/* ---- the questions ---- */}
+                <div id="signup-panel" className={isGuest
+                    ? ('flex-1 w-full mx-auto overflow-y-auto px-5 sm:px-6 '
+                        + (step === 'trade'
+                            /* Screen one sits lower with more air above it, and
+                               widens so the five cards sit on a single row. */
+                            ? 'max-w-5xl pt-20 pb-10 sm:pt-28 sm:pb-12'
+                            : step === 'g_subtype'
+                                ? 'max-w-3xl py-10 sm:py-12'
+                                /* The years opener is a flex column so its
+                                   stepper can centre in the space under the
+                                   question rather than sit high with a void. */
+                                : (step === 'g_you' || step === 'g_capacity')
+                                    ? 'max-w-2xl py-10 sm:py-12 flex flex-col'
+                                    : 'max-w-2xl py-10 sm:py-12'))
+                    : 'flex-1 overflow-y-auto px-4 sm:px-6 py-5'}>
+                    {/* One big question a screen. The picker screens (group,
+                        sub-type) and the years opener centre it — over the cards
+                        for the pickers, over the big stepper for the years, both
+                        Airbnb-style; the other content screens sit it left over
+                        their fields. The finish step carries its own heading. */}
+                    {/* The section name, at the top of every screen inside a
+                        section — the mobile stand-in for the rail, and a quiet
+                        anchor on desktop too. The pickers (trade, g_subtype)
+                        have no section, so it shows nothing there. */}
+                    {isGuest && currentSection && (
+                        <p className={'text-xs font-bold uppercase tracking-[0.12em] text-emerald-700 mb-3 '
+                            + ((step === 'g_you' || step === 'g_creds' || step === 'g_menu' || step === 'g_capacity' || step === 'g_photos') ? 'text-center' : '')}>
+                            {currentSection.label}
+                        </p>
+                    )}
+                    {isGuest && step !== 'finish' && step !== 'g_creds' && step !== 'g_menu' && step !== 'g_capacity' && (
+                        <h1 className={'font-extrabold tracking-tight text-slate-900 [text-wrap:balance] text-3xl sm:text-4xl '
+                            + ((step === 'trade' || step === 'g_subtype' || step === 'g_you') ? 'mb-10 text-center'
+                                /* g_photos is centred (this screen only, to match
+                                   Airbnb) with a tight gap so "Add at least 3 photos."
+                                   reads as a subtitle, not a stranded paragraph. */
+                                : step === 'g_photos' ? 'mb-2 text-center'
+                                    : 'mb-8')}>
+                            {step === 'trade'
+                                ? 'What experience are you offering guests?'
+                                /* The g_area step title carries a "when" that is
+                                   real for a slot (a schedule) and made-to-order
+                                   (a notice period) but false for a traveller,
+                                   who is only asked where. So the travelling
+                                   shape gets a where-only heading; the others
+                                   keep the generic title. */
+                                : (step === 'g_area' && shape !== 'slot' && shape !== 'made_to_order')
+                                    ? GUEST_SCREEN_COPY.locationHeadingTravel
+                                    : step === 'g_photos'
+                                        ? GUEST_SCREEN_COPY.photosHeading
+                                        : stepMeta.title}
+                        </h1>
+                    )}
+                    {/* Max guests renders its heading here, at the top, exactly
+                        where the years question sits (same classes, same spacing
+                        after the eyebrow), so the two questions line up. Its
+                        wording is shape-aware, so it can't ride the generic h1
+                        above. The stepper alone fills the centred space below. */}
+                    {isGuest && step === 'g_capacity' && (
+                        <>
+                            <h1 className="font-extrabold tracking-tight text-slate-900 [text-wrap:balance] text-3xl sm:text-4xl text-center mb-2">
+                                {shape === 'comes_to_you' ? GUEST_SCREEN_COPY.capacityHeadingTravel : GUEST_SCREEN_COPY.capacityHeadingVenue}
+                            </h1>
+                            <p className="text-center text-sm text-slate-500 [text-wrap:balance] mb-10">
+                                {shape === 'comes_to_you' ? GUEST_SCREEN_COPY.capacitySubtextTravel : GUEST_SCREEN_COPY.capacitySubtextVenue}
+                            </p>
+                        </>
+                    )}
+
+            {/* The "your details have been saved" banner used to sit here on
+                every step. It restored with a draft — so it showed before
+                anything had been typed — and it repeated on each screen, which
+                read as noise rather than reassurance. The draft still saves
+                (that behaviour is untouched); it just no longer announces
+                itself on every page. */}
 
             {/* Sent, and waiting on us. */}
             {status === 'pending_review' && (
@@ -2458,27 +3499,37 @@ function ApplicationForm() {
                 // under a "Guest experience" header: the guest never reaches the
                 // host pickerEntries below.
                 if (audienceForTrade(trade) === 'guest') {
+                    // Screen one: five broad groups, a glyph and a name, nothing
+                    // else. The narrower choice is screen two (g_subtype). No
+                    // instructions, no Stripe line — the question carries it.
                     return (
-                        <div>
-                            <p className="text-sm text-slate-600 mb-5">
-                                Pick the one that fits best — it is a starting point, and we may adjust it
-                                when we review you. If nothing fits, choose <span className="font-medium text-slate-700">Something&nbsp;else</span>.
-                            </p>
-                            <TradeTileGrid>
-                                {GUEST_CATEGORIES.map((c) => (
-                                    <TradeTile
-                                        key={c.key}
-                                        tradeKey={c.icon}
-                                        label={c.label || 'Something else'}
-                                        hint={c.hint}
-                                        onClick={() => chooseGuestCategory(c.key)}
-                                    />
-                                ))}
-                            </TradeTileGrid>
-                            <p className="text-xs text-slate-500 mt-6">
-                                A guest can book you once we have approved you and you have connected Stripe
-                                for payouts — not the moment you sign up.
-                            </p>
+                        <div className="grid grid-cols-2 gap-4 sm:grid-cols-5">
+                            {GUEST_GROUPS.map((g) => {
+                                const Icon = TRADE_ICONS[g.icon] || Sparkles;
+                                // Select, don't advance: the card takes an emerald
+                                // outline and the footer Next carries them on — so
+                                // this screen behaves the same as the sub-type one.
+                                const on = guestGroup === g.key;
+                                return (
+                                    <button
+                                        key={g.key}
+                                        type="button"
+                                        aria-pressed={on}
+                                        onClick={() => selectGroup(g.key)}
+                                        className={'group flex flex-col items-center gap-4 rounded-3xl border-2 bg-white p-5 text-center transition hover:shadow-md focus:outline-none focus-visible:ring-2 focus-visible:ring-emerald-600 '
+                                            + (on ? 'border-emerald-600 shadow-md' : 'border-slate-200 hover:border-slate-300')}
+                                    >
+                                        {/* The illustration zone — large and dominant, Airbnb-style.
+                                            The 3D artwork drops in here: replace the <Icon> with
+                                            <img src="/illustrations/guest-<key>.png" alt="" className="h-full w-auto" />.
+                                            The fixed height keeps every card's art aligned. */}
+                                        <span className="flex h-24 items-center justify-center sm:h-28">
+                                            <Icon className={'h-14 w-14 sm:h-16 sm:w-16 ' + (on ? 'text-emerald-700' : 'text-emerald-600')} strokeWidth={1.5} aria-hidden />
+                                        </span>
+                                        <span className="text-sm font-semibold leading-snug text-slate-900 sm:text-base">{g.label}</span>
+                                    </button>
+                                );
+                            })}
                         </div>
                     );
                 }
@@ -2596,39 +3647,57 @@ function ApplicationForm() {
                 );
             })()}
 
-            <fieldset disabled={locked} className={locked ? 'opacity-70' : ''}>
-                {onStep('business') && audienceForTrade(trade) === 'guest' ? (
-                    // Guest identity group: the business name and the person's name
-                    // sit together — a guest is choosing a person as much as a
-                    // business — two columns on desktop, stacked on a phone.
-                    <section className="mb-8">
-                        <div className="grid gap-4 sm:grid-cols-2 md:max-w-2xl">
-                            <div>
-                                <label className="block text-sm font-semibold text-slate-900 mb-1.5">Business name</label>
-                                <input
-                                    type="text"
-                                    value={businessName}
-                                    onChange={(e) => setBusinessName(e.target.value)}
-                                    placeholder="Solway Suppers"
-                                    className="w-full rounded-xl border border-slate-300 px-3.5 py-3 focus:outline-none focus:ring-2 focus:ring-emerald-700"
-                                />
-                                {problemFor('business_name') && (
-                                    <p data-problem className="text-sm text-rose-700 mt-1.5">{problemFor('business_name')!.message}</p>
-                                )}
+            {/* SCREEN TWO — the narrower choice under the chosen group. The
+                group card they picked on screen one travels here and lands
+                pinned above the choices (a 3D swoosh, not a jump cut). Select a
+                sub-type for an emerald outline; the footer Next carries them on.
+                Outside the fieldset: it is a picker, not a field. */}
+            {onStep('g_subtype') && audienceForTrade(trade) === 'guest' && (() => {
+                const groupMeta = GUEST_GROUPS.filter((x) => x.key === guestGroup)[0];
+                const GroupIcon = groupMeta ? (TRADE_ICONS[groupMeta.icon] || Sparkles) : Sparkles;
+                return (
+                    <>
+                        {groupMeta && (
+                            <div className="mb-9 flex justify-center [perspective:900px]">
+                                <div className="animate-guest-swoosh inline-flex items-center gap-3 rounded-2xl border-2 border-emerald-600 bg-emerald-50/60 px-5 py-3 shadow-sm">
+                                    <GroupIcon className="h-8 w-8 text-emerald-700" strokeWidth={1.5} aria-hidden />
+                                    <span className="text-base font-semibold text-slate-900">{groupMeta.label}</span>
+                                </div>
                             </div>
-                            <div>
-                                <label className="block text-sm font-semibold text-slate-900 mb-1.5">Your name</label>
-                                <input
-                                    type="text"
-                                    value={providerName}
-                                    onChange={(e) => setProviderName(e.target.value)}
-                                    placeholder="Rosa"
-                                    className="w-full rounded-xl border border-slate-300 px-3.5 py-3 focus:outline-none focus:ring-2 focus:ring-emerald-700"
-                                />
-                            </div>
+                        )}
+                        <div className="mx-auto grid max-w-2xl grid-cols-1 gap-3 sm:grid-cols-2">
+                            {categoriesForGroup(guestGroup).map((c) => {
+                                const on = guestCategory === c.key;
+                                return (
+                                    <button
+                                        key={c.key}
+                                        type="button"
+                                        aria-pressed={on}
+                                        onClick={() => selectGuestCategory(c.key)}
+                                        className={'rounded-2xl border-2 bg-white px-5 py-6 text-center transition hover:shadow-sm focus:outline-none focus-visible:ring-2 focus-visible:ring-emerald-600 '
+                                            + (on ? 'border-emerald-600 shadow-sm' : 'border-slate-200 hover:border-slate-300')}
+                                    >
+                                        <span className="text-base font-semibold text-slate-900">{c.label}</span>
+                                    </button>
+                                );
+                            })}
                         </div>
-                    </section>
-                ) : onStep('business') && (
+                    </>
+                );
+            })()}
+
+            {/* min-w-0 defeats the <fieldset> quirk: a fieldset defaults to
+                min-inline-size:min-content and will not shrink to its container,
+                so a wide nowrap child (a truncated row summary) pushed it past
+                the panel on a narrow screen and threw the centred content off. */}
+            <fieldset disabled={locked} className={'min-w-0 ' + (locked ? 'opacity-70' : '')
+                /* On the years opener the fieldset fills the panel below the
+                   question so its one section can centre vertically. */
+                + (isGuest && (step === 'g_you' || step === 'g_capacity') ? ' flex-1 flex flex-col' : '')}>
+                {/* The standalone business step is host-only now. A guest names
+                    the experience on g_about ("Name it, and tell guests what it
+                    is"), beside the description, so they never answer it twice. */}
+                {onStep('business') && (
                     <section className="mb-8">
                         <label className="block text-sm font-semibold text-slate-900 mb-1.5">Business name</label>
                         <input
@@ -2706,11 +3775,16 @@ function ApplicationForm() {
                 {/* The trade chip is gone: it said what they picked, and the
                     modal header now says that on every step. */}
 
-                {onStep('business') && (
+                {/* HOST/TRADE only: the business description (their name is the
+                    standalone business step above). A guest is never asked this —
+                    there is no naming step at all now: the listing title is their
+                    account name (or a trading name they set in account settings),
+                    and "what happens" (Details) plus the item descriptions carry
+                    the rest. */}
+                {!isGuest && onStep('business') && (
                 <section className="mb-8">
-                    <label className="block text-sm font-semibold text-slate-900 mb-1.5">About your business</label>
-                    {/* Capped to a measure rather than the window: past about
-                        70 characters a line is harder to read, not easier. */}
+                    {/* Capped to a measure rather than the window: past about 70
+                        characters a line is harder to read. */}
                     <textarea
                         value={description}
                         onChange={(e) => setDescription(e.target.value)}
@@ -2724,47 +3798,182 @@ function ApplicationForm() {
                 </section>
                 )}
 
-                {/* HOW A GUEST GETS IT — the one plain question that decides the
-                    booking shape (GUEST-EXPERIENCES-MARKETPLACE.md §10). It never
-                    shows the words "shape", "unit" or "capacity"; the category has
-                    already pre-selected an answer, the provider confirms it, and
-                    the owner has the final say at review. Everything below adapts
-                    to it: a menu for the two request shapes, a session schedule
-                    for a slot. */}
-                {onStep('business') && audienceForTrade(trade) === 'guest' && (
-                <section className="mb-8">
-                    <h2 className="text-sm font-semibold text-slate-900 mb-1">How do guests get what you offer?</h2>
-                    <p className="text-sm text-slate-500 mb-3">
-                        This decides what a guest sees when they book. Pick the one that is true most of the time.
-                    </p>
-                    <div className="grid gap-3 sm:grid-cols-3">
-                        {[
-                            { v: 'comes_to_you', t: 'I come to them', d: 'At the cottage — a private chef, a massage' },
-                            { v: 'made_to_order', t: 'I make it for a date', d: 'They collect it or I drop it off — cakes, hampers' },
-                            { v: 'slot', t: 'They come to me', d: 'Sessions people book into — a sauna, a class, a tasting' },
-                        ].map((o) => {
-                            const on = shape === o.v;
-                            return (
-                                <button
-                                    key={o.v}
-                                    type="button"
-                                    onClick={() => setShape(o.v)}
-                                    aria-pressed={on}
-                                    className={
-                                        'flex flex-col rounded-2xl border p-4 text-left transition '
-                                        + (on
-                                            ? 'border-emerald-600 bg-emerald-50 ring-1 ring-emerald-600'
-                                            : 'border-slate-300 hover:border-emerald-400')
-                                    }
-                                >
-                                    <span className="font-semibold text-slate-900">{o.t}</span>
-                                    <span className="mt-1 text-xs leading-snug text-slate-500">{o.d}</span>
+                {/* THE BOOKING SHAPE IS INFERRED, NEVER ASKED. The old "How do
+                    guests get it?" screen made a sauna owner classify our internal
+                    booking model — obvious from the category, so we read it off
+                    the category (cat.shape) at selection instead. Everything that
+                    used to sit under it now adapts silently: the price unit on
+                    g_menu, and the schedule on the where-and-when step. */}
+
+                {/* EXPERTISE — a hub, Airbnb-style, not a form. A photo of the
+                    host at the top, a heading and a line of subtext, then rows
+                    that each open a small sub-flow modal. The qualifications row
+                    is the one that gates Next for a chef; its "putting their
+                    safety in your hands" note lives inside that modal now, so the
+                    hub itself stays clean. Built on the reusable HubRow /
+                    SubFlowModal primitives, which later screens will want too. */}
+                {onStep('g_creds') && isGuest && (() => {
+                    const titleFilled = professionalTitle.trim() !== '';
+                    const titleSummary = professionalTitle.trim();
+                    const qualsFilled = qualifications.trim() !== '';
+                    const recognitionFilled = recognition.trim() !== '';
+                    // Borderless fields for the sub-flow modals: no box, no fill,
+                    // centred, floating in white space, with a quiet underline. The
+                    // counter (where there's a limit) sits at the right-hand end of
+                    // the field's line, just above the underline — not centred below.
+                    const fieldWrap = 'relative border-b border-slate-200 pb-2 transition-colors focus-within:border-slate-400';
+                    const bigInput = 'w-full bg-transparent pr-12 text-center text-2xl text-slate-900 placeholder:text-slate-300 focus:outline-none';
+                    const bigArea = 'w-full resize-none bg-transparent text-center text-xl leading-relaxed text-slate-900 placeholder:text-slate-300 focus:outline-none';
+                    const counterField = 'pointer-events-none absolute bottom-1 right-0 text-xs text-slate-400';
+                    return (
+                    <section className="mb-8 md:max-w-xl md:mx-auto">
+                        {/* The host photo, centred — the only place it lives now,
+                            so it has no row of its own. A neutral circle before a
+                            photo, the headshot after. Tapping it opens the file
+                            picker directly the first time; once a photo is set,
+                            tapping offers replace/remove. A small badge overlaps
+                            the bottom-right — a plus before, a pencil after — so
+                            it reads as tappable. */}
+                        <div className="flex flex-col items-center text-center">
+                            <div className="relative h-24 w-24">
+                                <button type="button" aria-label={headshot ? 'Change your photo' : 'Add a photo of you'}
+                                    onClick={() => (headshot ? setPhotoMenuOpen((o) => !o) : headshotInputRef.current?.click())}
+                                    className="flex h-24 w-24 items-center justify-center overflow-hidden rounded-full bg-slate-100 text-slate-400 transition hover:opacity-90 focus:outline-none focus-visible:ring-2 focus-visible:ring-emerald-600">
+                                    {headshot
+                                        ? <img src={getImageUrl(headshot)} alt="" className="h-full w-full object-cover" />
+                                        : <User className="h-10 w-10" strokeWidth={1.5} />}
                                 </button>
-                            );
-                        })}
-                    </div>
-                </section>
-                )}
+                                <span aria-hidden
+                                    className="pointer-events-none absolute bottom-0 right-0 flex h-7 w-7 items-center justify-center rounded-full border-2 border-white bg-emerald-700 text-white shadow-sm">
+                                    {headshot ? <Pencil className="h-3.5 w-3.5" /> : <Plus className="h-4 w-4" strokeWidth={2.5} />}
+                                </span>
+                                {photoMenuOpen && (
+                                    <>
+                                        <div className="fixed inset-0 z-[65]" onClick={() => setPhotoMenuOpen(false)} />
+                                        <div className="absolute left-1/2 top-full z-[66] mt-3 w-44 -translate-x-1/2 overflow-hidden rounded-2xl border border-slate-200 bg-white py-1 text-left shadow-lg">
+                                            <button type="button"
+                                                onClick={() => { setPhotoMenuOpen(false); headshotInputRef.current?.click(); }}
+                                                className="block w-full px-4 py-2.5 text-sm text-slate-700 hover:bg-slate-50">
+                                                {uploadingHeadshot ? 'Uploading…' : 'Replace photo'}
+                                            </button>
+                                            <button type="button"
+                                                onClick={() => { setPhotoMenuOpen(false); setHeadshot(null); }}
+                                                className="block w-full px-4 py-2.5 text-sm text-rose-600 hover:bg-slate-50">
+                                                Remove photo
+                                            </button>
+                                        </div>
+                                    </>
+                                )}
+                                <input ref={headshotInputRef} type="file" accept="image/png, image/jpeg"
+                                    className="hidden" onChange={uploadHeadshot} disabled={uploadingHeadshot} />
+                            </div>
+                            <h1 className="mt-6 text-2xl font-extrabold tracking-tight text-slate-900 [text-wrap:balance] sm:text-3xl">
+                                {GUEST_SCREEN_COPY.expertiseHeading}
+                            </h1>
+                            <p className="mt-2 text-sm text-slate-500 [text-wrap:balance]">
+                                {GUEST_SCREEN_COPY.expertiseSubtext}
+                            </p>
+                        </div>
+
+                        {/* Borderless rows: Your title (which also holds a line
+                            about you), Qualifications, Endorsements. Each opens its
+                            own modal. Only Qualifications (and only for the required
+                            categories) gates Next. The name is NOT asked here — it
+                            is the person's account name, captured at the account
+                            step and used as the listing title, so asking it again
+                            would be asking twice. Photo and title above are the
+                            rest of the person. */}
+                        <div className="mt-10 space-y-6">
+                            <HubRow
+                                filled={titleFilled}
+                                label={GUEST_SCREEN_COPY.titleRowLabel}
+                                prompt={GUEST_SCREEN_COPY.titleRowPrompt}
+                                summary={titleSummary}
+                                onOpen={() => setExpertiseModal('title')}
+                            />
+                            <HubRow
+                                filled={qualsFilled}
+                                label={GUEST_SCREEN_COPY.qualsRowLabel}
+                                suffix={catQualsRequired ? undefined : GUEST_SCREEN_COPY.optionalSuffix}
+                                prompt={GUEST_SCREEN_COPY.qualsRowPrompt}
+                                summary={qualifications.trim()}
+                                onOpen={() => setExpertiseModal('quals')}
+                            />
+                            <HubRow
+                                filled={recognitionFilled}
+                                label={GUEST_SCREEN_COPY.recognitionRowLabel}
+                                suffix={GUEST_SCREEN_COPY.optionalSuffix}
+                                prompt={GUEST_SCREEN_COPY.recognitionRowPrompt}
+                                summary={recognition.trim()}
+                                onOpen={() => setExpertiseModal('endorsements')}
+                            />
+                        </div>
+
+
+                        {/* ---- Your professional title: one borderless field,
+                            no caption, counter at the right above the underline. ---- */}
+                        <SubFlowModal
+                            open={expertiseModal === 'title'}
+                            title={GUEST_SCREEN_COPY.titleModalTitle}
+                            onClose={() => setExpertiseModal(null)}
+                            saveLabel={GUEST_SCREEN_COPY.save}
+                            saveDisabled={!professionalTitle.trim()}
+                        >
+                            <div className={fieldWrap}>
+                                <input
+                                    type="text"
+                                    value={professionalTitle}
+                                    onChange={(e) => setProfessionalTitle(e.target.value.slice(0, 40))}
+                                    placeholder={GUEST_SCREEN_COPY.titlePlaceholder}
+                                    className={bigInput}
+                                />
+                                <span className={counterField}>{professionalTitle.length}/40</span>
+                            </div>
+                        </SubFlowModal>
+
+                        {/* ---- Qualifications (note sits just above Save) ---- */}
+                        <SubFlowModal
+                            open={expertiseModal === 'quals'}
+                            title={GUEST_SCREEN_COPY.qualsModalTitle}
+                            onClose={() => setExpertiseModal(null)}
+                            saveLabel={GUEST_SCREEN_COPY.save}
+                            saveDisabled={!qualifications.trim()}
+                            note={catQualsRequired ? GUEST_SCREEN_COPY.qualsRequiredNote : GUEST_SCREEN_COPY.qualsOptionalNote}
+                        >
+                            <div className={fieldWrap}>
+                                <textarea
+                                    value={qualifications}
+                                    onChange={(e) => setQualifications(e.target.value.slice(0, 150))}
+                                    rows={4}
+                                    placeholder={GUEST_SCREEN_COPY.qualsPlaceholder}
+                                    className={bigArea + ' pr-12'}
+                                />
+                                <span className={counterField}>{qualifications.length}/150</span>
+                            </div>
+                        </SubFlowModal>
+
+                        {/* ---- Endorsements: always optional (note above Save) ---- */}
+                        <SubFlowModal
+                            open={expertiseModal === 'endorsements'}
+                            title={GUEST_SCREEN_COPY.recognitionModalTitle}
+                            onClose={() => setExpertiseModal(null)}
+                            saveLabel={GUEST_SCREEN_COPY.save}
+                            saveDisabled={!recognition.trim()}
+                            note={GUEST_SCREEN_COPY.recognitionNote}
+                        >
+                            <div className={fieldWrap}>
+                                <textarea
+                                    value={recognition}
+                                    onChange={(e) => setRecognition(e.target.value)}
+                                    rows={4}
+                                    placeholder={GUEST_SCREEN_COPY.recognitionPlaceholder}
+                                    className={bigArea}
+                                />
+                            </div>
+                        </SubFlowModal>
+                    </section>
+                    );
+                })()}
 
                 {/* WHAT THEY OFFER, AND FOR HOW MUCH.
                     One model for everyone now — no preset trade to frame it by.
@@ -2775,120 +3984,263 @@ function ApplicationForm() {
                     with no priced item is simply not live to guests. A one-item
                     menu renders as a single price on the card, so the chef's
                     "one thing, one price" reads exactly as it should. */}
-                {onStep('business') && audienceForTrade(trade) === 'guest' && shape && (() => {
-                    // A slot is one session offering, not a menu — a sauna owner
-                    // sells "the sauna", not a list. So a slot shows a single row
-                    // with no "add another", and its price unit is read off the
-                    // private/shared answer below rather than picked here. The two
-                    // request shapes keep the full menu with a per-item unit.
+                {onStep('g_menu') && audienceForTrade(trade) === 'guest' && (() => {
+                    // Rebuilt to the flow's craft: a centred question, then each
+                    // priced thing as a borderless HubRow (name + price + a photo
+                    // thumbnail), an add row at the bottom, and a per-item sub-flow
+                    // of one question a screen (name → price+type → description →
+                    // photo), the same shape as Airbnb's itinerary. The pricing
+                    // MODEL is unchanged — the same units and the same commission,
+                    // only the presentation. A slot is one session offering (a
+                    // sauna owner sells "the sauna", not a list), so it shows a
+                    // single row with no add and its price unit read off the
+                    // private/shared answer rather than picked here.
                     const isSlot = shape === 'slot';
                     const blank = { id: undefined as string | undefined, name: '', description: '', price: '', unit: 'flat', image: null as string | null };
-                    const rows = isSlot ? [items[0] || blank] : (items.length ? items : [blank]);
-                    const setRow = (i: number, field: 'name' | 'description' | 'price' | 'unit', val: string) =>
-                        setItems(rows.map((r, j) => (j === i ? { ...r, [field]: val } : r)));
-                    const addRow = () => setItems([...rows, { ...blank }]);
-                    const removeRow = (i: number) => { const next = rows.filter((_, j) => j !== i); setItems(next); };
 
-                    // Provider-facing wording for each unit. 'flat' leads because a
-                    // single set price is the commonest and the simplest to read.
-                    const UNIT_WORD: Record<string, string> = {
-                        flat: 'One set price', person: 'Per person', night: 'Per night',
-                        hour: 'Per hour', ticket: 'Per ticket', item: 'Per item',
+                    const UNIT_WORD: Record<string, string> = GUEST_SCREEN_COPY.priceUnitLabels;
+                    const unitWord = (r: { unit: string }) => isSlot
+                        ? (slotPrivate === false ? 'per person' : slotPrivate === true ? 'for the session' : '')
+                        : (UNIT_WORD[r.unit || 'flat'] || '');
+                    const rowSummary = (r: { price: string; unit: string }) => {
+                        const p = String(r.price || '').trim();
+                        return p !== '' && Number(p) > 0
+                            ? '£' + p + (unitWord(r) ? ' · ' + unitWord(r) : '')
+                            : GUEST_SCREEN_COPY.menuRowPrompt;
                     };
 
-                    const namePh = isSlot ? 'e.g. Lochside sauna session' : 'What you’re offering';
+                    const rows = isSlot ? (items.length ? [items[0]] : []) : items;
+                    const setField = (i: number, field: 'name' | 'description' | 'price' | 'unit', val: string) =>
+                        setItems((prev) => prev.map((r, j) => (j === i ? { ...r, [field]: val } : r)));
+
+                    const openEdit = (i: number) => { setMenuIndex(i); setMenuStep(0); setPayoutOpen(false); };
+                    const openAdd = () => { setItems((prev) => [...prev, { ...blank }]); setMenuIndex(items.length); setMenuStep(0); setPayoutOpen(false); };
+                    const openSlot = () => { if (!items.length) setItems([{ ...blank }]); setMenuIndex(0); setMenuStep(0); setPayoutOpen(false); };
+                    // A blank abandoned by cancelling an add (no name and no price)
+                    // is dropped on close, so a cancelled add leaves nothing behind.
+                    const closeItem = () => {
+                        setItems((prev) => prev.filter((r) => String(r.name || '').trim() !== '' || String(r.price || '').trim() !== ''));
+                        setMenuIndex(null);
+                    };
+                    const removeItem = (i: number) => { setItems((prev) => prev.filter((_, j) => j !== i)); setMenuIndex(null); };
+
+                    const it = menuIndex !== null ? items[menuIndex] : null;
+                    const nameFilled = !!it && String(it.name || '').trim() !== '';
+                    const priceNum = it ? (Number(it.price) || 0) : 0;
+                    const priceFilled = priceNum > 0;
+                    const LAST = 3;
+
+                    // The borderless fields shared with the expertise hub sub-flow.
+                    const fieldWrap = 'relative border-b border-slate-200 pb-2 transition-colors focus-within:border-slate-400';
+                    const bigInput = 'w-full bg-transparent text-center text-2xl text-slate-900 placeholder:text-slate-300 focus:outline-none';
+                    const bigArea = 'w-full resize-none bg-transparent text-center text-xl leading-relaxed text-slate-900 placeholder:text-slate-300 focus:outline-none';
+
+                    // The payout maths is the SAME one the order actually uses
+                    // (lib/pricing.serviceCommission, rounded to the penny) rather
+                    // than a fresh multiply, so the "You keep" figure matches what
+                    // the provider is really paid.
+                    const commission = serviceCommission(priceNum, DEFAULT_SERVICE_COMMISSION);
+                    const keep = Math.max(0, priceNum - commission);
+
                     return (
-                        <section className="mb-8">
-                            <h2 className="text-sm font-semibold text-slate-900 mb-1">
-                                {isSlot ? 'What people book' : 'What you offer'}
-                            </h2>
-                            <p className="text-sm text-slate-500 mb-3">
-                                {isSlot
-                                    ? 'Your session — a name, a photo and a price. How it is priced comes from the private-or-shared question below.'
-                                    : 'Name each thing a guest can book, with a photo and a price. One is plenty — a set dinner, say — or list as many as you like: a cake, a box of cupcakes, a tray bake. A guest booking six at a per-person price pays for six. You can edit or remove any of them later.'}
-                            </p>
-                            <div className="space-y-3">
-                                {rows.map((it, i) => (
-                                    <div key={it.id || i} className="rounded-xl border border-slate-200 p-3">
-                                        <div className="flex items-start gap-3">
-                                            {/* The item's own photo — the picture the
-                                                card sells on, so it is sized like the
-                                                thing it is, not a thumbnail beside the
-                                                fields. It shows the photo once it's on. */}
-                                            <label className="relative flex-none w-24 h-24 rounded-xl border-2 border-dashed border-slate-300 overflow-hidden cursor-pointer hover:border-emerald-400 bg-slate-50 flex flex-col items-center justify-center gap-1 text-center">
-                                                {it.image ? (
-                                                    <img src={getImageUrl(it.image)} alt="" className="w-full h-full object-cover" />
+                        <section className="mb-8 md:max-w-xl md:mx-auto">
+                            <div className="text-center">
+                                <h1 className="text-2xl font-extrabold tracking-tight text-slate-900 [text-wrap:balance] sm:text-3xl">
+                                    {isSlot ? GUEST_SCREEN_COPY.menuHeadingSlot : GUEST_SCREEN_COPY.menuHeading}
+                                </h1>
+                                <p className="mt-2 text-sm text-slate-500 [text-wrap:balance]">
+                                    {isSlot ? GUEST_SCREEN_COPY.menuSubtextSlot : GUEST_SCREEN_COPY.menuSubtext}
+                                </p>
+                            </div>
+
+                            <div className="mt-8 space-y-1">
+                                {isSlot ? (
+                                    <HubRow
+                                        filled={rows.length > 0 && String(rows[0].name || '').trim() !== ''}
+                                        thumb={rows[0] && rows[0].image ? getImageUrl(rows[0].image) : null}
+                                        label={(rows[0] && rows[0].name.trim()) || GUEST_SCREEN_COPY.menuSlotRowLabel}
+                                        prompt={GUEST_SCREEN_COPY.menuRowPrompt}
+                                        summary={rows.length ? rowSummary(rows[0]) : null}
+                                        onOpen={openSlot}
+                                    />
+                                ) : (
+                                    <>
+                                        {rows.map((r, i) => (
+                                            <HubRow
+                                                key={r.id || i}
+                                                filled
+                                                thumb={r.image ? getImageUrl(r.image) : null}
+                                                label={r.name.trim() || GUEST_SCREEN_COPY.menuUntitled}
+                                                prompt={GUEST_SCREEN_COPY.menuRowPrompt}
+                                                summary={rowSummary(r)}
+                                                onOpen={() => openEdit(i)}
+                                            />
+                                        ))}
+                                        <HubRow
+                                            filled={false}
+                                            label={GUEST_SCREEN_COPY.menuAddRow}
+                                            prompt={GUEST_SCREEN_COPY.menuRowPrompt}
+                                            onOpen={openAdd}
+                                        />
+                                    </>
+                                )}
+                            </div>
+
+                            {it && menuIndex !== null && (
+                                <SubFlowModal
+                                    open
+                                    title={
+                                        menuStep === 0 ? (isSlot ? GUEST_SCREEN_COPY.menuNameTitleSlot : GUEST_SCREEN_COPY.menuNameTitle)
+                                            : menuStep === 1 ? GUEST_SCREEN_COPY.menuPriceTitle
+                                                : menuStep === 2 ? GUEST_SCREEN_COPY.menuDescTitle
+                                                    : GUEST_SCREEN_COPY.menuPhotoTitle
+                                    }
+                                    onClose={closeItem}
+                                    onBack={menuStep > 0 ? () => setMenuStep((s) => s - 1) : undefined}
+                                    onRemove={!isSlot ? () => removeItem(menuIndex) : undefined}
+                                    saveLabel={menuStep === LAST ? GUEST_SCREEN_COPY.save : GUEST_SCREEN_COPY.menuNext}
+                                    saveDisabled={(menuStep === 0 && !nameFilled) || (menuStep === 1 && !priceFilled)}
+                                    onSave={menuStep === LAST ? closeItem : () => setMenuStep((s) => s + 1)}
+                                    note={menuStep === LAST ? GUEST_SCREEN_COPY.menuPhotoPrompt : undefined}
+                                >
+                                    {menuStep === 0 && (
+                                        <div className={fieldWrap}>
+                                            <input
+                                                type="text" value={it.name}
+                                                onChange={(e) => setField(menuIndex, 'name', e.target.value)}
+                                                placeholder={isSlot ? GUEST_SCREEN_COPY.menuNamePlaceholderSlot : GUEST_SCREEN_COPY.menuNamePlaceholder}
+                                                className={bigInput}
+                                            />
+                                        </div>
+                                    )}
+                                    {menuStep === 1 && (
+                                        <div>
+                                            {/* A big numeral you TYPE into — no spinner
+                                                arrows (nobody sets £45 by nudging up from
+                                                zero) and no box; the number is the thing
+                                                you see, the £ sits quietly at its baseline.
+                                                Airbnb's price register. */}
+                                            <div className="flex items-baseline justify-center gap-2">
+                                                <span className="text-4xl font-extrabold text-slate-400 sm:text-5xl">£</span>
+                                                <input
+                                                    type="number" min="0" step="0.01" inputMode="decimal" value={it.price}
+                                                    onChange={(e) => setField(menuIndex, 'price', e.target.value)}
+                                                    placeholder={GUEST_SCREEN_COPY.menuPricePlaceholder}
+                                                    aria-label={GUEST_SCREEN_COPY.menuPriceTitle}
+                                                    className="w-48 bg-transparent text-center text-6xl font-extrabold tabular-nums text-slate-900 placeholder:font-extrabold placeholder:text-slate-300 focus:outline-none [appearance:textfield] [&::-webkit-outer-spin-button]:appearance-none [&::-webkit-inner-spin-button]:appearance-none sm:text-7xl"
+                                                />
+                                            </div>
+                                            {/* Price type — the same options and the same
+                                                model as before, but no native <select>: a
+                                                current-choice HubRow that opens a sub-flow of
+                                                selectable rows, matching the coverage picker.
+                                                A slot derives it from the private/shared
+                                                answer, so it just states the basis. */}
+                                            <div className="mt-8">
+                                                {isSlot ? (
+                                                    unitWord(it)
+                                                        ? <p className="text-center text-sm text-slate-500">Priced {unitWord(it)}</p>
+                                                        : null
                                                 ) : (
                                                     <>
-                                                        <ImagePlus className="w-6 h-6 text-slate-400" strokeWidth={1.5} />
-                                                        <span className="text-[11px] leading-tight text-slate-500 px-1">
-                                                            {uploadingItem === i ? 'Uploading…' : 'Add photo'}
-                                                        </span>
+                                                        <div className="mx-auto max-w-sm">
+                                                            <HubRow
+                                                                filled
+                                                                label={GUEST_SCREEN_COPY.menuPriceTypeLabel}
+                                                                prompt=""
+                                                                summary={UNIT_WORD[it.unit || 'flat']}
+                                                                onOpen={() => setUnitPickerOpen(true)}
+                                                            />
+                                                        </div>
+                                                        <SubFlowModal
+                                                            open={unitPickerOpen}
+                                                            title={GUEST_SCREEN_COPY.menuPriceTypeTitle}
+                                                            onClose={() => setUnitPickerOpen(false)}
+                                                            saveLabel={GUEST_SCREEN_COPY.save}
+                                                        >
+                                                            <div role="radiogroup" aria-label={GUEST_SCREEN_COPY.menuPriceTypeLabel} className="mx-auto w-full max-w-md space-y-2">
+                                                                {ORDER_UNITS.map((u) => {
+                                                                    const on = (it.unit || 'flat') === u;
+                                                                    return (
+                                                                        <button
+                                                                            key={u}
+                                                                            type="button"
+                                                                            role="radio"
+                                                                            aria-checked={on}
+                                                                            onClick={() => { setField(menuIndex, 'unit', u); setUnitPickerOpen(false); }}
+                                                                            className={'flex w-full items-center gap-3 rounded-2xl border px-4 py-3.5 text-left transition '
+                                                                                + (on ? 'border-emerald-600 bg-emerald-50 ring-1 ring-emerald-600' : 'border-slate-200 hover:border-emerald-400')}
+                                                                        >
+                                                                            <span className={'flex h-6 w-6 flex-none items-center justify-center rounded-full border transition '
+                                                                                + (on ? 'border-emerald-600 bg-emerald-600 text-white' : 'border-slate-300 text-transparent')}>
+                                                                                <Check className="h-4 w-4" strokeWidth={3} />
+                                                                            </span>
+                                                                            <span className="font-semibold text-slate-900">{UNIT_WORD[u]}</span>
+                                                                        </button>
+                                                                    );
+                                                                })}
+                                                            </div>
+                                                        </SubFlowModal>
                                                     </>
                                                 )}
-                                                <input type="file" accept="image/*" className="sr-only"
-                                                    onChange={(e) => uploadItemPhoto(i, e)} />
-                                            </label>
-
-                                            <div className="min-w-0 flex-1">
-                                                <label className="block text-xs font-medium text-slate-500 mb-1">{isSlot ? 'Session name' : 'Name'}</label>
-                                                <div className="flex items-start gap-2">
-                                                    <input
-                                                        type="text" value={it.name}
-                                                        onChange={(e) => setRow(i, 'name', e.target.value)}
-                                                        placeholder={namePh}
-                                                        className="flex-1 min-w-0 rounded-lg border border-slate-300 px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-emerald-700"
-                                                    />
-                                                    {!isSlot && rows.length > 1 && (
-                                                        <button type="button" onClick={() => removeRow(i)} aria-label="Remove item"
-                                                            className="mt-1 rounded-md p-1 text-slate-400 hover:text-slate-700">
-                                                            <X className="w-4 h-4" />
-                                                        </button>
-                                                    )}
-                                                </div>
-                                                <label className="block text-xs font-medium text-slate-500 mt-2 mb-1">Price</label>
-                                                <div className="flex items-center gap-2">
-                                                    <span className="text-slate-500 text-sm">£</span>
-                                                    <input
-                                                        type="number" min="0" step="0.01" inputMode="decimal" value={it.price}
-                                                        onChange={(e) => setRow(i, 'price', e.target.value)}
-                                                        placeholder="45"
-                                                        className="w-24 rounded-lg border border-slate-300 px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-emerald-700"
-                                                    />
-                                                    {isSlot ? (
-                                                        <span className="text-xs text-slate-500">
-                                                            {slotPrivate === false ? 'per person' : slotPrivate === true ? 'for the session' : ''}
-                                                        </span>
-                                                    ) : (
-                                                        <select
-                                                            value={it.unit || 'flat'}
-                                                            onChange={(e) => setRow(i, 'unit', e.target.value)}
-                                                            aria-label="How this is priced"
-                                                            className="flex-1 min-w-0 rounded-lg border border-slate-300 px-2 py-2 text-sm bg-white focus:outline-none focus:ring-2 focus:ring-emerald-700"
-                                                        >
-                                                            {ORDER_UNITS.map((u) => (
-                                                                <option key={u} value={u}>{UNIT_WORD[u]}</option>
-                                                            ))}
-                                                        </select>
-                                                    )}
-                                                </div>
                                             </div>
+                                            {/* The payout, presented the way Airbnb's is:
+                                                a quiet "You keep £X" line, calm by default,
+                                                the maths only when the chevron is tapped. */}
+                                            {priceFilled && (
+                                                <div className="mt-8 flex flex-col items-center">
+                                                    <button type="button" onClick={() => setPayoutOpen((o) => !o)}
+                                                        aria-expanded={payoutOpen}
+                                                        className="inline-flex items-center gap-1 text-sm font-medium text-slate-600 hover:text-slate-800">
+                                                        {GUEST_SCREEN_COPY.payoutKeepLine} £{keep.toFixed(2)}
+                                                        <ChevronDown className={'h-4 w-4 transition-transform ' + (payoutOpen ? 'rotate-180' : '')} />
+                                                    </button>
+                                                    {payoutOpen && (
+                                                        <div className="mt-3 w-full max-w-xs rounded-2xl border border-slate-200 p-4 text-sm">
+                                                            <div className="flex justify-between py-1">
+                                                                <span className="text-slate-500">{GUEST_SCREEN_COPY.payoutRowPrice}</span>
+                                                                <span className="text-slate-900">£{priceNum.toFixed(2)}</span>
+                                                            </div>
+                                                            <div className="flex justify-between py-1">
+                                                                <span className="text-slate-500">{GUEST_SCREEN_COPY.payoutRowCommission} ({Math.round(DEFAULT_SERVICE_COMMISSION * 100)}%)</span>
+                                                                <span className="text-slate-900">−£{commission.toFixed(2)}</span>
+                                                            </div>
+                                                            <div className="mt-1 flex justify-between border-t border-slate-100 pt-2 font-semibold">
+                                                                <span className="text-slate-900">{GUEST_SCREEN_COPY.payoutRowKeep}</span>
+                                                                <span className="text-slate-900">£{keep.toFixed(2)}</span>
+                                                            </div>
+                                                        </div>
+                                                    )}
+                                                </div>
+                                            )}
                                         </div>
-                                        <label className="block text-xs font-medium text-slate-500 mt-3 mb-1">Description</label>
-                                        <input
-                                            type="text" value={it.description}
-                                            onChange={(e) => setRow(i, 'description', e.target.value)}
-                                            placeholder={isSlot ? 'What to expect, what to bring' : 'A short line about it'}
-                                            className="w-full rounded-lg border border-slate-300 px-3 py-2 text-sm text-slate-600 focus:outline-none focus:ring-2 focus:ring-emerald-700"
-                                        />
-                                    </div>
-                                ))}
-                            </div>
-                            {!isSlot && (
-                                <button type="button" onClick={addRow}
-                                    className="mt-3 inline-flex items-center gap-2 rounded-xl border-2 border-dashed border-slate-300 px-4 py-2.5 text-sm text-slate-600 hover:border-slate-400">
-                                    <Plus className="w-4 h-4" /> Add another
-                                </button>
+                                    )}
+                                    {menuStep === 2 && (
+                                        <div className={fieldWrap}>
+                                            <textarea
+                                                value={it.description} rows={3}
+                                                onChange={(e) => setField(menuIndex, 'description', e.target.value)}
+                                                placeholder={GUEST_SCREEN_COPY.menuDescPlaceholder}
+                                                className={bigArea}
+                                            />
+                                        </div>
+                                    )}
+                                    {menuStep === LAST && (
+                                        <div className="flex flex-col items-center">
+                                            <label className="relative flex h-40 w-40 cursor-pointer flex-col items-center justify-center gap-2 overflow-hidden rounded-2xl border-2 border-dashed border-slate-300 bg-slate-50 text-center hover:border-emerald-400">
+                                                {it.image ? (
+                                                    <img src={getImageUrl(it.image)} alt="" className="h-full w-full object-cover" />
+                                                ) : (
+                                                    <>
+                                                        <ImagePlus className="h-8 w-8 text-slate-400" strokeWidth={1.5} />
+                                                        <span className="text-xs text-slate-500">{uploadingItem === menuIndex ? 'Uploading…' : 'Add photo'}</span>
+                                                    </>
+                                                )}
+                                                <input type="file" accept="image/*" className="sr-only" onChange={(e) => uploadItemPhoto(menuIndex, e)} />
+                                            </label>
+                                        </div>
+                                    )}
+                                </SubFlowModal>
                             )}
                         </section>
                     );
@@ -2897,29 +4249,17 @@ function ApplicationForm() {
                 {/* MADE-TO-ORDER adds one field: the notice needed. It is the same
                     fact as the made-to-order cancellation cutoff, so it is asked
                     once, here. Gated on the shape, not worded as a condition. */}
-                {onStep('business') && audienceForTrade(trade) === 'guest' && shape === 'made_to_order' && (
+                {onStep('g_area') && audienceForTrade(trade) === 'guest' && shape === 'made_to_order' && (
                 <section className="mb-8">
-                    <label className="block text-sm font-semibold text-slate-900 mb-1.5">How much notice do you need?</label>
-                    <p className="text-sm text-slate-500 mb-3">
-                        So a guest can’t pick a date sooner than you can make it. A cake that needs three
-                        days won’t be offered for tomorrow.
-                    </p>
-                    <div className="flex items-center gap-2">
-                        <input
-                            type="number" min="0" step="1" inputMode="numeric" value={leadTimeDays}
-                            onChange={(e) => setLeadTimeDays(e.target.value)}
-                            placeholder="2"
-                            className="w-24 rounded-lg border border-slate-300 px-3 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-emerald-700"
-                        />
-                        <span className="text-sm text-slate-600">days’ notice</span>
-                    </div>
+                    <label className="block text-xs font-medium text-slate-500 mb-3">How much notice do you need?</label>
+                    <NumberStepper value={leadTimeDays} onChange={setLeadTimeDays} min={0} max={90} suggestion={2} suffix="days’ notice" />
                 </section>
                 )}
 
                 {/* SLOT: the private/shared answer (which sets the price unit and
                     the capacity), the session length, and the weekly opening hours
                     — the schedule editor a sauna owner needs and never had. §7/§10. */}
-                {onStep('business') && audienceForTrade(trade) === 'guest' && shape === 'slot' && (() => {
+                {onStep('g_area') && audienceForTrade(trade) === 'guest' && shape === 'slot' && (() => {
                     const DAYS = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
                     const dayOpen = (d: number) => schedule.some((r) => r.day === d);
                     const toggleDay = (d: number) => {
@@ -2932,17 +4272,14 @@ function ApplicationForm() {
                         if (val && blockedDates.indexOf(val) === -1) setBlockedDates([...blockedDates, val].sort());
                     };
                     const removeBlock = (val: string) => setBlockedDates(blockedDates.filter((b) => b !== val));
+                    // The big question ("When can guests book?") carries this
+                    // screen — no nested sub-headings, no paragraphs. Quiet field
+                    // labels name each control, one rhythm holds it together, so a
+                    // schedule reads as one focused task.
                     return (
                         <section className="mb-8">
-                            <h2 className="text-sm font-semibold text-slate-900 mb-1">When are you open?</h2>
-                            <p className="text-sm text-slate-500 mb-4">
-                                Set your regular week once. Guests staying nearby book the times that fall
-                                inside their stay; you can take a day off any time.
-                            </p>
-
-                            {/* Private or shared — sets the price unit and capacity. */}
-                            <div className="mb-5">
-                                <label className="block text-sm font-semibold text-slate-900 mb-1.5">Who is a session for?</label>
+                            <div className="mb-6">
+                                <label className="block text-xs font-medium text-slate-500 mb-2">Who is a session for?</label>
                                 <div className="grid gap-3 sm:grid-cols-2">
                                     {[
                                         { v: true, t: 'One group at a time', d: 'The whole thing is theirs — a private sauna. One booking fills it.' },
@@ -2960,29 +4297,17 @@ function ApplicationForm() {
                                 </div>
                             </div>
 
-                            <div className="grid gap-4 sm:grid-cols-2 mb-5">
-                                {slotPrivate === false && (
-                                    <div>
-                                        <label className="block text-sm font-semibold text-slate-900 mb-1.5">How many fit?</label>
-                                        <input type="number" min="1" step="1" inputMode="numeric" value={slotCapacity}
-                                            onChange={(e) => setSlotCapacity(e.target.value)} placeholder="8"
-                                            className="w-full rounded-lg border border-slate-300 px-3 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-emerald-700" />
-                                    </div>
-                                )}
-                                <div>
-                                    <label className="block text-sm font-semibold text-slate-900 mb-1.5">How long is each session?</label>
-                                    <div className="flex items-center gap-2">
-                                        <input type="number" min="15" step="15" inputMode="numeric" value={slotLength}
-                                            onChange={(e) => setSlotLength(e.target.value)} placeholder="60"
-                                            className="w-24 rounded-lg border border-slate-300 px-3 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-emerald-700" />
-                                        <span className="text-sm text-slate-600">minutes</span>
-                                    </div>
-                                </div>
+                            {/* Capacity has moved to its own screen in the Pricing
+                                section (g_capacity); this screen keeps only the
+                                session length and the weekly hours. */}
+                            <div className="mb-6">
+                                <label className="block text-xs font-medium text-slate-500 mb-3">How long is each session?</label>
+                                <NumberStepper value={slotLength} onChange={setSlotLength} min={15} max={480} step={15} suggestion={60} suffix="minutes" />
                             </div>
 
                             {/* The weekly hours — a day toggles open, and shows an
                                 open/close time when it is. */}
-                            <label className="block text-sm font-semibold text-slate-900 mb-2">Which days, and what hours?</label>
+                            <label className="block text-xs font-medium text-slate-500 mb-2">Which days, and what hours?</label>
                             <div className="space-y-2">
                                 {DAYS.map((label, d) => {
                                     const row = schedule.find((r) => r.day === d);
@@ -3009,8 +4334,8 @@ function ApplicationForm() {
                             </div>
 
                             {/* Block a date — the one exception the v1 schedule allows. */}
-                            <div className="mt-5">
-                                <label className="block text-sm font-semibold text-slate-900 mb-1.5">Days off</label>
+                            <div className="mt-6">
+                                <label className="block text-xs font-medium text-slate-500 mb-2">Days off</label>
                                 <div className="flex flex-wrap items-center gap-2">
                                     {blockedDates.map((b) => (
                                         <span key={b} className="inline-flex items-center gap-1.5 rounded-full bg-slate-100 px-3 py-1 text-xs font-medium text-slate-700">
@@ -3023,7 +4348,6 @@ function ApplicationForm() {
                                     <input type="date" onChange={(e) => { addBlock(e.target.value); e.target.value = ''; }}
                                         className="rounded-lg border border-slate-300 px-2 py-1.5 text-sm text-slate-600 focus:outline-none focus:ring-2 focus:ring-emerald-700" />
                                 </div>
-                                <p className="mt-1.5 text-xs text-slate-500">Add a holiday or a day you’re away. You can do this any time later, too.</p>
                             </div>
                         </section>
                     );
@@ -3036,74 +4360,338 @@ function ApplicationForm() {
                     earns its place, the rest fill in trust. Deliberately no
                     vetting badges — nothing here is checked, so nothing claims
                     to be. */}
-                {onStep('business') && audienceForTrade(trade) === 'guest' && (
-                <section className="mb-8">
-                    <h2 className="text-sm font-semibold text-slate-900 mb-1">A bit about you</h2>
-                    <p className="text-sm text-slate-500 mb-4">
-                        A guest is choosing who comes into the cottage they’re staying in. This is
-                        where you tell them who that is. All optional.
+                {/* THE YEARS OPENER — one question, one number, nothing else, the
+                    way Airbnb do it. The question is the centred H1 above; here is
+                    just the big centred stepper with air around it. The short line
+                    and the photo of the provider moved to the expertise screen
+                    (g_creds), where the person's story belongs. Two rules: it goes
+                    down to zero (a business started this year has none and we'd
+                    still take them), and it shows a suggestion but stores nothing
+                    until touched — the same rule as the where-and-when counts. */}
+                {/* VERIFY YOUR EMAIL — the account gate, straight after the
+                    category pick. A one-time code, so the rest of the wizard runs
+                    signed in: photos upload, everything saves to the database, and
+                    the finish screen is a real submit. No password here — the code
+                    is the proof, and it is what stops anyone building on an address
+                    they don't control. */}
+                {onStep('g_verify') && isGuest && (
+                <section className="mb-8 md:max-w-md">
+                    <p className="text-slate-600 [text-wrap:pretty]">
+                        We’ll email you a code to confirm this address. Enter it and you’re in —
+                        everything you add from here is saved to your account as you go.
                     </p>
 
-                    {/* "Your name" now sits with the business name up in the
-                        identity group — a guest is choosing a person as much as a
-                        business, so the two names belong together. */}
-                    <label className="block text-sm font-semibold text-slate-900 mb-1.5">A short line about you</label>
-                    <input
-                        type="text"
-                        value={basedLine}
-                        onChange={(e) => setBasedLine(e.target.value)}
-                        placeholder="Kirkcudbright · cooking since 2019"
-                        className="w-full md:max-w-md rounded-xl border border-slate-300 px-4 py-3 mb-4 focus:outline-none focus:ring-2 focus:ring-emerald-700"
-                    />
-
-                    {/* The food question is now conditional in its LOGIC, not just
-                        its wording: it only shows for a food category. A sauna or a
-                        photographer never sees it. (The marketplace's own food test
-                        is the Stripe MCC assigned at review; at sign-up the category
-                        is the signal, and it is the right one.) */}
-                    {(guestCategoryIsFood(guestCategory) || dietaryNote.trim() !== '') && (
-                        <>
-                            <label className="block text-sm font-semibold text-slate-900 mb-1.5">What can you cater for?</label>
-                            <textarea
-                                value={dietaryNote}
-                                onChange={(e) => setDietaryNote(e.target.value)}
-                                rows={2}
-                                placeholder="e.g. can do gluten-free and dairy-free with a day’s notice; not a nut-free kitchen"
-                                className="w-full md:max-w-md rounded-xl border border-slate-300 px-4 py-3 mb-1.5 focus:outline-none focus:ring-2 focus:ring-emerald-700"
-                            />
-                            <p className="text-xs text-slate-500 mb-4">
-                                Shown on your listing. Leave it blank and the listing tells guests you haven’t said — so they know to ask before booking.
-                            </p>
-                        </>
-                    )}
-
-                    <label className="block text-sm font-semibold text-slate-900 mb-1.5">A photo of you</label>
-                    <div className="flex items-center gap-3">
-                        {headshot && (
-                            <img src={getImageUrl(headshot)} alt="" className="w-16 h-16 rounded-full object-cover" />
-                        )}
-                        <label className="inline-flex items-center gap-2 rounded-xl border-2 border-dashed border-slate-300 px-4 py-2.5 cursor-pointer text-sm text-slate-600 hover:border-slate-400">
-                            <Plus className="w-4 h-4" />
-                            {uploadingHeadshot ? 'Uploading…' : headshot ? 'Replace' : 'Add a photo'}
+                    <div className="mt-8 space-y-5">
+                        <div>
+                            <label htmlFor="otp-name" className="block text-xs font-medium text-slate-500 mb-2">
+                                Your name <span className="text-slate-400">(optional)</span>
+                            </label>
+                            {/* Captured here, at the account step, because it is
+                                account information — it becomes your listing title,
+                                since a guest experience is a person, not a business.
+                                Not asked again later in the flow. */}
                             <input
-                                type="file"
-                                accept="image/png, image/jpeg"
-                                onChange={uploadHeadshot}
-                                className="hidden"
-                                disabled={uploadingHeadshot}
+                                id="otp-name"
+                                type="text"
+                                autoComplete="name"
+                                value={otpName}
+                                onChange={(e) => setOtpName(e.target.value)}
+                                disabled={otpSent}
+                                placeholder="Rosa Muir"
+                                className="w-full rounded-xl border border-slate-300 px-4 py-3 focus:outline-none focus:ring-2 focus:ring-emerald-700 disabled:bg-slate-50 disabled:text-slate-500"
                             />
-                        </label>
-                        {headshot && (
+                        </div>
+                        <div>
+                            <label htmlFor="otp-email" className="block text-xs font-medium text-slate-500 mb-2">
+                                Your email
+                            </label>
+                            <input
+                                id="otp-email"
+                                type="email"
+                                inputMode="email"
+                                autoComplete="email"
+                                value={otpEmail}
+                                onChange={(e) => setOtpEmail(e.target.value)}
+                                disabled={otpSent}
+                                placeholder="you@example.com"
+                                className="w-full rounded-xl border border-slate-300 px-4 py-3 focus:outline-none focus:ring-2 focus:ring-emerald-700 disabled:bg-slate-50 disabled:text-slate-500"
+                            />
+                        </div>
+
+                        {!otpSent ? (
                             <button
                                 type="button"
-                                onClick={() => setHeadshot(null)}
-                                className="inline-flex items-center gap-1.5 rounded-xl border border-slate-300 px-4 py-2.5 text-sm text-slate-600 hover:border-slate-500"
+                                onClick={sendOtp}
+                                // Email alone unlocks the code. The name must not
+                                // block a stranger on the first screen — it's the
+                                // cheapest place to give up. Blank is no worse than
+                                // before; it's captured at creation when given, and
+                                // can be set later otherwise.
+                                disabled={otpBusy || !otpEmail.trim()}
+                                className={'w-full rounded-full px-6 py-3 text-sm font-semibold transition '
+                                    + (otpBusy || !otpEmail.trim()
+                                        ? 'bg-slate-200 text-slate-400 cursor-not-allowed'
+                                        : 'bg-emerald-700 hover:bg-emerald-800 text-white')}
                             >
-                                <X className="w-3.5 h-3.5" />
-                                Remove
+                                {otpBusy ? 'Sending…' : 'Email me a code'}
                             </button>
+                        ) : (
+                            <>
+                                <div>
+                                    <label htmlFor="otp-code" className="block text-xs font-medium text-slate-500 mb-2">
+                                        The code we emailed you
+                                    </label>
+                                    <input
+                                        id="otp-code"
+                                        type="text"
+                                        inputMode="numeric"
+                                        autoComplete="one-time-code"
+                                        value={otpCode}
+                                        onChange={(e) => setOtpCode(e.target.value.replace(/[^0-9]/g, '').slice(0, 8))}
+                                        placeholder="123456"
+                                        className="w-full rounded-xl border border-slate-300 px-4 py-3 text-center text-2xl tracking-[0.3em] focus:outline-none focus:ring-2 focus:ring-emerald-700"
+                                    />
+                                </div>
+                                <button
+                                    type="button"
+                                    onClick={verifyOtp}
+                                    disabled={otpBusy || !otpCode.trim()}
+                                    className={'w-full rounded-full px-6 py-3 text-sm font-semibold transition '
+                                        + (otpBusy || !otpCode.trim()
+                                            ? 'bg-slate-200 text-slate-400 cursor-not-allowed'
+                                            : 'bg-emerald-700 hover:bg-emerald-800 text-white')}
+                                >
+                                    {otpBusy ? 'Checking…' : 'Verify and carry on'}
+                                </button>
+                                <p className="text-sm text-slate-500">
+                                    No code yet? Check spam, or{' '}
+                                    <button type="button" onClick={sendOtp} disabled={otpBusy}
+                                        className="font-semibold text-emerald-700 hover:text-emerald-800 underline disabled:opacity-60">
+                                        send another
+                                    </button>.
+                                </p>
+                            </>
+                        )}
+
+                        {otpError && (
+                            <p data-problem className="text-sm text-rose-700">{otpError}</p>
                         )}
                     </div>
+                </section>
+                )}
+
+                {onStep('g_you') && audienceForTrade(trade) === 'guest' && (
+                <section className="flex-1 flex flex-col items-center justify-center">
+                    <NumberStepper value={yearsDoing} onChange={setYearsDoing} min={0} max={70} suggestion={YEARS_DEFAULT} size="lg" solid />
+                </section>
+                )}
+
+                {/* MAXIMUM GUESTS — one centred question, the big stepper, worded
+                    by shape. Where the provider travels (comes_to_you) it's the
+                    largest group they'll take; where guests come to them (slot)
+                    it's what the space holds. For a shared slot this becomes
+                    sellable seats, so the default is deliberately low. */}
+                {onStep('g_capacity') && isGuest && (
+                <section className="flex-1 flex flex-col items-center justify-center">
+                    <NumberStepper value={maxGuests} onChange={setMaxGuests} min={1} max={60} suggestion={shape === 'comes_to_you' ? CAPACITY_DEFAULT_TRAVEL : CAPACITY_DEFAULT_SLOT} size="lg" solid suffix={GUEST_SCREEN_COPY.capacitySuffix} />
+                </section>
+                )}
+
+                {/* WHAT A GUEST CAN EXPECT — rebuilt to the flow's own craft: no
+                    stacked bordered textareas. A hub of borderless rows, each
+                    opening a one-field sub-flow (the same pattern as the expertise
+                    and price screens). Two questions survive: "What happens" (now
+                    DISPLAYED on the listing) and, for a food category, dietary
+                    (also displayed). "What's included" and "What a guest brings"
+                    were cut — the item description and price already carry them.
+                    All optional; none blocks a booking. */}
+                {onStep('g_expect') && isGuest && (() => {
+                    const fieldWrap = 'relative border-b border-slate-200 pb-2 transition-colors focus-within:border-slate-400';
+                    const bigArea = 'w-full resize-none bg-transparent text-center text-xl leading-relaxed text-slate-900 placeholder:text-slate-300 focus:outline-none';
+                    const isFoodCat = guestCategoryIsFood(guestCategory);
+                    const toggleDietary = (k: string) => setDietaryOptions((prev) =>
+                        prev.includes(k) ? prev.filter((x) => x !== k) : [...prev, k]);
+                    // The row reads back the ticks (in catalogue order) and flags a
+                    // note; either alone counts as filled. A blank row still prompts.
+                    const dietaryLabels = DIETARY_OPTIONS.filter((o) => dietaryOptions.includes(o.key)).map((o) => o.label);
+                    const dietarySummary = dietaryLabels.length
+                        ? dietaryLabels.join(', ') + (dietaryNote.trim() ? ' · note added' : '')
+                        : dietaryNote.trim();
+                    const dietaryFilled = dietaryLabels.length > 0 || dietaryNote.trim() !== '';
+                    return (
+                    <section className="mb-8 md:max-w-xl md:mx-auto">
+                        <div className="mt-6 space-y-6">
+                            <HubRow
+                                filled={whatToExpect.trim() !== ''}
+                                label={GUEST_SCREEN_COPY.expectRowLabel}
+                                suffix={GUEST_SCREEN_COPY.optionalSuffix}
+                                prompt={GUEST_SCREEN_COPY.expectRowPrompt}
+                                summary={whatToExpect.trim()}
+                                onOpen={() => setDetailModal('expect')}
+                            />
+                            {isFoodCat && (
+                                <HubRow
+                                    filled={dietaryFilled}
+                                    label={GUEST_SCREEN_COPY.dietaryRowLabel}
+                                    suffix={GUEST_SCREEN_COPY.optionalSuffix}
+                                    prompt={GUEST_SCREEN_COPY.dietaryRowPrompt}
+                                    summary={dietarySummary}
+                                    onOpen={() => setDetailModal('dietary')}
+                                />
+                            )}
+                        </div>
+
+                        {/* ---- What happens: one borderless field. ---- */}
+                        <SubFlowModal
+                            open={detailModal === 'expect'}
+                            title={GUEST_SCREEN_COPY.expectModalTitle}
+                            onClose={() => setDetailModal(null)}
+                            saveLabel={GUEST_SCREEN_COPY.save}
+                        >
+                            <div className={fieldWrap}>
+                                <textarea
+                                    value={whatToExpect}
+                                    onChange={(e) => setWhatToExpect(e.target.value)}
+                                    rows={4}
+                                    placeholder={GUEST_SCREEN_COPY.expectPlaceholder}
+                                    className={bigArea}
+                                />
+                            </div>
+                        </SubFlowModal>
+
+                        {/* ---- Dietary (food only): tick what you CAN CATER FOR —
+                            a capability, not a promise — with the note always
+                            visible beneath, since a chef who caters for none of
+                            the listed options still needs somewhere to say what she
+                            can do, and that caveat is the one that matters most. ---- */}
+                        {isFoodCat && (
+                            <SubFlowModal
+                                open={detailModal === 'dietary'}
+                                title={GUEST_SCREEN_COPY.dietaryModalTitle}
+                                onClose={() => setDetailModal(null)}
+                                saveLabel={GUEST_SCREEN_COPY.save}
+                                note={GUEST_SCREEN_COPY.dietaryModalNote}
+                            >
+                                <div className="mx-auto w-full max-w-md">
+                                    <div role="group" aria-label={GUEST_SCREEN_COPY.dietaryModalTitle} className="space-y-2">
+                                        {DIETARY_OPTIONS.map((o) => {
+                                            const on = dietaryOptions.includes(o.key);
+                                            return (
+                                                <button
+                                                    key={o.key}
+                                                    type="button"
+                                                    onClick={() => toggleDietary(o.key)}
+                                                    aria-pressed={on}
+                                                    className={'flex w-full items-center gap-3 rounded-2xl border px-4 py-3 text-left transition '
+                                                        + (on ? 'border-emerald-600 bg-emerald-50 ring-1 ring-emerald-600' : 'border-slate-200 hover:border-emerald-400')}
+                                                >
+                                                    <span className={'flex h-6 w-6 flex-none items-center justify-center rounded-md border transition '
+                                                        + (on ? 'border-emerald-600 bg-emerald-600 text-white' : 'border-slate-300 text-transparent')}>
+                                                        <Check className="h-4 w-4" strokeWidth={3} />
+                                                    </span>
+                                                    <span className="font-medium text-slate-900">{o.label}</span>
+                                                </button>
+                                            );
+                                        })}
+                                    </div>
+                                    {/* The note — always visible, never revealed by a
+                                        tick. The ticks are the shape; this is the honesty. */}
+                                    <div className="mt-6">
+                                        <label className="mb-2 block text-xs font-medium text-slate-500">{GUEST_SCREEN_COPY.dietaryNoteLabel}</label>
+                                        <textarea
+                                            value={dietaryNote}
+                                            onChange={(e) => setDietaryNote(e.target.value)}
+                                            rows={3}
+                                            placeholder={GUEST_SCREEN_COPY.dietaryPlaceholder}
+                                            className="w-full rounded-xl border border-slate-200 px-4 py-3 text-slate-900 placeholder:text-slate-300 focus:outline-none focus:ring-2 focus:ring-emerald-600"
+                                        />
+                                    </div>
+                                </div>
+                            </SubFlowModal>
+                        )}
+                    </section>
+                    );
+                })()}
+
+                {/* PHOTOS — a real, required step, the way Airbnb makes it (they
+                    ask for five; we ask for at least one, gated in the footer). A
+                    listing without a photo doesn't sell, and until now guest photos
+                    were only ever the per-item pictures. These append to `photos`,
+                    which already saves, loads and feeds the listing. */}
+                {onStep('g_photos') && isGuest && (
+                <section className="mb-8">
+                    {/* The screen instruction sits under the heading in both states
+                        — it asks for three; the Next gate stays at one (they differ
+                        on purpose), so this line is NOT wired to the gate. */}
+                    <p className="text-center text-base text-slate-600">
+                        {GUEST_SCREEN_COPY.photosAsk}
+                    </p>
+
+                    {photos.length === 0 ? (
+                        <>
+                            {/* Empty-state invitation: the two stock photographs as an
+                                overlapping, opposing-tilt pair (see EXPERIENCE_PHOTOS),
+                                then the Add button close beneath. Only the invitation —
+                                the moment a provider adds their own, the pair gives way
+                                to the editable grid below (stock photos should not sit
+                                alongside someone's own).
+
+                                The composition (size, ±5° tilt, overlap, stagger,
+                                outlined button) is the agreed commit-90a3c20 version,
+                                reduced ~10–15% via PHOTO_CARD_SIZE. This screen is
+                                CENTRED (justify-center) to match Airbnb — the eyebrow,
+                                heading, subtitle, photos and button share one axis. The
+                                anti-slide fix is kept: the panel centres in the full
+                                body width (the right-side spacer mirrors the rail), so
+                                the centre axis is the viewport centre in both rail
+                                states. overflow-visible so the tilt/shadow never clip.
+                                Do not adjust the composition again unless asked. */}
+                            <div className="mt-16 mb-6 flex justify-center overflow-visible">
+                                <div className="relative flex items-center">
+                                    <img
+                                        src={EXPERIENCE_PHOTOS[0].src}
+                                        alt={EXPERIENCE_PHOTOS[0].alt}
+                                        className={PHOTO_CARD_SIZE + ' aspect-[4/5] object-cover rounded-2xl bg-slate-100 ring-4 ring-white shadow-xl -rotate-5'}
+                                    />
+                                    <img
+                                        src={EXPERIENCE_PHOTOS[1].src}
+                                        alt={EXPERIENCE_PHOTOS[1].alt}
+                                        className={'-ml-8 sm:-ml-12 translate-y-3 ' + PHOTO_CARD_SIZE + ' aspect-[4/5] object-cover rounded-2xl bg-slate-100 ring-4 ring-white shadow-xl rotate-5'}
+                                    />
+                                </div>
+                            </div>
+
+                            <div className="flex justify-center">
+                                <label className="inline-flex cursor-pointer items-center gap-2 rounded-full border border-slate-900 bg-white px-6 py-3 text-sm font-semibold text-slate-900 transition hover:bg-slate-50">
+                                    <ImagePlus className="h-5 w-5" strokeWidth={1.75} />
+                                    <span>{uploadingPhotos ? 'Uploading…' : 'Add photos'}</span>
+                                    <input type="file" accept="image/*" multiple className="sr-only"
+                                        onChange={uploadGalleryPhotos} disabled={uploadingPhotos} />
+                                </label>
+                            </div>
+                        </>
+                    ) : (
+                        // Their own photos: the shared editor grid (drag to reorder
+                        // on mouse/touch/keyboard, delete, add). Immediate upload is
+                        // kept — photos are already stored paths — so the callbacks
+                        // just reorder/trim the array. The cover is the first photo,
+                        // set by dragging to the front; no separate control.
+                        <div className="mt-6">
+                            <PhotoEditorGrid
+                                items={photos.map((p) => ({ key: p, src: getImageUrl(p) }))}
+                                onReorder={(from, to) => setPhotos((prev) => {
+                                    const next = [...prev];
+                                    const [moved] = next.splice(from, 1);
+                                    next.splice(to, 0, moved);
+                                    return next;
+                                })}
+                                onRemove={(i) => setPhotos((prev) => prev.filter((_, j) => j !== i))}
+                                onAdd={uploadGalleryPhotos}
+                                uploading={uploadingPhotos}
+                                instruction={GUEST_SCREEN_COPY.photosReorderHint}
+                            />
+                        </div>
+                    )}
                 </section>
                 )}
 
@@ -4046,68 +5634,233 @@ function ApplicationForm() {
                 )}
 
 
-                {onStep('business') && (
+                {(audienceForTrade(trade) === 'guest' ? onStep('g_area') : onStep('business')) && (
                 <section className="mb-8">
-                    <h2 className="text-sm font-semibold text-slate-900 mb-1.5">Where do you cover?</h2>
-                    <p className="text-sm text-slate-500 mb-3">
-                        A town and how far you will travel from it. Add more than one if you cover separate areas.
-                    </p>
+                    {/* HOST TRADES keep the town-and-radius model — the radius is a
+                        live precision filter behind the directory, and five regions
+                        would be too coarse for it — but it's captured in the guest
+                        flow's craft now: borderless rows, an add row, a sub-flow
+                        modal that picks a town from the known list and a radius.
+                        Restricting to the known list also fixes the old free-text
+                        trap where an off-list town got centre 0,0 and never matched
+                        the directory. The data model is unchanged, so existing rows
+                        load and re-save exactly as before. */}
+                    {!isGuest && (
+                        <>
+                            <h2 className="text-sm font-semibold text-slate-900 mb-1.5">{HOST_LOCATION_COPY.heading}</h2>
+                            <p className="text-sm text-slate-500 mb-4">{HOST_LOCATION_COPY.subtext}</p>
 
-                    <div className="space-y-2 md:max-w-xl">
-                        {areas.map((a, i) => (
-                            <div key={i} className="flex items-center gap-2">
-                                <select
-                                    value={a.town}
-                                    aria-label="Town"
-                                    onChange={(e) => setAreas((prev) => prev.map((x, j) => (j === i ? { ...x, town: e.target.value } : x)))}
-                                    className="flex-1 min-w-0 rounded-xl border border-slate-300 px-3 py-2.5 focus:outline-none focus:ring-2 focus:ring-emerald-700"
-                                >
-                                    {COVERAGE_TOWNS.map((t) => (
-                                        <option key={t.key} value={t.label}>{t.label}</option>
-                                    ))}
-                                </select>
-                                <select
-                                    value={a.radius_miles}
-                                    aria-label="Distance covered"
-                                    onChange={(e) => setAreas((prev) => prev.map((x, j) => (j === i ? { ...x, radius_miles: Number(e.target.value) } : x)))}
-                                    className="rounded-xl border border-slate-300 px-3 py-2.5 focus:outline-none focus:ring-2 focus:ring-emerald-700"
-                                >
-                                    {[5, 10, 15, 20, 30, 50].map((m) => (
-                                        <option key={m} value={m}>within {m} miles</option>
-                                    ))}
-                                </select>
-                                <button
-                                    type="button"
-                                    onClick={() => setAreas((prev) => prev.filter((_, j) => j !== i))}
-                                    aria-label={'Remove ' + a.town}
-                                    className="shrink-0 w-10 h-10 rounded-full border border-slate-300 flex items-center justify-center text-slate-500 hover:border-slate-500"
-                                >
-                                    <X className="w-4 h-4" />
-                                </button>
+                            <div className="space-y-1 md:max-w-xl">
+                                {areas.map((a, i) => (
+                                    <HubRow
+                                        key={i}
+                                        filled
+                                        label={a.town}
+                                        prompt=""
+                                        summary={HOST_LOCATION_COPY.rowWithin + ' ' + Number(a.radius_miles) + ' ' + HOST_LOCATION_COPY.radiusSuffix}
+                                        onOpen={() => openHostArea(i)}
+                                    />
+                                ))}
+                                <HubRow
+                                    filled={false}
+                                    label={HOST_LOCATION_COPY.addRow}
+                                    prompt={HOST_LOCATION_COPY.addPrompt}
+                                    onOpen={() => openHostArea(null)}
+                                />
                             </div>
-                        ))}
-                    </div>
 
-                    {areas.length < COVERAGE_TOWNS.length && (
-                        <button
-                            type="button"
-                            onClick={addArea}
-                            className="mt-3 inline-flex items-center gap-1.5 text-sm font-semibold text-emerald-700 hover:text-emerald-800"
-                        >
-                            <Plus className="w-4 h-4" /> Add an area
-                        </button>
+                            {problemFor('areas') && (
+                                <p data-problem className="text-sm text-rose-700 mt-3">{problemFor('areas')!.message}</p>
+                            )}
+
+                            <SubFlowModal
+                                open={areaModalOpen}
+                                title={HOST_LOCATION_COPY.modalTitle}
+                                onClose={() => setAreaModalOpen(false)}
+                                saveLabel={GUEST_SCREEN_COPY.save}
+                                saveDisabled={!areaDraftTown.trim()}
+                                onSave={saveHostArea}
+                                onRemove={areaEditIndex !== null ? removeHostArea : undefined}
+                            >
+                                <div className="mx-auto w-full max-w-md">
+                                    <label className="mb-2 block text-xs font-medium text-slate-500">{HOST_LOCATION_COPY.townLabel}</label>
+                                    <div className="space-y-2">
+                                        {COVERAGE_TOWNS.map((t) => {
+                                            const on = areaDraftTown === t.label;
+                                            return (
+                                                <button key={t.key} type="button" onClick={() => setAreaDraftTown(t.label)} aria-pressed={on}
+                                                    className={'flex w-full items-center gap-3 rounded-2xl border px-4 py-3 text-left transition '
+                                                        + (on ? 'border-emerald-600 bg-emerald-50 ring-1 ring-emerald-600' : 'border-slate-200 hover:border-emerald-400')}>
+                                                    <span className={'flex h-5 w-5 flex-none items-center justify-center rounded-full border transition '
+                                                        + (on ? 'border-emerald-600 bg-emerald-600 text-white' : 'border-slate-300 text-transparent')}>
+                                                        <Check className="h-3 w-3" strokeWidth={3} />
+                                                    </span>
+                                                    <span className="font-semibold text-slate-900">{t.label}</span>
+                                                </button>
+                                            );
+                                        })}
+                                    </div>
+
+                                    <label className="mb-2 mt-6 block text-xs font-medium text-slate-500">{HOST_LOCATION_COPY.radiusLabel}</label>
+                                    <div className="flex flex-wrap gap-2">
+                                        {[5, 10, 15, 20, 30, 50].map((m) => {
+                                            const on = Number(areaDraftRadius) === m;
+                                            return (
+                                                <button key={m} type="button" onClick={() => setAreaDraftRadius(m)} aria-pressed={on}
+                                                    className={'rounded-full border px-4 py-2 text-sm font-semibold transition '
+                                                        + (on ? 'border-emerald-600 bg-emerald-600 text-white' : 'border-slate-300 text-slate-700 hover:border-emerald-400')}>
+                                                    {m} {HOST_LOCATION_COPY.radiusSuffix}
+                                                </button>
+                                            );
+                                        })}
+                                    </div>
+                                </div>
+                            </SubFlowModal>
+                        </>
                     )}
 
-                    {problemFor('areas') && (
-                        <p data-problem className="text-sm text-rose-700 mt-2">{problemFor('areas')!.message}</p>
+                    {/* GUEST providers pick regions from a fixed list — no radii,
+                        no free text, no spelling drift. Coverage is informational
+                        now, so this is a signal on the listing rather than a
+                        filter. Built in the flow's own craft: each chosen region a
+                        quiet borderless row, an add row at the bottom, both opening
+                        the same tick-list picker. The slot and made-to-order shapes
+                        carry their real "when" (schedule, notice) in their own
+                        blocks above; this screen is only the where. */}
+                    {isGuest && (
+                        <>
+                            {shape === 'slot' || shape === 'made_to_order' ? (
+                                <label className="block text-xs font-medium text-slate-500 mb-3">
+                                    {shape === 'slot'
+                                        ? 'Where does it take place?'
+                                        : 'Which parts of Dumfries & Galloway do you deliver to?'}
+                                </label>
+                            ) : (
+                                <p className="text-sm text-slate-500 mb-4 md:max-w-xl">
+                                    {GUEST_SCREEN_COPY.locationSubtextTravel}
+                                </p>
+                            )}
+
+                            <div className="space-y-1 md:max-w-xl">
+                                {areas.map((a, i) => (
+                                    <HubRow
+                                        key={i}
+                                        filled
+                                        label={a.town}
+                                        prompt=""
+                                        summary={regionHint(a.town)}
+                                        onOpen={() => setAreaPickerOpen(true)}
+                                    />
+                                ))}
+                                {!areasHasAll && (
+                                    <HubRow
+                                        filled={false}
+                                        label={GUEST_SCREEN_COPY.locationAddRow}
+                                        prompt={GUEST_SCREEN_COPY.locationAddPrompt}
+                                        onOpen={() => setAreaPickerOpen(true)}
+                                    />
+                                )}
+                            </div>
+
+                            {problemFor('areas') && (
+                                <p data-problem className="text-sm text-rose-700 mt-3">
+                                    {GUEST_SCREEN_COPY.locationAreaGate}
+                                </p>
+                            )}
+
+                            <SubFlowModal
+                                open={areaPickerOpen}
+                                title={GUEST_SCREEN_COPY.locationPickerTitle}
+                                onClose={() => setAreaPickerOpen(false)}
+                                saveLabel={GUEST_SCREEN_COPY.locationPickerDone}
+                                saveDisabled={areas.length === 0}
+                            >
+                                <div className="mx-auto w-full max-w-md space-y-2">
+                                    {GUEST_REGIONS.map((r) => {
+                                        const on = regionPicked(r.label);
+                                        return (
+                                            <button
+                                                key={r.key}
+                                                type="button"
+                                                onClick={() => toggleRegion(r)}
+                                                aria-pressed={on}
+                                                className={'flex w-full items-center gap-3 rounded-2xl border px-4 py-3 text-left transition '
+                                                    + (on ? 'border-emerald-600 bg-emerald-50 ring-1 ring-emerald-600' : 'border-slate-200 hover:border-emerald-400')}
+                                            >
+                                                <span className={'flex h-6 w-6 flex-none items-center justify-center rounded-md border transition '
+                                                    + (on ? 'border-emerald-600 bg-emerald-600 text-white' : 'border-slate-300 text-transparent')}>
+                                                    <Check className="h-4 w-4" strokeWidth={3} />
+                                                </span>
+                                                <span className="min-w-0">
+                                                    <span className="block font-semibold text-slate-900">{r.label}</span>
+                                                    <span className="block text-sm text-slate-500">{r.hint}</span>
+                                                </span>
+                                            </button>
+                                        );
+                                    })}
+                                </div>
+                            </SubFlowModal>
+                        </>
                     )}
                 </section>
                 )}
 
-                {onStep('business') && (
+                {/* THE CHECKS — the declarations this category confirms before
+                    we list it. The set is computed from the category (checksFor),
+                    so a chef sees food registration and allergens, a sauna sees
+                    its heat-and-cold statement, and everyone sees insurance and
+                    an accuracy line. Non-blocking: a box left unticked never
+                    stops Next or send — the owner weighs it at review. The big
+                    title above already asks the question, so this is just the
+                    list. */}
+                {onStep('g_checks') && audienceForTrade(trade) === 'guest' && (
+                <section className="mb-8">
+                    <p className="text-sm text-slate-500 mb-5 [text-wrap:balance]">
+                        Tick each one you can confirm. It helps guests book with confidence — none of it is shown publicly.
+                    </p>
+                    <div className="space-y-3">
+                        {checksFor(guestCategory).map((check) => {
+                            const on = !!declarations[check.key];
+                            return (
+                                <button
+                                    key={check.key}
+                                    type="button"
+                                    role="checkbox"
+                                    aria-checked={on}
+                                    onClick={() => setDeclarations((prev) => ({ ...prev, [check.key]: !prev[check.key] }))}
+                                    className={
+                                        'flex w-full items-start gap-4 rounded-2xl border-2 px-5 py-4 text-left transition '
+                                        + 'focus:outline-none focus-visible:ring-2 focus-visible:ring-emerald-600 '
+                                        + (on ? 'border-emerald-600 bg-emerald-50/60' : 'border-slate-200 hover:border-slate-300')
+                                    }
+                                >
+                                    <span
+                                        aria-hidden
+                                        className={
+                                            'mt-0.5 flex h-6 w-6 flex-none items-center justify-center rounded-md border-2 transition '
+                                            + (on ? 'border-emerald-600 bg-emerald-600 text-white' : 'border-slate-300 bg-white text-transparent')
+                                        }
+                                    >
+                                        <Check className="h-4 w-4" strokeWidth={3} />
+                                    </span>
+                                    <span className="min-w-0">
+                                        <span className="block text-sm font-semibold text-slate-900">{check.label}</span>
+                                        {check.hint && <span className="mt-0.5 block text-xs text-slate-500">{check.hint}</span>}
+                                    </span>
+                                </button>
+                            );
+                        })}
+                    </div>
+                    <p className="mt-5 text-xs text-slate-500">
+                        You can carry on without ticking every box — we may just ask you about it before you go live.
+                    </p>
+                </section>
+                )}
+
+                {(audienceForTrade(trade) === 'guest' ? onStep('g_contact') : onStep('business')) && (
                 <section className="mb-8 grid sm:grid-cols-2 gap-4">
                     <div>
-                        <label className="block text-sm font-semibold text-slate-900 mb-1.5">
+                        <label className="block text-xs font-medium text-slate-500 mb-2">
                             Email for us to reach you on
                         </label>
                         <input
@@ -4120,8 +5873,8 @@ function ApplicationForm() {
                         )}
                     </div>
                     <div>
-                        <label className="block text-sm font-semibold text-slate-900 mb-1.5">
-                            Phone <span className="font-normal text-slate-500">(optional)</span>
+                        <label className="block text-xs font-medium text-slate-500 mb-2">
+                            Phone <span className="text-slate-400">(optional)</span>
                         </label>
                         <input
                             value={contactPhone}
@@ -4129,17 +5882,10 @@ function ApplicationForm() {
                             className="w-full rounded-xl border border-slate-300 px-4 py-3 focus:outline-none focus:ring-2 focus:ring-emerald-700"
                         />
 
-                        {/* SAID BESIDE THE FIELD, NOT IN A POLICY.
-                            A text that arrives unannounced is the thing this
-                            sentence exists to prevent. It is also the reason
-                            the opt-out below is here rather than buried in a
-                            settings page nobody opens: without one, a
-                            tradesman who does not want texts removes his
-                            number instead, and then nobody can reach him at
-                            all when it is urgent. */}
-                        <p className="text-sm text-slate-600 mt-2">
-                            If it is a mobile, we will text you when an owner has an emergency —
-                            those are the ones where minutes matter. Everything else comes by email.
+                        {/* One short line, not a policy paragraph. The opt-out sits
+                            with it so a mobile number isn't removed to avoid texts. */}
+                        <p className="text-sm text-slate-500 mt-2">
+                            A mobile only gets a text for an owner’s emergency; everything else is email.
                         </p>
 
                         <label className="flex items-start gap-2.5 mt-3 cursor-pointer">
@@ -4158,14 +5904,8 @@ function ApplicationForm() {
                         </label>
                     </div>
 
-                    {/* Said once, plainly, and true today: nothing renders
-                        these publicly. It is here because the labels used to
-                        say "for job requests", which promised an owner would
-                        write to them directly — and the direction is the
-                        opposite of that. */}
                     <p className="sm:col-span-2 text-sm text-slate-500">
-                        Neither of these goes on your listing. We use them to tell you about
-                        your application and about work coming in.
+                        Neither goes on your listing — we use them to reach you about your work.
                     </p>
                 </section>
                 )}
@@ -4459,6 +6199,21 @@ function ApplicationForm() {
 
                 </div>{/* /the questions */}
 
+                {/* A right-side spacer mirroring the rail's width. The panel
+                    centres its content (mx-auto) within the space BETWEEN the rail
+                    and this spacer; with the spacer matching the rail, that space
+                    is the full body width minus 2×rail, so the content's centre —
+                    and therefore its left edge — is independent of the rail width.
+                    Without it the panel centres in the rail-left-only space and the
+                    whole column slides by half the rail's width change every time
+                    the rail collapses/expands. Hidden below lg, like the rail. */}
+                {isGuest && currentSection && flowSections.length > 0 && (
+                    <div aria-hidden
+                        className={'hidden lg:block shrink-0 transition-[width] duration-300 ease-out '
+                            + (railCollapsed ? 'w-16' : 'w-72')} />
+                )}
+                </div>{/* /the two-column body (rail + questions) */}
+
                 {/* ---- footer: Back, and the way on ----
                     Fixed to the bottom of the modal rather than sitting under
                     the content, so on a phone the way forward is under your
@@ -4468,7 +6223,9 @@ function ApplicationForm() {
                         route change: routing would remount this component and
                         take every field with it, which is the bug that makes
                         people distrust a stepped form. */}
-                    {(position > 1 || openGroup) ? (
+                    {/* For a guest, Back lives top-left in the takeover bar, so
+                        the footer carries only the way on. A trade keeps Back here. */}
+                    {!isGuest && ((position > 1 || openGroup) ? (
                         <button
                             type="button"
                             onClick={goBack}
@@ -4485,28 +6242,68 @@ function ApplicationForm() {
                             <ChevronLeft className="w-4 h-4" />
                             Back
                         </Link>
+                    ))}
+
+                    {/* A required guest step says exactly what is missing beside
+                        the greyed Next; a skippable one says so. Either way the
+                        Next is never a silent dead end and a skippable screen is
+                        never mistaken for one she must fill. */}
+                    {stepMissing && (
+                        <p className="text-sm font-medium text-amber-700 pr-1">{stepMissing}</p>
+                    )}
+                    {stepIsOptional && (
+                        <p className="text-sm text-slate-400 pr-1">
+                            {step === 'g_creds' ? GUEST_SCREEN_COPY.expertiseFootnote : 'Optional — you can skip this'}
+                        </p>
                     )}
 
                     <div className="flex-1" />
 
-                    {/* Step one has no Next: choosing the trade is what moves
-                        it on, and a Next beside it would be a button that
-                        cannot do anything until a card is tapped.
+                    {/* The guest picker screens (group, sub-type) now carry a
+                        Next like every other step — select a card, then Next —
+                        so the two behave the same. A host's step one still
+                        advances on the card itself and has no Next.
 
                         The last step has no Next either -- it has send, which
                         is already in the panel above with the words about what
-                        it does. Two buttons that both look like the end of the
-                        form is one too many. */}
-                    {step !== 'trade' && !lastStep && (
-                        <button
-                            type="button"
-                            onClick={goNext}
-                            className="inline-flex items-center gap-1.5 rounded-full bg-emerald-700 hover:bg-emerald-800 text-white px-6 py-2.5 text-sm font-semibold transition"
-                        >
-                            Next
-                            <ChevronRight className="w-4 h-4" />
-                        </button>
-                    )}
+                        it does. */}
+                    {!lastStep && step !== 'g_verify' && (step !== 'trade' || isGuest) && (() => {
+                        const disabled = isGuest && (
+                            step === 'trade' ? !guestGroup
+                            : step === 'g_subtype' ? !guestCategory
+                            // g_you has no gate: Next is enabled from load. The
+                            // shown number is the accepted answer, stored on Next.
+                            : step === 'g_creds' ? (!professionalTitle.trim() || (catQualsRequired && !qualifications.trim()))
+                            : step === 'g_photos' ? photos.length === 0
+                            : step === 'g_area' ? (stepProblems.length > 0 || !!whereMissing)
+                            : stepProblems.length > 0
+                        );
+                        const onNext = () => {
+                            if (isGuest && step === 'trade') return advanceFromGroup();
+                            if (isGuest && step === 'g_subtype') return advanceFromSubtype();
+                            // Pass the years screen without touching it: the shown
+                            // number is the answer they accepted, so store it now.
+                            if (isGuest && step === 'g_you' && !yearsDoing.trim()) setYearsDoing(String(YEARS_DEFAULT));
+                            // Same rule for max guests: an untouched pass stores
+                            // the shown default; a loaded value is left as it is.
+                            if (isGuest && step === 'g_capacity' && !maxGuests.trim()) setMaxGuests(String(shape === 'comes_to_you' ? CAPACITY_DEFAULT_TRAVEL : CAPACITY_DEFAULT_SLOT));
+                            goNext();
+                        };
+                        return (
+                            <button
+                                type="button"
+                                onClick={onNext}
+                                disabled={disabled}
+                                className={'inline-flex items-center gap-1.5 rounded-full px-6 py-2.5 text-sm font-semibold transition '
+                                    + (disabled
+                                        ? 'bg-slate-200 text-slate-400 cursor-not-allowed'
+                                        : 'bg-emerald-700 hover:bg-emerald-800 text-white')}
+                            >
+                                Next
+                                <ChevronRight className="w-4 h-4" />
+                            </button>
+                        );
+                    })()}
 
                     {/* The last step's forward action, in the place every other
                         step keeps one: Back on the left, the thing that moves

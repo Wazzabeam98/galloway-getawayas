@@ -7,7 +7,7 @@
 // the bookable sessions inside the stay folded in.
 
 import { isLiveToGuests, mccForProvider, isFoodProvider, normaliseUnit } from '@/lib/serviceOrders';
-import { pointForListing, coversPoint, guestCategory } from '@/lib/serviceProviders';
+import { guestCategory, knownDietaryOptions } from '@/lib/serviceProviders';
 import { shapeOf, generateSessions, sessionCapacity, seatsLeft } from '@/lib/serviceSlots';
 import { getImageUrl } from '@/lib/utils';
 import { shiftDayKey } from '@/lib/dayKey';
@@ -31,6 +31,15 @@ export interface MpProvider {
     // What a food business can cater for, in their own words; null when they
     // haven't said, which the listing shows plainly rather than staying silent.
     dietary_note: string | null;
+    // What the provider can cater for, as keys (DIETARY_OPTIONS), from
+    // guest_details jsonb. Shown as chips; the note carries the caveats.
+    dietary_options: string[];
+    // The person's professional title ("Chef and restaurant owner"), from
+    // guest_details jsonb — shown beneath the title (which is now their name).
+    professional_title: string | null;
+    // The provider's own walk-through of the experience, from guest_details jsonb.
+    // Displayed on the experience page; null when they didn't write one.
+    what_happens: string | null;
     description: string | null;
     shape: string;
     priceFrom: number;
@@ -42,6 +51,10 @@ export interface MpProvider {
     // Made-to-order only: notice needed, in days — gates the earliest bookable date.
     lead_time_days: number;
     hero: string | null;
+    // The regions this provider covers, in their own words — a line on the card.
+    // Informational since coverage stopped filtering; empty for a provider who
+    // predates the region picker.
+    areas: string[];
     // The only honest trust signal we can show today: how many confirmed
     // bookings this provider has taken through the site. Zero reads as "New
     // here" on the card rather than as nothing — a stranger booking a chef into
@@ -88,19 +101,16 @@ export async function loadMarketplace(
         .from('listings').select('id, location, latitude, longitude').eq('id', booking.listing_id).maybeSingle();
     if (!listing) return { open: true, stay: staySpan(booking), listing: null, providers: [] };
 
-    const point = pointForListing(listing);
-    if (!point) return { open: true, stay: staySpan(booking), listing: { id: listing.id, location: listing.location }, providers: [] };
-
     const { data: rows } = await admin
         .from('service_providers')
-        .select('id, business_name, provider_name, based_line, headshot, trade, custom_label, stripe_mcc, description, status, stripe_payouts_enabled, shape, slot_length_minutes, slot_capacity, cancellation_window_hours, lead_time_days, dietary_note')
+        .select('id, business_name, provider_name, based_line, headshot, trade, custom_label, stripe_mcc, description, status, stripe_payouts_enabled, shape, slot_length_minutes, slot_capacity, cancellation_window_hours, lead_time_days, dietary_note, guest_details')
         .eq('audience', 'guest').eq('status', 'approved').eq('stripe_payouts_enabled', true);
 
     const ids = (rows || []).map((r: any) => r.id);
     if (!ids.length) return { open: true, stay: staySpan(booking), listing: { id: listing.id, location: listing.location }, providers: [] };
 
     const [{ data: areas }, { data: itemRows }, { data: avail }, { data: blocks }, { data: sessRows }, { data: orderRows }] = await Promise.all([
-        admin.from('service_areas').select('provider_id, centre_lat, centre_lng, radius_miles').in('provider_id', ids),
+        admin.from('service_areas').select('provider_id, label').in('provider_id', ids),
         admin.from('service_provider_items').select('id, provider_id, name, description, price, unit, image, sort_order, created_at')
             .in('provider_id', ids).eq('active', true).gt('price', 0)
             .order('sort_order', { ascending: true }).order('created_at', { ascending: true }),
@@ -138,7 +148,6 @@ export async function loadMarketplace(
             unit: normaliseUnit(it.unit), image: it.image ? getImageUrl(it.image) : null,
         }));
         if (!items.length) continue;
-        if (!coversPoint(areasBy[p.id] || [], point.lat, point.lng)) continue;
 
         const shape = shapeOf(p);
         let sessions: MpSession[] = [];
@@ -172,6 +181,9 @@ export async function loadMarketplace(
             category: guestCategory(p),
             isFood: isFoodProvider(p),
             dietary_note: p.dietary_note || null,
+            dietary_options: knownDietaryOptions((p.guest_details && Array.isArray(p.guest_details.dietary_options)) ? p.guest_details.dietary_options : []),
+            professional_title: (p.guest_details && p.guest_details.professional_title) || null,
+            what_happens: (p.guest_details && p.guest_details.what_to_expect) || null,
             description: p.description,
             shape,
             priceFrom: Math.min(...items.map((i: MpItem) => i.price)),
@@ -180,6 +192,7 @@ export async function loadMarketplace(
             cancellation_window_hours: Number(p.cancellation_window_hours) || 48,
             lead_time_days: Number(p.lead_time_days) || 0,
             hero: (items.find((i: MpItem) => i.image) || {}).image || null,
+            areas: (areasBy[p.id] || []).map((a: any) => a.label).filter(Boolean),
             bookingsCount: bookingsCountBy[p.id] || 0,
         });
     }

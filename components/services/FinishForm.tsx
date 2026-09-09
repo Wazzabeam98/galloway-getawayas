@@ -4,7 +4,7 @@ import { useState } from 'react';
 import { createClientComponentClient } from '@supabase/auth-helpers-nextjs';
 
 // One field. Everything else was typed on the wizard and is already saved.
-export default function FinishForm({ token, email }: { token: string; email: string }) {
+export default function FinishForm({ token, email, trade }: { token: string; email: string; trade?: string }) {
     const [password, setPassword] = useState('');
     const [show, setShow] = useState(false);
     const [busy, setBusy] = useState(false);
@@ -60,7 +60,7 @@ export default function FinishForm({ token, email }: { token: string; email: str
 
                 // A full navigation rather than a router push: every signed-in
                 // surface reads the session from cookies on the server.
-                window.location.href = '/services/join?finished=1';
+                window.location.href = '/services/join?trade=' + encodeURIComponent(trade || '') + '&finished=1';
                 return;
             }
 

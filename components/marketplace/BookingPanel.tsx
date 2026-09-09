@@ -18,6 +18,10 @@ interface PanelProvider {
 // Between a yyyy-mm-dd key and a local Date at midnight. Constructing from the
 // parts (not new Date(key), which parses as UTC) keeps the calendar day the guest
 // clicks and the key we send to the server the same, in any timezone.
+// The common ones as one-tap chips, so a guest names an allergy even when they
+// wouldn't type it out. Free text below still catches anything not listed.
+const COMMON_ALLERGENS = ['Nuts', 'Peanuts', 'Gluten', 'Dairy', 'Eggs', 'Fish', 'Shellfish', 'Soya', 'Sesame'];
+
 function keyToDate(key: string): Date {
     const [y, m, d] = key.split('-').map(Number);
     return new Date(y, (m || 1) - 1, d || 1);
@@ -46,7 +50,9 @@ export default function BookingPanel({ bookingId, checkIn, checkOut, provider }:
     const [qty, setQty] = useState<number>(1);
     const [date, setDate] = useState<string>('');
     const [session, setSession] = useState<PanelSession | null>(null);
+    const [dayIdx, setDayIdx] = useState<number>(0);
     const [allergy, setAllergy] = useState<string>('');
+    const [allergyTags, setAllergyTags] = useState<string[]>([]);
     const [note, setNote] = useState<string>('');
     const [busy, setBusy] = useState(false);
     const [error, setError] = useState<string | null>(null);
@@ -89,7 +95,11 @@ export default function BookingPanel({ bookingId, checkIn, checkOut, provider }:
         try {
             const url = isSlot ? '/api/services/slots/book' : '/api/services/order';
             const trimmedNote = note.trim();
-            const trimmedAllergy = provider.isFood ? allergy.trim() : '';
+            // Ticked chips first, then anything typed — one string the provider
+            // reads on its own line / badge.
+            const trimmedAllergy = provider.isFood
+                ? [allergyTags.join(', '), allergy.trim()].filter(Boolean).join(allergyTags.length && allergy.trim() ? ' — ' : '')
+                : '';
             const body = isSlot
                 ? { providerId: provider.id, bookingId, sessionDate: session!.date, sessionTime: session!.time, quantity, note: trimmedNote, allergy: trimmedAllergy }
                 : { itemId: item.id, bookingId, serviceDate: date, quantity, note: trimmedNote, allergy: trimmedAllergy };
@@ -112,6 +122,20 @@ export default function BookingPanel({ bookingId, checkIn, checkOut, provider }:
                 {!isSlot && provider.items.length > 1 && !item ? (
                     <span className="text-sm text-slate-400">choose below</span>
                 ) : null}
+            </div>
+
+            {/* How it books — a badge, so instant and 48-hour-hold don't rely on
+                one line of small print above the button to tell them apart. */}
+            <div className="mt-2">
+                {isSlot ? (
+                    <span className="inline-flex items-center rounded-full bg-emerald-50 px-2.5 py-0.5 text-xs font-semibold text-emerald-800">
+                        Instant book — confirmed straight away
+                    </span>
+                ) : (
+                    <span className="inline-flex items-center rounded-full bg-amber-100 px-2.5 py-0.5 text-xs font-semibold text-amber-900">
+                        Request — {provider.who} has 48 hours to confirm
+                    </span>
+                )}
             </div>
 
             {/* Menu pick — request shapes with more than one item */}
@@ -137,35 +161,50 @@ export default function BookingPanel({ bookingId, checkIn, checkOut, provider }:
                 </fieldset>
             )}
 
-            {/* Slot picker — days and times, with seats left */}
+            {/* Slot picker — pick a DAY first (a row of day pills), then the
+                times for that day, so it's never a wall of every day's slots at
+                once. "N left" shows only when a SHARED session is genuinely low;
+                a whole-hire session (capacity 1) never shows "1 left", which read
+                as false scarcity on every slot. */}
             {isSlot && (
                 <div className="mt-4">
-                    <div className="text-xs font-semibold uppercase tracking-wide text-slate-500">Pick a time</div>
                     {days.length === 0 ? (
                         <p className="mt-2 text-sm text-slate-500">No times left during your stay.</p>
-                    ) : (
-                        <div className="mt-2 max-h-64 space-y-3 overflow-y-auto pr-1">
-                            {days.map((d) => (
-                                <div key={d.date}>
-                                    <div className="text-xs font-medium text-slate-500">{dateLabel(d.date)}</div>
-                                    <div className="mt-1.5 flex flex-wrap gap-1.5">
-                                        {d.times.map((s) => {
-                                            const on = session && session.date === s.date && session.time === s.time;
-                                            const low = s.seatsLeft <= 2;
-                                            return (
-                                                <button key={s.time} type="button"
-                                                    onClick={() => { setSession(s); setQty(1); }}
-                                                    className={`rounded-lg border px-2.5 py-1.5 text-sm transition ${on ? 'border-emerald-600 bg-emerald-600 text-white' : 'border-slate-300 text-slate-700 hover:border-slate-400'}`}>
-                                                    {timeLabel(s.time)}
-                                                    {low ? <span className={`ml-1 text-[10px] ${on ? 'text-emerald-100' : 'text-amber-600'}`}>{s.seatsLeft} left</span> : null}
-                                                </button>
-                                            );
-                                        })}
-                                    </div>
+                    ) : (() => {
+                        const active = Math.min(dayIdx, days.length - 1);
+                        const day = days[active];
+                        return (
+                            <>
+                                <div className="text-xs font-semibold uppercase tracking-wide text-slate-500">Pick a day</div>
+                                <div className="mt-2 flex gap-1.5 overflow-x-auto pb-1">
+                                    {days.map((d, i) => {
+                                        const on = i === active;
+                                        return (
+                                            <button key={d.date} type="button" onClick={() => setDayIdx(i)}
+                                                className={`flex-none rounded-lg border px-3 py-1.5 text-sm transition ${on ? 'border-emerald-600 bg-emerald-600 text-white' : 'border-slate-300 text-slate-700 hover:border-slate-400'}`}>
+                                                {dateLabel(d.date)}
+                                            </button>
+                                        );
+                                    })}
                                 </div>
-                            ))}
-                        </div>
-                    )}
+                                <div className="mt-3 text-xs font-semibold uppercase tracking-wide text-slate-500">Pick a time</div>
+                                <div className="mt-1.5 flex flex-wrap gap-1.5">
+                                    {day.times.map((s) => {
+                                        const on = session && session.date === s.date && session.time === s.time;
+                                        const low = s.capacity > 1 && s.seatsLeft >= 1 && s.seatsLeft <= 2;
+                                        return (
+                                            <button key={s.time} type="button"
+                                                onClick={() => { setSession(s); setQty(1); }}
+                                                className={`rounded-lg border px-2.5 py-1.5 text-sm transition ${on ? 'border-emerald-600 bg-emerald-600 text-white' : 'border-slate-300 text-slate-700 hover:border-slate-400'}`}>
+                                                {timeLabel(s.time)}
+                                                {low ? <span className={`ml-1 text-[10px] ${on ? 'text-emerald-100' : 'text-amber-600'}`}>{s.seatsLeft} left</span> : null}
+                                            </button>
+                                        );
+                                    })}
+                                </div>
+                            </>
+                        );
+                    })()}
                 </div>
             )}
 
@@ -217,6 +256,19 @@ export default function BookingPanel({ bookingId, checkIn, checkOut, provider }:
                         Allergies &amp; dietary needs
                         <span className="ml-1 font-normal normal-case tracking-normal text-slate-400">(optional)</span>
                     </span>
+                    <div className="mt-2 flex flex-wrap gap-1.5">
+                        {COMMON_ALLERGENS.map((a) => {
+                            const on = allergyTags.includes(a);
+                            return (
+                                <button key={a} type="button"
+                                    aria-pressed={on}
+                                    onClick={() => setAllergyTags((prev) => on ? prev.filter((x) => x !== a) : [...prev, a])}
+                                    className={`rounded-full border px-2.5 py-1 text-xs transition ${on ? 'border-rose-500 bg-rose-500 text-white' : 'border-rose-300 text-rose-700 hover:border-rose-400'}`}>
+                                    {a}
+                                </button>
+                            );
+                        })}
+                    </div>
                     <textarea
                         value={allergy}
                         onChange={(e) => setAllergy(e.target.value.slice(0, 500))}

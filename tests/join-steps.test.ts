@@ -29,12 +29,15 @@ const {
     firstStepWithProblem,
     openingStep,
     openingVisited,
+    sectionsFor,
+    sectionForStep,
 } = require('@/lib/joinSteps');
 
 const {
     TRADES, submitProblems, planForTrade,
     capabilityFor, pricedOfferingsFor, showsRates, extrasFor, bandsFor,
-    asksAboutFuel, asksAboutSkills, offerableSchemes,
+    asksAboutFuel, asksAboutSkills, offerableSchemes, checksFor,
+    guestAsksExpertise, guestQualificationsRequired, guestYearsRequired,
 } = require('@/lib/serviceProviders');
 
 const keys = (trade: string) => stepsFor(trade).map((s: any) => s.key);
@@ -446,22 +449,329 @@ test('what counts as seen matches where they land', () => {
     assert.equal(Array.isArray(seen) && seen.indexOf('finish') !== -1, true);
 });
 
-test('a guest with no category yet opens on the picker, not the business step', () => {
-    // The trade ('guest') is already in the URL, but the category is the guest's
-    // version of step one and has not been answered.
+test('a guest with no session opens on the verify gate, before the picker', () => {
+    // The account moved to the very front. Trade ('guest') is in the URL, but
+    // with no session the first screen is g_verify — ahead of the category
+    // picker, whatever else is or isn't answered.
     assert.equal(
         openingStep({ hydrated: true, restored: false, lodged: false, trade: 'guest', guestNeedsCategory: true }),
-        'trade',
+        'g_verify',
     );
-    // Once a category is picked (or a returning provider is loaded), the flag is
-    // false and they go on to the business step like anyone with an answered step one.
     assert.equal(
         openingStep({ hydrated: true, restored: false, lodged: false, trade: 'guest', guestNeedsCategory: false }),
-        'business',
+        'g_verify',
+        'still the gate first, even with a category already picked',
     );
-    // The picker is what they have seen when they land there.
+    // Nothing is behind the gate when they land on it.
     assert.deepEqual(
         openingVisited({ hydrated: true, restored: false, lodged: false, trade: 'guest', guestNeedsCategory: true }),
         [],
     );
+});
+
+test('a signed-in guest skips the gate — the picker if no category, else the first content screen', () => {
+    // A returning applicant, already signed in: the gate is behind them, so they
+    // open on the category picker (no category yet) or straight on the content.
+    assert.equal(
+        openingStep({ hydrated: true, restored: false, lodged: false, trade: 'guest', guestNeedsCategory: true, hasSession: true }),
+        'trade',
+    );
+    assert.equal(
+        // First content screen is the About-you opener for an expertise category.
+        openingStep({ hydrated: true, restored: false, lodged: false, trade: 'guest', guestNeedsCategory: false, hasSession: true, category: 'chef' }),
+        'g_you',
+    );
+    assert.equal(
+        // A sauna skips the expertise screens, so it opens on Location (g_area) —
+        // its where-and-when step, which holds the weekly schedule — never g_you,
+        // a step it does not have. This is the returning-sauna reorder fix.
+        openingStep({ hydrated: true, restored: false, lodged: false, trade: 'guest', guestNeedsCategory: false, hasSession: true, category: 'sauna' }),
+        'g_area',
+    );
+});
+
+// --- the guest-experience split -------------------------------------------
+//
+// The guest is the one trade 'guest'. Its later steps branch on the category
+// (its food flag) and the booking shape, passed in a StepContext. Without a
+// context the split stays off, so the flow is exactly what it was before —
+// this is what lets the component adopt it a piece at a time without breaking.
+
+const gkeys = (ctx: any) => stepsFor('guest', ctx).map((s: any) => s.key);
+
+test('a guest with no context still sees the old three steps', () => {
+    // The migration safety net: no context, no split.
+    assert.deepEqual(stepsFor('guest').map((s: any) => s.key), ['trade', 'business', 'finish']);
+});
+
+// The rebuilt flow, reordered to Airbnb's sequence and with the account gate
+// moved to the VERY FRONT (Sep 2026). g_verify — the verify-your-email gate that
+// makes the account — is the first screen of all, before the category picker:
+// picking "Host a guest experience" on the fork lands them straight on it, and
+// nothing comes before the account. Then the picker ('trade' group grid),
+// g_subtype, and the content: About you (g_you, g_creds), Location (g_area)
+// straight after, Photos (g_photos) BEFORE the writing (you describe your
+// kitchen better having just uploaded photos of it), Pricing (g_menu), Details
+// (g_expect), the naming/describing (g_about) near the end, and the Finish
+// wrap-up (g_checks, g_contact, finish). The booking shape is inferred from the
+// category and never a step; availability folds into g_area; dietary folds into
+// g_expect; the business step is host-only (the name rides on g_about). So an
+// anonymous applicant with a sub-type walks these thirteen keys — g_verify
+// leading, because they have no session yet. A signed-in applicant skips
+// g_verify (see the test below).
+// No naming step (g_about) any more: a guest experience is a person, so the
+// listing title is their account name, derived at submit — never asked.
+const TWELVE = [
+    'g_verify', 'trade', 'g_subtype', 'g_you', 'g_creds', 'g_area', 'g_photos',
+    'g_menu', 'g_expect', 'g_checks', 'g_contact', 'finish',
+];
+
+// A comes-to-you or slot category also has a max-guests step (g_capacity) at the
+// head of the Pricing section, just before g_menu. A made-to-order product
+// (cakes, hampers) and 'other' have no guest count, so they keep the thirteen.
+const withCapacity = (keys: string[]) => {
+    const out = keys.slice();
+    out.splice(out.indexOf('g_menu'), 0, 'g_capacity');
+    return out;
+};
+
+test('a chef (food, comes to them) walks the flow, with a capacity step, and never sees the business step', () => {
+    const ctx = { group: 'food', category: 'chef', shape: 'comes_to_you' };
+    assert.deepEqual(gkeys(ctx), withCapacity(TWELVE));
+    // The old "how do guests get it?" screen is gone — the shape is inferred.
+    assert.equal(stepApplies('business', 'guest', ctx), false, 'a guest names it on g_about, not a business step');
+    assert.equal(stepApplies('g_capacity', 'guest', ctx), true, 'a chef sets a largest group');
+});
+
+test('the verify gate leads the flow for an anonymous applicant and is gone once signed in', () => {
+    // The account moved to the very front: an applicant with no session verifies
+    // their email before the category picker, and everything after runs
+    // authenticated. A returning applicant who is already signed in never sees it.
+    const anon = { group: 'food', category: 'chef', shape: 'comes_to_you' };
+    assert.equal(stepApplies('g_verify', 'guest', anon), true, 'anonymous applicant must verify');
+    assert.equal(gkeys(anon).indexOf('g_verify'), 0, 'the gate is the very first screen, before the picker');
+
+    const signedIn = { ...anon, hasSession: true };
+    assert.equal(stepApplies('g_verify', 'guest', signedIn), false, 'a signed-in applicant skips it');
+    assert.equal(gkeys(signedIn).indexOf('g_verify'), -1, 'the gate is not in a signed-in flow');
+    // Everything else is unchanged — the signed-in flow is the thirteen (plus
+    // the chef's capacity step) minus g_verify.
+    assert.deepEqual(gkeys(signedIn), withCapacity(TWELVE).filter((k) => k !== 'g_verify'));
+});
+
+test('a signed-in applicant is never resolved onto the verify gate by a restored draft', () => {
+    // The bug: the restore path resolved a saved step with a context that left
+    // hasSession out, so g_verify counted as a live step and a signed-in user
+    // with any draft landed on the email screen. With the session carried, the
+    // gate is not a step for them, so a draft saved on it resolves to a real one.
+    const signedIn = { group: 'food', category: 'chef', shape: 'comes_to_you', hasSession: true };
+    assert.equal(stepsFor('guest', signedIn).some((s: any) => s.key === 'g_verify'), false);
+    assert.notEqual(resolveStep('guest', 'g_verify', signedIn), 'g_verify');
+    // Anonymous is unchanged — the gate is still a real step it can rest on.
+    const anon = { group: 'food', category: 'chef', shape: 'comes_to_you' };
+    assert.equal(resolveStep('guest', 'g_verify', anon), 'g_verify');
+});
+
+test('a cake maker (made to order) gets the years and expertise screens too', () => {
+    // Made-to-order food was cut from these screens for a while, then brought
+    // back: a cake maker has a track record and a story worth showing. So it
+    // walks the full flow now, with g_you and g_creds. The lead time it needs
+    // lives inside the where-and-when step, not a screen of its own.
+    const ctx = { group: 'food', category: 'food_order', shape: 'made_to_order' };
+    assert.deepEqual(gkeys(ctx), TWELVE);
+    assert.equal(stepApplies('g_you', 'guest', ctx), true, 'years asked');
+    assert.equal(stepApplies('g_creds', 'guest', ctx), true, 'expertise asked');
+    // Cakes and hampers have no guests, so no max-guests step.
+    assert.equal(stepApplies('g_capacity', 'guest', ctx), false, 'made-to-order skips the capacity step');
+});
+
+test('a yoga instructor (not food, slot) walks the flow, with a capacity step and dietary folded away', () => {
+    const ctx = { group: 'wellness', category: 'yoga', shape: 'slot' };
+    assert.deepEqual(gkeys(ctx), withCapacity(TWELVE));
+    assert.equal(stepApplies('g_capacity', 'guest', ctx), true, 'a slot sets how many the space holds');
+    // Dietary is no longer a step — it renders inside g_expect for a food
+    // category only, so a yoga class simply never sees that field.
+    assert.equal(stepApplies('g_area', 'guest', ctx), true, 'a slot still needs a location, on the where-and-when step');
+    // What guests can expect and the photos step are asked of everyone.
+    assert.equal(stepApplies('g_expect', 'guest', ctx), true);
+    assert.equal(stepApplies('g_photos', 'guest', ctx), true);
+});
+
+test('expertise and years are asked of every category except the sauna', () => {
+    // Sauna is the only sub-type that skips them now — nobody books a hot barrel
+    // for the owner's CV. Everyone else, including the crafts and made-to-order
+    // food, gets both screens.
+    for (const ctx of [
+        { group: 'food', category: 'chef', shape: 'comes_to_you' },
+        { group: 'food', category: 'food_order', shape: 'made_to_order' },
+        { group: 'wellness', category: 'yoga', shape: 'slot' },
+        { group: 'crafts', category: 'pottery', shape: 'slot' },
+        { group: 'crafts', category: 'painting', shape: 'slot' },
+        { group: 'crafts', category: 'workshops', shape: 'slot' },
+        { group: 'other', category: 'other', shape: null },
+    ]) {
+        assert.equal(stepApplies('g_you', 'guest', ctx), true, JSON.stringify(ctx) + ' is asked years');
+        assert.equal(stepApplies('g_creds', 'guest', ctx), true, JSON.stringify(ctx) + ' is asked for expertise');
+        assert.equal(stepApplies('g_photos', 'guest', ctx), true, JSON.stringify(ctx) + ' has a photos step');
+    }
+    // Only the sauna skips both — and it still has a photos step.
+    const sauna = { group: 'wellness', category: 'sauna', shape: 'slot' };
+    assert.equal(stepApplies('g_you', 'guest', sauna), false, 'sauna skips years');
+    assert.equal(stepApplies('g_creds', 'guest', sauna), false, 'sauna skips expertise');
+    assert.equal(stepApplies('g_photos', 'guest', sauna), true, 'sauna still has photos');
+});
+
+test('every guest confirms their checks, and the set is chosen for the category', () => {
+    // g_checks is on for every guest — at least the two universal declarations
+    // (insurance, accuracy). A food category adds its own; "Something else",
+    // which has no category, still gets the universal pair.
+    for (const ctx of [
+        { group: 'food', category: 'chef', shape: 'comes_to_you' },
+        { group: 'wellness', category: 'sauna', shape: 'slot' },
+        { group: 'other', category: 'other', shape: null },
+    ]) {
+        assert.equal(stepApplies('g_checks', 'guest', ctx), true, JSON.stringify(ctx) + ' has a checks step');
+    }
+    // A chef is asked more than a bare "Something else": the food declarations
+    // sit on top of the universal pair.
+    const chefChecks = checksFor('chef').map((c: any) => c.key);
+    const otherChecks = checksFor('other').map((c: any) => c.key);
+    assert.deepEqual(otherChecks, ['insurance', 'accurate'], 'other gets only the universal pair');
+    assert.equal(chefChecks.includes('food_registered'), true, 'a chef confirms food registration');
+    assert.equal(chefChecks.includes('allergens'), true, 'a chef confirms allergens');
+    assert.equal(chefChecks.length > otherChecks.length, true, 'a chef is asked more than "something else"');
+    // A tasting is the only food category that confirms an alcohol licence.
+    assert.equal(checksFor('tastings').some((c: any) => c.key === 'alcohol'), true, 'a tasting confirms alcohol');
+    assert.equal(checksFor('chef').some((c: any) => c.key === 'alcohol'), false, 'a chef does not');
+    // A sauna confirms its heat-and-cold statement; a chef never sees it.
+    assert.equal(checksFor('sauna').some((c: any) => c.key === 'sauna_safe'), true);
+    assert.equal(checksFor('chef').some((c: any) => c.key === 'sauna_safe'), false);
+});
+
+test('years and qualifications are required only where physical safety is at stake', () => {
+    // The line, category by category (Sep 2026). The four where a guide holds
+    // someone's safety require both; a private chef requires a track record but
+    // not a certificate (food hygiene is a separate check); a made-to-order
+    // product asks neither; everyone else asks, optionally.
+    const REQUIRE_BOTH = ['outdoors', 'water', 'massage', 'yoga'];
+    for (const c of REQUIRE_BOTH) {
+        assert.equal(guestYearsRequired(c), true, c + ' requires years');
+        assert.equal(guestQualificationsRequired(c), true, c + ' requires qualifications');
+        assert.equal(guestAsksExpertise(c), true, c + ' is asked');
+    }
+
+    // The food experiences where the person is the draw: years required,
+    // qualifications optional. The private chef in your kitchen, the tasting host
+    // whose knowledge is the product, and the cooking class you're paying to be
+    // taught — none forced to hold a certificate (food hygiene is a check).
+    for (const c of ['chef', 'tastings', 'cooking']) {
+        assert.equal(guestYearsRequired(c), true, c + ' needs a track record');
+        assert.equal(guestQualificationsRequired(c), false, c + ' is not forced to hold a qualification');
+        assert.equal(guestAsksExpertise(c), true, c + ' is asked');
+    }
+
+    // The optional middle — asked, qualifications never forced. The crafts and
+    // made-to-order food are back in this group, and 'other' is the catch-all.
+    for (const c of ['other', 'food_order', 'pottery', 'painting', 'workshops']) {
+        assert.equal(guestQualificationsRequired(c), false, c + ' does not force qualifications');
+        assert.equal(guestAsksExpertise(c), true, c + ' is asked, qualifications optional');
+    }
+
+    // Skipped entirely: only the sauna. The years and expertise screens never
+    // appear for it, because the answer changes neither the booking nor the
+    // approval — a hot barrel is booked for being warm, clean and well-sited.
+    assert.equal(guestAsksExpertise('sauna'), false, 'sauna skips the years and expertise screens');
+});
+
+test('the something-else group skips the sub-type screen', () => {
+    // 'other' is alone under its group, so there is no screen two to show.
+    const ctx = { group: 'other', category: 'other', shape: null };
+    assert.equal(stepApplies('g_subtype', 'guest', ctx), false, 'other has no sub-type');
+    // The thirteen minus the sub-type screen — the verify gate still leads, then
+    // the picker, then straight into the content.
+    assert.deepEqual(
+        gkeys(ctx),
+        ['g_verify', 'trade', 'g_you', 'g_creds', 'g_area', 'g_photos', 'g_menu', 'g_expect', 'g_checks', 'g_contact', 'finish'],
+    );
+});
+
+test('the guest split never touches a host trade', () => {
+    const ctx = { group: 'food', category: 'chef', shape: 'comes_to_you' };
+    // A guest context passed to a plumber changes nothing about the plumber.
+    assert.deepEqual(
+        stepsFor('plumber', ctx).map((s: any) => s.key),
+        stepsFor('plumber').map((s: any) => s.key),
+    );
+    for (const k of ['g_subtype', 'g_verify', 'g_you', 'g_creds', 'g_capacity', 'g_menu', 'g_expect', 'g_photos', 'g_area', 'g_checks', 'g_contact']) {
+        assert.equal(stepApplies(k as any, 'plumber', ctx), false, k + ' is off for a host trade');
+    }
+});
+
+test('guest movement and the last step honour the context', () => {
+    const ctx = { group: 'wellness', category: 'sauna', shape: 'slot' };
+    assert.equal(nextStep('guest', 'g_menu', ctx), 'g_expect');
+    assert.equal(previousStep('guest', 'g_expect', ctx), 'g_menu');
+    assert.equal(isLastStep('guest', 'finish', ctx), true);
+    assert.equal(isLastStep('guest', 'g_contact', ctx), false);
+    // The business step is off for a guest-with-context, so it resolves back to
+    // a real one rather than stranding them.
+    assert.equal(resolveStep('guest', 'business', ctx), 'finish');
+});
+
+// --- the named sections (the progress rail) --------------------------------
+//
+// The flow is grouped into named sections, not a "Step 5 of 12" count. The rail
+// and the per-screen eyebrow both read from sectionsFor / sectionForStep, so
+// they can't disagree about the flow.
+
+test('the guest flow is six named sections, in Airbnb order', () => {
+    const ctx = { group: 'food', category: 'chef', shape: 'comes_to_you' };
+    const secs = sectionsFor('guest', ctx);
+    // The old "Experience" section is gone: its only screen was the naming step,
+    // which is now a pre-rail name-only step (g_about) and its description field
+    // was cut. What is left is six sections.
+    assert.deepEqual(secs.map((s: any) => s.key),
+        ['about', 'location', 'photos', 'pricing', 'details', 'finish']);
+    // About you pairs the years screen and the expertise hub; every other
+    // content section is a single screen; Finish gathers the wrap-up.
+    assert.deepEqual(secs.find((s: any) => s.key === 'about').steps, ['g_you', 'g_creds']);
+    // Pricing leads with the capacity step, then the priced offerings.
+    assert.deepEqual(secs.find((s: any) => s.key === 'pricing').steps, ['g_capacity', 'g_menu']);
+    assert.deepEqual(secs.find((s: any) => s.key === 'finish').steps, ['g_checks', 'g_contact', 'finish']);
+    // The rail jumps to a section's first live step.
+    assert.equal(secs.find((s: any) => s.key === 'location').firstStep, 'g_area');
+});
+
+test('a section with no screens drops out of the rail entirely', () => {
+    // The sauna skips BOTH the years screen and the expertise hub, so its About
+    // you section has nothing in it — and a section with no live steps drops
+    // out rather than sitting in the rail as a dead label. So the sauna's rail
+    // is six sections, opening at Location.
+    const sauna = sectionsFor('guest', { group: 'wellness', category: 'sauna', shape: 'slot' });
+    assert.equal(sauna.some((s: any) => s.key === 'about'), false, 'sauna has no About you section');
+    assert.deepEqual(sauna.map((s: any) => s.key),
+        ['location', 'photos', 'pricing', 'details', 'finish']);
+});
+
+test('the pickers and the name step sit before the rail, in no section', () => {
+    // The flow branches on the group and the sub-type, so the rail can't be
+    // drawn until they're answered — and listing them would imply you can change
+    // category mid-flow and invalidate everything after it.
+    assert.equal(sectionForStep('trade'), null);
+    assert.equal(sectionForStep('g_subtype'), null);
+    // The verify-email gate is pre-rail too — the rail begins once the account
+    // exists, at About you.
+    assert.equal(sectionForStep('g_verify'), null);
+    // The name step (g_about) sits right after the sub-type, before the rail
+    // begins — it belongs to no section, like the pickers it follows.
+    assert.equal(sectionForStep('g_about'), null);
+    // A content screen carries its section; About you covers the first two.
+    assert.equal(sectionForStep('g_you').key, 'about');
+    assert.equal(sectionForStep('g_creds').key, 'about');
+});
+
+test('a host trade has no rail', () => {
+    // The rail is guest-only. A plumber (or a guest with no context) gets none.
+    assert.deepEqual(sectionsFor('plumber', { group: 'x', category: 'y', shape: null }), []);
+    assert.deepEqual(sectionsFor('guest'), []);
 });

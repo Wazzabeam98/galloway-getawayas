@@ -4,6 +4,7 @@ import { cookies } from 'next/headers';
 import { NextResponse } from 'next/server';
 import { bookingReleasesPrivateData } from '@/lib/bookingEntitlement';
 import { directionsUrl, appleDirectionsUrl } from '@/lib/directions';
+import { compareTripsByStart } from '@/lib/bookingOrder';
 
 export const dynamic = 'force-dynamic';
 
@@ -34,7 +35,9 @@ export async function GET() {
         .from('bookings')
         .select('*')
         .eq('guest_id', uid)
-        .order('check_in', { ascending: false });
+        .order('check_in', { ascending: true })
+        .order('check_out', { ascending: true })
+        .order('id', { ascending: true });
 
     const { data: sharedRows } = await admin
         .from('booking_guests')
@@ -49,7 +52,9 @@ export async function GET() {
             .from('bookings')
             .select('id, listing_id, host_id, guest_id, check_in, check_out, guests, adults, children, pets, status, payment_status')
             .in('id', sharedIds)
-            .order('check_in', { ascending: false })
+            .order('check_in', { ascending: true })
+            .order('check_out', { ascending: true })
+            .order('id', { ascending: true })
         : { data: [] };
 
     const trips: any[] = [];
@@ -88,7 +93,10 @@ export async function GET() {
         });
     });
 
-    trips.sort((a, b) => (a.check_in < b.check_in ? 1 : -1));
+    // Soonest first, by the shared total comparator (check-in, then check-out,
+    // then id) — the same order the page and the home card use, so a same-day
+    // tie can't put a different stay first here than they show.
+    trips.sort(compareTripsByStart);
 
     // Card-safe arrival detail, per trip — everything the Getting-there page used
     // to hold EXCEPT the two secrets: the address and a map point, the times,

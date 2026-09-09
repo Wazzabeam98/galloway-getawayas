@@ -4,7 +4,7 @@ import { logError } from '@/lib/logError';
 import { TRADES } from '@/lib/serviceProviders';
 import { withinLimits, callerAddress, GLOBAL_KEY } from '@/lib/rateLimit';
 import { sendEmail } from '@/lib/email';
-import { mintToken, verificationEmail, alreadyHaveAccountEmail } from '@/lib/serviceApplications';
+import { mintToken, verificationEmail, alreadyHaveAccountEmail, APPLICATION_PAYLOAD_KEYS } from '@/lib/serviceApplications';
 
 export const dynamic = 'force-dynamic';
 
@@ -59,34 +59,11 @@ interface Body {
     slotBlocks?: any[];
 }
 
-// Whitelists, not blacklists. Anything the browser sends that is not named here
-// is dropped rather than trusted — `status`, `approved_digest`,
-// `commission_rate` and the rest are the platform's, and an application arrives
-// from a stranger by definition.
-const PROVIDER_COLUMNS = [
-    'business_name', 'trade', 'description', 'contact_email', 'contact_phone', 'sms_opt_out',
-    'audience', 'photos', 'logo', 'does_gas', 'does_oil',
-    'callout_fee', 'hourly_rate', 'callout_waived',
-    'pricing_choice', 'billable_hourly_rate', 'covered_bands',
-    // The one fixed price a guest-trade provider charges. Whitelisted like the
-    // rest; commission_rate stays the platform's and is not here.
-    'experience_price',
-    // Who they are — a name, a line, a photo of them. Whitelisted so a
-    // first-time applicant (who posts here, having no session yet) keeps them;
-    // without this they were silently dropped for anyone applying fresh.
-    'provider_name', 'based_line', 'headshot',
-    // What a food business can cater for, in their own words. Shown on the
-    // listing; empty reads as "hasn't said" there rather than as "fine".
-    'dietary_note',
-    // The category the applicant picked and the booking shape it implies — all a
-    // STARTING POINT the owner confirms at review. Whitelisted because none of
-    // them grant live status: an applicant is not visible to guests until the
-    // owner approves them and they connect Stripe, and the owner re-checks the
-    // category, MCC and shape then. custom_label seeds the guest-facing word;
-    // shape + exclusive_per_date the booking shape; the rest its own config.
-    'custom_label', 'shape', 'exclusive_per_date',
-    'lead_time_days', 'slot_length_minutes', 'slot_capacity',
-];
+// The provider whitelist (and the wider payload whitelist that includes the
+// guest content answers) live in lib/serviceApplications.ts, so the intake here
+// and the column write at /finish read from the same source of truth. What is
+// STORED here is the wide list — the payload is jsonb and holds everything the
+// wizard collected; /finish narrows it to real columns.
 
 const AREA_COLUMNS = ['label', 'centre_lat', 'centre_lng', 'radius_miles'];
 // A slot's weekly opening hours and days off. provider_id is stamped at /finish.
@@ -217,7 +194,10 @@ export async function POST(req: Request) {
                 business_name: String(incoming.business_name || '').trim(),
                 contact_phone: String(incoming.contact_phone || '').trim() || null,
                 payload: {
-                    provider: pick(incoming, PROVIDER_COLUMNS),
+                    // The wide list: everything the wizard collected, including
+                    // the declarations and the guest content answers, kept as
+                    // jsonb. /finish narrows this to real columns.
+                    provider: pick(incoming, APPLICATION_PAYLOAD_KEYS),
                     areas: (body.areas || []).map((a) => pick(a, AREA_COLUMNS)),
                     extras: (body.extras || []).map((e) => pick(e, EXTRA_COLUMNS)),
                     prices: (body.prices || []).map((p) => pick(p, PRICE_COLUMNS)),
@@ -232,7 +212,7 @@ export async function POST(req: Request) {
                 },
                 token_hash: hash,
             })
-            .select('id, email, business_name')
+            .select('id, email, business_name, trade')
             .single();
 
         if (appError || !application) {

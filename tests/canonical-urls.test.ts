@@ -61,7 +61,7 @@ test('every indexable public page sets a canonical of its own', () => {
     // one has to say.
     const PUBLIC_PAGES: Record<string, string> = {
         'app/page.tsx': 'the home page',
-        'app/business/page.tsx': 'set up a business',
+        'app/business/page.tsx': 'start hosting',
         'app/contact/page.tsx': 'contact',
         'app/terms/page.tsx': 'terms',
         'app/privacy/page.tsx': 'privacy',

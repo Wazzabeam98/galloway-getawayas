@@ -6,7 +6,9 @@ import { adminClient } from '@/lib/supabaseAdmin';
 import { guestExperiencesOpen } from '@/lib/serviceOrders';
 import { loadMarketplace, pickProvider } from '@/lib/experiencesData';
 import { shapeCue } from '@/lib/serviceSlots';
-import { itemPriceLabel, unitPhrase, cancellationSentence } from '@/components/marketplace/present';
+import { dietaryOptionLabel } from '@/lib/serviceProviders';
+import { itemPriceLabel, unitPhrase, cancellationSentence, coverageLabel } from '@/components/marketplace/present';
+import { MapPin } from 'lucide-react';
 import BookingPanel from '@/components/marketplace/BookingPanel';
 
 export const dynamic = 'force-dynamic';
@@ -71,8 +73,10 @@ export default async function ListingPage(
                                 <img src={p.headshot} alt={who} className="h-12 w-12 rounded-full object-cover ring-1 ring-slate-200" />
                             ) : null}
                             <div>
-                                {p.provider_name && p.provider_name !== p.business_name ? (
-                                    <div className="font-medium text-slate-800">{p.provider_name}</div>
+                                {/* The title (h1) is the person's name now; the
+                                    professional title sits beneath it. */}
+                                {p.professional_title ? (
+                                    <div className="font-medium text-slate-800">{p.professional_title}</div>
                                 ) : null}
                                 {p.based_line ? <div className="text-sm text-slate-500">{p.based_line}</div> : null}
                             </div>
@@ -81,8 +85,25 @@ export default async function ListingPage(
                             </span>
                         </div>
 
+                        {coverageLabel(p) ? (
+                            <p className="mt-4 flex items-center gap-1.5 text-sm text-slate-500">
+                                <MapPin className="h-4 w-4 flex-none" aria-hidden />
+                                <span>Covers {coverageLabel(p)}</span>
+                            </p>
+                        ) : null}
+
                         {p.description ? (
                             <p className="mt-6 whitespace-pre-line text-[15px] leading-relaxed text-slate-700">{p.description}</p>
+                        ) : null}
+
+                        {/* What happens — the provider's own walk-through of the
+                            experience, start to finish. Only shown when they wrote
+                            one; the description and the menu carry the rest. */}
+                        {p.what_happens ? (
+                            <div className="mt-8">
+                                <h2 className="text-sm font-semibold uppercase tracking-wide text-slate-500">What happens</h2>
+                                <p className="mt-2 whitespace-pre-line text-[15px] leading-relaxed text-slate-700">{p.what_happens}</p>
+                            </div>
                         ) : null}
 
                         {/* The menu — the whole list, each with its photo, for a
@@ -121,9 +142,28 @@ export default async function ListingPage(
                         {p.isFood && (
                             <div className="mt-8 rounded-2xl border border-slate-200 bg-white p-4">
                                 <h3 className="text-sm font-semibold text-slate-900">Allergies &amp; dietary</h3>
-                                {p.dietary_note ? (
-                                    <p className="mt-1 whitespace-pre-line text-sm leading-relaxed text-slate-600">{p.dietary_note}</p>
+                                {(p.dietary_options.length > 0 || p.dietary_note) ? (
+                                    <>
+                                        {/* What they can cater for, as chips — a
+                                            capability, read alongside the note, which
+                                            is where the caveats live. */}
+                                        {p.dietary_options.length > 0 && (
+                                            <ul className="mt-2 flex flex-wrap gap-2">
+                                                {p.dietary_options.map((k) => (
+                                                    <li key={k} className="rounded-full bg-emerald-50 px-3 py-1 text-xs font-medium text-emerald-800 ring-1 ring-emerald-200">
+                                                        {dietaryOptionLabel(k)}
+                                                    </li>
+                                                ))}
+                                            </ul>
+                                        )}
+                                        {p.dietary_note ? (
+                                            <p className="mt-3 whitespace-pre-line text-sm leading-relaxed text-slate-600">{p.dietary_note}</p>
+                                        ) : null}
+                                    </>
                                 ) : (
+                                    /* Silence is the failure mode: when they've said
+                                       nothing at all — no chips, no note — say THAT
+                                       plainly and point the guest at the allergy field. */
                                     <p className="mt-1 text-sm leading-relaxed text-slate-500">
                                         {who} hasn’t said what they can cater for. Add any allergy or dietary need when
                                         you book{p.shape === 'slot'

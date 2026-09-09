@@ -7,6 +7,7 @@
 
 import { blockedSkills, SkillRow } from '@/lib/serviceSkills';
 import { townKey } from '@/lib/places';
+import { GUEST_CATEGORY_COPY, GUEST_SCREEN_COPY } from '@/lib/strings';
 
 // Nobody searches for "maintenance". They search for a plumber.
 //
@@ -91,26 +92,63 @@ export const GUEST_TRADES = ['guest'] as const;
 // OVERNIGHT-BUILD.md for why these nine.
 export interface GuestCategory {
     key: string;
+    group: string;   // the GUEST_GROUPS key this sub-type sits under
     label: string;   // pre-fills custom_label; shown to guests until the owner changes it
-    hint: string;    // the supporting line under the tile
+    hint: string;    // the supporting line, used on the sub-type screen
     icon: string;    // a TRADE_ICONS key (components/services/TradeTiles)
     food: boolean;   // gates the "what can you cater for?" question
     shape: 'comes_to_you' | 'made_to_order' | 'slot' | null;  // pre-selects the shape question
 }
 
-export const GUEST_CATEGORIES: GuestCategory[] = [
-    { key: 'chef', label: 'Private chef & catering', hint: 'Dinners cooked at the cottage, grazing tables', icon: 'chef', food: true, shape: 'comes_to_you' },
-    { key: 'baking', label: 'Cakes & baking', hint: 'Celebration cakes, tray bakes, fresh bread', icon: 'cake', food: true, shape: 'made_to_order' },
-    { key: 'hampers', label: 'Hampers & local produce', hint: 'Welcome hampers, fresh fish, veg boxes', icon: 'hamper', food: true, shape: 'made_to_order' },
-    { key: 'tastings', label: 'Drinks & tastings', hint: 'Whisky, gin and wine tastings', icon: 'tasting', food: true, shape: 'slot' },
-    { key: 'outdoors', label: 'Guided outdoors', hint: 'Walks, wild swimming, fishing, foraging, dark skies', icon: 'outdoors', food: false, shape: 'slot' },
-    { key: 'water', label: 'On the water', hint: 'Kayaking, paddleboarding, boat trips', icon: 'water', food: false, shape: 'slot' },
-    { key: 'wellness', label: 'Wellness & spa', hint: 'Massage, sauna, yoga', icon: 'wellness', food: false, shape: 'slot' },
-    { key: 'crafts', label: 'Arts & crafts', hint: 'Pottery, painting, make-your-own workshops', icon: 'crafts', food: false, shape: 'slot' },
-    // Always last, always the storefront icon, like the tradesman "Something
-    // else": the generic template that covers whatever the eight above don't.
-    { key: 'other', label: '', hint: 'Anything else a guest would book for their stay', icon: 'other', food: false, shape: null },
+// The top level of the guest picker — five broad cards with a glyph and a
+// name, Airbnb-style. Choosing one opens a second screen of the narrower
+// categories that sit under it; 'other' has no sub-type and goes straight on.
+export interface GuestGroup { key: string; label: string; icon: string; }
+export const GUEST_GROUPS: GuestGroup[] = [
+    { key: 'food', label: 'Food & drink', icon: 'chef' },
+    { key: 'outdoors', label: 'Outdoors & water', icon: 'outdoors' },
+    { key: 'wellness', label: 'Wellness & spa', icon: 'wellness' },
+    { key: 'crafts', label: 'Arts & crafts', icon: 'crafts' },
+    { key: 'other', label: 'Something else', icon: 'other' },
 ];
+
+// The sub-types, each tagged with its group. The booking shape and the food
+// flag live here, on the granular choice, because that is what actually decides
+// the flow — a private chef comes to you, a cake is made to order, a tasting is
+// a slot. Wellness and Arts split into three each so their group leads to a
+// real screen-two rather than a lone card.
+export const GUEST_CATEGORIES: GuestCategory[] = [
+    // Food & drink, four sub-types. The labels live in lib/strings.ts so the
+    // wording can be rewritten in one pass; the key, icon, food flag and shape
+    // are the logic and stay here. "Food to order" is the old Cakes & baking and
+    // Hampers merged — same shape, same skipped screens, same declarations, so
+    // which one it is is asked further down, not forked here.
+    { key: 'chef', group: 'food', label: GUEST_CATEGORY_COPY.chef.label, hint: GUEST_CATEGORY_COPY.chef.hint, icon: 'chef', food: true, shape: 'comes_to_you' },
+    { key: 'food_order', group: 'food', label: GUEST_CATEGORY_COPY.food_order.label, hint: GUEST_CATEGORY_COPY.food_order.hint, icon: 'hamper', food: true, shape: 'made_to_order' },
+    { key: 'tastings', group: 'food', label: GUEST_CATEGORY_COPY.tastings.label, hint: GUEST_CATEGORY_COPY.tastings.hint, icon: 'tasting', food: true, shape: 'slot' },
+    { key: 'cooking', group: 'food', label: GUEST_CATEGORY_COPY.cooking.label, hint: GUEST_CATEGORY_COPY.cooking.hint, icon: 'chef', food: true, shape: 'slot' },
+    { key: 'outdoors', group: 'outdoors', label: 'Guided outdoors', hint: 'Walks, wild swimming, fishing, foraging, dark skies', icon: 'outdoors', food: false, shape: 'slot' },
+    { key: 'water', group: 'outdoors', label: 'On the water', hint: 'Kayaking, paddleboarding, boat trips', icon: 'water', food: false, shape: 'slot' },
+    { key: 'massage', group: 'wellness', label: 'Massage & treatments', hint: 'Massage, reflexology, beauty', icon: 'wellness', food: false, shape: 'slot' },
+    { key: 'sauna', group: 'wellness', label: 'Sauna & cold-water', hint: 'Wood-fired sauna, cold-water dipping', icon: 'wellness', food: false, shape: 'slot' },
+    { key: 'yoga', group: 'wellness', label: 'Yoga & movement', hint: 'Yoga, pilates, breathwork', icon: 'wellness', food: false, shape: 'slot' },
+    { key: 'pottery', group: 'crafts', label: 'Pottery', hint: 'Wheel-throwing, hand-building', icon: 'crafts', food: false, shape: 'slot' },
+    { key: 'painting', group: 'crafts', label: 'Painting & drawing', hint: 'Watercolour, sketching, life classes', icon: 'crafts', food: false, shape: 'slot' },
+    { key: 'workshops', group: 'crafts', label: 'Make-your-own workshops', hint: 'Candles, prints, willow, jewellery', icon: 'crafts', food: false, shape: 'slot' },
+    // Always last, the storefront icon: the generic template for whatever the
+    // groups above don't cover. Its group has no sub-type screen.
+    { key: 'other', group: 'other', label: '', hint: 'Anything else a guest would book for their stay', icon: 'other', food: false, shape: null },
+];
+
+export function guestGroupByKey(key: string | null | undefined): GuestGroup | null {
+    return GUEST_GROUPS.filter((g) => g.key === String(key || ''))[0] || null;
+}
+
+// The sub-types under a group, in order. 'other' is alone under its group,
+// which is what makes its group skip the sub-type screen.
+export function categoriesForGroup(group: string | null | undefined): GuestCategory[] {
+    return GUEST_CATEGORIES.filter((c) => c.group === String(group || ''));
+}
 
 export function guestCategoryByKey(key: string | null | undefined): GuestCategory | null {
     return GUEST_CATEGORIES.filter((c) => c.key === String(key || ''))[0] || null;
@@ -121,6 +159,217 @@ export function guestCategoryByKey(key: string | null | undefined): GuestCategor
 export function guestCategoryIsFood(key: string | null | undefined): boolean {
     const c = guestCategoryByKey(key);
     return !!(c && c.food);
+}
+
+// HOW HARD WE ASK ABOUT THE PERSON BEHIND THE EXPERIENCE.
+//
+// Not every category should be asked its years and qualifications, and forcing
+// them everywhere turns away the wrong people. The line, decided category by
+// category (Sep 2026):
+//
+//   - A MADE-TO-ORDER product (a cake, a hamper) skips both screens entirely.
+//     You are buying the thing, not the maker; the photos and the price sell it,
+//     and food registration (a separate check) does the safety work.
+//   - The four where someone's PHYSICAL SAFETY is in their hands — a guide, on
+//     the water, a massage, a yoga class — require both years and
+//     qualifications. This is the whole reason to ask.
+//   - A private chef requires YEARS (a real track record) but not a formal
+//     qualification: a brilliant self-taught cook doing supper clubs may have no
+//     certificate, and food hygiene registration is already a check. Requiring a
+//     qualification would turn away exactly the people we want.
+//   - Everything else asks both, but they are optional — a potter's work speaks
+//     for itself, a whisky host's licence is the real gate.
+//
+// Keyed off the category (and its inferred shape for the made-to-order skip), so
+// the wizard, its Next gate and any later review all read the same rule.
+const GUEST_QUALS_REQUIRED = ['outdoors', 'water', 'massage', 'yoga'];
+// Years required, qualifications optional, for the food experiences where the
+// person is the draw: the private chef in your kitchen, the tasting host whose
+// knowledge is the product, and the cooking class where you're paying to be
+// taught. (Cooking class is treated the same as the other two — flagged to Liam
+// in case a formal qualification should be required there instead.)
+const GUEST_YEARS_REQUIRED = ['outdoors', 'water', 'massage', 'yoga', 'chef', 'tastings', 'cooking'];
+
+// Sauna is the ONLY sub-type that skips the years and expertise screens: nobody
+// books a hot barrel by the water for the owner's CV, and its heat-and-cold
+// declaration covers what matters. The crafts (pottery, painting, workshops) and
+// made-to-order food (Food to order) were cut too for a while, then brought
+// back — a potter or a cake maker has a track record and a story worth showing —
+// so they get both screens again (years asked, qualifications optional).
+//
+// This is ONLY about the years/qualifications screens. The safety-check map
+// (GUEST_CHECKS / checksFor) is untouched — a sauna still declares its heat and
+// cold safety, and the crafts still declare safe tools and kiln.
+const GUEST_EXPERTISE_SKIP = ['sauna'];
+
+// Whether the years + expertise screens are shown at all. Off for the skip list
+// above (just sauna); on for everyone else, including made-to-order food and
+// "Something else".
+export function guestAsksExpertise(category: string | null | undefined): boolean {
+    const c = guestCategoryByKey(category);
+    if (!c) return true;
+    return GUEST_EXPERTISE_SKIP.indexOf(c.key) === -1;
+}
+
+// Whether qualifications must be filled in before Next. The four safety
+// categories only.
+export function guestQualificationsRequired(category: string | null | undefined): boolean {
+    return GUEST_QUALS_REQUIRED.indexOf(String(category || '')) !== -1;
+}
+
+// Whether the years field must be filled in before Next. The four, plus the
+// private chef.
+export function guestYearsRequired(category: string | null | undefined): boolean {
+    return GUEST_YEARS_REQUIRED.indexOf(String(category || '')) !== -1;
+}
+
+// GUEST CHECKS — the declarations a guest confirms before we list them.
+//
+// Airbnb's experience flow ends on a health-and-safety attestation; ours does
+// the same, but the statements are chosen for what the category actually is —
+// a private chef confirms food registration, a sauna owner confirms their heat
+// setup is maintained, a paddleboard guide confirms the water-safety kit. Two
+// are universal (insurance and an accuracy statement); the rest are gated by
+// the category's group, its `food` flag, or the category itself, so nobody
+// ticks a box that has nothing to do with what they offer.
+//
+// Non-blocking for now: these are recorded against the application (the
+// `declarations` column) for the owner to weigh at review, not enforced as a
+// gate on Next or submit. The applicant should not be turned away at sign-up
+// over a box; the owner decides what a missing tick means when they approve.
+//
+// `applies` is a predicate over the chosen category (null when unpicked or
+// "Something else"), so the set a given provider sees is computed, never a
+// hand-maintained per-category list that would drift from GUEST_CATEGORIES.
+export interface GuestCheck {
+    key: string;
+    label: string;   // the statement the provider confirms
+    hint?: string;   // the supporting line under it
+    applies: (category: GuestCategory | null) => boolean;
+}
+
+// DIETARY OPTIONS — what a food provider can cater for, as ticks.
+//
+// A tick reads as "can cater for", not "provides" — a capability, weighed with
+// the free-text note beside it (dietary_note), which is where the caveats live
+// ("gluten-free with a day's notice, not a nut-free kitchen"). That is why there
+// is no "nut-free" tick: a positive nut-free tick reads as a guaranteed nut-free
+// kitchen, the one claim that could hurt someone, so nut allergies are handled
+// as awareness plus whatever the note says. "Other allergies on request" is not
+// a tick either — it is just the note in tick form.
+//
+// The keys are stored in guest_details.dietary_options (jsonb, no column of
+// their own); the labels live here so the wizard, the listing and the review
+// queue read one source — the same shape as GUEST_CHECKS above.
+export interface DietaryOption {
+    key: string;
+    label: string;
+}
+
+export const DIETARY_OPTIONS: DietaryOption[] = [
+    { key: 'vegetarian', label: 'Vegetarian' },
+    { key: 'vegan', label: 'Vegan' },
+    { key: 'gluten_free', label: 'Gluten-free' },
+    // One combined tick: the chef saying she'll accommodate allergies and
+    // intolerances AT ALL, not which ones — the guest picks their specific
+    // allergens at booking, and the note carries the caveats and notice.
+    // Nothing is ticked by default: a tick has to mean she chose it, so an
+    // unticked box reads as "won't work around them", which a guest needs to
+    // see before booking. Dairy-free and low-sugar were dropped — the note
+    // covers those.
+    { key: 'food_allergies_intolerances', label: 'Food allergies and intolerances' },
+];
+
+/** The label for a stored dietary key, or the key itself if it is unknown. */
+export function dietaryOptionLabel(key: string): string {
+    return DIETARY_OPTIONS.filter((o) => o.key === key)[0]?.label || key;
+}
+
+/**
+ * Keep only the dietary keys the catalogue still knows, in catalogue order — so
+ * a key retired from DIETARY_OPTIONS (an old seed, or any future change) is
+ * silently dropped rather than rendered as a raw string, and the listing never
+ * has to trust what was stored.
+ */
+export function knownDietaryOptions(keys: string[]): string[] {
+    const has = new Set(keys);
+    return DIETARY_OPTIONS.filter((o) => has.has(o.key)).map((o) => o.key);
+}
+
+export const GUEST_CHECKS: GuestCheck[] = [
+    // Universal — asked of every guest experience.
+    {
+        key: 'insurance',
+        label: 'I hold public liability insurance for what I offer.',
+        hint: 'Cover for a guest who is hurt, or whose property is damaged, while you host them.',
+        applies: () => true,
+    },
+    {
+        key: 'accurate',
+        label: "Everything I've described here is accurate, and I'll keep it up to date.",
+        hint: 'What a guest reads is what they get.',
+        applies: () => true,
+    },
+    // Food & drink — a food business in Scotland must register with its council.
+    {
+        key: 'food_registered',
+        label: 'I am registered as a food business with my local council.',
+        hint: 'Free, and required before you sell food. Dumfries & Galloway Council registers you — allow 28 days.',
+        applies: (c) => !!c && c.food,
+    },
+    {
+        key: 'allergens',
+        label: 'I can give guests full allergen information for what I make.',
+        hint: 'The fourteen named allergens, on request and labelled on anything pre-packed.',
+        applies: (c) => !!c && c.food,
+    },
+    // Alcohol — pouring at a tasting needs a licence.
+    {
+        key: 'alcohol',
+        label: 'I hold the licence to serve alcohol, or guests supply their own.',
+        hint: 'A tasting where you pour needs a personal or occasional licence.',
+        applies: (c) => !!c && c.key === 'tastings',
+    },
+    // Outdoors & water — leading people into the outdoors.
+    {
+        key: 'outdoor_trained',
+        label: 'I am trained and equipped to lead this activity safely.',
+        hint: 'The right qualification for what you run, and a plan for when conditions turn.',
+        applies: (c) => !!c && c.group === 'outdoors',
+    },
+    {
+        key: 'water_safety',
+        label: 'I carry the water-safety kit, and I check conditions before every session.',
+        hint: 'Tides, water temperature, and a way to get someone out.',
+        applies: (c) => !!c && c.key === 'water',
+    },
+    // Wellness — heat, cold water, and hands-on treatment.
+    {
+        key: 'sauna_safe',
+        label: 'My sauna and cold-water setup is maintained, and guests get clear safety guidance.',
+        hint: 'Ventilation, a way out from the inside, and who should not use it.',
+        applies: (c) => !!c && c.key === 'sauna',
+    },
+    {
+        key: 'treatment_qualified',
+        label: 'I am qualified and insured for the treatments I give.',
+        hint: 'Trained to give massage, reflexology or beauty treatments to the public.',
+        applies: (c) => !!c && c.key === 'massage',
+    },
+    // Arts & crafts — tools, kilns and materials around guests.
+    {
+        key: 'equipment_safe',
+        label: 'My tools, kiln and materials are safe for guests to use under supervision.',
+        applies: (c) => !!c && c.group === 'crafts',
+    },
+];
+
+// The checks a given category must confirm, in order. An unknown / unpicked /
+// "Something else" category (c === null) still gets the two universal ones, so
+// every guest experience has a checks screen with something on it.
+export function checksFor(category: string | null | undefined): GuestCheck[] {
+    const c = guestCategoryByKey(category);
+    return GUEST_CHECKS.filter((k) => k.applies(c));
 }
 
 // A heading on the picker, not a thing anybody is.
@@ -2057,15 +2306,39 @@ export function approvalBlockers(
     return registrationBlockers(provider, rows, today).concat(categoryBlockers(provider));
 }
 
+// Short, guest-facing category words keyed by the Stripe MCC assigned at review.
+// The MCC is a HARD gate for a provider to appear at all (mccForProvider must be
+// truthy), so every visible provider has one — which makes it a reliable
+// fallback when the free-text custom_label was left blank at review. Without
+// this, every uncategorised provider read "Local experience", so a chef, a
+// sauna and a whisky tasting looked identical on the shop.
+const GUEST_MCC_LABEL: Record<string, string> = {
+    '5811': 'Private chef',
+    '5812': 'Prepared meals',
+    '5462': 'Bakery',
+    '5411': 'Local produce',
+    '7299': 'Wellbeing',
+    '7997': 'Activity',
+    '7911': 'Class',
+    '7333': 'Photography',
+    '7230': 'Hair & beauty',
+    '5992': 'Florist',
+    '7392': 'Guided experience',
+    '7999': 'Activity',
+};
+
 // The word a guest reads above a provider on the shop and the trip page.
 //
-// Always the word the owner typed when they assigned the category — there are
-// no fixed guest trades any more, so there is no trade label to fall back to.
-// A neutral "Local experience" covers the case a guest provider somehow reaches
-// a guest with no label, which the payout gate should prevent, because the word
-// is assigned in the same act as the code the gate requires.
-export function guestCategory(provider: { trade?: string | null; custom_label?: string | null }): string {
-    return String(provider.custom_label || '').trim() || 'Local experience';
+// The word the owner typed at review wins (custom_label). If it was left blank,
+// fall back to the category the MCC implies — the code the payout gate already
+// requires — so the card never reads a bland "Local experience" for want of a
+// hand-typed word. Only a provider with neither (which the gate should prevent)
+// gets the neutral label.
+export function guestCategory(provider: { trade?: string | null; custom_label?: string | null; stripe_mcc?: string | null }): string {
+    const label = String(provider.custom_label || '').trim();
+    if (label) return label;
+    const byMcc = GUEST_MCC_LABEL[String(provider.stripe_mcc || '').trim()];
+    return byMcc || 'Local experience';
 }
 
 // What the provider is told while filling the form in. Deliberately narrower
@@ -2221,6 +2494,13 @@ export interface ProviderDraft {
     pricing_choice?: string | null;
     billable_hourly_rate?: any;
     covered_bands?: string[] | null;
+
+    // A guest slot provider must set weekly hours, or they finish sign-up
+    // invisible: with no availability nothing generates bookable sessions and
+    // the shop drops them. shape says whether hours even apply; scheduleCount is
+    // how many weekly rows they've added.
+    shape?: string | null;
+    scheduleCount?: number;
 }
 
 export interface Problem {
@@ -2239,7 +2519,12 @@ export function submitProblems(draft: ProviderDraft): Problem[] {
     const description = (draft.description || '').trim();
     const email = (draft.contact_email || '').trim();
 
-    if (name.length < 2) {
+    // A host trades under a business name and must give one. A guest experience
+    // is a person: the title is derived from the account name (or a trading name
+    // set in account settings) at submit, never typed, so there is nothing to
+    // require here — and requiring it would block every guest on an empty field
+    // that no longer exists.
+    if (audienceForTrade(draft.trade || '') !== 'guest' && name.length < 2) {
         problems.push({ field: 'business_name', message: 'Add the name of your business.' });
     }
 
@@ -2268,7 +2553,22 @@ export function submitProblems(draft: ProviderDraft): Problem[] {
     if (!draft.areaCount) {
         problems.push({
             field: 'areas',
-            message: 'Add at least one area you cover, so we know who to show you to.',
+            // A guest's coverage is informational (it does not filter who sees
+            // them), so the host line "so we know who to show you to" would be
+            // false for them; the guest wording says what it is really for.
+            message: draft.audience === 'guest'
+                ? GUEST_SCREEN_COPY.locationAreaGate
+                : 'Add at least one area you cover, so we know who to show you to.',
+        });
+    }
+
+    // A guest slot provider with no weekly hours would finish sign-up and then
+    // be invisible — no availability, no sessions, dropped from the shop, with
+    // no error to tell them why. Require at least one row before they can send.
+    if (draft.audience === 'guest' && draft.shape === 'slot' && !(Number(draft.scheduleCount) > 0)) {
+        problems.push({
+            field: 'availability',
+            message: 'Add your weekly hours so guests can book a time — without them your listing can’t be booked.',
         });
     }
 

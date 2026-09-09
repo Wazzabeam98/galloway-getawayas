@@ -279,3 +279,34 @@ test('whether the email actually went is reported, not assumed', async () => {
     assert.equal(res.body.verificationEmailed, false, 'and the panel is told the truth about the email');
     assert.ok(logged.some((l) => /verification-email/.test(String(l.message))));
 });
+
+test('the guest content answers and the declarations reach the stored payload; a platform field does not', async () => {
+    // The bug this guards: pick(incoming, PROVIDER_COLUMNS) at intake stripped
+    // the content answers and the declarations before anything was stored, so
+    // everything the content screens collect was discarded. The payload is jsonb
+    // and holds them now; the narrower column list still keeps the platform's
+    // own fields out.
+    const { route, inserted } = load();
+    await route.POST(call({
+        ...APPLICATION,
+        provider: {
+            ...APPLICATION.provider,
+            trade: 'guest',
+            qualifications: 'Trained at Leiths, ten years in restaurant kitchens',
+            years_experience: '10',
+            what_to_expect: 'Three courses cooked at your table',
+            declarations: { insurance: true, food_registered: true },
+            // A stranger cannot promote themselves: the whitelist drops it.
+            status: 'approved',
+        },
+    }));
+
+    const stored = inserted.service_applications[0].payload.provider;
+    assert.equal(stored.qualifications, 'Trained at Leiths, ten years in restaurant kitchens',
+        'the content answer is kept in the jsonb payload, not stripped');
+    assert.equal(stored.years_experience, '10');
+    assert.equal(stored.what_to_expect, 'Three courses cooked at your table');
+    assert.deepEqual(stored.declarations, { insurance: true, food_registered: true },
+        'the declarations are kept');
+    assert.equal('status' in stored, false, 'a platform field a stranger sends is still dropped');
+});
