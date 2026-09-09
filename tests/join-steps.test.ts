@@ -477,11 +477,16 @@ test('a signed-in guest skips the gate — the picker if no category, else the f
         'trade',
     );
     assert.equal(
-        // No naming step any more — the first content screen is the About-you
-        // opener (g_you); resolveStep drops it to the next live step for a
-        // category that skips the expertise screens.
-        openingStep({ hydrated: true, restored: false, lodged: false, trade: 'guest', guestNeedsCategory: false, hasSession: true }),
+        // First content screen is the About-you opener for an expertise category.
+        openingStep({ hydrated: true, restored: false, lodged: false, trade: 'guest', guestNeedsCategory: false, hasSession: true, category: 'chef' }),
         'g_you',
+    );
+    assert.equal(
+        // A sauna skips the expertise screens, so it opens on Location (g_area) —
+        // its where-and-when step, which holds the weekly schedule — never g_you,
+        // a step it does not have. This is the returning-sauna reorder fix.
+        openingStep({ hydrated: true, restored: false, lodged: false, trade: 'guest', guestNeedsCategory: false, hasSession: true, category: 'sauna' }),
+        'g_area',
     );
 });
 

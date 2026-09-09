@@ -363,6 +363,11 @@ function ApplicationForm() {
     const supabase = createClientComponentClient();
 
     const [loading, setLoading] = useState(true);
+    // The provider load failed (not "no application yet"). A failed select used
+    // to fall through to a BLANK new-application form — a returning provider
+    // could then create a second row over their real one. So a failure is held
+    // and shown, never rendered as new.
+    const [loadFailed, setLoadFailed] = useState(false);
     const [session, setSession] = useState<any>(null);
 
     const [providerId, setProviderId] = useState<string | null>(null);
@@ -709,12 +714,20 @@ function ApplicationForm() {
                 // and each is its own business with its own name, so this is
                 // the application for the trade they picked and nothing about
                 // it is inherited from another one they hold.
-                const { data: existing } = await supabase
+                const { data: existing, error: existingError } = await supabase
                     .from('service_providers')
                     .select('id, business_name, trade, description, sms_opt_out, audience, photos, logo, status, review_note, callout_fee, hourly_rate, callout_waived, does_gas, does_oil, kind, pricing_choice, billable_hourly_rate, covered_bands, provider_name, based_line, headshot, dietary_note, custom_label, shape, lead_time_days, slot_length_minutes, slot_capacity, declarations, guest_details')
                     .eq('owner_id', session.user.id)
                     .eq('trade', tradeFromUrl)
                     .maybeSingle();
+
+                // A failed read is NOT "no application yet". `existing` would be
+                // null either way, and the old code carried on into the blank
+                // new-application form — so a returning provider whose read
+                // errored (a revoked grant, a missing column mid-migration, a
+                // network blip) could file a second row over their real one.
+                // Stop and say so instead.
+                if (existingError) throw existingError;
 
                 if (existing) {
                     setProviderId(existing.id);
@@ -940,8 +953,10 @@ function ApplicationForm() {
                 // resolveGuestTitleNow). So there is nothing to prefill here.
 
             } catch (err) {
-                // Nothing to show them but the empty form; a stuck spinner is
-                // worse than a form that starts blank.
+                // A blank form is worse than a stuck spinner here: it looks like a
+                // fresh application over a record we failed to read. Hold the
+                // failure and show a retry rather than rendering the form.
+                setLoadFailed(true);
                 toast.error('We could not load your details. Try refreshing.', { theme: 'colored' });
             } finally {
                 setLoading(false);
@@ -970,7 +985,7 @@ function ApplicationForm() {
         // A guest with no session opens on the verify gate, before the picker.
         // Session is set inside the same load() that flips `hydrated`, so it is
         // already known by the time this runs.
-        const openState = { hydrated, restored, lodged, trade: tradeFromUrl, guestNeedsCategory, hasSession: !!session };
+        const openState = { hydrated, restored, lodged, trade: tradeFromUrl, guestNeedsCategory, hasSession: !!session, category: guestCategory };
         const opening = openingStep(openState);
         if (opening === null) return;
 
@@ -3072,6 +3087,23 @@ function ApplicationForm() {
 
     if (loading) {
         return <div className="max-w-3xl mx-auto px-4 sm:px-6 py-16 text-slate-500">Loading…</div>;
+    }
+
+    // The read failed. Never the blank form — that would invite a second row
+    // over one we could not read. Offer a retry instead.
+    if (loadFailed) {
+        return (
+            <div className="max-w-md mx-auto px-4 sm:px-6 py-16 text-center">
+                <p className="text-slate-900 font-semibold">We couldn’t load your details.</p>
+                <p className="text-sm text-slate-500 mt-1.5">
+                    Nothing has been lost — this is a problem reading your account, not your work.
+                </p>
+                <button type="button" onClick={() => window.location.reload()}
+                    className="mt-6 inline-flex items-center rounded-full bg-emerald-700 px-6 py-2.5 text-sm font-semibold text-white transition hover:bg-emerald-800">
+                    Try again
+                </button>
+            </div>
+        );
     }
 
     const summary = statusSummary(status);

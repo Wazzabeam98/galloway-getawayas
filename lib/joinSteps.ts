@@ -512,6 +512,12 @@ export interface OpeningState {
     // verify gate — the first screen, before the category picker. Nothing comes
     // before the account.
     hasSession?: boolean;
+    // The guest's chosen category. Decides their first content screen: the
+    // About-you opener (g_you) for a category that asks about expertise, else
+    // Location (g_area), which every guest has. Without it a category that skips
+    // the expertise screens (a sauna) would open on g_you, a step it does not
+    // have.
+    category?: string | null;
 }
 
 export function openingStep(state: OpeningState): StepKey | null {
@@ -536,10 +542,13 @@ export function openingStep(state: OpeningState): StepKey | null {
     // A trade in the URL means step one is already answered — they came back
     // through a link, or they have a saved record — so opening on the picker
     // would make them answer it twice. A guest has no business step; their first
-    // content screen is the About-you opener (g_you); resolveStep drops it to the
-    // next live step for a category that skips the expertise screens.
+    // content screen is the About-you opener (g_you), or Location (g_area) for a
+    // category that skips the expertise screens — the same rule the forward flow
+    // uses after the sub-type pick, so a returning sauna owner lands on the
+    // where-and-when step (its schedule) rather than a step it does not have.
     if (!state.trade) return 'trade';
-    return audienceForTrade(state.trade) === 'guest' ? 'g_you' : 'business';
+    if (audienceForTrade(state.trade) !== 'guest') return 'business';
+    return guestAsksExpertise(state.category) ? 'g_you' : 'g_area';
 }
 
 // What counts as already seen when opening there. Everything up to and
