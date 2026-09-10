@@ -224,6 +224,25 @@ export const GUEST_SCREEN_COPY = {
     coverageAllHintDeliver: 'You deliver anywhere in the region',
     coverageAllHintFixed: 'Anywhere in Dumfries & Galloway',
 
+    // The fulfilment fork on the made-to-order location screen: does the provider
+    // take it to the guest, does the guest collect, or both. Delivery shows the
+    // region picker; collection shows a private address.
+    fulfilmentHeading: 'How do guests get it?',
+    fulfilmentDelivery: 'Delivery',
+    fulfilmentDeliveryHint: 'You take it to the guest',
+    fulfilmentCollection: 'Collection',
+    fulfilmentCollectionHint: 'Guests come to you',
+    fulfilmentBoth: 'Both',
+    fulfilmentBothHint: 'Delivery or collection',
+    fulfilmentGate: 'Choose how guests get it.',
+    // The collection address. The hint DESCRIBES what we do — not a guarantee it
+    // can't reach anyone else (a provider who messages their address to a guest is
+    // outside our control).
+    collectionAddressLabel: 'Your collection address',
+    collectionAddressHint: 'We only show this to a guest once they’ve booked and paid.',
+    collectionAddressPlaceholder: 'The address a guest collects from',
+    collectionAddressGate: 'Add the address guests collect from.',
+
     // The photos screen. An instruction, not a slogan — it names the task rather
     // than describing the outcome. The single line asks for three (what makes a
     // decent listing) but the gate stays at one photo — the ask and the gate are

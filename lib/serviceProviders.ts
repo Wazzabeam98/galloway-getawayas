@@ -2423,6 +2423,10 @@ export interface ProviderDraft {
     // how many weekly rows they've added.
     shape?: string | null;
     scheduleCount?: number;
+    // Made-to-order fulfilment: '' | 'delivery' | 'collection' | 'both'. Decides
+    // whether areas or a collection address are required.
+    fulfilment?: string | null;
+    hasCollectionAddress?: boolean;
 }
 
 export interface Problem {
@@ -2435,6 +2439,22 @@ export const MIN_DESCRIPTION = 40;
 // What has to be true before it can be sent for review. Deliberately not
 // enforced while a draft is being filled in — a half-finished form should save,
 // not argue.
+/**
+ * What to write for `collection_address`, or `undefined` to OMIT it from the
+ * update. The omit is the safety: a returning provider whose private address did
+ * not load (`loaded` false) and who has typed nothing must NOT blank a real
+ * address on save — so we send nothing rather than null, and the stored value
+ * stands. Same class of bug as an untouched slot-capacity default overwriting a
+ * stored one. When loaded, the field is authoritative (a cleared field writes
+ * null); when not collecting, the address is cleared.
+ */
+export function collectionAddressForWrite(o: { collects: boolean; loaded: boolean; value: string }): string | null | undefined {
+    const v = (o.value || '').trim();
+    if (!o.loaded && v === '') return undefined; // not loaded, nothing typed → leave the stored value alone
+    if (!o.collects) return null;                // not collecting → clear it
+    return v || null;                            // collecting → the typed value (null only if cleared while loaded)
+}
+
 export function submitProblems(draft: ProviderDraft): Problem[] {
     const problems: Problem[] = [];
     const name = (draft.business_name || '').trim();
@@ -2476,7 +2496,21 @@ export function submitProblems(draft: ProviderDraft): Problem[] {
         problems.push({ field: 'audience', message: 'Choose who you sell to.' });
     }
 
-    if (!draft.areaCount) {
+    // Made-to-order asks the fulfilment fork; it decides what's required. A
+    // collection-only baker has no region to pick, so requiring an area would be
+    // nonsense — but a delivering one still needs one, and slot / comes-to-you /
+    // host always do.
+    const isGuestMTO = draft.audience === 'guest' && draft.shape === 'made_to_order';
+    const ful = String(draft.fulfilment || '');
+    const wantsDelivery = ful === 'delivery' || ful === 'both';
+    const wantsCollection = ful === 'collection' || ful === 'both';
+
+    if (isGuestMTO && !ful) {
+        problems.push({ field: 'fulfilment', message: GUEST_SCREEN_COPY.fulfilmentGate });
+    }
+
+    const areasRequired = isGuestMTO ? wantsDelivery : true;
+    if (areasRequired && !draft.areaCount) {
         problems.push({
             field: 'areas',
             // A guest's coverage is informational (it does not filter who sees
@@ -2486,6 +2520,10 @@ export function submitProblems(draft: ProviderDraft): Problem[] {
                 ? GUEST_SCREEN_COPY.locationAreaGate
                 : 'Add at least one area you cover, so we know who to show you to.',
         });
+    }
+
+    if (isGuestMTO && wantsCollection && !draft.hasCollectionAddress) {
+        problems.push({ field: 'collection_address', message: GUEST_SCREEN_COPY.collectionAddressGate });
     }
 
     // A guest slot provider with no weekly hours would finish sign-up and then

@@ -435,8 +435,9 @@ const GUEST_STEP_FIELDS: Partial<Record<StepKey, string[]>> = {
     trade: ['trade', 'audience'],
     // No naming step for a guest: business_name is derived from the account at
     // submit, not asked, so it belongs to no step's Next.
-    // Location and the weekly hours both live on the where-and-when step.
-    g_area: ['areas', 'availability'],
+    // Location, weekly hours, the made-to-order fulfilment fork and its
+    // collection address all live on the where/delivery step.
+    g_area: ['areas', 'availability', 'fulfilment', 'collection_address'],
     // No contact step: contact_email is derived from the account at submit (so
     // submitProblems no longer raises it for a guest) and the phone lives on the
     // profile — neither belongs to a step's Next.

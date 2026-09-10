@@ -85,7 +85,7 @@ export default async function OrderPage({ params, searchParams }: { params: { or
     if (!order || order.guest_id !== user.id) redirect('/trips');
 
     const [{ data: prov }, { data: listing, error: listingError }] = await Promise.all([
-        admin.from('service_providers').select('business_name, provider_name, based_line, headshot, description, cancellation_window_hours, slot_length_minutes').eq('id', order.provider_id).maybeSingle(),
+        admin.from('service_providers').select('business_name, provider_name, based_line, headshot, description, cancellation_window_hours, slot_length_minutes, fulfilment, collection_address').eq('id', order.provider_id).maybeSingle(),
         order.listing_id
             // The cottage the experience is attached to. `address` is not a column
             // on listings — the address is street_address + postcode + location —
@@ -118,6 +118,12 @@ export default async function OrderPage({ params, searchParams }: { params: { or
     const live = order.status === 'authorised' || order.status === 'confirmed' || order.status === 'holding';
     const comesToCottage = order.shape === 'comes_to_you';
     const isSlot = order.shape === 'slot';
+    // Made-to-order collection: the provider's address is private and released
+    // only once the order is confirmed (i.e. paid — `charged`). Read via the
+    // service role above; never sent to the browser before then. Delivery and
+    // "both" still deliver, so only pure collection changes the day-of line.
+    const collects = prov?.fulfilment === 'collection' || prov?.fulfilment === 'both';
+    const collectionAddress = charged && collects ? (prov?.collection_address || null) : null;
 
     return (
         <div className="min-h-screen bg-slate-50">
@@ -160,7 +166,7 @@ export default async function OrderPage({ params, searchParams }: { params: { or
                                 </p>
                                 <ol className="mt-3 space-y-1.5 text-sm text-emerald-800">
                                     <li className="flex gap-2"><span className="font-semibold">1.</span> Check your email for the receipt and the details.</li>
-                                    <li className="flex gap-2"><span className="font-semibold">2.</span> {comesToCottage ? `${who} will come to your cottage at the agreed time.` : isSlot ? `Turn up at the time you booked — the address is below.` : `${who} will be in touch about collection or delivery.`}</li>
+                                    <li className="flex gap-2"><span className="font-semibold">2.</span> {comesToCottage ? `${who} will come to your cottage at the agreed time.` : isSlot ? `Turn up at the time you booked — the address is below.` : collectionAddress ? `Collect from ${collectionAddress}.` : `${who} will be in touch about collection or delivery.`}</li>
                                     <li className="flex gap-2"><span className="font-semibold">3.</span> Anything to sort? Message {who} below.</li>
                                 </ol>
                                 <div className="mt-4 flex flex-wrap gap-2">
@@ -211,6 +217,8 @@ export default async function OrderPage({ params, searchParams }: { params: { or
                                                 <>Comes to your cottage{listing && listing.title ? ' — ' + listing.title : ''}{cottageAddress ? <span className="block text-slate-500">{cottageAddress}</span> : null}</>
                                             ) : isSlot ? (
                                                 <>You go to {who}{prov && prov.based_line ? <span className="block text-slate-500">{prov.based_line}</span> : <span className="block text-slate-500">Message them below for the exact address and directions.</span>}</>
+                                            ) : collectionAddress ? (
+                                                <>Collect from {who}<span className="block text-slate-500">{collectionAddress}</span></>
                                             ) : (
                                                 <>{who} will arrange collection or delivery with you — message them below.</>
                                             )}

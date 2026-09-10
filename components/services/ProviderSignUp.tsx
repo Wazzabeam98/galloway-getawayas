@@ -73,6 +73,7 @@ import {
     guestCategoryIsFood,
     guestAsksExpertise,
     guestQualificationsRequired,
+    collectionAddressForWrite,
     DIETARY_OPTIONS,
     DEFAULT_SERVICE_COMMISSION,
 } from '@/lib/serviceProviders';
@@ -597,6 +598,18 @@ function ApplicationForm() {
     const [shape, setShape] = useState('');
     // Made-to-order only: notice needed, in days ("how much notice do you need?").
     const [leadTimeDays, setLeadTimeDays] = useState('');
+    // Made-to-order fulfilment: '' | 'delivery' | 'collection' | 'both' — the fork
+    // between "you take it to the guest" (delivery regions) and "the guest comes to
+    // you" (a private collection address). Separate from `shape` on purpose.
+    const [fulfilment, setFulfilment] = useState('');
+    const [collectionAddress, setCollectionAddress] = useState('');
+    // Whether the collection address is safe to write. TRUE for a fresh flow
+    // (nothing to lose) and once a returning provider's address has actually been
+    // read back from provider_private; FALSE for a returning provider until that
+    // read succeeds. The write omits collection_address while this is false AND the
+    // field is empty, so a not-loaded value can never blank a real one on save —
+    // the same class of bug as the slot-capacity default. See guestProviderFields.
+    const [collectionAddressLoaded, setCollectionAddressLoaded] = useState(true);
     // Slot only. `slotPrivate` is the private/shared answer (null until asked):
     // private → the whole session for one group (sells as one booking, flat
     // price); shared → several people join (per-person price, seats = capacity).
@@ -741,7 +754,7 @@ function ApplicationForm() {
                     // provider_name was retired with the "Your name" field), and
                     // selecting a column the authenticated role can't read 403s
                     // the whole load. They stay revoked.
-                    .select('id, business_name, trade, description, sms_opt_out, audience, photos, logo, status, review_note, callout_fee, hourly_rate, callout_waived, does_gas, does_oil, kind, pricing_choice, billable_hourly_rate, covered_bands, headshot, dietary_note, custom_label, shape, lead_time_days, slot_length_minutes, slot_capacity, declarations, guest_details')
+                    .select('id, business_name, trade, description, sms_opt_out, audience, photos, logo, status, review_note, callout_fee, hourly_rate, callout_waived, does_gas, does_oil, kind, pricing_choice, billable_hourly_rate, covered_bands, headshot, dietary_note, custom_label, shape, lead_time_days, slot_length_minutes, slot_capacity, declarations, guest_details, fulfilment')
                     .eq('owner_id', session.user.id)
                     .eq('trade', tradeFromUrl)
                     .maybeSingle();
@@ -822,6 +835,19 @@ function ApplicationForm() {
                     const ex = existing as any;
                     if (ex.shape) setShape(ex.shape);
                     if (ex.lead_time_days) setLeadTimeDays(String(ex.lead_time_days));
+                    if (ex.fulfilment) setFulfilment(String(ex.fulfilment));
+                    // The collection address is revoked on the table, so it can't
+                    // ride the select above — the owner reads their own back through
+                    // provider_private. Mark it NOT loaded until that read succeeds,
+                    // so a failed read can't let a blank overwrite a real address on
+                    // save (guestProviderFields omits it while unloaded + empty).
+                    setCollectionAddressLoaded(false);
+                    const { data: priv, error: privErr } = await supabase
+                        .from('provider_private').select('collection_address').eq('id', existing.id).maybeSingle();
+                    if (!privErr) {
+                        setCollectionAddress((priv?.collection_address as string) || '');
+                        setCollectionAddressLoaded(true);
+                    }
                     if (ex.slot_length_minutes) setSlotLength(String(ex.slot_length_minutes));
                     // Capacity loads into the max-guests screen from the stored
                     // column (authoritative for existing slot listings, so an
@@ -1117,6 +1143,12 @@ function ApplicationForm() {
             if (d.declarations && typeof d.declarations === 'object') setDeclarations(d.declarations);
             if (d.shape) setShape(d.shape);
             if (d.leadTimeDays) setLeadTimeDays(d.leadTimeDays);
+            if (d.fulfilment) setFulfilment(d.fulfilment);
+            // The draft is this browser's own, and it's the source of truth here
+            // (no DB row yet), so a restored address is authoritative — leave
+            // collectionAddressLoaded true (its default). Never persisted from a
+            // DB read; only the provider's own in-progress typing.
+            if (d.collectionAddress) setCollectionAddress(d.collectionAddress);
             if (d.slotPrivate !== undefined && d.slotPrivate !== null) setSlotPrivate(d.slotPrivate === true);
             if (d.maxGuests) setMaxGuests(d.maxGuests);
             if (d.slotLength) setSlotLength(d.slotLength);
@@ -1248,6 +1280,10 @@ function ApplicationForm() {
                     whatToExpect,
                     // The category, the inferred shape and its own fields.
                     guestCategory, shape, leadTimeDays,
+                    // Made-to-order fulfilment fork + its collection address. The
+                    // address is the provider's own, in their own browser's draft
+                    // — never shared, and it's a private column server-side.
+                    fulfilment, collectionAddress,
                     slotPrivate, maxGuests, slotLength, schedule, blockedDates,
                     // The checks they've ticked so far.
                     declarations,
@@ -1267,6 +1303,7 @@ function ApplicationForm() {
         yearsDoing, professionalTitle, qualifications, recognition,
         whatToExpect,
         guestCategory, shape, leadTimeDays,
+        fulfilment, collectionAddress,
         slotPrivate, maxGuests, slotLength, schedule, blockedDates,
         declarations,
     ]);
@@ -1302,6 +1339,8 @@ function ApplicationForm() {
         covered_bands: coveredBands,
         shape,
         scheduleCount: schedule.length,
+        fulfilment,
+        hasCollectionAddress: collectionAddress.trim() !== '',
     });
 
     // One block of £ boxes for a pricing structure. Nothing computes from
@@ -2302,6 +2341,23 @@ function ApplicationForm() {
         const acceptance: Record<string, string> = termsAgreed
             ? { terms_version: PROVIDER_TERMS_VERSION, terms_agreed_at: new Date().toISOString() }
             : {};
+        // Fulfilment (made-to-order this pass): the direction, plus the collection
+        // address when they collect. The address is OMITTED from the write while it
+        // is not loaded AND the field is empty — so a returning provider whose
+        // private address failed to load can never blank a real one on save. When
+        // loaded (even to empty) the field is authoritative, and a delivery-only
+        // choice clears it. `undefined` keys drop out of the update.
+        const collects = fulfilment === 'collection' || fulfilment === 'both';
+        const fulfilmentFields = isMTO
+            ? {
+                fulfilment: fulfilment || null,
+                // undefined omits the key from the update — the not-loaded-and-empty
+                // safety lives in collectionAddressForWrite (unit-proved).
+                collection_address: collectionAddressForWrite({
+                    collects, loaded: collectionAddressLoaded, value: collectionAddress,
+                }),
+            }
+            : {};
         return {
             ...(cat && cat.label && status !== 'approved' ? { custom_label: cat.label } : {}),
             shape: shape || 'made_to_order',
@@ -2313,6 +2369,7 @@ function ApplicationForm() {
             // records it but still sells whole). Written from the one maxGuests
             // state, so it can never disagree with the jsonb copy below.
             slot_capacity: isSlot ? (num(maxGuests, 1) ?? 1) : null,
+            ...fulfilmentFields,
             declarations: acceptance,
         };
     };
@@ -3428,13 +3485,13 @@ function ApplicationForm() {
                                 ? 'What experience are you offering guests?'
                                 /* The g_area title's "when" is real only for a slot
                                    (a schedule). A traveller is asked where only; a
-                                   made-to-order's when is now its own screen and
-                                   this is delivery only — so each gets its own
-                                   honest heading and the slot keeps the generic. */
+                                   made-to-order asks the fulfilment fork (deliver,
+                                   collect, or both) — so each gets its own honest
+                                   heading and the slot keeps the generic. */
                                 : (step === 'g_area' && shape === 'comes_to_you')
                                     ? GUEST_SCREEN_COPY.locationHeadingTravel
                                     : (step === 'g_area' && shape === 'made_to_order')
-                                        ? GUEST_SCREEN_COPY.locationHeadingDeliver
+                                        ? GUEST_SCREEN_COPY.fulfilmentHeading
                                     : step === 'g_photos'
                                         ? GUEST_SCREEN_COPY.photosHeading
                                         : stepMeta.title}
@@ -5791,86 +5848,119 @@ function ApplicationForm() {
                         the same tick-list picker. The slot and made-to-order shapes
                         carry their real "when" (schedule, notice) in their own
                         blocks above; this screen is only the where. */}
-                    {isGuest && (
+                    {isGuest && (() => {
+                        // made-to-order asks the fulfilment fork; regions show for a
+                        // slot, a traveller, or a made-to-order that delivers; the
+                        // collection address shows for a made-to-order that collects.
+                        const showRegions = shape !== 'made_to_order' || fulfilment === 'delivery' || fulfilment === 'both';
+                        const showCollection = shape === 'made_to_order' && (fulfilment === 'collection' || fulfilment === 'both');
+                        const forkOptions: [string, string, string][] = [
+                            ['delivery', GUEST_SCREEN_COPY.fulfilmentDelivery, GUEST_SCREEN_COPY.fulfilmentDeliveryHint],
+                            ['collection', GUEST_SCREEN_COPY.fulfilmentCollection, GUEST_SCREEN_COPY.fulfilmentCollectionHint],
+                            ['both', GUEST_SCREEN_COPY.fulfilmentBoth, GUEST_SCREEN_COPY.fulfilmentBothHint],
+                        ];
+                        return (
                         <>
-                            {shape === 'slot' ? (
-                                // A slot has the schedule blocks above, so this is a
-                                // sub-label over the region rows.
-                                <label className="block text-xs font-medium text-slate-500 mb-3">
-                                    Where does it take place?
-                                </label>
-                            ) : (
-                                // Made-to-order and comes-to-you: this screen is only
-                                // the where, so a subtext under the h1 — delivery for a
-                                // baker, travel for a chef.
-                                <p className="text-sm text-slate-500 mb-4 md:max-w-xl">
-                                    {shape === 'made_to_order'
-                                        ? GUEST_SCREEN_COPY.locationSubtextDeliver
-                                        : GUEST_SCREEN_COPY.locationSubtextTravel}
-                                </p>
-                            )}
-
-                            <div className="space-y-1 md:max-w-xl">
-                                {areas.map((a, i) => (
-                                    <HubRow
-                                        key={i}
-                                        filled
-                                        label={a.town}
-                                        prompt=""
-                                        summary={regionHintFor(a.town)}
-                                        onOpen={() => setAreaPickerOpen(true)}
-                                    />
-                                ))}
-                                {!areasHasAll && (
-                                    <HubRow
-                                        filled={false}
-                                        label={GUEST_SCREEN_COPY.locationAddRow}
-                                        prompt={shape === 'made_to_order' ? GUEST_SCREEN_COPY.locationAddPromptDeliver : GUEST_SCREEN_COPY.locationAddPrompt}
-                                        onOpen={() => setAreaPickerOpen(true)}
-                                    />
-                                )}
-                            </div>
-
-                            {problemFor('areas') && (
-                                <p data-problem className="text-sm text-rose-700 mt-3">
-                                    {GUEST_SCREEN_COPY.locationAreaGate}
-                                </p>
-                            )}
-
-                            <SubFlowModal
-                                open={areaPickerOpen}
-                                title={shape === 'made_to_order' ? GUEST_SCREEN_COPY.locationPickerTitleDeliver : GUEST_SCREEN_COPY.locationPickerTitle}
-                                onClose={() => setAreaPickerOpen(false)}
-                                saveLabel={GUEST_SCREEN_COPY.locationPickerDone}
-                                saveDisabled={areas.length === 0}
-                            >
-                                <div className="mx-auto w-full max-w-md space-y-2">
-                                    {GUEST_REGIONS.map((r) => {
-                                        const on = regionPicked(r.label);
+                            {/* MADE-TO-ORDER: the fulfilment fork. Delivery reveals the
+                                region picker; collection reveals a private address;
+                                both reveals both. The shared mechanism massage adopts
+                                next — kept separate from `shape`. */}
+                            {shape === 'made_to_order' && (
+                                <div role="radiogroup" aria-label={GUEST_SCREEN_COPY.fulfilmentHeading}
+                                    className="grid grid-cols-1 gap-3 sm:grid-cols-3 md:max-w-xl">
+                                    {forkOptions.map(([val, label, hint]) => {
+                                        const on = fulfilment === val;
                                         return (
-                                            <button
-                                                key={r.key}
-                                                type="button"
-                                                onClick={() => toggleRegion(r)}
-                                                aria-pressed={on}
-                                                className={'flex w-full items-center gap-3 rounded-2xl border px-4 py-3 text-left transition '
-                                                    + (on ? 'border-emerald-600 bg-emerald-50 ring-1 ring-emerald-600' : 'border-slate-200 hover:border-emerald-400')}
-                                            >
-                                                <span className={'flex h-6 w-6 flex-none items-center justify-center rounded-md border transition '
-                                                    + (on ? 'border-emerald-600 bg-emerald-600 text-white' : 'border-slate-300 text-transparent')}>
-                                                    <Check className="h-4 w-4" strokeWidth={3} />
-                                                </span>
-                                                <span className="min-w-0">
-                                                    <span className="block font-semibold text-slate-900">{r.label}</span>
-                                                    <span className="block text-sm text-slate-500">{r.key === GUEST_COVERAGE_ALL_KEY ? allRegionHint : r.hint}</span>
-                                                </span>
+                                            <button key={val} type="button" role="radio" aria-checked={on}
+                                                onClick={() => setFulfilment(val)}
+                                                className={'rounded-2xl border-2 px-4 py-3 text-left transition '
+                                                    + (on ? 'border-emerald-600 bg-emerald-50/60' : 'border-slate-200 hover:border-slate-300')}>
+                                                <span className="block font-semibold text-slate-900">{label}</span>
+                                                <span className="mt-0.5 block text-xs text-slate-500">{hint}</span>
                                             </button>
                                         );
                                     })}
                                 </div>
-                            </SubFlowModal>
+                            )}
+
+                            {/* Delivery / coverage regions. */}
+                            {showRegions && (
+                                <div className={shape === 'made_to_order' ? 'mt-8' : ''}>
+                                    {shape === 'slot' ? (
+                                        <label className="block text-xs font-medium text-slate-500 mb-3">Where does it take place?</label>
+                                    ) : shape === 'made_to_order' ? (
+                                        <label className="block text-xs font-medium text-slate-500 mb-3">{GUEST_SCREEN_COPY.locationHeadingDeliver}</label>
+                                    ) : (
+                                        <p className="text-sm text-slate-500 mb-4 md:max-w-xl">{GUEST_SCREEN_COPY.locationSubtextTravel}</p>
+                                    )}
+
+                                    <div className="space-y-1 md:max-w-xl">
+                                        {areas.map((a, i) => (
+                                            <HubRow key={i} filled label={a.town} prompt="" summary={regionHintFor(a.town)} onOpen={() => setAreaPickerOpen(true)} />
+                                        ))}
+                                        {!areasHasAll && (
+                                            <HubRow filled={false} label={GUEST_SCREEN_COPY.locationAddRow}
+                                                prompt={shape === 'made_to_order' ? GUEST_SCREEN_COPY.locationAddPromptDeliver : GUEST_SCREEN_COPY.locationAddPrompt}
+                                                onOpen={() => setAreaPickerOpen(true)} />
+                                        )}
+                                    </div>
+
+                                    {problemFor('areas') && (
+                                        <p data-problem className="text-sm text-rose-700 mt-3">{GUEST_SCREEN_COPY.locationAreaGate}</p>
+                                    )}
+                                </div>
+                            )}
+
+                            {/* Collection address — private; released only on a
+                                confirmed order (see the order page). */}
+                            {showCollection && (
+                                <div className="mt-8 md:max-w-xl">
+                                    <label htmlFor="collection-address" className="block text-xs font-medium text-slate-500 mb-2">{GUEST_SCREEN_COPY.collectionAddressLabel}</label>
+                                    <textarea id="collection-address" rows={3}
+                                        value={collectionAddress}
+                                        onChange={(e) => setCollectionAddress(e.target.value)}
+                                        placeholder={GUEST_SCREEN_COPY.collectionAddressPlaceholder}
+                                        className="w-full rounded-xl border border-slate-300 px-4 py-3 focus:outline-none focus:ring-2 focus:ring-emerald-700" />
+                                    <p className="mt-2 text-xs text-slate-500">{GUEST_SCREEN_COPY.collectionAddressHint}</p>
+                                    {problemFor('collection_address') && (
+                                        <p data-problem className="text-sm text-rose-700 mt-2">{problemFor('collection_address')!.message}</p>
+                                    )}
+                                </div>
+                            )}
+
+                            {/* The region picker modal — only when regions can show. */}
+                            {showRegions && (
+                                <SubFlowModal
+                                    open={areaPickerOpen}
+                                    title={shape === 'made_to_order' ? GUEST_SCREEN_COPY.locationPickerTitleDeliver : GUEST_SCREEN_COPY.locationPickerTitle}
+                                    onClose={() => setAreaPickerOpen(false)}
+                                    saveLabel={GUEST_SCREEN_COPY.locationPickerDone}
+                                    saveDisabled={areas.length === 0}
+                                >
+                                    <div className="mx-auto w-full max-w-md space-y-2">
+                                        {GUEST_REGIONS.map((r) => {
+                                            const on = regionPicked(r.label);
+                                            return (
+                                                <button key={r.key} type="button" onClick={() => toggleRegion(r)} aria-pressed={on}
+                                                    className={'flex w-full items-center gap-3 rounded-2xl border px-4 py-3 text-left transition '
+                                                        + (on ? 'border-emerald-600 bg-emerald-50 ring-1 ring-emerald-600' : 'border-slate-200 hover:border-emerald-400')}>
+                                                    <span className={'flex h-6 w-6 flex-none items-center justify-center rounded-md border transition '
+                                                        + (on ? 'border-emerald-600 bg-emerald-600 text-white' : 'border-slate-300 text-transparent')}>
+                                                        <Check className="h-4 w-4" strokeWidth={3} />
+                                                    </span>
+                                                    <span className="min-w-0">
+                                                        <span className="block font-semibold text-slate-900">{r.label}</span>
+                                                        <span className="block text-sm text-slate-500">{r.key === GUEST_COVERAGE_ALL_KEY ? allRegionHint : r.hint}</span>
+                                                    </span>
+                                                </button>
+                                            );
+                                        })}
+                                    </div>
+                                </SubFlowModal>
+                            )}
                         </>
-                    )}
+                        );
+                    })()}
                 </section>
                 )}
 
