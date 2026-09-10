@@ -7,11 +7,17 @@ import { upstreamDetail } from '@/lib/address';
 export const dynamic = 'force-dynamic';
 
 // Suggestions as the host types. This exists as a server route for one reason:
-// getAddress.io takes the API key as a query-string parameter, so calling it
+// Ideal Postcodes takes the API key as a query-string parameter, so calling it
 // from the browser would put the key in the network tab.
 //
 // Returns only { id, address } per suggestion. The id is what /api/address/get
 // exchanges for the full address.
+//
+// REGION BIAS, NOT FILTER. bias_postcode_area=DG floats Dumfries & Galloway
+// results to the top without EXCLUDING anything — a hard postcode filter would
+// be wrong both ways (DG16 reaches into Cumbria; real D&G addresses sit in
+// CA/KA/ML/TD). The authoritative "is it in D&G" check is by council area on the
+// chosen address, in /api/address/get.
 export async function GET(request: Request) {
     try {
         // Signed in only. Every call spends a lookup from a paid allowance, so
@@ -27,7 +33,7 @@ export async function GET(request: Request) {
             return NextResponse.json({ ok: false, error: 'Not signed in' }, { status: 401 });
         }
 
-        if (!ServerEnv.GETADDRESS_API_KEY) {
+        if (!ServerEnv.IDEAL_POSTCODES_API_KEY) {
             return NextResponse.json(
                 {
                     ok: false,
@@ -52,27 +58,32 @@ export async function GET(request: Request) {
         }
 
         const url =
-            `https://api.getAddress.io/autocomplete/${encodeURIComponent(term)}` +
-            `?api-key=${encodeURIComponent(ServerEnv.GETADDRESS_API_KEY)}&top=20`;
+            'https://api.ideal-postcodes.co.uk/v1/autocomplete/addresses'
+            + `?query=${encodeURIComponent(term)}`
+            + `&api_key=${encodeURIComponent(ServerEnv.IDEAL_POSTCODES_API_KEY)}`
+            // Soft bias, not a filter: D&G first, nothing excluded.
+            + '&bias_postcode_area=DG';
 
         const response = await fetch(url, { cache: 'no-store' });
 
         if (!response.ok) {
-            const detail = await upstreamDetail(response, ServerEnv.GETADDRESS_API_KEY);
-            console.error('getAddress autocomplete failed', detail);
+            const detail = await upstreamDetail(response, ServerEnv.IDEAL_POSTCODES_API_KEY);
+            console.error('address autocomplete failed', detail);
             // The real status, not a friendly mask — a rejected key, a spent
             // allowance and an outage need telling apart from the browser.
             return NextResponse.json({ ok: false, error: detail }, { status: 502 });
         }
 
+        // Ideal Postcodes: { result: { hits: [{ id, suggestion, udprn }] } }.
         const data = await response.json();
-        const suggestions = Array.isArray(data?.suggestions) ? data.suggestions : [];
+        const hits = (data && data.result && Array.isArray(data.result.hits)) ? data.result.hits : [];
 
         return NextResponse.json({
             ok: true,
-            suggestions: suggestions
-                .filter((s: any) => s && s.id && s.address)
-                .map((s: any) => ({ id: String(s.id), address: String(s.address) })),
+            // Keep our own { id, address } contract so the client is unchanged.
+            suggestions: hits
+                .filter((s: any) => s && s.id && s.suggestion)
+                .map((s: any) => ({ id: String(s.id), address: String(s.suggestion) })),
         });
     } catch (err) {
         console.error('address autocomplete error', err);

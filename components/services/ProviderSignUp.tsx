@@ -617,9 +617,9 @@ function ApplicationForm() {
     // they are empty, so a not-loaded value can never blank a real one on save —
     // the same class of bug as the slot-capacity default. See guestProviderFields.
     const [collectionAddressLoaded, setCollectionAddressLoaded] = useState(true);
-    // The optional getAddress.io lookup — suggestions for a typed postcode.
-    // Manual entry is the primary path; this fills the fields when the lookup is
-    // available and degrades silently (a dead key surfaces the manual message).
+    // The optional address lookup (Ideal Postcodes) — suggestions for a typed
+    // postcode. Manual entry is the primary path; this fills the fields when the
+    // lookup is available and degrades to the manual message when it isn't.
     const [collectionLookupQuery, setCollectionLookupQuery] = useState('');
     const [collectionLookupResults, setCollectionLookupResults] = useState<Array<{ id: string; label: string }>>([]);
     const [collectionLookupBusy, setCollectionLookupBusy] = useState(false);
@@ -1372,11 +1372,12 @@ function ApplicationForm() {
             && collectionPostcode.trim() !== '',
     });
 
-    // The optional getAddress.io lookup for the collection address, reusing the
-    // same routes and helpers as add-a-property. Manual entry is the primary path
-    // (the three fields below always work); this fills them when the lookup is
-    // available and shows a plain "enter it by hand" line when it isn't (a
-    // dead/absent key returns 502/503 — it has been 401ing upstream since August).
+    // The optional address lookup (Ideal Postcodes) for the collection address,
+    // reusing the shared /api/address routes and helpers. Manual entry is the
+    // primary path (the three fields below always work); this fills them when the
+    // lookup is available and shows a plain "enter it by hand" line when it isn't
+    // (an absent key returns 503, a rejected one 502). The region gate lives in
+    // /api/address/get, which refuses an address outside Dumfries & Galloway.
     const runCollectionLookup = async () => {
         const q = collectionLookupQuery.trim();
         if (q.length < 3) return;
@@ -1413,8 +1414,20 @@ function ApplicationForm() {
         try {
             const res = await fetch('/api/address/get?id=' + encodeURIComponent(id));
             const body = await res.json();
+            // The address is real but outside Dumfries & Galloway — say so
+            // plainly, naming where it is, and DON'T fill the fields. The lookup
+            // stays open so they can pick another; the manual link is still there.
+            if (body && body.outOfRegion) {
+                const where = body.district
+                    ? 'That address is in ' + body.district + ', outside Dumfries & Galloway.'
+                    : 'That address is outside Dumfries & Galloway.';
+                setCollectionLookupError(where + ' ' + GUEST_SCREEN_COPY.collectionOutOfRegionSuffix);
+                setCollectionLookupResults([]);
+                return;
+            }
             if (!res.ok || !body.ok || !body.address) {
                 setCollectionLookupError(GUEST_SCREEN_COPY.collectionLookupManual);
+                setCollectionManual(true);
                 return;
             }
             const a = body.address;
@@ -6043,7 +6056,7 @@ function ApplicationForm() {
                                 <div className="mt-8 md:max-w-xl">
                                     <span className="block text-xs font-medium text-slate-500 mb-2">{GUEST_SCREEN_COPY.collectionAddressLabel}</span>
 
-                                    {/* Optional getAddress.io lookup. */}
+                                    {/* Optional address lookup (Ideal Postcodes). */}
                                     <div className="flex gap-2">
                                         <input
                                             type="text"

@@ -660,16 +660,15 @@ export default function AddHome() {
                 {/* Step 3: Location */}
                 {step === 3 && (
                     <div>
-                        <h2 className="text-3xl font-extrabold text-slate-900 mb-2">Confirm your location</h2>
-                        {/* Only claim a lookup happened when one did. A host
-                            who chose "skip to manual listing form", or who hit
-                            the lookup while it was unavailable, arrives here
-                            with four empty boxes under a line telling them this
-                            is what we found. */}
+                        <h2 className="text-3xl font-extrabold text-slate-900 mb-2">Your location</h2>
+                        {/* The address is typed here — there is no lookup on this
+                            flow any more (the postcode/street search landing screen
+                            was cut in #122 when the wizard moved to open on the
+                            property-type step; coordinates are geocoded from the
+                            postcode server-side on save). So the copy asks for the
+                            address rather than claiming to have "found" it. */}
                         <p className="text-slate-600 mb-8">
-                            {street || city || postcode
-                                ? 'This is what we found from your address search — check it over.'
-                                : 'Where is your place? Guests only ever see the town and region.'}
+                            Where is your place? Guests only ever see the town and region.
                         </p>
                         <div className="space-y-4">
                             <div>

@@ -286,12 +286,16 @@ export const GUEST_SCREEN_COPY = {
     collectionPostcodeLabel: 'Postcode',
     collectionPostcodePlaceholder: 'e.g. DG6 4JT',
     collectionAddressGate: 'Add the street, town and postcode guests collect from.',
-    // The optional address lookup (getAddress.io). Manual entry is always there;
-    // this just fills the fields when the lookup is available.
+    // The optional address lookup (Ideal Postcodes). Manual entry is always
+    // there; this just fills the fields when the lookup is available.
     collectionLookupPrompt: 'Look up a postcode',
     collectionLookupFind: 'Find address',
     collectionLookupManual: 'Enter it by hand below — nothing else changes.',
     collectionManualLink: 'Enter it by hand',
+    // Shown when the chosen address is outside Dumfries & Galloway. The district
+    // name is filled in front of this (e.g. "That address is in Cumberland,
+    // outside Dumfries & Galloway.").
+    collectionOutOfRegionSuffix: 'We only cover Dumfries & Galloway — pick another address, or enter it by hand.',
 
     // The photos screen. An instruction, not a slogan — it names the task rather
     // than describing the outcome. The single line asks for three (what makes a
