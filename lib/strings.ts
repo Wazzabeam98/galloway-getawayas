@@ -202,7 +202,27 @@ export const GUEST_SCREEN_COPY = {
     // The gate under a greyed Next when no area is picked. Guest wording; the
     // host trades keep their own "who to show you to" line, which is still true
     // for them because their coverage does filter.
-    locationAreaGate: 'Add at least one area you cover — guests see it on your listing.',
+    locationAreaGate: 'Add at least one area — guests see it on your listing.',
+
+    // Made-to-order's two logistics screens, split so each asks one thing.
+    // First the notice (a big stepper, like the other single-number screens); then
+    // the delivery areas — a baker doesn't TRAVEL to a guest, they collect or drop
+    // off, so the wording is delivery, not travel.
+    noticeQuestion: 'How much notice do you need?',
+    // Just "days" — the heading already says it's notice, and the longer
+    // "days’ notice" overflowed the big stepper on a phone.
+    noticeSuffix: 'days',
+    locationHeadingDeliver: 'Where do you deliver to?',
+    locationSubtextDeliver: 'Pick the areas you deliver to — guests see this on your listing.',
+    locationPickerTitleDeliver: 'Where do you deliver to?',
+    locationAddPromptDeliver: 'Pick a region you deliver to',
+    // The "All of Dumfries & Galloway" option's hint is shape-specific — travel
+    // for a chef who comes to you, delivery for a baker, and neither for a fixed
+    // slot (a sauna at one place). GUEST_REGIONS holds the neutral default; the
+    // picker overrides it by shape from these.
+    coverageAllHintTravel: 'You travel anywhere in the region',
+    coverageAllHintDeliver: 'You deliver anywhere in the region',
+    coverageAllHintFixed: 'Anywhere in Dumfries & Galloway',
 
     // The photos screen. An instruction, not a slogan — it names the task rather
     // than describing the outcome. The single line asks for three (what makes a
@@ -289,7 +309,9 @@ export interface RegionCopy {
 export const GUEST_COVERAGE_ALL_KEY = 'all';
 
 export const GUEST_REGIONS: RegionCopy[] = [
-    { key: 'all', label: 'All of Dumfries & Galloway', hint: 'You travel anywhere in the region' },
+    // Neutral default hint; the guest picker overrides it by shape (travel /
+    // deliver / fixed) — see coverageAllHint* in GUEST_SCREEN_COPY.
+    { key: 'all', label: 'All of Dumfries & Galloway', hint: 'Anywhere in Dumfries & Galloway' },
     { key: 'rhins', label: 'The Rhins', hint: 'Stranraer, Portpatrick' },
     { key: 'machars', label: 'The Machars', hint: 'Wigtown, Whithorn, Newton Stewart' },
     { key: 'stewartry', label: 'The Stewartry', hint: 'Kirkcudbright, Castle Douglas, Gatehouse, Dalbeattie' },

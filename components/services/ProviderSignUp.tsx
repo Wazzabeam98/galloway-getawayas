@@ -174,18 +174,22 @@ function NumberStepper({
     const nudge = (dir: number) => ((solid || has) ? commit(shown + dir * step) : commit(suggestion ?? min));
 
     const lg = size === 'lg';
+    // lg is the whole-screen stepper (years, guests, notice). It is sized DOWN on
+    // a phone — at full desktop size the number field plus the two circles and the
+    // suffix are wider than a 375px screen and clip at both edges. Desktop keeps
+    // the big size via the sm: breakpoints.
     const circle =
-        (lg ? 'h-16 w-16 ' : 'h-11 w-11 ')
+        (lg ? 'h-14 w-14 sm:h-16 sm:w-16 ' : 'h-11 w-11 ')
         + 'flex flex-none items-center justify-center rounded-full border border-slate-300 '
         + 'text-slate-600 transition hover:border-slate-500 focus:outline-none focus-visible:ring-2 '
         + 'focus-visible:ring-emerald-600 disabled:opacity-40 disabled:hover:border-slate-300';
-    const glyph = lg ? 'h-6 w-6' : 'h-4 w-4';
+    const glyph = lg ? 'h-5 w-5 sm:h-6 sm:w-6' : 'h-4 w-4';
     const numberField = lg
-        ? 'w-44 bg-transparent text-center text-8xl sm:text-9xl font-extrabold tabular-nums text-slate-900 placeholder:font-extrabold placeholder:text-slate-300 focus:outline-none [appearance:textfield] [&::-webkit-outer-spin-button]:appearance-none [&::-webkit-inner-spin-button]:appearance-none'
+        ? 'w-28 sm:w-44 bg-transparent text-center text-7xl sm:text-9xl font-extrabold tabular-nums text-slate-900 placeholder:font-extrabold placeholder:text-slate-300 focus:outline-none [appearance:textfield] [&::-webkit-outer-spin-button]:appearance-none [&::-webkit-inner-spin-button]:appearance-none'
         : 'w-16 bg-transparent text-center text-4xl font-extrabold tabular-nums text-slate-900 placeholder:font-extrabold placeholder:text-slate-300 focus:outline-none [appearance:textfield] [&::-webkit-outer-spin-button]:appearance-none [&::-webkit-inner-spin-button]:appearance-none';
 
     return (
-        <div className={'flex items-center ' + (lg ? 'gap-8 sm:gap-10' : 'gap-4')}>
+        <div className={'flex items-center ' + (lg ? 'gap-4 sm:gap-10' : 'gap-4')}>
             <button type="button" onClick={() => nudge(-1)} disabled={has && shown <= min}
                 aria-label="Decrease" className={circle}>
                 <Minus className={glyph} strokeWidth={2} />
@@ -1669,12 +1673,11 @@ function ApplicationForm() {
     // host touches them, so the step can't be passed until each one that applies
     // has a real value. (The area and weekly-hours requirements come through
     // stepProblems, below.)
-    const whereMissing: string | null = isGuest && step === 'g_area'
-        ? (shape === 'slot'
-            ? (!slotLength.trim() ? 'Set how long each session is.' : null)
-            : shape === 'made_to_order'
-                ? (!leadTimeDays.trim() ? 'Set how much notice you need.' : null)
-                : null)
+    // Only the slot gates g_area on a number here (its session length). The
+    // made-to-order notice moved to its own screen (g_notice), which stores the
+    // shown value on Next like the years/guests steppers rather than gating.
+    const whereMissing: string | null = isGuest && step === 'g_area' && shape === 'slot'
+        ? (!slotLength.trim() ? 'Set how long each session is.' : null)
         : null;
 
     // g_photos deliberately shows no footer message: the on-screen line asks for
@@ -2133,6 +2136,15 @@ function ApplicationForm() {
     const ALL_REGION_LABEL = GUEST_REGIONS.filter((r) => r.key === GUEST_COVERAGE_ALL_KEY)[0].label;
     const areasHasAll = areas.some((a) => a.town === ALL_REGION_LABEL);
     const regionHint = (label: string) => GUEST_REGIONS.filter((r) => r.label === label)[0]?.hint || '';
+    // The "All of Dumfries & Galloway" hint is shape-specific — travel for a chef
+    // who comes to you, delivery for a baker, neither for a fixed slot. The
+    // individual regions' hints (town lists) are shape-neutral and stay as-is.
+    const allRegionHint = shape === 'comes_to_you'
+        ? GUEST_SCREEN_COPY.coverageAllHintTravel
+        : shape === 'made_to_order'
+            ? GUEST_SCREEN_COPY.coverageAllHintDeliver
+            : GUEST_SCREEN_COPY.coverageAllHintFixed;
+    const regionHintFor = (label: string) => (label === ALL_REGION_LABEL ? allRegionHint : regionHint(label));
     const regionPicked = (label: string) => areas.some((a) => a.town === label);
     const toggleRegion = (r: { key: string; label: string }) => {
         if (r.key === GUEST_COVERAGE_ALL_KEY) {
@@ -3379,7 +3391,7 @@ function ApplicationForm() {
                                 /* The years opener is a flex column so its
                                    stepper can centre in the space under the
                                    question rather than sit high with a void. */
-                                : (step === 'g_you' || step === 'g_capacity')
+                                : (step === 'g_you' || step === 'g_capacity' || step === 'g_notice')
                                     ? 'max-w-2xl py-10 sm:py-12 flex flex-col'
                                     /* Finish is the widest content screen: it is a
                                        full-width preview of the listing about to be
@@ -3400,13 +3412,13 @@ function ApplicationForm() {
                         have no section, so it shows nothing there. */}
                     {isGuest && currentSection && (
                         <p className={'text-xs font-bold uppercase tracking-[0.12em] text-emerald-700 mb-3 '
-                            + ((step === 'g_you' || step === 'g_creds' || step === 'g_menu' || step === 'g_capacity' || step === 'g_photos') ? 'text-center' : '')}>
+                            + ((step === 'g_you' || step === 'g_creds' || step === 'g_menu' || step === 'g_capacity' || step === 'g_notice' || step === 'g_photos') ? 'text-center' : '')}>
                             {currentSection.label}
                         </p>
                     )}
                     {isGuest && step !== 'finish' && step !== 'g_creds' && step !== 'g_menu' && step !== 'g_capacity' && (
                         <h1 className={'font-extrabold tracking-tight text-slate-900 [text-wrap:balance] text-3xl sm:text-4xl '
-                            + ((step === 'trade' || step === 'g_subtype' || step === 'g_you') ? 'mb-10 text-center'
+                            + ((step === 'trade' || step === 'g_subtype' || step === 'g_you' || step === 'g_notice') ? 'mb-10 text-center'
                                 /* g_photos is centred (this screen only, to match
                                    Airbnb) with a tight gap so "Add at least 3 photos."
                                    reads as a subtitle, not a stranded paragraph. */
@@ -3414,14 +3426,15 @@ function ApplicationForm() {
                                     : 'mb-8')}>
                             {step === 'trade'
                                 ? 'What experience are you offering guests?'
-                                /* The g_area step title carries a "when" that is
-                                   real for a slot (a schedule) and made-to-order
-                                   (a notice period) but false for a traveller,
-                                   who is only asked where. So the travelling
-                                   shape gets a where-only heading; the others
-                                   keep the generic title. */
-                                : (step === 'g_area' && shape !== 'slot' && shape !== 'made_to_order')
+                                /* The g_area title's "when" is real only for a slot
+                                   (a schedule). A traveller is asked where only; a
+                                   made-to-order's when is now its own screen and
+                                   this is delivery only — so each gets its own
+                                   honest heading and the slot keeps the generic. */
+                                : (step === 'g_area' && shape === 'comes_to_you')
                                     ? GUEST_SCREEN_COPY.locationHeadingTravel
+                                    : (step === 'g_area' && shape === 'made_to_order')
+                                        ? GUEST_SCREEN_COPY.locationHeadingDeliver
                                     : step === 'g_photos'
                                         ? GUEST_SCREEN_COPY.photosHeading
                                         : stepMeta.title}
@@ -3743,7 +3756,7 @@ function ApplicationForm() {
             <fieldset disabled={locked} className={'min-w-0 ' + (locked ? 'opacity-70' : '')
                 /* On the years opener the fieldset fills the panel below the
                    question so its one section can centre vertically. */
-                + (isGuest && (step === 'g_you' || step === 'g_capacity') ? ' flex-1 flex flex-col' : '')}>
+                + (isGuest && (step === 'g_you' || step === 'g_capacity' || step === 'g_notice') ? ' flex-1 flex flex-col' : '')}>
                 {/* The standalone business step is host-only now. A guest names
                     the experience on g_about ("Name it, and tell guests what it
                     is"), beside the description, so they never answer it twice. */}
@@ -4296,13 +4309,14 @@ function ApplicationForm() {
                     );
                 })()}
 
-                {/* MADE-TO-ORDER adds one field: the notice needed. It is the same
-                    fact as the made-to-order cancellation cutoff, so it is asked
-                    once, here. Gated on the shape, not worded as a condition. */}
-                {onStep('g_area') && audienceForTrade(trade) === 'guest' && shape === 'made_to_order' && (
-                <section className="mb-8">
-                    <label className="block text-xs font-medium text-slate-500 mb-3">How much notice do you need?</label>
-                    <NumberStepper value={leadTimeDays} onChange={setLeadTimeDays} min={0} max={90} suggestion={2} suffix="days’ notice" />
+                {/* MADE-TO-ORDER: the notice period, on its own screen (g_notice)
+                    before the delivery areas — a big centred stepper under the
+                    question, like the years and guests screens. The heading is the
+                    generic h1 (noticeQuestion). It's the same fact as the
+                    made-to-order cancellation cutoff, still asked once. */}
+                {onStep('g_notice') && audienceForTrade(trade) === 'guest' && (
+                <section className="flex-1 flex flex-col items-center justify-center">
+                    <NumberStepper value={leadTimeDays} onChange={setLeadTimeDays} min={0} max={90} suggestion={2} size="lg" solid suffix={GUEST_SCREEN_COPY.noticeSuffix} />
                 </section>
                 )}
 
@@ -5779,15 +5793,20 @@ function ApplicationForm() {
                         blocks above; this screen is only the where. */}
                     {isGuest && (
                         <>
-                            {shape === 'slot' || shape === 'made_to_order' ? (
+                            {shape === 'slot' ? (
+                                // A slot has the schedule blocks above, so this is a
+                                // sub-label over the region rows.
                                 <label className="block text-xs font-medium text-slate-500 mb-3">
-                                    {shape === 'slot'
-                                        ? 'Where does it take place?'
-                                        : 'Which parts of Dumfries & Galloway do you deliver to?'}
+                                    Where does it take place?
                                 </label>
                             ) : (
+                                // Made-to-order and comes-to-you: this screen is only
+                                // the where, so a subtext under the h1 — delivery for a
+                                // baker, travel for a chef.
                                 <p className="text-sm text-slate-500 mb-4 md:max-w-xl">
-                                    {GUEST_SCREEN_COPY.locationSubtextTravel}
+                                    {shape === 'made_to_order'
+                                        ? GUEST_SCREEN_COPY.locationSubtextDeliver
+                                        : GUEST_SCREEN_COPY.locationSubtextTravel}
                                 </p>
                             )}
 
@@ -5798,7 +5817,7 @@ function ApplicationForm() {
                                         filled
                                         label={a.town}
                                         prompt=""
-                                        summary={regionHint(a.town)}
+                                        summary={regionHintFor(a.town)}
                                         onOpen={() => setAreaPickerOpen(true)}
                                     />
                                 ))}
@@ -5806,7 +5825,7 @@ function ApplicationForm() {
                                     <HubRow
                                         filled={false}
                                         label={GUEST_SCREEN_COPY.locationAddRow}
-                                        prompt={GUEST_SCREEN_COPY.locationAddPrompt}
+                                        prompt={shape === 'made_to_order' ? GUEST_SCREEN_COPY.locationAddPromptDeliver : GUEST_SCREEN_COPY.locationAddPrompt}
                                         onOpen={() => setAreaPickerOpen(true)}
                                     />
                                 )}
@@ -5820,7 +5839,7 @@ function ApplicationForm() {
 
                             <SubFlowModal
                                 open={areaPickerOpen}
-                                title={GUEST_SCREEN_COPY.locationPickerTitle}
+                                title={shape === 'made_to_order' ? GUEST_SCREEN_COPY.locationPickerTitleDeliver : GUEST_SCREEN_COPY.locationPickerTitle}
                                 onClose={() => setAreaPickerOpen(false)}
                                 saveLabel={GUEST_SCREEN_COPY.locationPickerDone}
                                 saveDisabled={areas.length === 0}
@@ -5843,7 +5862,7 @@ function ApplicationForm() {
                                                 </span>
                                                 <span className="min-w-0">
                                                     <span className="block font-semibold text-slate-900">{r.label}</span>
-                                                    <span className="block text-sm text-slate-500">{r.hint}</span>
+                                                    <span className="block text-sm text-slate-500">{r.key === GUEST_COVERAGE_ALL_KEY ? allRegionHint : r.hint}</span>
                                                 </span>
                                             </button>
                                         );
@@ -6477,6 +6496,9 @@ function ApplicationForm() {
                             // Same rule for max guests: an untouched pass stores
                             // the shown default; a loaded value is left as it is.
                             if (isGuest && step === 'g_capacity' && !maxGuests.trim()) setMaxGuests(String(shape === 'comes_to_you' ? CAPACITY_DEFAULT_TRAVEL : CAPACITY_DEFAULT_SLOT));
+                            // Same for the notice screen: an untouched pass stores
+                            // the shown suggestion (2 days).
+                            if (isGuest && step === 'g_notice' && !leadTimeDays.trim()) setLeadTimeDays('2');
                             goNext();
                         };
                         return (

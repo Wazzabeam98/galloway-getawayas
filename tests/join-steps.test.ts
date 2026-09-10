@@ -575,14 +575,22 @@ test('a signed-in applicant is never resolved onto the verify gate by a restored
 test('a cake maker (made to order) gets the years and expertise screens too', () => {
     // Made-to-order food was cut from these screens for a while, then brought
     // back: a cake maker has a track record and a story worth showing. So it
-    // walks the full flow now, with g_you and g_creds. The lead time it needs
-    // lives inside the where-and-when step, not a screen of its own.
+    // walks the full flow now, with g_you and g_creds. Its notice period is now
+    // its OWN screen (g_notice), before the delivery areas (g_area) — split out
+    // of the old combined where-and-when step, which promised a schedule it did
+    // not have. So a cake maker walks the ten PLUS the notice screen.
     const ctx = { group: 'food', category: 'food_order', shape: 'made_to_order' };
-    assert.deepEqual(gkeys(ctx), TEN);
+    const withNotice = TEN.slice();
+    withNotice.splice(withNotice.indexOf('g_area'), 0, 'g_notice');
+    assert.deepEqual(gkeys(ctx), withNotice);
+    assert.equal(stepApplies('g_notice', 'guest', ctx), true, 'made-to-order asks its notice, on its own screen');
     assert.equal(stepApplies('g_you', 'guest', ctx), true, 'years asked');
     assert.equal(stepApplies('g_creds', 'guest', ctx), true, 'expertise asked');
     // Cakes and hampers have no guests, so no max-guests step.
     assert.equal(stepApplies('g_capacity', 'guest', ctx), false, 'made-to-order skips the capacity step');
+    // The notice screen is made-to-order only — a slot and a traveller never see it.
+    assert.equal(stepApplies('g_notice', 'guest', { group: 'wellness', category: 'sauna', shape: 'slot' }), false, 'a slot has no notice screen');
+    assert.equal(stepApplies('g_notice', 'guest', { group: 'food', category: 'chef', shape: 'comes_to_you' }), false, 'a traveller has no notice screen');
 });
 
 test('a yoga instructor (not food, slot) walks the flow, with a capacity step and dietary folded away', () => {

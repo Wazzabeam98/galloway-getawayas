@@ -41,7 +41,7 @@ import { GUEST_SCREEN_COPY } from '@/lib/strings';
 // ever gains one. See stepApplies.
 export type StepKey =
     | 'trade' | 'g_subtype' | 'g_verify' | 'business'
-    | 'g_you' | 'g_creds' | 'g_about' | 'g_capacity' | 'g_menu' | 'g_expect' | 'g_photos' | 'g_area'
+    | 'g_you' | 'g_creds' | 'g_about' | 'g_capacity' | 'g_menu' | 'g_expect' | 'g_photos' | 'g_notice' | 'g_area'
     | 'credentials' | 'prices' | 'finish';
 
 // The guest-only steps, in flow order. Rebuilt against Airbnb's host-an-
@@ -65,7 +65,7 @@ export type StepKey =
 // account address is the contact address, and the phone lives on the profile).
 const GUEST_STEP_KEYS: StepKey[] = [
     'g_verify', 'g_subtype',
-    'g_you', 'g_creds', 'g_area', 'g_photos', 'g_capacity', 'g_menu', 'g_expect',
+    'g_you', 'g_creds', 'g_notice', 'g_area', 'g_photos', 'g_capacity', 'g_menu', 'g_expect',
 ];
 
 // What a guest's steps branch on, all from earlier answers: the top-level group
@@ -114,6 +114,14 @@ const ALL_STEPS: Step[] = [
     // it is kept for the host trades and harmless for guests.
     { key: 'g_you', label: 'You', title: GUEST_SCREEN_COPY.yearsQuestion },
     { key: 'g_creds', label: 'Expertise', title: GUEST_SCREEN_COPY.expertiseHeading },
+    // Made-to-order only: the notice period, its own single-question screen before
+    // the delivery areas (a big stepper, like the years/guests screens). The other
+    // shapes carry their "when" inside g_area (a slot's schedule) or not at all.
+    { key: 'g_notice', label: 'Notice', title: GUEST_SCREEN_COPY.noticeQuestion },
+    // The g_area title has a "when" that is true for a slot (a schedule); for a
+    // made-to-order the when is now its own screen (g_notice) and this is delivery
+    // only, and for a traveller it is where only. The form picks the honest
+    // heading per shape (see the h1 logic); this generic title is the slot's.
     { key: 'g_area', label: 'Where', title: 'Where, and when, can guests get it?' },
     { key: 'g_photos', label: 'Photos', title: 'Show guests what it looks like' },
     // The Pricing section opens with the capacity question (Airbnb's order),
@@ -200,14 +208,16 @@ export function stepApplies(step: StepKey, trade: string, ctx?: StepContext): bo
             // 'other' has no shape, so both skip it.
             case 'g_capacity':
                 return shape === 'comes_to_you' || shape === 'slot';
-            // Where and when, in one step. Every guest needs a location —
-            // submitProblems requires at least one area for anyone, and the
-            // marketplace has to know where they are. The wording adapts (how
-            // far will you travel vs where is it), and the shape decides whether
-            // a schedule shows inside it: a slot picks weekly hours, a
-            // made-to-order sets a lead time, a comes-to-you arranges it on the
-            // enquiry. The step is always there so nobody is stranded on an
-            // areas or availability error with no screen to fix it on.
+            // The notice period, made-to-order only — its own screen before the
+            // delivery areas. Other shapes have no notice (a slot has a schedule
+            // inside g_area; a traveller arranges it on the enquiry).
+            case 'g_notice':
+                return shape === 'made_to_order';
+            // The location, every guest. A slot picks its weekly hours here too;
+            // a made-to-order's notice moved to g_notice, so this is delivery
+            // only for them; a comes-to-you arranges the when on the enquiry.
+            // Always present so nobody is stranded on an areas error with no
+            // screen to fix it on.
             case 'g_area':
                 return true;
             default:
@@ -281,7 +291,7 @@ export function stepsFor(trade: string, ctx?: StepContext): Step[] {
 
 const GUEST_SECTIONS: { key: string; label: string; steps: StepKey[] }[] = [
     { key: 'about', label: GUEST_SCREEN_COPY.sectionAboutYou, steps: ['g_you', 'g_creds'] },
-    { key: 'location', label: GUEST_SCREEN_COPY.sectionLocation, steps: ['g_area'] },
+    { key: 'location', label: GUEST_SCREEN_COPY.sectionLocation, steps: ['g_notice', 'g_area'] },
     { key: 'photos', label: GUEST_SCREEN_COPY.sectionPhotos, steps: ['g_photos'] },
     { key: 'pricing', label: GUEST_SCREEN_COPY.sectionPricing, steps: ['g_capacity', 'g_menu'] },
     { key: 'details', label: GUEST_SCREEN_COPY.sectionDetails, steps: ['g_expect'] },
@@ -410,6 +420,7 @@ const STEP_FIELDS: Record<StepKey, string[]> = {
     g_menu: [],
     g_expect: [],
     g_photos: [],
+    g_notice: [],
     g_area: [],
     finish: [],
 };
