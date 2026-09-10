@@ -6456,7 +6456,19 @@ function ApplicationForm() {
                     .join(', ') || '—';
                 // A guest's areas hold the region label in `town` (set from
                 // GUEST_REGIONS when a region is picked), so read that directly.
-                const coverageVal = (areas || []).map((a) => a.town).filter(Boolean).join(', ') || '—';
+                const areaList = (areas || []).map((a) => a.town).filter(Boolean).join(', ');
+                // Coverage reflects the made-to-order fulfilment choice: delivery
+                // shows the delivery areas; collection-only has no areas, so it
+                // says "Collection only" rather than reading blank; both shows the
+                // areas and notes collection is available too. Slot and
+                // comes-to-you keep their areas as before.
+                const coverageVal = shape === 'made_to_order'
+                    ? (fulfilment === 'collection'
+                        ? GUEST_SCREEN_COPY.finishCoverageCollectionOnly
+                        : fulfilment === 'both'
+                            ? (areaList ? areaList + GUEST_SCREEN_COPY.finishCoverageBothSuffix : GUEST_SCREEN_COPY.finishCoverageCollectionAvailable)
+                            : (areaList || '—'))
+                    : (areaList || '—');
                 const whenVal = shape === 'slot'
                     ? `${(schedule || []).length} weekly time${(schedule || []).length === 1 ? '' : 's'}`
                     : shape === 'made_to_order'

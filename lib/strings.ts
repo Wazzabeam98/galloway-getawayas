@@ -57,6 +57,12 @@ export const GUEST_SCREEN_COPY = {
     finishSummaryCategory: 'Experience',   // fallback if the category has no label
     finishSummaryPrice: 'Price',
     finishSummaryCoverage: 'Coverage',
+    // The coverage value reflects the made-to-order fulfilment choice: delivery
+    // shows the areas, collection-only says so (there are no areas), both shows
+    // the areas and notes collection is available too.
+    finishCoverageCollectionOnly: 'Collection only',
+    finishCoverageCollectionAvailable: 'Collection available',
+    finishCoverageBothSuffix: ' · collection available',
     finishSummaryWhen: 'When',
     finishSummaryPhotos: 'Photos',
     // The written answers, previewed on the finish screen — their last look before
