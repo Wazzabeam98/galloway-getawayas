@@ -1375,6 +1375,9 @@ function ApplicationForm() {
         covered_bands: coveredBands,
         shape,
         scheduleCount: schedule.length,
+        // Items priced above zero — the marketplace lists only priced providers,
+        // so a guest listing needs at least one to be bookable.
+        pricedItemCount: (items || []).filter((i) => Number(String(i.price ?? '').trim()) > 0).length,
         fulfilment,
         // A usable collection address needs all three: the street and postcode a
         // guest actually finds, and the town that becomes the public based_line.
@@ -1895,7 +1898,10 @@ function ApplicationForm() {
     // must be touched. g_creds is skippable unless this category requires
     // qualifications. (The old g_checks is gone — its one confirmation moved to
     // the finish screen and is required there, not skippable.)
-    const OPTIONAL_GUEST_STEPS: StepKey[] = ['g_menu', 'g_expect'];
+    // g_menu is required now: a listing needs at least one priced item to be
+    // bookable, so its Next gates on the 'menu' problem (GUEST_STEP_FIELDS).
+    // g_expect stays optional.
+    const OPTIONAL_GUEST_STEPS: StepKey[] = ['g_expect'];
     const stepIsPicker = step === 'trade' || step === 'g_subtype';
     // g_creds is no longer skippable for anyone: the professional title is now
     // required for every category (qualifications on top for the safety four).

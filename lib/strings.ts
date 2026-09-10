@@ -143,6 +143,9 @@ export const GUEST_SCREEN_COPY = {
     menuSubtext: 'Add each thing a guest can book.',
     menuHeadingSlot: 'Your session, and what it costs',
     menuSubtextSlot: 'One session, priced the way you set it up.',
+    // Required before a guest listing can be sent: a listing with no priced item
+    // never appears on the marketplace and can't be booked.
+    menuRequiredGate: 'Add at least one thing a guest can book, with a price — without one your listing can’t be booked.',
     menuAddRow: 'Add an item',
     menuRowPrompt: 'Name it and set a price',
     menuUntitled: 'Untitled item',

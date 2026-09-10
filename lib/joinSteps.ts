@@ -438,6 +438,9 @@ const GUEST_STEP_FIELDS: Partial<Record<StepKey, string[]>> = {
     // Location, weekly hours, the made-to-order fulfilment fork and its
     // collection address all live on the where/delivery step.
     g_area: ['areas', 'availability', 'fulfilment', 'collection_address'],
+    // The priced-item requirement belongs to the pricing step, so a greyed Next
+    // and "go to first problem" both land here.
+    g_menu: ['menu'],
     // No contact step: contact_email is derived from the account at submit (so
     // submitProblems no longer raises it for a guest) and the phone lives on the
     // profile — neither belongs to a step's Next.

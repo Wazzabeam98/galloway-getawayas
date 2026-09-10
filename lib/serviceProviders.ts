@@ -2427,6 +2427,9 @@ export interface ProviderDraft {
     // whether areas or a collection address are required.
     fulfilment?: string | null;
     hasCollectionAddress?: boolean;
+    // How many items have a price above zero. A guest listing needs at least one
+    // — the marketplace lists only priced providers, so a no-price one is unbookable.
+    pricedItemCount?: number;
 }
 
 export interface Problem {
@@ -2560,6 +2563,16 @@ export function submitProblems(draft: ProviderDraft): Problem[] {
             field: 'availability',
             message: 'Add your weekly hours so guests can book a time — without them your listing can’t be booked.',
         });
+    }
+
+    // A guest listing with no PRICED item is a dead end: the marketplace only
+    // lists providers with an item priced above zero, so a no-price listing never
+    // appears and can't be opened or booked — yet nothing stopped it being sent
+    // for review and approved. Require at least one priced thing, the same way
+    // the slot hours are required. (Every guest shape sells something: a menu
+    // item, a made-to-order product, or a slot session.)
+    if (draft.audience === 'guest' && !(Number(draft.pricedItemCount) > 0)) {
+        problems.push({ field: 'menu', message: GUEST_SCREEN_COPY.menuRequiredGate });
     }
 
     for (const problem of pricingProblems(draft)) problems.push(problem);
