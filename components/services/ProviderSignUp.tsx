@@ -6033,7 +6033,10 @@ function ApplicationForm() {
                     : shape === 'made_to_order'
                         ? `${String(leadTimeDays || '0').trim()} days’ notice`
                         : 'arranged per booking';
-                const cover = (photos || [])[0] ? getImageUrl((photos || [])[0]) : null;
+                // Up to THREE photos in the hero space, in listing order so the
+                // cover leads. More than three crams; one or two fill the space
+                // rather than leaving gaps (see the layout below).
+                const shots = (photos || []).slice(0, 3).map((p) => getImageUrl(p));
                 const facts: [string, string][] = [
                     [GUEST_SCREEN_COPY.finishSummaryPrice, priceVal],
                     [GUEST_SCREEN_COPY.finishSummaryCoverage, coverageVal],
@@ -6055,12 +6058,33 @@ function ApplicationForm() {
                     {/* The preview card — reads as the listing about to be reviewed,
                         their last chance to spot a mistake before sending. */}
                     <div className="overflow-hidden rounded-3xl border border-slate-200">
-                        {cover ? (
-                            // eslint-disable-next-line @next/next/no-img-element
-                            <img src={cover} alt="" className="h-56 w-full object-cover sm:h-72" />
-                        ) : (
+                        {/* The hero: up to three photos in one band of fixed height,
+                            cover first. One fills it; two split it in half; three put
+                            the cover large on the left with the next two stacked on
+                            the right (Airbnb-style), so the space is used whatever the
+                            count and it's never more than three. */}
+                        {shots.length === 0 ? (
                             <div className="flex h-40 w-full items-center justify-center bg-slate-100 text-sm text-slate-400">
                                 No cover photo yet
+                            </div>
+                        ) : shots.length === 1 ? (
+                            // eslint-disable-next-line @next/next/no-img-element
+                            <img src={shots[0]} alt="" className="h-56 w-full object-cover sm:h-72" />
+                        ) : shots.length === 2 ? (
+                            <div className="grid h-56 grid-cols-2 grid-rows-1 gap-1 sm:h-72">
+                                {shots.map((s, i) => (
+                                    // eslint-disable-next-line @next/next/no-img-element
+                                    <img key={i} src={s} alt="" className="h-full w-full object-cover" />
+                                ))}
+                            </div>
+                        ) : (
+                            <div className="grid h-56 grid-cols-2 grid-rows-2 gap-1 sm:h-72">
+                                {/* eslint-disable-next-line @next/next/no-img-element */}
+                                <img src={shots[0]} alt="" className="row-span-2 h-full w-full object-cover" />
+                                {/* eslint-disable-next-line @next/next/no-img-element */}
+                                <img src={shots[1]} alt="" className="h-full w-full object-cover" />
+                                {/* eslint-disable-next-line @next/next/no-img-element */}
+                                <img src={shots[2]} alt="" className="h-full w-full object-cover" />
                             </div>
                         )}
                         <div className="p-6 sm:p-8">
