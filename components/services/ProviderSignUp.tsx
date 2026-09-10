@@ -631,6 +631,10 @@ function ApplicationForm() {
     // while there is more of the list below the visible area.
     const collectionListRef = useRef<HTMLUListElement>(null);
     const [collectionMoreBelow, setCollectionMoreBelow] = useState(false);
+    // The list's max height, measured to fit the space above the pinned footer so
+    // the LIST scrolls itself rather than pushing the page. Null on mobile (and
+    // before first measure), where the CSS max-height and native scroll stand.
+    const [collectionListMaxH, setCollectionListMaxH] = useState<number | null>(null);
     // The three manual boxes stay hidden behind the lookup until they're needed —
     // the screen is just the postcode lookup by default. They open when the
     // provider chooses to type it by hand, when a lookup fills or fails, or when a
@@ -1485,18 +1489,54 @@ function ApplicationForm() {
     }, [collectionLookupQuery, collectionInLookupMode]);
 
     // Is there more of the suggestions list below the fold? Drives the bottom
-    // fade. Recomputed on scroll (below) and whenever the results change.
+    // fade. Reads the list's CURRENT height, so it's correct once the cap below
+    // has been applied. Recomputed on scroll, on resize, and when results change.
     const updateCollectionMoreBelow = () => {
         const el = collectionListRef.current;
         setCollectionMoreBelow(!!el && el.scrollHeight - el.scrollTop - el.clientHeight > 4);
     };
+
+    // Cap the list to the space between its top and the panel's bottom edge (the
+    // pinned footer sits just below the panel), so the list fits above the footer
+    // and scrolls itself instead of pushing the page. Desktop only — on mobile
+    // the list keeps its CSS max-height and the page scrolls by thumb.
+    const measureCollectionListMax = () => {
+        const el = collectionListRef.current;
+        if (!el) return;
+        const desktop = typeof window !== 'undefined'
+            && window.matchMedia('(hover: hover) and (pointer: fine)').matches;
+        if (!desktop) { setCollectionListMaxH((prev) => (prev === null ? prev : null)); return; }
+        const panel = document.getElementById('signup-panel');
+        const boundary = panel ? panel.getBoundingClientRect().bottom : window.innerHeight;
+        const top = el.getBoundingClientRect().top;
+        // Leave room above the footer and for the "Enter it by hand" link beneath.
+        const avail = Math.floor(boundary - top - 52);
+        const capped = Math.max(160, avail);
+        setCollectionListMaxH((prev) => (prev === capped ? prev : capped));
+    };
+
+    // Measure the cap when the list appears or its results change (after paint —
+    // a bare rAF can fire before the list's position is final).
     useEffect(() => {
-        // After the list renders/changes, measure once it has painted (a bare
-        // rAF sometimes fires before the list's height is final).
-        const id = setTimeout(updateCollectionMoreBelow, 60);
+        const id = setTimeout(measureCollectionListMax, 60);
         return () => clearTimeout(id);
         // eslint-disable-next-line react-hooks/exhaustive-deps
-    }, [collectionLookupResults]);
+    }, [collectionLookupResults, collectionInLookupMode]);
+
+    // Once the cap (or results) has applied, measure whether more is below.
+    useEffect(() => {
+        const id = setTimeout(updateCollectionMoreBelow, 70);
+        return () => clearTimeout(id);
+        // eslint-disable-next-line react-hooks/exhaustive-deps
+    }, [collectionListMaxH, collectionLookupResults]);
+
+    // Re-measure on window resize while the list is showing.
+    useEffect(() => {
+        const onResize = () => { measureCollectionListMax(); updateCollectionMoreBelow(); };
+        window.addEventListener('resize', onResize);
+        return () => window.removeEventListener('resize', onResize);
+        // eslint-disable-next-line react-hooks/exhaustive-deps
+    }, []);
 
     // One block of £ boxes for a pricing structure. Nothing computes from
     // these yet — they are on the page so real window cleaners can say which
@@ -6178,6 +6218,7 @@ function ApplicationForm() {
                                             {collectionLookupResults.length > 0 && (
                                                 <div className="relative mt-1">
                                                     <ul ref={collectionListRef} onScroll={updateCollectionMoreBelow}
+                                                        style={collectionListMaxH ? { maxHeight: collectionListMaxH } : undefined}
                                                         className="scroll-always max-h-64 overflow-y-auto overscroll-contain rounded-xl border border-slate-200 divide-y divide-slate-100">
                                                         {collectionLookupResults.map((s) => (
                                                             <li key={s.id}>
