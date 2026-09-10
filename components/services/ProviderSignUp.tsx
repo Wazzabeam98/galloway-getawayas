@@ -624,6 +624,8 @@ function ApplicationForm() {
     const [collectionLookupResults, setCollectionLookupResults] = useState<Array<{ id: string; label: string }>>([]);
     const [collectionLookupBusy, setCollectionLookupBusy] = useState(false);
     const [collectionLookupError, setCollectionLookupError] = useState('');
+    // Guards against an earlier search resolving after a later one when typing fast.
+    const collectionLookupSeq = useRef(0);
     // The three manual boxes stay hidden behind the lookup until they're needed —
     // the screen is just the postcode lookup by default. They open when the
     // provider chooses to type it by hand, when a lookup fills or fails, or when a
@@ -1378,33 +1380,35 @@ function ApplicationForm() {
     // lookup is available and shows a plain "enter it by hand" line when it isn't
     // (an absent key returns 503, a rejected one 502). The region gate lives in
     // /api/address/get, which refuses an address outside Dumfries & Galloway.
-    const runCollectionLookup = async () => {
-        const q = collectionLookupQuery.trim();
-        if (q.length < 3) return;
+    // Search-as-you-type. Called by the debounce effect once the query settles,
+    // never per keystroke. `seq` guards against an earlier request resolving after
+    // a later one (typing fast) and overwriting fresher results. A failure just
+    // shows the "enter it by hand" line and leaves the lookup open — the manual
+    // link is the escape; we don't yank the box away mid-type.
+    const runCollectionLookup = async (query: string) => {
+        const q = query.trim();
+        if (q.length < 3) { setCollectionLookupResults([]); return; }
+        const seq = ++collectionLookupSeq.current;
         setCollectionLookupBusy(true);
         setCollectionLookupError('');
-        setCollectionLookupResults([]);
         try {
             const res = await fetch('/api/address/autocomplete?q=' + encodeURIComponent(q));
             const body = await res.json();
+            if (seq !== collectionLookupSeq.current) return;   // a newer keystroke won
             if (!res.ok || !body.ok) {
-                // Lookup unavailable (no or lapsed key) — fall back to manual entry
-                // and open the boxes so the fallback is visible, not silent.
                 setCollectionLookupError(GUEST_SCREEN_COPY.collectionLookupManual);
-                setCollectionManual(true);
+                setCollectionLookupResults([]);
                 return;
             }
             const suggestions = (body.suggestions || []).map((s: any) => ({ id: String(s.id), label: String(s.address || '') }));
-            if (!suggestions.length) {
-                setCollectionLookupError(GUEST_SCREEN_COPY.collectionLookupManual);
-                setCollectionManual(true);
-            }
+            setCollectionLookupError(suggestions.length ? '' : GUEST_SCREEN_COPY.collectionLookupManual);
             setCollectionLookupResults(suggestions);
         } catch {
+            if (seq !== collectionLookupSeq.current) return;
             setCollectionLookupError(GUEST_SCREEN_COPY.collectionLookupManual);
-            setCollectionManual(true);
+            setCollectionLookupResults([]);
         } finally {
-            setCollectionLookupBusy(false);
+            if (seq === collectionLookupSeq.current) setCollectionLookupBusy(false);
         }
     };
 
@@ -1427,7 +1431,6 @@ function ApplicationForm() {
             }
             if (!res.ok || !body.ok || !body.address) {
                 setCollectionLookupError(GUEST_SCREEN_COPY.collectionLookupManual);
-                setCollectionManual(true);
                 return;
             }
             const a = body.address;
@@ -1438,7 +1441,9 @@ function ApplicationForm() {
             setCollectionPostcode(a.postcode || '');
             setCollectionLookupResults([]);
             setCollectionLookupError('');
-            // Show the filled boxes so they can check and correct the result.
+            // Collapse the lookup: clear its query (so the postcode doesn't show
+            // twice) and switch to the filled three fields.
+            setCollectionLookupQuery('');
             setCollectionManual(true);
         } catch {
             setCollectionLookupError(GUEST_SCREEN_COPY.collectionLookupManual);
@@ -1446,6 +1451,33 @@ function ApplicationForm() {
             setCollectionLookupBusy(false);
         }
     };
+
+    // "Search again" from the filled fields: clear them and drop back to the
+    // lookup with an empty box. Manual off + empty fields = lookup mode.
+    const searchCollectionAgain = () => {
+        setCollectionStreet('');
+        setCollectionTown('');
+        setCollectionPostcode('');
+        setCollectionManual(false);
+        setCollectionLookupQuery('');
+        setCollectionLookupResults([]);
+        setCollectionLookupError('');
+    };
+
+    // Search as they type: debounce the query and fire once it settles (≥3 chars),
+    // the way the old lookup did — no button to press. Only while in lookup mode
+    // (no address chosen and not typing by hand); a picked/manual address is a
+    // settled answer, not a search term.
+    const collectionInLookupMode = !collectionManual
+        && !collectionStreet.trim() && !collectionTown.trim() && !collectionPostcode.trim();
+    useEffect(() => {
+        if (!collectionInLookupMode) return;
+        const q = collectionLookupQuery.trim();
+        if (q.length < 3) { setCollectionLookupResults([]); return; }
+        const timer = setTimeout(() => { runCollectionLookup(q); }, 300);
+        return () => clearTimeout(timer);
+        // eslint-disable-next-line react-hooks/exhaustive-deps
+    }, [collectionLookupQuery, collectionInLookupMode]);
 
     // One block of £ boxes for a pricing structure. Nothing computes from
     // these yet — they are on the page so real window cleaners can say which
@@ -6056,47 +6088,12 @@ function ApplicationForm() {
                                 <div className="mt-8 md:max-w-xl">
                                     <span className="block text-xs font-medium text-slate-500 mb-2">{GUEST_SCREEN_COPY.collectionAddressLabel}</span>
 
-                                    {/* Optional address lookup (Ideal Postcodes). */}
-                                    <div className="flex gap-2">
-                                        <input
-                                            type="text"
-                                            value={collectionLookupQuery}
-                                            onChange={(e) => setCollectionLookupQuery(e.target.value)}
-                                            onKeyDown={(e) => { if (e.key === 'Enter') { e.preventDefault(); runCollectionLookup(); } }}
-                                            placeholder={GUEST_SCREEN_COPY.collectionLookupPrompt}
-                                            className="min-w-0 flex-1 rounded-xl border border-slate-300 px-4 py-2.5 focus:outline-none focus:ring-2 focus:ring-emerald-700" />
-                                        <button type="button" onClick={runCollectionLookup} disabled={collectionLookupBusy || collectionLookupQuery.trim().length < 3}
-                                            className="flex-none rounded-xl border border-slate-300 px-4 py-2.5 text-sm font-semibold text-slate-700 transition hover:border-emerald-400 disabled:opacity-50">
-                                            {collectionLookupBusy ? '…' : GUEST_SCREEN_COPY.collectionLookupFind}
-                                        </button>
-                                    </div>
-                                    {collectionLookupResults.length > 0 && (
-                                        <ul className="mt-2 max-h-56 overflow-y-auto rounded-xl border border-slate-200">
-                                            {collectionLookupResults.map((s) => (
-                                                <li key={s.id}>
-                                                    <button type="button" onClick={() => pickCollectionSuggestion(s.id)}
-                                                        className="block w-full px-4 py-2.5 text-left text-sm text-slate-700 transition hover:bg-emerald-50">
-                                                        {s.label}
-                                                    </button>
-                                                </li>
-                                            ))}
-                                        </ul>
-                                    )}
-                                    {collectionLookupError && (
-                                        <p className="mt-2 text-xs text-slate-500">{collectionLookupError}</p>
-                                    )}
-
-                                    {/* Hidden by default — the screen is just the lookup.
-                                        A link opens them for someone who'd rather type it. */}
-                                    {!showCollectionFields ? (
-                                        <button type="button" onClick={() => setCollectionManual(true)}
-                                            className="mt-3 text-sm font-medium text-emerald-700 underline underline-offset-2 hover:text-emerald-800">
-                                            {GUEST_SCREEN_COPY.collectionManualLink}
-                                        </button>
-                                    ) : (
+                                    {showCollectionFields ? (
+                                        // FIELDS MODE — a chosen or hand-typed address. The
+                                        // lookup is collapsed away (no duplicate postcode, no
+                                        // fourth box); a "Search again" link reopens it.
                                         <>
-                                            {/* The three fields — the source of truth. */}
-                                            <div className="mt-4 space-y-3">
+                                            <div className="space-y-3">
                                                 <div>
                                                     <label htmlFor="collection-street" className="block text-xs font-medium text-slate-500 mb-1">{GUEST_SCREEN_COPY.collectionStreetLabel}</label>
                                                     <input id="collection-street" type="text"
@@ -6125,10 +6122,51 @@ function ApplicationForm() {
                                                 </div>
                                             </div>
 
-                                            <p className="mt-2 text-xs text-slate-500">{GUEST_SCREEN_COPY.collectionAddressHint}</p>
+                                            <div className="mt-2 flex items-start justify-between gap-3">
+                                                <p className="text-xs text-slate-500">{GUEST_SCREEN_COPY.collectionAddressHint}</p>
+                                                <button type="button" onClick={searchCollectionAgain}
+                                                    className="flex-none text-sm font-medium text-emerald-700 underline underline-offset-2 hover:text-emerald-800">
+                                                    {GUEST_SCREEN_COPY.collectionSearchAgain}
+                                                </button>
+                                            </div>
                                             {problemFor('collection_address') && (
                                                 <p data-problem className="text-sm text-rose-700 mt-2">{problemFor('collection_address')!.message}</p>
                                             )}
+                                        </>
+                                    ) : (
+                                        // LOOKUP MODE — search as you type (debounced, ≥3
+                                        // chars, no button); pick fills the fields above.
+                                        // "Enter it by hand" is the escape if it can't help.
+                                        <>
+                                            <input
+                                                type="text"
+                                                value={collectionLookupQuery}
+                                                onChange={(e) => setCollectionLookupQuery(e.target.value)}
+                                                placeholder={GUEST_SCREEN_COPY.collectionLookupPrompt}
+                                                autoComplete="off"
+                                                className="w-full rounded-xl border border-slate-300 px-4 py-3 focus:outline-none focus:ring-2 focus:ring-emerald-700" />
+                                            {collectionLookupBusy && collectionLookupResults.length === 0 && (
+                                                <p className="mt-2 text-xs text-slate-400">Searching…</p>
+                                            )}
+                                            {collectionLookupResults.length > 0 && (
+                                                <ul className="mt-2 max-h-64 overflow-y-auto overscroll-contain rounded-xl border border-slate-200 divide-y divide-slate-100">
+                                                    {collectionLookupResults.map((s) => (
+                                                        <li key={s.id}>
+                                                            <button type="button" onClick={() => pickCollectionSuggestion(s.id)}
+                                                                className="block w-full px-4 py-2.5 text-left text-sm text-slate-700 transition hover:bg-emerald-50">
+                                                                {s.label}
+                                                            </button>
+                                                        </li>
+                                                    ))}
+                                                </ul>
+                                            )}
+                                            {collectionLookupError && (
+                                                <p className="mt-2 text-xs text-slate-500">{collectionLookupError}</p>
+                                            )}
+                                            <button type="button" onClick={() => setCollectionManual(true)}
+                                                className="mt-3 text-sm font-medium text-emerald-700 underline underline-offset-2 hover:text-emerald-800">
+                                                {GUEST_SCREEN_COPY.collectionManualLink}
+                                            </button>
                                         </>
                                     )}
                                 </div>

@@ -292,6 +292,7 @@ export const GUEST_SCREEN_COPY = {
     collectionLookupFind: 'Find address',
     collectionLookupManual: 'Enter it by hand below — nothing else changes.',
     collectionManualLink: 'Enter it by hand',
+    collectionSearchAgain: 'Search again',
     // Shown when the chosen address is outside Dumfries & Galloway. The district
     // name is filled in front of this (e.g. "That address is in Cumberland,
     // outside Dumfries & Galloway.").
