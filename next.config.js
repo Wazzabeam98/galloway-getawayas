@@ -13,6 +13,13 @@
 // no project of ours — images through next/image have been failing wherever
 // they are used, HomeCard included.
 const nextConfig = {
+    // Where the build writes. Default `.next` for dev, `next start` and Vercel,
+    // but overridable so a compile-only gate (the pre-push hook) can build into
+    // a throwaway dir instead of clobbering the `.next` a running `next dev` is
+    // serving from — which stamps the dev server with a build id its on-disk
+    // chunks no longer match, 404ing them until it is restarted. Build or dev
+    // used to mean "not both"; a separate distDir lets them coexist.
+    distDir: process.env.NEXT_DIST_DIR || '.next',
     images: {
         domains: [
             'auth.gallowaygetaways.co.uk',
