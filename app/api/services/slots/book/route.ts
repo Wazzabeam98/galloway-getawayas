@@ -63,7 +63,7 @@ export async function POST(request: Request) {
 
         const { data: provider } = await admin
             .from('service_providers')
-            .select('id, business_name, trade, shape, status, stripe_account_id, stripe_payouts_enabled, plan, commission_rate, slot_length_minutes, slot_capacity, cancellation_window_hours')
+            .select('id, business_name, trade, shape, status, stripe_account_id, stripe_payouts_enabled, plan, commission_rate, slot_length_minutes, slot_capacity, slot_min_people, cancellation_window_hours')
             .eq('id', providerId)
             .maybeSingle();
 
@@ -120,6 +120,20 @@ export async function POST(request: Request) {
         if (quantity === null) {
             return NextResponse.json(
                 { ok: false, error: 'Choose how many, up to ' + MAX_ORDER_QUANTITY + '.' },
+                { status: 400 }
+            );
+        }
+
+        // THE PER-PERSON MINIMUM — the real invariant, not the picker floor.
+        // A tasting or class priced per person may set a smallest group it will
+        // run for (slot_min_people, default 1 = no minimum). It bites only when
+        // the unit multiplies (per person); a whole-group flat price is one
+        // booking regardless of head count. Enforced HERE so a crafted request
+        // that goes under the floor is rejected, exactly as the ceiling is.
+        const minPeople = unitMultiplies(unit) ? Math.max(1, Number(provider.slot_min_people) || 1) : 1;
+        if (quantity < minPeople) {
+            return NextResponse.json(
+                { ok: false, error: 'This session is for a minimum of ' + minPeople + ' people.' },
                 { status: 400 }
             );
         }

@@ -2493,6 +2493,12 @@ export interface ProviderDraft {
     // How many items have a price above zero. A guest listing needs at least one
     // — the marketplace lists only priced providers, so a no-price one is unbookable.
     pricedItemCount?: number;
+    // A slot's pricing basis and the two group numbers. slotPrivate false means
+    // per person, where a minimum-people rule can apply; the minimum may not
+    // exceed the capacity ceiling, or the session could never be booked.
+    slotPrivate?: boolean | null;
+    slotCapacity?: any;
+    slotMinPeople?: any;
 }
 
 export interface Problem {
@@ -2636,6 +2642,19 @@ export function submitProblems(draft: ProviderDraft): Problem[] {
     // item, a made-to-order product, or a slot session.)
     if (draft.audience === 'guest' && !(Number(draft.pricedItemCount) > 0)) {
         problems.push({ field: 'menu', message: GUEST_SCREEN_COPY.menuRequiredGate });
+    }
+
+    // A per-person slot's minimum can't exceed its capacity ceiling: a session
+    // that needs at least four but seats at most two could never be booked. Only
+    // a shared/per-person slot has a minimum (a private one is one booking
+    // whatever the head count), so the rule is gated on slotPrivate === false.
+    // A minimum of 1 (or blank) is no minimum and never trips this.
+    if (draft.audience === 'guest' && draft.shape === 'slot' && draft.slotPrivate === false) {
+        const min = Number(draft.slotMinPeople);
+        const cap = Number(draft.slotCapacity);
+        if (Number.isFinite(min) && min > 1 && Number.isFinite(cap) && cap >= 1 && min > cap) {
+            problems.push({ field: 'slot_min', message: GUEST_SCREEN_COPY.slotMinOverCapacity });
+        }
     }
 
     for (const problem of pricingProblems(draft)) problems.push(problem);

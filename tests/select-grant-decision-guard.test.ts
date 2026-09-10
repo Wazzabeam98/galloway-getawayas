@@ -45,7 +45,7 @@ const TABLES: TableDecision[] = [
             'created_at', 'custom_label', 'declarations', 'declined_at', 'description', 'dietary_note',
             'does_gas', 'does_oil', 'guest_details', 'headshot', 'hourly_rate', 'id', 'kind',
             'fulfilment', 'lead_time_days', 'logo', 'notify_user_ids', 'owner_id', 'photos', 'plan', 'pricing_choice',
-            'review_note', 'settlement', 'shape', 'slot_capacity', 'slot_length_minutes', 'sms_opt_out',
+            'review_note', 'settlement', 'shape', 'slot_capacity', 'slot_length_minutes', 'slot_min_people', 'sms_opt_out',
             'status', 'submitted_at', 'subscription_status', 'trade', 'trial_ends_at', 'updated_at',
         ]),
         revoked: {

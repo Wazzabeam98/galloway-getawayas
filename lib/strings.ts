@@ -134,6 +134,23 @@ export const GUEST_SCREEN_COPY = {
     capacitySubtextVenue: 'The most guests your space or session fits at once.',
     capacitySuffix: 'guests',
 
+    // The slot pricing-basis screen (g_slot_basis) — private (the whole session
+    // for one group, one flat booking) vs shared (several people join, priced
+    // per person). Lifted off the schedule screen to its own question. The two
+    // option cards' words live in the component; this is the heading.
+    slotBasisQuestion: 'Who is a session for?',
+    slotBasisGate: 'Pick who a session is for to carry on.',
+    // The per-person minimum screen (g_slot_min) — shared slots only. The
+    // smallest group a single booking may be, Airbnb-style: the guest books and
+    // pays for at least this many. Default 1 means no minimum.
+    slotMinQuestion: 'What’s the smallest group you’ll run a session for?',
+    slotMinSubtext: 'A single booking must be at least this many people. Leave it at one if a session will run for anyone.',
+    slotMinSuffix: 'people',
+    // Raised when the minimum is set above the capacity ceiling — an
+    // unsatisfiable session that could never be booked. Shown on the minimum
+    // screen; the number is filled in by the form.
+    slotMinOverCapacity: 'The minimum can’t be more than the most a session holds.',
+
     // The price screen (g_menu) — rebuilt as a hub: a centred question, then each
     // priced thing as a borderless row (name + price + thumbnail), an add row at
     // the bottom, and a per-item sub-flow of one question a screen. The payout is

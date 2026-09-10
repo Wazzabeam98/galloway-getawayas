@@ -55,6 +55,36 @@ test('a slot still requires an area (the fork is made-to-order only)', () => {
     assert.equal(has({ trade: 'guest', audience: 'guest', shape: 'slot', areaCount: 0 }, 'areas'), true);
 });
 
+// --- the per-person slot minimum ≤ capacity --------------------------------
+//
+// The wizard's stepper caps the minimum at the capacity, but the rule is
+// enforced in submitProblems too, so a crafted/edited draft can't send a
+// minimum a session could never satisfy. Only a per-person slot has a minimum
+// (slotPrivate === false); a private/whole-group slot is one booking whatever
+// the head count, so the rule never applies to it. A minimum of 1 is no minimum.
+const slot = (over: any) => ({ trade: 'guest', audience: 'guest', shape: 'slot', slotPrivate: false, areaCount: 1, scheduleCount: 1, pricedItemCount: 1, ...over });
+
+test('a per-person minimum above the capacity is a problem', () => {
+    assert.equal(has(slot({ slotCapacity: 4, slotMinPeople: 6 }), 'slot_min'), true, 'min 6 with room for 4 is unbookable');
+    // At or below the ceiling is fine.
+    assert.equal(has(slot({ slotCapacity: 6, slotMinPeople: 6 }), 'slot_min'), false, 'min equal to capacity is allowed');
+    assert.equal(has(slot({ slotCapacity: 8, slotMinPeople: 4 }), 'slot_min'), false, 'min below capacity is allowed');
+});
+
+test('a minimum of 1 (or blank) is no minimum and never trips the rule', () => {
+    assert.equal(has(slot({ slotCapacity: 4, slotMinPeople: 1 }), 'slot_min'), false);
+    assert.equal(has(slot({ slotCapacity: 4, slotMinPeople: '' }), 'slot_min'), false);
+    assert.equal(has(slot({ slotCapacity: 4 }), 'slot_min'), false, 'no minimum set at all');
+});
+
+test('the minimum rule applies only to a per-person slot', () => {
+    // A private/whole-group slot: one booking whatever the head count, so a
+    // stray high slotMinPeople must not be treated as a rule.
+    assert.equal(has(slot({ slotPrivate: true, slotCapacity: 2, slotMinPeople: 6 }), 'slot_min'), false, 'private slot has no minimum rule');
+    // A made-to-order product isn't a slot at all.
+    assert.equal(has({ trade: 'guest', audience: 'guest', shape: 'made_to_order', slotPrivate: false, slotCapacity: 2, slotMinPeople: 6, fulfilment: 'delivery', areaCount: 1, pricedItemCount: 1 }, 'slot_min'), false, 'made-to-order has no minimum rule');
+});
+
 // --- the overwrite safety (the case to prove, not reason about) ------------
 
 const NOTHING = { street: '', town: '', postcode: '' };

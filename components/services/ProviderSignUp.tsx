@@ -664,6 +664,12 @@ function ApplicationForm() {
     // stores the shown value on an untouched pass, like the years screen.
     const [maxGuests, setMaxGuests] = useState('');
     const [slotLength, setSlotLength] = useState('');
+    // Per-person slots only: the smallest group a single booking may be
+    // (slot_min_people). Airbnb-style — the guest books and pays for at least
+    // this many. Blank/1 means no minimum. Its own stepper screen (g_slot_min),
+    // shown only for a shared slot; the booking route is the real gate, this is
+    // the convenience floor. Loaded from slot_min_people on return.
+    const [slotMinPeople, setSlotMinPeople] = useState('');
     // The declarations jsonb, loaded from a returning provider's row. It now holds
     // the terms acceptance ({ terms_version, terms_agreed_at }), so values are not
     // all booleans — kept only to derive whether they've agreed to the CURRENT
@@ -794,7 +800,7 @@ function ApplicationForm() {
                     // provider_name was retired with the "Your name" field), and
                     // selecting a column the authenticated role can't read 403s
                     // the whole load. They stay revoked.
-                    .select('id, business_name, trade, description, sms_opt_out, audience, photos, logo, status, review_note, callout_fee, hourly_rate, callout_waived, does_gas, does_oil, kind, pricing_choice, billable_hourly_rate, covered_bands, headshot, dietary_note, custom_label, shape, lead_time_days, slot_length_minutes, slot_capacity, declarations, guest_details, fulfilment')
+                    .select('id, business_name, trade, description, sms_opt_out, audience, photos, logo, status, review_note, callout_fee, hourly_rate, callout_waived, does_gas, does_oil, kind, pricing_choice, billable_hourly_rate, covered_bands, headshot, dietary_note, custom_label, shape, lead_time_days, slot_length_minutes, slot_capacity, slot_min_people, declarations, guest_details, fulfilment')
                     .eq('owner_id', session.user.id)
                     .eq('trade', tradeFromUrl)
                     .maybeSingle();
@@ -907,6 +913,12 @@ function ApplicationForm() {
                     if (ex.shape === 'slot') {
                         const anyPerson = (itemRows || []).some((r: any) => String(r.unit) === 'person');
                         setSlotPrivate(!anyPerson);
+                        // The per-person minimum, only meaningful for a shared
+                        // slot. Load it back so a returning host edits what they
+                        // set; 1 (or unset) reads as no minimum.
+                        if (ex.slot_min_people !== null && ex.slot_min_people !== undefined && Number(ex.slot_min_people) > 1) {
+                            setSlotMinPeople(String(ex.slot_min_people));
+                        }
                     }
                     if (audienceForTrade(existing.trade || tradeFromUrl) === 'guest') {
                         const byLabel = GUEST_CATEGORIES.filter((c) => c.label && c.label === ex.custom_label)[0];
@@ -1198,6 +1210,7 @@ function ApplicationForm() {
             if (d.slotPrivate !== undefined && d.slotPrivate !== null) setSlotPrivate(d.slotPrivate === true);
             if (d.maxGuests) setMaxGuests(d.maxGuests);
             if (d.slotLength) setSlotLength(d.slotLength);
+            if (d.slotMinPeople) setSlotMinPeople(d.slotMinPeople);
             if (Array.isArray(d.schedule)) setSchedule(d.schedule);
             if (Array.isArray(d.blockedDates)) setBlockedDates(d.blockedDates);
 
@@ -1264,7 +1277,7 @@ function ApplicationForm() {
                     // as a live step during restore, and a signed-in applicant
                     // with any saved draft is resolved onto the email screen they
                     // should never see. A signed-in user has no g_verify step.
-                    ? { category: d.guestCategory, shape: d.shape, hasSession: !!sessionArg }
+                    ? { category: d.guestCategory, shape: d.shape, hasSession: !!sessionArg, slotPrivate: (d.slotPrivate === undefined || d.slotPrivate === null) ? null : d.slotPrivate === true }
                     : undefined;
             const landing = resolveStep(restoreTrade, d.step, restoreCtx);
             setStep(landing);
@@ -1330,7 +1343,7 @@ function ApplicationForm() {
                     // address is the provider's own, in their own browser's draft
                     // — never shared, and it's a private column server-side.
                     fulfilment, collectionStreet, collectionTown, collectionPostcode,
-                    slotPrivate, maxGuests, slotLength, schedule, blockedDates,
+                    slotPrivate, maxGuests, slotLength, slotMinPeople, schedule, blockedDates,
                     // The checks they've ticked so far.
                     declarations,
                 })
@@ -1350,7 +1363,7 @@ function ApplicationForm() {
         whatToExpect,
         guestCategory, shape, leadTimeDays,
         fulfilment, collectionStreet, collectionTown, collectionPostcode,
-        slotPrivate, maxGuests, slotLength, schedule, blockedDates,
+        slotPrivate, maxGuests, slotLength, slotMinPeople, schedule, blockedDates,
         declarations,
     ]);
 
@@ -1385,6 +1398,11 @@ function ApplicationForm() {
         covered_bands: coveredBands,
         shape,
         scheduleCount: schedule.length,
+        // The slot pricing basis and its two group numbers, so the min ≤ capacity
+        // rule can be checked. slotMinPeople blank reads as no minimum.
+        slotPrivate,
+        slotCapacity: maxGuests,
+        slotMinPeople,
         // Items priced above zero — the marketplace lists only priced providers,
         // so a guest listing needs at least one to be bookable.
         pricedItemCount: (items || []).filter((i) => Number(String(i.price ?? '').trim()) > 0).length,
@@ -1820,7 +1838,7 @@ function ApplicationForm() {
     // saves the category, not the group) still resolves its steps correctly.
     const stepCtx: StepContext | undefined =
         isGuest
-            ? { group: guestGroup || (guestCategoryByKey(guestCategory)?.group || ''), category: guestCategory, shape, hasSession: !!session }
+            ? { group: guestGroup || (guestCategoryByKey(guestCategory)?.group || ''), category: guestCategory, shape, hasSession: !!session, slotPrivate }
             : undefined;
 
     const problemFor = (field: string) => {
@@ -1942,6 +1960,10 @@ function ApplicationForm() {
             ? GUEST_SCREEN_COPY.titleGate
             : step === 'g_creds' && catQualsRequired && !qualifications.trim()
             ? GUEST_SCREEN_COPY.qualsGate
+            // The pricing basis gates Next until it's answered — say so rather
+            // than leaving a greyed button with no reason.
+            : step === 'g_slot_basis' && slotPrivate === null
+            ? GUEST_SCREEN_COPY.slotBasisGate
             : whereMissing)
         : null;
 
@@ -2588,6 +2610,11 @@ function ApplicationForm() {
             // records it but still sells whole). Written from the one maxGuests
             // state, so it can never disagree with the jsonb copy below.
             slot_capacity: isSlot ? (num(maxGuests, 1) ?? 1) : null,
+            // The per-person minimum — a real number only for a shared/per-person
+            // slot; a private/flat slot is one booking whatever the head count, so
+            // it stores 1 (no minimum). Floored at 1 to satisfy the column's
+            // check; the min ≤ capacity rule is enforced before send (submitProblems).
+            slot_min_people: (isSlot && slotPrivate === false) ? Math.max(1, num(slotMinPeople, 1) ?? 1) : 1,
             ...fulfilmentFields,
             declarations: acceptance,
         };
@@ -3698,7 +3725,7 @@ function ApplicationForm() {
                                 /* The years opener is a flex column so its
                                    stepper can centre in the space under the
                                    question rather than sit high with a void. */
-                                : (step === 'g_you' || step === 'g_capacity' || step === 'g_notice')
+                                : (step === 'g_you' || step === 'g_capacity' || step === 'g_notice' || step === 'g_slot_min')
                                     ? 'max-w-2xl py-10 sm:py-12 flex flex-col'
                                     /* Finish is the widest content screen: it is a
                                        full-width preview of the listing about to be
@@ -3723,13 +3750,13 @@ function ApplicationForm() {
                         have no section, so it shows nothing there. */}
                     {isGuest && currentSection && (
                         <p className={'text-xs font-bold uppercase tracking-[0.12em] text-emerald-700 mb-3 '
-                            + ((step === 'g_you' || step === 'g_creds' || step === 'g_menu' || step === 'g_capacity' || step === 'g_notice' || step === 'g_photos') ? 'text-center' : '')}>
+                            + ((step === 'g_you' || step === 'g_creds' || step === 'g_menu' || step === 'g_capacity' || step === 'g_notice' || step === 'g_photos' || step === 'g_slot_basis' || step === 'g_slot_min') ? 'text-center' : '')}>
                             {currentSection.label}
                         </p>
                     )}
-                    {isGuest && step !== 'finish' && step !== 'g_creds' && step !== 'g_menu' && step !== 'g_capacity' && (
+                    {isGuest && step !== 'finish' && step !== 'g_creds' && step !== 'g_menu' && step !== 'g_capacity' && step !== 'g_slot_min' && (
                         <h1 className={'font-extrabold tracking-tight text-slate-900 [text-wrap:balance] text-3xl sm:text-4xl '
-                            + ((step === 'trade' || step === 'g_subtype' || step === 'g_you' || step === 'g_notice') ? 'mb-10 text-center'
+                            + ((step === 'trade' || step === 'g_subtype' || step === 'g_you' || step === 'g_notice' || step === 'g_slot_basis') ? 'mb-10 text-center'
                                 /* g_photos is centred (this screen only, to match
                                    Airbnb) with a tight gap so "Add at least 3 photos."
                                    reads as a subtitle, not a stranded paragraph. */
@@ -3763,6 +3790,19 @@ function ApplicationForm() {
                             </h1>
                             <p className="text-center text-sm text-slate-500 [text-wrap:balance] mb-10">
                                 {shape === 'comes_to_you' ? GUEST_SCREEN_COPY.capacitySubtextTravel : GUEST_SCREEN_COPY.capacitySubtextVenue}
+                            </p>
+                        </>
+                    )}
+                    {/* The minimum screen renders its heading+subtext here, at the
+                        top like g_capacity, so the question and its explanation sit
+                        above the big centred stepper rather than below it. */}
+                    {isGuest && step === 'g_slot_min' && (
+                        <>
+                            <h1 className="font-extrabold tracking-tight text-slate-900 [text-wrap:balance] text-3xl sm:text-4xl text-center mb-2">
+                                {GUEST_SCREEN_COPY.slotMinQuestion}
+                            </h1>
+                            <p className="text-center text-sm text-slate-500 [text-wrap:balance] mb-10">
+                                {GUEST_SCREEN_COPY.slotMinSubtext}
                             </p>
                         </>
                     )}
@@ -4067,7 +4107,7 @@ function ApplicationForm() {
             <fieldset disabled={locked} className={'min-w-0 ' + (locked ? 'opacity-70' : '')
                 /* On the years opener the fieldset fills the panel below the
                    question so its one section can centre vertically. */
-                + (isGuest && (step === 'g_you' || step === 'g_capacity' || step === 'g_notice') ? ' flex-1 flex flex-col' : '')
+                + (isGuest && (step === 'g_you' || step === 'g_capacity' || step === 'g_notice' || step === 'g_slot_min') ? ' flex-1 flex flex-col' : '')
                 /* Same fill on the made-to-order fork, but desktop only — mobile
                    keeps its natural top-down stack. */
                 + (guestMtoArea ? ' sm:flex-1 sm:flex sm:flex-col' : '')}>
@@ -4657,28 +4697,10 @@ function ApplicationForm() {
                     // schedule reads as one focused task.
                     return (
                         <section className="mb-8">
-                            <div className="mb-6">
-                                <label className="block text-xs font-medium text-slate-500 mb-2">Who is a session for?</label>
-                                <div className="grid gap-3 sm:grid-cols-2">
-                                    {[
-                                        { v: true, t: 'One group at a time', d: 'The whole thing is theirs — a private sauna. One booking fills it.' },
-                                        { v: false, t: 'Several people join', d: 'A class or a walk. Priced per person, up to a number you set.' },
-                                    ].map((o) => {
-                                        const on = slotPrivate === o.v;
-                                        return (
-                                            <button key={String(o.v)} type="button" onClick={() => setSlotPrivate(o.v)} aria-pressed={on}
-                                                className={'flex flex-col rounded-2xl border p-4 text-left transition ' + (on ? 'border-emerald-600 bg-emerald-50 ring-1 ring-emerald-600' : 'border-slate-300 hover:border-emerald-400')}>
-                                                <span className="font-semibold text-slate-900">{o.t}</span>
-                                                <span className="mt-1 text-xs leading-snug text-slate-500">{o.d}</span>
-                                            </button>
-                                        );
-                                    })}
-                                </div>
-                            </div>
-
-                            {/* Capacity has moved to its own screen in the Pricing
-                                section (g_capacity); this screen keeps only the
-                                session length and the weekly hours. */}
+                            {/* The pricing basis ("Who is a session for?") moved to
+                                its own screen in the Pricing section (g_slot_basis),
+                                and capacity to g_capacity; this schedule screen keeps
+                                only the session length and the weekly hours. */}
                             <div className="mb-6">
                                 <label className="block text-xs font-medium text-slate-500 mb-3">How long is each session?</label>
                                 <NumberStepper value={slotLength} onChange={setSlotLength} min={15} max={480} step={15} suggestion={60} suffix="minutes" />
@@ -4870,9 +4892,46 @@ function ApplicationForm() {
                     largest group they'll take; where guests come to them (slot)
                     it's what the space holds. For a shared slot this becomes
                     sellable seats, so the default is deliberately low. */}
+                {/* THE PRICING BASIS — slot only, its own screen now. Private (the
+                    whole session for one group, one flat booking) vs shared
+                    (several people join, priced per person). It sets the price
+                    unit g_menu reads and decides whether the minimum screen
+                    exists. The centred H1 asks the question; here are the two
+                    cards. */}
+                {onStep('g_slot_basis') && isGuest && shape === 'slot' && (
+                <section className="mb-8 md:max-w-xl md:mx-auto">
+                    <div className="grid gap-3 sm:grid-cols-2">
+                        {[
+                            { v: true, t: 'One group at a time', d: 'The whole thing is theirs — a private sauna. One booking fills it.' },
+                            { v: false, t: 'Several people join', d: 'A class or a walk. Priced per person, up to a number you set.' },
+                        ].map((o) => {
+                            const on = slotPrivate === o.v;
+                            return (
+                                <button key={String(o.v)} type="button" onClick={() => setSlotPrivate(o.v)} aria-pressed={on}
+                                    className={'flex flex-col rounded-2xl border p-4 text-left transition ' + (on ? 'border-emerald-600 bg-emerald-50 ring-1 ring-emerald-600' : 'border-slate-300 hover:border-emerald-400')}>
+                                    <span className="font-semibold text-slate-900">{o.t}</span>
+                                    <span className="mt-1 text-xs leading-snug text-slate-500">{o.d}</span>
+                                </button>
+                            );
+                        })}
+                    </div>
+                </section>
+                )}
+
                 {onStep('g_capacity') && isGuest && (
                 <section className="flex-1 flex flex-col items-center justify-center">
                     <NumberStepper value={maxGuests} onChange={setMaxGuests} min={1} max={60} suggestion={shape === 'comes_to_you' ? CAPACITY_DEFAULT_TRAVEL : CAPACITY_DEFAULT_SLOT} size="lg" solid suffix={GUEST_SCREEN_COPY.capacitySuffix} />
+                </section>
+                )}
+
+                {/* THE PER-PERSON MINIMUM — shared slots only. The smallest group
+                    a single booking may be, a big stepper like guests/years. The
+                    ceiling (g_capacity) is the max above it, so the stepper caps
+                    there; default 1 = no minimum. The route is the real gate —
+                    this is the convenience floor. */}
+                {onStep('g_slot_min') && isGuest && shape === 'slot' && slotPrivate === false && (
+                <section className="flex-1 flex flex-col items-center justify-center">
+                    <NumberStepper value={slotMinPeople} onChange={setSlotMinPeople} min={1} max={Math.max(1, parseInt(maxGuests, 10) || CAPACITY_DEFAULT_SLOT)} suggestion={1} size="lg" solid suffix={GUEST_SCREEN_COPY.slotMinSuffix} />
                 </section>
                 )}
 
@@ -6976,6 +7035,9 @@ function ApplicationForm() {
                             // shown number is the accepted answer, stored on Next.
                             : step === 'g_creds' ? (!professionalTitle.trim() || (catQualsRequired && !qualifications.trim()))
                             : step === 'g_photos' ? photos.length === 0
+                            // The pricing basis must be answered before moving on —
+                            // it sets the unit and decides the next screen.
+                            : step === 'g_slot_basis' ? slotPrivate === null
                             : step === 'g_area' ? (stepProblems.length > 0 || !!whereMissing)
                             : stepProblems.length > 0
                         );

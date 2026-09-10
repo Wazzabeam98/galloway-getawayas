@@ -593,9 +593,27 @@ test('a cake maker (made to order) gets the years and expertise screens too', ()
     assert.equal(stepApplies('g_notice', 'guest', { group: 'food', category: 'chef', shape: 'comes_to_you' }), false, 'a traveller has no notice screen');
 });
 
-test('a yoga instructor (not food, slot) walks the flow, with a capacity step and dietary folded away', () => {
+// A slot also opens its Pricing section with the pricing-basis screen
+// (g_slot_basis — private vs per person), before the capacity ceiling. A
+// PER-PERSON slot (slotPrivate === false) gains one more screen, the minimum
+// (g_slot_min), between the ceiling and the price; a private/whole-group slot
+// drops it, and so does a slot whose basis is not yet answered.
+const withSlotPricing = (keys: string[], perPerson = false) => {
+    const out = keys.slice();
+    const at = out.indexOf('g_menu');
+    const inserts = perPerson
+        ? ['g_slot_basis', 'g_capacity', 'g_slot_min']
+        : ['g_slot_basis', 'g_capacity'];
+    out.splice(at, 0, ...inserts);
+    return out;
+};
+
+test('a yoga instructor (not food, slot) walks the flow, with the basis and capacity steps and dietary folded away', () => {
     const ctx = { group: 'wellness', category: 'yoga', shape: 'slot' };
-    assert.deepEqual(gkeys(ctx), withCapacity(TEN));
+    // Basis, then capacity — the minimum is absent until the basis is answered
+    // per person, so an unanswered slot walks basis + capacity only.
+    assert.deepEqual(gkeys(ctx), withSlotPricing(TEN));
+    assert.equal(stepApplies('g_slot_basis', 'guest', ctx), true, 'a slot picks who a session is for');
     assert.equal(stepApplies('g_capacity', 'guest', ctx), true, 'a slot sets how many the space holds');
     // Dietary is no longer a step — it renders inside g_expect for a food
     // category only, so a yoga class simply never sees that field.
@@ -603,6 +621,29 @@ test('a yoga instructor (not food, slot) walks the flow, with a capacity step an
     // What guests can expect and the photos step are asked of everyone.
     assert.equal(stepApplies('g_expect', 'guest', ctx), true);
     assert.equal(stepApplies('g_photos', 'guest', ctx), true);
+});
+
+test('the per-person minimum screen exists only for a shared/per-person slot', () => {
+    const shared = { group: 'wellness', category: 'yoga', shape: 'slot', slotPrivate: false };
+    const priv = { group: 'wellness', category: 'sauna', shape: 'slot', slotPrivate: true };
+    const unanswered = { group: 'wellness', category: 'yoga', shape: 'slot' };
+    // Per person: basis → capacity → minimum → price.
+    assert.equal(stepApplies('g_slot_min', 'guest', shared), true, 'per person has a minimum');
+    assert.deepEqual(gkeys(shared), withSlotPricing(TEN, true));
+    // Whole group: one booking whatever the head count, so no minimum screen.
+    assert.equal(stepApplies('g_slot_min', 'guest', priv), false, 'private/whole-group has no minimum');
+    // Not yet answered: the basis screen comes first, so the minimum stays out
+    // until the answer is per person.
+    assert.equal(stepApplies('g_slot_min', 'guest', unanswered), false, 'null basis hides the minimum');
+    // The basis and the minimum are slot-only — a chef and a cake maker never
+    // see either.
+    for (const nonSlot of [
+        { group: 'food', category: 'chef', shape: 'comes_to_you', slotPrivate: false },
+        { group: 'food', category: 'food_order', shape: 'made_to_order', slotPrivate: false },
+    ]) {
+        assert.equal(stepApplies('g_slot_basis', 'guest', nonSlot), false, 'non-slot has no basis screen');
+        assert.equal(stepApplies('g_slot_min', 'guest', nonSlot), false, 'non-slot has no minimum screen');
+    }
 });
 
 test('expertise and years are asked of every category except the sauna', () => {

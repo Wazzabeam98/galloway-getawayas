@@ -13,6 +13,9 @@ interface PanelSession { date: string; time: string; capacity: number; seatsLeft
 interface PanelProvider {
     id: string; business_name: string; who: string; shape: string; isFood: boolean;
     items: PanelItem[]; sessions: PanelSession[]; leadTimeDays: number;
+    // Per-person slots only: the smallest group a single booking may be. 1 = no
+    // minimum. Floors the quantity picker; the booking route is the real gate.
+    minPeople: number;
 }
 
 // Between a yyyy-mm-dd key and a local Date at midnight. Constructing from the
@@ -68,7 +71,11 @@ export default function BookingPanel({ bookingId, checkIn, checkOut, provider }:
     }, [provider.sessions]);
 
     const seatCap = isSlot && session ? Math.min(MAX_ORDER_QUANTITY, session.seatsLeft) : MAX_ORDER_QUANTITY;
-    const quantity = multiplies ? Math.min(Math.max(1, Math.floor(qty) || 1), seatCap) : 1;
+    // The per-person floor: the smallest group this session runs for. A
+    // convenience only — the booking route is the real gate. Applies only when
+    // the unit multiplies; 1 (no minimum) otherwise.
+    const minPeople = isSlot && multiplies ? Math.max(1, provider.minPeople || 1) : 1;
+    const quantity = multiplies ? Math.min(Math.max(minPeople, Math.floor(qty) || minPeople), seatCap) : 1;
     const total = item ? orderTotal(item.price, quantity) : 0;
 
     // Enough picked to book. Drives the mobile bottom bar: when it isn't ready,
@@ -194,7 +201,7 @@ export default function BookingPanel({ bookingId, checkIn, checkOut, provider }:
                                         const low = s.capacity > 1 && s.seatsLeft >= 1 && s.seatsLeft <= 2;
                                         return (
                                             <button key={s.time} type="button"
-                                                onClick={() => { setSession(s); setQty(1); }}
+                                                onClick={() => { setSession(s); setQty(minPeople); }}
                                                 className={`rounded-lg border px-2.5 py-1.5 text-sm transition ${on ? 'border-emerald-600 bg-emerald-600 text-white' : 'border-slate-300 text-slate-700 hover:border-slate-400'}`}>
                                                 {timeLabel(s.time)}
                                                 {low ? <span className={`ml-1 text-[10px] ${on ? 'text-emerald-100' : 'text-amber-600'}`}>{s.seatsLeft} left</span> : null}
@@ -214,10 +221,11 @@ export default function BookingPanel({ bookingId, checkIn, checkOut, provider }:
                     <span className="text-xs font-semibold uppercase tracking-wide text-slate-500">
                         {unitPhrase(item.unit) === 'per person' ? 'How many people?' : 'How many?'}
                     </span>
-                    <input type="number" min={1} max={seatCap} inputMode="numeric" value={qty}
-                        onChange={(e) => setQty(Math.min(Math.max(1, Math.floor(Number(e.target.value) || 1)), seatCap))}
+                    <input type="number" min={minPeople} max={seatCap} inputMode="numeric" value={qty}
+                        onChange={(e) => setQty(Math.min(Math.max(minPeople, Math.floor(Number(e.target.value) || minPeople)), seatCap))}
                         className="mt-1 block w-24 rounded-lg border border-slate-300 px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-emerald-600" />
                     {isSlot && session ? <span className="ml-2 text-xs text-slate-400">{session.seatsLeft} place{session.seatsLeft === 1 ? '' : 's'} left</span> : null}
+                    {minPeople > 1 ? <p className="mt-1 text-xs text-slate-500">This session is for {minPeople} people or more.</p> : null}
                 </label>
             )}
 

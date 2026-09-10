@@ -201,6 +201,7 @@ export default async function ListingPage(
                                 items: p.items,
                                 sessions: p.sessions,
                                 leadTimeDays: p.lead_time_days,
+                                minPeople: p.minPeople,
                             }}
                         />
                     </div>

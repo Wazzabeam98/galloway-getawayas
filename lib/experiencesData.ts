@@ -6,7 +6,7 @@
 // priced item, and covering the cottage — with shape and, for a slot provider,
 // the bookable sessions inside the stay folded in.
 
-import { isLiveToGuests, mccForProvider, isFoodProvider, normaliseUnit } from '@/lib/serviceOrders';
+import { isLiveToGuests, mccForProvider, isFoodProvider, normaliseUnit, unitMultiplies } from '@/lib/serviceOrders';
 import { guestCategory, knownDietaryOptions } from '@/lib/serviceProviders';
 import { shapeOf, generateSessions, sessionCapacity, seatsLeft } from '@/lib/serviceSlots';
 import { getImageUrl, firstName } from '@/lib/utils';
@@ -53,6 +53,11 @@ export interface MpProvider {
     items: MpItem[];
     // Slots only: the next bookable sessions in the stay (future, seats left).
     sessions: MpSession[];
+    // Per-person slots only: the smallest group a single booking may be
+    // (slot_min_people). 1 = no minimum. The panel floors the picker at it; the
+    // booking route enforces it for real. Meaningless when the unit doesn't
+    // multiply (a whole-group flat price is one booking) — 1 there.
+    minPeople: number;
     cancellation_window_hours: number;
     // Made-to-order only: notice needed, in days — gates the earliest bookable date.
     lead_time_days: number;
@@ -109,7 +114,7 @@ export async function loadMarketplace(
 
     const { data: rows } = await admin
         .from('service_providers')
-        .select('id, owner_id, business_name, provider_name, based_line, headshot, trade, custom_label, stripe_mcc, description, status, stripe_payouts_enabled, shape, slot_length_minutes, slot_capacity, cancellation_window_hours, lead_time_days, dietary_note, guest_details')
+        .select('id, owner_id, business_name, provider_name, based_line, headshot, trade, custom_label, stripe_mcc, description, status, stripe_payouts_enabled, shape, slot_length_minutes, slot_capacity, slot_min_people, cancellation_window_hours, lead_time_days, dietary_note, guest_details')
         .eq('audience', 'guest').eq('status', 'approved').eq('stripe_payouts_enabled', true);
 
     const ids = (rows || []).map((r: any) => r.id);
@@ -205,6 +210,8 @@ export async function loadMarketplace(
             priceFrom: Math.min(...items.map((i: MpItem) => i.price)),
             items,
             sessions,
+            minPeople: (shape === 'slot' && unitMultiplies(items[0].unit))
+                ? Math.max(1, Number(p.slot_min_people) || 1) : 1,
             cancellation_window_hours: Number(p.cancellation_window_hours) || 48,
             lead_time_days: Number(p.lead_time_days) || 0,
             hero: (items.find((i: MpItem) => i.image) || {}).image || null,
