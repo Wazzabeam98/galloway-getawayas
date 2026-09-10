@@ -624,6 +624,11 @@ function ApplicationForm() {
     const [collectionLookupResults, setCollectionLookupResults] = useState<Array<{ id: string; label: string }>>([]);
     const [collectionLookupBusy, setCollectionLookupBusy] = useState(false);
     const [collectionLookupError, setCollectionLookupError] = useState('');
+    // The three manual boxes stay hidden behind the lookup until they're needed —
+    // the screen is just the postcode lookup by default. They open when the
+    // provider chooses to type it by hand, when a lookup fills or fails, or when a
+    // returning provider already has an address loaded (see showCollectionFields).
+    const [collectionManual, setCollectionManual] = useState(false);
     // Slot only. `slotPrivate` is the private/shared answer (null until asked):
     // private → the whole session for one group (sells as one booking, flat
     // price); shared → several people join (per-person price, seats = capacity).
@@ -1382,14 +1387,21 @@ function ApplicationForm() {
             const res = await fetch('/api/address/autocomplete?q=' + encodeURIComponent(q));
             const body = await res.json();
             if (!res.ok || !body.ok) {
+                // Lookup unavailable (no or lapsed key) — fall back to manual entry
+                // and open the boxes so the fallback is visible, not silent.
                 setCollectionLookupError(GUEST_SCREEN_COPY.collectionLookupManual);
+                setCollectionManual(true);
                 return;
             }
             const suggestions = (body.suggestions || []).map((s: any) => ({ id: String(s.id), label: String(s.address || '') }));
-            if (!suggestions.length) setCollectionLookupError(GUEST_SCREEN_COPY.collectionLookupManual);
+            if (!suggestions.length) {
+                setCollectionLookupError(GUEST_SCREEN_COPY.collectionLookupManual);
+                setCollectionManual(true);
+            }
             setCollectionLookupResults(suggestions);
         } catch {
             setCollectionLookupError(GUEST_SCREEN_COPY.collectionLookupManual);
+            setCollectionManual(true);
         } finally {
             setCollectionLookupBusy(false);
         }
@@ -1413,6 +1425,8 @@ function ApplicationForm() {
             setCollectionPostcode(a.postcode || '');
             setCollectionLookupResults([]);
             setCollectionLookupError('');
+            // Show the filled boxes so they can check and correct the result.
+            setCollectionManual(true);
         } catch {
             setCollectionLookupError(GUEST_SCREEN_COPY.collectionLookupManual);
         } finally {
@@ -5947,6 +5961,17 @@ function ApplicationForm() {
                         // collection address shows for a made-to-order that collects.
                         const showRegions = shape !== 'made_to_order' || fulfilment === 'delivery' || fulfilment === 'both';
                         const showCollection = shape === 'made_to_order' && (fulfilment === 'collection' || fulfilment === 'both');
+                        // The manual boxes are hidden behind the lookup until they're
+                        // wanted: the provider asks to type it by hand, a lookup fills
+                        // or fails, or a returning provider already has an address.
+                        // Otherwise the screen is just the lookup. The Next gate still
+                        // fires in the footer (submitProblems), so an empty required
+                        // address is not silently allowed — it just doesn't force the
+                        // boxes open before they've chosen how to enter it.
+                        const showCollectionFields = collectionManual
+                            || collectionStreet.trim() !== ''
+                            || collectionTown.trim() !== ''
+                            || collectionPostcode.trim() !== '';
                         const forkOptions: [string, string, string][] = [
                             ['delivery', GUEST_SCREEN_COPY.fulfilmentDelivery, GUEST_SCREEN_COPY.fulfilmentDeliveryHint],
                             ['collection', GUEST_SCREEN_COPY.fulfilmentCollection, GUEST_SCREEN_COPY.fulfilmentCollectionHint],
@@ -6048,39 +6073,50 @@ function ApplicationForm() {
                                         <p className="mt-2 text-xs text-slate-500">{collectionLookupError}</p>
                                     )}
 
-                                    {/* The three fields — the source of truth. */}
-                                    <div className="mt-4 space-y-3">
-                                        <div>
-                                            <label htmlFor="collection-street" className="block text-xs font-medium text-slate-500 mb-1">{GUEST_SCREEN_COPY.collectionStreetLabel}</label>
-                                            <input id="collection-street" type="text"
-                                                value={collectionStreet}
-                                                onChange={(e) => setCollectionStreet(e.target.value)}
-                                                placeholder={GUEST_SCREEN_COPY.collectionStreetPlaceholder}
-                                                className="w-full rounded-xl border border-slate-300 px-4 py-3 focus:outline-none focus:ring-2 focus:ring-emerald-700" />
-                                        </div>
-                                        <div className="flex gap-3">
-                                            <div className="min-w-0 flex-1">
-                                                <label htmlFor="collection-town" className="block text-xs font-medium text-slate-500 mb-1">{GUEST_SCREEN_COPY.collectionTownLabel}</label>
-                                                <input id="collection-town" type="text"
-                                                    value={collectionTown}
-                                                    onChange={(e) => setCollectionTown(e.target.value)}
-                                                    placeholder={GUEST_SCREEN_COPY.collectionTownPlaceholder}
-                                                    className="w-full rounded-xl border border-slate-300 px-4 py-3 focus:outline-none focus:ring-2 focus:ring-emerald-700" />
+                                    {/* Hidden by default — the screen is just the lookup.
+                                        A link opens them for someone who'd rather type it. */}
+                                    {!showCollectionFields ? (
+                                        <button type="button" onClick={() => setCollectionManual(true)}
+                                            className="mt-3 text-sm font-medium text-emerald-700 underline underline-offset-2 hover:text-emerald-800">
+                                            {GUEST_SCREEN_COPY.collectionManualLink}
+                                        </button>
+                                    ) : (
+                                        <>
+                                            {/* The three fields — the source of truth. */}
+                                            <div className="mt-4 space-y-3">
+                                                <div>
+                                                    <label htmlFor="collection-street" className="block text-xs font-medium text-slate-500 mb-1">{GUEST_SCREEN_COPY.collectionStreetLabel}</label>
+                                                    <input id="collection-street" type="text"
+                                                        value={collectionStreet}
+                                                        onChange={(e) => setCollectionStreet(e.target.value)}
+                                                        placeholder={GUEST_SCREEN_COPY.collectionStreetPlaceholder}
+                                                        className="w-full rounded-xl border border-slate-300 px-4 py-3 focus:outline-none focus:ring-2 focus:ring-emerald-700" />
+                                                </div>
+                                                <div className="flex gap-3">
+                                                    <div className="min-w-0 flex-1">
+                                                        <label htmlFor="collection-town" className="block text-xs font-medium text-slate-500 mb-1">{GUEST_SCREEN_COPY.collectionTownLabel}</label>
+                                                        <input id="collection-town" type="text"
+                                                            value={collectionTown}
+                                                            onChange={(e) => setCollectionTown(e.target.value)}
+                                                            placeholder={GUEST_SCREEN_COPY.collectionTownPlaceholder}
+                                                            className="w-full rounded-xl border border-slate-300 px-4 py-3 focus:outline-none focus:ring-2 focus:ring-emerald-700" />
+                                                    </div>
+                                                    <div className="w-36 flex-none">
+                                                        <label htmlFor="collection-postcode" className="block text-xs font-medium text-slate-500 mb-1">{GUEST_SCREEN_COPY.collectionPostcodeLabel}</label>
+                                                        <input id="collection-postcode" type="text"
+                                                            value={collectionPostcode}
+                                                            onChange={(e) => setCollectionPostcode(e.target.value)}
+                                                            placeholder={GUEST_SCREEN_COPY.collectionPostcodePlaceholder}
+                                                            className="w-full rounded-xl border border-slate-300 px-4 py-3 focus:outline-none focus:ring-2 focus:ring-emerald-700" />
+                                                    </div>
+                                                </div>
                                             </div>
-                                            <div className="w-36 flex-none">
-                                                <label htmlFor="collection-postcode" className="block text-xs font-medium text-slate-500 mb-1">{GUEST_SCREEN_COPY.collectionPostcodeLabel}</label>
-                                                <input id="collection-postcode" type="text"
-                                                    value={collectionPostcode}
-                                                    onChange={(e) => setCollectionPostcode(e.target.value)}
-                                                    placeholder={GUEST_SCREEN_COPY.collectionPostcodePlaceholder}
-                                                    className="w-full rounded-xl border border-slate-300 px-4 py-3 focus:outline-none focus:ring-2 focus:ring-emerald-700" />
-                                            </div>
-                                        </div>
-                                    </div>
 
-                                    <p className="mt-2 text-xs text-slate-500">{GUEST_SCREEN_COPY.collectionAddressHint}</p>
-                                    {problemFor('collection_address') && (
-                                        <p data-problem className="text-sm text-rose-700 mt-2">{problemFor('collection_address')!.message}</p>
+                                            <p className="mt-2 text-xs text-slate-500">{GUEST_SCREEN_COPY.collectionAddressHint}</p>
+                                            {problemFor('collection_address') && (
+                                                <p data-problem className="text-sm text-rose-700 mt-2">{problemFor('collection_address')!.message}</p>
+                                            )}
+                                        </>
                                     )}
                                 </div>
                             )}

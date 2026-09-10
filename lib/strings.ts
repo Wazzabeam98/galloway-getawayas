@@ -291,6 +291,7 @@ export const GUEST_SCREEN_COPY = {
     collectionLookupPrompt: 'Look up a postcode',
     collectionLookupFind: 'Find address',
     collectionLookupManual: 'Enter it by hand below — nothing else changes.',
+    collectionManualLink: 'Enter it by hand',
 
     // The photos screen. An instruction, not a slogan — it names the task rather
     // than describing the outcome. The single line asks for three (what makes a
