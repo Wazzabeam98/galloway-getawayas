@@ -1,0 +1,350 @@
+{
+  "ranAt": "2026-09-10T10:59:59.612Z",
+  "target": "http://localhost:3190",
+  "account": "acct_1UB72uA4n4otlrBz",
+  "passed": 8,
+  "failed": 0,
+  "lostWebhookReconciled": true,
+  "scenarios": [
+    {
+      "number": "1",
+      "title": "Lost webhook on a slot: the sweep reconciles against Stripe — confirms the paid order, keeps the seat",
+      "checks": [
+        {
+          "description": "slot/book accepted and returned a Checkout url",
+          "ok": true,
+          "detail": "HTTP 200 {\"ok\":true,\"url\":\"https://checkout.stripe.com/c/pay/cs_test_a1tmlIWAQgj6bOtGkepzn32IKVGw5gqsVEF0w7lVnuCAUpix562QccLMmo#fidnandhYHdWcXxpYCc%2FJ2FgY2RwaXEnKSdicGR"
+        },
+        {
+          "description": "a holding order exists after booking",
+          "ok": true,
+          "detail": "holding"
+        },
+        {
+          "description": "the seat was claimed (seats_taken = 1)",
+          "ok": true,
+          "detail": "1"
+        },
+        {
+          "description": "the guest was charged (PaymentIntent succeeded)",
+          "ok": true,
+          "detail": "succeeded"
+        },
+        {
+          "description": "the mis-signed webhook was rejected (400), so nothing confirmed it",
+          "ok": true,
+          "detail": "HTTP 400"
+        },
+        {
+          "description": "the order is still holding (the webhook never landed)",
+          "ok": true,
+          "detail": "holding"
+        },
+        {
+          "description": "the sweep ran",
+          "ok": true,
+          "detail": "{\"ok\":true,\"released\":0,\"seatsReleased\":0,\"reconciled\":1,\"failures\":[]}"
+        },
+        {
+          "description": "the sweep reported a reconciliation",
+          "ok": true,
+          "detail": "reconciled=1"
+        },
+        {
+          "description": "STRIPE: the charge is captured (money really moved)",
+          "ok": true,
+          "detail": "succeeded captured=6000"
+        },
+        {
+          "description": "STRIPE: the provider was paid — £6 fee to us, £54 transferred to them",
+          "ok": true,
+          "detail": "fee=600 transfer=tr_3UE5hSPTBrEa7mS70gUgkxaa"
+        },
+        {
+          "description": "STRIPE: the provider’s connected balance rose by ~£54 net",
+          "ok": true,
+          "detail": "delta £54"
+        },
+        {
+          "description": "APP: the order was RECONCILED to confirmed (not expired)",
+          "ok": true,
+          "detail": "confirmed"
+        },
+        {
+          "description": "APP: the order now carries the PaymentIntent id",
+          "ok": true,
+          "detail": "pi_3UE5hSPTBrEa7mS70oN7UFtq"
+        },
+        {
+          "description": "APP: the seat was KEPT (seats_taken still 1 — not resold)",
+          "ok": true,
+          "detail": "1"
+        }
+      ],
+      "status": "passed",
+      "note": "FIXED: the paid order was reconciled to confirmed and the seat kept — the charge is no longer orphaned.",
+      "fixVerified": true
+    },
+    {
+      "number": "2",
+      "title": "Request-and-confirm (chef): held on request, captured on confirm, 10% fee + 90% to provider",
+      "checks": [
+        {
+          "description": "services/order accepted and returned a Checkout url",
+          "ok": true,
+          "detail": "HTTP 200 {\"ok\":true,\"url\":\"https://checkout.stripe.com/c/pay/cs_test_a1eGzmxzgywZ6RZINJd8WqgrYRF5107nf2x3e04QbUYkLVF0tjgOuedOGh#fidnandhYHdWcXxpYCc%2FJ2FgY2RwaXEnKSdicGR"
+        },
+        {
+          "description": "the card is HELD not charged (requires_capture)",
+          "ok": true,
+          "detail": "requires_capture"
+        },
+        {
+          "description": "STRIPE: nothing captured yet",
+          "ok": true,
+          "detail": "false"
+        },
+        {
+          "description": "the webhook was accepted (200)",
+          "ok": true,
+          "detail": "HTTP 200"
+        },
+        {
+          "description": "an authorised order was created by the webhook",
+          "ok": true,
+          "detail": "authorised"
+        },
+        {
+          "description": "the order carries the held PaymentIntent",
+          "ok": true,
+          "detail": "pi_3UE5hYPTBrEa7mS71uXHCJXw"
+        },
+        {
+          "description": "orders/respond confirm succeeded",
+          "ok": true,
+          "detail": "HTTP 200 {\"ok\":true,\"status\":\"confirmed\"}"
+        },
+        {
+          "description": "STRIPE: the hold was captured (£180)",
+          "ok": true,
+          "detail": "succeeded captured=18000"
+        },
+        {
+          "description": "STRIPE: our fee is £18 and the transfer went to the provider",
+          "ok": true,
+          "detail": "fee=1800"
+        },
+        {
+          "description": "STRIPE: the provider gained ~£162 net",
+          "ok": true,
+          "detail": "delta £162"
+        },
+        {
+          "description": "APP: the order is confirmed",
+          "ok": true,
+          "detail": "confirmed"
+        }
+      ],
+      "status": "passed",
+      "note": null
+    },
+    {
+      "number": "3",
+      "title": "Instant slot (sauna): seat claimed, charged immediately, confirmed by the webhook",
+      "checks": [
+        {
+          "description": "slot/book accepted",
+          "ok": true,
+          "detail": "HTTP 200"
+        },
+        {
+          "description": "a holding order exists",
+          "ok": true,
+          "detail": "holding"
+        },
+        {
+          "description": "STRIPE: charged immediately (succeeded)",
+          "ok": true,
+          "detail": "succeeded"
+        },
+        {
+          "description": "STRIPE: fee £6, transfer to provider",
+          "ok": true,
+          "detail": "fee=600 transfer=tr_3UE5hePTBrEa7mS70MvvNHvG"
+        },
+        {
+          "description": "the webhook was accepted (200)",
+          "ok": true,
+          "detail": "HTTP 200"
+        },
+        {
+          "description": "APP: the order is confirmed and carries the PaymentIntent",
+          "ok": true,
+          "detail": "confirmed"
+        }
+      ],
+      "status": "passed",
+      "note": null
+    },
+    {
+      "number": "4",
+      "title": "Card declined halfway (request shape): no order stranded, nothing held",
+      "checks": [
+        {
+          "description": "STRIPE: the charge was declined",
+          "ok": true,
+          "detail": "card_declined"
+        },
+        {
+          "description": "STRIPE: code is card_declined",
+          "ok": true,
+          "detail": "card_declined"
+        },
+        {
+          "description": "APP: no order row was created (the webhook never fired)",
+          "ok": true,
+          "detail": "0 row(s)"
+        }
+      ],
+      "status": "passed",
+      "note": "Slot shape differs: the seat is claimed before the card, so a decline there parks the seat until the sweep (~35 min). Nothing is charged either way."
+    },
+    {
+      "number": "5",
+      "title": "Provider never responds: the 48h hold is released by the sweep, nothing captured",
+      "checks": [
+        {
+          "description": "an authorised order exists",
+          "ok": true,
+          "detail": "authorised"
+        },
+        {
+          "description": "the sweep ran",
+          "ok": true,
+          "detail": "{\"ok\":true,\"released\":1,\"seatsReleased\":0,\"reconciled\":0,\"failures\":[]}"
+        },
+        {
+          "description": "STRIPE: the hold was cancelled, nothing captured",
+          "ok": true,
+          "detail": "canceled"
+        },
+        {
+          "description": "APP: the order is expired",
+          "ok": true,
+          "detail": "expired"
+        }
+      ],
+      "status": "passed",
+      "note": "The sweep sends the guest no email on expiry (the decline path does) — a notification gap, not a money error."
+    },
+    {
+      "number": "6",
+      "title": "Cancel after payment, inside the window: provider keeps 90%, platform keeps its 10%, no refund",
+      "checks": [
+        {
+          "description": "the order is confirmed and captured",
+          "ok": true,
+          "detail": "confirmed"
+        },
+        {
+          "description": "cancel (forfeit) succeeded with no refund",
+          "ok": true,
+          "detail": "HTTP 200 {\"ok\":true,\"status\":\"cancelled\",\"refunded\":0}"
+        },
+        {
+          "description": "STRIPE: nothing was refunded (money stays put)",
+          "ok": true,
+          "detail": "0"
+        },
+        {
+          "description": "STRIPE: our £18 application fee was NOT refunded",
+          "ok": true,
+          "detail": "fee=1800 refunded=false"
+        },
+        {
+          "description": "APP: the order is cancelled and records the forfeit (cancel_ack)",
+          "ok": true,
+          "detail": "cancelled"
+        }
+      ],
+      "status": "passed",
+      "note": "Provider keeps 90% and the platform keeps its 10% on an experience that will not happen — a policy choice for the solicitor."
+    },
+    {
+      "number": "7",
+      "title": "Refund issued: full refund to the guest, our 10% returned, the transfer reversed",
+      "checks": [
+        {
+          "description": "the order is confirmed and captured",
+          "ok": true,
+          "detail": null
+        },
+        {
+          "description": "orders/respond refund succeeded",
+          "ok": true,
+          "detail": "HTTP 200 {\"ok\":true,\"status\":\"refunded\"}"
+        },
+        {
+          "description": "STRIPE: the guest was refunded in full (£180)",
+          "ok": true,
+          "detail": "18000"
+        },
+        {
+          "description": "STRIPE: our application fee was refunded — commission UNWOUND",
+          "ok": true,
+          "detail": "refunded=true amount_refunded=1800"
+        },
+        {
+          "description": "STRIPE: the transfer to the provider was fully reversed",
+          "ok": true,
+          "detail": "reversed 18000/18000"
+        },
+        {
+          "description": "APP: the order is refunded",
+          "ok": true,
+          "detail": null
+        }
+      ],
+      "status": "passed",
+      "note": "No partial-refund path exists for experiences, so the cottage \"partial refund keeps the fee\" bug has no analogue here."
+    },
+    {
+      "number": "8",
+      "title": "Slot hold never paid: still expired and the seat released (the fix didn’t break this)",
+      "checks": [
+        {
+          "description": "slot/book accepted",
+          "ok": true,
+          "detail": "HTTP 200"
+        },
+        {
+          "description": "a holding order exists",
+          "ok": true,
+          "detail": "holding"
+        },
+        {
+          "description": "the seat was claimed (seats_taken = 1)",
+          "ok": true,
+          "detail": "1"
+        },
+        {
+          "description": "the sweep ran",
+          "ok": true,
+          "detail": "{\"ok\":true,\"released\":0,\"seatsReleased\":1,\"reconciled\":0,\"failures\":[]}"
+        },
+        {
+          "description": "APP: the unpaid order is EXPIRED",
+          "ok": true,
+          "detail": "expired"
+        },
+        {
+          "description": "APP: the seat was released (seats_taken back to 0)",
+          "ok": true,
+          "detail": "0"
+        }
+      ],
+      "status": "passed",
+      "note": "Reconciliation rescues only paid holds; a genuinely unpaid one still expires and frees its seat."
+    }
+  ]
+}
