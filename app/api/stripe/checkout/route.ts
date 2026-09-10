@@ -349,6 +349,12 @@ export async function POST(request: Request) {
                 // booking row is created client-side, so a value arriving with
                 // it would be the guest's claim rather than ours.
                 cleaning_fee: quote.cleaningFeeTotal,
+                // The per-night split behind the accommodation subtotal, frozen
+                // on the same principle and at the same moment: the calendar
+                // this was computed against is host-mutable, so the only honest
+                // record of what each night cost is the one taken now. Every
+                // later view reads this snapshot rather than recomputing.
+                nightly_breakdown: quote.nightly,
                 status: 'pending_payment',
             })
             .eq('id', booking.id);

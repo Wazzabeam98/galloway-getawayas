@@ -1,7 +1,7 @@
 {
   "runners": {
     "payout": {
-      "ranAt": "2026-09-03T10:37:11.930Z",
+      "ranAt": "2026-09-05T07:21:10.364Z",
       "target": "http://localhost:3100",
       "passed": 7,
       "failed": 0,
@@ -52,7 +52,7 @@
       ]
     },
     "refund": {
-      "ranAt": "2026-09-03T10:38:08.539Z",
+      "ranAt": "2026-09-05T07:22:07.985Z",
       "target": "http://localhost:3100",
       "passed": 7,
       "failed": 0,
@@ -103,7 +103,7 @@
       ]
     },
     "balance": {
-      "ranAt": "2026-09-03T10:38:58.416Z",
+      "ranAt": "2026-09-05T07:22:58.028Z",
       "target": "http://localhost:3100",
       "passed": 7,
       "failed": 0,
@@ -154,7 +154,7 @@
       ]
     },
     "crosscutting": {
-      "ranAt": "2026-09-03T10:39:56.972Z",
+      "ranAt": "2026-09-05T07:24:01.493Z",
       "target": "http://localhost:3100",
       "passed": 6,
       "failed": 0,
@@ -199,12 +199,12 @@
       ]
     }
   },
-  "updatedAt": "2026-09-03T10:39:56.972Z",
+  "updatedAt": "2026-09-05T07:24:01.493Z",
   "fingerprint": {
     "app/api/cron/host-payouts/route.ts": "2caeb83a83858c1b",
     "app/api/cron/balance-charges/route.ts": "5a298e8ba66478b3",
     "app/api/stripe/refund/route.ts": "668329efa9c7eee5",
-    "app/api/stripe/checkout/route.ts": "ae8ce787fff52ea6",
+    "app/api/stripe/checkout/route.ts": "312815c26709b0ba",
     "app/api/stripe/webhook/route.ts": "8822785c1cdcf436",
     "app/api/bookings/cancel/route.ts": "5635a762f6572270",
     "app/api/bookings/host-refund/route.ts": "fd88f68757c99a95",
@@ -214,7 +214,7 @@
     "lib/hostDebt.ts": "3dccd9c9ee9d8459",
     "lib/refundSpread.ts": "fad761755dc4b85b",
     "lib/fees.ts": "eee8370bca28610e",
-    "lib/pricing.ts": "409f796fc35cbc12",
+    "lib/pricing.ts": "b448a43e9bc66e81",
     "lib/cancellation.ts": "17829661b2f52ab4",
     "scripts/seed-payments.mjs": "9228438aa5af1424",
     "scripts/payout-scenarios.mjs": "cdb63b1817b61b48",
