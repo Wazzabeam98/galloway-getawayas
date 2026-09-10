@@ -29,7 +29,10 @@ export default async function ListingPage(
     const p = pickProvider(mp, params.providerId);
     if (!p) redirect(`/experiences/${params.bookingId}`);
 
-    const who = (p.provider_name && p.provider_name.trim()) || p.business_name;
+    // The person a guest is booking — their first name only (never a surname),
+    // for the byline and image alts. Falls back to the Title, never to a stored
+    // name snapshot.
+    const who = p.byline || p.business_name;
     const gallery = Array.from(new Set(p.items.map((i) => i.image).filter(Boolean))) as string[];
 
     return (
@@ -73,10 +76,11 @@ export default async function ListingPage(
                                 <img src={p.headshot} alt={who} className="h-12 w-12 rounded-full object-cover ring-1 ring-slate-200" />
                             ) : null}
                             <div>
-                                {/* The title (h1) is the person's name now; the
-                                    professional title sits beneath it. */}
-                                {p.professional_title ? (
-                                    <div className="font-medium text-slate-800">{p.professional_title}</div>
+                                {/* The heading (h1) is the Title now; the person's
+                                    first name is the byline beneath their photo, so
+                                    a guest sees who they're booking — no surname. */}
+                                {p.byline ? (
+                                    <div className="font-medium text-slate-800">{p.byline}</div>
                                 ) : null}
                                 {p.based_line ? <div className="text-sm text-slate-500">{p.based_line}</div> : null}
                             </div>

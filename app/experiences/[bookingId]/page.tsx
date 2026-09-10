@@ -65,7 +65,9 @@ export default async function ExperiencesPage({ params }: { params: { bookingId:
 }
 
 function Card({ bookingId, p }: { bookingId: string; p: MpProvider }) {
-    const who = (p.provider_name && p.provider_name.trim()) || p.business_name;
+    // Who you're booking — first name only (never a surname), for the byline and
+    // image alts; falls back to the Title, never to a stored name snapshot.
+    const who = p.byline || p.business_name;
     return (
         <Link
             href={`/experiences/${bookingId}/${p.id}`}
@@ -103,9 +105,10 @@ function Card({ bookingId, p }: { bookingId: string; p: MpProvider }) {
                         </span>
                     )}
                     <span className="min-w-0 truncate text-xs text-slate-500">
-                        {/* The card title is the person's name; beneath it, their
-                            professional title, then where they're based. */}
-                        {p.professional_title || p.based_line || 'Local provider'}
+                        {/* The card title is the Title now; beneath it, the
+                            person's first name (who you're booking) — no surname —
+                            or where they're based when they have no shown name. */}
+                        {p.byline || p.based_line || 'Local provider'}
                     </span>
                     <VerifiedBadge />
                 </div>

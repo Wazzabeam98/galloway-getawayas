@@ -83,13 +83,15 @@ export const GUEST_SCREEN_COPY = {
     // optional row; the only sometimes-required one is qualifications.
     optionalSuffix: '(optional)',
 
-    // Row: your title — one field, no caption, a 0/40 counter.
+    // Row: your title — one field, no caption, a 0/40 counter. This is the
+    // listing's DISPLAY NAME now (it becomes business_name at submit), so a guest
+    // reads it as the heading; the provider's own name is the byline beneath.
     titleRowLabel: 'Intro',
-    titleRowPrompt: 'Add your professional title',
-    // The gate under a greyed Next when the (now required) professional title is
-    // still empty — shown for every category.
-    titleGate: 'Add your professional title — it’s the first thing a guest reads.',
-    titleModalTitle: 'Add your professional title',
+    titleRowPrompt: 'Add your title',
+    // The gate under a greyed Next when the (now required) title is still empty —
+    // shown for every category.
+    titleGate: 'Add your title — it’s the first thing a guest reads.',
+    titleModalTitle: 'Add your title',
     titlePlaceholder: 'What you do — your title or trade',
 
     // Row: qualifications. Required for the four safety categories (no

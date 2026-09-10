@@ -9,7 +9,7 @@
 import { isLiveToGuests, mccForProvider, isFoodProvider, normaliseUnit } from '@/lib/serviceOrders';
 import { guestCategory, knownDietaryOptions } from '@/lib/serviceProviders';
 import { shapeOf, generateSessions, sessionCapacity, seatsLeft } from '@/lib/serviceSlots';
-import { getImageUrl } from '@/lib/utils';
+import { getImageUrl, firstName } from '@/lib/utils';
 import { shiftDayKey } from '@/lib/dayKey';
 
 export interface MpItem {
@@ -20,7 +20,13 @@ export interface MpSession {
 }
 export interface MpProvider {
     id: string;
+    // The listing's display name is the provider's Title (their Intro field).
     business_name: string;
+    // The byline beneath their photo: the provider's FIRST name only, derived
+    // live from their profile (honouring the show_full_name / preferred_name
+    // switch). A surname must never reach a guest, so this is not provider_name
+    // (a stored snapshot that could carry one). Empty when they have no shown name.
+    byline: string;
     provider_name: string | null;
     based_line: string | null;
     headshot: string | null;
@@ -103,11 +109,20 @@ export async function loadMarketplace(
 
     const { data: rows } = await admin
         .from('service_providers')
-        .select('id, business_name, provider_name, based_line, headshot, trade, custom_label, stripe_mcc, description, status, stripe_payouts_enabled, shape, slot_length_minutes, slot_capacity, cancellation_window_hours, lead_time_days, dietary_note, guest_details')
+        .select('id, owner_id, business_name, provider_name, based_line, headshot, trade, custom_label, stripe_mcc, description, status, stripe_payouts_enabled, shape, slot_length_minutes, slot_capacity, cancellation_window_hours, lead_time_days, dietary_note, guest_details')
         .eq('audience', 'guest').eq('status', 'approved').eq('stripe_payouts_enabled', true);
 
     const ids = (rows || []).map((r: any) => r.id);
     if (!ids.length) return { open: true, stay: staySpan(booking), listing: { id: listing.id, location: listing.location }, providers: [] };
+
+    // The byline (first name) comes from the owner's profile, live, so it tracks
+    // the name and the show_full_name switch rather than a stored snapshot.
+    const ownerIds = Array.from(new Set((rows || []).map((r: any) => r.owner_id).filter(Boolean)));
+    const { data: ownerProfiles } = ownerIds.length
+        ? await admin.from('profiles').select('id, full_name, preferred_name, show_full_name').in('id', ownerIds)
+        : { data: [] as any[] };
+    const profileById: Record<string, any> = {};
+    for (const pr of ownerProfiles || []) profileById[pr.id] = pr;
 
     const [{ data: areas }, { data: itemRows }, { data: avail }, { data: blocks }, { data: sessRows }, { data: orderRows }] = await Promise.all([
         admin.from('service_areas').select('provider_id, label').in('provider_id', ids),
@@ -175,6 +190,7 @@ export async function loadMarketplace(
         providers.push({
             id: p.id,
             business_name: p.business_name,
+            byline: firstName(profileById[p.owner_id] || null, ''),
             provider_name: p.provider_name,
             based_line: p.based_line,
             headshot: p.headshot ? getImageUrl(p.headshot) : null,

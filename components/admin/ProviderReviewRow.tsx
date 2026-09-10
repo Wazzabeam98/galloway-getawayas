@@ -250,6 +250,11 @@ export default function ProviderReviewRow({
                     </div>
                     <div className="min-w-0">
                     <h3 className="font-bold text-slate-900">{provider.business_name}</h3>
+                    {/* The listing is titled by its Title now; on a guest row the
+                        person's full name (admin-only) says who it belongs to. */}
+                    {provider.personName ? (
+                        <p className="text-sm font-medium text-slate-700 mt-0.5">{provider.personName}</p>
+                    ) : null}
                     <p className="text-sm text-slate-600 mt-0.5">
                         {provider.tradeLabel}
                         {' · '}

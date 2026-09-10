@@ -4,7 +4,7 @@ import { cookies } from 'next/headers';
 import { requireAdmin } from '@/lib/access';
 import Link from 'next/link';
 import { notFound } from 'next/navigation';
-import { getImageUrl } from '@/lib/utils';
+import { getImageUrl, adminName } from '@/lib/utils';
 import {
     tradeLabel,
     calloutLine,
@@ -114,6 +114,25 @@ export default async function AdminProviders() {
             verified: registrationVerified(r),
             expired: registrationExpired(r),
         }));
+
+    // A guest listing is now titled by its Title, not the person's name, so the
+    // review row would otherwise not show WHO it belongs to. This is admin-only
+    // (behind requireAdmin), so it shows the FULL legal name — the point of the
+    // queue is deciding whether to approve a real person — via adminName, which
+    // ignores the show_full_name guest-privacy switch by design.
+    const ownerIds = Array.from(new Set(rows.map((r: any) => r.owner_id).filter(Boolean)));
+    const { data: ownerProfiles } = ownerIds.length
+        ? await admin.from('profiles').select('id, full_name, preferred_name').in('id', ownerIds)
+        : { data: [] as any[] };
+    const profileById: Record<string, any> = {};
+    for (const pr of ownerProfiles || []) profileById[pr.id] = pr;
+    // The person's full name, for a guest row only. A guest experience is always
+    // audience 'guest' and titled by its Title; a host/trade row ('both'
+    // included) is a business the person typed a name for, so no person byline.
+    const personName = (p: any): string =>
+        p.audience === 'guest'
+            ? adminName(profileById[p.owner_id] || null, '')
+            : '';
 
     const skillRows = rows.length
         ? (await admin
@@ -242,7 +261,7 @@ export default async function AdminProviders() {
                         {waiting.map((p: any) => (
                             <ProviderReviewRow
                                 key={p.id}
-                                provider={{ ...p, tradeLabel: tradeLabel(p.trade), logoUrl: p.logo ? getImageUrl(p.logo) : null, initials: initialsFor(p.business_name), calloutLine: calloutLine(p.callout_fee, p.callout_waived) }}
+                                provider={{ ...p, tradeLabel: tradeLabel(p.trade), logoUrl: p.logo ? getImageUrl(p.logo) : null, initials: initialsFor(p.business_name), calloutLine: calloutLine(p.callout_fee, p.callout_waived), personName: personName(p) }}
                                 areas={areasFor(p.id)}
                                 photoUrls={(p.photos || []).slice(0, 3).map((x: string) => getImageUrl(x))}
                                 registrations={regsFor(p.id)}
@@ -281,6 +300,7 @@ export default async function AdminProviders() {
                                     initials: initialsFor(p.business_name),
                                     changedFields: changedFields(p).map(fieldLabel),
                                     calloutLine: calloutLine(p.callout_fee, p.callout_waived),
+                                    personName: personName(p),
                                 }}
                                 areas={areasFor(p.id)}
                                 photoUrls={(p.photos || []).slice(0, 3).map((x: string) => getImageUrl(x))}
@@ -315,7 +335,7 @@ export default async function AdminProviders() {
                         {rest.map((p: any) => (
                             <ProviderReviewRow
                                 key={p.id}
-                                provider={{ ...p, tradeLabel: tradeLabel(p.trade), logoUrl: p.logo ? getImageUrl(p.logo) : null, initials: initialsFor(p.business_name), calloutLine: calloutLine(p.callout_fee, p.callout_waived) }}
+                                provider={{ ...p, tradeLabel: tradeLabel(p.trade), logoUrl: p.logo ? getImageUrl(p.logo) : null, initials: initialsFor(p.business_name), calloutLine: calloutLine(p.callout_fee, p.callout_waived), personName: personName(p) }}
                                 areas={areasFor(p.id)}
                                 photoUrls={(p.photos || []).slice(0, 3).map((x: string) => getImageUrl(x))}
                                 registrations={regsFor(p.id)}

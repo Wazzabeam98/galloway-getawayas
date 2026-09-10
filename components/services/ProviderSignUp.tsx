@@ -14,7 +14,7 @@ import {
 } from 'lucide-react';
 import { TradeTile, TradeTileGrid, TRADE_ICONS, GROUP_ICONS } from '@/components/services/TradeTiles';
 import { compressImage } from '@/lib/compressImage';
-import { getImageUrl, generateRandomNumber, resolveTitle, backfillName } from '@/lib/utils';
+import { getImageUrl, generateRandomNumber, backfillName, firstName } from '@/lib/utils';
 import { ORDER_UNITS } from '@/lib/serviceOrders';
 import Env from '@/config/Env';
 import {
@@ -447,10 +447,11 @@ function ApplicationForm() {
     // The terms open in a modal from the agree line, so the finish screen itself
     // stays a preview of what they're submitting rather than a wall of terms.
     const [termsModalOpen, setTermsModalOpen] = useState(false);
-    // The listing title for the finish-screen summary. Derived from the account
-    // (resolveGuestTitleNow is async), so it is loaded into state when the finish
-    // screen is reached rather than computed inline.
-    const [summaryTitle, setSummaryTitle] = useState('');
+    // The finish-screen byline: the provider's first name, shown beneath their
+    // photo. Derived from the account (resolveGuestBylineNow is async), so it is
+    // loaded into state when the finish screen is reached. The title itself is
+    // now the Title field (professionalTitle), computed inline.
+    const [summaryByline, setSummaryByline] = useState('');
     const [checkYourEmail, setCheckYourEmail] = useState(false);
 
     // The verify-your-email gate (g_verify). A guest signs in up front with a
@@ -2418,32 +2419,27 @@ function ApplicationForm() {
         };
     };
 
-    // The listing TITLE for a guest — their account name, or a trading name if
-    // they set one in account settings. Derived here rather than asked: a guest
-    // experience is a person, not a business. Read fresh at submit — everyone is
-    // signed in by now (a host already was; an anonymous applicant through the
-    // verify gate, where their name is captured). trading_name is read
-    // defensively so this still works before the column ships (the migration
-    // lands on prod before this code).
-    const resolveGuestTitleNow = async (): Promise<string> => {
+    // The listing title for a guest is now the Title (their Intro field), so it
+    // is not derived from the name any more. What we still derive from the
+    // account is the BYLINE — the person's FIRST name, shown beneath their photo
+    // so a guest sees who they're booking without a surname on the listing.
+    // firstName honours the same show_full_name / preferred_name switch guests
+    // and hosts rely on in messaging; a surname must never reach a guest.
+    const resolveGuestBylineNow = async (): Promise<string> => {
         const { data: { session } } = await supabase.auth.getSession();
         if (!session?.user) return '';
         const { data: prof } = await supabase.from('profiles')
             .select('full_name, preferred_name, show_full_name').eq('id', session.user.id).maybeSingle();
-        let trading: string | null = null;
-        const { data: t, error: te } = await supabase.from('profiles')
-            .select('trading_name').eq('id', session.user.id).maybeSingle();
-        if (!te && t) trading = (t as any).trading_name || null;
-        return resolveTitle(prof ? { ...(prof as any), trading_name: trading } : null, '');
+        return firstName(prof ? (prof as any) : null, '');
     };
 
-    // Load the listing title for the finish-screen summary once they reach it.
-    // Derived from the account (async), so it can't be computed inline in the
-    // summary; fetched when the finish step is shown and a session exists.
+    // Load the byline (the provider's first name) for the finish-screen summary
+    // once they reach it. Derived from the account (async), so it can't be
+    // computed inline; fetched when the finish step is shown and a session exists.
     useEffect(() => {
-        if (!isGuest || step !== 'finish' || !session || summaryTitle) return;
+        if (!isGuest || step !== 'finish' || !session || summaryByline) return;
         let cancelled = false;
-        resolveGuestTitleNow().then((title) => { if (!cancelled) setSummaryTitle(title); });
+        resolveGuestBylineNow().then((name) => { if (!cancelled) setSummaryByline(name); });
         return () => { cancelled = true; };
         // eslint-disable-next-line react-hooks/exhaustive-deps
     }, [isGuest, step, session]);
@@ -2454,8 +2450,8 @@ function ApplicationForm() {
             // The content answers ride only here, in the application payload —
             // never in the signed-in column write (they have no columns yet).
             ...guestContentFields(),
-            // A guest's title is the person (or their trading name), derived and
-            // passed in; a host trades under the business name they typed.
+            // A guest's title is their Title (the Intro field), passed in; a host
+            // trades under the business name they typed.
             business_name: audienceForTrade(trade) === 'guest' ? title : businessName.trim(),
             trade,
             description: description.trim(),
@@ -2691,7 +2687,7 @@ function ApplicationForm() {
         setSaving(true);
         setAcctError('');
 
-        const title = audienceForTrade(trade) === 'guest' ? await resolveGuestTitleNow() : businessName.trim();
+        const title = audienceForTrade(trade) === 'guest' ? professionalTitle.trim() : businessName.trim();
         const rows = applicationRows(new Date(), title);
 
         try {
@@ -2810,9 +2806,9 @@ function ApplicationForm() {
 
         const now = new Date();
 
-        // A guest's title is the person (or their trading name), derived from the
-        // account; a host trades under the business name they typed.
-        const title = audienceForTrade(trade) === 'guest' ? await resolveGuestTitleNow() : businessName.trim();
+        // A guest's title is their Title (the Intro field, mandatory); a host
+        // trades under the business name they typed.
+        const title = audienceForTrade(trade) === 'guest' ? professionalTitle.trim() : businessName.trim();
 
         const payload: any = {
             ...guestProviderFields(),
@@ -4041,8 +4037,9 @@ function ApplicationForm() {
                         </div>
 
 
-                        {/* ---- Your professional title: one borderless field,
-                            no caption, counter at the right above the underline. ---- */}
+                        {/* ---- Your title (the listing's display name): one
+                            borderless field, no caption, counter at the right
+                            above the underline. ---- */}
                         <SubFlowModal
                             open={expertiseModal === 'title'}
                             title={GUEST_SCREEN_COPY.titleModalTitle}
@@ -6218,10 +6215,28 @@ function ApplicationForm() {
                             </div>
                         )}
                         <div className="p-6 sm:p-8">
+                            {/* The Title is the listing's display name; the
+                                category sits beneath it, and the provider's own
+                                photo + first name is the byline (who a guest is
+                                booking) — never a surname. */}
                             <h3 className="text-2xl font-bold text-slate-900 [text-wrap:balance] sm:text-3xl">
-                                {summaryTitle || '—'}
+                                {professionalTitle.trim() || '—'}
                             </h3>
                             <p className="mt-1 text-slate-500">{catLabel}</p>
+
+                            {summaryByline ? (
+                                <div className="mt-4 flex items-center gap-2.5">
+                                    {headshot ? (
+                                        // eslint-disable-next-line @next/next/no-img-element
+                                        <img src={getImageUrl(headshot)} alt="" className="h-9 w-9 flex-none rounded-full object-cover ring-1 ring-slate-200" />
+                                    ) : (
+                                        <span className="flex h-9 w-9 flex-none items-center justify-center rounded-full bg-slate-100 text-xs font-semibold text-slate-500">
+                                            {summaryByline.slice(0, 1)}
+                                        </span>
+                                    )}
+                                    <span className="text-sm text-slate-600">{summaryByline}</span>
+                                </div>
+                            ) : null}
 
                             <dl className="mt-6 grid grid-cols-2 gap-x-8 gap-y-4 lg:grid-cols-4">
                                 {facts.map(([label, value]) => (
