@@ -5854,10 +5854,10 @@ function ApplicationForm() {
                         // collection address shows for a made-to-order that collects.
                         const showRegions = shape !== 'made_to_order' || fulfilment === 'delivery' || fulfilment === 'both';
                         const showCollection = shape === 'made_to_order' && (fulfilment === 'collection' || fulfilment === 'both');
-                        const forkOptions: [string, string][] = [
-                            ['delivery', GUEST_SCREEN_COPY.fulfilmentDelivery],
-                            ['collection', GUEST_SCREEN_COPY.fulfilmentCollection],
-                            ['both', GUEST_SCREEN_COPY.fulfilmentBoth],
+                        const forkOptions: [string, string, string][] = [
+                            ['delivery', GUEST_SCREEN_COPY.fulfilmentDelivery, GUEST_SCREEN_COPY.fulfilmentDeliveryHint],
+                            ['collection', GUEST_SCREEN_COPY.fulfilmentCollection, GUEST_SCREEN_COPY.fulfilmentCollectionHint],
+                            ['both', GUEST_SCREEN_COPY.fulfilmentBoth, GUEST_SCREEN_COPY.fulfilmentBothHint],
                         ];
                         return (
                         <>
@@ -5867,18 +5867,21 @@ function ApplicationForm() {
                                 next — kept separate from `shape`. */}
                             {shape === 'made_to_order' && (
                                 <div role="radiogroup" aria-label={GUEST_SCREEN_COPY.fulfilmentHeading}
-                                    className="grid grid-cols-1 gap-3 sm:grid-cols-3 md:max-w-xl">
-                                    {forkOptions.map(([val, label]) => {
+                                    className="grid grid-cols-1 gap-4 sm:grid-cols-3 md:max-w-xl">
+                                    {forkOptions.map(([val, label, hint]) => {
                                         const on = fulfilment === val;
                                         return (
                                             <button key={val} type="button" role="radio" aria-checked={on}
                                                 onClick={() => setFulfilment(val)}
-                                                // The exact sub-type/category card: rounded-2xl border-2,
-                                                // bg-white, px-5 py-6, one centred label — taken from those
-                                                // screens so it's the same card, not a near-match.
-                                                className={'rounded-2xl border-2 bg-white px-5 py-6 text-center transition hover:shadow-sm focus:outline-none focus-visible:ring-2 focus-visible:ring-emerald-600 '
+                                                // Large cards — the only three options on the screen, so
+                                                // they use the space: roughly triple the sub-type card on a
+                                                // wide screen (side by side), and tall-but-fitting on a
+                                                // phone (stacked, still clearing the pinned footer). Label
+                                                // and hint, centred.
+                                                className={'flex min-h-[9rem] flex-col items-center justify-center gap-1.5 rounded-2xl border-2 bg-white px-5 text-center transition hover:shadow-sm focus:outline-none focus-visible:ring-2 focus-visible:ring-emerald-600 sm:min-h-[14rem] '
                                                     + (on ? 'border-emerald-600 shadow-sm' : 'border-slate-200 hover:border-slate-300')}>
-                                                <span className="text-base font-semibold text-slate-900">{label}</span>
+                                                <span className="text-lg font-semibold text-slate-900">{label}</span>
+                                                <span className="text-sm text-slate-500">{hint}</span>
                                             </button>
                                         );
                                     })}

@@ -229,8 +229,11 @@ export const GUEST_SCREEN_COPY = {
     // region picker; collection shows a private address.
     fulfilmentHeading: 'How do guests get it?',
     fulfilmentDelivery: 'Delivery',
+    fulfilmentDeliveryHint: 'You take it to the guest',
     fulfilmentCollection: 'Collection',
+    fulfilmentCollectionHint: 'Guests come to you',
     fulfilmentBoth: 'Both',
+    fulfilmentBothHint: 'Delivery or collection',
     fulfilmentGate: 'Choose how guests get it.',
     // The collection address. The hint DESCRIBES what we do — not a guarantee it
     // can't reach anyone else (a provider who messages their address to a guest is
