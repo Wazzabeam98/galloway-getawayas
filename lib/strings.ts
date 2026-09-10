@@ -90,14 +90,14 @@ export const GUEST_SCREEN_COPY = {
     // still empty — shown for every category.
     titleGate: 'Add your professional title — it’s the first thing a guest reads.',
     titleModalTitle: 'Add your professional title',
-    titlePlaceholder: 'Chef and restaurant owner',
+    titlePlaceholder: 'What you do — your title or trade',
 
     // Row: qualifications. Required for the four safety categories (no
     // suffix, gates Next), optional everywhere else (the suffix shows).
     qualsRowLabel: 'Qualifications',
     qualsRowPrompt: 'Add your training and qualifications',
     qualsModalTitle: 'Training and qualifications',
-    qualsPlaceholder: 'Trained at Leiths, ten years in restaurant kitchens, Level 3 Food Hygiene. Say what qualifies you — a guest chooses you on this.',
+    qualsPlaceholder: 'What qualifies you — where you trained, how long you’ve done it, any certificates or licences. A guest chooses you on this.',
     qualsRequiredNote: 'A guest is putting their safety in your hands, so for this kind of experience we do need it.',
     qualsOptionalNote: 'Anything you’ve trained in or worked at — it all helps.',
     // The gate under a greyed Next on the hub when a required qualification is
@@ -121,7 +121,7 @@ export const GUEST_SCREEN_COPY = {
     // largest group they'll take; where guests come to them it's what the space
     // or session holds. For a shared slot this number becomes sellable seats.
     capacityHeadingTravel: 'What’s the largest group you’ll take?',
-    capacitySubtextTravel: 'The room is the guest’s to sort — this is just how many you’ll cook for or work with.',
+    capacitySubtextTravel: 'The room is the guest’s to sort — this is just the biggest group you’ll take on.',
     capacityHeadingVenue: 'How many can it hold?',
     capacitySubtextVenue: 'The most guests your space or session fits at once.',
     capacitySuffix: 'guests',
@@ -142,9 +142,26 @@ export const GUEST_SCREEN_COPY = {
 
     // The per-item sub-flow, one thing a screen (Airbnb's itinerary shape).
     menuNameTitle: 'What are you offering?',
-    menuNamePlaceholder: 'Five-course tasting menu',
     menuNameTitleSlot: 'Name your session',
-    menuNamePlaceholderSlot: 'Lochside sauna session',
+    // The item-name placeholder is a real example, keyed on the category: one
+    // example can't serve a chef, a baker, a kayak guide and a potter, so each
+    // gets its own. The fallback covers "other"/unknown, which has no fixed shape
+    // and so no natural example — it reads as guidance instead.
+    menuNameExamples: {
+        chef: 'Five-course tasting menu',
+        food_order: 'Victoria sponge',
+        tastings: 'Whisky tasting for six',
+        cooking: 'Sourdough masterclass',
+        outdoors: 'Guided foraging walk',
+        water: 'Sunset kayak tour',
+        massage: 'Deep-tissue massage, 60 min',
+        sauna: 'Lochside sauna session',
+        yoga: 'Sunrise yoga class',
+        pottery: 'Wheel-throwing taster',
+        painting: 'Watercolour afternoon',
+        workshops: 'Candle-making workshop',
+    } as Record<string, string>,
+    menuNameExampleFallback: 'Name what a guest books',
     menuPriceTitle: 'What does it cost?',
     menuPricePlaceholder: '45',        // the big numeral's placeholder — an example price
     menuPriceTypeLabel: 'How this is priced',   // the current-choice row on the price step
@@ -162,7 +179,7 @@ export const GUEST_SCREEN_COPY = {
     menuDescTitle: 'Add a short description',
     menuDescPlaceholder: 'A line about what’s included.',
     menuPhotoTitle: 'Add a photo',
-    menuPhotoPrompt: 'A real photo of the food or the setting sells it best.',
+    menuPhotoPrompt: 'A real photo of what you’re offering sells it best.',
     menuNext: 'Next',
 
     // The payout, presented Airbnb-style: calm by default, the maths on request.
@@ -178,7 +195,23 @@ export const GUEST_SCREEN_COPY = {
     expectRowLabel: 'What happens',
     expectRowPrompt: 'Walk a guest through it, start to finish',
     expectModalTitle: 'What happens?',
-    expectPlaceholder: 'I arrive at 6, cook three courses while you relax, serve at the table and clear everything away by 9.',
+    // "What happens" is a real example too, by category — same reasoning as
+    // menuNameExamples. Fallback for "other"/unknown reads as guidance.
+    expectExamples: {
+        chef: 'I arrive at 6, cook three courses while you relax, serve at the table and clear everything away by 9.',
+        food_order: 'Order two days ahead and collect from Gatehouse, or I’ll drop it to your cottage on the morning.',
+        tastings: 'We sit down for six drams over about ninety minutes; I talk you through each, with water and oatcakes between.',
+        cooking: 'Over two hours we make a sourdough loaf from scratch — mix, shape and bake — and you take yours home.',
+        outdoors: 'We meet at the car park at 10, walk about four miles over easy ground, stop for a flask halfway, back by 1.',
+        water: 'We kit you out and cover the basics on the beach, then paddle the bay for about two hours.',
+        massage: 'A short health form and a chat about what you’re after, then a full hour on the table with time to come round.',
+        sauna: 'A two-hour slot for up to six: wood-fired sauna by the water, cold-water dips between rounds, towels and changing space provided.',
+        yoga: 'A 75-minute class for all levels; mats and props provided, just bring something warm for the end.',
+        pottery: 'Two hours at the wheel getting you throwing your first pots; I trim, fire and post them on to you after.',
+        painting: 'A relaxed afternoon sketching the coast in watercolour; all materials provided, no experience needed.',
+        workshops: 'Over ninety minutes you make two candles to take home; I bring everything, you pick the scents.',
+    } as Record<string, string>,
+    expectExampleFallback: 'Walk a guest through it start to finish — when it starts, what happens, and when it ends.',
     dietaryRowLabel: 'Dietary',
     dietaryRowPrompt: 'What you can cater for',
     dietaryModalTitle: 'What can you cater for?',

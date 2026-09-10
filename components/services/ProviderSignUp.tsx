@@ -4239,7 +4239,7 @@ function ApplicationForm() {
                                             <input
                                                 type="text" value={it.name}
                                                 onChange={(e) => setField(menuIndex, 'name', e.target.value)}
-                                                placeholder={isSlot ? GUEST_SCREEN_COPY.menuNamePlaceholderSlot : GUEST_SCREEN_COPY.menuNamePlaceholder}
+                                                placeholder={GUEST_SCREEN_COPY.menuNameExamples[guestCategory] ?? GUEST_SCREEN_COPY.menuNameExampleFallback}
                                                 className={bigInput}
                                             />
                                         </div>
@@ -4685,7 +4685,7 @@ function ApplicationForm() {
                                     value={whatToExpect}
                                     onChange={(e) => setWhatToExpect(e.target.value)}
                                     rows={4}
-                                    placeholder={GUEST_SCREEN_COPY.expectPlaceholder}
+                                    placeholder={GUEST_SCREEN_COPY.expectExamples[guestCategory] ?? GUEST_SCREEN_COPY.expectExampleFallback}
                                     className={bigArea}
                                 />
                             </div>
