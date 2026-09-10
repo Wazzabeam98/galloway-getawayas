@@ -119,6 +119,16 @@ interface AreaRow {
 // it on. Per trade, because somebody can be part-way through two.
 const draftKey = (trade: string) => 'gg.provider-draft.' + trade;
 
+// A guest covers whole REGIONS, so a radius is meaningless to them — nothing on
+// the guest path reads it. But service_areas has CHECK (radius_miles > 0 …), so
+// writing the guest's real 0 was silently rejected and their coverage never
+// saved. Store a positive sentinel instead: it satisfies the check (which is
+// doing a real job on the trade side, so it stays), and the guest surfaces read
+// coverage by region label, never by radius. (The centre is already 0,0 for a
+// region, which pointForListing treats as "no point", so nothing distance-sorts
+// a guest by this anyway.)
+const GUEST_COVERAGE_RADIUS = 1;
+
 // The number the years opener shows from load. It is the accepted answer, not a
 // placeholder: someone whose real answer is this presses Next straight through
 // and it is stored (see the years case in the footer's onNext). Shown solid
@@ -3250,6 +3260,15 @@ function ApplicationForm() {
             }
         }
 
+        // The child writes below used to be `await …insert(rows)` with the
+        // returned error thrown away, so a rejected write (a constraint, an RLS
+        // refusal) vanished and the save reported success over the top of it —
+        // the class of silent failure that hid the coverage bug. Each one is now
+        // checked and, if it fails, named in a warning at the end, like the
+        // skills write already does. Nothing here aborts the save (the row is
+        // written); it just stops a failure being invisible.
+        const savedButFailed: string[] = [];
+
         // Areas are replaced wholesale — there are only ever a handful, and
         // diffing them would be more code than it saves.
         await supabase.from('service_areas').delete().eq('provider_id', id);
@@ -3262,10 +3281,17 @@ function ApplicationForm() {
                     label: a.town,
                     centre_lat: town ? town.lat : 0,
                     centre_lng: town ? town.lng : 0,
-                    radius_miles: a.radius_miles,
+                    // A guest's region has no radius; store a positive sentinel so
+                    // the service_areas check (radius_miles > 0) accepts it. A host
+                    // keeps their real radius.
+                    radius_miles: isGuest ? GUEST_COVERAGE_RADIUS : a.radius_miles,
                 };
             });
-            await supabase.from('service_areas').insert(rows);
+            const { error } = await supabase.from('service_areas').insert(rows);
+            if (error) {
+                console.error('[provider-save] service_areas insert failed', error);
+                savedButFailed.push('your coverage areas');
+            }
         }
 
         // The slot schedule — the weekly opening hours and the days off. Replaced
@@ -3277,11 +3303,13 @@ function ApplicationForm() {
             const { availability, blocks } = guestScheduleRows();
             await supabase.from('slot_availability').delete().eq('provider_id', id);
             if (availability.length) {
-                await supabase.from('slot_availability').insert(availability.map((a) => ({ ...a, provider_id: id })));
+                const { error } = await supabase.from('slot_availability').insert(availability.map((a) => ({ ...a, provider_id: id })));
+                if (error) { console.error('[provider-save] slot_availability insert failed', error); savedButFailed.push('your weekly hours'); }
             }
             await supabase.from('slot_blocks').delete().eq('provider_id', id);
             if (blocks.length) {
-                await supabase.from('slot_blocks').insert(blocks.map((b) => ({ ...b, provider_id: id })));
+                const { error } = await supabase.from('slot_blocks').insert(blocks.map((b) => ({ ...b, provider_id: id })));
+                if (error) { console.error('[provider-save] slot_blocks insert failed', error); savedButFailed.push('your days off'); }
             }
         }
 
@@ -3329,8 +3357,14 @@ function ApplicationForm() {
             // uniform set of columns.
             const toUpdate = valid.filter((r) => r.id);
             const toInsert = valid.filter((r) => !r.id).map(({ id: _omit, ...rest }) => rest);
-            if (toUpdate.length) await supabase.from('service_provider_items').upsert(toUpdate);
-            if (toInsert.length) await supabase.from('service_provider_items').insert(toInsert);
+            if (toUpdate.length) {
+                const { error } = await supabase.from('service_provider_items').upsert(toUpdate);
+                if (error) { console.error('[provider-save] items upsert failed', error); savedButFailed.push('your prices'); }
+            }
+            if (toInsert.length) {
+                const { error } = await supabase.from('service_provider_items').insert(toInsert);
+                if (error) { console.error('[provider-save] items insert failed', error); savedButFailed.push('your prices'); }
+            }
         }
 
         // Skills go through a route rather than being written from here.
@@ -3359,6 +3393,18 @@ function ApplicationForm() {
                 toast.warning('Your details saved, but the skills did not. Try that part again.',
                     { theme: 'colored' });
             }
+        }
+
+        // A child write was refused. The row saved, but a part they filled in did
+        // not — say so plainly and name it, rather than the old silent success.
+        // (A guest whose coverage or prices vanished would otherwise find out
+        // only when nobody could book them.)
+        if (savedButFailed.length) {
+            const parts = Array.from(new Set(savedButFailed));
+            toast.warning(
+                'Your listing saved, but we could not save ' + parts.join(' or ') + '. Please try that part again.',
+                { theme: 'colored', autoClose: false }
+            );
         }
 
         // Told last, once the row and its areas are both written, so the
