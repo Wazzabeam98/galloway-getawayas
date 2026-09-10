@@ -626,6 +626,11 @@ function ApplicationForm() {
     const [collectionLookupError, setCollectionLookupError] = useState('');
     // Guards against an earlier search resolving after a later one when typing fast.
     const collectionLookupSeq = useRef(0);
+    // A bottom fade on the suggestions list — a scroll signal that shows whether
+    // or not the browser draws the scrollbar (macOS overlay bars fade out). True
+    // while there is more of the list below the visible area.
+    const collectionListRef = useRef<HTMLUListElement>(null);
+    const [collectionMoreBelow, setCollectionMoreBelow] = useState(false);
     // The three manual boxes stay hidden behind the lookup until they're needed —
     // the screen is just the postcode lookup by default. They open when the
     // provider chooses to type it by hand, when a lookup fills or fails, or when a
@@ -1478,6 +1483,20 @@ function ApplicationForm() {
         return () => clearTimeout(timer);
         // eslint-disable-next-line react-hooks/exhaustive-deps
     }, [collectionLookupQuery, collectionInLookupMode]);
+
+    // Is there more of the suggestions list below the fold? Drives the bottom
+    // fade. Recomputed on scroll (below) and whenever the results change.
+    const updateCollectionMoreBelow = () => {
+        const el = collectionListRef.current;
+        setCollectionMoreBelow(!!el && el.scrollHeight - el.scrollTop - el.clientHeight > 4);
+    };
+    useEffect(() => {
+        // After the list renders/changes, measure once it has painted (a bare
+        // rAF sometimes fires before the list's height is final).
+        const id = setTimeout(updateCollectionMoreBelow, 60);
+        return () => clearTimeout(id);
+        // eslint-disable-next-line react-hooks/exhaustive-deps
+    }, [collectionLookupResults]);
 
     // One block of £ boxes for a pricing structure. Nothing computes from
     // these yet — they are on the page so real window cleaners can say which
@@ -6149,16 +6168,32 @@ function ApplicationForm() {
                                                 <p className="mt-2 text-xs text-slate-400">Searching…</p>
                                             )}
                                             {collectionLookupResults.length > 0 && (
-                                                <ul className="mt-2 max-h-64 overflow-y-auto overscroll-contain rounded-xl border border-slate-200 divide-y divide-slate-100">
-                                                    {collectionLookupResults.map((s) => (
-                                                        <li key={s.id}>
-                                                            <button type="button" onClick={() => pickCollectionSuggestion(s.id)}
-                                                                className="block w-full px-4 py-2.5 text-left text-sm text-slate-700 transition hover:bg-emerald-50">
-                                                                {s.label}
-                                                            </button>
-                                                        </li>
-                                                    ))}
-                                                </ul>
+                                                // A count under the box says how many there are, since
+                                                // a scrollbar — even one that stays visible — is easy to
+                                                // miss. "16 addresses" makes the length explicit.
+                                                <p className="mt-2 text-xs text-slate-400">
+                                                    {collectionLookupResults.length} {collectionLookupResults.length === 1 ? 'address' : 'addresses'}
+                                                </p>
+                                            )}
+                                            {collectionLookupResults.length > 0 && (
+                                                <div className="relative mt-1">
+                                                    <ul ref={collectionListRef} onScroll={updateCollectionMoreBelow}
+                                                        className="scroll-always max-h-64 overflow-y-auto overscroll-contain rounded-xl border border-slate-200 divide-y divide-slate-100">
+                                                        {collectionLookupResults.map((s) => (
+                                                            <li key={s.id}>
+                                                                <button type="button" onClick={() => pickCollectionSuggestion(s.id)}
+                                                                    className="block w-full px-4 py-2.5 text-left text-sm text-slate-700 transition hover:bg-emerald-50">
+                                                                    {s.label}
+                                                                </button>
+                                                            </li>
+                                                        ))}
+                                                    </ul>
+                                                    {/* A soft fade over the bottom edge while more of the
+                                                        list is below — a scroll cue that doesn't rely on the
+                                                        browser drawing (or keeping) the scrollbar. */}
+                                                    <div aria-hidden hidden={!collectionMoreBelow}
+                                                        className="pointer-events-none absolute inset-x-0 bottom-0 h-8 rounded-b-xl bg-gradient-to-t from-white to-transparent" />
+                                                </div>
                                             )}
                                             {collectionLookupError && (
                                                 <p className="mt-2 text-xs text-slate-500">{collectionLookupError}</p>
@@ -6546,7 +6581,7 @@ function ApplicationForm() {
                                 <X className="h-5 w-5" />
                             </button>
                         </div>
-                        <div className="space-y-4 overflow-y-auto px-5 py-5 text-sm text-slate-700 sm:px-6">
+                        <div className="scroll-always space-y-4 overflow-y-auto px-5 py-5 text-sm text-slate-700 sm:px-6">
                             {PROVIDER_TERMS.draftNotice && (
                                 <p className="rounded-lg border border-amber-200 bg-amber-50 px-3 py-2 text-xs font-semibold text-amber-800">
                                     {PROVIDER_TERMS.draftNotice}

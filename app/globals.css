@@ -313,6 +313,48 @@
   scrollbar-color: #d6d3d1 transparent;
 }
 
+/* 10. Always-visible scrollbars on the address suggestions list and the terms
+   panel. macOS overlay scrollbars fade the moment the pointer stops, which hid
+   that a sixteen-address list had more below the fold — it read as "a few
+   results". DESKTOP ONLY (a mouse/trackpad pointer): phones scroll by thumb and
+   keep their native bar. `overflow-y: scroll` keeps the gutter present, and
+   styling ::-webkit-scrollbar opts the element out of overlay so the track and
+   thumb stay drawn whether or not the pointer is moving. */
+@media (hover: hover) and (pointer: fine) {
+  /* NB: no `scrollbar-width`/`scrollbar-color` here on purpose. Once either
+     standard property is set, Chromium and Safari IGNORE the ::-webkit-scrollbar
+     styling below — the two are mutually exclusive — and fall back to a thin
+     native bar that still auto-hides. macOS browsers are WebKit/Blink, so the
+     ::-webkit rules are the ones that force an always-drawn track and thumb. */
+  .scroll-always {
+    overflow-y: scroll;
+    /* Override the global `.overflow-y-auto { scrollbar-width: thin }` (section 9):
+       any non-auto scrollbar-width makes Chromium/Safari ignore the ::-webkit
+       rules below and fall back to a thin auto-hiding native bar. `auto` hands
+       control back to ::-webkit-scrollbar. */
+    scrollbar-width: auto;
+  }
+  .scroll-always::-webkit-scrollbar {
+    width: 12px;
+    /* Safari needs this to draw a custom bar instead of the overlay one. */
+    -webkit-appearance: none;
+  }
+  .scroll-always::-webkit-scrollbar-track {
+    background: #f1f0ef;
+    border-radius: 999px;
+  }
+  .scroll-always::-webkit-scrollbar-thumb {
+    background: #a8a29e;
+    border-radius: 999px;
+    /* A border in the track colour insets the thumb so it reads as a slim pill
+       inside a wider track, rather than filling the gutter. */
+    border: 3px solid #f1f0ef;
+  }
+  .scroll-always::-webkit-scrollbar-thumb:hover {
+    background: #78716c;
+  }
+}
+
 /* The phone's copy of the search calendar. It reuses .airbnb-compact-calendar
    for sizing, but that styling assumes the desktop layout — two months side by
    side, each labelled by .rdrMonthName, with the month/year bar collapsed to
