@@ -15,6 +15,7 @@ import {
 import { TradeTile, TradeTileGrid, TRADE_ICONS, GROUP_ICONS } from '@/components/services/TradeTiles';
 import { compressImage } from '@/lib/compressImage';
 import { getImageUrl, generateRandomNumber, backfillName, firstName } from '@/lib/utils';
+import { buildStreetAddress } from '@/lib/address';
 import { ORDER_UNITS } from '@/lib/serviceOrders';
 import Env from '@/config/Env';
 import {
@@ -73,7 +74,7 @@ import {
     guestCategoryIsFood,
     guestAsksExpertise,
     guestQualificationsRequired,
-    collectionAddressForWrite,
+    collectionFieldsForWrite,
     DIETARY_OPTIONS,
     DEFAULT_SERVICE_COMMISSION,
 } from '@/lib/serviceProviders';
@@ -603,14 +604,26 @@ function ApplicationForm() {
     // between "you take it to the guest" (delivery regions) and "the guest comes to
     // you" (a private collection address). Separate from `shape` on purpose.
     const [fulfilment, setFulfilment] = useState('');
-    const [collectionAddress, setCollectionAddress] = useState('');
+    // The collection address as three fields — a single blob can't be split back
+    // into its town, and the town is what a guest reads (the public based_line).
+    // Street and postcode stay private; the town's public copy is based_line.
+    const [collectionStreet, setCollectionStreet] = useState('');
+    const [collectionTown, setCollectionTown] = useState('');
+    const [collectionPostcode, setCollectionPostcode] = useState('');
     // Whether the collection address is safe to write. TRUE for a fresh flow
     // (nothing to lose) and once a returning provider's address has actually been
     // read back from provider_private; FALSE for a returning provider until that
-    // read succeeds. The write omits collection_address while this is false AND the
-    // field is empty, so a not-loaded value can never blank a real one on save —
+    // read succeeds. The write omits the collection fields while this is false AND
+    // they are empty, so a not-loaded value can never blank a real one on save —
     // the same class of bug as the slot-capacity default. See guestProviderFields.
     const [collectionAddressLoaded, setCollectionAddressLoaded] = useState(true);
+    // The optional getAddress.io lookup — suggestions for a typed postcode.
+    // Manual entry is the primary path; this fills the fields when the lookup is
+    // available and degrades silently (a dead key surfaces the manual message).
+    const [collectionLookupQuery, setCollectionLookupQuery] = useState('');
+    const [collectionLookupResults, setCollectionLookupResults] = useState<Array<{ id: string; label: string }>>([]);
+    const [collectionLookupBusy, setCollectionLookupBusy] = useState(false);
+    const [collectionLookupError, setCollectionLookupError] = useState('');
     // Slot only. `slotPrivate` is the private/shared answer (null until asked):
     // private → the whole session for one group (sells as one booking, flat
     // price); shared → several people join (per-person price, seats = capacity).
@@ -844,9 +857,13 @@ function ApplicationForm() {
                     // save (guestProviderFields omits it while unloaded + empty).
                     setCollectionAddressLoaded(false);
                     const { data: priv, error: privErr } = await supabase
-                        .from('provider_private').select('collection_address').eq('id', existing.id).maybeSingle();
+                        .from('provider_private')
+                        .select('collection_street, collection_town, collection_postcode')
+                        .eq('id', existing.id).maybeSingle();
                     if (!privErr) {
-                        setCollectionAddress((priv?.collection_address as string) || '');
+                        setCollectionStreet((priv?.collection_street as string) || '');
+                        setCollectionTown((priv?.collection_town as string) || '');
+                        setCollectionPostcode((priv?.collection_postcode as string) || '');
                         setCollectionAddressLoaded(true);
                     }
                     if (ex.slot_length_minutes) setSlotLength(String(ex.slot_length_minutes));
@@ -1149,7 +1166,9 @@ function ApplicationForm() {
             // (no DB row yet), so a restored address is authoritative — leave
             // collectionAddressLoaded true (its default). Never persisted from a
             // DB read; only the provider's own in-progress typing.
-            if (d.collectionAddress) setCollectionAddress(d.collectionAddress);
+            if (d.collectionStreet) setCollectionStreet(d.collectionStreet);
+            if (d.collectionTown) setCollectionTown(d.collectionTown);
+            if (d.collectionPostcode) setCollectionPostcode(d.collectionPostcode);
             if (d.slotPrivate !== undefined && d.slotPrivate !== null) setSlotPrivate(d.slotPrivate === true);
             if (d.maxGuests) setMaxGuests(d.maxGuests);
             if (d.slotLength) setSlotLength(d.slotLength);
@@ -1284,7 +1303,7 @@ function ApplicationForm() {
                     // Made-to-order fulfilment fork + its collection address. The
                     // address is the provider's own, in their own browser's draft
                     // — never shared, and it's a private column server-side.
-                    fulfilment, collectionAddress,
+                    fulfilment, collectionStreet, collectionTown, collectionPostcode,
                     slotPrivate, maxGuests, slotLength, schedule, blockedDates,
                     // The checks they've ticked so far.
                     declarations,
@@ -1304,7 +1323,7 @@ function ApplicationForm() {
         yearsDoing, professionalTitle, qualifications, recognition,
         whatToExpect,
         guestCategory, shape, leadTimeDays,
-        fulfilment, collectionAddress,
+        fulfilment, collectionStreet, collectionTown, collectionPostcode,
         slotPrivate, maxGuests, slotLength, schedule, blockedDates,
         declarations,
     ]);
@@ -1341,8 +1360,65 @@ function ApplicationForm() {
         shape,
         scheduleCount: schedule.length,
         fulfilment,
-        hasCollectionAddress: collectionAddress.trim() !== '',
+        // A usable collection address needs all three: the street and postcode a
+        // guest actually finds, and the town that becomes the public based_line.
+        hasCollectionAddress: collectionStreet.trim() !== ''
+            && collectionTown.trim() !== ''
+            && collectionPostcode.trim() !== '',
     });
+
+    // The optional getAddress.io lookup for the collection address, reusing the
+    // same routes and helpers as add-a-property. Manual entry is the primary path
+    // (the three fields below always work); this fills them when the lookup is
+    // available and shows a plain "enter it by hand" line when it isn't (a
+    // dead/absent key returns 502/503 — it has been 401ing upstream since August).
+    const runCollectionLookup = async () => {
+        const q = collectionLookupQuery.trim();
+        if (q.length < 3) return;
+        setCollectionLookupBusy(true);
+        setCollectionLookupError('');
+        setCollectionLookupResults([]);
+        try {
+            const res = await fetch('/api/address/autocomplete?q=' + encodeURIComponent(q));
+            const body = await res.json();
+            if (!res.ok || !body.ok) {
+                setCollectionLookupError(GUEST_SCREEN_COPY.collectionLookupManual);
+                return;
+            }
+            const suggestions = (body.suggestions || []).map((s: any) => ({ id: String(s.id), label: String(s.address || '') }));
+            if (!suggestions.length) setCollectionLookupError(GUEST_SCREEN_COPY.collectionLookupManual);
+            setCollectionLookupResults(suggestions);
+        } catch {
+            setCollectionLookupError(GUEST_SCREEN_COPY.collectionLookupManual);
+        } finally {
+            setCollectionLookupBusy(false);
+        }
+    };
+
+    const pickCollectionSuggestion = async (id: string) => {
+        setCollectionLookupBusy(true);
+        setCollectionLookupError('');
+        try {
+            const res = await fetch('/api/address/get?id=' + encodeURIComponent(id));
+            const body = await res.json();
+            if (!res.ok || !body.ok || !body.address) {
+                setCollectionLookupError(GUEST_SCREEN_COPY.collectionLookupManual);
+                return;
+            }
+            const a = body.address;
+            // buildStreetAddress folds a flat/sub-building into the one private
+            // street line — the same assembly add-a-property uses.
+            setCollectionStreet(buildStreetAddress(a.flat || '', '', a.street || ''));
+            setCollectionTown(a.town || '');
+            setCollectionPostcode(a.postcode || '');
+            setCollectionLookupResults([]);
+            setCollectionLookupError('');
+        } catch {
+            setCollectionLookupError(GUEST_SCREEN_COPY.collectionLookupManual);
+        } finally {
+            setCollectionLookupBusy(false);
+        }
+    };
 
     // One block of £ boxes for a pricing structure. Nothing computes from
     // these yet — they are on the page so real window cleaners can say which
@@ -2353,15 +2429,19 @@ function ApplicationForm() {
         // loaded (even to empty) the field is authoritative, and a delivery-only
         // choice clears it. `undefined` keys drop out of the update.
         const collects = fulfilment === 'collection' || fulfilment === 'both';
+        // The three private fields plus the public based_line the town drives, or
+        // undefined to omit them all — the not-loaded-and-empty safety lives in
+        // collectionFieldsForWrite (unit-proved). Spreading undefined writes
+        // nothing, so a returning provider whose private address failed to load
+        // can never blank a real one on save.
+        const collectionWrite = isMTO
+            ? collectionFieldsForWrite({
+                collects, loaded: collectionAddressLoaded,
+                street: collectionStreet, town: collectionTown, postcode: collectionPostcode,
+            })
+            : undefined;
         const fulfilmentFields = isMTO
-            ? {
-                fulfilment: fulfilment || null,
-                // undefined omits the key from the update — the not-loaded-and-empty
-                // safety lives in collectionAddressForWrite (unit-proved).
-                collection_address: collectionAddressForWrite({
-                    collects, loaded: collectionAddressLoaded, value: collectionAddress,
-                }),
-            }
+            ? { fulfilment: fulfilment || null, ...(collectionWrite || {}) }
             : {};
         return {
             ...(cat && cat.label && status !== 'approved' ? { custom_label: cat.label } : {}),
@@ -5929,16 +6009,75 @@ function ApplicationForm() {
                                 </div>
                             )}
 
-                            {/* Collection address — private; released only on a
-                                confirmed order (see the order page). */}
+                            {/* Collection address — three fields, not one blob, so
+                                the town can drive the public based_line while the
+                                street and postcode stay private, released only on a
+                                confirmed order (see the order page). Optional
+                                postcode lookup on top; manual entry always works. */}
                             {showCollection && (
                                 <div className="mt-8 md:max-w-xl">
-                                    <label htmlFor="collection-address" className="block text-xs font-medium text-slate-500 mb-2">{GUEST_SCREEN_COPY.collectionAddressLabel}</label>
-                                    <textarea id="collection-address" rows={3}
-                                        value={collectionAddress}
-                                        onChange={(e) => setCollectionAddress(e.target.value)}
-                                        placeholder={GUEST_SCREEN_COPY.collectionAddressPlaceholder}
-                                        className="w-full rounded-xl border border-slate-300 px-4 py-3 focus:outline-none focus:ring-2 focus:ring-emerald-700" />
+                                    <span className="block text-xs font-medium text-slate-500 mb-2">{GUEST_SCREEN_COPY.collectionAddressLabel}</span>
+
+                                    {/* Optional getAddress.io lookup. */}
+                                    <div className="flex gap-2">
+                                        <input
+                                            type="text"
+                                            value={collectionLookupQuery}
+                                            onChange={(e) => setCollectionLookupQuery(e.target.value)}
+                                            onKeyDown={(e) => { if (e.key === 'Enter') { e.preventDefault(); runCollectionLookup(); } }}
+                                            placeholder={GUEST_SCREEN_COPY.collectionLookupPrompt}
+                                            className="min-w-0 flex-1 rounded-xl border border-slate-300 px-4 py-2.5 focus:outline-none focus:ring-2 focus:ring-emerald-700" />
+                                        <button type="button" onClick={runCollectionLookup} disabled={collectionLookupBusy || collectionLookupQuery.trim().length < 3}
+                                            className="flex-none rounded-xl border border-slate-300 px-4 py-2.5 text-sm font-semibold text-slate-700 transition hover:border-emerald-400 disabled:opacity-50">
+                                            {collectionLookupBusy ? '…' : GUEST_SCREEN_COPY.collectionLookupFind}
+                                        </button>
+                                    </div>
+                                    {collectionLookupResults.length > 0 && (
+                                        <ul className="mt-2 max-h-56 overflow-y-auto rounded-xl border border-slate-200">
+                                            {collectionLookupResults.map((s) => (
+                                                <li key={s.id}>
+                                                    <button type="button" onClick={() => pickCollectionSuggestion(s.id)}
+                                                        className="block w-full px-4 py-2.5 text-left text-sm text-slate-700 transition hover:bg-emerald-50">
+                                                        {s.label}
+                                                    </button>
+                                                </li>
+                                            ))}
+                                        </ul>
+                                    )}
+                                    {collectionLookupError && (
+                                        <p className="mt-2 text-xs text-slate-500">{collectionLookupError}</p>
+                                    )}
+
+                                    {/* The three fields — the source of truth. */}
+                                    <div className="mt-4 space-y-3">
+                                        <div>
+                                            <label htmlFor="collection-street" className="block text-xs font-medium text-slate-500 mb-1">{GUEST_SCREEN_COPY.collectionStreetLabel}</label>
+                                            <input id="collection-street" type="text"
+                                                value={collectionStreet}
+                                                onChange={(e) => setCollectionStreet(e.target.value)}
+                                                placeholder={GUEST_SCREEN_COPY.collectionStreetPlaceholder}
+                                                className="w-full rounded-xl border border-slate-300 px-4 py-3 focus:outline-none focus:ring-2 focus:ring-emerald-700" />
+                                        </div>
+                                        <div className="flex gap-3">
+                                            <div className="min-w-0 flex-1">
+                                                <label htmlFor="collection-town" className="block text-xs font-medium text-slate-500 mb-1">{GUEST_SCREEN_COPY.collectionTownLabel}</label>
+                                                <input id="collection-town" type="text"
+                                                    value={collectionTown}
+                                                    onChange={(e) => setCollectionTown(e.target.value)}
+                                                    placeholder={GUEST_SCREEN_COPY.collectionTownPlaceholder}
+                                                    className="w-full rounded-xl border border-slate-300 px-4 py-3 focus:outline-none focus:ring-2 focus:ring-emerald-700" />
+                                            </div>
+                                            <div className="w-36 flex-none">
+                                                <label htmlFor="collection-postcode" className="block text-xs font-medium text-slate-500 mb-1">{GUEST_SCREEN_COPY.collectionPostcodeLabel}</label>
+                                                <input id="collection-postcode" type="text"
+                                                    value={collectionPostcode}
+                                                    onChange={(e) => setCollectionPostcode(e.target.value)}
+                                                    placeholder={GUEST_SCREEN_COPY.collectionPostcodePlaceholder}
+                                                    className="w-full rounded-xl border border-slate-300 px-4 py-3 focus:outline-none focus:ring-2 focus:ring-emerald-700" />
+                                            </div>
+                                        </div>
+                                    </div>
+
                                     <p className="mt-2 text-xs text-slate-500">{GUEST_SCREEN_COPY.collectionAddressHint}</p>
                                     {problemFor('collection_address') && (
                                         <p data-problem className="text-sm text-rose-700 mt-2">{problemFor('collection_address')!.message}</p>

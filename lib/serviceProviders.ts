@@ -2440,19 +2440,45 @@ export const MIN_DESCRIPTION = 40;
 // enforced while a draft is being filled in — a half-finished form should save,
 // not argue.
 /**
- * What to write for `collection_address`, or `undefined` to OMIT it from the
- * update. The omit is the safety: a returning provider whose private address did
- * not load (`loaded` false) and who has typed nothing must NOT blank a real
- * address on save — so we send nothing rather than null, and the stored value
- * stands. Same class of bug as an untouched slot-capacity default overwriting a
- * stored one. When loaded, the field is authoritative (a cleared field writes
- * null); when not collecting, the address is cleared.
+ * The collection-address columns to write — the three private fields plus the
+ * public `based_line` the town drives — or `undefined` to OMIT all of them from
+ * the update.
+ *
+ * The omit is the safety: a returning provider whose private address did not load
+ * (`loaded` false) and who has typed nothing must NOT blank a real address on
+ * save — so we send nothing rather than nulls, and the stored values stand. Same
+ * class of bug as an untouched slot-capacity default overwriting a stored one.
+ *
+ * When loaded, the fields are authoritative (a cleared field writes null); when
+ * not collecting, the address is cleared and `based_line` with it (the town is
+ * its only source today). `based_line` is the town alone — everything is in
+ * Dumfries & Galloway, so repeating the region on every listing adds nothing.
  */
-export function collectionAddressForWrite(o: { collects: boolean; loaded: boolean; value: string }): string | null | undefined {
-    const v = (o.value || '').trim();
-    if (!o.loaded && v === '') return undefined; // not loaded, nothing typed → leave the stored value alone
-    if (!o.collects) return null;                // not collecting → clear it
-    return v || null;                            // collecting → the typed value (null only if cleared while loaded)
+export function collectionFieldsForWrite(o: {
+    collects: boolean; loaded: boolean;
+    street: string; town: string; postcode: string;
+}): {
+    collection_street: string | null;
+    collection_town: string | null;
+    collection_postcode: string | null;
+    based_line: string | null;
+} | undefined {
+    const street = (o.street || '').trim();
+    const town = (o.town || '').trim();
+    const postcode = (o.postcode || '').trim();
+    // Not loaded and nothing typed anywhere → leave every stored value alone.
+    if (!o.loaded && !street && !town && !postcode) return undefined;
+    // Not collecting → clear the private fields and the public location with them.
+    if (!o.collects) {
+        return { collection_street: null, collection_town: null, collection_postcode: null, based_line: null };
+    }
+    // Collecting → the typed values; the town is the public based_line.
+    return {
+        collection_street: street || null,
+        collection_town: town || null,
+        collection_postcode: postcode || null,
+        based_line: town || null,
+    };
 }
 
 export function submitProblems(draft: ProviderDraft): Problem[] {

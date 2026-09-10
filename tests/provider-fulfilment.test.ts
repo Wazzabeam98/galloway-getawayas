@@ -8,7 +8,7 @@ import { installAliases } from './helpers/stub';
 
 installAliases();
 
-const { submitProblems, collectionAddressForWrite } = require('@/lib/serviceProviders');
+const { submitProblems, collectionFieldsForWrite } = require('@/lib/serviceProviders');
 
 // Only the fields this fork owns; other unrelated problems (e.g. a short
 // description) are irrelevant here, so assert on presence/absence of these.
@@ -57,23 +57,49 @@ test('a slot still requires an area (the fork is made-to-order only)', () => {
 
 // --- the overwrite safety (the case to prove, not reason about) ------------
 
+const NOTHING = { street: '', town: '', postcode: '' };
+const ADDR = { street: '4 Shore Road', town: 'Kirkcudbright', postcode: 'DG6 4JT' };
+
 test('a not-loaded, untouched collection address is OMITTED — it cannot blank a real one', () => {
     // The dangerous case: a returning collection provider re-opens the wizard,
     // their private address did NOT load (loaded:false), they type nothing, and
-    // they save. The write must send NOTHING for collection_address so the stored
-    // address stands — undefined omits the key from the PATCH.
+    // they save. The write must send NOTHING for the collection fields so the
+    // stored address stands — undefined omits every key from the PATCH.
     assert.equal(
-        collectionAddressForWrite({ collects: true, loaded: false, value: '' }),
+        collectionFieldsForWrite({ collects: true, loaded: false, ...NOTHING }),
         undefined,
-        'not loaded + empty must omit the column, never write null over a real address',
+        'not loaded + all empty must omit the columns, never write null over a real address',
     );
-    // Even if they had it loaded and cleared it, that IS authoritative → null.
-    assert.equal(collectionAddressForWrite({ collects: true, loaded: true, value: '' }), null);
-    // A typed value writes, loaded or not.
-    assert.equal(collectionAddressForWrite({ collects: true, loaded: false, value: '  12 Shore Rd  ' }), '12 Shore Rd');
-    assert.equal(collectionAddressForWrite({ collects: true, loaded: true, value: '12 Shore Rd' }), '12 Shore Rd');
-    // Not collecting clears it — but only once we can safely touch it (loaded, or
-    // they typed); a not-loaded delivery-only save still omits rather than nulls.
-    assert.equal(collectionAddressForWrite({ collects: false, loaded: true, value: '' }), null);
-    assert.equal(collectionAddressForWrite({ collects: false, loaded: false, value: '' }), undefined);
+    // A not-loaded delivery-only save (not collecting) still omits rather than
+    // nulling — same protection.
+    assert.equal(collectionFieldsForWrite({ collects: false, loaded: false, ...NOTHING }), undefined);
+});
+
+test('collecting writes the three fields and derives based_line from the town (town alone)', () => {
+    const out = collectionFieldsForWrite({ collects: true, loaded: true, ...ADDR });
+    assert.deepEqual(out, {
+        collection_street: '4 Shore Road',
+        collection_town: 'Kirkcudbright',
+        collection_postcode: 'DG6 4JT',
+        based_line: 'Kirkcudbright',  // the town alone — everything is in D&G, so no region
+    });
+    // A typed value writes even when the private read hadn't loaded (it isn't the
+    // all-empty case, so the safety doesn't apply).
+    const typedUnloaded = collectionFieldsForWrite({ collects: true, loaded: false, ...ADDR });
+    assert.equal(typedUnloaded && typedUnloaded.collection_street, '4 Shore Road');
+    assert.equal(typedUnloaded && typedUnloaded.based_line, 'Kirkcudbright');
+});
+
+test('not collecting clears the private fields and the public based_line with them', () => {
+    // Loaded (or typed) so it is safe to touch: a delivery-only save nulls all
+    // four, so a provider who stops collecting loses the collection address and
+    // its public location together.
+    assert.deepEqual(collectionFieldsForWrite({ collects: false, loaded: true, ...NOTHING }), {
+        collection_street: null, collection_town: null, collection_postcode: null, based_line: null,
+    });
+});
+
+test('based_line is the town only, never the town plus a region', () => {
+    const out = collectionFieldsForWrite({ collects: true, loaded: true, street: '1 High St', town: 'Dumfries', postcode: 'DG1 1AA' });
+    assert.equal(out && out.based_line, 'Dumfries');
 });

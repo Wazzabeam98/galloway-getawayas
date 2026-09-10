@@ -273,10 +273,24 @@ export const GUEST_SCREEN_COPY = {
     // The collection address. The hint DESCRIBES what we do — not a guarantee it
     // can't reach anyone else (a provider who messages their address to a guest is
     // outside our control).
-    collectionAddressLabel: 'Your collection address',
-    collectionAddressHint: 'We only show this to a guest once they’ve booked and paid.',
-    collectionAddressPlaceholder: 'The address a guest collects from',
-    collectionAddressGate: 'Add the address guests collect from.',
+    // Three fields, not one blob: a single address can't be split back into its
+    // town reliably, and the town is what a guest reads (the public "based in
+    // Kirkcudbright" line). Street and postcode stay private, released only on a
+    // confirmed order — the same split the cottage side makes.
+    collectionAddressLabel: 'Where guests collect',
+    collectionAddressHint: 'We only show the street and postcode to a guest once they’ve booked and paid. The town shows on your listing.',
+    collectionStreetLabel: 'Street address',
+    collectionStreetPlaceholder: 'e.g. The Old Bakery, 4 Shore Road',
+    collectionTownLabel: 'Town',
+    collectionTownPlaceholder: 'e.g. Kirkcudbright',
+    collectionPostcodeLabel: 'Postcode',
+    collectionPostcodePlaceholder: 'e.g. DG6 4JT',
+    collectionAddressGate: 'Add the street, town and postcode guests collect from.',
+    // The optional address lookup (getAddress.io). Manual entry is always there;
+    // this just fills the fields when the lookup is available.
+    collectionLookupPrompt: 'Look up a postcode',
+    collectionLookupFind: 'Find address',
+    collectionLookupManual: 'Enter it by hand below — nothing else changes.',
 
     // The photos screen. An instruction, not a slogan — it names the task rather
     // than describing the outcome. The single line asks for three (what makes a

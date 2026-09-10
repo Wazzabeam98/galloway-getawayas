@@ -85,7 +85,7 @@ export default async function OrderPage({ params, searchParams }: { params: { or
     if (!order || order.guest_id !== user.id) redirect('/trips');
 
     const [{ data: prov }, { data: listing, error: listingError }] = await Promise.all([
-        admin.from('service_providers').select('business_name, provider_name, based_line, headshot, description, cancellation_window_hours, slot_length_minutes, fulfilment, collection_address').eq('id', order.provider_id).maybeSingle(),
+        admin.from('service_providers').select('business_name, provider_name, based_line, headshot, description, cancellation_window_hours, slot_length_minutes, fulfilment, collection_street, collection_town, collection_postcode').eq('id', order.provider_id).maybeSingle(),
         order.listing_id
             // The cottage the experience is attached to. `address` is not a column
             // on listings — the address is street_address + postcode + location —
@@ -123,7 +123,12 @@ export default async function OrderPage({ params, searchParams }: { params: { or
     // service role above; never sent to the browser before then. Delivery and
     // "both" still deliver, so only pure collection changes the day-of line.
     const collects = prov?.fulfilment === 'collection' || prov?.fulfilment === 'both';
-    const collectionAddress = charged && collects ? (prov?.collection_address || null) : null;
+    // Assembled from the three private fields, same order the cottage address
+    // uses: "The Old Bakery, 4 Shore Road, Kirkcudbright, DG6 4JT".
+    const collectionAddress = charged && collects
+        ? ([prov?.collection_street, prov?.collection_town, prov?.collection_postcode]
+            .map((p) => (p || '').trim()).filter(Boolean).join(', ') || null)
+        : null;
 
     return (
         <div className="min-h-screen bg-slate-50">
