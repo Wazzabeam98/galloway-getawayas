@@ -37,11 +37,22 @@ async function clean(me) {
     await db.remove('bookings', '?guest_id=eq.' + me + '&stripe_payment_intent_id=eq.' + BOOKING_PI).catch(() => {});
     const provs = await db.select('service_providers', '?owner_id=eq.' + me + '&business_name=eq.' + encodeURIComponent(BUSINESS) + '&select=id').catch(() => []);
     for (const p of provs || []) {
+        // Dependent rows FIRST, or the provider delete fails on a foreign key.
+        // service_orders references BOTH the provider and its slot_sessions, so
+        // it goes before sessions; a crafted-request test leaves holding/expired
+        // orders behind, and NOT clearing them is exactly what orphaned this
+        // fixture once (the provider delete failed on that FK and the error was
+        // swallowed, so --reset reported success while the row survived).
+        await db.remove('service_orders', '?provider_id=eq.' + p.id).catch(() => {});
         await db.remove('service_provider_items', '?provider_id=eq.' + p.id).catch(() => {});
         await db.remove('slot_availability', '?provider_id=eq.' + p.id).catch(() => {});
         await db.remove('slot_blocks', '?provider_id=eq.' + p.id).catch(() => {});
         await db.remove('slot_sessions', '?provider_id=eq.' + p.id).catch(() => {});
-        await db.remove('service_providers', '?id=eq.' + p.id).catch(() => {});
+        // The provider delete is NOT swallowed: if a dependency is still holding
+        // it, this throws and the script exits non-zero, rather than printing
+        // "Removed" over a row that is still there. That silent success over a
+        // failed delete is the bug this fixes.
+        await db.remove('service_providers', '?id=eq.' + p.id);
     }
 }
 
