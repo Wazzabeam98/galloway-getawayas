@@ -593,43 +593,62 @@ test('a cake maker (made to order) gets the years and expertise screens too', ()
     assert.equal(stepApplies('g_notice', 'guest', { group: 'food', category: 'chef', shape: 'comes_to_you' }), false, 'a traveller has no notice screen');
 });
 
-// A slot also opens its Pricing section with the pricing-basis screen
-// (g_slot_basis — private vs per person), before the capacity ceiling. A
-// PER-PERSON slot (slotPrivate === false) gains one more screen, the minimum
-// (g_slot_min), between the ceiling and the price; a private/whole-group slot
-// drops it, and so does a slot whose basis is not yet answered.
-const withSlotPricing = (keys: string[], perPerson = false) => {
-    const out = keys.slice();
-    const at = out.indexOf('g_menu');
-    const inserts = perPerson
-        ? ['g_slot_basis', 'g_capacity', 'g_slot_min']
-        : ['g_slot_basis', 'g_capacity'];
-    out.splice(at, 0, ...inserts);
-    return out;
+// The full slot flow, built from scratch (the request shapes splice into TEN;
+// a slot restructures the middle too much for that). A slot carries:
+//   - the LOCATION section: g_area (the place) — and, for the three either-way
+//     categories, a come-to-me/travel fork (g_slot_where) before it;
+//   - a WHEN section (slots only): g_slot_length then g_slot_hours;
+//   - the PRICING section: g_slot_basis, g_capacity, and — per person only —
+//     g_slot_min, before g_menu.
+// `expertise` is true for every slot category except the sauna, which skips the
+// years and expertise screens.
+const slotFlow = (opts: { fork?: boolean; perPerson?: boolean; expertise?: boolean } = {}) => {
+    const keys = ['g_verify', 'trade', 'g_subtype'];
+    if (opts.expertise !== false) keys.push('g_you', 'g_creds');
+    if (opts.fork) keys.push('g_slot_where');
+    keys.push('g_area', 'g_slot_length', 'g_slot_hours', 'g_photos', 'g_slot_basis', 'g_capacity');
+    if (opts.perPerson) keys.push('g_slot_min');
+    keys.push('g_menu', 'g_expect', 'finish');
+    return keys;
 };
 
-test('a yoga instructor (not food, slot) walks the flow, with the basis and capacity steps and dietary folded away', () => {
-    const ctx = { group: 'wellness', category: 'yoga', shape: 'slot' };
-    // Basis, then capacity — the minimum is absent until the basis is answered
-    // per person, so an unanswered slot walks basis + capacity only.
-    assert.deepEqual(gkeys(ctx), withSlotPricing(TEN));
-    assert.equal(stepApplies('g_slot_basis', 'guest', ctx), true, 'a slot picks who a session is for');
-    assert.equal(stepApplies('g_capacity', 'guest', ctx), true, 'a slot sets how many the space holds');
-    // Dietary is no longer a step — it renders inside g_expect for a food
-    // category only, so a yoga class simply never sees that field.
-    assert.equal(stepApplies('g_area', 'guest', ctx), true, 'a slot still needs a location, on the where-and-when step');
-    // What guests can expect and the photos step are asked of everyone.
-    assert.equal(stepApplies('g_expect', 'guest', ctx), true);
-    assert.equal(stepApplies('g_photos', 'guest', ctx), true);
+test('a potter (slot, fixed come-to-me) walks the location + When split, no fork', () => {
+    // Pottery is a come-to-me slot with no fork (studio, one honest answer), and
+    // it is asked its expertise. Its location is g_area (the address) and its
+    // When section is session length then weekly hours.
+    const ctx = { group: 'crafts', category: 'pottery', shape: 'slot' };
+    assert.deepEqual(gkeys(ctx), slotFlow());
+    assert.equal(stepApplies('g_slot_where', 'guest', ctx), false, 'a fixed come-to-me slot skips the where fork');
+    assert.equal(stepApplies('g_slot_length', 'guest', ctx), true, 'a slot sets a session length');
+    assert.equal(stepApplies('g_slot_hours', 'guest', ctx), true, 'a slot sets weekly hours');
+    assert.equal(stepApplies('g_slot_basis', 'guest', ctx), true);
+    assert.equal(stepApplies('g_capacity', 'guest', ctx), true);
+});
+
+test('the come-to-me / travel fork is asked only for yoga, massage and painting', () => {
+    // The three either-way categories get g_slot_where; every other slot defaults
+    // and skips it.
+    for (const cat of ['yoga', 'massage', 'painting']) {
+        const ctx = { group: 'wellness', category: cat, shape: 'slot' };
+        assert.equal(stepApplies('g_slot_where', 'guest', ctx), true, cat + ' is asked the fork');
+        assert.deepEqual(gkeys(ctx), slotFlow({ fork: true }));
+    }
+    for (const cat of ['tastings', 'cooking', 'sauna', 'pottery', 'workshops', 'outdoors', 'water']) {
+        const ctx = { group: 'x', category: cat, shape: 'slot' };
+        assert.equal(stepApplies('g_slot_where', 'guest', ctx), false, cat + ' defaults, no fork');
+    }
+    // Non-slot shapes never see the fork.
+    assert.equal(stepApplies('g_slot_where', 'guest', { category: 'chef', shape: 'comes_to_you' }), false);
+    assert.equal(stepApplies('g_slot_where', 'guest', { category: 'food_order', shape: 'made_to_order' }), false);
 });
 
 test('the per-person minimum screen exists only for a shared/per-person slot', () => {
-    const shared = { group: 'wellness', category: 'yoga', shape: 'slot', slotPrivate: false };
+    const shared = { group: 'crafts', category: 'pottery', shape: 'slot', slotPrivate: false };
     const priv = { group: 'wellness', category: 'sauna', shape: 'slot', slotPrivate: true };
-    const unanswered = { group: 'wellness', category: 'yoga', shape: 'slot' };
-    // Per person: basis → capacity → minimum → price.
+    const unanswered = { group: 'crafts', category: 'pottery', shape: 'slot' };
+    // Per person: … g_capacity → g_slot_min → g_menu.
     assert.equal(stepApplies('g_slot_min', 'guest', shared), true, 'per person has a minimum');
-    assert.deepEqual(gkeys(shared), withSlotPricing(TEN, true));
+    assert.deepEqual(gkeys(shared), slotFlow({ perPerson: true }));
     // Whole group: one booking whatever the head count, so no minimum screen.
     assert.equal(stepApplies('g_slot_min', 'guest', priv), false, 'private/whole-group has no minimum');
     // Not yet answered: the basis screen comes first, so the minimum stays out
@@ -776,12 +795,17 @@ test('the guest flow is six named sections, in Airbnb order', () => {
 test('a section with no screens drops out of the rail entirely', () => {
     // The sauna skips BOTH the years screen and the expertise hub, so its About
     // you section has nothing in it — and a section with no live steps drops
-    // out rather than sitting in the rail as a dead label. So the sauna's rail
-    // is six sections, opening at Location.
+    // out rather than sitting in the rail as a dead label. As a slot it DOES have
+    // a When section (session length + hours), so its rail opens at Location and
+    // carries When after it.
     const sauna = sectionsFor('guest', { group: 'wellness', category: 'sauna', shape: 'slot' });
     assert.equal(sauna.some((s: any) => s.key === 'about'), false, 'sauna has no About you section');
     assert.deepEqual(sauna.map((s: any) => s.key),
-        ['location', 'photos', 'pricing', 'details', 'finish']);
+        ['location', 'when', 'photos', 'pricing', 'details', 'finish']);
+    // And a made-to-order guest, not being a slot, has NO When section — proof it
+    // drops out for the shapes without those screens.
+    const baker = sectionsFor('guest', { group: 'food', category: 'food_order', shape: 'made_to_order' });
+    assert.equal(baker.some((s: any) => s.key === 'when'), false, 'a non-slot has no When section');
 });
 
 test('the pickers and the name step sit before the rail, in no section', () => {

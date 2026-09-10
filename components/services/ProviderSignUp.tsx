@@ -74,6 +74,9 @@ import {
     guestCategoryIsFood,
     guestAsksExpertise,
     guestQualificationsRequired,
+    slotAsksWhereFork,
+    slotIsMeetingPoint,
+    defaultSlotFulfilment,
     collectionFieldsForWrite,
     DIETARY_OPTIONS,
     DEFAULT_SERVICE_COMMISSION,
@@ -1945,12 +1948,12 @@ function ApplicationForm() {
     // host touches them, so the step can't be passed until each one that applies
     // has a real value. (The area and weekly-hours requirements come through
     // stepProblems, below.)
-    // Only the slot gates g_area on a number here (its session length). The
-    // made-to-order notice moved to its own screen (g_notice), which stores the
-    // shown value on Next like the years/guests steppers rather than gating.
-    const whereMissing: string | null = isGuest && step === 'g_area' && shape === 'slot'
-        ? (!slotLength.trim() ? 'Set how long each session is.' : null)
-        : null;
+    // g_area's own required-fields (the address or a region) come through
+    // stepProblems now, the same as made-to-order — nothing extra to gate here.
+    // Session length moved to g_slot_length (stores its shown default on Next,
+    // like the years/guests steppers) and the weekly hours to g_slot_hours (its
+    // requirement is the 'availability' problem, which maps to that step).
+    const whereMissing: string | null = null;
 
     // g_photos deliberately shows no footer message: the on-screen line asks for
     // three, the Next gate quietly holds at one, and we don't restate either in
@@ -1964,6 +1967,9 @@ function ApplicationForm() {
             // than leaving a greyed button with no reason.
             : step === 'g_slot_basis' && slotPrivate === null
             ? GUEST_SCREEN_COPY.slotBasisGate
+            // The come-to-me / travel fork, same rule.
+            : step === 'g_slot_where' && !fulfilment
+            ? GUEST_SCREEN_COPY.slotWhereGate
             : whereMissing)
         : null;
 
@@ -2125,6 +2131,11 @@ function ApplicationForm() {
         setGuestCategory(key);
         const cat = guestCategoryByKey(key);
         if (cat && cat.shape) setShape(cat.shape);
+        // A slot's location fork: the seven fixed categories default to come-to-me
+        // ('collection') and skip g_slot_where; the three either-way ones (yoga,
+        // massage, painting) start blank so that screen asks. Made-to-order forks
+        // on its own screen and comes-to-you doesn't use the field, so both clear.
+        setFulfilment(defaultSlotFulfilment(key));
         markVisited('trade');
         markVisited('g_subtype');
     };
@@ -2590,13 +2601,21 @@ function ApplicationForm() {
         // collectionFieldsForWrite (unit-proved). Spreading undefined writes
         // nothing, so a returning provider whose private address failed to load
         // can never blank a real one on save.
-        const collectionWrite = isMTO
+        // Made-to-order AND slot both carry a fulfilment now: a come-to-me slot
+        // (collection) writes an address exactly like a collecting baker — town
+        // → public based_line, street + postcode private, released on a confirmed
+        // booking — and a travelling slot (delivery) clears it and keeps regions.
+        // This is the code that ALSO fixes based_line never being derived for a
+        // slot: with the slot going through collectionFieldsForWrite, its town
+        // becomes the public based_line the guest sees.
+        const usesFulfilment = isMTO || isSlot;
+        const collectionWrite = usesFulfilment
             ? collectionFieldsForWrite({
                 collects, loaded: collectionAddressLoaded,
                 street: collectionStreet, town: collectionTown, postcode: collectionPostcode,
             })
             : undefined;
-        const fulfilmentFields = isMTO
+        const fulfilmentFields = usesFulfilment
             ? { fulfilment: fulfilment || null, ...(collectionWrite || {}) }
             : {};
         return {
@@ -3725,7 +3744,7 @@ function ApplicationForm() {
                                 /* The years opener is a flex column so its
                                    stepper can centre in the space under the
                                    question rather than sit high with a void. */
-                                : (step === 'g_you' || step === 'g_capacity' || step === 'g_notice' || step === 'g_slot_min')
+                                : (step === 'g_you' || step === 'g_capacity' || step === 'g_notice' || step === 'g_slot_min' || step === 'g_slot_length')
                                     ? 'max-w-2xl py-10 sm:py-12 flex flex-col'
                                     /* Finish is the widest content screen: it is a
                                        full-width preview of the listing about to be
@@ -3750,13 +3769,13 @@ function ApplicationForm() {
                         have no section, so it shows nothing there. */}
                     {isGuest && currentSection && (
                         <p className={'text-xs font-bold uppercase tracking-[0.12em] text-emerald-700 mb-3 '
-                            + ((step === 'g_you' || step === 'g_creds' || step === 'g_menu' || step === 'g_capacity' || step === 'g_notice' || step === 'g_photos' || step === 'g_slot_basis' || step === 'g_slot_min') ? 'text-center' : '')}>
+                            + ((step === 'g_you' || step === 'g_creds' || step === 'g_menu' || step === 'g_capacity' || step === 'g_notice' || step === 'g_photos' || step === 'g_slot_basis' || step === 'g_slot_min' || step === 'g_slot_where' || step === 'g_slot_length') ? 'text-center' : '')}>
                             {currentSection.label}
                         </p>
                     )}
-                    {isGuest && step !== 'finish' && step !== 'g_creds' && step !== 'g_menu' && step !== 'g_capacity' && step !== 'g_slot_min' && (
+                    {isGuest && step !== 'finish' && step !== 'g_creds' && step !== 'g_menu' && step !== 'g_capacity' && step !== 'g_slot_min' && step !== 'g_slot_length' && (
                         <h1 className={'font-extrabold tracking-tight text-slate-900 [text-wrap:balance] text-3xl sm:text-4xl '
-                            + ((step === 'trade' || step === 'g_subtype' || step === 'g_you' || step === 'g_notice' || step === 'g_slot_basis') ? 'mb-10 text-center'
+                            + ((step === 'trade' || step === 'g_subtype' || step === 'g_you' || step === 'g_notice' || step === 'g_slot_basis' || step === 'g_slot_where') ? 'mb-10 text-center'
                                 /* g_photos is centred (this screen only, to match
                                    Airbnb) with a tight gap so "Add at least 3 photos."
                                    reads as a subtitle, not a stranded paragraph. */
@@ -3764,15 +3783,23 @@ function ApplicationForm() {
                                     : 'mb-8')}>
                             {step === 'trade'
                                 ? 'What experience are you offering guests?'
-                                /* The g_area title's "when" is real only for a slot
-                                   (a schedule). A traveller is asked where only; a
-                                   made-to-order asks the fulfilment fork (deliver,
-                                   collect, or both) — so each gets its own honest
-                                   heading and the slot keeps the generic. */
+                                /* g_area is the PLACE now. A traveller is asked where
+                                   they cover; a made-to-order asks the fulfilment
+                                   fork; a slot's heading follows its fulfilment — the
+                                   address it gives (premises or meeting point) or the
+                                   regions it travels to. Session length and hours are
+                                   their own screens (g_slot_length/g_slot_hours) and
+                                   ride the generic stepMeta title. */
                                 : (step === 'g_area' && shape === 'comes_to_you')
                                     ? GUEST_SCREEN_COPY.locationHeadingTravel
                                     : (step === 'g_area' && shape === 'made_to_order')
                                         ? GUEST_SCREEN_COPY.fulfilmentHeading
+                                    : (step === 'g_area' && shape === 'slot')
+                                        ? (fulfilment === 'delivery'
+                                            ? GUEST_SCREEN_COPY.slotPlaceHeadingTravel
+                                            : slotIsMeetingPoint(guestCategory)
+                                                ? GUEST_SCREEN_COPY.slotPlaceHeadingMeeting
+                                                : GUEST_SCREEN_COPY.slotPlaceHeadingPremises)
                                     : step === 'g_photos'
                                         ? GUEST_SCREEN_COPY.photosHeading
                                         : stepMeta.title}
@@ -3803,6 +3830,19 @@ function ApplicationForm() {
                             </h1>
                             <p className="text-center text-sm text-slate-500 [text-wrap:balance] mb-10">
                                 {GUEST_SCREEN_COPY.slotMinSubtext}
+                            </p>
+                        </>
+                    )}
+                    {/* Session length renders its heading+subtext here, above the
+                        big centred stepper — same shape as capacity and the
+                        minimum. */}
+                    {isGuest && step === 'g_slot_length' && (
+                        <>
+                            <h1 className="font-extrabold tracking-tight text-slate-900 [text-wrap:balance] text-3xl sm:text-4xl text-center mb-2">
+                                {GUEST_SCREEN_COPY.slotLengthQuestion}
+                            </h1>
+                            <p className="text-center text-sm text-slate-500 [text-wrap:balance] mb-10">
+                                {GUEST_SCREEN_COPY.slotLengthSubtext}
                             </p>
                         </>
                     )}
@@ -4107,7 +4147,7 @@ function ApplicationForm() {
             <fieldset disabled={locked} className={'min-w-0 ' + (locked ? 'opacity-70' : '')
                 /* On the years opener the fieldset fills the panel below the
                    question so its one section can centre vertically. */
-                + (isGuest && (step === 'g_you' || step === 'g_capacity' || step === 'g_notice' || step === 'g_slot_min') ? ' flex-1 flex flex-col' : '')
+                + (isGuest && (step === 'g_you' || step === 'g_capacity' || step === 'g_notice' || step === 'g_slot_min' || step === 'g_slot_length') ? ' flex-1 flex flex-col' : '')
                 /* Same fill on the made-to-order fork, but desktop only — mobile
                    keeps its natural top-down stack. */
                 + (guestMtoArea ? ' sm:flex-1 sm:flex sm:flex-col' : '')}>
@@ -4678,7 +4718,42 @@ function ApplicationForm() {
                 {/* SLOT: the private/shared answer (which sets the price unit and
                     the capacity), the session length, and the weekly opening hours
                     — the schedule editor a sauna owner needs and never had. §7/§10. */}
-                {onStep('g_area') && audienceForTrade(trade) === 'guest' && shape === 'slot' && (() => {
+                {/* THE COME-TO-ME / TRAVEL FORK — slot, and only the three either-way
+                    categories (yoga, massage, painting). It sets `fulfilment` the
+                    way made-to-order's own fork does, so g_area then shows an
+                    address or the coverage regions. The centred H1 asks the
+                    question; here are the two cards. */}
+                {onStep('g_slot_where') && isGuest && shape === 'slot' && (
+                <section className="mb-8 md:max-w-xl md:mx-auto">
+                    <div className="grid gap-3 sm:grid-cols-2">
+                        {[
+                            { v: 'collection', t: GUEST_SCREEN_COPY.slotWhereAtPlace, d: GUEST_SCREEN_COPY.slotWhereAtPlaceHint },
+                            { v: 'delivery', t: GUEST_SCREEN_COPY.slotWhereTravel, d: GUEST_SCREEN_COPY.slotWhereTravelHint },
+                        ].map((o) => {
+                            const on = fulfilment === o.v;
+                            return (
+                                <button key={o.v} type="button" onClick={() => setFulfilment(o.v)} aria-pressed={on}
+                                    className={'flex flex-col rounded-2xl border p-4 text-left transition ' + (on ? 'border-emerald-600 bg-emerald-50 ring-1 ring-emerald-600' : 'border-slate-300 hover:border-emerald-400')}>
+                                    <span className="font-semibold text-slate-900">{o.t}</span>
+                                    <span className="mt-1 text-xs leading-snug text-slate-500">{o.d}</span>
+                                </button>
+                            );
+                        })}
+                    </div>
+                </section>
+                )}
+
+                {/* THE WHEN SECTION (slots only), one question a screen. Session
+                    length here; the weekly hours on the next screen. Split out of
+                    the old overloaded g_area, whose heading promised a schedule
+                    while the first control asked session length. */}
+                {onStep('g_slot_length') && isGuest && shape === 'slot' && (
+                <section className="flex-1 flex flex-col items-center justify-center">
+                    <NumberStepper value={slotLength} onChange={setSlotLength} min={15} max={480} step={15} suggestion={60} size="lg" solid suffix={GUEST_SCREEN_COPY.slotLengthSuffix} />
+                </section>
+                )}
+
+                {onStep('g_slot_hours') && audienceForTrade(trade) === 'guest' && shape === 'slot' && (() => {
                     const DAYS = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
                     const dayOpen = (d: number) => schedule.some((r) => r.day === d);
                     const toggleDay = (d: number) => {
@@ -4691,23 +4766,11 @@ function ApplicationForm() {
                         if (val && blockedDates.indexOf(val) === -1) setBlockedDates([...blockedDates, val].sort());
                     };
                     const removeBlock = (val: string) => setBlockedDates(blockedDates.filter((b) => b !== val));
-                    // The big question ("When can guests book?") carries this
-                    // screen — no nested sub-headings, no paragraphs. Quiet field
-                    // labels name each control, one rhythm holds it together, so a
-                    // schedule reads as one focused task.
+                    // One task: the weekly hours, with the odd day off folded in as
+                    // the exception it is — not a fifth screen. Quiet field labels,
+                    // one rhythm.
                     return (
-                        <section className="mb-8">
-                            {/* The pricing basis ("Who is a session for?") moved to
-                                its own screen in the Pricing section (g_slot_basis),
-                                and capacity to g_capacity; this schedule screen keeps
-                                only the session length and the weekly hours. */}
-                            <div className="mb-6">
-                                <label className="block text-xs font-medium text-slate-500 mb-3">How long is each session?</label>
-                                <NumberStepper value={slotLength} onChange={setSlotLength} min={15} max={480} step={15} suggestion={60} suffix="minutes" />
-                            </div>
-
-                            {/* The weekly hours — a day toggles open, and shows an
-                                open/close time when it is. */}
+                        <section className="mb-8 md:max-w-xl md:mx-auto">
                             <label className="block text-xs font-medium text-slate-500 mb-2">Which days, and what hours?</label>
                             <div className="space-y-2">
                                 {DAYS.map((label, d) => {
@@ -6171,11 +6234,20 @@ function ApplicationForm() {
                         carry their real "when" (schedule, notice) in their own
                         blocks above; this screen is only the where. */}
                     {isGuest && (() => {
-                        // made-to-order asks the fulfilment fork; regions show for a
-                        // slot, a traveller, or a made-to-order that delivers; the
-                        // collection address shows for a made-to-order that collects.
-                        const showRegions = shape !== 'made_to_order' || fulfilment === 'delivery' || fulfilment === 'both';
-                        const showCollection = shape === 'made_to_order' && (fulfilment === 'collection' || fulfilment === 'both');
+                        // Made-to-order and slot both drive the location off the
+                        // fulfilment field now: collection = an address guests come
+                        // to, delivery = the host travels (coverage regions). A
+                        // comes-to-you traveller always shows regions. So: regions
+                        // when a fulfilment provider delivers/travels OR when the
+                        // shape is comes-to-you; the address when it collects.
+                        const usesFulfilment = shape === 'made_to_order' || shape === 'slot';
+                        const collects = fulfilment === 'collection' || fulfilment === 'both';
+                        const delivers = fulfilment === 'delivery' || fulfilment === 'both';
+                        const showRegions = usesFulfilment ? delivers : true;
+                        const showCollection = usesFulfilment && collects;
+                        // Slot copy forks on premises vs meeting point (outdoors,
+                        // water) — data identical, wording only.
+                        const slotMeeting = shape === 'slot' && slotIsMeetingPoint(guestCategory);
                         // The manual boxes are hidden behind the lookup until they're
                         // wanted: the provider asks to type it by hand, a lookup fills
                         // or fails, or a returning provider already has an address.
@@ -6221,12 +6293,14 @@ function ApplicationForm() {
                                 </div>
                             )}
 
-                            {/* Delivery / coverage regions. */}
+                            {/* Coverage regions — shown when the provider travels: a
+                                comes-to-you chef, a made-to-order that delivers, or a
+                                slot host who goes to the guest's cottage. A slot at a
+                                fixed place shows the address block below instead, not
+                                this. */}
                             {showRegions && (
                                 <div className={shape === 'made_to_order' ? 'mt-8' : ''}>
-                                    {shape === 'slot' ? (
-                                        <label className="block text-xs font-medium text-slate-500 mb-3">Where does it take place?</label>
-                                    ) : shape === 'made_to_order' ? (
+                                    {shape === 'made_to_order' ? (
                                         <label className="block text-xs font-medium text-slate-500 mb-3">{GUEST_SCREEN_COPY.locationHeadingDeliver}</label>
                                     ) : (
                                         <p className="text-sm text-slate-500 mb-4 md:max-w-xl">{GUEST_SCREEN_COPY.locationSubtextTravel}</p>
@@ -6256,7 +6330,11 @@ function ApplicationForm() {
                                 postcode lookup on top; manual entry always works. */}
                             {showCollection && (
                                 <div className="mt-8 md:max-w-xl">
-                                    <span className="block text-xs font-medium text-slate-500 mb-2">{GUEST_SCREEN_COPY.collectionAddressLabel}</span>
+                                    <span className="block text-xs font-medium text-slate-500 mb-2">{
+                                        shape === 'slot'
+                                            ? (slotMeeting ? GUEST_SCREEN_COPY.slotAddressLabelMeeting : GUEST_SCREEN_COPY.slotAddressLabelPremises)
+                                            : GUEST_SCREEN_COPY.collectionAddressLabel
+                                    }</span>
 
                                     {showCollectionFields ? (
                                         // FIELDS MODE — a chosen or hand-typed address. The
@@ -6579,7 +6657,12 @@ function ApplicationForm() {
                         : fulfilment === 'both'
                             ? (areaList ? areaList + GUEST_SCREEN_COPY.finishCoverageBothSuffix : GUEST_SCREEN_COPY.finishCoverageCollectionAvailable)
                             : (areaList || '—'))
-                    : (areaList || '—');
+                    // A slot follows its fulfilment: a come-to-me slot has no
+                    // regions but a public town (the address they gave); a
+                    // travelling slot shows the areas it covers.
+                    : shape === 'slot'
+                        ? (fulfilment === 'delivery' ? (areaList || '—') : (collectionTown.trim() || '—'))
+                        : (areaList || '—');
                 const whenVal = shape === 'slot'
                     ? `${(schedule || []).length} weekly time${(schedule || []).length === 1 ? '' : 's'}`
                     : shape === 'made_to_order'
@@ -7038,6 +7121,8 @@ function ApplicationForm() {
                             // The pricing basis must be answered before moving on —
                             // it sets the unit and decides the next screen.
                             : step === 'g_slot_basis' ? slotPrivate === null
+                            // The come-to-me / travel fork sets the location screen.
+                            : step === 'g_slot_where' ? !fulfilment
                             : step === 'g_area' ? (stepProblems.length > 0 || !!whereMissing)
                             : stepProblems.length > 0
                         );
@@ -7053,6 +7138,9 @@ function ApplicationForm() {
                             // Same for the notice screen: an untouched pass stores
                             // the shown suggestion (2 days).
                             if (isGuest && step === 'g_notice' && !leadTimeDays.trim()) setLeadTimeDays('2');
+                            // Same for session length: an untouched pass stores the
+                            // shown suggestion (60 minutes).
+                            if (isGuest && step === 'g_slot_length' && !slotLength.trim()) setSlotLength('60');
                             goNext();
                         };
                         return (

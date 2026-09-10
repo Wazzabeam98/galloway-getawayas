@@ -32,7 +32,42 @@ const {
     planTerms,
     TRIAL_DAYS,
     SUBSCRIPTION_MONTHLY,
+    slotAsksWhereFork,
+    slotIsMeetingPoint,
+    defaultSlotFulfilment,
 } = require('@/lib/serviceProviders');
+
+// The slot location fork, per category. Only three either-way categories are
+// asked where it happens; the rest default to come-to-me. Two of those defaults
+// are meeting points (a place, not premises) — copy only, but it drives which
+// wording the address screen shows.
+test('the slot where-fork is asked for exactly yoga, massage and painting', () => {
+    for (const c of ['yoga', 'massage', 'painting']) {
+        assert.equal(slotAsksWhereFork(c), true, c + ' is asked');
+        assert.equal(defaultSlotFulfilment(c), '', c + ' has no default (the fork asks)');
+    }
+    // Every other slot category defaults to come-to-me and is not asked.
+    for (const c of ['tastings', 'cooking', 'sauna', 'pottery', 'workshops', 'outdoors', 'water']) {
+        assert.equal(slotAsksWhereFork(c), false, c + ' is not asked');
+        assert.equal(defaultSlotFulfilment(c), 'collection', c + ' defaults to come-to-me');
+    }
+});
+
+test('meeting-point copy is used for the two outdoor slot categories only', () => {
+    assert.equal(slotIsMeetingPoint('outdoors'), true);
+    assert.equal(slotIsMeetingPoint('water'), true);
+    for (const c of ['tastings', 'cooking', 'sauna', 'pottery', 'workshops', 'yoga', 'massage', 'painting']) {
+        assert.equal(slotIsMeetingPoint(c), false, c + ' is premises, not a meeting point');
+    }
+});
+
+test('a non-slot category has no slot fulfilment default (its own fork or none)', () => {
+    // Made-to-order forks on its own screen; comes-to-you doesn't use the field.
+    assert.equal(defaultSlotFulfilment('chef'), '');        // comes_to_you
+    assert.equal(defaultSlotFulfilment('food_order'), '');  // made_to_order
+    assert.equal(defaultSlotFulfilment('other'), '');       // no shape
+    assert.equal(defaultSlotFulfilment(null), '');
+});
 
 const complete = {
     business_name: 'Solway Sparkle',

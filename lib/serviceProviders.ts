@@ -161,6 +161,45 @@ export function guestCategoryIsFood(key: string | null | undefined): boolean {
     return !!(c && c.food);
 }
 
+// WHERE A SLOT HAPPENS — the come-to-me / travel fork, per category.
+//
+// A slot is a session at a time, and the axis is the same one made-to-order
+// forks on (collection vs delivery): does the guest come to a place the host
+// names, or does the host travel to the guest's cottage? Most slot categories
+// have one honest answer, so we default them and never ask; three genuinely go
+// either way, so those — and only those — are asked the fork on g_slot_where.
+//
+//   asked (either): yoga, massage, painting
+//   fixed come-to-me: everything else that is a slot
+//
+// The stored value is the `fulfilment` field reused: 'collection' = come-to-me
+// (an address guests come to), 'delivery' = the host travels (coverage regions).
+// No 'both' for a slot — a session happens in one place.
+const SLOT_WHERE_FORK_CATEGORIES = ['yoga', 'massage', 'painting'];
+
+// The come-to-me categories whose "place" is a MEETING POINT rather than the
+// host's own premises — a trailhead, a launch, a car park. Data is identical (an
+// address with the town public and the exact spot released on booking); only the
+// copy differs ("Where do guests meet you?" not "Your address").
+const SLOT_MEETING_POINT_CATEGORIES = ['outdoors', 'water'];
+
+export function slotAsksWhereFork(category: string | null | undefined): boolean {
+    return SLOT_WHERE_FORK_CATEGORIES.indexOf(String(category || '')) !== -1;
+}
+
+export function slotIsMeetingPoint(category: string | null | undefined): boolean {
+    return SLOT_MEETING_POINT_CATEGORIES.indexOf(String(category || '')) !== -1;
+}
+
+// The default fulfilment for a slot category with no fork: come-to-me. The three
+// fork categories return '' so g_slot_where asks. Non-slot categories return ''
+// (made-to-order forks on its own screen; comes-to-you doesn't use the field).
+export function defaultSlotFulfilment(category: string | null | undefined): string {
+    const c = guestCategoryByKey(category);
+    if (!c || c.shape !== 'slot') return '';
+    return slotAsksWhereFork(category) ? '' : 'collection';
+}
+
 // HOW HARD WE ASK ABOUT THE PERSON BEHIND THE EXPERIENCE.
 //
 // Not every category should be asked its years and qualifications, and forcing
@@ -2594,11 +2633,16 @@ export function submitProblems(draft: ProviderDraft): Problem[] {
         problems.push({ field: 'audience', message: 'Choose who you sell to.' });
     }
 
-    // Made-to-order asks the fulfilment fork; it decides what's required. A
-    // collection-only baker has no region to pick, so requiring an area would be
-    // nonsense — but a delivering one still needs one, and slot / comes-to-you /
-    // host always do.
+    // The fulfilment fork decides what the location screen requires. Made-to-order
+    // and slot both use it now (same field): collection = guests come to an
+    // address, delivery = the host travels (coverage regions). A collection-only
+    // provider has no region to pick, so requiring an area would be nonsense — but
+    // a delivering/travelling one still needs one, and comes-to-you / host always
+    // do. A slot's fork is defaulted or asked in-flow (g_slot_where), so unlike
+    // made-to-order it is never blank here; only made-to-order gates on "unanswered".
     const isGuestMTO = draft.audience === 'guest' && draft.shape === 'made_to_order';
+    const isGuestSlot = draft.audience === 'guest' && draft.shape === 'slot';
+    const usesFulfilment = isGuestMTO || isGuestSlot;
     const ful = String(draft.fulfilment || '');
     const wantsDelivery = ful === 'delivery' || ful === 'both';
     const wantsCollection = ful === 'collection' || ful === 'both';
@@ -2607,7 +2651,7 @@ export function submitProblems(draft: ProviderDraft): Problem[] {
         problems.push({ field: 'fulfilment', message: GUEST_SCREEN_COPY.fulfilmentGate });
     }
 
-    const areasRequired = isGuestMTO ? wantsDelivery : true;
+    const areasRequired = usesFulfilment ? wantsDelivery : true;
     if (areasRequired && !draft.areaCount) {
         problems.push({
             field: 'areas',
@@ -2620,7 +2664,7 @@ export function submitProblems(draft: ProviderDraft): Problem[] {
         });
     }
 
-    if (isGuestMTO && wantsCollection && !draft.hasCollectionAddress) {
+    if (usesFulfilment && wantsCollection && !draft.hasCollectionAddress) {
         problems.push({ field: 'collection_address', message: GUEST_SCREEN_COPY.collectionAddressGate });
     }
 

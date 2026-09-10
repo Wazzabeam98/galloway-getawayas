@@ -34,6 +34,10 @@ export const GUEST_SCREEN_COPY = {
     // answered. Checks, contact and the account screen fold into one Finish.
     sectionAboutYou: 'About you',
     sectionLocation: 'Location',
+    // Slots only: session length + weekly hours, split out of Location so the
+    // rail label matches what the screen asks (a "Location" section holding a
+    // session-length question was the dishonest-label problem).
+    sectionWhen: 'When',
     sectionPhotos: 'Photos',
     sectionPricing: 'Pricing',
     sectionDetails: 'Details',
@@ -296,6 +300,35 @@ export const GUEST_SCREEN_COPY = {
     fulfilmentBoth: 'Both',
     fulfilmentBothHint: 'Delivery or collection',
     fulfilmentGate: 'Choose how guests get it.',
+
+    // ---- SLOT LOCATION (the where/when split) ----------------------------
+    // A slot happens at a time, so its "where" and "when" are separate questions
+    // on separate screens. The where reuses the fulfilment field (collection =
+    // guests come to an address, delivery = the host travels), but only the three
+    // either-way categories (yoga, massage, painting) are ASKED the fork; the
+    // rest default to come-to-me and skip straight to the address.
+    slotWhereQuestion: 'Where does it happen?',
+    slotWhereAtPlace: 'At my place',
+    slotWhereAtPlaceHint: 'Guests come to you',
+    slotWhereTravel: 'I come to the guest',
+    slotWhereTravelHint: 'You go to their cottage',
+    slotWhereGate: 'Choose where it happens to carry on.',
+    // The g_area heading for a slot, by where it happens. Premises vs meeting
+    // point is copy only — the stored address is identical.
+    slotPlaceHeadingPremises: 'What’s the address guests come to?',
+    slotPlaceHeadingMeeting: 'Where do guests meet you?',
+    slotPlaceHeadingTravel: 'Which parts of Dumfries & Galloway do you cover?',
+    // The address-block label, slot variants (the made-to-order one is "Where
+    // guests collect"). Same three fields underneath.
+    slotAddressLabelPremises: 'Your address',
+    slotAddressLabelMeeting: 'The meeting point',
+    // The When section screens.
+    slotLengthQuestion: 'How long is each session?',
+    slotLengthSubtext: 'Roughly how long a guest is with you — you can change it later.',
+    slotLengthSuffix: 'minutes',
+    slotHoursQuestion: 'When can guests book?',
+    slotHoursSubtext: 'The days and hours you run sessions. Block off the odd date below.',
+
     // The collection address. The hint DESCRIBES what we do — not a guarantee it
     // can't reach anyone else (a provider who messages their address to a guest is
     // outside our control).
@@ -311,7 +344,7 @@ export const GUEST_SCREEN_COPY = {
     collectionTownPlaceholder: 'e.g. Kirkcudbright',
     collectionPostcodeLabel: 'Postcode',
     collectionPostcodePlaceholder: 'e.g. DG6 4JT',
-    collectionAddressGate: 'Add the street, town and postcode guests collect from.',
+    collectionAddressGate: 'Add the street, town and postcode of the address.',
     // The optional address lookup (Ideal Postcodes). Manual entry is always
     // there; this just fills the fields when the lookup is available.
     collectionLookupPrompt: 'Look up a postcode',

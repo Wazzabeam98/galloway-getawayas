@@ -51,8 +51,26 @@ test('both requires an area AND an address', () => {
     assert.equal(has(ok, 'collection_address'), false);
 });
 
-test('a slot still requires an area (the fork is made-to-order only)', () => {
-    assert.equal(has({ trade: 'guest', audience: 'guest', shape: 'slot', areaCount: 0 }, 'areas'), true);
+// A slot uses the fulfilment fork now, the same as made-to-order: a come-to-me
+// slot (collection) needs an ADDRESS and no region; a travelling slot (delivery)
+// needs a region and no address. So "a slot always requires an area" is no
+// longer true — it depends on the fork.
+test('a come-to-me slot requires an address, not a region', () => {
+    const slot = (over: any) => ({ trade: 'guest', audience: 'guest', shape: 'slot', scheduleCount: 1, pricedItemCount: 1, ...over });
+    const missing = slot({ fulfilment: 'collection', areaCount: 0, hasCollectionAddress: false });
+    assert.equal(has(missing, 'collection_address'), true, 'come-to-me needs its address');
+    assert.equal(has(missing, 'areas'), false, 'come-to-me has no region to pick');
+    const ok = slot({ fulfilment: 'collection', areaCount: 0, hasCollectionAddress: true });
+    assert.equal(has(ok, 'collection_address'), false);
+    assert.equal(has(ok, 'areas'), false);
+});
+
+test('a travelling slot requires a region, not an address', () => {
+    const slot = (over: any) => ({ trade: 'guest', audience: 'guest', shape: 'slot', scheduleCount: 1, pricedItemCount: 1, ...over });
+    assert.equal(has(slot({ fulfilment: 'delivery', areaCount: 0 }), 'areas'), true);
+    assert.equal(has(slot({ fulfilment: 'delivery', areaCount: 0 }), 'collection_address'), false);
+    const ok = slot({ fulfilment: 'delivery', areaCount: 1 });
+    assert.equal(has(ok, 'areas'), false);
 });
 
 // --- the per-person slot minimum ≤ capacity --------------------------------
