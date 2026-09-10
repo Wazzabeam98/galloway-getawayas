@@ -1,7 +1,9 @@
 'use client';
 
-import { useState } from 'react';
+import { Fragment, useState } from 'react';
 import { RETENTION_DAYS } from '@/lib/serviceApplications';
+import type { ReviewContent as ReviewContentType } from '@/lib/serviceProviders';
+import ReviewContent from '@/components/admin/ReviewContent';
 
 export interface WaitingRow {
     id: string;
@@ -12,6 +14,10 @@ export interface WaitingRow {
     daysWaiting: number;
     daysLeft: number;
     resend_count: number;
+    // The submitted menu + written answers, from the application payload — the
+    // same renderer the claimed review rows use. Guest applications only carry
+    // meaningful content; ReviewContent renders nothing for the rest.
+    content: ReviewContentType;
 }
 
 // The people who filled the form in and never opened their link.
@@ -25,6 +31,7 @@ export interface WaitingRow {
 export default function WaitingOnApplicant({ rows }: { rows: WaitingRow[] }) {
     const [sent, setSent] = useState<Record<string, boolean>>({});
     const [busy, setBusy] = useState<Record<string, boolean>>({});
+    const [open, setOpen] = useState<Record<string, boolean>>({});
 
     const resend = async (id: string) => {
         setBusy((b) => ({ ...b, [id]: true }));
@@ -64,13 +71,21 @@ export default function WaitingOnApplicant({ rows }: { rows: WaitingRow[] }) {
                     <tbody>
                         {rows.map((r) => {
                             const urgent = r.daysLeft <= 21;
+                            const canReview = r.content && r.content.isGuest;
                             return (
-                                <tr key={r.id} className="border-b border-slate-100 last:border-0 align-top">
+                                <Fragment key={r.id}>
+                                <tr className="border-b border-slate-100 last:border-0 align-top">
                                     <td className="py-3 px-4">
                                         <div className="font-semibold text-slate-900">{r.business_name}</div>
                                         <div className="text-xs text-slate-500">
                                             {r.trade} · {r.email}
                                         </div>
+                                        {canReview ? (
+                                            <button type="button" onClick={() => setOpen((o) => ({ ...o, [r.id]: !o[r.id] }))}
+                                                className="mt-1 text-xs font-medium text-emerald-800 hover:underline">
+                                                {open[r.id] ? 'Hide what they submitted' : 'Show what they submitted'}
+                                            </button>
+                                        ) : null}
                                     </td>
                                     <td className="py-3 px-4 whitespace-nowrap">
                                         {r.contact_phone ? (
@@ -123,6 +138,14 @@ export default function WaitingOnApplicant({ rows }: { rows: WaitingRow[] }) {
                                         )}
                                     </td>
                                 </tr>
+                                {canReview && open[r.id] ? (
+                                    <tr className="border-b border-slate-100 last:border-0">
+                                        <td colSpan={5} className="px-4 pb-4">
+                                            <ReviewContent content={r.content} />
+                                        </td>
+                                    </tr>
+                                ) : null}
+                                </Fragment>
                             );
                         })}
                     </tbody>

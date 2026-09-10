@@ -287,6 +287,69 @@ export function knownDietaryOptions(keys: string[]): string[] {
     return DIETARY_OPTIONS.filter((o) => has.has(o.key)).map((o) => o.key);
 }
 
+// ---------------------------------------------------------------------------
+// Review content — what an admin needs to SEE before approving a guest listing.
+//
+// The review queue showed the business, trade, registrations and photos, but
+// not the menu, its prices, or the written answers a category assignment and an
+// approval decision actually rest on — a blind spot flagged in the audit. This
+// normalises both sources into one shape so the renderer is written once:
+//   - a CLAIMED provider row (service_providers) + its service_provider_items
+//   - an UNCLAIMED application (service_applications.payload.provider + .items)
+// Both carry guest_details (jsonb), declarations (jsonb) and dietary_note; the
+// menu is the separate items list either way.
+// ---------------------------------------------------------------------------
+
+export interface ReviewMenuItem { name: string; price: string; unit: string; description: string; priced: boolean; }
+export interface ReviewContent {
+    isGuest: boolean;
+    title: string;
+    whatHappens: string;
+    qualifications: string;
+    dietary: string[];      // human labels
+    dietaryNote: string;
+    termsVersion: string;
+    termsAgreedAt: string;
+    items: ReviewMenuItem[];
+    pricedCount: number;
+    priceFrom: number | null;
+}
+
+export function reviewContentFrom(source: {
+    audience?: string | null;
+    guest_details?: any;
+    declarations?: any;
+    dietary_note?: string | null;
+    items?: any[] | null;
+}): ReviewContent {
+    const gd = (source && source.guest_details && typeof source.guest_details === 'object') ? source.guest_details : {};
+    const decl = (source && source.declarations && typeof source.declarations === 'object') ? source.declarations : {};
+    const items: ReviewMenuItem[] = (Array.isArray(source && source.items) ? source!.items! : []).map((it: any) => {
+        const price = String(it && it.price != null ? it.price : '').trim();
+        return {
+            name: String((it && it.name) || '').trim(),
+            price,
+            unit: String((it && it.unit) || '').trim(),
+            description: String((it && it.description) || '').trim(),
+            priced: Number(price) > 0,
+        };
+    });
+    const priced = items.filter((it) => it.priced);
+    return {
+        isGuest: source && source.audience === 'guest',
+        title: String(gd.professional_title || '').trim(),
+        whatHappens: String(gd.what_to_expect || '').trim(),
+        qualifications: String(gd.qualifications || '').trim(),
+        dietary: knownDietaryOptions(Array.isArray(gd.dietary_options) ? gd.dietary_options : []).map(dietaryOptionLabel),
+        dietaryNote: String((source && source.dietary_note) || '').trim(),
+        termsVersion: String(decl.terms_version || '').trim(),
+        termsAgreedAt: String(decl.terms_agreed_at || '').trim(),
+        items,
+        pricedCount: priced.length,
+        priceFrom: priced.length ? Math.min(...priced.map((it) => Number(it.price))) : null,
+    };
+}
+
 // The per-category checks catalogue and its single-confirmation successor were
 // both retired (Sep 2026): the provider now agrees to the terms and conditions
 // on the finish screen. What they agreed to, and when, is recorded in the

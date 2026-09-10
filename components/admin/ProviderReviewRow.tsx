@@ -3,7 +3,8 @@
 import { useState } from 'react';
 import { useRouter } from 'next/navigation';
 import { toast } from 'react-toastify';
-import { planForTrade, bandLabel, SUBSCRIPTION_MONTHLY, TRIAL_DAYS } from '@/lib/serviceProviders';
+import { planForTrade, bandLabel, SUBSCRIPTION_MONTHLY, TRIAL_DAYS, reviewContentFrom } from '@/lib/serviceProviders';
+import ReviewContent from '@/components/admin/ReviewContent';
 import { ASSIGNABLE_MCCS, assignableMccLabel } from '@/lib/serviceOrders';
 
 const STATUS_STYLE: Record<string, string> = {
@@ -623,6 +624,11 @@ export default function ProviderReviewRow({
                     ))}
                 </div>
             )}
+
+            {/* A guest listing's menu, prices and written answers — so an
+                unbookable or empty listing can't be approved sight-unseen.
+                Guest-only; ReviewContent renders nothing for host/trade rows. */}
+            <ReviewContent content={reviewContentFrom(provider)} />
 
             {hasChanges && (
                 <div className="mt-5 pt-4 border-t border-slate-200">
