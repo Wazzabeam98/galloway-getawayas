@@ -1604,6 +1604,10 @@ function ApplicationForm() {
     // which is what keeps a host's steps and validation byte-for-byte unchanged:
     // the guest steps stay off and stepForField uses the host map.
     const isGuest = audienceForTrade(trade) === 'guest';
+    // The made-to-order Location screen is the three-card fulfilment fork, so it
+    // centres vertically like the stepper screens (g_you/g_capacity/g_notice) —
+    // desktop only; the stacked mobile layout is left exactly as it is.
+    const guestMtoArea = isGuest && step === 'g_area' && shape === 'made_to_order';
     // group falls back to the category's own group, so a restored draft (which
     // saves the category, not the group) still resolves its steps correctly.
     const stepCtx: StepContext | undefined =
@@ -3456,7 +3460,11 @@ function ApplicationForm() {
                                        sitting in a half-width column. */
                                     : step === 'finish'
                                         ? 'max-w-6xl py-10 sm:py-12'
-                                        : 'max-w-2xl py-10 sm:py-12'))
+                                        /* The made-to-order fork centres its cards in
+                                           the space on desktop, like the steppers. */
+                                        : guestMtoArea
+                                            ? 'max-w-2xl py-10 sm:py-12 sm:flex sm:flex-col'
+                                            : 'max-w-2xl py-10 sm:py-12'))
                     : 'flex-1 overflow-y-auto px-4 sm:px-6 py-5'}>
                     {/* One big question a screen. The picker screens (group,
                         sub-type) and the years opener centre it — over the cards
@@ -3813,7 +3821,10 @@ function ApplicationForm() {
             <fieldset disabled={locked} className={'min-w-0 ' + (locked ? 'opacity-70' : '')
                 /* On the years opener the fieldset fills the panel below the
                    question so its one section can centre vertically. */
-                + (isGuest && (step === 'g_you' || step === 'g_capacity' || step === 'g_notice') ? ' flex-1 flex flex-col' : '')}>
+                + (isGuest && (step === 'g_you' || step === 'g_capacity' || step === 'g_notice') ? ' flex-1 flex flex-col' : '')
+                /* Same fill on the made-to-order fork, but desktop only — mobile
+                   keeps its natural top-down stack. */
+                + (guestMtoArea ? ' sm:flex-1 sm:flex sm:flex-col' : '')}>
                 {/* The standalone business step is host-only now. A guest names
                     the experience on g_about ("Name it, and tell guests what it
                     is"), beside the description, so they never answer it twice. */}
@@ -5756,7 +5767,12 @@ function ApplicationForm() {
 
 
                 {(audienceForTrade(trade) === 'guest' ? onStep('g_area') : onStep('business')) && (
-                <section className="mb-8">
+                <section className={'mb-8'
+                    /* Vertically centre the fork (and whatever it reveals below it)
+                       in the space between the question and the footer on desktop.
+                       No items-center: the cards and pickers keep their left edge
+                       and their max width. Mobile is untouched. */
+                    + (guestMtoArea ? ' sm:flex-1 sm:flex sm:flex-col sm:justify-center' : '')}>
                     {/* HOST TRADES keep the town-and-radius model — the radius is a
                         live precision filter behind the directory, and five regions
                         would be too coarse for it — but it's captured in the guest
