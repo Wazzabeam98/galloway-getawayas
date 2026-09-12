@@ -69,6 +69,9 @@ export const GUEST_SCREEN_COPY = {
     finishCoverageBothSuffix: ' · collection available',
     finishSummaryWhen: 'When',
     finishSummaryPhotos: 'Photos',
+    // Shown on the finish preview for an 'offer both' slot — the one place a
+    // provider is now told how a time with both products on it actually sells.
+    finishBothNote: 'Each time sells as a private hire or single places — whichever a guest books first. Once it’s booked one way, the other closes for that time.',
     // The written answers, previewed on the finish screen — their last look before
     // it goes for review.
     finishWroteTitle: 'Your title',

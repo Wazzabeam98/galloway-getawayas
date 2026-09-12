@@ -1255,6 +1255,7 @@ function ApplicationForm() {
             // The category, shape and its fields. Set before the filledIn check
             // so a guest who picked a category but typed nothing still lands past
             // the picker rather than being asked to choose it again.
+            if (d.guestGroup) setGuestGroup(d.guestGroup);
             if (d.guestCategory) setGuestCategory(d.guestCategory);
             if (d.declarations && typeof d.declarations === 'object') setDeclarations(d.declarations);
             if (d.shape) setShape(d.shape);
@@ -1397,8 +1398,10 @@ function ApplicationForm() {
                     // The Airbnb-shaped content answers.
                     yearsDoing, professionalTitle, qualifications, recognition,
                     whatToExpect,
-                    // The category, the inferred shape and its own fields.
-                    guestCategory, shape, leadTimeDays,
+                    // The category (and the group above it, so the sub-type screen
+                    // still has its cards after a reload), the inferred shape and
+                    // its own fields.
+                    guestGroup, guestCategory, shape, leadTimeDays,
                     // Made-to-order fulfilment fork + its collection address. The
                     // address is the provider's own, in their own browser's draft
                     // — never shared, and it's a private column server-side.
@@ -1421,7 +1424,7 @@ function ApplicationForm() {
         items, providerName, headshot, dietaryNote, dietaryOptions,
         yearsDoing, professionalTitle, qualifications, recognition,
         whatToExpect,
-        guestCategory, shape, leadTimeDays,
+        guestGroup, guestCategory, shape, leadTimeDays,
         fulfilment, collectionStreet, collectionTown, collectionPostcode,
         slotOffer, maxGuests, slotLength, slotMinPeople, schedule,
         declarations,
@@ -2200,9 +2203,50 @@ function ApplicationForm() {
     // tapping a card selects it (an emerald outline), and the footer Next is
     // what carries them on — never an auto-advance jump-cut.
 
+    // Switching category — or the group above it — makes the OLD listing's
+    // answers wrong: they describe the tasting, not the cooking class now being
+    // set up. So clear everything specific to the old experience — its title, its
+    // items and prices, what-to-expect and dietary, the credentials that answer
+    // "what qualifies you for THIS" (a wine cert does not belong on a cooking
+    // class), where and how it runs (address, coverage, notice, and the whole
+    // slot set-up: private/shared, capacity, minimum, session length, weekly
+    // hours). What STAYS is only what is the PERSON and can't be wrong for a new
+    // experience: their years, their photos and their headshot. shape and the
+    // fulfilment default are then reset to the new category's by
+    // selectGuestCategory.
+    const clearOfferingAnswers = () => {
+        setProfessionalTitle('');
+        setDescription('');
+        setQualifications('');
+        setRecognition('');
+        setItems([]);
+        setMenuIndex(null);
+        setWhatToExpect('');
+        setDietaryNote('');
+        setDietaryOptions([]);
+        setSlotOffer(null);
+        setMaxGuests('');
+        setSlotMinPeople('');
+        setSlotLength('');
+        setSchedule([]);
+        setHoursMode('simple');
+        setSharedOpen('10:00');
+        setSharedClose('18:00');
+        setLeadTimeDays('');
+        setCollectionStreet('');
+        setCollectionTown('');
+        setCollectionPostcode('');
+        setAreas([]);
+    };
+
     // Screen two: select a sub-type. Records the category (a starting point,
     // confirmed at review) and pre-selects the booking shape it usually is.
     const selectGuestCategory = (key: string) => {
+        // A real change FROM one category TO another drops the previous offering's
+        // answers; picking the same one again leaves the work in place, and the
+        // first pick (from none) has nothing to clear — nor does re-picking after a
+        // reload, which does not restore the group.
+        if (guestCategory && key !== guestCategory) clearOfferingAnswers();
         setGuestCategory(key);
         const cat = guestCategoryByKey(key);
         if (cat && cat.shape) setShape(cat.shape);
@@ -2217,6 +2261,14 @@ function ApplicationForm() {
 
     // Screen one: select a top-level group.
     const selectGroup = (key: string) => {
+        // A real change FROM one group TO another means a different category will
+        // be chosen, so the old category and its offering answers go now — nothing
+        // survives the switch. Setting the group from none (a first pick, or after a
+        // reload, which does not restore the group) clears nothing.
+        if (guestGroup && key !== guestGroup) {
+            setGuestCategory('');
+            clearOfferingAnswers();
+        }
         setGuestGroup(key);
         markVisited('trade');
     };
@@ -5139,16 +5191,6 @@ function ApplicationForm() {
                             <ChoiceCard key={o.v} selected={slotOffer === o.v} onSelect={() => applyOffer(o.v)} title={o.t} hint={o.d} />
                         ))}
                     </div>
-                    {/* The consequence of 'both', at the moment they choose it — a
-                        highlighted line, not a tick to click past. Each TIME is sold
-                        as whichever a guest books first; the other closes for it. */}
-                    {slotOffer === 'both' && (
-                        <div className="mt-4 rounded-xl border border-emerald-600/40 bg-emerald-50 p-4 text-sm leading-relaxed text-emerald-900">
-                            <span className="font-semibold">Each time sells as one or the other.</span>{' '}
-                            A guest books any given time as a private hire <em>or</em> as individual places —
-                            whichever comes first. Once a time is booked one way, the other closes for that time.
-                        </div>
-                    )}
                 </section>
                 )}
 
@@ -6916,6 +6958,15 @@ function ApplicationForm() {
                                     </div>
                                 ))}
                             </dl>
+
+                            {/* The one place a 'both' provider is told how a time
+                                sells — the basis screen no longer says it, and this
+                                is the review where they can still change their mind. */}
+                            {shape === 'slot' && slotOffer === 'both' && (
+                                <p className="mt-6 rounded-xl bg-slate-50 px-4 py-3 text-sm leading-relaxed text-slate-600">
+                                    {GUEST_SCREEN_COPY.finishBothNote}
+                                </p>
+                            )}
 
                             {wrote.length > 0 && (
                                 <div className="mt-8 space-y-5 border-t border-slate-100 pt-6">
