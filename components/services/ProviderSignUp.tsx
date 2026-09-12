@@ -267,6 +267,32 @@ function HubRow({ filled, label, suffix, prompt, summary, onOpen, thumb }: {
     );
 }
 
+// The one large, centred choice card every either/or fork in the guest wizard
+// uses — the fulfilment fork (delivery / collection / both), the slot
+// private/shared answer, and the slot come-to-me / travel fork. Tall so a
+// screenful of two or three options fills the space, with the label above and
+// the hint below, both centred. There is deliberately no second, smaller set
+// of card styles: a fork that wants cards uses this. `radio` gives the button
+// radiogroup semantics (role="radio" + aria-checked); without it the card is an
+// aria-pressed toggle, which is what the slot forks use.
+function ChoiceCard({ selected, onSelect, title, hint, radio }: {
+    selected: boolean;
+    onSelect: () => void;
+    title: string;
+    hint: string;
+    radio?: boolean;
+}) {
+    return (
+        <button type="button" onClick={onSelect}
+            {...(radio ? { role: 'radio', 'aria-checked': selected } : { 'aria-pressed': selected })}
+            className={'flex min-h-[9rem] flex-col items-center justify-center gap-1.5 rounded-2xl border-2 bg-white px-5 text-center transition hover:shadow-sm focus:outline-none focus-visible:ring-2 focus-visible:ring-emerald-600 sm:min-h-[14rem] '
+                + (selected ? 'border-emerald-600 shadow-sm' : 'border-slate-200 hover:border-slate-300')}>
+            <span className="text-lg font-semibold text-slate-900">{title}</span>
+            <span className="text-sm text-slate-500">{hint}</span>
+        </button>
+    );
+}
+
 // The sub-flow modal a hub row opens, styled to match Airbnb's: a large centred
 // card, a big heading, then a single borderless field floating in a lot of white
 // space (the field is passed in as children — no box, no fill, just placeholder
@@ -1868,6 +1894,12 @@ function ApplicationForm() {
     // centres vertically like the stepper screens (g_you/g_capacity/g_notice) —
     // desktop only; the stacked mobile layout is left exactly as it is.
     const guestMtoArea = isGuest && step === 'g_area' && shape === 'made_to_order';
+    // The two slot choice-card forks — private/shared (g_slot_basis) and the
+    // come-to-me / travel fork (g_slot_where) — are the same shape as the
+    // made-to-order fork: a screenful of large ChoiceCards and nothing else, so
+    // they centre vertically on desktop the same way, and by the same three
+    // coordinated pieces (panel, fieldset, section). Mobile keeps its stack.
+    const guestSlotChoice = isGuest && shape === 'slot' && (step === 'g_slot_basis' || step === 'g_slot_where');
     // group falls back to the category's own group, so a restored draft (which
     // saves the category, not the group) still resolves its steps correctly.
     const stepCtx: StepContext | undefined =
@@ -3779,9 +3811,10 @@ function ApplicationForm() {
                                        sitting in a half-width column. */
                                     : step === 'finish'
                                         ? 'max-w-6xl py-10 sm:py-12'
-                                        /* The made-to-order fork centres its cards in
-                                           the space on desktop, like the steppers. */
-                                        : guestMtoArea
+                                        /* The made-to-order fork and the slot choice
+                                           forks centre their cards in the space on
+                                           desktop, like the steppers. */
+                                        : (guestMtoArea || guestSlotChoice)
                                             ? 'max-w-2xl py-10 sm:py-12 sm:flex sm:flex-col'
                                             : 'max-w-2xl py-10 sm:py-12'))
                     : 'flex-1 overflow-y-auto px-4 sm:px-6 py-5'}>
@@ -4175,9 +4208,9 @@ function ApplicationForm() {
                 /* On the years opener the fieldset fills the panel below the
                    question so its one section can centre vertically. */
                 + (isGuest && (step === 'g_you' || step === 'g_capacity' || step === 'g_notice' || step === 'g_slot_min' || step === 'g_slot_length') ? ' flex-1 flex flex-col' : '')
-                /* Same fill on the made-to-order fork, but desktop only — mobile
-                   keeps its natural top-down stack. */
-                + (guestMtoArea ? ' sm:flex-1 sm:flex sm:flex-col' : '')}>
+                /* Same fill on the made-to-order fork and the slot choice forks,
+                   but desktop only — mobile keeps its natural top-down stack. */
+                + (guestMtoArea || guestSlotChoice ? ' sm:flex-1 sm:flex sm:flex-col' : '')}>
                 {/* The standalone business step is host-only now. A guest names
                     the experience on g_about ("Name it, and tell guests what it
                     is"), beside the description, so they never answer it twice. */}
@@ -4756,21 +4789,14 @@ function ApplicationForm() {
                     address or the coverage regions. The centred H1 asks the
                     question; here are the two cards. */}
                 {onStep('g_slot_where') && isGuest && shape === 'slot' && (
-                <section className="mb-8 md:max-w-xl md:mx-auto">
+                <section className="mb-8 sm:mb-0 sm:flex-1 sm:flex sm:flex-col sm:justify-center md:max-w-xl md:mx-auto">
                     <div className="grid gap-3 sm:grid-cols-2">
                         {[
                             { v: 'collection', t: GUEST_SCREEN_COPY.slotWhereAtPlace, d: GUEST_SCREEN_COPY.slotWhereAtPlaceHint },
                             { v: 'delivery', t: GUEST_SCREEN_COPY.slotWhereTravel, d: GUEST_SCREEN_COPY.slotWhereTravelHint },
-                        ].map((o) => {
-                            const on = fulfilment === o.v;
-                            return (
-                                <button key={o.v} type="button" onClick={() => setFulfilment(o.v)} aria-pressed={on}
-                                    className={'flex flex-col rounded-2xl border p-4 text-left transition ' + (on ? 'border-emerald-600 bg-emerald-50 ring-1 ring-emerald-600' : 'border-slate-300 hover:border-emerald-400')}>
-                                    <span className="font-semibold text-slate-900">{o.t}</span>
-                                    <span className="mt-1 text-xs leading-snug text-slate-500">{o.d}</span>
-                                </button>
-                            );
-                        })}
+                        ].map((o) => (
+                            <ChoiceCard key={o.v} selected={fulfilment === o.v} onSelect={() => setFulfilment(o.v)} title={o.t} hint={o.d} />
+                        ))}
                     </div>
                 </section>
                 )}
@@ -5028,22 +5054,15 @@ function ApplicationForm() {
                     exists. The centred H1 asks the question; here are the two
                     cards. */}
                 {onStep('g_slot_basis') && isGuest && shape === 'slot' && (
-                <section className="mb-8 md:max-w-xl md:mx-auto">
+                <section className="mb-8 sm:mb-0 sm:flex-1 sm:flex sm:flex-col sm:justify-center md:max-w-xl md:mx-auto">
                     <div className="grid gap-3 sm:grid-cols-3">
                         {([
                             { v: 'private', t: 'One group at a time', d: 'The whole thing is theirs — a private hire. One booking fills it.' },
                             { v: 'shared', t: 'Several people join', d: 'A class or a tasting. Priced per person, up to a number you set.' },
                             { v: 'both', t: 'Offer both', d: 'Let guests pick a private hire or a single place.' },
-                        ] as const).map((o) => {
-                            const on = slotOffer === o.v;
-                            return (
-                                <button key={o.v} type="button" onClick={() => applyOffer(o.v)} aria-pressed={on}
-                                    className={'flex flex-col rounded-2xl border p-4 text-left transition ' + (on ? 'border-emerald-600 bg-emerald-50 ring-1 ring-emerald-600' : 'border-slate-300 hover:border-emerald-400')}>
-                                    <span className="font-semibold text-slate-900">{o.t}</span>
-                                    <span className="mt-1 text-xs leading-snug text-slate-500">{o.d}</span>
-                                </button>
-                            );
-                        })}
+                        ] as const).map((o) => (
+                            <ChoiceCard key={o.v} selected={slotOffer === o.v} onSelect={() => applyOffer(o.v)} title={o.t} hint={o.d} />
+                        ))}
                     </div>
                     {/* The consequence of 'both', at the moment they choose it — a
                         highlighted line, not a tick to click past. Each TIME is sold
@@ -6350,23 +6369,14 @@ function ApplicationForm() {
                             {shape === 'made_to_order' && (
                                 <div role="radiogroup" aria-label={GUEST_SCREEN_COPY.fulfilmentHeading}
                                     className="grid grid-cols-1 gap-4 sm:grid-cols-3 md:max-w-xl">
-                                    {forkOptions.map(([val, label, hint]) => {
-                                        const on = fulfilment === val;
-                                        return (
-                                            <button key={val} type="button" role="radio" aria-checked={on}
-                                                onClick={() => setFulfilment(val)}
-                                                // Large cards — the only three options on the screen, so
-                                                // they use the space: roughly triple the sub-type card on a
-                                                // wide screen (side by side), and tall-but-fitting on a
-                                                // phone (stacked, still clearing the pinned footer). Label
-                                                // and hint, centred.
-                                                className={'flex min-h-[9rem] flex-col items-center justify-center gap-1.5 rounded-2xl border-2 bg-white px-5 text-center transition hover:shadow-sm focus:outline-none focus-visible:ring-2 focus-visible:ring-emerald-600 sm:min-h-[14rem] '
-                                                    + (on ? 'border-emerald-600 shadow-sm' : 'border-slate-200 hover:border-slate-300')}>
-                                                <span className="text-lg font-semibold text-slate-900">{label}</span>
-                                                <span className="text-sm text-slate-500">{hint}</span>
-                                            </button>
-                                        );
-                                    })}
+                                    {/* Large cards — the shared ChoiceCard, in radiogroup
+                                        mode. The only options on the screen, so they use the
+                                        space: side by side on a wide screen, tall-but-fitting
+                                        stacked on a phone. */}
+                                    {forkOptions.map(([val, label, hint]) => (
+                                        <ChoiceCard key={val} radio selected={fulfilment === val}
+                                            onSelect={() => setFulfilment(val)} title={label} hint={hint} />
+                                    ))}
                                 </div>
                             )}
 
