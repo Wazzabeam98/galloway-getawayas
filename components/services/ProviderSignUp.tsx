@@ -703,6 +703,15 @@ function ApplicationForm() {
     const [declarations, setDeclarations] = useState<Record<string, any>>({});
     // The weekly opening hours — one row per open period. day is 0..6 (0=Sunday).
     const [schedule, setSchedule] = useState<Array<{ day: number; open: string; close: string }>>([]);
+    // The When screen's hours control. 'simple' is one set of hours across all
+    // the chosen days; 'perday' gives particular days their own. sharedOpen/close
+    // are the SUGGESTION shown in the control — they write nothing on their own,
+    // exactly like the stepper defaults: the schedule stays empty until a day is
+    // actually picked, and only then does a day take these hours. Derived from an
+    // existing schedule on load.
+    const [hoursMode, setHoursMode] = useState<'simple' | 'perday'>('simple');
+    const [sharedOpen, setSharedOpen] = useState('10:00');
+    const [sharedClose, setSharedClose] = useState('18:00');
     // Dates taken off (block-a-date), as 'yyyy-mm-dd' keys.
     const [blockedDates, setBlockedDates] = useState<string[]>([]);
     // Keyed by extra. Price stays a string for the same reason band prices
@@ -986,11 +995,18 @@ function ApplicationForm() {
                         .eq('provider_id', existing.id)
                         .order('day_of_week', { ascending: true });
                     if (avail && avail.length) {
-                        setSchedule(avail.map((r: any) => ({
+                        const rows = avail.map((r: any) => ({
                             day: r.day_of_week,
                             open: String(r.open_time || '').slice(0, 5),
                             close: String(r.close_time || '').slice(0, 5),
-                        })));
+                        }));
+                        setSchedule(rows);
+                        // If every open day shares the same hours, the simple
+                        // control can represent them; otherwise open on the
+                        // per-day view so nothing already set is flattened.
+                        const uniform = rows.every((r: any) => r.open === rows[0].open && r.close === rows[0].close);
+                        if (uniform) { setSharedOpen(rows[0].open); setSharedClose(rows[0].close); setHoursMode('simple'); }
+                        else setHoursMode('perday');
                     }
                     const { data: blks } = await supabase
                         .from('slot_blocks')
@@ -3799,7 +3815,7 @@ function ApplicationForm() {
                             {currentSection.label}
                         </p>
                     )}
-                    {isGuest && step !== 'finish' && step !== 'g_creds' && step !== 'g_menu' && step !== 'g_capacity' && step !== 'g_slot_min' && step !== 'g_slot_length' && (
+                    {isGuest && step !== 'finish' && step !== 'g_creds' && step !== 'g_menu' && step !== 'g_capacity' && step !== 'g_slot_min' && step !== 'g_slot_length' && step !== 'g_slot_hours' && (
                         <h1 className={'font-extrabold tracking-tight text-slate-900 [text-wrap:balance] text-3xl sm:text-4xl '
                             + ((step === 'trade' || step === 'g_subtype' || step === 'g_you' || step === 'g_notice' || step === 'g_slot_basis' || step === 'g_slot_where') ? 'mb-10 text-center'
                                 /* g_photos is centred (this screen only, to match
@@ -4787,49 +4803,91 @@ function ApplicationForm() {
                 {onStep('g_slot_hours') && audienceForTrade(trade) === 'guest' && shape === 'slot' && (() => {
                     const DAYS = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
                     const dayOpen = (d: number) => schedule.some((r) => r.day === d);
+                    const selected = schedule.slice().sort((a, b) => a.day - b.day);
+                    // Tap a day on/off. A newly opened day takes the shared hours as
+                    // its starting point (the same in either mode); the schedule is
+                    // empty until this first tap, so nothing is written before it.
                     const toggleDay = (d: number) => {
                         if (dayOpen(d)) setSchedule(schedule.filter((r) => r.day !== d));
-                        else setSchedule([...schedule, { day: d, open: '10:00', close: '18:00' }].sort((a, b) => a.day - b.day));
+                        else setSchedule([...schedule, { day: d, open: sharedOpen, close: sharedClose }].sort((a, b) => a.day - b.day));
                     };
-                    const setTime = (d: number, field: 'open' | 'close', val: string) =>
+                    // The one hours control: change it and every chosen day follows.
+                    const setShared = (field: 'open' | 'close', val: string) => {
+                        if (field === 'open') setSharedOpen(val); else setSharedClose(val);
+                        setSchedule(schedule.map((r) => ({ ...r, [field]: val })));
+                    };
+                    const setDayTime = (d: number, field: 'open' | 'close', val: string) =>
                         setSchedule(schedule.map((r) => (r.day === d ? { ...r, [field]: val } : r)));
+                    // Fold the per-day hours back to one set: adopt the first open
+                    // day's hours for all, so the simple control shows the truth.
+                    const collapseToSimple = () => {
+                        const first = selected[0];
+                        const o = first ? first.open : sharedOpen;
+                        const c = first ? first.close : sharedClose;
+                        setSharedOpen(o); setSharedClose(c);
+                        setSchedule(schedule.map((r) => ({ ...r, open: o, close: c })));
+                        setHoursMode('simple');
+                    };
                     const addBlock = (val: string) => {
                         if (val && blockedDates.indexOf(val) === -1) setBlockedDates([...blockedDates, val].sort());
                     };
                     const removeBlock = (val: string) => setBlockedDates(blockedDates.filter((b) => b !== val));
-                    // One task: the weekly hours, with the odd day off folded in as
-                    // the exception it is — not a fifth screen. Quiet field labels,
-                    // one rhythm.
+                    const timeField = 'rounded-lg border border-slate-300 px-3 py-2 text-slate-800 focus:outline-none focus:ring-2 focus:ring-emerald-700';
+                    // ONE decision then an optional refinement: pick the days, set one
+                    // set of hours for all of them, and only reach for per-day hours
+                    // if you actually want them. No seven-row settings table.
                     return (
                         <section className="mb-8 md:max-w-xl md:mx-auto">
-                            <label className="block text-xs font-medium text-slate-500 mb-2">Which days, and what hours?</label>
-                            <div className="space-y-2">
-                                {DAYS.map((label, d) => {
-                                    const row = schedule.find((r) => r.day === d);
-                                    return (
-                                        <div key={d} className="flex items-center gap-3 rounded-xl border border-slate-200 px-3 py-2">
-                                            <button type="button" onClick={() => toggleDay(d)} aria-pressed={!!row}
-                                                className={'flex-none w-16 rounded-lg px-2 py-1.5 text-sm font-semibold transition ' + (row ? 'bg-emerald-700 text-white' : 'bg-slate-100 text-slate-500 hover:bg-slate-200')}>
-                                                {label}
+                            <h1 className="text-2xl font-extrabold tracking-tight text-slate-900 [text-wrap:balance] sm:text-3xl">When are you open?</h1>
+                            <p className="mt-2 text-sm leading-relaxed text-slate-500">Pick your days, then set the hours. You can give particular days their own hours after.</p>
+
+                            <div className="mt-10 flex flex-col items-center gap-8">
+                                {/* One row of seven day toggles. */}
+                                <div className="flex flex-wrap justify-center gap-2">
+                                    {DAYS.map((label, d) => {
+                                        const on = dayOpen(d);
+                                        return (
+                                            <button key={d} type="button" onClick={() => toggleDay(d)} aria-pressed={on} title={label}
+                                                className={'h-11 w-11 rounded-full text-sm font-semibold transition ' + (on ? 'bg-emerald-700 text-white' : 'bg-slate-100 text-slate-500 hover:bg-slate-200')}>
+                                                {label[0]}<span className="sr-only">{label}</span>
                                             </button>
-                                            {row ? (
-                                                <div className="flex items-center gap-2 text-sm text-slate-700">
-                                                    <input type="time" value={row.open} onChange={(e) => setTime(d, 'open', e.target.value)}
-                                                        className="rounded-lg border border-slate-300 px-2 py-1.5 focus:outline-none focus:ring-2 focus:ring-emerald-700" />
-                                                    <span className="text-slate-400">to</span>
-                                                    <input type="time" value={row.close} onChange={(e) => setTime(d, 'close', e.target.value)}
-                                                        className="rounded-lg border border-slate-300 px-2 py-1.5 focus:outline-none focus:ring-2 focus:ring-emerald-700" />
-                                                </div>
-                                            ) : (
-                                                <span className="text-sm text-slate-400">Closed</span>
-                                            )}
+                                        );
+                                    })}
+                                </div>
+
+                                {/* The hours — a single control for all the chosen days,
+                                    or, if refined, one row per day. Shown once a day is on. */}
+                                {selected.length > 0 && (hoursMode === 'simple' ? (
+                                    <div className="flex flex-col items-center gap-4">
+                                        <div className="flex items-center gap-3 text-lg">
+                                            <input type="time" value={sharedOpen} onChange={(e) => setShared('open', e.target.value)} className={timeField} aria-label="Opening time" />
+                                            <span className="text-slate-400">to</span>
+                                            <input type="time" value={sharedClose} onChange={(e) => setShared('close', e.target.value)} className={timeField} aria-label="Closing time" />
                                         </div>
-                                    );
-                                })}
+                                        <button type="button" onClick={() => setHoursMode('perday')} className="text-sm font-medium text-emerald-700 underline-offset-2 hover:underline">
+                                            Set different hours for particular days
+                                        </button>
+                                    </div>
+                                ) : (
+                                    <div className="flex w-full flex-col items-center gap-3">
+                                        {selected.map((r) => (
+                                            <div key={r.day} className="flex items-center gap-3">
+                                                <span className="w-10 text-sm font-semibold text-slate-700">{DAYS[r.day]}</span>
+                                                <input type="time" value={r.open} onChange={(e) => setDayTime(r.day, 'open', e.target.value)} className={timeField} aria-label={DAYS[r.day] + ' opening time'} />
+                                                <span className="text-slate-400">to</span>
+                                                <input type="time" value={r.close} onChange={(e) => setDayTime(r.day, 'close', e.target.value)} className={timeField} aria-label={DAYS[r.day] + ' closing time'} />
+                                            </div>
+                                        ))}
+                                        <button type="button" onClick={collapseToSimple} className="mt-1 text-sm font-medium text-emerald-700 underline-offset-2 hover:underline">
+                                            Use the same hours for every day
+                                        </button>
+                                    </div>
+                                ))}
                             </div>
 
-                            {/* Block a date — the one exception the v1 schedule allows. */}
-                            <div className="mt-6">
+                            {/* Days off — the block-a-date exception. LEFT UNCHANGED;
+                                the owner will rework this separately. */}
+                            <div className="mt-10">
                                 <label className="block text-xs font-medium text-slate-500 mb-2">Days off</label>
                                 <div className="flex flex-wrap items-center gap-2">
                                     {blockedDates.map((b) => (
