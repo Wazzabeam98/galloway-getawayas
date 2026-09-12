@@ -1,0 +1,130 @@
+{
+  "ranAt": "2026-09-12T13:46:50.293Z",
+  "target": "http://localhost:3190",
+  "account": "acct_1UB72uA4n4otlrBz",
+  "passed": 3,
+  "failed": 0,
+  "scenarios": [
+    {
+      "number": "1",
+      "title": "A private hire on a shared table with a PAID seat is refused; the seat and its charge untouched",
+      "checks": [
+        {
+          "desc": "a shared seat is booked, paid and confirmed",
+          "ok": true,
+          "detail": "confirmed"
+        },
+        {
+          "desc": "the session is a shared table (private=false), 1 seat taken",
+          "ok": true,
+          "detail": "private=false seats=1"
+        },
+        {
+          "desc": "the private hire is REFUSED with 409",
+          "ok": true,
+          "detail": "HTTP 409"
+        },
+        {
+          "desc": "the message says the time is a shared table",
+          "ok": true,
+          "detail": "That time is already a shared table — choose another for a private hire."
+        },
+        {
+          "desc": "the shared seat is untouched (still 1, still shared)",
+          "ok": true,
+          "detail": "private=false seats=1"
+        },
+        {
+          "desc": "STRIPE: the paid seat’s charge is intact — captured, £0 refunded",
+          "ok": true,
+          "detail": "captured=true refunded=0"
+        }
+      ],
+      "status": "passed"
+    },
+    {
+      "number": "2",
+      "title": "A cancelled private booking refunds, frees the room, and the time reopens as a shared table",
+      "checks": [
+        {
+          "desc": "the time is a private hire (private=true), full at 1/1",
+          "ok": true,
+          "detail": "private=true seats=1/1"
+        },
+        {
+          "desc": "cancel returns a refund",
+          "ok": true,
+          "detail": "HTTP 200 {\"ok\":true,\"status\":\"refunded\"}"
+        },
+        {
+          "desc": "STRIPE: the private booking was refunded in full (£120)",
+          "ok": true,
+          "detail": "refunded=12000"
+        },
+        {
+          "desc": "the room is freed (seats back to 0)",
+          "ok": true,
+          "detail": "0"
+        },
+        {
+          "desc": "the same time now takes a SHARED booking (reopened as either)",
+          "ok": true,
+          "detail": "HTTP 200 {\"ok\":true,\"url\":\"https://checkout.stripe.com/c/pay/cs_test_a1T8ypNEXpVjUl2TjPgt7KEBWluyxP99YthLzgxr"
+        },
+        {
+          "desc": "the session re-established as a shared table (private=false, capacity 8)",
+          "ok": true,
+          "detail": "private=false cap=8 seats=1"
+        }
+      ],
+      "status": "passed"
+    },
+    {
+      "number": "3",
+      "title": "A cancelled seat frees only itself; the other paid guest stays, the table stays shared, private still refused",
+      "checks": [
+        {
+          "desc": "the shared table has 3 seats taken",
+          "ok": true,
+          "detail": "private=false seats=3"
+        },
+        {
+          "desc": "cancelling the 2-seat order refunds",
+          "ok": true,
+          "detail": "HTTP 200"
+        },
+        {
+          "desc": "STRIPE: only the cancelled order was refunded (£60)",
+          "ok": true,
+          "detail": "refunded=6000"
+        },
+        {
+          "desc": "only the 2 seats freed — 1 remains (nothing freed a paid seat)",
+          "ok": true,
+          "detail": "1"
+        },
+        {
+          "desc": "the table is still shared (private=false)",
+          "ok": true,
+          "detail": "false"
+        },
+        {
+          "desc": "STRIPE: the remaining guest’s charge is intact — captured, £0 refunded",
+          "ok": true,
+          "detail": "captured=true refunded=0"
+        },
+        {
+          "desc": "the remaining guest’s order is still confirmed",
+          "ok": true,
+          "detail": "confirmed"
+        },
+        {
+          "desc": "a private hire is still refused while a guest is seated",
+          "ok": true,
+          "detail": "HTTP 409"
+        }
+      ],
+      "status": "passed"
+    }
+  ]
+}
