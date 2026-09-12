@@ -2033,6 +2033,18 @@ function ApplicationForm() {
             // The come-to-me / travel fork, same rule.
             : step === 'g_slot_where' && !fulfilment
             ? GUEST_SCREEN_COPY.slotWhereGate
+            // A 'both' slot needs a priced private hire AND a priced shared table,
+            // or it quietly ships only one. Next is greyed until both — say which
+            // is missing rather than leaving it unexplained. (No price at all falls
+            // to the menu's own required-item gate.)
+            : step === 'g_menu' && shape === 'slot' && slotOffer === 'both'
+                && !(items.some((r) => String(r.unit) === 'flat' && Number(r.price) > 0)
+                    && items.some((r) => String(r.unit) === 'person' && Number(r.price) > 0))
+            ? (!items.some((r) => Number(r.price) > 0)
+                ? GUEST_SCREEN_COPY.menuRequiredGate
+                : items.some((r) => String(r.unit) === 'flat' && Number(r.price) > 0)
+                    ? GUEST_SCREEN_COPY.menuSlotBothGateShared
+                    : GUEST_SCREEN_COPY.menuSlotBothGatePrivate)
             : whereMissing)
         : null;
 
@@ -3428,9 +3440,9 @@ function ApplicationForm() {
         // a placed order. Empty rows (no name or no price) are dropped.
         if (audienceForTrade(trade) === 'guest') {
             // A slot keeps each item's OWN unit — flat for a private hire, person
-            // for a shared table — so a 'both' provider stores two items with two
-            // units. The unit is set when the offering is chosen, not picked per
-            // row, so a slot row is only ever flat or person.
+            // for a shared table. private/shared derive it from the offering; 'both'
+            // has the provider choose it per item on the unit step. Either way a
+            // slot row is only ever flat or person, normalised here.
             const valid = items
                 .map((it, i) => ({
                     id: it.id,
@@ -4514,6 +4526,11 @@ function ApplicationForm() {
                     // single row with no add and its price unit read off the
                     // private/shared answer rather than picked here.
                     const isSlot = shape === 'slot';
+                    // 'offer both' is the only slot where the unit is ambiguous, so
+                    // it alone lets the provider add items and choose each one's unit
+                    // (session vs person) as a step in the sub-flow. private/shared
+                    // stay a single item whose unit is derived, never asked.
+                    const slotBoth = isSlot && slotOffer === 'both';
                     const blank = { id: undefined as string | undefined, name: '', description: '', price: '', unit: 'flat', image: null as string | null };
 
                     const UNIT_WORD: Record<string, string> = GUEST_SCREEN_COPY.priceUnitLabels;
@@ -4526,6 +4543,13 @@ function ApplicationForm() {
                             ? '£' + p + (unitWord(r) ? ' · ' + unitWord(r) : '')
                             : GUEST_SCREEN_COPY.menuRowPrompt;
                     };
+                    // An item is done only when it has BOTH a name and a real price —
+                    // the tick has to mean that. A seeded 'both' row ('Private hire',
+                    // 'Per person') has a name from the start, so keying the tick off
+                    // the name alone showed it as done while it still read "Name it
+                    // and set a price". This is the completeness the row displays.
+                    const isRowComplete = (r: { name: string; price: string }) =>
+                        String(r.name || '').trim() !== '' && Number(r.price) > 0;
 
                     // A slot now has 1 or 2 rows (a private hire and/or a shared
                     // table), authored when the offering is chosen — so its rows
@@ -4548,7 +4572,16 @@ function ApplicationForm() {
                     const nameFilled = !!it && String(it.name || '').trim() !== '';
                     const priceNum = it ? (Number(it.price) || 0) : 0;
                     const priceFilled = priceNum > 0;
-                    const LAST = 3;
+                    // The sub-flow is one question a screen. A 'both' slot gets an
+                    // extra screen — the unit choice — between price and description;
+                    // every other item derives its unit, so it has no such screen.
+                    // Steps are addressed by KIND, not a bare index, so inserting one
+                    // can't silently shift the others.
+                    const stepKinds: Array<'name' | 'price' | 'unit' | 'desc' | 'photo'> = slotBoth
+                        ? ['name', 'price', 'unit', 'desc', 'photo']
+                        : ['name', 'price', 'desc', 'photo'];
+                    const LAST = stepKinds.length - 1;
+                    const stepKind = stepKinds[menuStep] ?? 'name';
 
                     // The borderless fields shared with the expertise hub sub-flow.
                     const fieldWrap = 'relative border-b border-slate-200 pb-2 transition-colors focus-within:border-slate-400';
@@ -4574,11 +4607,12 @@ function ApplicationForm() {
                             </div>
 
                             <div className="mt-8 space-y-1">
-                                {isSlot ? (
+                                {(isSlot && !slotBoth) ? (
+                                    // private/shared: a single fixed offering, no add.
                                     rows.map((r, i) => (
                                         <HubRow
-                                            key={r.id || String(r.unit) || i}
-                                            filled={String(r.name || '').trim() !== ''}
+                                            key={r.id || i}
+                                            filled={isRowComplete(r)}
                                             thumb={r.image ? getImageUrl(r.image) : null}
                                             label={(r.name && r.name.trim()) || GUEST_SCREEN_COPY.menuSlotRowLabel}
                                             prompt={GUEST_SCREEN_COPY.menuRowPrompt}
@@ -4587,13 +4621,15 @@ function ApplicationForm() {
                                         />
                                     ))
                                 ) : (
+                                    // a full menu (non-slot) or 'both' (private hire +
+                                    // shared table, plus any extra option): add-style.
                                     <>
                                         {rows.map((r, i) => (
                                             <HubRow
                                                 key={r.id || i}
-                                                filled
+                                                filled={isRowComplete(r)}
                                                 thumb={r.image ? getImageUrl(r.image) : null}
-                                                label={r.name.trim() || GUEST_SCREEN_COPY.menuUntitled}
+                                                label={r.name.trim() || (isSlot ? GUEST_SCREEN_COPY.menuSlotRowLabel : GUEST_SCREEN_COPY.menuUntitled)}
                                                 prompt={GUEST_SCREEN_COPY.menuRowPrompt}
                                                 summary={rowSummary(r)}
                                                 onOpen={() => openEdit(i)}
@@ -4601,7 +4637,7 @@ function ApplicationForm() {
                                         ))}
                                         <HubRow
                                             filled={false}
-                                            label={GUEST_SCREEN_COPY.menuAddRow}
+                                            label={isSlot ? GUEST_SCREEN_COPY.menuSlotAddRow : GUEST_SCREEN_COPY.menuAddRow}
                                             prompt={GUEST_SCREEN_COPY.menuRowPrompt}
                                             onOpen={openAdd}
                                         />
@@ -4613,20 +4649,21 @@ function ApplicationForm() {
                                 <SubFlowModal
                                     open
                                     title={
-                                        menuStep === 0 ? (isSlot ? GUEST_SCREEN_COPY.menuNameTitleSlot : GUEST_SCREEN_COPY.menuNameTitle)
-                                            : menuStep === 1 ? GUEST_SCREEN_COPY.menuPriceTitle
-                                                : menuStep === 2 ? GUEST_SCREEN_COPY.menuDescTitle
-                                                    : GUEST_SCREEN_COPY.menuPhotoTitle
+                                        stepKind === 'name' ? (isSlot ? GUEST_SCREEN_COPY.menuNameTitleSlot : GUEST_SCREEN_COPY.menuNameTitle)
+                                            : stepKind === 'price' ? GUEST_SCREEN_COPY.menuPriceTitle
+                                                : stepKind === 'unit' ? GUEST_SCREEN_COPY.menuSlotUnitTitle
+                                                    : stepKind === 'desc' ? GUEST_SCREEN_COPY.menuDescTitle
+                                                        : GUEST_SCREEN_COPY.menuPhotoTitle
                                     }
                                     onClose={closeItem}
                                     onBack={menuStep > 0 ? () => setMenuStep((s) => s - 1) : undefined}
-                                    onRemove={!isSlot ? () => removeItem(menuIndex) : undefined}
+                                    onRemove={(!isSlot || slotBoth) ? () => removeItem(menuIndex) : undefined}
                                     saveLabel={menuStep === LAST ? GUEST_SCREEN_COPY.save : GUEST_SCREEN_COPY.menuNext}
-                                    saveDisabled={(menuStep === 0 && !nameFilled) || (menuStep === 1 && !priceFilled)}
+                                    saveDisabled={(stepKind === 'name' && !nameFilled) || (stepKind === 'price' && !priceFilled)}
                                     onSave={menuStep === LAST ? closeItem : () => setMenuStep((s) => s + 1)}
                                     note={menuStep === LAST ? GUEST_SCREEN_COPY.menuPhotoPrompt : undefined}
                                 >
-                                    {menuStep === 0 && (
+                                    {stepKind === 'name' && (
                                         <div className={fieldWrap}>
                                             <input
                                                 type="text" value={it.name}
@@ -4636,7 +4673,7 @@ function ApplicationForm() {
                                             />
                                         </div>
                                     )}
-                                    {menuStep === 1 && (
+                                    {stepKind === 'price' && (
                                         <div>
                                             {/* A big numeral you TYPE into — no spinner
                                                 arrows (nobody sets £45 by nudging up from
@@ -4657,13 +4694,16 @@ function ApplicationForm() {
                                                 model as before, but no native <select>: a
                                                 current-choice HubRow that opens a sub-flow of
                                                 selectable rows, matching the coverage picker.
-                                                A slot derives it from the private/shared
-                                                answer, so it just states the basis. */}
+                                                A private/shared slot derives it from the
+                                                answer and just states the basis; a 'both' slot
+                                                asks it on its own step next, so nothing here. */}
                                             <div className="mt-8">
                                                 {isSlot ? (
-                                                    unitWord(it)
-                                                        ? <p className="text-center text-sm text-slate-500">Priced {unitWord(it)}</p>
-                                                        : null
+                                                    slotBoth
+                                                        ? null
+                                                        : unitWord(it)
+                                                            ? <p className="text-center text-sm text-slate-500">Priced {unitWord(it)}</p>
+                                                            : null
                                                 ) : (
                                                     <>
                                                         <div className="mx-auto max-w-sm">
@@ -4738,7 +4778,42 @@ function ApplicationForm() {
                                             )}
                                         </div>
                                     )}
-                                    {menuStep === 2 && (
+                                    {/* THE UNIT STEP — 'both' slots only. Session
+                                        (a private hire, flat) or per person (a shared
+                                        table). Selectable rows in the wizard's own
+                                        register; a unit is always set, so there is no
+                                        gate on this screen. */}
+                                    {stepKind === 'unit' && (
+                                        <div role="radiogroup" aria-label={GUEST_SCREEN_COPY.menuSlotUnitTitle} className="mx-auto w-full max-w-md space-y-3">
+                                            {([
+                                                ['flat', GUEST_SCREEN_COPY.menuSlotUnitFlat, GUEST_SCREEN_COPY.menuSlotUnitFlatHint],
+                                                ['person', GUEST_SCREEN_COPY.menuSlotUnitPerson, GUEST_SCREEN_COPY.menuSlotUnitPersonHint],
+                                            ] as const).map(([u, label, hint]) => {
+                                                const on = String(it.unit) === u;
+                                                return (
+                                                    <button
+                                                        key={u}
+                                                        type="button"
+                                                        role="radio"
+                                                        aria-checked={on}
+                                                        onClick={() => setField(menuIndex, 'unit', u)}
+                                                        className={'flex w-full items-start gap-3 rounded-2xl border px-4 py-4 text-left transition '
+                                                            + (on ? 'border-emerald-600 bg-emerald-50 ring-1 ring-emerald-600' : 'border-slate-200 hover:border-emerald-400')}
+                                                    >
+                                                        <span className={'mt-0.5 flex h-6 w-6 flex-none items-center justify-center rounded-full border transition '
+                                                            + (on ? 'border-emerald-600 bg-emerald-600 text-white' : 'border-slate-300 text-transparent')}>
+                                                            <Check className="h-4 w-4" strokeWidth={3} />
+                                                        </span>
+                                                        <span>
+                                                            <span className="block font-semibold text-slate-900">{label}</span>
+                                                            <span className="block text-sm text-slate-500">{hint}</span>
+                                                        </span>
+                                                    </button>
+                                                );
+                                            })}
+                                        </div>
+                                    )}
+                                    {stepKind === 'desc' && (
                                         <div className={fieldWrap}>
                                             <textarea
                                                 value={it.description} rows={3}
@@ -4748,7 +4823,7 @@ function ApplicationForm() {
                                             />
                                         </div>
                                     )}
-                                    {menuStep === LAST && (
+                                    {stepKind === 'photo' && (
                                         <div className="flex flex-col items-center">
                                             <label className="relative flex h-40 w-40 cursor-pointer flex-col items-center justify-center gap-2 overflow-hidden rounded-2xl border-2 border-dashed border-slate-300 bg-slate-50 text-center hover:border-emerald-400">
                                                 {it.image ? (

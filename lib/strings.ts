@@ -168,6 +168,9 @@ export const GUEST_SCREEN_COPY = {
     // never appears on the marketplace and can't be booked.
     menuRequiredGate: 'Add at least one thing a guest can book, with a price — without one your listing can’t be booked.',
     menuAddRow: 'Add an item',
+    // The add row for a slot offering 'both': the two starters (private hire,
+    // shared table) are seeded, and this adds a further option beside them.
+    menuSlotAddRow: 'Add another option',
     menuRowPrompt: 'Name it and set a price',
     menuUntitled: 'Untitled item',
     menuSlotRowLabel: 'Your session',
@@ -208,6 +211,21 @@ export const GUEST_SCREEN_COPY = {
         ticket: 'Per ticket',
         item: 'Per item',
     } as Record<string, string>,
+    // SLOT 'offer both' only: the unit is chosen per item, as its own step in the
+    // sub-flow. A private-only slot is flat and a shared-only slot is per person —
+    // both derived, never asked — so these two are the only choices, and only when
+    // the provider offers both. 'flat' = a private hire (the whole session, one
+    // booking), 'person' = a seat at a shared table.
+    menuSlotUnitTitle: 'How is this priced?',
+    menuSlotUnitFlat: 'For the session',
+    menuSlotUnitFlatHint: 'One price for the whole session — a private hire.',
+    menuSlotUnitPerson: 'Per person',
+    menuSlotUnitPersonHint: 'A price each — a shared table or class.',
+    // Shown beside the greyed Next on the slot price screen when 'offer both' is
+    // missing one side, so the reason is never left unsaid. The no-price-at-all
+    // case falls to menuRequiredGate.
+    menuSlotBothGatePrivate: 'Set a price for the private hire to carry on.',
+    menuSlotBothGateShared: 'Set a price for the shared table to carry on.',
     menuDescTitle: 'Add a short description',
     menuDescPlaceholder: 'A line about what’s included.',
     menuPhotoTitle: 'Add a photo',
