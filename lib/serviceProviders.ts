@@ -161,6 +161,45 @@ export function guestCategoryIsFood(key: string | null | undefined): boolean {
     return !!(c && c.food);
 }
 
+// WHERE A SLOT HAPPENS — the come-to-me / travel fork, per category.
+//
+// A slot is a session at a time, and the axis is the same one made-to-order
+// forks on (collection vs delivery): does the guest come to a place the host
+// names, or does the host travel to the guest's cottage? Most slot categories
+// have one honest answer, so we default them and never ask; three genuinely go
+// either way, so those — and only those — are asked the fork on g_slot_where.
+//
+//   asked (either): yoga, massage, painting
+//   fixed come-to-me: everything else that is a slot
+//
+// The stored value is the `fulfilment` field reused: 'collection' = come-to-me
+// (an address guests come to), 'delivery' = the host travels (coverage regions).
+// No 'both' for a slot — a session happens in one place.
+const SLOT_WHERE_FORK_CATEGORIES = ['yoga', 'massage', 'painting'];
+
+// The come-to-me categories whose "place" is a MEETING POINT rather than the
+// host's own premises — a trailhead, a launch, a car park. Data is identical (an
+// address with the town public and the exact spot released on booking); only the
+// copy differs ("Where do guests meet you?" not "Your address").
+const SLOT_MEETING_POINT_CATEGORIES = ['outdoors', 'water'];
+
+export function slotAsksWhereFork(category: string | null | undefined): boolean {
+    return SLOT_WHERE_FORK_CATEGORIES.indexOf(String(category || '')) !== -1;
+}
+
+export function slotIsMeetingPoint(category: string | null | undefined): boolean {
+    return SLOT_MEETING_POINT_CATEGORIES.indexOf(String(category || '')) !== -1;
+}
+
+// The default fulfilment for a slot category with no fork: come-to-me. The three
+// fork categories return '' so g_slot_where asks. Non-slot categories return ''
+// (made-to-order forks on its own screen; comes-to-you doesn't use the field).
+export function defaultSlotFulfilment(category: string | null | undefined): string {
+    const c = guestCategoryByKey(category);
+    if (!c || c.shape !== 'slot') return '';
+    return slotAsksWhereFork(category) ? '' : 'collection';
+}
+
 // HOW HARD WE ASK ABOUT THE PERSON BEHIND THE EXPERIENCE.
 //
 // Not every category should be asked its years and qualifications, and forcing
@@ -197,9 +236,7 @@ const GUEST_YEARS_REQUIRED = ['outdoors', 'water', 'massage', 'yoga', 'chef', 't
 // back — a potter or a cake maker has a track record and a story worth showing —
 // so they get both screens again (years asked, qualifications optional).
 //
-// This is ONLY about the years/qualifications screens. The safety-check map
-// (GUEST_CHECKS / checksFor) is untouched — a sauna still declares its heat and
-// cold safety, and the crafts still declare safe tools and kiln.
+// This is ONLY about the years/qualifications screens.
 const GUEST_EXPERTISE_SKIP = ['sauna'];
 
 // Whether the years + expertise screens are shown at all. Off for the skip list
@@ -241,13 +278,6 @@ export function guestYearsRequired(category: string | null | undefined): boolean
 // `applies` is a predicate over the chosen category (null when unpicked or
 // "Something else"), so the set a given provider sees is computed, never a
 // hand-maintained per-category list that would drift from GUEST_CATEGORIES.
-export interface GuestCheck {
-    key: string;
-    label: string;   // the statement the provider confirms
-    hint?: string;   // the supporting line under it
-    applies: (category: GuestCategory | null) => boolean;
-}
-
 // DIETARY OPTIONS — what a food provider can cater for, as ticks.
 //
 // A tick reads as "can cater for", not "provides" — a capability, weighed with
@@ -260,7 +290,7 @@ export interface GuestCheck {
 //
 // The keys are stored in guest_details.dietary_options (jsonb, no column of
 // their own); the labels live here so the wizard, the listing and the review
-// queue read one source — the same shape as GUEST_CHECKS above.
+// queue read one source.
 export interface DietaryOption {
     key: string;
     label: string;
@@ -296,31 +326,75 @@ export function knownDietaryOptions(keys: string[]): string[] {
     return DIETARY_OPTIONS.filter((o) => has.has(o.key)).map((o) => o.key);
 }
 
-// One confirmation for every guest experience, whatever the category. The old
-// per-category catalogue (insurance, food registration, allergens, alcohol,
-// sauna heat, water safety, …) collapsed to this single responsibility
-// statement (Sep 2026): a provider is a third party responsible for their own
-// insurance, permits and licences, and the specifics moved into the terms and
-// conditions rather than a wall of tickboxes. Worded as a confirmation of
-// responsibility, NOT an indemnity — a promise to cover liability is a contract
-// term and belongs in the T&Cs, not here. Kept as a one-entry catalogue (rather
-// than a bare constant) so the storage shape is unchanged: guestProviderFields
-// still builds `declarations` by looping checksFor, now writing a single
-// `{ responsibility: true }`.
-export const GUEST_CHECKS: GuestCheck[] = [
-    {
-        key: 'responsibility',
-        label: GUEST_SCREEN_COPY.responsibilityConfirm,
-        applies: () => true,
-    },
-];
+// ---------------------------------------------------------------------------
+// Review content — what an admin needs to SEE before approving a guest listing.
+//
+// The review queue showed the business, trade, registrations and photos, but
+// not the menu, its prices, or the written answers a category assignment and an
+// approval decision actually rest on — a blind spot flagged in the audit. This
+// normalises both sources into one shape so the renderer is written once:
+//   - a CLAIMED provider row (service_providers) + its service_provider_items
+//   - an UNCLAIMED application (service_applications.payload.provider + .items)
+// Both carry guest_details (jsonb), declarations (jsonb) and dietary_note; the
+// menu is the separate items list either way.
+// ---------------------------------------------------------------------------
 
-// The checks a given category must confirm. Now one — the responsibility
-// confirmation, asked of every guest experience regardless of category.
-export function checksFor(category: string | null | undefined): GuestCheck[] {
-    const c = guestCategoryByKey(category);
-    return GUEST_CHECKS.filter((k) => k.applies(c));
+export interface ReviewMenuItem { name: string; price: string; unit: string; description: string; priced: boolean; }
+export interface ReviewContent {
+    isGuest: boolean;
+    title: string;
+    whatHappens: string;
+    qualifications: string;
+    dietary: string[];      // human labels
+    dietaryNote: string;
+    termsVersion: string;
+    termsAgreedAt: string;
+    items: ReviewMenuItem[];
+    pricedCount: number;
+    priceFrom: number | null;
 }
+
+export function reviewContentFrom(source: {
+    audience?: string | null;
+    guest_details?: any;
+    declarations?: any;
+    dietary_note?: string | null;
+    items?: any[] | null;
+}): ReviewContent {
+    const gd = (source && source.guest_details && typeof source.guest_details === 'object') ? source.guest_details : {};
+    const decl = (source && source.declarations && typeof source.declarations === 'object') ? source.declarations : {};
+    const items: ReviewMenuItem[] = (Array.isArray(source && source.items) ? source!.items! : []).map((it: any) => {
+        const price = String(it && it.price != null ? it.price : '').trim();
+        return {
+            name: String((it && it.name) || '').trim(),
+            price,
+            unit: String((it && it.unit) || '').trim(),
+            description: String((it && it.description) || '').trim(),
+            priced: Number(price) > 0,
+        };
+    });
+    const priced = items.filter((it) => it.priced);
+    return {
+        isGuest: source && source.audience === 'guest',
+        title: String(gd.professional_title || '').trim(),
+        whatHappens: String(gd.what_to_expect || '').trim(),
+        qualifications: String(gd.qualifications || '').trim(),
+        dietary: knownDietaryOptions(Array.isArray(gd.dietary_options) ? gd.dietary_options : []).map(dietaryOptionLabel),
+        dietaryNote: String((source && source.dietary_note) || '').trim(),
+        termsVersion: String(decl.terms_version || '').trim(),
+        termsAgreedAt: String(decl.terms_agreed_at || '').trim(),
+        items,
+        pricedCount: priced.length,
+        priceFrom: priced.length ? Math.min(...priced.map((it) => Number(it.price))) : null,
+    };
+}
+
+// The per-category checks catalogue and its single-confirmation successor were
+// both retired (Sep 2026): the provider now agrees to the terms and conditions
+// on the finish screen. What they agreed to, and when, is recorded in the
+// `declarations` jsonb (terms_version + terms_agreed_at) — the acceptance store,
+// no longer a set of tickboxes. The terms text is the single source in
+// lib/providerTerms.ts.
 
 // A heading on the picker, not a thing anybody is.
 //
@@ -2451,6 +2525,19 @@ export interface ProviderDraft {
     // how many weekly rows they've added.
     shape?: string | null;
     scheduleCount?: number;
+    // Made-to-order fulfilment: '' | 'delivery' | 'collection' | 'both'. Decides
+    // whether areas or a collection address are required.
+    fulfilment?: string | null;
+    hasCollectionAddress?: boolean;
+    // How many items have a price above zero. A guest listing needs at least one
+    // — the marketplace lists only priced providers, so a no-price one is unbookable.
+    pricedItemCount?: number;
+    // What a slot provider offers and the two group numbers. A shared table
+    // ('shared' or 'both') is where a minimum-people rule can apply; the minimum
+    // may not exceed the capacity ceiling, or the session could never be booked.
+    slotOffer?: 'private' | 'shared' | 'both' | null;
+    slotCapacity?: any;
+    slotMinPeople?: any;
 }
 
 export interface Problem {
@@ -2463,6 +2550,48 @@ export const MIN_DESCRIPTION = 40;
 // What has to be true before it can be sent for review. Deliberately not
 // enforced while a draft is being filled in — a half-finished form should save,
 // not argue.
+/**
+ * The collection-address columns to write — the three private fields plus the
+ * public `based_line` the town drives — or `undefined` to OMIT all of them from
+ * the update.
+ *
+ * The omit is the safety: a returning provider whose private address did not load
+ * (`loaded` false) and who has typed nothing must NOT blank a real address on
+ * save — so we send nothing rather than nulls, and the stored values stand. Same
+ * class of bug as an untouched slot-capacity default overwriting a stored one.
+ *
+ * When loaded, the fields are authoritative (a cleared field writes null); when
+ * not collecting, the address is cleared and `based_line` with it (the town is
+ * its only source today). `based_line` is the town alone — everything is in
+ * Dumfries & Galloway, so repeating the region on every listing adds nothing.
+ */
+export function collectionFieldsForWrite(o: {
+    collects: boolean; loaded: boolean;
+    street: string; town: string; postcode: string;
+}): {
+    collection_street: string | null;
+    collection_town: string | null;
+    collection_postcode: string | null;
+    based_line: string | null;
+} | undefined {
+    const street = (o.street || '').trim();
+    const town = (o.town || '').trim();
+    const postcode = (o.postcode || '').trim();
+    // Not loaded and nothing typed anywhere → leave every stored value alone.
+    if (!o.loaded && !street && !town && !postcode) return undefined;
+    // Not collecting → clear the private fields and the public location with them.
+    if (!o.collects) {
+        return { collection_street: null, collection_town: null, collection_postcode: null, based_line: null };
+    }
+    // Collecting → the typed values; the town is the public based_line.
+    return {
+        collection_street: street || null,
+        collection_town: town || null,
+        collection_postcode: postcode || null,
+        based_line: town || null,
+    };
+}
+
 export function submitProblems(draft: ProviderDraft): Problem[] {
     const problems: Problem[] = [];
     const name = (draft.business_name || '').trim();
@@ -2504,7 +2633,26 @@ export function submitProblems(draft: ProviderDraft): Problem[] {
         problems.push({ field: 'audience', message: 'Choose who you sell to.' });
     }
 
-    if (!draft.areaCount) {
+    // The fulfilment fork decides what the location screen requires. Made-to-order
+    // and slot both use it now (same field): collection = guests come to an
+    // address, delivery = the host travels (coverage regions). A collection-only
+    // provider has no region to pick, so requiring an area would be nonsense — but
+    // a delivering/travelling one still needs one, and comes-to-you / host always
+    // do. A slot's fork is defaulted or asked in-flow (g_slot_where), so unlike
+    // made-to-order it is never blank here; only made-to-order gates on "unanswered".
+    const isGuestMTO = draft.audience === 'guest' && draft.shape === 'made_to_order';
+    const isGuestSlot = draft.audience === 'guest' && draft.shape === 'slot';
+    const usesFulfilment = isGuestMTO || isGuestSlot;
+    const ful = String(draft.fulfilment || '');
+    const wantsDelivery = ful === 'delivery' || ful === 'both';
+    const wantsCollection = ful === 'collection' || ful === 'both';
+
+    if (isGuestMTO && !ful) {
+        problems.push({ field: 'fulfilment', message: GUEST_SCREEN_COPY.fulfilmentGate });
+    }
+
+    const areasRequired = usesFulfilment ? wantsDelivery : true;
+    if (areasRequired && !draft.areaCount) {
         problems.push({
             field: 'areas',
             // A guest's coverage is informational (it does not filter who sees
@@ -2516,6 +2664,10 @@ export function submitProblems(draft: ProviderDraft): Problem[] {
         });
     }
 
+    if (usesFulfilment && wantsCollection && !draft.hasCollectionAddress) {
+        problems.push({ field: 'collection_address', message: GUEST_SCREEN_COPY.collectionAddressGate });
+    }
+
     // A guest slot provider with no weekly hours would finish sign-up and then
     // be invisible — no availability, no sessions, dropped from the shop, with
     // no error to tell them why. Require at least one row before they can send.
@@ -2524,6 +2676,29 @@ export function submitProblems(draft: ProviderDraft): Problem[] {
             field: 'availability',
             message: 'Add your weekly hours so guests can book a time — without them your listing can’t be booked.',
         });
+    }
+
+    // A guest listing with no PRICED item is a dead end: the marketplace only
+    // lists providers with an item priced above zero, so a no-price listing never
+    // appears and can't be opened or booked — yet nothing stopped it being sent
+    // for review and approved. Require at least one priced thing, the same way
+    // the slot hours are required. (Every guest shape sells something: a menu
+    // item, a made-to-order product, or a slot session.)
+    if (draft.audience === 'guest' && !(Number(draft.pricedItemCount) > 0)) {
+        problems.push({ field: 'menu', message: GUEST_SCREEN_COPY.menuRequiredGate });
+    }
+
+    // A shared table's minimum can't exceed its capacity ceiling: a session that
+    // needs at least four but seats at most two could never be booked. Only a
+    // shared table has a minimum (a private hire is one booking whatever the head
+    // count), so the rule is gated on the offering including shared. A minimum of
+    // 1 (or blank) is no minimum and never trips this.
+    if (draft.audience === 'guest' && draft.shape === 'slot' && (draft.slotOffer === 'shared' || draft.slotOffer === 'both')) {
+        const min = Number(draft.slotMinPeople);
+        const cap = Number(draft.slotCapacity);
+        if (Number.isFinite(min) && min > 1 && Number.isFinite(cap) && cap >= 1 && min > cap) {
+            problems.push({ field: 'slot_min', message: GUEST_SCREEN_COPY.slotMinOverCapacity });
+        }
     }
 
     for (const problem of pricingProblems(draft)) problems.push(problem);

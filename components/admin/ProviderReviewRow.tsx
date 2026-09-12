@@ -3,7 +3,8 @@
 import { useState } from 'react';
 import { useRouter } from 'next/navigation';
 import { toast } from 'react-toastify';
-import { planForTrade, bandLabel, SUBSCRIPTION_MONTHLY, TRIAL_DAYS } from '@/lib/serviceProviders';
+import { planForTrade, bandLabel, SUBSCRIPTION_MONTHLY, TRIAL_DAYS, reviewContentFrom } from '@/lib/serviceProviders';
+import ReviewContent from '@/components/admin/ReviewContent';
 import { ASSIGNABLE_MCCS, assignableMccLabel } from '@/lib/serviceOrders';
 
 const STATUS_STYLE: Record<string, string> = {
@@ -250,6 +251,11 @@ export default function ProviderReviewRow({
                     </div>
                     <div className="min-w-0">
                     <h3 className="font-bold text-slate-900">{provider.business_name}</h3>
+                    {/* The listing is titled by its Title now; on a guest row the
+                        person's full name (admin-only) says who it belongs to. */}
+                    {provider.personName ? (
+                        <p className="text-sm font-medium text-slate-700 mt-0.5">{provider.personName}</p>
+                    ) : null}
                     <p className="text-sm text-slate-600 mt-0.5">
                         {provider.tradeLabel}
                         {' · '}
@@ -618,6 +624,11 @@ export default function ProviderReviewRow({
                     ))}
                 </div>
             )}
+
+            {/* A guest listing's menu, prices and written answers — so an
+                unbookable or empty listing can't be approved sight-unseen.
+                Guest-only; ReviewContent renders nothing for host/trade rows. */}
+            <ReviewContent content={reviewContentFrom(provider)} />
 
             {hasChanges && (
                 <div className="mt-5 pt-4 border-t border-slate-200">

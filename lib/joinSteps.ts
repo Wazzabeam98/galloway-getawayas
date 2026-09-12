@@ -29,6 +29,7 @@ import {
     asksAboutFuel,
     audienceForTrade,
     guestAsksExpertise,
+    slotAsksWhereFork,
 } from '@/lib/serviceProviders';
 import { GUEST_SCREEN_COPY } from '@/lib/strings';
 
@@ -41,7 +42,7 @@ import { GUEST_SCREEN_COPY } from '@/lib/strings';
 // ever gains one. See stepApplies.
 export type StepKey =
     | 'trade' | 'g_subtype' | 'g_verify' | 'business'
-    | 'g_you' | 'g_creds' | 'g_about' | 'g_capacity' | 'g_menu' | 'g_expect' | 'g_photos' | 'g_area'
+    | 'g_you' | 'g_creds' | 'g_about' | 'g_slot_basis' | 'g_capacity' | 'g_slot_min' | 'g_menu' | 'g_expect' | 'g_photos' | 'g_notice' | 'g_slot_where' | 'g_area' | 'g_slot_length' | 'g_slot_hours'
     | 'credentials' | 'prices' | 'finish';
 
 // The guest-only steps, in flow order. Rebuilt against Airbnb's host-an-
@@ -65,7 +66,7 @@ export type StepKey =
 // account address is the contact address, and the phone lives on the profile).
 const GUEST_STEP_KEYS: StepKey[] = [
     'g_verify', 'g_subtype',
-    'g_you', 'g_creds', 'g_area', 'g_photos', 'g_capacity', 'g_menu', 'g_expect',
+    'g_you', 'g_creds', 'g_notice', 'g_slot_where', 'g_area', 'g_slot_length', 'g_slot_hours', 'g_photos', 'g_slot_basis', 'g_capacity', 'g_slot_min', 'g_menu', 'g_expect',
 ];
 
 // What a guest's steps branch on, all from earlier answers: the top-level group
@@ -82,6 +83,15 @@ export interface StepContext {
     // (g_verify) only exists while there is NO session: a returning applicant
     // who is already signed in never sees it.
     hasSession?: boolean;
+    // What a slot provider offers: 'private' (the whole session for one group),
+    // 'shared' (several people join, per person), 'both' (either — each time sold
+    // as whichever books first), null = not yet answered. The per-person MINIMUM
+    // screen (g_slot_min) exists only when a SHARED table is offered ('shared' or
+    // 'both') — a whole-group flat price is one booking regardless of head count,
+    // so a minimum-people rule is meaningless for private-only. Carried into the
+    // context so the step model can add or drop that one screen, the same way
+    // shape adds or drops g_capacity.
+    slotOffer?: 'private' | 'shared' | 'both' | null;
 }
 
 export interface Step {
@@ -114,13 +124,45 @@ const ALL_STEPS: Step[] = [
     // it is kept for the host trades and harmless for guests.
     { key: 'g_you', label: 'You', title: GUEST_SCREEN_COPY.yearsQuestion },
     { key: 'g_creds', label: 'Expertise', title: GUEST_SCREEN_COPY.expertiseHeading },
+    // Made-to-order only: the notice period, its own single-question screen before
+    // the delivery areas (a big stepper, like the years/guests screens). The other
+    // shapes carry their "when" inside g_area (a slot's schedule) or not at all.
+    { key: 'g_notice', label: 'Notice', title: GUEST_SCREEN_COPY.noticeQuestion },
+    // Slot only, and only the three either-way categories (yoga, massage,
+    // painting): does the guest come to a place the host names, or does the host
+    // travel to the guest's cottage? It sets `fulfilment` (collection vs delivery)
+    // the way made-to-order's own fork does, so g_area then shows an address or
+    // the coverage regions. The other slot categories default and skip it.
+    { key: 'g_slot_where', label: 'Where', title: GUEST_SCREEN_COPY.slotWhereQuestion },
+    // g_area is now purely the PLACE: an address (come-to-me) or the coverage
+    // regions (travel). A slot's session length and weekly hours moved to their
+    // own When section (g_slot_length, g_slot_hours), so the old "Where, and when"
+    // heading no longer applies — the form picks an honest per-shape heading (see
+    // the h1 logic). Made-to-order's fulfilment fork still lives on this screen.
     { key: 'g_area', label: 'Where', title: 'Where, and when, can guests get it?' },
+    // The When section (slots only), split out of the old overloaded schedule
+    // screen so each label matches its one question: session length, then the
+    // weekly hours (with the odd day off folded in as the hours' exception).
+    { key: 'g_slot_length', label: 'Length', title: GUEST_SCREEN_COPY.slotLengthQuestion },
+    { key: 'g_slot_hours', label: 'Hours', title: GUEST_SCREEN_COPY.slotHoursQuestion },
     { key: 'g_photos', label: 'Photos', title: 'Show guests what it looks like' },
     // The Pricing section opens with the capacity question (Airbnb's order),
     // then the priced offerings. Shown only where a group size is meaningful —
     // comes-to-you and slot — so a made-to-order product (cakes, hampers) and
     // 'other' skip it. The heading is worded per shape in the form.
+    // Slot only, and the first screen of the Pricing section: whether a session
+    // is private (the whole thing for one group, one flat booking) or shared
+    // (several people join, priced per person). It sets the price UNIT that
+    // g_menu reads and decides whether the per-person minimum screen exists at
+    // all, so it comes before both. Lifted off g_area, where it used to crowd
+    // the schedule; its own screen now, one question.
+    { key: 'g_slot_basis', label: 'Basis', title: GUEST_SCREEN_COPY.slotBasisQuestion },
     { key: 'g_capacity', label: 'Guests', title: 'How many guests?' },
+    // Per-person slots only: the smallest group a single booking may be. Its own
+    // stepper screen (like years/guests), default 1 = no minimum. Sits between
+    // the ceiling (g_capacity) and the price, so a host sets "up to N, at least
+    // M" as one thought. Dropped entirely for a private/whole-group slot.
+    { key: 'g_slot_min', label: 'Minimum', title: GUEST_SCREEN_COPY.slotMinQuestion },
     { key: 'g_menu', label: 'Price', title: 'What you offer, and what it costs' },
     { key: 'g_expect', label: 'Details', title: 'What can a guest expect?' },
     // Not "Registration". Registration and skills never co-occur across the
@@ -198,18 +240,40 @@ export function stepApplies(step: StepKey, trade: string, ctx?: StepContext): bo
             // provider travels to the guest (comes_to_you) or the guests come to
             // a session (slot). A made-to-order product has no guests, and
             // 'other' has no shape, so both skip it.
+            // The private/shared pricing basis — slot only. A made-to-order
+            // product and a traveller price per item/enquiry, not per session.
+            case 'g_slot_basis':
+                return shape === 'slot';
             case 'g_capacity':
                 return shape === 'comes_to_you' || shape === 'slot';
-            // Where and when, in one step. Every guest needs a location —
-            // submitProblems requires at least one area for anyone, and the
-            // marketplace has to know where they are. The wording adapts (how
-            // far will you travel vs where is it), and the shape decides whether
-            // a schedule shows inside it: a slot picks weekly hours, a
-            // made-to-order sets a lead time, a comes-to-you arranges it on the
-            // enquiry. The step is always there so nobody is stranded on an
-            // areas or availability error with no screen to fix it on.
+            // The per-person minimum — a slot that is priced per person (the
+            // shared answer). A private/whole-group slot is one booking whatever
+            // the head count, so it has no minimum-people rule and no screen.
+            // null (not yet answered) hides it too — the basis screen comes
+            // first, so by the time this could apply the answer exists.
+            case 'g_slot_min':
+                return shape === 'slot' && (ctx.slotOffer === 'shared' || ctx.slotOffer === 'both');
+            // The notice period, made-to-order only — its own screen before the
+            // delivery areas. Other shapes have no notice (a slot has a schedule
+            // inside g_area; a traveller arranges it on the enquiry).
+            case 'g_notice':
+                return shape === 'made_to_order';
+            // The come-to-me / travel fork — slot only, and only the three
+            // categories that genuinely go either way. The rest default to
+            // come-to-me (see defaultSlotFulfilment) and never see this screen.
+            case 'g_slot_where':
+                return shape === 'slot' && slotAsksWhereFork(ctx.category);
+            // The location (the PLACE), every guest. A made-to-order's notice
+            // moved to g_notice; a slot's length and hours moved to the When
+            // section; so this is now purely the address or the coverage regions.
+            // Always present so nobody is stranded on an areas error with no
+            // screen to fix it on.
             case 'g_area':
                 return true;
+            // The When section — slots only. Session length, then weekly hours.
+            case 'g_slot_length':
+            case 'g_slot_hours':
+                return shape === 'slot';
             default:
                 return false;
         }
@@ -281,9 +345,13 @@ export function stepsFor(trade: string, ctx?: StepContext): Step[] {
 
 const GUEST_SECTIONS: { key: string; label: string; steps: StepKey[] }[] = [
     { key: 'about', label: GUEST_SCREEN_COPY.sectionAboutYou, steps: ['g_you', 'g_creds'] },
-    { key: 'location', label: GUEST_SCREEN_COPY.sectionLocation, steps: ['g_area'] },
+    { key: 'location', label: GUEST_SCREEN_COPY.sectionLocation, steps: ['g_notice', 'g_slot_where', 'g_area'] },
+    // Slots only: session length + weekly hours. A section with no live steps
+    // drops out of the rail (sectionsFor filters by stepApplies), so a
+    // made-to-order or comes-to-you guest never sees a "When" section at all.
+    { key: 'when', label: GUEST_SCREEN_COPY.sectionWhen, steps: ['g_slot_length', 'g_slot_hours'] },
     { key: 'photos', label: GUEST_SCREEN_COPY.sectionPhotos, steps: ['g_photos'] },
-    { key: 'pricing', label: GUEST_SCREEN_COPY.sectionPricing, steps: ['g_capacity', 'g_menu'] },
+    { key: 'pricing', label: GUEST_SCREEN_COPY.sectionPricing, steps: ['g_slot_basis', 'g_capacity', 'g_slot_min', 'g_menu'] },
     { key: 'details', label: GUEST_SCREEN_COPY.sectionDetails, steps: ['g_expect'] },
     // Finish is now a single screen: the account, with one responsibility
     // confirmation folded in above submit. The old checks and contact steps that
@@ -406,11 +474,17 @@ const STEP_FIELDS: Record<StepKey, string[]> = {
     g_you: [],
     g_creds: [],
     g_about: [],
+    g_slot_basis: [],
     g_capacity: [],
+    g_slot_min: [],
     g_menu: [],
     g_expect: [],
     g_photos: [],
+    g_notice: [],
+    g_slot_where: [],
     g_area: [],
+    g_slot_length: [],
+    g_slot_hours: [],
     finish: [],
 };
 
@@ -424,8 +498,19 @@ const GUEST_STEP_FIELDS: Partial<Record<StepKey, string[]>> = {
     trade: ['trade', 'audience'],
     // No naming step for a guest: business_name is derived from the account at
     // submit, not asked, so it belongs to no step's Next.
-    // Location and the weekly hours both live on the where-and-when step.
-    g_area: ['areas', 'availability'],
+    // g_area is the PLACE: the coverage regions (travel), the fulfilment fork
+    // and the collection/come-to-me address. The weekly hours ('availability')
+    // moved to its own When-section screen, g_slot_hours, so its error lands
+    // there rather than back on the location screen.
+    g_area: ['areas', 'fulfilment', 'collection_address'],
+    g_slot_hours: ['availability'],
+    // The per-person minimum must not exceed the capacity ceiling; that problem
+    // belongs to the minimum screen, so a greyed Next and "go to first problem"
+    // both land here.
+    g_slot_min: ['slot_min'],
+    // The priced-item requirement belongs to the pricing step, so a greyed Next
+    // and "go to first problem" both land here.
+    g_menu: ['menu'],
     // No contact step: contact_email is derived from the account at submit (so
     // submitProblems no longer raises it for a guest) and the phone lives on the
     // profile — neither belongs to a step's Next.

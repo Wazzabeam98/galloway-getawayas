@@ -77,7 +77,13 @@ echo "pre-push: running the build…"
 # weaker of the two: tsconfig.test.json sets "strict": false and names route
 # files one at a time, so it compiles code next build refuses and ignores most
 # of app/api entirely.
-if ! npm run build > /tmp/gg-pre-push-build.log 2>&1; then
+#
+# Build into a THROWAWAY distDir, not `.next`. This is a compile-only gate — its
+# output is never served — but `.next` is what a running `next dev` serves from,
+# and overwriting it mid-session stamps that server with a build id its chunks
+# no longer match (404s until restarted). NEXT_DIST_DIR keeps the full build
+# gate while leaving the dev server's `.next` untouched.
+if ! NEXT_DIST_DIR=.next-verify npm run build > /tmp/gg-pre-push-build.log 2>&1; then
     echo >&2
     echo "pre-push: BUILD FAILED — nothing was pushed." >&2
     echo >&2

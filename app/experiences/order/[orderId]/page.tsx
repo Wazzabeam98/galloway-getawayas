@@ -85,7 +85,7 @@ export default async function OrderPage({ params, searchParams }: { params: { or
     if (!order || order.guest_id !== user.id) redirect('/trips');
 
     const [{ data: prov }, { data: listing, error: listingError }] = await Promise.all([
-        admin.from('service_providers').select('business_name, provider_name, based_line, headshot, description, cancellation_window_hours, slot_length_minutes').eq('id', order.provider_id).maybeSingle(),
+        admin.from('service_providers').select('business_name, provider_name, based_line, headshot, description, cancellation_window_hours, slot_length_minutes, fulfilment, collection_street, collection_town, collection_postcode').eq('id', order.provider_id).maybeSingle(),
         order.listing_id
             // The cottage the experience is attached to. `address` is not a column
             // on listings — the address is street_address + postcode + location —
@@ -116,8 +116,25 @@ export default async function OrderPage({ params, searchParams }: { params: { or
 
     const meta = STATUS[order.status] || { label: order.status, tone: 'over' as const };
     const live = order.status === 'authorised' || order.status === 'confirmed' || order.status === 'holding';
-    const comesToCottage = order.shape === 'comes_to_you';
+    // A slot now carries fulfilment too: 'collection' = the guest comes to the
+    // host's address, 'delivery' = the host runs the session at the guest's
+    // cottage. So "comes to your cottage" is a comes-to-you shape OR a travelling
+    // slot; the address block covers a collecting baker OR a come-to-me slot.
     const isSlot = order.shape === 'slot';
+    const slotTravels = isSlot && prov?.fulfilment === 'delivery';
+    const comesToCottage = order.shape === 'comes_to_you' || slotTravels;
+    // Made-to-order collection / a come-to-me slot: the provider's address is
+    // private and released only once the order is confirmed (i.e. paid —
+    // `charged`). Read via the service role above; never sent to the browser
+    // before then. Delivery and "both" still deliver, so only pure collection
+    // (or a come-to-me slot) shows the address on the day-of line.
+    const collects = prov?.fulfilment === 'collection' || prov?.fulfilment === 'both';
+    // Assembled from the three private fields, same order the cottage address
+    // uses: "The Old Bakery, 4 Shore Road, Kirkcudbright, DG6 4JT".
+    const collectionAddress = charged && collects
+        ? ([prov?.collection_street, prov?.collection_town, prov?.collection_postcode]
+            .map((p) => (p || '').trim()).filter(Boolean).join(', ') || null)
+        : null;
 
     return (
         <div className="min-h-screen bg-slate-50">
@@ -160,7 +177,7 @@ export default async function OrderPage({ params, searchParams }: { params: { or
                                 </p>
                                 <ol className="mt-3 space-y-1.5 text-sm text-emerald-800">
                                     <li className="flex gap-2"><span className="font-semibold">1.</span> Check your email for the receipt and the details.</li>
-                                    <li className="flex gap-2"><span className="font-semibold">2.</span> {comesToCottage ? `${who} will come to your cottage at the agreed time.` : isSlot ? `Turn up at the time you booked — the address is below.` : `${who} will be in touch about collection or delivery.`}</li>
+                                    <li className="flex gap-2"><span className="font-semibold">2.</span> {comesToCottage ? `${who} will come to your cottage at the agreed time.` : isSlot ? (collectionAddress ? `Go to ${collectionAddress} at the time you booked.` : `Turn up at the time you booked — the address is below.`) : collectionAddress ? `Collect from ${collectionAddress}.` : `${who} will be in touch about collection or delivery.`}</li>
                                     <li className="flex gap-2"><span className="font-semibold">3.</span> Anything to sort? Message {who} below.</li>
                                 </ol>
                                 <div className="mt-4 flex flex-wrap gap-2">
@@ -169,7 +186,7 @@ export default async function OrderPage({ params, searchParams }: { params: { or
                                             title: (order.item_name || 'Experience') + ' — ' + who,
                                             date: String(order.service_date).slice(0, 10),
                                             time: order.service_time || null,
-                                            where: isSlot ? (prov?.based_line || who) : (cottageAddress || 'Your cottage'),
+                                            where: comesToCottage ? (cottageAddress || 'Your cottage') : isSlot ? (collectionAddress || prov?.based_line || who) : (collectionAddress || cottageAddress || 'Your cottage'),
                                             details: (order.item_description || '') + (order.note ? '\n\nYour note: ' + order.note : ''),
                                             durationMin: Number(prov?.slot_length_minutes) || 60,
                                         })}
@@ -210,7 +227,18 @@ export default async function OrderPage({ params, searchParams }: { params: { or
                                             {comesToCottage ? (
                                                 <>Comes to your cottage{listing && listing.title ? ' — ' + listing.title : ''}{cottageAddress ? <span className="block text-slate-500">{cottageAddress}</span> : null}</>
                                             ) : isSlot ? (
-                                                <>You go to {who}{prov && prov.based_line ? <span className="block text-slate-500">{prov.based_line}</span> : <span className="block text-slate-500">Message them below for the exact address and directions.</span>}</>
+                                                // A come-to-me slot: the full address once paid (charged →
+                                                // collectionAddress), the public town before then, and a
+                                                // fallback only if the host set no address at all.
+                                                <>You go to {who}{collectionAddress ? (
+                                                    <span className="block text-slate-500">{collectionAddress}</span>
+                                                ) : prov && prov.based_line ? (
+                                                    <span className="block text-slate-500">{prov.based_line}{charged ? '' : ' — full address once your place is confirmed'}</span>
+                                                ) : (
+                                                    <span className="block text-slate-500">Message them below for the exact address and directions.</span>
+                                                )}</>
+                                            ) : collectionAddress ? (
+                                                <>Collect from {who}<span className="block text-slate-500">{collectionAddress}</span></>
                                             ) : (
                                                 <>{who} will arrange collection or delivery with you — message them below.</>
                                             )}

@@ -14,8 +14,10 @@ import {
 } from 'lucide-react';
 import { TradeTile, TradeTileGrid, TRADE_ICONS, GROUP_ICONS } from '@/components/services/TradeTiles';
 import { compressImage } from '@/lib/compressImage';
-import { getImageUrl, generateRandomNumber, resolveTitle, backfillName } from '@/lib/utils';
+import { getImageUrl, generateRandomNumber, backfillName, firstName } from '@/lib/utils';
+import { buildStreetAddress } from '@/lib/address';
 import { ORDER_UNITS } from '@/lib/serviceOrders';
+import { slotOfferingFromUnits, offeringHasShared, type SlotOffering } from '@/lib/serviceSlots';
 import Env from '@/config/Env';
 import {
     skillKey,
@@ -73,11 +75,15 @@ import {
     guestCategoryIsFood,
     guestAsksExpertise,
     guestQualificationsRequired,
-    checksFor,
+    slotAsksWhereFork,
+    slotIsMeetingPoint,
+    defaultSlotFulfilment,
+    collectionFieldsForWrite,
     DIETARY_OPTIONS,
     DEFAULT_SERVICE_COMMISSION,
 } from '@/lib/serviceProviders';
 import { serviceCommission } from '@/lib/pricing';
+import { PROVIDER_TERMS, PROVIDER_TERMS_VERSION } from '@/lib/providerTerms';
 import { GUEST_SCREEN_COPY, GUEST_REGIONS, GUEST_COVERAGE_ALL_KEY, HOST_LOCATION_COPY } from '@/lib/strings';
 import { PhotoEditorGrid } from './PhotoEditorGrid';
 import {
@@ -174,18 +180,22 @@ function NumberStepper({
     const nudge = (dir: number) => ((solid || has) ? commit(shown + dir * step) : commit(suggestion ?? min));
 
     const lg = size === 'lg';
+    // lg is the whole-screen stepper (years, guests, notice). It is sized DOWN on
+    // a phone — at full desktop size the number field plus the two circles and the
+    // suffix are wider than a 375px screen and clip at both edges. Desktop keeps
+    // the big size via the sm: breakpoints.
     const circle =
-        (lg ? 'h-16 w-16 ' : 'h-11 w-11 ')
+        (lg ? 'h-14 w-14 sm:h-16 sm:w-16 ' : 'h-11 w-11 ')
         + 'flex flex-none items-center justify-center rounded-full border border-slate-300 '
         + 'text-slate-600 transition hover:border-slate-500 focus:outline-none focus-visible:ring-2 '
         + 'focus-visible:ring-emerald-600 disabled:opacity-40 disabled:hover:border-slate-300';
-    const glyph = lg ? 'h-6 w-6' : 'h-4 w-4';
+    const glyph = lg ? 'h-5 w-5 sm:h-6 sm:w-6' : 'h-4 w-4';
     const numberField = lg
-        ? 'w-44 bg-transparent text-center text-8xl sm:text-9xl font-extrabold tabular-nums text-slate-900 placeholder:font-extrabold placeholder:text-slate-300 focus:outline-none [appearance:textfield] [&::-webkit-outer-spin-button]:appearance-none [&::-webkit-inner-spin-button]:appearance-none'
+        ? 'w-28 sm:w-44 bg-transparent text-center text-7xl sm:text-9xl font-extrabold tabular-nums text-slate-900 placeholder:font-extrabold placeholder:text-slate-300 focus:outline-none [appearance:textfield] [&::-webkit-outer-spin-button]:appearance-none [&::-webkit-inner-spin-button]:appearance-none'
         : 'w-16 bg-transparent text-center text-4xl font-extrabold tabular-nums text-slate-900 placeholder:font-extrabold placeholder:text-slate-300 focus:outline-none [appearance:textfield] [&::-webkit-outer-spin-button]:appearance-none [&::-webkit-inner-spin-button]:appearance-none';
 
     return (
-        <div className={'flex items-center ' + (lg ? 'gap-8 sm:gap-10' : 'gap-4')}>
+        <div className={'flex items-center ' + (lg ? 'gap-4 sm:gap-10' : 'gap-4')}>
             <button type="button" onClick={() => nudge(-1)} disabled={has && shown <= min}
                 aria-label="Decrease" className={circle}>
                 <Minus className={glyph} strokeWidth={2} />
@@ -243,6 +253,32 @@ function HubRow({ filled, label, suffix, prompt, summary, onOpen, thumb }: {
                 <span className="block truncate text-sm text-slate-500">{filled && summary ? summary : prompt}</span>
             </span>
             <ChevronRight className="h-5 w-5 flex-none text-slate-400" />
+        </button>
+    );
+}
+
+// The one large, centred choice card every either/or fork in the guest wizard
+// uses — the fulfilment fork (delivery / collection / both), the slot
+// private/shared answer, and the slot come-to-me / travel fork. Tall so a
+// screenful of two or three options fills the space, with the label above and
+// the hint below, both centred. There is deliberately no second, smaller set
+// of card styles: a fork that wants cards uses this. `radio` gives the button
+// radiogroup semantics (role="radio" + aria-checked); without it the card is an
+// aria-pressed toggle, which is what the slot forks use.
+function ChoiceCard({ selected, onSelect, title, hint, radio }: {
+    selected: boolean;
+    onSelect: () => void;
+    title: string;
+    hint: string;
+    radio?: boolean;
+}) {
+    return (
+        <button type="button" onClick={onSelect}
+            {...(radio ? { role: 'radio', 'aria-checked': selected } : { 'aria-pressed': selected })}
+            className={'flex min-h-[9rem] flex-col items-center justify-center gap-1.5 rounded-2xl border-2 bg-white px-5 text-center transition hover:shadow-sm focus:outline-none focus-visible:ring-2 focus-visible:ring-emerald-600 sm:min-h-[14rem] '
+                + (selected ? 'border-emerald-600 shadow-sm' : 'border-slate-200 hover:border-slate-300')}>
+            <span className="text-lg font-semibold text-slate-900">{title}</span>
+            <span className="text-sm text-slate-500">{hint}</span>
         </button>
     );
 }
@@ -431,12 +467,22 @@ function ApplicationForm() {
     const [acctBusy, setAcctBusy] = useState(false);
     const [acctError, setAcctError] = useState('');
     const [acctConsent, setAcctConsent] = useState(false);
-    // The single responsibility confirmation on the finish screen (it replaced
-    // the per-category checks). The tick itself is held in `declarations`
-    // under the 'responsibility' key, so guestProviderFields writes it like any
-    // other check; this is only the error shown when a guest presses send
-    // without it. Required to send — see the save() guard and the gated button.
-    const [responsibilityError, setResponsibilityError] = useState('');
+    // The provider terms agreement on the finish screen (it replaced the single
+    // responsibility tickbox, which replaced the per-category checks). `termsAgreed`
+    // is the agree box; on submit it is recorded in the `declarations` jsonb as
+    // { terms_version, terms_agreed_at } — the version they agreed to and when, so
+    // a bare boolean can't hide that the text has moved on since. Required to send:
+    // see the save() guard and the gated button. `termsError` is the gate message.
+    const [termsAgreed, setTermsAgreed] = useState(false);
+    const [termsError, setTermsError] = useState('');
+    // The terms open in a modal from the agree line, so the finish screen itself
+    // stays a preview of what they're submitting rather than a wall of terms.
+    const [termsModalOpen, setTermsModalOpen] = useState(false);
+    // The finish-screen byline: the provider's first name, shown beneath their
+    // photo. Derived from the account (resolveGuestBylineNow is async), so it is
+    // loaded into state when the finish screen is reached. The title itself is
+    // now the Title field (professionalTitle), computed inline.
+    const [summaryByline, setSummaryByline] = useState('');
     const [checkYourEmail, setCheckYourEmail] = useState(false);
 
     // The verify-your-email gate (g_verify). A guest signs in up front with a
@@ -584,12 +630,56 @@ function ApplicationForm() {
     const [shape, setShape] = useState('');
     // Made-to-order only: notice needed, in days ("how much notice do you need?").
     const [leadTimeDays, setLeadTimeDays] = useState('');
-    // Slot only. `slotPrivate` is the private/shared answer (null until asked):
-    // private → the whole session for one group (sells as one booking, flat
-    // price); shared → several people join (per-person price, seats = capacity).
-    // It is inferred on load from the session item's UNIT, not the capacity
-    // number, so a private slot can hold many yet still sell whole.
-    const [slotPrivate, setSlotPrivate] = useState<boolean | null>(null);
+    // Made-to-order fulfilment: '' | 'delivery' | 'collection' | 'both' — the fork
+    // between "you take it to the guest" (delivery regions) and "the guest comes to
+    // you" (a private collection address). Separate from `shape` on purpose.
+    const [fulfilment, setFulfilment] = useState('');
+    // The collection address as three fields — a single blob can't be split back
+    // into its town, and the town is what a guest reads (the public based_line).
+    // Street and postcode stay private; the town's public copy is based_line.
+    const [collectionStreet, setCollectionStreet] = useState('');
+    const [collectionTown, setCollectionTown] = useState('');
+    const [collectionPostcode, setCollectionPostcode] = useState('');
+    // Whether the collection address is safe to write. TRUE for a fresh flow
+    // (nothing to lose) and once a returning provider's address has actually been
+    // read back from provider_private; FALSE for a returning provider until that
+    // read succeeds. The write omits the collection fields while this is false AND
+    // they are empty, so a not-loaded value can never blank a real one on save —
+    // the same class of bug as the slot-capacity default. See guestProviderFields.
+    const [collectionAddressLoaded, setCollectionAddressLoaded] = useState(true);
+    // The optional address lookup (Ideal Postcodes) — suggestions for a typed
+    // postcode. Manual entry is the primary path; this fills the fields when the
+    // lookup is available and degrades to the manual message when it isn't.
+    const [collectionLookupQuery, setCollectionLookupQuery] = useState('');
+    const [collectionLookupResults, setCollectionLookupResults] = useState<Array<{ id: string; label: string }>>([]);
+    const [collectionLookupBusy, setCollectionLookupBusy] = useState(false);
+    const [collectionLookupError, setCollectionLookupError] = useState('');
+    // Guards against an earlier search resolving after a later one when typing fast.
+    const collectionLookupSeq = useRef(0);
+    // A bottom fade on the suggestions list — a scroll signal that shows whether
+    // or not the browser draws the scrollbar (macOS overlay bars fade out). True
+    // while there is more of the list below the visible area.
+    const collectionListRef = useRef<HTMLUListElement>(null);
+    const [collectionMoreBelow, setCollectionMoreBelow] = useState(false);
+    // The list's max height, measured to fit the space above the pinned footer so
+    // the LIST scrolls itself rather than pushing the page. Null on mobile (and
+    // before first measure), where the CSS max-height and native scroll stand.
+    const [collectionListMaxH, setCollectionListMaxH] = useState<number | null>(null);
+    // The three manual boxes stay hidden behind the lookup until they're needed —
+    // the screen is just the postcode lookup by default. They open when the
+    // provider chooses to type it by hand, when a lookup fills or fails, or when a
+    // returning provider already has an address loaded (see showCollectionFields).
+    const [collectionManual, setCollectionManual] = useState(false);
+    // Slot only. `slotOffer` is what the provider sells: 'private' (the whole
+    // session for one group — a flat price, one booking fills it), 'shared'
+    // (several people join — a per-person price, seats = capacity), or 'both'
+    // (offer either; each TIME is then sold as whichever a guest books first).
+    // Null until asked. Inferred on load from the session items' UNITS, not the
+    // capacity number — a private slot can hold many yet still sell whole — so a
+    // returning host who set up under the old single-item model sees exactly what
+    // they had (one flat item → 'private', one per-person item → 'shared'), never
+    // silently upgraded to 'both'.
+    const [slotOffer, setSlotOffer] = useState<SlotOffering | null>(null);
     // Maximum guests — the group size. Asked on its own screen in the Pricing
     // section (g_capacity). For a slot it is written to the slot_capacity column
     // (a shared slot sells that many seats via sessionCapacity; a private slot
@@ -598,14 +688,46 @@ function ApplicationForm() {
     // stores the shown value on an untouched pass, like the years screen.
     const [maxGuests, setMaxGuests] = useState('');
     const [slotLength, setSlotLength] = useState('');
-    // The declarations they've confirmed on the checks screen, keyed by check
-    // (lib/serviceProviders GUEST_CHECKS). Non-blocking — recorded for the owner
-    // to weigh at review, never a gate on Next or submit.
-    const [declarations, setDeclarations] = useState<Record<string, boolean>>({});
+    // Per-person slots only: the smallest group a single booking may be
+    // (slot_min_people). Airbnb-style — the guest books and pays for at least
+    // this many. Blank/1 means no minimum. Its own stepper screen (g_slot_min),
+    // shown only for a shared slot; the booking route is the real gate, this is
+    // the convenience floor. Loaded from slot_min_people on return.
+    const [slotMinPeople, setSlotMinPeople] = useState('');
+    // Choosing the offering (re)shapes the slot's item list to match: a private
+    // hire is one flat item, a shared table one per-person item, 'both' is one of
+    // each. Existing rows are kept BY UNIT, so a price already entered survives a
+    // change of mind and a returning host's single item is preserved when they
+    // add the second product; a fresh product gets a default name (so the row is
+    // not nameless and dropped) and an empty price to set on the menu step.
+    const applyOffer = (offer: SlotOffering) => {
+        setSlotOffer(offer);
+        setItems((prev) => {
+            const flat = prev.find((r) => String(r.unit) === 'flat');
+            const person = prev.find((r) => String(r.unit) === 'person');
+            const blankFlat = { id: undefined as string | undefined, name: 'Private hire', description: '', price: '', unit: 'flat', image: null as string | null };
+            const blankPerson = { id: undefined as string | undefined, name: 'Per person', description: '', price: '', unit: 'person', image: null as string | null };
+            if (offer === 'private') return [flat || blankFlat];
+            if (offer === 'shared') return [person || blankPerson];
+            return [flat || blankFlat, person || blankPerson];
+        });
+    };
+    // The declarations jsonb, loaded from a returning provider's row. It now holds
+    // the terms acceptance ({ terms_version, terms_agreed_at }), so values are not
+    // all booleans — kept only to derive whether they've agreed to the CURRENT
+    // terms version on return (see the load below).
+    const [declarations, setDeclarations] = useState<Record<string, any>>({});
     // The weekly opening hours — one row per open period. day is 0..6 (0=Sunday).
     const [schedule, setSchedule] = useState<Array<{ day: number; open: string; close: string }>>([]);
-    // Dates taken off (block-a-date), as 'yyyy-mm-dd' keys.
-    const [blockedDates, setBlockedDates] = useState<string[]>([]);
+    // The When screen's hours control. 'simple' is one set of hours across all
+    // the chosen days; 'perday' gives particular days their own. sharedOpen/close
+    // are the SUGGESTION shown in the control — they write nothing on their own,
+    // exactly like the stepper defaults: the schedule stays empty until a day is
+    // actually picked, and only then does a day take these hours. Derived from an
+    // existing schedule on load.
+    const [hoursMode, setHoursMode] = useState<'simple' | 'perday'>('simple');
+    const [sharedOpen, setSharedOpen] = useState('10:00');
+    const [sharedClose, setSharedClose] = useState('18:00');
     // Keyed by extra. Price stays a string for the same reason band prices
     // do — a half-typed number should not be coerced mid-keystroke.
     const [extras, setExtras] = useState<Record<string, { offered: boolean; price: string; notes: string }>>({});
@@ -727,7 +849,7 @@ function ApplicationForm() {
                     // provider_name was retired with the "Your name" field), and
                     // selecting a column the authenticated role can't read 403s
                     // the whole load. They stay revoked.
-                    .select('id, business_name, trade, description, sms_opt_out, audience, photos, logo, status, review_note, callout_fee, hourly_rate, callout_waived, does_gas, does_oil, kind, pricing_choice, billable_hourly_rate, covered_bands, headshot, dietary_note, custom_label, shape, lead_time_days, slot_length_minutes, slot_capacity, declarations, guest_details')
+                    .select('id, business_name, trade, description, sms_opt_out, audience, photos, logo, status, review_note, callout_fee, hourly_rate, callout_waived, does_gas, does_oil, kind, pricing_choice, billable_hourly_rate, covered_bands, headshot, dietary_note, custom_label, shape, lead_time_days, slot_length_minutes, slot_capacity, slot_min_people, declarations, guest_details, fulfilment')
                     .eq('owner_id', session.user.id)
                     .eq('trade', tradeFromUrl)
                     .maybeSingle();
@@ -808,6 +930,23 @@ function ApplicationForm() {
                     const ex = existing as any;
                     if (ex.shape) setShape(ex.shape);
                     if (ex.lead_time_days) setLeadTimeDays(String(ex.lead_time_days));
+                    if (ex.fulfilment) setFulfilment(String(ex.fulfilment));
+                    // The collection address is revoked on the table, so it can't
+                    // ride the select above — the owner reads their own back through
+                    // provider_private. Mark it NOT loaded until that read succeeds,
+                    // so a failed read can't let a blank overwrite a real address on
+                    // save (guestProviderFields omits it while unloaded + empty).
+                    setCollectionAddressLoaded(false);
+                    const { data: priv, error: privErr } = await supabase
+                        .from('provider_private')
+                        .select('collection_street, collection_town, collection_postcode')
+                        .eq('id', existing.id).maybeSingle();
+                    if (!privErr) {
+                        setCollectionStreet((priv?.collection_street as string) || '');
+                        setCollectionTown((priv?.collection_town as string) || '');
+                        setCollectionPostcode((priv?.collection_postcode as string) || '');
+                        setCollectionAddressLoaded(true);
+                    }
                     if (ex.slot_length_minutes) setSlotLength(String(ex.slot_length_minutes));
                     // Capacity loads into the max-guests screen from the stored
                     // column (authoritative for existing slot listings, so an
@@ -815,14 +954,21 @@ function ApplicationForm() {
                     if (ex.slot_capacity !== null && ex.slot_capacity !== undefined) {
                         setMaxGuests(String(ex.slot_capacity));
                     }
-                    // Private vs shared comes from the session item's UNIT, not
-                    // the capacity number — a private slot can hold six yet sell
-                    // whole, so capacity no longer implies the answer. Slots are
-                    // single-item with a uniform unit, but read it as "any
-                    // per-person item ⇒ shared" so a stray can't mis-load it.
+                    // The offering comes from the session items' UNITS, not the
+                    // capacity number — a private slot can hold six yet sell whole.
+                    // A flat item is a private hire, a per-person item a shared
+                    // table; both present is 'both'. This is the returning-host
+                    // path: someone who set up under the old single-item model has
+                    // one item and no stored offering, and loads as exactly what
+                    // that item is — 'private' or 'shared' — never flipped.
                     if (ex.shape === 'slot') {
-                        const anyPerson = (itemRows || []).some((r: any) => String(r.unit) === 'person');
-                        setSlotPrivate(!anyPerson);
+                        setSlotOffer(slotOfferingFromUnits((itemRows || []).map((r: any) => r.unit)));
+                        // The per-person minimum, only meaningful for a shared
+                        // slot. Load it back so a returning host edits what they
+                        // set; 1 (or unset) reads as no minimum.
+                        if (ex.slot_min_people !== null && ex.slot_min_people !== undefined && Number(ex.slot_min_people) > 1) {
+                            setSlotMinPeople(String(ex.slot_min_people));
+                        }
                     }
                     if (audienceForTrade(existing.trade || tradeFromUrl) === 'guest') {
                         const byLabel = GUEST_CATEGORIES.filter((c) => c.label && c.label === ex.custom_label)[0];
@@ -830,10 +976,13 @@ function ApplicationForm() {
                         // ('other') marks "already past the picker" without claiming
                         // a food category it isn't.
                         setGuestCategory(byLabel ? byLabel.key : 'other');
-                        // Their declarations, so a returning provider sees what
-                        // they already confirmed rather than a blank checks screen.
+                        // Their declarations, which now hold the terms acceptance.
+                        // Pre-tick the agree box only if they already agreed to the
+                        // CURRENT terms version — if the terms have moved on since,
+                        // the box starts unticked so they agree to the new text.
                         if (ex.declarations && typeof ex.declarations === 'object') {
-                            setDeclarations(ex.declarations as Record<string, boolean>);
+                            setDeclarations(ex.declarations as Record<string, any>);
+                            setTermsAgreed((ex.declarations as any).terms_version === PROVIDER_TERMS_VERSION);
                         }
                         // Their content answers in their own words — the seven
                         // fields that now live in the guest_details jsonb column
@@ -860,19 +1009,19 @@ function ApplicationForm() {
                         .eq('provider_id', existing.id)
                         .order('day_of_week', { ascending: true });
                     if (avail && avail.length) {
-                        setSchedule(avail.map((r: any) => ({
+                        const rows = avail.map((r: any) => ({
                             day: r.day_of_week,
                             open: String(r.open_time || '').slice(0, 5),
                             close: String(r.close_time || '').slice(0, 5),
-                        })));
+                        }));
+                        setSchedule(rows);
+                        // If every open day shares the same hours, the simple
+                        // control can represent them; otherwise open on the
+                        // per-day view so nothing already set is flattened.
+                        const uniform = rows.every((r: any) => r.open === rows[0].open && r.close === rows[0].close);
+                        if (uniform) { setSharedOpen(rows[0].open); setSharedClose(rows[0].close); setHoursMode('simple'); }
+                        else setHoursMode('perday');
                     }
-                    const { data: blks } = await supabase
-                        .from('slot_blocks')
-                        .select('blocked_date')
-                        .eq('provider_id', existing.id)
-                        .order('blocked_date', { ascending: true });
-                    if (blks && blks.length) setBlockedDates(blks.map((b: any) => b.blocked_date));
-
                     // The numbers only. Whether one has been checked is not
                     // read here and not shown here — it is not theirs to see
                     // or to change, and a form that displayed it would invite
@@ -1096,15 +1245,25 @@ function ApplicationForm() {
             // The category, shape and its fields. Set before the filledIn check
             // so a guest who picked a category but typed nothing still lands past
             // the picker rather than being asked to choose it again.
+            if (d.guestGroup) setGuestGroup(d.guestGroup);
             if (d.guestCategory) setGuestCategory(d.guestCategory);
             if (d.declarations && typeof d.declarations === 'object') setDeclarations(d.declarations);
             if (d.shape) setShape(d.shape);
             if (d.leadTimeDays) setLeadTimeDays(d.leadTimeDays);
-            if (d.slotPrivate !== undefined && d.slotPrivate !== null) setSlotPrivate(d.slotPrivate === true);
+            if (d.fulfilment) setFulfilment(d.fulfilment);
+            // The draft is this browser's own, and it's the source of truth here
+            // (no DB row yet), so a restored address is authoritative — leave
+            // collectionAddressLoaded true (its default). Never persisted from a
+            // DB read; only the provider's own in-progress typing.
+            if (d.collectionStreet) setCollectionStreet(d.collectionStreet);
+            if (d.collectionTown) setCollectionTown(d.collectionTown);
+            if (d.collectionPostcode) setCollectionPostcode(d.collectionPostcode);
+            if (d.slotOffer) setSlotOffer(d.slotOffer);
+            else if (d.slotPrivate !== undefined && d.slotPrivate !== null) setSlotOffer(d.slotPrivate === true ? 'private' : 'shared');
             if (d.maxGuests) setMaxGuests(d.maxGuests);
             if (d.slotLength) setSlotLength(d.slotLength);
+            if (d.slotMinPeople) setSlotMinPeople(d.slotMinPeople);
             if (Array.isArray(d.schedule)) setSchedule(d.schedule);
-            if (Array.isArray(d.blockedDates)) setBlockedDates(d.blockedDates);
 
             // Whether there is anything in here worth calling kept work.
             //
@@ -1169,7 +1328,7 @@ function ApplicationForm() {
                     // as a live step during restore, and a signed-in applicant
                     // with any saved draft is resolved onto the email screen they
                     // should never see. A signed-in user has no g_verify step.
-                    ? { category: d.guestCategory, shape: d.shape, hasSession: !!sessionArg }
+                    ? { category: d.guestCategory, shape: d.shape, hasSession: !!sessionArg, slotOffer: d.slotOffer ?? (d.slotPrivate === true ? 'private' : d.slotPrivate === false ? 'shared' : null) }
                     : undefined;
             const landing = resolveStep(restoreTrade, d.step, restoreCtx);
             setStep(landing);
@@ -1229,9 +1388,15 @@ function ApplicationForm() {
                     // The Airbnb-shaped content answers.
                     yearsDoing, professionalTitle, qualifications, recognition,
                     whatToExpect,
-                    // The category, the inferred shape and its own fields.
-                    guestCategory, shape, leadTimeDays,
-                    slotPrivate, maxGuests, slotLength, schedule, blockedDates,
+                    // The category (and the group above it, so the sub-type screen
+                    // still has its cards after a reload), the inferred shape and
+                    // its own fields.
+                    guestGroup, guestCategory, shape, leadTimeDays,
+                    // Made-to-order fulfilment fork + its collection address. The
+                    // address is the provider's own, in their own browser's draft
+                    // — never shared, and it's a private column server-side.
+                    fulfilment, collectionStreet, collectionTown, collectionPostcode,
+                    slotOffer, maxGuests, slotLength, slotMinPeople, schedule,
                     // The checks they've ticked so far.
                     declarations,
                 })
@@ -1249,8 +1414,9 @@ function ApplicationForm() {
         items, providerName, headshot, dietaryNote, dietaryOptions,
         yearsDoing, professionalTitle, qualifications, recognition,
         whatToExpect,
-        guestCategory, shape, leadTimeDays,
-        slotPrivate, maxGuests, slotLength, schedule, blockedDates,
+        guestGroup, guestCategory, shape, leadTimeDays,
+        fulfilment, collectionStreet, collectionTown, collectionPostcode,
+        slotOffer, maxGuests, slotLength, slotMinPeople, schedule,
         declarations,
     ]);
 
@@ -1285,7 +1451,176 @@ function ApplicationForm() {
         covered_bands: coveredBands,
         shape,
         scheduleCount: schedule.length,
+        // The slot pricing basis and its two group numbers, so the min ≤ capacity
+        // rule can be checked. slotMinPeople blank reads as no minimum.
+        slotOffer,
+        slotCapacity: maxGuests,
+        slotMinPeople,
+        // Items priced above zero — the marketplace lists only priced providers,
+        // so a guest listing needs at least one to be bookable.
+        pricedItemCount: (items || []).filter((i) => Number(String(i.price ?? '').trim()) > 0).length,
+        fulfilment,
+        // A usable collection address needs all three: the street and postcode a
+        // guest actually finds, and the town that becomes the public based_line.
+        hasCollectionAddress: collectionStreet.trim() !== ''
+            && collectionTown.trim() !== ''
+            && collectionPostcode.trim() !== '',
     });
+
+    // The optional address lookup (Ideal Postcodes) for the collection address,
+    // reusing the shared /api/address routes and helpers. Manual entry is the
+    // primary path (the three fields below always work); this fills them when the
+    // lookup is available and shows a plain "enter it by hand" line when it isn't
+    // (an absent key returns 503, a rejected one 502). The region gate lives in
+    // /api/address/get, which refuses an address outside Dumfries & Galloway.
+    // Search-as-you-type. Called by the debounce effect once the query settles,
+    // never per keystroke. `seq` guards against an earlier request resolving after
+    // a later one (typing fast) and overwriting fresher results. A failure just
+    // shows the "enter it by hand" line and leaves the lookup open — the manual
+    // link is the escape; we don't yank the box away mid-type.
+    const runCollectionLookup = async (query: string) => {
+        const q = query.trim();
+        if (q.length < 3) { setCollectionLookupResults([]); return; }
+        const seq = ++collectionLookupSeq.current;
+        setCollectionLookupBusy(true);
+        setCollectionLookupError('');
+        try {
+            const res = await fetch('/api/address/autocomplete?q=' + encodeURIComponent(q));
+            const body = await res.json();
+            if (seq !== collectionLookupSeq.current) return;   // a newer keystroke won
+            if (!res.ok || !body.ok) {
+                setCollectionLookupError(GUEST_SCREEN_COPY.collectionLookupManual);
+                setCollectionLookupResults([]);
+                return;
+            }
+            const suggestions = (body.suggestions || []).map((s: any) => ({ id: String(s.id), label: String(s.address || '') }));
+            setCollectionLookupError(suggestions.length ? '' : GUEST_SCREEN_COPY.collectionLookupManual);
+            setCollectionLookupResults(suggestions);
+        } catch {
+            if (seq !== collectionLookupSeq.current) return;
+            setCollectionLookupError(GUEST_SCREEN_COPY.collectionLookupManual);
+            setCollectionLookupResults([]);
+        } finally {
+            if (seq === collectionLookupSeq.current) setCollectionLookupBusy(false);
+        }
+    };
+
+    const pickCollectionSuggestion = async (id: string) => {
+        setCollectionLookupBusy(true);
+        setCollectionLookupError('');
+        try {
+            const res = await fetch('/api/address/get?id=' + encodeURIComponent(id));
+            const body = await res.json();
+            // The address is real but outside Dumfries & Galloway — say so
+            // plainly, naming where it is, and DON'T fill the fields. The lookup
+            // stays open so they can pick another; the manual link is still there.
+            if (body && body.outOfRegion) {
+                const where = body.district
+                    ? 'That address is in ' + body.district + ', outside Dumfries & Galloway.'
+                    : 'That address is outside Dumfries & Galloway.';
+                setCollectionLookupError(where + ' ' + GUEST_SCREEN_COPY.collectionOutOfRegionSuffix);
+                setCollectionLookupResults([]);
+                return;
+            }
+            if (!res.ok || !body.ok || !body.address) {
+                setCollectionLookupError(GUEST_SCREEN_COPY.collectionLookupManual);
+                return;
+            }
+            const a = body.address;
+            // buildStreetAddress folds a flat/sub-building into the one private
+            // street line — the same assembly add-a-property uses.
+            setCollectionStreet(buildStreetAddress(a.flat || '', '', a.street || ''));
+            setCollectionTown(a.town || '');
+            setCollectionPostcode(a.postcode || '');
+            setCollectionLookupResults([]);
+            setCollectionLookupError('');
+            // Collapse the lookup: clear its query (so the postcode doesn't show
+            // twice) and switch to the filled three fields.
+            setCollectionLookupQuery('');
+            setCollectionManual(true);
+        } catch {
+            setCollectionLookupError(GUEST_SCREEN_COPY.collectionLookupManual);
+        } finally {
+            setCollectionLookupBusy(false);
+        }
+    };
+
+    // "Search again" from the filled fields: clear them and drop back to the
+    // lookup with an empty box. Manual off + empty fields = lookup mode.
+    const searchCollectionAgain = () => {
+        setCollectionStreet('');
+        setCollectionTown('');
+        setCollectionPostcode('');
+        setCollectionManual(false);
+        setCollectionLookupQuery('');
+        setCollectionLookupResults([]);
+        setCollectionLookupError('');
+    };
+
+    // Search as they type: debounce the query and fire once it settles (≥3 chars),
+    // the way the old lookup did — no button to press. Only while in lookup mode
+    // (no address chosen and not typing by hand); a picked/manual address is a
+    // settled answer, not a search term.
+    const collectionInLookupMode = !collectionManual
+        && !collectionStreet.trim() && !collectionTown.trim() && !collectionPostcode.trim();
+    useEffect(() => {
+        if (!collectionInLookupMode) return;
+        const q = collectionLookupQuery.trim();
+        if (q.length < 3) { setCollectionLookupResults([]); return; }
+        const timer = setTimeout(() => { runCollectionLookup(q); }, 300);
+        return () => clearTimeout(timer);
+        // eslint-disable-next-line react-hooks/exhaustive-deps
+    }, [collectionLookupQuery, collectionInLookupMode]);
+
+    // Is there more of the suggestions list below the fold? Drives the bottom
+    // fade. Reads the list's CURRENT height, so it's correct once the cap below
+    // has been applied. Recomputed on scroll, on resize, and when results change.
+    const updateCollectionMoreBelow = () => {
+        const el = collectionListRef.current;
+        setCollectionMoreBelow(!!el && el.scrollHeight - el.scrollTop - el.clientHeight > 4);
+    };
+
+    // Cap the list to the space between its top and the panel's bottom edge (the
+    // pinned footer sits just below the panel), so the list fits above the footer
+    // and scrolls itself instead of pushing the page. Desktop only — on mobile
+    // the list keeps its CSS max-height and the page scrolls by thumb.
+    const measureCollectionListMax = () => {
+        const el = collectionListRef.current;
+        if (!el) return;
+        const desktop = typeof window !== 'undefined'
+            && window.matchMedia('(hover: hover) and (pointer: fine)').matches;
+        if (!desktop) { setCollectionListMaxH((prev) => (prev === null ? prev : null)); return; }
+        const panel = document.getElementById('signup-panel');
+        const boundary = panel ? panel.getBoundingClientRect().bottom : window.innerHeight;
+        const top = el.getBoundingClientRect().top;
+        // Leave room above the footer and for the "Enter it by hand" link beneath.
+        const avail = Math.floor(boundary - top - 52);
+        const capped = Math.max(160, avail);
+        setCollectionListMaxH((prev) => (prev === capped ? prev : capped));
+    };
+
+    // Measure the cap when the list appears or its results change (after paint —
+    // a bare rAF can fire before the list's position is final).
+    useEffect(() => {
+        const id = setTimeout(measureCollectionListMax, 60);
+        return () => clearTimeout(id);
+        // eslint-disable-next-line react-hooks/exhaustive-deps
+    }, [collectionLookupResults, collectionInLookupMode]);
+
+    // Once the cap (or results) has applied, measure whether more is below.
+    useEffect(() => {
+        const id = setTimeout(updateCollectionMoreBelow, 70);
+        return () => clearTimeout(id);
+        // eslint-disable-next-line react-hooks/exhaustive-deps
+    }, [collectionListMaxH, collectionLookupResults]);
+
+    // Re-measure on window resize while the list is showing.
+    useEffect(() => {
+        const onResize = () => { measureCollectionListMax(); updateCollectionMoreBelow(); };
+        window.addEventListener('resize', onResize);
+        return () => window.removeEventListener('resize', onResize);
+        // eslint-disable-next-line react-hooks/exhaustive-deps
+    }, []);
 
     // One block of £ boxes for a pricing structure. Nothing computes from
     // these yet — they are on the page so real window cleaners can say which
@@ -1548,11 +1883,21 @@ function ApplicationForm() {
     // which is what keeps a host's steps and validation byte-for-byte unchanged:
     // the guest steps stay off and stepForField uses the host map.
     const isGuest = audienceForTrade(trade) === 'guest';
+    // The made-to-order Location screen is the three-card fulfilment fork, so it
+    // centres vertically like the stepper screens (g_you/g_capacity/g_notice) —
+    // desktop only; the stacked mobile layout is left exactly as it is.
+    const guestMtoArea = isGuest && step === 'g_area' && shape === 'made_to_order';
+    // The two slot choice-card forks — private/shared (g_slot_basis) and the
+    // come-to-me / travel fork (g_slot_where) — are the same shape as the
+    // made-to-order fork: a screenful of large ChoiceCards and nothing else, so
+    // they centre vertically on desktop the same way, and by the same three
+    // coordinated pieces (panel, fieldset, section). Mobile keeps its stack.
+    const guestSlotChoice = isGuest && shape === 'slot' && (step === 'g_slot_basis' || step === 'g_slot_where');
     // group falls back to the category's own group, so a restored draft (which
     // saves the category, not the group) still resolves its steps correctly.
     const stepCtx: StepContext | undefined =
         isGuest
-            ? { group: guestGroup || (guestCategoryByKey(guestCategory)?.group || ''), category: guestCategory, shape, hasSession: !!session }
+            ? { group: guestGroup || (guestCategoryByKey(guestCategory)?.group || ''), category: guestCategory, shape, hasSession: !!session, slotOffer }
             : undefined;
 
     const problemFor = (field: string) => {
@@ -1640,7 +1985,10 @@ function ApplicationForm() {
     // must be touched. g_creds is skippable unless this category requires
     // qualifications. (The old g_checks is gone — its one confirmation moved to
     // the finish screen and is required there, not skippable.)
-    const OPTIONAL_GUEST_STEPS: StepKey[] = ['g_menu', 'g_expect'];
+    // g_menu is required now: a listing needs at least one priced item to be
+    // bookable, so its Next gates on the 'menu' problem (GUEST_STEP_FIELDS).
+    // g_expect stays optional.
+    const OPTIONAL_GUEST_STEPS: StepKey[] = ['g_expect'];
     const stepIsPicker = step === 'trade' || step === 'g_subtype';
     // g_creds is no longer skippable for anyone: the professional title is now
     // required for every category (qualifications on top for the safety four).
@@ -1656,13 +2004,12 @@ function ApplicationForm() {
     // host touches them, so the step can't be passed until each one that applies
     // has a real value. (The area and weekly-hours requirements come through
     // stepProblems, below.)
-    const whereMissing: string | null = isGuest && step === 'g_area'
-        ? (shape === 'slot'
-            ? (!slotLength.trim() ? 'Set how long each session is.' : null)
-            : shape === 'made_to_order'
-                ? (!leadTimeDays.trim() ? 'Set how much notice you need.' : null)
-                : null)
-        : null;
+    // g_area's own required-fields (the address or a region) come through
+    // stepProblems now, the same as made-to-order — nothing extra to gate here.
+    // Session length moved to g_slot_length (stores its shown default on Next,
+    // like the years/guests steppers) and the weekly hours to g_slot_hours (its
+    // requirement is the 'availability' problem, which maps to that step).
+    const whereMissing: string | null = null;
 
     // g_photos deliberately shows no footer message: the on-screen line asks for
     // three, the Next gate quietly holds at one, and we don't restate either in
@@ -1672,6 +2019,25 @@ function ApplicationForm() {
             ? GUEST_SCREEN_COPY.titleGate
             : step === 'g_creds' && catQualsRequired && !qualifications.trim()
             ? GUEST_SCREEN_COPY.qualsGate
+            // The pricing basis gates Next until it's answered — say so rather
+            // than leaving a greyed button with no reason.
+            : step === 'g_slot_basis' && slotOffer === null
+            ? GUEST_SCREEN_COPY.slotBasisGate
+            // The come-to-me / travel fork, same rule.
+            : step === 'g_slot_where' && !fulfilment
+            ? GUEST_SCREEN_COPY.slotWhereGate
+            // A 'both' slot needs a priced private hire AND a priced shared table,
+            // or it quietly ships only one. Next is greyed until both — say which
+            // is missing rather than leaving it unexplained. (No price at all falls
+            // to the menu's own required-item gate.)
+            : step === 'g_menu' && shape === 'slot' && slotOffer === 'both'
+                && !(items.some((r) => String(r.unit) === 'flat' && Number(r.price) > 0)
+                    && items.some((r) => String(r.unit) === 'person' && Number(r.price) > 0))
+            ? (!items.some((r) => Number(r.price) > 0)
+                ? GUEST_SCREEN_COPY.menuRequiredGate
+                : items.some((r) => String(r.unit) === 'flat' && Number(r.price) > 0)
+                    ? GUEST_SCREEN_COPY.menuSlotBothGateShared
+                    : GUEST_SCREEN_COPY.menuSlotBothGatePrivate)
             : whereMissing)
         : null;
 
@@ -1827,18 +2193,72 @@ function ApplicationForm() {
     // tapping a card selects it (an emerald outline), and the footer Next is
     // what carries them on — never an auto-advance jump-cut.
 
+    // Switching category — or the group above it — makes the OLD listing's
+    // answers wrong: they describe the tasting, not the cooking class now being
+    // set up. So clear everything specific to the old experience — its title, its
+    // items and prices, what-to-expect and dietary, the credentials that answer
+    // "what qualifies you for THIS" (a wine cert does not belong on a cooking
+    // class), where and how it runs (address, coverage, notice, and the whole
+    // slot set-up: private/shared, capacity, minimum, session length, weekly
+    // hours). What STAYS is only what is the PERSON and can't be wrong for a new
+    // experience: their years, their photos and their headshot. shape and the
+    // fulfilment default are then reset to the new category's by
+    // selectGuestCategory.
+    const clearOfferingAnswers = () => {
+        setProfessionalTitle('');
+        setDescription('');
+        setQualifications('');
+        setRecognition('');
+        setItems([]);
+        setMenuIndex(null);
+        setWhatToExpect('');
+        setDietaryNote('');
+        setDietaryOptions([]);
+        setSlotOffer(null);
+        setMaxGuests('');
+        setSlotMinPeople('');
+        setSlotLength('');
+        setSchedule([]);
+        setHoursMode('simple');
+        setSharedOpen('10:00');
+        setSharedClose('18:00');
+        setLeadTimeDays('');
+        setCollectionStreet('');
+        setCollectionTown('');
+        setCollectionPostcode('');
+        setAreas([]);
+    };
+
     // Screen two: select a sub-type. Records the category (a starting point,
     // confirmed at review) and pre-selects the booking shape it usually is.
     const selectGuestCategory = (key: string) => {
+        // A real change FROM one category TO another drops the previous offering's
+        // answers; picking the same one again leaves the work in place, and the
+        // first pick (from none) has nothing to clear — nor does re-picking after a
+        // reload, which does not restore the group.
+        if (guestCategory && key !== guestCategory) clearOfferingAnswers();
         setGuestCategory(key);
         const cat = guestCategoryByKey(key);
         if (cat && cat.shape) setShape(cat.shape);
+        // A slot's location fork: the seven fixed categories default to come-to-me
+        // ('collection') and skip g_slot_where; the three either-way ones (yoga,
+        // massage, painting) start blank so that screen asks. Made-to-order forks
+        // on its own screen and comes-to-you doesn't use the field, so both clear.
+        setFulfilment(defaultSlotFulfilment(key));
         markVisited('trade');
         markVisited('g_subtype');
     };
 
     // Screen one: select a top-level group.
     const selectGroup = (key: string) => {
+        // A real change FROM one group TO another means a different category will
+        // be chosen, so the old category and its offering answers go now — nothing
+        // survives the switch. Setting the group from none (a first pick, or after a
+        // reload, which does not restore the group) clears nothing.
+        if (guestGroup && key !== guestGroup) {
+            setGuestCategory('');
+            clearOfferingAnswers();
+        }
         setGuestGroup(key);
         markVisited('trade');
     };
@@ -2120,6 +2540,15 @@ function ApplicationForm() {
     const ALL_REGION_LABEL = GUEST_REGIONS.filter((r) => r.key === GUEST_COVERAGE_ALL_KEY)[0].label;
     const areasHasAll = areas.some((a) => a.town === ALL_REGION_LABEL);
     const regionHint = (label: string) => GUEST_REGIONS.filter((r) => r.label === label)[0]?.hint || '';
+    // The "All of Dumfries & Galloway" hint is shape-specific — travel for a chef
+    // who comes to you, delivery for a baker, neither for a fixed slot. The
+    // individual regions' hints (town lists) are shape-neutral and stay as-is.
+    const allRegionHint = shape === 'comes_to_you'
+        ? GUEST_SCREEN_COPY.coverageAllHintTravel
+        : shape === 'made_to_order'
+            ? GUEST_SCREEN_COPY.coverageAllHintDeliver
+            : GUEST_SCREEN_COPY.coverageAllHintFixed;
+    const regionHintFor = (label: string) => (label === ALL_REGION_LABEL ? allRegionHint : regionHint(label));
     const regionPicked = (label: string) => areas.some((a) => a.town === label);
     const toggleRegion = (r: { key: string; label: string }) => {
         if (r.key === GUEST_COVERAGE_ALL_KEY) {
@@ -2269,12 +2698,43 @@ function ApplicationForm() {
             const n = Math.floor(Number(String(v || '').trim()));
             return String(v || '').trim() !== '' && Number.isFinite(n) ? Math.max(min, n) : null;
         };
-        // The declarations, as a record of exactly the checks this category was
-        // asked and whether each was confirmed — not the raw state, which could
-        // carry a stale tick from a category they backed out of. So the owner
-        // reads a true picture at review: what we put to them, and their answer.
-        const confirmed: Record<string, boolean> = {};
-        for (const check of checksFor(guestCategory)) confirmed[check.key] = !!declarations[check.key];
+        // The terms acceptance, recorded in the declarations jsonb: which version
+        // of the terms they agreed to and when. Not a bare boolean — the version
+        // stamp makes a stale agreement obvious if the text later changes. Written
+        // only when they've agreed (the send gate guarantees they have); the
+        // timestamp is the moment of submit.
+        const acceptance: Record<string, string> = termsAgreed
+            ? { terms_version: PROVIDER_TERMS_VERSION, terms_agreed_at: new Date().toISOString() }
+            : {};
+        // Fulfilment (made-to-order this pass): the direction, plus the collection
+        // address when they collect. The address is OMITTED from the write while it
+        // is not loaded AND the field is empty — so a returning provider whose
+        // private address failed to load can never blank a real one on save. When
+        // loaded (even to empty) the field is authoritative, and a delivery-only
+        // choice clears it. `undefined` keys drop out of the update.
+        const collects = fulfilment === 'collection' || fulfilment === 'both';
+        // The three private fields plus the public based_line the town drives, or
+        // undefined to omit them all — the not-loaded-and-empty safety lives in
+        // collectionFieldsForWrite (unit-proved). Spreading undefined writes
+        // nothing, so a returning provider whose private address failed to load
+        // can never blank a real one on save.
+        // Made-to-order AND slot both carry a fulfilment now: a come-to-me slot
+        // (collection) writes an address exactly like a collecting baker — town
+        // → public based_line, street + postcode private, released on a confirmed
+        // booking — and a travelling slot (delivery) clears it and keeps regions.
+        // This is the code that ALSO fixes based_line never being derived for a
+        // slot: with the slot going through collectionFieldsForWrite, its town
+        // becomes the public based_line the guest sees.
+        const usesFulfilment = isMTO || isSlot;
+        const collectionWrite = usesFulfilment
+            ? collectionFieldsForWrite({
+                collects, loaded: collectionAddressLoaded,
+                street: collectionStreet, town: collectionTown, postcode: collectionPostcode,
+            })
+            : undefined;
+        const fulfilmentFields = usesFulfilment
+            ? { fulfilment: fulfilment || null, ...(collectionWrite || {}) }
+            : {};
         return {
             ...(cat && cat.label && status !== 'approved' ? { custom_label: cat.label } : {}),
             shape: shape || 'made_to_order',
@@ -2286,7 +2746,13 @@ function ApplicationForm() {
             // records it but still sells whole). Written from the one maxGuests
             // state, so it can never disagree with the jsonb copy below.
             slot_capacity: isSlot ? (num(maxGuests, 1) ?? 1) : null,
-            declarations: confirmed,
+            // The per-person minimum — a real number only for a shared/per-person
+            // slot; a private/flat slot is one booking whatever the head count, so
+            // it stores 1 (no minimum). Floored at 1 to satisfy the column's
+            // check; the min ≤ capacity rule is enforced before send (submitProblems).
+            slot_min_people: (isSlot && offeringHasShared(slotOffer)) ? Math.max(1, num(slotMinPeople, 1) ?? 1) : 1,
+            ...fulfilmentFields,
+            declarations: acceptance,
         };
     };
 
@@ -2318,36 +2784,43 @@ function ApplicationForm() {
         };
     };
 
-    // The weekly opening hours and days off, as child rows for the slot tables.
-    // Only meaningful for a slot; empty for every other shape.
+    // The weekly opening hours, as child rows for the slot_availability table.
+    // Only meaningful for a slot; empty for every other shape. Days off are NOT
+    // set here any more — the slot diary owns them (app/api/services/slots/
+    // schedule), so the wizard never writes slot_blocks.
     const guestScheduleRows = () => {
-        if (audienceForTrade(trade) !== 'guest' || shape !== 'slot') return { availability: [], blocks: [] };
+        if (audienceForTrade(trade) !== 'guest' || shape !== 'slot') return { availability: [] };
         return {
             availability: schedule
                 .filter((r) => r.open && r.close)
                 .map((r) => ({ day_of_week: r.day, open_time: r.open, close_time: r.close })),
-            blocks: blockedDates.map((d) => ({ blocked_date: d })),
         };
     };
 
-    // The listing TITLE for a guest — their account name, or a trading name if
-    // they set one in account settings. Derived here rather than asked: a guest
-    // experience is a person, not a business. Read fresh at submit — everyone is
-    // signed in by now (a host already was; an anonymous applicant through the
-    // verify gate, where their name is captured). trading_name is read
-    // defensively so this still works before the column ships (the migration
-    // lands on prod before this code).
-    const resolveGuestTitleNow = async (): Promise<string> => {
+    // The listing title for a guest is now the Title (their Intro field), so it
+    // is not derived from the name any more. What we still derive from the
+    // account is the BYLINE — the person's FIRST name, shown beneath their photo
+    // so a guest sees who they're booking without a surname on the listing.
+    // firstName honours the same show_full_name / preferred_name switch guests
+    // and hosts rely on in messaging; a surname must never reach a guest.
+    const resolveGuestBylineNow = async (): Promise<string> => {
         const { data: { session } } = await supabase.auth.getSession();
         if (!session?.user) return '';
         const { data: prof } = await supabase.from('profiles')
             .select('full_name, preferred_name, show_full_name').eq('id', session.user.id).maybeSingle();
-        let trading: string | null = null;
-        const { data: t, error: te } = await supabase.from('profiles')
-            .select('trading_name').eq('id', session.user.id).maybeSingle();
-        if (!te && t) trading = (t as any).trading_name || null;
-        return resolveTitle(prof ? { ...(prof as any), trading_name: trading } : null, '');
+        return firstName(prof ? (prof as any) : null, '');
     };
+
+    // Load the byline (the provider's first name) for the finish-screen summary
+    // once they reach it. Derived from the account (async), so it can't be
+    // computed inline; fetched when the finish step is shown and a session exists.
+    useEffect(() => {
+        if (!isGuest || step !== 'finish' || !session || summaryByline) return;
+        let cancelled = false;
+        resolveGuestBylineNow().then((name) => { if (!cancelled) setSummaryByline(name); });
+        return () => { cancelled = true; };
+        // eslint-disable-next-line react-hooks/exhaustive-deps
+    }, [isGuest, step, session]);
 
     const applicationRows = (now: Date, title: string) => {
         const provider: any = {
@@ -2355,8 +2828,8 @@ function ApplicationForm() {
             // The content answers ride only here, in the application payload —
             // never in the signed-in column write (they have no columns yet).
             ...guestContentFields(),
-            // A guest's title is the person (or their trading name), derived and
-            // passed in; a host trades under the business name they typed.
+            // A guest's title is their Title (the Intro field), passed in; a host
+            // trades under the business name they typed.
             business_name: audienceForTrade(trade) === 'guest' ? title : businessName.trim(),
             trade,
             description: description.trim(),
@@ -2440,14 +2913,15 @@ function ApplicationForm() {
         // The menu, for a guest trade. Only rows with a name and a real price;
         // everyone names their items now, so a nameless row is an empty one and
         // drops out, and a half-filled form does not create a phantom item.
-        const slotUnit = slotPrivate === false ? 'person' : 'flat';
         const items_ = audienceForTrade(trade) === 'guest'
             ? items
                 .map((it, i) => ({
                     name: String(it.name || '').trim(),
                     description: String(it.description || '').trim() || null,
                     price: String(it.price || '').trim() !== '' ? Number(it.price) : null,
-                    unit: shape === 'slot' ? slotUnit : String(it.unit || 'flat'),
+                    // A slot keeps each item's OWN unit — flat for a private hire,
+                    // person for a shared table — so 'both' can carry two.
+                    unit: shape === 'slot' ? (String(it.unit) === 'person' ? 'person' : 'flat') : String(it.unit || 'flat'),
                     image: it.image || null,
                     sort_order: i,
                     active: true,
@@ -2455,7 +2929,7 @@ function ApplicationForm() {
                 .filter((r) => r.name && r.price !== null && Number(r.price) > 0)
             : [];
 
-        const { availability, blocks } = guestScheduleRows();
+        const { availability } = guestScheduleRows();
 
         return {
             provider,
@@ -2466,7 +2940,6 @@ function ApplicationForm() {
             items: items_,
             skills: hasSkills ? skills : [],
             slotAvailability: availability,
-            slotBlocks: blocks,
         };
     };
 
@@ -2592,7 +3065,7 @@ function ApplicationForm() {
         setSaving(true);
         setAcctError('');
 
-        const title = audienceForTrade(trade) === 'guest' ? await resolveGuestTitleNow() : businessName.trim();
+        const title = audienceForTrade(trade) === 'guest' ? professionalTitle.trim() : businessName.trim();
         const rows = applicationRows(new Date(), title);
 
         try {
@@ -2652,14 +3125,13 @@ function ApplicationForm() {
     };
 
     const save = async (submit: boolean) => {
-        // The responsibility confirmation gates send for a guest — someone who
-        // won't confirm they carry their own insurance, permits and licences
-        // should not go live. Checked before the account/validation branches so
-        // it applies whichever submit path they are on. Not a submitProblems
-        // field: it lives on the finish screen, so its own error shows there.
-        if (submit && isGuest && !declarations['responsibility']) {
+        // Agreeing to the terms gates send for a guest — someone who won't agree
+        // should not go live. Checked before the account/validation branches so it
+        // applies whichever submit path they are on. Not a submitProblems field:
+        // it lives on the finish screen, so its own error shows there.
+        if (submit && isGuest && !termsAgreed) {
             setTouchedSubmit(true);
-            setResponsibilityError(GUEST_SCREEN_COPY.responsibilityGate);
+            setTermsError(GUEST_SCREEN_COPY.termsGate);
             goToFirstProblem();
             return;
         }
@@ -2712,9 +3184,9 @@ function ApplicationForm() {
 
         const now = new Date();
 
-        // A guest's title is the person (or their trading name), derived from the
-        // account; a host trades under the business name they typed.
-        const title = audienceForTrade(trade) === 'guest' ? await resolveGuestTitleNow() : businessName.trim();
+        // A guest's title is their Title (the Intro field, mandatory); a host
+        // trades under the business name they typed.
+        const title = audienceForTrade(trade) === 'guest' ? professionalTitle.trim() : businessName.trim();
 
         const payload: any = {
             ...guestProviderFields(),
@@ -2952,6 +3424,15 @@ function ApplicationForm() {
             }
         }
 
+        // The child writes below used to be `await …insert(rows)` with the
+        // returned error thrown away, so a rejected write (a constraint, an RLS
+        // refusal) vanished and the save reported success over the top of it —
+        // the class of silent failure that hid the coverage bug. Each one is now
+        // checked and, if it fails, named in a warning at the end, like the
+        // skills write already does. Nothing here aborts the save (the row is
+        // written); it just stops a failure being invisible.
+        const savedButFailed: string[] = [];
+
         // Areas are replaced wholesale — there are only ever a handful, and
         // diffing them would be more code than it saves.
         await supabase.from('service_areas').delete().eq('provider_id', id);
@@ -2964,26 +3445,31 @@ function ApplicationForm() {
                     label: a.town,
                     centre_lat: town ? town.lat : 0,
                     centre_lng: town ? town.lng : 0,
+                    // A guest's region has no radius, so this is 0 for them (the
+                    // check allows it, and nothing on the guest path reads it); a
+                    // host keeps their real radius. Same honest value the finish
+                    // route writes, so the two save paths never disagree.
                     radius_miles: a.radius_miles,
                 };
             });
-            await supabase.from('service_areas').insert(rows);
+            const { error } = await supabase.from('service_areas').insert(rows);
+            if (error) {
+                console.error('[provider-save] service_areas insert failed', error);
+                savedButFailed.push('your coverage areas');
+            }
         }
 
-        // The slot schedule — the weekly opening hours and the days off. Replaced
+        // The slot schedule — the weekly opening hours. Replaced
         // wholesale like the areas: a handful of rows, and the provider owns them
         // under RLS (the slot_shape migration's "owners manage their own"
         // policies). Only a slot has them; for any other shape the delete clears
         // any left behind by a shape the provider changed away from.
         if (audienceForTrade(trade) === 'guest') {
-            const { availability, blocks } = guestScheduleRows();
+            const { availability } = guestScheduleRows();
             await supabase.from('slot_availability').delete().eq('provider_id', id);
             if (availability.length) {
-                await supabase.from('slot_availability').insert(availability.map((a) => ({ ...a, provider_id: id })));
-            }
-            await supabase.from('slot_blocks').delete().eq('provider_id', id);
-            if (blocks.length) {
-                await supabase.from('slot_blocks').insert(blocks.map((b) => ({ ...b, provider_id: id })));
+                const { error } = await supabase.from('slot_availability').insert(availability.map((a) => ({ ...a, provider_id: id })));
+                if (error) { console.error('[provider-save] slot_availability insert failed', error); savedButFailed.push('your weekly hours'); }
             }
         }
 
@@ -2996,10 +3482,10 @@ function ApplicationForm() {
         // deleted. The order snapshots what it was for, so none of this touches
         // a placed order. Empty rows (no name or no price) are dropped.
         if (audienceForTrade(trade) === 'guest') {
-            // A slot's single offering has no unit picker: private is a flat
-            // price for the session, shared is per person. Derived here so the
-            // one place a unit is stored agrees with the private/shared answer.
-            const slotUnit = slotPrivate === false ? 'person' : 'flat';
+            // A slot keeps each item's OWN unit — flat for a private hire, person
+            // for a shared table. private/shared derive it from the offering; 'both'
+            // has the provider choose it per item on the unit step. Either way a
+            // slot row is only ever flat or person, normalised here.
             const valid = items
                 .map((it, i) => ({
                     id: it.id,
@@ -3007,7 +3493,7 @@ function ApplicationForm() {
                     name: String(it.name || '').trim(),
                     description: String(it.description || '').trim() || null,
                     price: String(it.price || '').trim() !== '' ? Number(it.price) : null,
-                    unit: shape === 'slot' ? slotUnit : String(it.unit || 'flat'),
+                    unit: shape === 'slot' ? (String(it.unit) === 'person' ? 'person' : 'flat') : String(it.unit || 'flat'),
                     image: it.image || null,
                     sort_order: i,
                     active: true,
@@ -3031,8 +3517,14 @@ function ApplicationForm() {
             // uniform set of columns.
             const toUpdate = valid.filter((r) => r.id);
             const toInsert = valid.filter((r) => !r.id).map(({ id: _omit, ...rest }) => rest);
-            if (toUpdate.length) await supabase.from('service_provider_items').upsert(toUpdate);
-            if (toInsert.length) await supabase.from('service_provider_items').insert(toInsert);
+            if (toUpdate.length) {
+                const { error } = await supabase.from('service_provider_items').upsert(toUpdate);
+                if (error) { console.error('[provider-save] items upsert failed', error); savedButFailed.push('your prices'); }
+            }
+            if (toInsert.length) {
+                const { error } = await supabase.from('service_provider_items').insert(toInsert);
+                if (error) { console.error('[provider-save] items insert failed', error); savedButFailed.push('your prices'); }
+            }
         }
 
         // Skills go through a route rather than being written from here.
@@ -3061,6 +3553,18 @@ function ApplicationForm() {
                 toast.warning('Your details saved, but the skills did not. Try that part again.',
                     { theme: 'colored' });
             }
+        }
+
+        // A child write was refused. The row saved, but a part they filled in did
+        // not — say so plainly and name it, rather than the old silent success.
+        // (A guest whose coverage or prices vanished would otherwise find out
+        // only when nobody could book them.)
+        if (savedButFailed.length) {
+            const parts = Array.from(new Set(savedButFailed));
+            toast.warning(
+                'Your listing saved, but we could not save ' + parts.join(' or ') + '. Please try that part again.',
+                { theme: 'colored', autoClose: false }
+            );
         }
 
         // Told last, once the row and its areas are both written, so the
@@ -3354,9 +3858,20 @@ function ApplicationForm() {
                                 /* The years opener is a flex column so its
                                    stepper can centre in the space under the
                                    question rather than sit high with a void. */
-                                : (step === 'g_you' || step === 'g_capacity')
+                                : (step === 'g_you' || step === 'g_capacity' || step === 'g_notice' || step === 'g_slot_min' || step === 'g_slot_length')
                                     ? 'max-w-2xl py-10 sm:py-12 flex flex-col'
-                                    : 'max-w-2xl py-10 sm:py-12'))
+                                    /* Finish is the widest content screen: it is a
+                                       full-width preview of the listing about to be
+                                       submitted, so it uses the space rather than
+                                       sitting in a half-width column. */
+                                    : step === 'finish'
+                                        ? 'max-w-6xl py-10 sm:py-12'
+                                        /* The made-to-order fork and the slot choice
+                                           forks centre their cards in the space on
+                                           desktop, like the steppers. */
+                                        : (guestMtoArea || guestSlotChoice)
+                                            ? 'max-w-2xl py-10 sm:py-12 sm:flex sm:flex-col'
+                                            : 'max-w-2xl py-10 sm:py-12'))
                     : 'flex-1 overflow-y-auto px-4 sm:px-6 py-5'}>
                     {/* One big question a screen. The picker screens (group,
                         sub-type) and the years opener centre it — over the cards
@@ -3369,13 +3884,13 @@ function ApplicationForm() {
                         have no section, so it shows nothing there. */}
                     {isGuest && currentSection && (
                         <p className={'text-xs font-bold uppercase tracking-[0.12em] text-emerald-700 mb-3 '
-                            + ((step === 'g_you' || step === 'g_creds' || step === 'g_menu' || step === 'g_capacity' || step === 'g_photos') ? 'text-center' : '')}>
+                            + ((step === 'g_you' || step === 'g_creds' || step === 'g_menu' || step === 'g_capacity' || step === 'g_notice' || step === 'g_photos' || step === 'g_slot_basis' || step === 'g_slot_min' || step === 'g_slot_where' || step === 'g_slot_length') ? 'text-center' : '')}>
                             {currentSection.label}
                         </p>
                     )}
-                    {isGuest && step !== 'finish' && step !== 'g_creds' && step !== 'g_menu' && step !== 'g_capacity' && (
+                    {isGuest && step !== 'finish' && step !== 'g_creds' && step !== 'g_menu' && step !== 'g_capacity' && step !== 'g_slot_min' && step !== 'g_slot_length' && step !== 'g_slot_hours' && (
                         <h1 className={'font-extrabold tracking-tight text-slate-900 [text-wrap:balance] text-3xl sm:text-4xl '
-                            + ((step === 'trade' || step === 'g_subtype' || step === 'g_you') ? 'mb-10 text-center'
+                            + ((step === 'trade' || step === 'g_subtype' || step === 'g_you' || step === 'g_notice' || step === 'g_slot_basis' || step === 'g_slot_where') ? 'mb-10 text-center'
                                 /* g_photos is centred (this screen only, to match
                                    Airbnb) with a tight gap so "Add at least 3 photos."
                                    reads as a subtitle, not a stranded paragraph. */
@@ -3383,14 +3898,23 @@ function ApplicationForm() {
                                     : 'mb-8')}>
                             {step === 'trade'
                                 ? 'What experience are you offering guests?'
-                                /* The g_area step title carries a "when" that is
-                                   real for a slot (a schedule) and made-to-order
-                                   (a notice period) but false for a traveller,
-                                   who is only asked where. So the travelling
-                                   shape gets a where-only heading; the others
-                                   keep the generic title. */
-                                : (step === 'g_area' && shape !== 'slot' && shape !== 'made_to_order')
+                                /* g_area is the PLACE now. A traveller is asked where
+                                   they cover; a made-to-order asks the fulfilment
+                                   fork; a slot's heading follows its fulfilment — the
+                                   address it gives (premises or meeting point) or the
+                                   regions it travels to. Session length and hours are
+                                   their own screens (g_slot_length/g_slot_hours) and
+                                   ride the generic stepMeta title. */
+                                : (step === 'g_area' && shape === 'comes_to_you')
                                     ? GUEST_SCREEN_COPY.locationHeadingTravel
+                                    : (step === 'g_area' && shape === 'made_to_order')
+                                        ? GUEST_SCREEN_COPY.fulfilmentHeading
+                                    : (step === 'g_area' && shape === 'slot')
+                                        ? (fulfilment === 'delivery'
+                                            ? GUEST_SCREEN_COPY.slotPlaceHeadingTravel
+                                            : slotIsMeetingPoint(guestCategory)
+                                                ? GUEST_SCREEN_COPY.slotPlaceHeadingMeeting
+                                                : GUEST_SCREEN_COPY.slotPlaceHeadingPremises)
                                     : step === 'g_photos'
                                         ? GUEST_SCREEN_COPY.photosHeading
                                         : stepMeta.title}
@@ -3408,6 +3932,32 @@ function ApplicationForm() {
                             </h1>
                             <p className="text-center text-sm text-slate-500 [text-wrap:balance] mb-10">
                                 {shape === 'comes_to_you' ? GUEST_SCREEN_COPY.capacitySubtextTravel : GUEST_SCREEN_COPY.capacitySubtextVenue}
+                            </p>
+                        </>
+                    )}
+                    {/* The minimum screen renders its heading+subtext here, at the
+                        top like g_capacity, so the question and its explanation sit
+                        above the big centred stepper rather than below it. */}
+                    {isGuest && step === 'g_slot_min' && (
+                        <>
+                            <h1 className="font-extrabold tracking-tight text-slate-900 [text-wrap:balance] text-3xl sm:text-4xl text-center mb-2">
+                                {GUEST_SCREEN_COPY.slotMinQuestion}
+                            </h1>
+                            <p className="text-center text-sm text-slate-500 [text-wrap:balance] mb-10">
+                                {GUEST_SCREEN_COPY.slotMinSubtext}
+                            </p>
+                        </>
+                    )}
+                    {/* Session length renders its heading+subtext here, above the
+                        big centred stepper — same shape as capacity and the
+                        minimum. */}
+                    {isGuest && step === 'g_slot_length' && (
+                        <>
+                            <h1 className="font-extrabold tracking-tight text-slate-900 [text-wrap:balance] text-3xl sm:text-4xl text-center mb-2">
+                                {GUEST_SCREEN_COPY.slotLengthQuestion}
+                            </h1>
+                            <p className="text-center text-sm text-slate-500 [text-wrap:balance] mb-10">
+                                {GUEST_SCREEN_COPY.slotLengthSubtext}
                             </p>
                         </>
                     )}
@@ -3712,7 +4262,10 @@ function ApplicationForm() {
             <fieldset disabled={locked} className={'min-w-0 ' + (locked ? 'opacity-70' : '')
                 /* On the years opener the fieldset fills the panel below the
                    question so its one section can centre vertically. */
-                + (isGuest && (step === 'g_you' || step === 'g_capacity') ? ' flex-1 flex flex-col' : '')}>
+                + (isGuest && (step === 'g_you' || step === 'g_capacity' || step === 'g_notice' || step === 'g_slot_min' || step === 'g_slot_length') ? ' flex-1 flex flex-col' : '')
+                /* Same fill on the made-to-order fork and the slot choice forks,
+                   but desktop only — mobile keeps its natural top-down stack. */
+                + (guestMtoArea || guestSlotChoice ? ' sm:flex-1 sm:flex sm:flex-col' : '')}>
                 {/* The standalone business step is host-only now. A guest names
                     the experience on g_about ("Name it, and tell guests what it
                     is"), beside the description, so they never answer it twice. */}
@@ -3929,8 +4482,9 @@ function ApplicationForm() {
                         </div>
 
 
-                        {/* ---- Your professional title: one borderless field,
-                            no caption, counter at the right above the underline. ---- */}
+                        {/* ---- Your title (the listing's display name): one
+                            borderless field, no caption, counter at the right
+                            above the underline. ---- */}
                         <SubFlowModal
                             open={expertiseModal === 'title'}
                             title={GUEST_SCREEN_COPY.titleModalTitle}
@@ -4015,11 +4569,16 @@ function ApplicationForm() {
                     // single row with no add and its price unit read off the
                     // private/shared answer rather than picked here.
                     const isSlot = shape === 'slot';
+                    // 'offer both' is the only slot where the unit is ambiguous, so
+                    // it alone lets the provider add items and choose each one's unit
+                    // (session vs person) as a step in the sub-flow. private/shared
+                    // stay a single item whose unit is derived, never asked.
+                    const slotBoth = isSlot && slotOffer === 'both';
                     const blank = { id: undefined as string | undefined, name: '', description: '', price: '', unit: 'flat', image: null as string | null };
 
                     const UNIT_WORD: Record<string, string> = GUEST_SCREEN_COPY.priceUnitLabels;
                     const unitWord = (r: { unit: string }) => isSlot
-                        ? (slotPrivate === false ? 'per person' : slotPrivate === true ? 'for the session' : '')
+                        ? (String(r.unit) === 'person' ? 'per person' : 'for the session')
                         : (UNIT_WORD[r.unit || 'flat'] || '');
                     const rowSummary = (r: { price: string; unit: string }) => {
                         const p = String(r.price || '').trim();
@@ -4027,14 +4586,23 @@ function ApplicationForm() {
                             ? '£' + p + (unitWord(r) ? ' · ' + unitWord(r) : '')
                             : GUEST_SCREEN_COPY.menuRowPrompt;
                     };
+                    // An item is done only when it has BOTH a name and a real price —
+                    // the tick has to mean that. A seeded 'both' row ('Private hire',
+                    // 'Per person') has a name from the start, so keying the tick off
+                    // the name alone showed it as done while it still read "Name it
+                    // and set a price". This is the completeness the row displays.
+                    const isRowComplete = (r: { name: string; price: string }) =>
+                        String(r.name || '').trim() !== '' && Number(r.price) > 0;
 
-                    const rows = isSlot ? (items.length ? [items[0]] : []) : items;
+                    // A slot now has 1 or 2 rows (a private hire and/or a shared
+                    // table), authored when the offering is chosen — so its rows
+                    // are just its items, the same as a menu, only fixed (no add).
+                    const rows = items;
                     const setField = (i: number, field: 'name' | 'description' | 'price' | 'unit', val: string) =>
                         setItems((prev) => prev.map((r, j) => (j === i ? { ...r, [field]: val } : r)));
 
                     const openEdit = (i: number) => { setMenuIndex(i); setMenuStep(0); setPayoutOpen(false); };
                     const openAdd = () => { setItems((prev) => [...prev, { ...blank }]); setMenuIndex(items.length); setMenuStep(0); setPayoutOpen(false); };
-                    const openSlot = () => { if (!items.length) setItems([{ ...blank }]); setMenuIndex(0); setMenuStep(0); setPayoutOpen(false); };
                     // A blank abandoned by cancelling an add (no name and no price)
                     // is dropped on close, so a cancelled add leaves nothing behind.
                     const closeItem = () => {
@@ -4047,7 +4615,16 @@ function ApplicationForm() {
                     const nameFilled = !!it && String(it.name || '').trim() !== '';
                     const priceNum = it ? (Number(it.price) || 0) : 0;
                     const priceFilled = priceNum > 0;
-                    const LAST = 3;
+                    // The sub-flow is one question a screen. A 'both' slot gets an
+                    // extra screen — the unit choice — between price and description;
+                    // every other item derives its unit, so it has no such screen.
+                    // Steps are addressed by KIND, not a bare index, so inserting one
+                    // can't silently shift the others.
+                    const stepKinds: Array<'name' | 'price' | 'unit' | 'desc' | 'photo'> = slotBoth
+                        ? ['name', 'price', 'unit', 'desc', 'photo']
+                        : ['name', 'price', 'desc', 'photo'];
+                    const LAST = stepKinds.length - 1;
+                    const stepKind = stepKinds[menuStep] ?? 'name';
 
                     // The borderless fields shared with the expertise hub sub-flow.
                     const fieldWrap = 'relative border-b border-slate-200 pb-2 transition-colors focus-within:border-slate-400';
@@ -4073,23 +4650,29 @@ function ApplicationForm() {
                             </div>
 
                             <div className="mt-8 space-y-1">
-                                {isSlot ? (
-                                    <HubRow
-                                        filled={rows.length > 0 && String(rows[0].name || '').trim() !== ''}
-                                        thumb={rows[0] && rows[0].image ? getImageUrl(rows[0].image) : null}
-                                        label={(rows[0] && rows[0].name.trim()) || GUEST_SCREEN_COPY.menuSlotRowLabel}
-                                        prompt={GUEST_SCREEN_COPY.menuRowPrompt}
-                                        summary={rows.length ? rowSummary(rows[0]) : null}
-                                        onOpen={openSlot}
-                                    />
+                                {(isSlot && !slotBoth) ? (
+                                    // private/shared: a single fixed offering, no add.
+                                    rows.map((r, i) => (
+                                        <HubRow
+                                            key={r.id || i}
+                                            filled={isRowComplete(r)}
+                                            thumb={r.image ? getImageUrl(r.image) : null}
+                                            label={(r.name && r.name.trim()) || GUEST_SCREEN_COPY.menuSlotRowLabel}
+                                            prompt={GUEST_SCREEN_COPY.menuRowPrompt}
+                                            summary={rowSummary(r)}
+                                            onOpen={() => openEdit(i)}
+                                        />
+                                    ))
                                 ) : (
+                                    // a full menu (non-slot) or 'both' (private hire +
+                                    // shared table, plus any extra option): add-style.
                                     <>
                                         {rows.map((r, i) => (
                                             <HubRow
                                                 key={r.id || i}
-                                                filled
+                                                filled={isRowComplete(r)}
                                                 thumb={r.image ? getImageUrl(r.image) : null}
-                                                label={r.name.trim() || GUEST_SCREEN_COPY.menuUntitled}
+                                                label={r.name.trim() || (isSlot ? GUEST_SCREEN_COPY.menuSlotRowLabel : GUEST_SCREEN_COPY.menuUntitled)}
                                                 prompt={GUEST_SCREEN_COPY.menuRowPrompt}
                                                 summary={rowSummary(r)}
                                                 onOpen={() => openEdit(i)}
@@ -4097,7 +4680,7 @@ function ApplicationForm() {
                                         ))}
                                         <HubRow
                                             filled={false}
-                                            label={GUEST_SCREEN_COPY.menuAddRow}
+                                            label={isSlot ? GUEST_SCREEN_COPY.menuSlotAddRow : GUEST_SCREEN_COPY.menuAddRow}
                                             prompt={GUEST_SCREEN_COPY.menuRowPrompt}
                                             onOpen={openAdd}
                                         />
@@ -4109,30 +4692,31 @@ function ApplicationForm() {
                                 <SubFlowModal
                                     open
                                     title={
-                                        menuStep === 0 ? (isSlot ? GUEST_SCREEN_COPY.menuNameTitleSlot : GUEST_SCREEN_COPY.menuNameTitle)
-                                            : menuStep === 1 ? GUEST_SCREEN_COPY.menuPriceTitle
-                                                : menuStep === 2 ? GUEST_SCREEN_COPY.menuDescTitle
-                                                    : GUEST_SCREEN_COPY.menuPhotoTitle
+                                        stepKind === 'name' ? (isSlot ? GUEST_SCREEN_COPY.menuNameTitleSlot : GUEST_SCREEN_COPY.menuNameTitle)
+                                            : stepKind === 'price' ? GUEST_SCREEN_COPY.menuPriceTitle
+                                                : stepKind === 'unit' ? GUEST_SCREEN_COPY.menuSlotUnitTitle
+                                                    : stepKind === 'desc' ? GUEST_SCREEN_COPY.menuDescTitle
+                                                        : GUEST_SCREEN_COPY.menuPhotoTitle
                                     }
                                     onClose={closeItem}
                                     onBack={menuStep > 0 ? () => setMenuStep((s) => s - 1) : undefined}
-                                    onRemove={!isSlot ? () => removeItem(menuIndex) : undefined}
+                                    onRemove={(!isSlot || slotBoth) ? () => removeItem(menuIndex) : undefined}
                                     saveLabel={menuStep === LAST ? GUEST_SCREEN_COPY.save : GUEST_SCREEN_COPY.menuNext}
-                                    saveDisabled={(menuStep === 0 && !nameFilled) || (menuStep === 1 && !priceFilled)}
+                                    saveDisabled={(stepKind === 'name' && !nameFilled) || (stepKind === 'price' && !priceFilled)}
                                     onSave={menuStep === LAST ? closeItem : () => setMenuStep((s) => s + 1)}
                                     note={menuStep === LAST ? GUEST_SCREEN_COPY.menuPhotoPrompt : undefined}
                                 >
-                                    {menuStep === 0 && (
+                                    {stepKind === 'name' && (
                                         <div className={fieldWrap}>
                                             <input
                                                 type="text" value={it.name}
                                                 onChange={(e) => setField(menuIndex, 'name', e.target.value)}
-                                                placeholder={isSlot ? GUEST_SCREEN_COPY.menuNamePlaceholderSlot : GUEST_SCREEN_COPY.menuNamePlaceholder}
+                                                placeholder={GUEST_SCREEN_COPY.menuNameExamples[guestCategory] ?? GUEST_SCREEN_COPY.menuNameExampleFallback}
                                                 className={bigInput}
                                             />
                                         </div>
                                     )}
-                                    {menuStep === 1 && (
+                                    {stepKind === 'price' && (
                                         <div>
                                             {/* A big numeral you TYPE into — no spinner
                                                 arrows (nobody sets £45 by nudging up from
@@ -4153,13 +4737,16 @@ function ApplicationForm() {
                                                 model as before, but no native <select>: a
                                                 current-choice HubRow that opens a sub-flow of
                                                 selectable rows, matching the coverage picker.
-                                                A slot derives it from the private/shared
-                                                answer, so it just states the basis. */}
+                                                A private/shared slot derives it from the
+                                                answer and just states the basis; a 'both' slot
+                                                asks it on its own step next, so nothing here. */}
                                             <div className="mt-8">
                                                 {isSlot ? (
-                                                    unitWord(it)
-                                                        ? <p className="text-center text-sm text-slate-500">Priced {unitWord(it)}</p>
-                                                        : null
+                                                    slotBoth
+                                                        ? null
+                                                        : unitWord(it)
+                                                            ? <p className="text-center text-sm text-slate-500">Priced {unitWord(it)}</p>
+                                                            : null
                                                 ) : (
                                                     <>
                                                         <div className="mx-auto max-w-sm">
@@ -4234,7 +4821,42 @@ function ApplicationForm() {
                                             )}
                                         </div>
                                     )}
-                                    {menuStep === 2 && (
+                                    {/* THE UNIT STEP — 'both' slots only. Session
+                                        (a private hire, flat) or per person (a shared
+                                        table). Selectable rows in the wizard's own
+                                        register; a unit is always set, so there is no
+                                        gate on this screen. */}
+                                    {stepKind === 'unit' && (
+                                        <div role="radiogroup" aria-label={GUEST_SCREEN_COPY.menuSlotUnitTitle} className="mx-auto w-full max-w-md space-y-3">
+                                            {([
+                                                ['flat', GUEST_SCREEN_COPY.menuSlotUnitFlat, GUEST_SCREEN_COPY.menuSlotUnitFlatHint],
+                                                ['person', GUEST_SCREEN_COPY.menuSlotUnitPerson, GUEST_SCREEN_COPY.menuSlotUnitPersonHint],
+                                            ] as const).map(([u, label, hint]) => {
+                                                const on = String(it.unit) === u;
+                                                return (
+                                                    <button
+                                                        key={u}
+                                                        type="button"
+                                                        role="radio"
+                                                        aria-checked={on}
+                                                        onClick={() => setField(menuIndex, 'unit', u)}
+                                                        className={'flex w-full items-start gap-3 rounded-2xl border px-4 py-4 text-left transition '
+                                                            + (on ? 'border-emerald-600 bg-emerald-50 ring-1 ring-emerald-600' : 'border-slate-200 hover:border-emerald-400')}
+                                                    >
+                                                        <span className={'mt-0.5 flex h-6 w-6 flex-none items-center justify-center rounded-full border transition '
+                                                            + (on ? 'border-emerald-600 bg-emerald-600 text-white' : 'border-slate-300 text-transparent')}>
+                                                            <Check className="h-4 w-4" strokeWidth={3} />
+                                                        </span>
+                                                        <span>
+                                                            <span className="block font-semibold text-slate-900">{label}</span>
+                                                            <span className="block text-sm text-slate-500">{hint}</span>
+                                                        </span>
+                                                    </button>
+                                                );
+                                            })}
+                                        </div>
+                                    )}
+                                    {stepKind === 'desc' && (
                                         <div className={fieldWrap}>
                                             <textarea
                                                 value={it.description} rows={3}
@@ -4244,7 +4866,7 @@ function ApplicationForm() {
                                             />
                                         </div>
                                     )}
-                                    {menuStep === LAST && (
+                                    {stepKind === 'photo' && (
                                         <div className="flex flex-col items-center">
                                             <label className="relative flex h-40 w-40 cursor-pointer flex-col items-center justify-center gap-2 overflow-hidden rounded-2xl border-2 border-dashed border-slate-300 bg-slate-50 text-center hover:border-emerald-400">
                                                 {it.image ? (
@@ -4265,109 +4887,142 @@ function ApplicationForm() {
                     );
                 })()}
 
-                {/* MADE-TO-ORDER adds one field: the notice needed. It is the same
-                    fact as the made-to-order cancellation cutoff, so it is asked
-                    once, here. Gated on the shape, not worded as a condition. */}
-                {onStep('g_area') && audienceForTrade(trade) === 'guest' && shape === 'made_to_order' && (
-                <section className="mb-8">
-                    <label className="block text-xs font-medium text-slate-500 mb-3">How much notice do you need?</label>
-                    <NumberStepper value={leadTimeDays} onChange={setLeadTimeDays} min={0} max={90} suggestion={2} suffix="days’ notice" />
+                {/* MADE-TO-ORDER: the notice period, on its own screen (g_notice)
+                    before the delivery areas — a big centred stepper under the
+                    question, like the years and guests screens. The heading is the
+                    generic h1 (noticeQuestion). It's the same fact as the
+                    made-to-order cancellation cutoff, still asked once. */}
+                {onStep('g_notice') && audienceForTrade(trade) === 'guest' && (
+                <section className="flex-1 flex flex-col items-center justify-center">
+                    <NumberStepper value={leadTimeDays} onChange={setLeadTimeDays} min={0} max={90} suggestion={2} size="lg" solid suffix={GUEST_SCREEN_COPY.noticeSuffix} />
                 </section>
                 )}
 
                 {/* SLOT: the private/shared answer (which sets the price unit and
                     the capacity), the session length, and the weekly opening hours
                     — the schedule editor a sauna owner needs and never had. §7/§10. */}
-                {onStep('g_area') && audienceForTrade(trade) === 'guest' && shape === 'slot' && (() => {
+                {/* THE COME-TO-ME / TRAVEL FORK — slot, and only the three either-way
+                    categories (yoga, massage, painting). It sets `fulfilment` the
+                    way made-to-order's own fork does, so g_area then shows an
+                    address or the coverage regions. The centred H1 asks the
+                    question; here are the two cards. */}
+                {onStep('g_slot_where') && isGuest && shape === 'slot' && (
+                <section className="mb-8 sm:mb-0 sm:flex-1 sm:flex sm:flex-col sm:justify-center md:max-w-xl md:mx-auto">
+                    <div className="grid gap-3 sm:grid-cols-2">
+                        {[
+                            { v: 'collection', t: GUEST_SCREEN_COPY.slotWhereAtPlace, d: GUEST_SCREEN_COPY.slotWhereAtPlaceHint },
+                            { v: 'delivery', t: GUEST_SCREEN_COPY.slotWhereTravel, d: GUEST_SCREEN_COPY.slotWhereTravelHint },
+                        ].map((o) => (
+                            <ChoiceCard key={o.v} selected={fulfilment === o.v} onSelect={() => setFulfilment(o.v)} title={o.t} hint={o.d} />
+                        ))}
+                    </div>
+                </section>
+                )}
+
+                {/* THE WHEN SECTION (slots only), one question a screen. Session
+                    length here; the weekly hours on the next screen. Split out of
+                    the old overloaded g_area, whose heading promised a schedule
+                    while the first control asked session length. */}
+                {onStep('g_slot_length') && isGuest && shape === 'slot' && (
+                <section className="flex-1 flex flex-col items-center justify-center">
+                    <NumberStepper value={slotLength} onChange={setSlotLength} min={15} max={480} step={15} suggestion={60} size="lg" solid suffix={GUEST_SCREEN_COPY.slotLengthSuffix} />
+                </section>
+                )}
+
+                {onStep('g_slot_hours') && audienceForTrade(trade) === 'guest' && shape === 'slot' && (() => {
                     const DAYS = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
                     const dayOpen = (d: number) => schedule.some((r) => r.day === d);
+                    const selected = schedule.slice().sort((a, b) => a.day - b.day);
+                    // Tap a day on/off. A newly opened day takes the shared hours as
+                    // its starting point (the same in either mode); the schedule is
+                    // empty until this first tap, so nothing is written before it.
                     const toggleDay = (d: number) => {
                         if (dayOpen(d)) setSchedule(schedule.filter((r) => r.day !== d));
-                        else setSchedule([...schedule, { day: d, open: '10:00', close: '18:00' }].sort((a, b) => a.day - b.day));
+                        else setSchedule([...schedule, { day: d, open: sharedOpen, close: sharedClose }].sort((a, b) => a.day - b.day));
                     };
-                    const setTime = (d: number, field: 'open' | 'close', val: string) =>
+                    // The one hours control: change it and every chosen day follows.
+                    const setShared = (field: 'open' | 'close', val: string) => {
+                        if (field === 'open') setSharedOpen(val); else setSharedClose(val);
+                        setSchedule(schedule.map((r) => ({ ...r, [field]: val })));
+                    };
+                    const setDayTime = (d: number, field: 'open' | 'close', val: string) =>
                         setSchedule(schedule.map((r) => (r.day === d ? { ...r, [field]: val } : r)));
-                    const addBlock = (val: string) => {
-                        if (val && blockedDates.indexOf(val) === -1) setBlockedDates([...blockedDates, val].sort());
+                    // Fold the per-day hours back to one set: adopt the first open
+                    // day's hours for all, so the simple control shows the truth.
+                    const collapseToSimple = () => {
+                        const first = selected[0];
+                        const o = first ? first.open : sharedOpen;
+                        const c = first ? first.close : sharedClose;
+                        setSharedOpen(o); setSharedClose(c);
+                        setSchedule(schedule.map((r) => ({ ...r, open: o, close: c })));
+                        setHoursMode('simple');
                     };
-                    const removeBlock = (val: string) => setBlockedDates(blockedDates.filter((b) => b !== val));
-                    // The big question ("When can guests book?") carries this
-                    // screen — no nested sub-headings, no paragraphs. Quiet field
-                    // labels name each control, one rhythm holds it together, so a
-                    // schedule reads as one focused task.
+                    // Select-all: turns every day on (keeping any hours already set,
+                    // new days taking the shared hours), and clears when all are on.
+                    // Writes nothing until pressed, like the day toggles themselves.
+                    const allDaysOn = schedule.length === 7;
+                    const toggleAllDays = () => {
+                        if (allDaysOn) { setSchedule([]); return; }
+                        const byDay = new Map(schedule.map((r) => [r.day, r]));
+                        setSchedule([0, 1, 2, 3, 4, 5, 6].map((d) => byDay.get(d) || { day: d, open: sharedOpen, close: sharedClose }));
+                    };
+                    const timeField = 'rounded-lg border border-slate-300 px-3 py-2 text-slate-800 focus:outline-none focus:ring-2 focus:ring-emerald-700';
+                    // ONE decision then an optional refinement: pick the days, set one
+                    // set of hours for all of them, and only reach for per-day hours
+                    // if you actually want them. No seven-row settings table.
                     return (
-                        <section className="mb-8">
-                            <div className="mb-6">
-                                <label className="block text-xs font-medium text-slate-500 mb-2">Who is a session for?</label>
-                                <div className="grid gap-3 sm:grid-cols-2">
-                                    {[
-                                        { v: true, t: 'One group at a time', d: 'The whole thing is theirs — a private sauna. One booking fills it.' },
-                                        { v: false, t: 'Several people join', d: 'A class or a walk. Priced per person, up to a number you set.' },
-                                    ].map((o) => {
-                                        const on = slotPrivate === o.v;
+                        <section className="mb-8 md:max-w-xl md:mx-auto">
+                            <h1 className="font-extrabold tracking-tight text-slate-900 [text-wrap:balance] text-3xl sm:text-4xl text-center">When are you open?</h1>
+                            <p className="mt-2 text-center text-sm leading-relaxed text-slate-500">Pick your days, then set the hours. You can give particular days their own hours after.</p>
+
+                            <div className="mt-10 flex flex-col items-center gap-8">
+                                {/* One row of seven day toggles, then a select-all. */}
+                                <div className="flex flex-wrap items-center justify-center gap-2">
+                                    {DAYS.map((label, d) => {
+                                        const on = dayOpen(d);
                                         return (
-                                            <button key={String(o.v)} type="button" onClick={() => setSlotPrivate(o.v)} aria-pressed={on}
-                                                className={'flex flex-col rounded-2xl border p-4 text-left transition ' + (on ? 'border-emerald-600 bg-emerald-50 ring-1 ring-emerald-600' : 'border-slate-300 hover:border-emerald-400')}>
-                                                <span className="font-semibold text-slate-900">{o.t}</span>
-                                                <span className="mt-1 text-xs leading-snug text-slate-500">{o.d}</span>
+                                            <button key={d} type="button" onClick={() => toggleDay(d)} aria-pressed={on} title={label}
+                                                className={'h-11 w-11 rounded-full text-sm font-semibold transition ' + (on ? 'bg-emerald-700 text-white' : 'bg-slate-100 text-slate-500 hover:bg-slate-200')}>
+                                                {label[0]}<span className="sr-only">{label}</span>
                                             </button>
                                         );
                                     })}
+                                    <button type="button" onClick={toggleAllDays} aria-pressed={allDaysOn}
+                                        className={'h-11 rounded-full px-4 text-sm font-semibold transition ' + (allDaysOn ? 'bg-emerald-700 text-white' : 'bg-slate-100 text-slate-500 hover:bg-slate-200')}>
+                                        {allDaysOn ? 'Clear' : 'Every day'}
+                                    </button>
                                 </div>
-                            </div>
 
-                            {/* Capacity has moved to its own screen in the Pricing
-                                section (g_capacity); this screen keeps only the
-                                session length and the weekly hours. */}
-                            <div className="mb-6">
-                                <label className="block text-xs font-medium text-slate-500 mb-3">How long is each session?</label>
-                                <NumberStepper value={slotLength} onChange={setSlotLength} min={15} max={480} step={15} suggestion={60} suffix="minutes" />
-                            </div>
-
-                            {/* The weekly hours — a day toggles open, and shows an
-                                open/close time when it is. */}
-                            <label className="block text-xs font-medium text-slate-500 mb-2">Which days, and what hours?</label>
-                            <div className="space-y-2">
-                                {DAYS.map((label, d) => {
-                                    const row = schedule.find((r) => r.day === d);
-                                    return (
-                                        <div key={d} className="flex items-center gap-3 rounded-xl border border-slate-200 px-3 py-2">
-                                            <button type="button" onClick={() => toggleDay(d)} aria-pressed={!!row}
-                                                className={'flex-none w-16 rounded-lg px-2 py-1.5 text-sm font-semibold transition ' + (row ? 'bg-emerald-700 text-white' : 'bg-slate-100 text-slate-500 hover:bg-slate-200')}>
-                                                {label}
-                                            </button>
-                                            {row ? (
-                                                <div className="flex items-center gap-2 text-sm text-slate-700">
-                                                    <input type="time" value={row.open} onChange={(e) => setTime(d, 'open', e.target.value)}
-                                                        className="rounded-lg border border-slate-300 px-2 py-1.5 focus:outline-none focus:ring-2 focus:ring-emerald-700" />
-                                                    <span className="text-slate-400">to</span>
-                                                    <input type="time" value={row.close} onChange={(e) => setTime(d, 'close', e.target.value)}
-                                                        className="rounded-lg border border-slate-300 px-2 py-1.5 focus:outline-none focus:ring-2 focus:ring-emerald-700" />
-                                                </div>
-                                            ) : (
-                                                <span className="text-sm text-slate-400">Closed</span>
-                                            )}
+                                {/* The hours — a single control for all the chosen days,
+                                    or, if refined, one row per day. Shown once a day is on. */}
+                                {selected.length > 0 && (hoursMode === 'simple' ? (
+                                    <div className="flex flex-col items-center gap-4">
+                                        <div className="flex items-center gap-3 text-lg">
+                                            <input type="time" value={sharedOpen} onChange={(e) => setShared('open', e.target.value)} className={timeField} aria-label="Opening time" />
+                                            <span className="text-slate-400">to</span>
+                                            <input type="time" value={sharedClose} onChange={(e) => setShared('close', e.target.value)} className={timeField} aria-label="Closing time" />
                                         </div>
-                                    );
-                                })}
+                                        <button type="button" onClick={() => setHoursMode('perday')} className="text-sm font-medium text-emerald-700 underline-offset-2 hover:underline">
+                                            Set different hours for particular days
+                                        </button>
+                                    </div>
+                                ) : (
+                                    <div className="flex w-full flex-col items-center gap-3">
+                                        {selected.map((r) => (
+                                            <div key={r.day} className="flex items-center gap-3">
+                                                <span className="w-10 text-sm font-semibold text-slate-700">{DAYS[r.day]}</span>
+                                                <input type="time" value={r.open} onChange={(e) => setDayTime(r.day, 'open', e.target.value)} className={timeField} aria-label={DAYS[r.day] + ' opening time'} />
+                                                <span className="text-slate-400">to</span>
+                                                <input type="time" value={r.close} onChange={(e) => setDayTime(r.day, 'close', e.target.value)} className={timeField} aria-label={DAYS[r.day] + ' closing time'} />
+                                            </div>
+                                        ))}
+                                        <button type="button" onClick={collapseToSimple} className="mt-1 text-sm font-medium text-emerald-700 underline-offset-2 hover:underline">
+                                            Use the same hours for every day
+                                        </button>
+                                    </div>
+                                ))}
                             </div>
 
-                            {/* Block a date — the one exception the v1 schedule allows. */}
-                            <div className="mt-6">
-                                <label className="block text-xs font-medium text-slate-500 mb-2">Days off</label>
-                                <div className="flex flex-wrap items-center gap-2">
-                                    {blockedDates.map((b) => (
-                                        <span key={b} className="inline-flex items-center gap-1.5 rounded-full bg-slate-100 px-3 py-1 text-xs font-medium text-slate-700">
-                                            {b}
-                                            <button type="button" onClick={() => removeBlock(b)} aria-label={'Remove ' + b} className="text-slate-400 hover:text-slate-700">
-                                                <X className="w-3 h-3" />
-                                            </button>
-                                        </span>
-                                    ))}
-                                    <input type="date" onChange={(e) => { addBlock(e.target.value); e.target.value = ''; }}
-                                        className="rounded-lg border border-slate-300 px-2 py-1.5 text-sm text-slate-600 focus:outline-none focus:ring-2 focus:ring-emerald-700" />
-                                </div>
-                            </div>
                         </section>
                     );
                 })()}
@@ -4510,9 +5165,40 @@ function ApplicationForm() {
                     largest group they'll take; where guests come to them (slot)
                     it's what the space holds. For a shared slot this becomes
                     sellable seats, so the default is deliberately low. */}
+                {/* THE PRICING BASIS — slot only, its own screen now. Private (the
+                    whole session for one group, one flat booking) vs shared
+                    (several people join, priced per person). It sets the price
+                    unit g_menu reads and decides whether the minimum screen
+                    exists. The centred H1 asks the question; here are the two
+                    cards. */}
+                {onStep('g_slot_basis') && isGuest && shape === 'slot' && (
+                <section className="mb-8 sm:mb-0 sm:flex-1 sm:flex sm:flex-col sm:justify-center md:max-w-xl md:mx-auto">
+                    <div className="grid gap-3 sm:grid-cols-3">
+                        {([
+                            { v: 'private', t: 'One group at a time', d: 'The whole thing is theirs — a private hire. One booking fills it.' },
+                            { v: 'shared', t: 'Several people join', d: 'A class or a tasting. Priced per person, up to a number you set.' },
+                            { v: 'both', t: 'Offer both', d: 'Let guests pick a private hire or a single place.' },
+                        ] as const).map((o) => (
+                            <ChoiceCard key={o.v} selected={slotOffer === o.v} onSelect={() => applyOffer(o.v)} title={o.t} hint={o.d} />
+                        ))}
+                    </div>
+                </section>
+                )}
+
                 {onStep('g_capacity') && isGuest && (
                 <section className="flex-1 flex flex-col items-center justify-center">
                     <NumberStepper value={maxGuests} onChange={setMaxGuests} min={1} max={60} suggestion={shape === 'comes_to_you' ? CAPACITY_DEFAULT_TRAVEL : CAPACITY_DEFAULT_SLOT} size="lg" solid suffix={GUEST_SCREEN_COPY.capacitySuffix} />
+                </section>
+                )}
+
+                {/* THE PER-PERSON MINIMUM — shared slots only. The smallest group
+                    a single booking may be, a big stepper like guests/years. The
+                    ceiling (g_capacity) is the max above it, so the stepper caps
+                    there; default 1 = no minimum. The route is the real gate —
+                    this is the convenience floor. */}
+                {onStep('g_slot_min') && isGuest && shape === 'slot' && offeringHasShared(slotOffer) && (
+                <section className="flex-1 flex flex-col items-center justify-center">
+                    <NumberStepper value={slotMinPeople} onChange={setSlotMinPeople} min={1} max={Math.max(1, parseInt(maxGuests, 10) || CAPACITY_DEFAULT_SLOT)} suggestion={1} size="lg" solid suffix={GUEST_SCREEN_COPY.slotMinSuffix} />
                 </section>
                 )}
 
@@ -4572,7 +5258,7 @@ function ApplicationForm() {
                                     value={whatToExpect}
                                     onChange={(e) => setWhatToExpect(e.target.value)}
                                     rows={4}
-                                    placeholder={GUEST_SCREEN_COPY.expectPlaceholder}
+                                    placeholder={GUEST_SCREEN_COPY.expectExamples[guestCategory] ?? GUEST_SCREEN_COPY.expectExampleFallback}
                                     className={bigArea}
                                 />
                             </div>
@@ -5654,7 +6340,12 @@ function ApplicationForm() {
 
 
                 {(audienceForTrade(trade) === 'guest' ? onStep('g_area') : onStep('business')) && (
-                <section className="mb-8">
+                <section className={'mb-8'
+                    /* Vertically centre the fork (and whatever it reveals below it)
+                       in the space between the question and the footer on desktop.
+                       No items-center: the cards and pickers keep their left edge
+                       and their max width. Mobile is untouched. */
+                    + (guestMtoArea ? ' sm:flex-1 sm:flex sm:flex-col sm:justify-center' : '')}>
                     {/* HOST TRADES keep the town-and-radius model — the radius is a
                         live precision filter behind the directory, and five regions
                         would be too coarse for it — but it's captured in the guest
@@ -5746,81 +6437,234 @@ function ApplicationForm() {
                         the same tick-list picker. The slot and made-to-order shapes
                         carry their real "when" (schedule, notice) in their own
                         blocks above; this screen is only the where. */}
-                    {isGuest && (
+                    {isGuest && (() => {
+                        // Made-to-order and slot both drive the location off the
+                        // fulfilment field now: collection = an address guests come
+                        // to, delivery = the host travels (coverage regions). A
+                        // comes-to-you traveller always shows regions. So: regions
+                        // when a fulfilment provider delivers/travels OR when the
+                        // shape is comes-to-you; the address when it collects.
+                        const usesFulfilment = shape === 'made_to_order' || shape === 'slot';
+                        const collects = fulfilment === 'collection' || fulfilment === 'both';
+                        const delivers = fulfilment === 'delivery' || fulfilment === 'both';
+                        const showRegions = usesFulfilment ? delivers : true;
+                        const showCollection = usesFulfilment && collects;
+                        // Slot copy forks on premises vs meeting point (outdoors,
+                        // water) — data identical, wording only.
+                        const slotMeeting = shape === 'slot' && slotIsMeetingPoint(guestCategory);
+                        // The manual boxes are hidden behind the lookup until they're
+                        // wanted: the provider asks to type it by hand, a lookup fills
+                        // or fails, or a returning provider already has an address.
+                        // Otherwise the screen is just the lookup. The Next gate still
+                        // fires in the footer (submitProblems), so an empty required
+                        // address is not silently allowed — it just doesn't force the
+                        // boxes open before they've chosen how to enter it.
+                        const showCollectionFields = collectionManual
+                            || collectionStreet.trim() !== ''
+                            || collectionTown.trim() !== ''
+                            || collectionPostcode.trim() !== '';
+                        const forkOptions: [string, string, string][] = [
+                            ['delivery', GUEST_SCREEN_COPY.fulfilmentDelivery, GUEST_SCREEN_COPY.fulfilmentDeliveryHint],
+                            ['collection', GUEST_SCREEN_COPY.fulfilmentCollection, GUEST_SCREEN_COPY.fulfilmentCollectionHint],
+                            ['both', GUEST_SCREEN_COPY.fulfilmentBoth, GUEST_SCREEN_COPY.fulfilmentBothHint],
+                        ];
+                        return (
                         <>
-                            {shape === 'slot' || shape === 'made_to_order' ? (
-                                <label className="block text-xs font-medium text-slate-500 mb-3">
-                                    {shape === 'slot'
-                                        ? 'Where does it take place?'
-                                        : 'Which parts of Dumfries & Galloway do you deliver to?'}
-                                </label>
-                            ) : (
-                                <p className="text-sm text-slate-500 mb-4 md:max-w-xl">
-                                    {GUEST_SCREEN_COPY.locationSubtextTravel}
-                                </p>
-                            )}
-
-                            <div className="space-y-1 md:max-w-xl">
-                                {areas.map((a, i) => (
-                                    <HubRow
-                                        key={i}
-                                        filled
-                                        label={a.town}
-                                        prompt=""
-                                        summary={regionHint(a.town)}
-                                        onOpen={() => setAreaPickerOpen(true)}
-                                    />
-                                ))}
-                                {!areasHasAll && (
-                                    <HubRow
-                                        filled={false}
-                                        label={GUEST_SCREEN_COPY.locationAddRow}
-                                        prompt={GUEST_SCREEN_COPY.locationAddPrompt}
-                                        onOpen={() => setAreaPickerOpen(true)}
-                                    />
-                                )}
-                            </div>
-
-                            {problemFor('areas') && (
-                                <p data-problem className="text-sm text-rose-700 mt-3">
-                                    {GUEST_SCREEN_COPY.locationAreaGate}
-                                </p>
-                            )}
-
-                            <SubFlowModal
-                                open={areaPickerOpen}
-                                title={GUEST_SCREEN_COPY.locationPickerTitle}
-                                onClose={() => setAreaPickerOpen(false)}
-                                saveLabel={GUEST_SCREEN_COPY.locationPickerDone}
-                                saveDisabled={areas.length === 0}
-                            >
-                                <div className="mx-auto w-full max-w-md space-y-2">
-                                    {GUEST_REGIONS.map((r) => {
-                                        const on = regionPicked(r.label);
-                                        return (
-                                            <button
-                                                key={r.key}
-                                                type="button"
-                                                onClick={() => toggleRegion(r)}
-                                                aria-pressed={on}
-                                                className={'flex w-full items-center gap-3 rounded-2xl border px-4 py-3 text-left transition '
-                                                    + (on ? 'border-emerald-600 bg-emerald-50 ring-1 ring-emerald-600' : 'border-slate-200 hover:border-emerald-400')}
-                                            >
-                                                <span className={'flex h-6 w-6 flex-none items-center justify-center rounded-md border transition '
-                                                    + (on ? 'border-emerald-600 bg-emerald-600 text-white' : 'border-slate-300 text-transparent')}>
-                                                    <Check className="h-4 w-4" strokeWidth={3} />
-                                                </span>
-                                                <span className="min-w-0">
-                                                    <span className="block font-semibold text-slate-900">{r.label}</span>
-                                                    <span className="block text-sm text-slate-500">{r.hint}</span>
-                                                </span>
-                                            </button>
-                                        );
-                                    })}
+                            {/* MADE-TO-ORDER: the fulfilment fork. Delivery reveals the
+                                region picker; collection reveals a private address;
+                                both reveals both. The shared mechanism massage adopts
+                                next — kept separate from `shape`. */}
+                            {shape === 'made_to_order' && (
+                                <div role="radiogroup" aria-label={GUEST_SCREEN_COPY.fulfilmentHeading}
+                                    className="grid grid-cols-1 gap-4 sm:grid-cols-3 md:max-w-xl">
+                                    {/* Large cards — the shared ChoiceCard, in radiogroup
+                                        mode. The only options on the screen, so they use the
+                                        space: side by side on a wide screen, tall-but-fitting
+                                        stacked on a phone. */}
+                                    {forkOptions.map(([val, label, hint]) => (
+                                        <ChoiceCard key={val} radio selected={fulfilment === val}
+                                            onSelect={() => setFulfilment(val)} title={label} hint={hint} />
+                                    ))}
                                 </div>
-                            </SubFlowModal>
+                            )}
+
+                            {/* Coverage regions — shown when the provider travels: a
+                                comes-to-you chef, a made-to-order that delivers, or a
+                                slot host who goes to the guest's cottage. A slot at a
+                                fixed place shows the address block below instead, not
+                                this. */}
+                            {showRegions && (
+                                <div className={shape === 'made_to_order' ? 'mt-8' : ''}>
+                                    {shape === 'made_to_order' ? (
+                                        <label className="block text-xs font-medium text-slate-500 mb-3">{GUEST_SCREEN_COPY.locationHeadingDeliver}</label>
+                                    ) : (
+                                        <p className="text-sm text-slate-500 mb-4 md:max-w-xl">{GUEST_SCREEN_COPY.locationSubtextTravel}</p>
+                                    )}
+
+                                    <div className="space-y-1 md:max-w-xl">
+                                        {areas.map((a, i) => (
+                                            <HubRow key={i} filled label={a.town} prompt="" summary={regionHintFor(a.town)} onOpen={() => setAreaPickerOpen(true)} />
+                                        ))}
+                                        {!areasHasAll && (
+                                            <HubRow filled={false} label={GUEST_SCREEN_COPY.locationAddRow}
+                                                prompt={shape === 'made_to_order' ? GUEST_SCREEN_COPY.locationAddPromptDeliver : GUEST_SCREEN_COPY.locationAddPrompt}
+                                                onOpen={() => setAreaPickerOpen(true)} />
+                                        )}
+                                    </div>
+
+                                    {problemFor('areas') && (
+                                        <p data-problem className="text-sm text-rose-700 mt-3">{GUEST_SCREEN_COPY.locationAreaGate}</p>
+                                    )}
+                                </div>
+                            )}
+
+                            {/* Collection address — three fields, not one blob, so
+                                the town can drive the public based_line while the
+                                street and postcode stay private, released only on a
+                                confirmed order (see the order page). Optional
+                                postcode lookup on top; manual entry always works. */}
+                            {showCollection && (
+                                <div className="mt-8 md:max-w-xl">
+                                    <span className="block text-xs font-medium text-slate-500 mb-2">{
+                                        shape === 'slot'
+                                            ? (slotMeeting ? GUEST_SCREEN_COPY.slotAddressLabelMeeting : GUEST_SCREEN_COPY.slotAddressLabelPremises)
+                                            : GUEST_SCREEN_COPY.collectionAddressLabel
+                                    }</span>
+
+                                    {showCollectionFields ? (
+                                        // FIELDS MODE — a chosen or hand-typed address. The
+                                        // lookup is collapsed away (no duplicate postcode, no
+                                        // fourth box); a "Search again" link reopens it.
+                                        <>
+                                            <div className="space-y-3">
+                                                <div>
+                                                    <label htmlFor="collection-street" className="block text-xs font-medium text-slate-500 mb-1">{GUEST_SCREEN_COPY.collectionStreetLabel}</label>
+                                                    <input id="collection-street" type="text"
+                                                        value={collectionStreet}
+                                                        onChange={(e) => setCollectionStreet(e.target.value)}
+                                                        placeholder={GUEST_SCREEN_COPY.collectionStreetPlaceholder}
+                                                        className="w-full rounded-xl border border-slate-300 px-4 py-3 focus:outline-none focus:ring-2 focus:ring-emerald-700" />
+                                                </div>
+                                                <div className="flex gap-3">
+                                                    <div className="min-w-0 flex-1">
+                                                        <label htmlFor="collection-town" className="block text-xs font-medium text-slate-500 mb-1">{GUEST_SCREEN_COPY.collectionTownLabel}</label>
+                                                        <input id="collection-town" type="text"
+                                                            value={collectionTown}
+                                                            onChange={(e) => setCollectionTown(e.target.value)}
+                                                            placeholder={GUEST_SCREEN_COPY.collectionTownPlaceholder}
+                                                            className="w-full rounded-xl border border-slate-300 px-4 py-3 focus:outline-none focus:ring-2 focus:ring-emerald-700" />
+                                                    </div>
+                                                    <div className="w-36 flex-none">
+                                                        <label htmlFor="collection-postcode" className="block text-xs font-medium text-slate-500 mb-1">{GUEST_SCREEN_COPY.collectionPostcodeLabel}</label>
+                                                        <input id="collection-postcode" type="text"
+                                                            value={collectionPostcode}
+                                                            onChange={(e) => setCollectionPostcode(e.target.value)}
+                                                            placeholder={GUEST_SCREEN_COPY.collectionPostcodePlaceholder}
+                                                            className="w-full rounded-xl border border-slate-300 px-4 py-3 focus:outline-none focus:ring-2 focus:ring-emerald-700" />
+                                                    </div>
+                                                </div>
+                                            </div>
+
+                                            <div className="mt-2 flex items-start justify-between gap-3">
+                                                <p className="text-xs text-slate-500">{GUEST_SCREEN_COPY.collectionAddressHint}</p>
+                                                <button type="button" onClick={searchCollectionAgain}
+                                                    className="flex-none text-sm font-medium text-emerald-700 underline underline-offset-2 hover:text-emerald-800">
+                                                    {GUEST_SCREEN_COPY.collectionSearchAgain}
+                                                </button>
+                                            </div>
+                                            {problemFor('collection_address') && (
+                                                <p data-problem className="text-sm text-rose-700 mt-2">{problemFor('collection_address')!.message}</p>
+                                            )}
+                                        </>
+                                    ) : (
+                                        // LOOKUP MODE — search as you type (debounced, ≥3
+                                        // chars, no button); pick fills the fields above.
+                                        // "Enter it by hand" is the escape if it can't help.
+                                        <>
+                                            <input
+                                                type="text"
+                                                value={collectionLookupQuery}
+                                                onChange={(e) => setCollectionLookupQuery(e.target.value)}
+                                                placeholder={GUEST_SCREEN_COPY.collectionLookupPrompt}
+                                                autoComplete="off"
+                                                className="w-full rounded-xl border border-slate-300 px-4 py-3 focus:outline-none focus:ring-2 focus:ring-emerald-700" />
+                                            {collectionLookupBusy && collectionLookupResults.length === 0 && (
+                                                <p className="mt-2 text-xs text-slate-400">Searching…</p>
+                                            )}
+                                            {collectionLookupResults.length > 0 && (
+                                                // A count under the box says how many there are, since
+                                                // a scrollbar — even one that stays visible — is easy to
+                                                // miss. "16 addresses" makes the length explicit.
+                                                <p className="mt-2 text-xs text-slate-400">
+                                                    {collectionLookupResults.length} {collectionLookupResults.length === 1 ? 'address' : 'addresses'}
+                                                </p>
+                                            )}
+                                            {collectionLookupResults.length > 0 && (
+                                                <div className="relative mt-1">
+                                                    <ul ref={collectionListRef} onScroll={updateCollectionMoreBelow}
+                                                        style={collectionListMaxH ? { maxHeight: collectionListMaxH } : undefined}
+                                                        className="scroll-always max-h-64 overflow-y-auto overscroll-contain rounded-xl border border-slate-200 divide-y divide-slate-100">
+                                                        {collectionLookupResults.map((s) => (
+                                                            <li key={s.id}>
+                                                                <button type="button" onClick={() => pickCollectionSuggestion(s.id)}
+                                                                    className="block w-full px-4 py-2.5 text-left text-sm text-slate-700 transition hover:bg-emerald-50">
+                                                                    {s.label}
+                                                                </button>
+                                                            </li>
+                                                        ))}
+                                                    </ul>
+                                                    {/* A soft fade over the bottom edge while more of the
+                                                        list is below — a scroll cue that doesn't rely on the
+                                                        browser drawing (or keeping) the scrollbar. */}
+                                                    <div aria-hidden hidden={!collectionMoreBelow}
+                                                        className="pointer-events-none absolute inset-x-0 bottom-0 h-8 rounded-b-xl bg-gradient-to-t from-white to-transparent" />
+                                                </div>
+                                            )}
+                                            {collectionLookupError && (
+                                                <p className="mt-2 text-xs text-slate-500">{collectionLookupError}</p>
+                                            )}
+                                            <button type="button" onClick={() => setCollectionManual(true)}
+                                                className="mt-3 text-sm font-medium text-emerald-700 underline underline-offset-2 hover:text-emerald-800">
+                                                {GUEST_SCREEN_COPY.collectionManualLink}
+                                            </button>
+                                        </>
+                                    )}
+                                </div>
+                            )}
+
+                            {/* The region picker modal — only when regions can show. */}
+                            {showRegions && (
+                                <SubFlowModal
+                                    open={areaPickerOpen}
+                                    title={shape === 'made_to_order' ? GUEST_SCREEN_COPY.locationPickerTitleDeliver : GUEST_SCREEN_COPY.locationPickerTitle}
+                                    onClose={() => setAreaPickerOpen(false)}
+                                    saveLabel={GUEST_SCREEN_COPY.locationPickerDone}
+                                    saveDisabled={areas.length === 0}
+                                >
+                                    <div className="mx-auto w-full max-w-md space-y-2">
+                                        {GUEST_REGIONS.map((r) => {
+                                            const on = regionPicked(r.label);
+                                            return (
+                                                <button key={r.key} type="button" onClick={() => toggleRegion(r)} aria-pressed={on}
+                                                    className={'flex w-full items-center gap-3 rounded-2xl border px-4 py-3 text-left transition '
+                                                        + (on ? 'border-emerald-600 bg-emerald-50 ring-1 ring-emerald-600' : 'border-slate-200 hover:border-emerald-400')}>
+                                                    <span className={'flex h-6 w-6 flex-none items-center justify-center rounded-md border transition '
+                                                        + (on ? 'border-emerald-600 bg-emerald-600 text-white' : 'border-slate-300 text-transparent')}>
+                                                        <Check className="h-4 w-4" strokeWidth={3} />
+                                                    </span>
+                                                    <span className="min-w-0">
+                                                        <span className="block font-semibold text-slate-900">{r.label}</span>
+                                                        <span className="block text-sm text-slate-500">{r.key === GUEST_COVERAGE_ALL_KEY ? allRegionHint : r.hint}</span>
+                                                    </span>
+                                                </button>
+                                            );
+                                        })}
+                                    </div>
+                                </SubFlowModal>
+                            )}
                         </>
-                    )}
+                        );
+                    })()}
                 </section>
                 )}
 
@@ -5980,41 +6824,229 @@ function ApplicationForm() {
                 below, and changing the address is a button rather than an
                 instruction, because the field is two steps back and telling
                 somebody to go and find it is how they give up. */}
-            {/* The one confirmation that replaced the per-category checks, folded
-                onto the finish screen as a tickbox above submit (the standard
-                shape). Guest-only, and REQUIRED to send — the save() guard and
-                the gated button both hold on it. The tick lives in
-                `declarations.responsibility`, so guestProviderFields writes it
-                like any check. Worded as a confirmation of responsibility, not an
-                indemnity — the liability terms are in the T&Cs, not here. */}
-            {onStep('finish') && isGuest && !locked && !lodged && (
+            {/* The finish screen for a guest: a full-width PREVIEW of what they're
+                submitting — cover photo, name, category, price, coverage, and what
+                they wrote — so their last impression after ten screens is their own
+                listing, not a wall of terms. Beneath it the terms are ONE line: a
+                tickbox with the terms behind a link that opens them in a modal.
+                REQUIRED to send — the save() guard and the gated button both hold
+                on `termsAgreed`; the acceptance (version + timestamp) is recorded
+                in the declarations jsonb (guestProviderFields). */}
+            {onStep('finish') && isGuest && !locked && !lodged && (() => {
+                const catLabel = guestCategoryByKey(guestCategory)?.label || GUEST_SCREEN_COPY.finishSummaryCategory;
+                const priceVal = (items || [])
+                    .filter((i) => String(i.price || '').trim())
+                    .map((i) => '£' + String(i.price).trim())
+                    .join(', ') || '—';
+                // A guest's areas hold the region label in `town` (set from
+                // GUEST_REGIONS when a region is picked), so read that directly.
+                const areaList = (areas || []).map((a) => a.town).filter(Boolean).join(', ');
+                // Coverage reflects the made-to-order fulfilment choice: delivery
+                // shows the delivery areas; collection-only has no areas, so it
+                // says "Collection only" rather than reading blank; both shows the
+                // areas and notes collection is available too. Slot and
+                // comes-to-you keep their areas as before.
+                const coverageVal = shape === 'made_to_order'
+                    ? (fulfilment === 'collection'
+                        ? GUEST_SCREEN_COPY.finishCoverageCollectionOnly
+                        : fulfilment === 'both'
+                            ? (areaList ? areaList + GUEST_SCREEN_COPY.finishCoverageBothSuffix : GUEST_SCREEN_COPY.finishCoverageCollectionAvailable)
+                            : (areaList || '—'))
+                    // A slot follows its fulfilment: a come-to-me slot has no
+                    // regions but a public town (the address they gave); a
+                    // travelling slot shows the areas it covers.
+                    : shape === 'slot'
+                        ? (fulfilment === 'delivery' ? (areaList || '—') : (collectionTown.trim() || '—'))
+                        : (areaList || '—');
+                const whenVal = shape === 'slot'
+                    ? `${(schedule || []).length} weekly time${(schedule || []).length === 1 ? '' : 's'}`
+                    : shape === 'made_to_order'
+                        ? `${String(leadTimeDays || '0').trim()} days’ notice`
+                        : 'arranged per booking';
+                // Up to THREE photos in the hero space, in listing order so the
+                // cover leads. More than three crams; one or two fill the space
+                // rather than leaving gaps (see the layout below).
+                const shots = (photos || []).slice(0, 3).map((p) => getImageUrl(p));
+                const facts: [string, string][] = [
+                    [GUEST_SCREEN_COPY.finishSummaryPrice, priceVal],
+                    [GUEST_SCREEN_COPY.finishSummaryCoverage, coverageVal],
+                    [GUEST_SCREEN_COPY.finishSummaryWhen, whenVal],
+                    [GUEST_SCREEN_COPY.finishSummaryPhotos, String((photos || []).length)],
+                ];
+                const wrote: [string, string][] = ([
+                    [GUEST_SCREEN_COPY.finishWroteTitle, professionalTitle.trim()],
+                    [GUEST_SCREEN_COPY.finishWroteExpect, whatToExpect.trim()],
+                    [GUEST_SCREEN_COPY.finishWroteQuals, qualifications.trim()],
+                    [GUEST_SCREEN_COPY.finishWroteDietary, dietaryNote.trim()],
+                ] as [string, string][]).filter(([, v]) => v);
+                return (
                 <section className="mb-8">
-                    <label
-                        className={
-                            'flex items-start gap-3 rounded-2xl border-2 px-5 py-4 cursor-pointer transition '
-                            + 'focus-within:ring-2 focus-within:ring-emerald-600 '
-                            + (declarations['responsibility']
-                                ? 'border-emerald-600 bg-emerald-50/60'
-                                : 'border-slate-200 hover:border-slate-300')
-                        }
-                    >
-                        <input
-                            type="checkbox"
-                            checked={!!declarations['responsibility']}
-                            onChange={(e) => {
-                                setDeclarations((prev) => ({ ...prev, responsibility: e.target.checked }));
-                                setResponsibilityError('');
-                            }}
-                            className="mt-0.5 w-4 h-4 rounded border-slate-300 shrink-0"
-                        />
-                        <span className="text-sm text-slate-800">
-                            {GUEST_SCREEN_COPY.responsibilityConfirm}
-                        </span>
-                    </label>
-                    {responsibilityError && (
-                        <p data-problem className="text-sm text-rose-700 mt-2">{responsibilityError}</p>
-                    )}
+                    <h2 className="text-xs font-semibold uppercase tracking-wide text-slate-500 mb-3">
+                        {GUEST_SCREEN_COPY.finishSummaryHeading}
+                    </h2>
+
+                    {/* The preview card — reads as the listing about to be reviewed,
+                        their last chance to spot a mistake before sending. */}
+                    <div className="overflow-hidden rounded-3xl border border-slate-200">
+                        {/* The hero: up to three photos in one band of fixed height,
+                            cover first. One fills it; two split it in half; three put
+                            the cover large on the left with the next two stacked on
+                            the right (Airbnb-style), so the space is used whatever the
+                            count and it's never more than three. */}
+                        {shots.length === 0 ? (
+                            <div className="flex h-40 w-full items-center justify-center bg-slate-100 text-sm text-slate-400">
+                                No cover photo yet
+                            </div>
+                        ) : shots.length === 1 ? (
+                            // eslint-disable-next-line @next/next/no-img-element
+                            <img src={shots[0]} alt="" className="h-56 w-full object-cover sm:h-72" />
+                        ) : shots.length === 2 ? (
+                            <div className="grid h-56 grid-cols-2 grid-rows-1 gap-1 sm:h-72">
+                                {shots.map((s, i) => (
+                                    // eslint-disable-next-line @next/next/no-img-element
+                                    <img key={i} src={s} alt="" className="h-full w-full object-cover" />
+                                ))}
+                            </div>
+                        ) : (
+                            <div className="grid h-56 grid-cols-2 grid-rows-2 gap-1 sm:h-72">
+                                {/* eslint-disable-next-line @next/next/no-img-element */}
+                                <img src={shots[0]} alt="" className="row-span-2 h-full w-full object-cover" />
+                                {/* eslint-disable-next-line @next/next/no-img-element */}
+                                <img src={shots[1]} alt="" className="h-full w-full object-cover" />
+                                {/* eslint-disable-next-line @next/next/no-img-element */}
+                                <img src={shots[2]} alt="" className="h-full w-full object-cover" />
+                            </div>
+                        )}
+                        <div className="p-6 sm:p-8">
+                            {/* The Title is the listing's display name; the
+                                category sits beneath it, and the provider's own
+                                photo + first name is the byline (who a guest is
+                                booking) — never a surname. */}
+                            <h3 className="text-2xl font-bold text-slate-900 [text-wrap:balance] sm:text-3xl">
+                                {professionalTitle.trim() || '—'}
+                            </h3>
+                            <p className="mt-1 text-slate-500">{catLabel}</p>
+
+                            {summaryByline ? (
+                                <div className="mt-4 flex items-center gap-2.5">
+                                    {headshot ? (
+                                        // eslint-disable-next-line @next/next/no-img-element
+                                        <img src={getImageUrl(headshot)} alt="" className="h-9 w-9 flex-none rounded-full object-cover ring-1 ring-slate-200" />
+                                    ) : (
+                                        <span className="flex h-9 w-9 flex-none items-center justify-center rounded-full bg-slate-100 text-xs font-semibold text-slate-500">
+                                            {summaryByline.slice(0, 1)}
+                                        </span>
+                                    )}
+                                    <span className="text-sm text-slate-600">{summaryByline}</span>
+                                </div>
+                            ) : null}
+
+                            <dl className="mt-6 grid grid-cols-2 gap-x-8 gap-y-4 lg:grid-cols-4">
+                                {facts.map(([label, value]) => (
+                                    <div key={label}>
+                                        <dt className="text-xs font-medium uppercase tracking-wide text-slate-400">{label}</dt>
+                                        <dd className="mt-0.5 text-sm text-slate-900 break-words">{value}</dd>
+                                    </div>
+                                ))}
+                            </dl>
+
+                            {/* The one place a 'both' provider is told how a time
+                                sells — the basis screen no longer says it, and this
+                                is the review where they can still change their mind. */}
+                            {shape === 'slot' && slotOffer === 'both' && (
+                                <p className="mt-6 rounded-xl bg-slate-50 px-4 py-3 text-sm leading-relaxed text-slate-600">
+                                    {GUEST_SCREEN_COPY.finishBothNote}
+                                </p>
+                            )}
+
+                            {wrote.length > 0 && (
+                                <div className="mt-8 space-y-5 border-t border-slate-100 pt-6">
+                                    {wrote.map(([label, value]) => (
+                                        <div key={label}>
+                                            <dt className="text-xs font-medium uppercase tracking-wide text-slate-400">{label}</dt>
+                                            <dd className="mt-1 whitespace-pre-line text-sm text-slate-700 [text-wrap:pretty]">{value}</dd>
+                                        </div>
+                                    ))}
+                                </div>
+                            )}
+                        </div>
+                    </div>
+
+                    {/* The terms, one line: a tickbox with the terms behind a link.
+                        The link is a button INSIDE the label — clicking it opens the
+                        modal and does not toggle the box (an interactive descendant
+                        doesn't fire the label's control). */}
+                    <div className="mt-6">
+                        <div className="flex items-start gap-3">
+                            <input
+                                id="agree-terms"
+                                type="checkbox"
+                                checked={termsAgreed}
+                                onChange={(e) => { setTermsAgreed(e.target.checked); setTermsError(''); }}
+                                className="mt-0.5 h-4 w-4 shrink-0 rounded border-slate-300"
+                            />
+                            <label htmlFor="agree-terms" className="text-sm text-slate-800">
+                                {GUEST_SCREEN_COPY.termsAgreePrefix}{' '}
+                                <button
+                                    type="button"
+                                    onClick={(e) => { e.preventDefault(); setTermsModalOpen(true); }}
+                                    className="font-semibold text-emerald-700 underline hover:text-emerald-800"
+                                >
+                                    {GUEST_SCREEN_COPY.termsLinkText}
+                                </button>.
+                                <span className="mt-0.5 block text-xs text-slate-400">
+                                    Version {PROVIDER_TERMS.version}
+                                </span>
+                            </label>
+                        </div>
+                        {termsError && (
+                            <p data-problem className="mt-2 text-sm text-rose-700">{termsError}</p>
+                        )}
+                    </div>
                 </section>
+                );
+            })()}
+
+            {/* The terms modal: the full terms in a scrollable panel with a close
+                button. No scroll-to-bottom gate. Opened from the agree line. */}
+            {termsModalOpen && (
+                <div
+                    className="fixed inset-0 z-50 flex items-end justify-center bg-slate-900/40 sm:items-center sm:p-6"
+                    role="dialog"
+                    aria-modal="true"
+                    aria-label={PROVIDER_TERMS.title}
+                    onClick={() => setTermsModalOpen(false)}
+                >
+                    <div
+                        className="flex max-h-[85vh] w-full flex-col rounded-t-3xl bg-white shadow-xl sm:max-w-2xl sm:rounded-3xl"
+                        onClick={(e) => e.stopPropagation()}
+                    >
+                        <div className="flex items-center justify-between border-b border-slate-100 px-5 py-4 sm:px-6">
+                            <h3 className="text-base font-bold text-slate-900">{PROVIDER_TERMS.title}</h3>
+                            <button
+                                type="button"
+                                onClick={() => setTermsModalOpen(false)}
+                                aria-label={GUEST_SCREEN_COPY.termsModalClose}
+                                className="rounded-full p-1.5 text-slate-500 transition hover:bg-slate-100 hover:text-slate-800"
+                            >
+                                <X className="h-5 w-5" />
+                            </button>
+                        </div>
+                        <div className="scroll-always space-y-4 overflow-y-auto px-5 py-5 text-sm text-slate-700 sm:px-6">
+                            {PROVIDER_TERMS.draftNotice && (
+                                <p className="rounded-lg border border-amber-200 bg-amber-50 px-3 py-2 text-xs font-semibold text-amber-800">
+                                    {PROVIDER_TERMS.draftNotice}
+                                </p>
+                            )}
+                            {PROVIDER_TERMS.sections.map((sec) => (
+                                <div key={sec.heading} className="space-y-1.5">
+                                    <h4 className="font-semibold text-slate-900">{sec.heading}</h4>
+                                    {sec.body.map((p, i) => <p key={i}>{p}</p>)}
+                                </div>
+                            ))}
+                        </div>
+                    </div>
+                </div>
             )}
 
             {onStep('finish') && accountExists && !lodged && (
@@ -6118,11 +7150,13 @@ function ApplicationForm() {
                 </div>
             )}
 
-            {onStep('finish') && !locked && !lodged && (
+            {/* "Save and finish later" now lives in the footer, on the same line
+                as the send button (see the footer below). What stays here is the
+                live-business note, and — signed out — the reassurance that the
+                form is safe on the device. The block renders only when it has
+                something to say, so an empty divider never shows. */}
+            {onStep('finish') && !locked && !lodged && (status === 'approved' || !session) && (
                 <div className="border-t border-slate-200 pt-6">
-                    {/* A live business is not re-applying. One button, and it
-                        says what it does — and the consequence is stated
-                        before they press it rather than discovered after. */}
                     {status === 'approved' ? (
                         <>
                             <p className="text-sm text-slate-600 mb-4">
@@ -6137,27 +7171,11 @@ function ApplicationForm() {
                         </>
                     ) : (
                         <div className="flex flex-wrap items-center gap-3">
-                            {/* The button that sends this is in the modal
-                                footer with Back, where every other step keeps
-                                its forward action. What stays here is the
-                                wording that only makes sense beside the form.
-
-                                "Save and finish later" is a promise that needs
-                                somewhere to save TO. Signed out there is no
-                                such place, and it used to open the login wall
-                                — so it says what actually happens instead: the
-                                form is in this browser and will be here when
-                                they come back. */}
-                            {session ? (
-                                <button
-                                    type="button"
-                                    onClick={() => save(false)}
-                                    disabled={saving}
-                                    className="rounded-full border border-slate-300 px-6 py-3 font-semibold text-slate-700 hover:border-slate-500 transition disabled:opacity-60"
-                                >
-                                    Save and finish later
-                                </button>
-                            ) : (
+                            {/* Signed out there is nowhere to save TO, so instead
+                                of a button this says what actually happens: the
+                                form is in this browser and will be here when they
+                                come back. */}
+                            {(
                                 <p className="text-sm text-slate-500">
                                     Everything you have typed stays on this device, so you can close
                                     this and come back to it.
@@ -6166,43 +7184,45 @@ function ApplicationForm() {
                         </div>
                     )}
 
-                    {/* Only a draft, and only one they have actually started.
-                        Nothing is recoverable afterwards, so it asks first. */}
-                    {status === 'draft' && providerId && (
-                        <div className="mt-8 pt-6 border-t border-slate-200">
-                            {!confirmRemove ? (
+                </div>
+            )}
+
+            {/* Only a draft, and only one they have actually started. Its own
+                block (not nested in the note above), so a signed-in returning
+                draft can still remove it. */}
+            {onStep('finish') && !locked && !lodged && status === 'draft' && providerId && (
+                <div className="mt-8 pt-6 border-t border-slate-200">
+                    {!confirmRemove ? (
+                        <button
+                            type="button"
+                            onClick={() => setConfirmRemove(true)}
+                            className="text-sm font-semibold text-rose-700 hover:text-rose-800 underline"
+                        >
+                            Remove this
+                        </button>
+                    ) : (
+                        <div>
+                            <p className="text-sm text-slate-700 mb-3">
+                                Remove this {tradeLabel(trade).toLowerCase()} application? Everything you have
+                                filled in goes with it, and it cannot be got back.
+                            </p>
+                            <div className="flex flex-wrap gap-3">
                                 <button
                                     type="button"
-                                    onClick={() => setConfirmRemove(true)}
-                                    className="text-sm font-semibold text-rose-700 hover:text-rose-800 underline"
+                                    onClick={removeDraft}
+                                    disabled={removing}
+                                    className="rounded-full bg-rose-700 hover:bg-rose-800 text-white px-5 py-2.5 text-sm font-semibold transition disabled:opacity-60"
                                 >
-                                    Remove this
+                                    {removing ? 'Removing…' : 'Remove for good'}
                                 </button>
-                            ) : (
-                                <div>
-                                    <p className="text-sm text-slate-700 mb-3">
-                                        Remove this {tradeLabel(trade).toLowerCase()} application? Everything you have
-                                        filled in goes with it, and it cannot be got back.
-                                    </p>
-                                    <div className="flex flex-wrap gap-3">
-                                        <button
-                                            type="button"
-                                            onClick={removeDraft}
-                                            disabled={removing}
-                                            className="rounded-full bg-rose-700 hover:bg-rose-800 text-white px-5 py-2.5 text-sm font-semibold transition disabled:opacity-60"
-                                        >
-                                            {removing ? 'Removing…' : 'Remove for good'}
-                                        </button>
-                                        <button
-                                            type="button"
-                                            onClick={() => setConfirmRemove(false)}
-                                            className="rounded-full border border-slate-300 px-5 py-2.5 text-sm font-semibold text-slate-700"
-                                        >
-                                            Keep it
-                                        </button>
-                                    </div>
-                                </div>
-                            )}
+                                <button
+                                    type="button"
+                                    onClick={() => setConfirmRemove(false)}
+                                    className="rounded-full border border-slate-300 px-5 py-2.5 text-sm font-semibold text-slate-700"
+                                >
+                                    Keep it
+                                </button>
+                            </div>
                         </div>
                     )}
                 </div>
@@ -6255,6 +7275,22 @@ function ApplicationForm() {
                         </Link>
                     ))}
 
+                    {/* "Save and finish later" sits at the left of the footer on
+                        the finish step, on the same line as the send button, rather
+                        than floating in the content where it was easy to miss. Only
+                        when signed in (there is somewhere to save to) and not a live
+                        business re-applying. */}
+                    {onStep('finish') && !locked && !lodged && status !== 'approved' && session && (
+                        <button
+                            type="button"
+                            onClick={() => save(false)}
+                            disabled={saving}
+                            className="shrink-0 rounded-full border border-slate-300 px-4 sm:px-5 py-2.5 text-sm font-semibold text-slate-700 hover:border-slate-500 transition disabled:opacity-60"
+                        >
+                            Save and finish later
+                        </button>
+                    )}
+
                     {/* A required guest step says exactly what is missing beside
                         the greyed Next; a skippable one says so. Either way the
                         Next is never a silent dead end and a skippable screen is
@@ -6286,6 +7322,16 @@ function ApplicationForm() {
                             // shown number is the accepted answer, stored on Next.
                             : step === 'g_creds' ? (!professionalTitle.trim() || (catQualsRequired && !qualifications.trim()))
                             : step === 'g_photos' ? photos.length === 0
+                            // The pricing basis must be answered before moving on —
+                            // it sets the unit and decides the next screen.
+                            : step === 'g_slot_basis' ? slotOffer === null
+                            // The come-to-me / travel fork sets the location screen.
+                            : step === 'g_slot_where' ? !fulfilment
+                            // A 'both' slot must have BOTH products priced, or a
+                            // host who chose both quietly ships only one.
+                            : step === 'g_menu' && shape === 'slot' && slotOffer === 'both'
+                                ? !(items.some((r) => String(r.unit) === 'flat' && Number(r.price) > 0)
+                                    && items.some((r) => String(r.unit) === 'person' && Number(r.price) > 0))
                             : step === 'g_area' ? (stepProblems.length > 0 || !!whereMissing)
                             : stepProblems.length > 0
                         );
@@ -6298,6 +7344,12 @@ function ApplicationForm() {
                             // Same rule for max guests: an untouched pass stores
                             // the shown default; a loaded value is left as it is.
                             if (isGuest && step === 'g_capacity' && !maxGuests.trim()) setMaxGuests(String(shape === 'comes_to_you' ? CAPACITY_DEFAULT_TRAVEL : CAPACITY_DEFAULT_SLOT));
+                            // Same for the notice screen: an untouched pass stores
+                            // the shown suggestion (2 days).
+                            if (isGuest && step === 'g_notice' && !leadTimeDays.trim()) setLeadTimeDays('2');
+                            // Same for session length: an untouched pass stores the
+                            // shown suggestion (60 minutes).
+                            if (isGuest && step === 'g_slot_length' && !slotLength.trim()) setSlotLength('60');
                             goNext();
                         };
                         return (
@@ -6330,11 +7382,11 @@ function ApplicationForm() {
                         <button
                             type="button"
                             onClick={() => save(true)}
-                            // A guest must confirm responsibility before send. The
+                            // A guest must agree to the terms before send. The
                             // save() guard enforces it too; disabling the button
-                            // makes it visible, with the box and its gate line
-                            // right above on the finish screen.
-                            disabled={saving || acctBusy || (isGuest && !declarations['responsibility'])}
+                            // makes it visible, with the agree box and its gate
+                            // line right above on the finish screen.
+                            disabled={saving || acctBusy || (isGuest && !termsAgreed)}
                             className="min-w-0 rounded-full bg-emerald-700 hover:bg-emerald-800 text-white px-5 sm:px-6 py-2.5 text-sm font-semibold transition disabled:opacity-60"
                         >
                             <span className="block truncate">

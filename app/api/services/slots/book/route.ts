@@ -9,7 +9,8 @@ import {
     normaliseUnit, unitMultiplies, orderQuantity, orderTotal, MAX_ORDER_QUANTITY, expiryFrom,
 } from '@/lib/serviceOrders';
 import {
-    isSlot, sessionCapacity, generateSessions, SLOT_HOLD_MINUTES,
+    isSlot, sessionCapacity, hasSlotCapacity, generateSessions, SLOT_HOLD_MINUTES,
+    bookingIsPrivate, slotClaimKind, optionAvailability,
 } from '@/lib/serviceSlots';
 import { dateFromKey, dateKey } from '@/lib/pricing';
 
@@ -41,6 +42,12 @@ export async function POST(request: Request) {
         const bookingId: string = body && body.bookingId;
         const sessionDate: string = body && body.sessionDate;
         const sessionTime: string = body && body.sessionTime;      // "HH:MM"
+        // The product the guest picked off the provider's menu. A slot provider
+        // can offer more than one — a private hire AND a shared table — so the
+        // guest's choice decides which, and with it the unit, capacity, minimum
+        // and mode. Absent for a single-item provider (the shape before two
+        // products), where we fall back to their one item.
+        const requestedItemId: string = body && body.itemId;
         const requestedQuantity: unknown = body && body.quantity;
         const note: string = (body && body.note ? String(body.note) : '').slice(0, 500);
         // The allergy field, separate from note — see the order route. A slot
@@ -63,7 +70,7 @@ export async function POST(request: Request) {
 
         const { data: provider } = await admin
             .from('service_providers')
-            .select('id, business_name, trade, shape, status, stripe_account_id, stripe_payouts_enabled, plan, commission_rate, slot_length_minutes, slot_capacity, cancellation_window_hours')
+            .select('id, business_name, trade, shape, status, stripe_account_id, stripe_payouts_enabled, plan, commission_rate, slot_length_minutes, slot_capacity, slot_min_people, cancellation_window_hours')
             .eq('id', providerId)
             .maybeSingle();
 
@@ -71,17 +78,21 @@ export async function POST(request: Request) {
             return NextResponse.json({ ok: false, error: 'That isn’t available.' }, { status: 400 });
         }
 
-        // The single item carries the price, the unit and the name. A slot
-        // provider has a list of one (its session type).
-        const { data: item } = await admin
+        // The chosen item carries the price, the unit, the name — and so the mode
+        // (a flat item is a private hire, a per-person item a shared seat). Read
+        // it by the id the guest picked, scoped to THIS provider so a foreign or
+        // inactive id cannot be booked; fall back to the provider's single item
+        // when none was sent. Everything downstream — unit, capacity, minimum,
+        // private/shared — derives from this row, never from the browser.
+        const itemQuery = admin
             .from('service_provider_items')
             .select('id, name, description, price, unit, active')
             .eq('provider_id', provider.id)
             .eq('active', true)
-            .gt('price', 0)
-            .order('sort_order', { ascending: true })
-            .limit(1)
-            .maybeSingle();
+            .gt('price', 0);
+        const { data: item } = requestedItemId
+            ? await itemQuery.eq('id', requestedItemId).maybeSingle()
+            : await itemQuery.order('sort_order', { ascending: true }).limit(1).maybeSingle();
         if (!item) return NextResponse.json({ ok: false, error: 'That isn’t available.' }, { status: 400 });
 
         const unit = normaliseUnit(item.unit);
@@ -115,11 +126,44 @@ export async function POST(request: Request) {
             return NextResponse.json({ ok: false, error: 'That time has passed. Pick another.' }, { status: 400 });
         }
 
+        // A per-person item is a shared table, and a shared table needs a real
+        // number of seats. Without a capacity, sessionCapacity() falls back to 1
+        // and the "shared" table would sell a single seat at a per-person price —
+        // a private hire in all but name, at the wrong price and mode. Refuse a
+        // misconfigured item HERE, before the seat is claimed and before Stripe,
+        // exactly as the minimum is: an unbookable listing must not be booked, not
+        // quietly sold as something it isn't. (A flat item needs no capacity — a
+        // private hire is always one booking — so this bites per-person only.)
+        if (unitMultiplies(unit) && !hasSlotCapacity(provider)) {
+            return NextResponse.json(
+                { ok: false, error: 'This session isn’t bookable yet — the host hasn’t set how many people it’s for. Try again later or message them.' },
+                { status: 400 }
+            );
+        }
+
         const capacity = sessionCapacity(provider, unit);
+        // A flat item is a private hire (takes the whole session); a per-person
+        // item is a seat at a shared table. The first booking pins the time to
+        // one mode; a later booking of the other kind is refused below.
+        const isPrivate = bookingIsPrivate(unit);
         const quantity = orderQuantity(unit, unitMultiplies(unit) ? requestedQuantity : 1);
         if (quantity === null) {
             return NextResponse.json(
                 { ok: false, error: 'Choose how many, up to ' + MAX_ORDER_QUANTITY + '.' },
+                { status: 400 }
+            );
+        }
+
+        // THE PER-PERSON MINIMUM — the real invariant, not the picker floor.
+        // A tasting or class priced per person may set a smallest group it will
+        // run for (slot_min_people, default 1 = no minimum). It bites only when
+        // the unit multiplies (per person); a whole-group flat price is one
+        // booking regardless of head count. Enforced HERE so a crafted request
+        // that goes under the floor is rejected, exactly as the ceiling is.
+        const minPeople = unitMultiplies(unit) ? Math.max(1, Number(provider.slot_min_people) || 1) : 1;
+        if (quantity < minPeople) {
+            return NextResponse.json(
+                { ok: false, error: 'This session is for a minimum of ' + minPeople + ' people.' },
                 { status: 400 }
             );
         }
@@ -129,28 +173,70 @@ export async function POST(request: Request) {
         // seats by compare-and-swap. A lost swap means someone else moved it
         // between our read and our write, so re-read and try again; a full
         // session is a clean 409.
+        //
+        // THE MODE IS PINNED HERE. The booking that fills an EMPTY session (fresh,
+        // or reopened by a cancellation) sets whether the time is a private hire
+        // or a shared table, and its capacity, in the same CAS. A later booking of
+        // the OTHER kind — a private hire on a table people have joined, or a seat
+        // on a privately-hired room — is refused (mode-clash). This is what stops
+        // a private booking silently taking one seat of a shared table.
         await admin.from('slot_sessions')
-            .upsert({ provider_id: provider.id, session_date: sessionDate, session_time: sessionTime, capacity, seats_taken: 0 },
+            .upsert({ provider_id: provider.id, session_date: sessionDate, session_time: sessionTime, capacity, seats_taken: 0, private: isPrivate },
                 { onConflict: 'provider_id,session_date,session_time', ignoreDuplicates: true });
 
         let claimed = false;
+        let modeClash = false;
         for (let attempt = 0; attempt < 5 && !claimed; attempt++) {
             const { data: sess } = await admin.from('slot_sessions')
-                .select('id, capacity, seats_taken')
+                .select('id, capacity, seats_taken, private')
                 .eq('provider_id', provider.id).eq('session_date', sessionDate).eq('session_time', sessionTime)
                 .maybeSingle();
             if (!sess) break;
-            if (sess.seats_taken + quantity > sess.capacity) {
-                return NextResponse.json(
-                    { ok: false, error: 'That time just filled up. Pick another.' },
-                    { status: 409 }
-                );
+
+            const kind = slotClaimKind(sess, isPrivate);
+            if (kind === 'mode-clash') { modeClash = true; break; }
+
+            // WHETHER THIS OPTION STILL FITS is the one truth optionAvailability
+            // holds — the same function the guest panel greys times with and the
+            // host diary reads. Checked here against the row we just read; the CAS
+            // below is what makes the take atomic, so a race that slips between
+            // this read and the write loses the swap and retries. One source, not
+            // a capacity rule re-implemented per surface.
+            const avail = optionAvailability(sess, unit, provider);
+            if (!avail.possible || quantity > avail.seatsLeft) {
+                return NextResponse.json({ ok: false, error: 'That time just filled up. Pick another.' }, { status: 409 });
             }
+
+            if (kind === 'establish') {
+                // Empty session: this booking sets the mode AND the capacity, on a
+                // CAS guarded by seats_taken = 0. Of two bookings racing on a fresh
+                // (or reopened) time, exactly one wins; the loser retries, now sees
+                // the mode it set, and either joins it or clashes.
+                const { data: swapped } = await admin.from('slot_sessions')
+                    .update({ seats_taken: quantity, private: isPrivate, capacity })
+                    .eq('id', sess.id).eq('seats_taken', 0)   // CAS guard: still empty
+                    .select('id');
+                if (swapped && swapped.length) claimed = true;
+                continue;
+            }
+
+            // kind === 'join' — same mode, take seats against the pinned capacity.
             const { data: swapped } = await admin.from('slot_sessions')
                 .update({ seats_taken: sess.seats_taken + quantity })
                 .eq('id', sess.id).eq('seats_taken', sess.seats_taken)   // CAS guard
                 .select('id');
             if (swapped && swapped.length) claimed = true;
+        }
+        if (modeClash) {
+            return NextResponse.json(
+                {
+                    ok: false,
+                    error: isPrivate
+                        ? 'That time is already a shared table — choose another for a private hire.'
+                        : 'That time is booked as a private hire — choose another to join a group.',
+                },
+                { status: 409 }
+            );
         }
         if (!claimed) {
             return NextResponse.json({ ok: false, error: 'That time just filled up. Pick another.' }, { status: 409 });

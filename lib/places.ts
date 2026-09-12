@@ -59,7 +59,7 @@ export function townKey(location: string | null): string {
 // Every listing on this site sits in the Dumfries & Galloway council area, and
 // the listings that already exist spell it this way. `location` has to match
 // them, so this is the default the form offers rather than the postal county
-// getAddress.io returns (which here is usually the historic county —
+// the address lookup returns (which here is usually the historic county —
 // "Kirkcudbrightshire" and the like).
 export const DEFAULT_REGION = 'Dumfries and Galloway';
 

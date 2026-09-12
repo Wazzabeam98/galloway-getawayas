@@ -4,9 +4,9 @@
 //
 // Publishing has required a postcode since 28 August 2026, and until now
 // nothing did anything with it. Coordinates had exactly one writer in the whole
-// codebase — the getAddress.io lookup in the wizard — so a host who took the
-// "skip to manual listing form" route, typed their postcode by hand and
-// published passed every rule and still had no coordinates.
+// codebase — the address lookup in the wizard — so a host who typed their
+// postcode by hand (the only path add-a-property offers now) and published
+// passed every rule and still had no coordinates.
 //
 // That path is not hypothetical. The wizard offers it, and it is what happens
 // whenever the address lookup is down or out of quota.
@@ -25,13 +25,13 @@
 // postcodes, returning the centroid of the postcode unit — usually a handful of
 // houses. The two alternatives already in reach are worse for this job:
 //
-//   getAddress.io  already paid for, but its lookup takes an address id rather
-//                  than a postcode, and it is the thing that was unavailable in
-//                  the case this exists to cover. A fallback that shares a
-//                  failure with the thing it backs up is not a fallback.
-//   Nominatim      already used by the listing page for the map, but it is a
-//                  general geocoder whose postcode results are less reliable,
-//                  and its usage policy discourages automated lookups.
+//   Ideal Postcodes  the address lookup, but it resolves an address id rather
+//                    than a postcode, and a fallback that shares a failure (or a
+//                    bill) with the thing it backs up is not a fallback. It is
+//                    also now the D&G region gate here — see adminDistrictForPostcode.
+//   Nominatim        already used by the listing page for the map, but it is a
+//                    general geocoder whose postcode results are less reliable,
+//                    and its usage policy discourages automated lookups.
 //
 // BEST EFFORT, ALWAYS. A failure here returns null and the save proceeds. A
 // host must never be unable to save their own listing because a third party is
@@ -86,6 +86,44 @@ export async function coordinatesForPostcode(
         return null;
     }
 }
+
+/**
+ * The council area (administrative district) a UK postcode sits in, or null.
+ *
+ * Same keyless postcodes.io source as coordinatesForPostcode, used to gate an
+ * address to Dumfries & Galloway by the REAL boundary rather than a postcode
+ * prefix — DG16 runs into Cumbria and genuine D&G addresses sit in CA/KA/ML/TD,
+ * so "starts with DG" is wrong both ways. `admin_district` is the council area
+ * ("Dumfries and Galloway", "Cumberland", "South Ayrshire", …).
+ *
+ * Never throws: any failure returns null, and the caller decides what an unknown
+ * district means (here, we refuse rather than guess an address into the region).
+ */
+export async function adminDistrictForPostcode(
+    postcode: string | null | undefined
+): Promise<string | null> {
+    const tidy = tidyPostcode(String(postcode || '').trim());
+    if (!tidy) return null;
+
+    try {
+        const controller = new AbortController();
+        const timer = setTimeout(() => controller.abort(), 6000);
+        const res = await fetch(
+            'https://api.postcodes.io/postcodes/' + encodeURIComponent(tidy),
+            { signal: controller.signal, cache: 'no-store' }
+        );
+        clearTimeout(timer);
+        if (!res.ok) return null;
+        const body = await res.json();
+        const district = body && body.result && body.result.admin_district;
+        return typeof district === 'string' && district.trim() ? district.trim() : null;
+    } catch {
+        return null;
+    }
+}
+
+/** The one council area this site covers, as postcodes.io spells it. */
+export const DG_ADMIN_DISTRICT = 'Dumfries and Galloway';
 
 /**
  * What to add to a listing patch so its coordinates match its postcode.

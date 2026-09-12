@@ -36,7 +36,7 @@ const {
 const {
     TRADES, submitProblems, planForTrade,
     capabilityFor, pricedOfferingsFor, showsRates, extrasFor, bandsFor,
-    asksAboutFuel, asksAboutSkills, offerableSchemes, checksFor,
+    asksAboutFuel, asksAboutSkills, offerableSchemes,
     guestAsksExpertise, guestQualificationsRequired, guestYearsRequired,
 } = require('@/lib/serviceProviders');
 
@@ -575,26 +575,94 @@ test('a signed-in applicant is never resolved onto the verify gate by a restored
 test('a cake maker (made to order) gets the years and expertise screens too', () => {
     // Made-to-order food was cut from these screens for a while, then brought
     // back: a cake maker has a track record and a story worth showing. So it
-    // walks the full flow now, with g_you and g_creds. The lead time it needs
-    // lives inside the where-and-when step, not a screen of its own.
+    // walks the full flow now, with g_you and g_creds. Its notice period is now
+    // its OWN screen (g_notice), before the delivery areas (g_area) — split out
+    // of the old combined where-and-when step, which promised a schedule it did
+    // not have. So a cake maker walks the ten PLUS the notice screen.
     const ctx = { group: 'food', category: 'food_order', shape: 'made_to_order' };
-    assert.deepEqual(gkeys(ctx), TEN);
+    const withNotice = TEN.slice();
+    withNotice.splice(withNotice.indexOf('g_area'), 0, 'g_notice');
+    assert.deepEqual(gkeys(ctx), withNotice);
+    assert.equal(stepApplies('g_notice', 'guest', ctx), true, 'made-to-order asks its notice, on its own screen');
     assert.equal(stepApplies('g_you', 'guest', ctx), true, 'years asked');
     assert.equal(stepApplies('g_creds', 'guest', ctx), true, 'expertise asked');
     // Cakes and hampers have no guests, so no max-guests step.
     assert.equal(stepApplies('g_capacity', 'guest', ctx), false, 'made-to-order skips the capacity step');
+    // The notice screen is made-to-order only — a slot and a traveller never see it.
+    assert.equal(stepApplies('g_notice', 'guest', { group: 'wellness', category: 'sauna', shape: 'slot' }), false, 'a slot has no notice screen');
+    assert.equal(stepApplies('g_notice', 'guest', { group: 'food', category: 'chef', shape: 'comes_to_you' }), false, 'a traveller has no notice screen');
 });
 
-test('a yoga instructor (not food, slot) walks the flow, with a capacity step and dietary folded away', () => {
-    const ctx = { group: 'wellness', category: 'yoga', shape: 'slot' };
-    assert.deepEqual(gkeys(ctx), withCapacity(TEN));
-    assert.equal(stepApplies('g_capacity', 'guest', ctx), true, 'a slot sets how many the space holds');
-    // Dietary is no longer a step — it renders inside g_expect for a food
-    // category only, so a yoga class simply never sees that field.
-    assert.equal(stepApplies('g_area', 'guest', ctx), true, 'a slot still needs a location, on the where-and-when step');
-    // What guests can expect and the photos step are asked of everyone.
-    assert.equal(stepApplies('g_expect', 'guest', ctx), true);
-    assert.equal(stepApplies('g_photos', 'guest', ctx), true);
+// The full slot flow, built from scratch (the request shapes splice into TEN;
+// a slot restructures the middle too much for that). A slot carries:
+//   - the LOCATION section: g_area (the place) — and, for the three either-way
+//     categories, a come-to-me/travel fork (g_slot_where) before it;
+//   - a WHEN section (slots only): g_slot_length then g_slot_hours;
+//   - the PRICING section: g_slot_basis, g_capacity, and — per person only —
+//     g_slot_min, before g_menu.
+// `expertise` is true for every slot category except the sauna, which skips the
+// years and expertise screens.
+const slotFlow = (opts: { fork?: boolean; perPerson?: boolean; expertise?: boolean } = {}) => {
+    const keys = ['g_verify', 'trade', 'g_subtype'];
+    if (opts.expertise !== false) keys.push('g_you', 'g_creds');
+    if (opts.fork) keys.push('g_slot_where');
+    keys.push('g_area', 'g_slot_length', 'g_slot_hours', 'g_photos', 'g_slot_basis', 'g_capacity');
+    if (opts.perPerson) keys.push('g_slot_min');
+    keys.push('g_menu', 'g_expect', 'finish');
+    return keys;
+};
+
+test('a potter (slot, fixed come-to-me) walks the location + When split, no fork', () => {
+    // Pottery is a come-to-me slot with no fork (studio, one honest answer), and
+    // it is asked its expertise. Its location is g_area (the address) and its
+    // When section is session length then weekly hours.
+    const ctx = { group: 'crafts', category: 'pottery', shape: 'slot' };
+    assert.deepEqual(gkeys(ctx), slotFlow());
+    assert.equal(stepApplies('g_slot_where', 'guest', ctx), false, 'a fixed come-to-me slot skips the where fork');
+    assert.equal(stepApplies('g_slot_length', 'guest', ctx), true, 'a slot sets a session length');
+    assert.equal(stepApplies('g_slot_hours', 'guest', ctx), true, 'a slot sets weekly hours');
+    assert.equal(stepApplies('g_slot_basis', 'guest', ctx), true);
+    assert.equal(stepApplies('g_capacity', 'guest', ctx), true);
+});
+
+test('the come-to-me / travel fork is asked only for yoga, massage and painting', () => {
+    // The three either-way categories get g_slot_where; every other slot defaults
+    // and skips it.
+    for (const cat of ['yoga', 'massage', 'painting']) {
+        const ctx = { group: 'wellness', category: cat, shape: 'slot' };
+        assert.equal(stepApplies('g_slot_where', 'guest', ctx), true, cat + ' is asked the fork');
+        assert.deepEqual(gkeys(ctx), slotFlow({ fork: true }));
+    }
+    for (const cat of ['tastings', 'cooking', 'sauna', 'pottery', 'workshops', 'outdoors', 'water']) {
+        const ctx = { group: 'x', category: cat, shape: 'slot' };
+        assert.equal(stepApplies('g_slot_where', 'guest', ctx), false, cat + ' defaults, no fork');
+    }
+    // Non-slot shapes never see the fork.
+    assert.equal(stepApplies('g_slot_where', 'guest', { category: 'chef', shape: 'comes_to_you' }), false);
+    assert.equal(stepApplies('g_slot_where', 'guest', { category: 'food_order', shape: 'made_to_order' }), false);
+});
+
+test('the per-person minimum screen exists only for a shared/per-person slot', () => {
+    const shared = { group: 'crafts', category: 'pottery', shape: 'slot', slotOffer: 'shared' };
+    const priv = { group: 'wellness', category: 'sauna', shape: 'slot', slotOffer: 'private' };
+    const unanswered = { group: 'crafts', category: 'pottery', shape: 'slot' };
+    // Per person: … g_capacity → g_slot_min → g_menu.
+    assert.equal(stepApplies('g_slot_min', 'guest', shared), true, 'per person has a minimum');
+    assert.deepEqual(gkeys(shared), slotFlow({ perPerson: true }));
+    // Whole group: one booking whatever the head count, so no minimum screen.
+    assert.equal(stepApplies('g_slot_min', 'guest', priv), false, 'private/whole-group has no minimum');
+    // Not yet answered: the basis screen comes first, so the minimum stays out
+    // until the answer is per person.
+    assert.equal(stepApplies('g_slot_min', 'guest', unanswered), false, 'null basis hides the minimum');
+    // The basis and the minimum are slot-only — a chef and a cake maker never
+    // see either.
+    for (const nonSlot of [
+        { group: 'food', category: 'chef', shape: 'comes_to_you', slotOffer: 'shared' },
+        { group: 'food', category: 'food_order', shape: 'made_to_order', slotOffer: 'shared' },
+    ]) {
+        assert.equal(stepApplies('g_slot_basis', 'guest', nonSlot), false, 'non-slot has no basis screen');
+        assert.equal(stepApplies('g_slot_min', 'guest', nonSlot), false, 'non-slot has no minimum screen');
+    }
 });
 
 test('expertise and years are asked of every category except the sauna', () => {
@@ -621,22 +689,11 @@ test('expertise and years are asked of every category except the sauna', () => {
     assert.equal(stepApplies('g_photos', 'guest', sauna), true, 'sauna still has photos');
 });
 
-test('every guest confirms one responsibility statement, whatever the category', () => {
-    // The per-category catalogue (insurance, food registration, allergens,
-    // alcohol, sauna heat, water safety, …) collapsed to a SINGLE responsibility
-    // confirmation (Sep 2026): a provider is a third party responsible for their
-    // own insurance, permits and licences, and the specifics moved into the T&Cs.
-    // There is no g_checks step any more — the one box is folded onto the finish
-    // screen — so checksFor returns exactly one entry, the same for every
-    // category, and guestProviderFields still writes it into declarations.
-    for (const cat of ['chef', 'sauna', 'tastings', 'water', 'other', null]) {
-        assert.deepEqual(
-            checksFor(cat).map((c: any) => c.key),
-            ['responsibility'],
-            JSON.stringify(cat) + ' confirms exactly the one responsibility statement',
-        );
-    }
-});
+// The per-category checks catalogue and its single-confirmation successor were
+// both retired: a guest now agrees to the provider terms on the finish screen,
+// recorded in the declarations jsonb (terms_version + terms_agreed_at). That
+// acceptance lives in the component, not the pure step model, so it has no test
+// here; the gating and the recorded stamp are covered live and by typecheck.
 
 test('years and qualifications are required only where physical safety is at stake', () => {
     // The line, category by category (Sep 2026). The four where a guide holds
@@ -738,12 +795,17 @@ test('the guest flow is six named sections, in Airbnb order', () => {
 test('a section with no screens drops out of the rail entirely', () => {
     // The sauna skips BOTH the years screen and the expertise hub, so its About
     // you section has nothing in it — and a section with no live steps drops
-    // out rather than sitting in the rail as a dead label. So the sauna's rail
-    // is six sections, opening at Location.
+    // out rather than sitting in the rail as a dead label. As a slot it DOES have
+    // a When section (session length + hours), so its rail opens at Location and
+    // carries When after it.
     const sauna = sectionsFor('guest', { group: 'wellness', category: 'sauna', shape: 'slot' });
     assert.equal(sauna.some((s: any) => s.key === 'about'), false, 'sauna has no About you section');
     assert.deepEqual(sauna.map((s: any) => s.key),
-        ['location', 'photos', 'pricing', 'details', 'finish']);
+        ['location', 'when', 'photos', 'pricing', 'details', 'finish']);
+    // And a made-to-order guest, not being a slot, has NO When section — proof it
+    // drops out for the shapes without those screens.
+    const baker = sectionsFor('guest', { group: 'food', category: 'food_order', shape: 'made_to_order' });
+    assert.equal(baker.some((s: any) => s.key === 'when'), false, 'a non-slot has no When section');
 });
 
 test('the pickers and the name step sit before the rail, in no section', () => {

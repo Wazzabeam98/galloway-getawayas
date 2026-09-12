@@ -3,6 +3,8 @@ import { adminClient } from '@/lib/supabaseAdmin';
 import { logError } from '@/lib/logError';
 import { announceSubmission } from '@/lib/serviceSubmittedAlert';
 import { audienceForTrade } from '@/lib/serviceProviders';
+import { hasSlotCapacity } from '@/lib/serviceSlots';
+import { normaliseUnit, unitMultiplies } from '@/lib/serviceOrders';
 import { hashToken, linkExpired, ApplicationRow, PROVIDER_COLUMNS, pickColumns } from '@/lib/serviceApplications';
 
 export const dynamic = 'force-dynamic';
@@ -68,6 +70,31 @@ export async function POST(req: Request) {
 
         const payload = row.payload || {};
         const incoming = payload.provider || {};
+
+        // ------------------------------------------------------------------
+        // The capacity invariant, at creation. A per-person slot item is a
+        // shared table, and a shared table needs a real number of seats — the
+        // same rule /slots/book enforces at booking (lib/serviceSlots.
+        // hasSlotCapacity). This route materialises a client-supplied payload
+        // verbatim, so refuse the bad state HERE too, before the account is made
+        // (nothing is created when this fires — no orphan user). Scoped to slots:
+        // a per-person item on a comes-to-you chef is normal and uses no slot
+        // capacity. The wizard cannot produce this — guestProviderFields floors a
+        // slot's capacity at 1 for both the signed-in save and this apply payload
+        // — so this guards a crafted or malformed payload, not a path the UI can
+        // walk; it also stops a future serialisation regression writing it.
+        // ------------------------------------------------------------------
+        if (String(incoming.shape) === 'slot') {
+            const items = Array.isArray(payload.items) ? payload.items : [];
+            const hasPerPerson = items.some((it: any) => unitMultiplies(normaliseUnit(it && it.unit)));
+            if (hasPerPerson && !hasSlotCapacity(incoming)) {
+                await logError('service-finish-capacity', { application: row.id, slot_capacity: incoming.slot_capacity ?? null });
+                return NextResponse.json({
+                    ok: false,
+                    error: 'We couldn’t create this listing: a per-person session needs a set number of people, and this one has none. Please set it up again.',
+                }, { status: 400 });
+            }
+        }
 
         // ------------------------------------------------------------------
         // The account.
@@ -150,7 +177,18 @@ export async function POST(req: Request) {
         // The children. Written after the parent so a failure here leaves a
         // real application rather than an orphan.
         const areas = (payload.areas || []).map((a: any) => ({ ...a, provider_id: id }));
-        if (areas.length) await admin.from('service_areas').insert(areas);
+        if (areas.length) {
+            // The error used to be thrown away here, so a rejected coverage
+            // insert (the radius check was the one that bit) left the provider
+            // with no coverage and nobody any the wiser. It does not abort the
+            // finish — the application is real and better saved without coverage
+            // than not saved at all — but it is logged so it surfaces at
+            // /admin/errors instead of only when a provider notices and asks.
+            const { error: areasError } = await admin.from('service_areas').insert(areas);
+            if (areasError) {
+                await logError('service-finish-areas', { application: row.id, provider: id, message: areasError.message });
+            }
+        }
 
         const extras = (payload.extras || []).map((e: any) => ({ ...e, provider_id: id }));
         if (extras.length) await admin.from('service_provider_extras').insert(extras);

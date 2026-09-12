@@ -1,24 +1,29 @@
-// Turning a getAddress.io result into the boxes on the add-a-property form.
+// Turning an Ideal Postcodes resolved address into the boxes on the address
+// forms. (Was getAddress.io until it ceased trading on 4 Feb 2026; Ideal is
+// licensed directly from Royal Mail's PAF, so the field names below are theirs.)
 //
 // Kept out of the route file because a Next.js route may only export handlers,
 // and kept in one function because the old mapping was spread across a .map(),
 // a click handler and two fallbacks — which is how the postcode ended up in the
 // street box and the county in the town box.
 
-interface GetAddressResult {
+interface IdealAddressResult {
     postcode?: string;
     latitude?: number;
     longitude?: number;
+    // PAF premise/thoroughfare lines, already composed by Ideal.
     line_1?: string;
     line_2?: string;
     line_3?: string;
-    line_4?: string;
-    locality?: string;
-    town_or_city?: string;
+    post_town?: string;
+    dependant_locality?: string;
+    // Ideal returns several county flavours; administrative_county is the modern
+    // council-ish one, county the postal one. Either is "not the street".
     county?: string;
+    administrative_county?: string;
     sub_building_name?: string;
-    sub_building_number?: string;
     building_name?: string;
+    building_number?: string;
 }
 
 function clean(value: unknown): string {
@@ -33,10 +38,10 @@ export function tidyPostcode(raw: string): string {
     return squashed.slice(0, squashed.length - 3) + ' ' + squashed.slice(squashed.length - 3);
 }
 
-export function mapAddress(result: GetAddressResult) {
-    const town = clean(result.town_or_city);
-    const county = clean(result.county);
-    const locality = clean(result.locality);
+export function mapAddress(result: IdealAddressResult) {
+    const town = clean(result.post_town);
+    const county = clean(result.administrative_county) || clean(result.county);
+    const locality = clean(result.dependant_locality);
 
     // Anything that is really the town, the county or the locality must not
     // also be treated as part of the street — that is exactly how the postcode
@@ -46,18 +51,18 @@ export function mapAddress(result: GetAddressResult) {
         .map((v) => v.toLowerCase());
 
     const streetParts: string[] = [];
-    for (const line of [result.line_1, result.line_2, result.line_3, result.line_4]) {
+    for (const line of [result.line_1, result.line_2, result.line_3]) {
         const part = clean(line);
         if (!part) continue;
         if (notThePlace.indexOf(part.toLowerCase()) !== -1) continue;
-        // A line repeated by getAddress shouldn't become a repeated segment.
+        // A line repeated by the source shouldn't become a repeated segment.
         if (streetParts.some((p) => p.toLowerCase() === part.toLowerCase())) continue;
         streetParts.push(part);
     }
 
-    // A flat or sub-building is its own box on the form. When getAddress has
+    // A flat or sub-building is its own box on the form. When the source has
     // put it at the front of line_1 as well, the street keeps the rest.
-    const flat = clean(result.sub_building_name) || clean(result.sub_building_number);
+    const flat = clean(result.sub_building_name);
     const street = streetParts
         .filter((p) => !flat || p.toLowerCase() !== flat.toLowerCase())
         .join(', ');
@@ -68,11 +73,11 @@ export function mapAddress(result: GetAddressResult) {
         flat,
         street,
         town,
-        // getAddress returns the postal county, which in this part of Scotland
-        // is usually the historic one — "Kirkcudbrightshire" rather than the
-        // council area. Passed through so it can be seen, but the form defaults
-        // the Region box to the council area instead, because that is what the
-        // existing listings use and what `location` has to match.
+        // The county flavours in this part of Scotland are usually the historic
+        // one ("Kirkcudbrightshire") rather than the council area. Passed through
+        // so it can be seen, but the form defaults the Region box to the council
+        // area instead, because that is what the existing listings use and what
+        // `location` has to match.
         county,
         postcode: rawPostcode ? tidyPostcode(rawPostcode) : '',
         latitude: typeof result.latitude === 'number' ? result.latitude : null,
@@ -106,11 +111,11 @@ export function buildStreetAddress(
 //
 // These routes used to collapse every upstream failure into "Address search is
 // unavailable just now", which is polite and tells you nothing — a wrong key, a
-// spent allowance and a getAddress outage all looked identical.
+// spent allowance and an outage all looked identical.
 //
-// The key travels in the query string, so anything getAddress echoes back could
-// carry it. It is redacted defensively even though the error bodies seen so far
-// do not include it.
+// The key travels in the query string, so anything the provider echoes back
+// could carry it. It is redacted defensively even though the error bodies seen
+// so far do not include it.
 export async function upstreamDetail(response: Response, key: string): Promise<string> {
     let body = '';
     try {
@@ -119,5 +124,5 @@ export async function upstreamDetail(response: Response, key: string): Promise<s
         body = '';
     }
     if (key && body) body = body.split(key).join('<redacted>');
-    return `getAddress returned ${response.status}${body ? ': ' + body : ''}`;
+    return `address lookup returned ${response.status}${body ? ': ' + body : ''}`;
 }

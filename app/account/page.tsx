@@ -12,7 +12,7 @@ import Logo from '@/components/base/Logo';
 import MessageTemplates from '@/components/account/MessageTemplates';
 import LoginModel from '@/components/auth/LoginModel';
 import { toast } from 'react-toastify';
-import { getImageUrl, formatTime, resolveTitle } from '@/lib/utils';
+import { getImageUrl, formatTime } from '@/lib/utils';
 import Env from '@/config/Env';
 import { compressImage } from '@/lib/compressImage';
 import NotificationsSection from '@/components/account/NotificationsSection';
@@ -299,33 +299,14 @@ export default function AccountSettings() {
         setProfile((prev) => ({ ...prev, [field.key]: draftValue }));
         setEditingField(null);
 
-        // The listing title (service_providers.business_name) is derived from the
-        // trading name and the person's name, so a change to any of them re-derives
-        // it on the owner's guest experience. Hosts type their own business name,
-        // so only guest rows are touched.
-        if (field.key === 'trading_name' || field.key === 'full_name' || field.key === 'preferred_name') {
-            await rederiveGuestTitle({ [field.key]: draftValue });
-        }
+        // A guest listing's title is the provider's own Title now, not their
+        // name, so a name/trading-name change no longer rewrites the listing
+        // heading. The name only appears as the byline beneath their photo, which
+        // the guest-facing surfaces derive from this profile live (first name,
+        // honouring show_full_name) — so a change here shows up on its own with
+        // nothing to re-derive or write.
 
         router.refresh();
-    };
-
-    // Re-derive the guest listing title from the latest name values and write it
-    // to the owner's guest experience. `next` carries the value just saved, which
-    // the profile state may not have caught up to yet.
-    const rederiveGuestTitle = async (next: Partial<{ full_name: string; preferred_name: string; trading_name: string; show_full_name: boolean }>) => {
-        if (!session?.user) return;
-        const title = resolveTitle({
-            full_name: next.full_name ?? profile.full_name,
-            preferred_name: next.preferred_name ?? profile.preferred_name,
-            trading_name: next.trading_name ?? profile.trading_name,
-            show_full_name: next.show_full_name ?? showFullName,
-        }, '');
-        if (!title) return;
-        await supabase.from('service_providers')
-            .update({ business_name: title })
-            .eq('owner_id', session.user.id)
-            .eq('audience', 'guest');
     };
 
     const saveBio = async () => {
@@ -548,9 +529,10 @@ export default function AccountSettings() {
             return;
         }
 
-        // The switch changes what displayName returns, so a guest listed under
-        // their own name (no trading name) may need its title re-derived.
-        await rederiveGuestTitle({ show_full_name: next });
+        // The switch changes what firstName returns, so it changes the byline
+        // beneath the provider's photo on their guest listing — but the guest
+        // surfaces derive that live from this profile, so there is nothing to
+        // re-derive or write here now.
 
         toast.success('Privacy setting saved.', { theme: 'colored' });
     };

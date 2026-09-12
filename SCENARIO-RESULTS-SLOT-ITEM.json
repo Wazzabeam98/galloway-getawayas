@@ -1,0 +1,89 @@
+{
+  "ranAt": "2026-09-12T14:02:37.437Z",
+  "target": "http://localhost:3190",
+  "passed": 3,
+  "failed": 0,
+  "scenarios": [
+    {
+      "number": "1",
+      "title": "Booking the private item (not items[0]) makes a private hire — the route used the chosen id",
+      "checks": [
+        {
+          "desc": "book accepted",
+          "ok": true,
+          "detail": "HTTP 200 {\"ok\":true,\"url\":\"https://checkout.stripe.com/c/pay/cs_test_a149LYbiBmeLr1tC0FwtWS8f4fzlSpU2LDGjXfbaNBsWMaSdwSanuWAJDC#f"
+        },
+        {
+          "desc": "the order is for the PRIVATE item, not items[0] (shared)",
+          "ok": true,
+          "detail": "item_id=490af8e7"
+        },
+        {
+          "desc": "unit/price came from that item (flat, £120)",
+          "ok": true,
+          "detail": "flat £120"
+        },
+        {
+          "desc": "the time is a private hire — private=true, capacity 1",
+          "ok": true,
+          "detail": "private=true cap=1"
+        }
+      ],
+      "status": "passed"
+    },
+    {
+      "number": "2",
+      "title": "The shared item enforces its minimum; the private item ignores it",
+      "checks": [
+        {
+          "desc": "one seat on the shared item is refused (minimum 2)",
+          "ok": true,
+          "detail": "HTTP 400 This session is for a minimum of 2 people."
+        },
+        {
+          "desc": "two seats is accepted",
+          "ok": true,
+          "detail": "HTTP 200 {\"ok\":true,\"url\":\"https://checkout.stripe.com/c/pay/cs_test_a13BeKUHAwmOUUPAiXZKQ3vbk8T7HccSVgUkzEmV"
+        },
+        {
+          "desc": "the order is the shared item, 2 seats, £60",
+          "ok": true,
+          "detail": "person q2 £60"
+        },
+        {
+          "desc": "the time is a shared table — private=false, capacity 8, 2 seats",
+          "ok": true,
+          "detail": "private=false cap=8 seats=2"
+        },
+        {
+          "desc": "the private item books with no minimum applied",
+          "ok": true,
+          "detail": "HTTP 200"
+        }
+      ],
+      "status": "passed"
+    },
+    {
+      "number": "3",
+      "title": "An unknown or another provider’s item id is refused",
+      "checks": [
+        {
+          "desc": "an unknown item id is refused (400)",
+          "ok": true,
+          "detail": "HTTP 400 That isn’t available."
+        },
+        {
+          "desc": "another provider’s item id is refused (400)",
+          "ok": true,
+          "detail": "HTTP 400 That isn’t available."
+        },
+        {
+          "desc": "no seat was claimed for the refused bookings",
+          "ok": true,
+          "detail": null
+        }
+      ],
+      "status": "passed"
+    }
+  ]
+}

@@ -10,7 +10,9 @@
 // it, the value silently becomes an empty string in the bundle rather than
 // leaking — but that is a broken feature, not a design.
 export default class ServerEnv {
-    // getAddress.io puts the key in the query string, so a browser-side call
-    // would show it in the network tab to anyone who opened dev tools.
-    static GETADDRESS_API_KEY: string = process.env.GETADDRESS_API_KEY || "";
+    // Ideal Postcodes puts the key in the query string, so a browser-side call
+    // would show it in the network tab to anyone who opened dev tools — the
+    // address lookup lives behind our own /api/address routes for that reason.
+    // (Replaces GETADDRESS_API_KEY: getAddress.io ceased trading on 4 Feb 2026.)
+    static IDEAL_POSTCODES_API_KEY: string = process.env.IDEAL_POSTCODES_API_KEY || "";
 }

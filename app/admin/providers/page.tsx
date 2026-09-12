@@ -4,7 +4,7 @@ import { cookies } from 'next/headers';
 import { requireAdmin } from '@/lib/access';
 import Link from 'next/link';
 import { notFound } from 'next/navigation';
-import { getImageUrl } from '@/lib/utils';
+import { getImageUrl, adminName } from '@/lib/utils';
 import {
     tradeLabel,
     calloutLine,
@@ -21,7 +21,7 @@ import {
     ATTENTION_REASONS,
 } from '@/lib/serviceProviders';
 import { skillIsPublic, blockedSkillReason } from '@/lib/serviceSkills';
-import { asksAboutFuel } from '@/lib/serviceProviders';
+import { asksAboutFuel, reviewContentFrom } from '@/lib/serviceProviders';
 import ProviderReviewRow from '@/components/admin/ProviderReviewRow';
 import WaitingOnApplicant from '@/components/admin/WaitingOnApplicant';
 import { daysWaiting, daysUntilDeleted, RETENTION_DAYS } from '@/lib/serviceApplications';
@@ -51,7 +51,7 @@ export default async function AdminProviders() {
     // are silently piling up.
     const { data: providers, error } = await admin
         .from('service_providers')
-        .select('id, business_name, trade, description, photos, logo, audience, kind, status, plan, contact_email, contact_phone, submitted_at, created_at, owner_id, approved_digest, changes_pending_at, does_gas, does_oil, callout_fee, hourly_rate, callout_waived, trial_ends_at, pricing_choice, billable_hourly_rate, covered_bands, provider_name, based_line, headshot, stripe_mcc, custom_label, category_assigned_at, exclusive_per_date, shape')
+        .select('id, business_name, trade, description, photos, logo, audience, kind, status, plan, contact_email, contact_phone, submitted_at, created_at, owner_id, approved_digest, changes_pending_at, does_gas, does_oil, callout_fee, hourly_rate, callout_waived, trial_ends_at, pricing_choice, billable_hourly_rate, covered_bands, provider_name, based_line, headshot, stripe_mcc, custom_label, category_assigned_at, exclusive_per_date, shape, guest_details, declarations, dietary_note')
         .order('submitted_at', { ascending: false, nullsFirst: false });
 
     // WHO HAS PROVED THEY CAN READ THEIR EMAIL.
@@ -115,6 +115,25 @@ export default async function AdminProviders() {
             expired: registrationExpired(r),
         }));
 
+    // A guest listing is now titled by its Title, not the person's name, so the
+    // review row would otherwise not show WHO it belongs to. This is admin-only
+    // (behind requireAdmin), so it shows the FULL legal name — the point of the
+    // queue is deciding whether to approve a real person — via adminName, which
+    // ignores the show_full_name guest-privacy switch by design.
+    const ownerIds = Array.from(new Set(rows.map((r: any) => r.owner_id).filter(Boolean)));
+    const { data: ownerProfiles } = ownerIds.length
+        ? await admin.from('profiles').select('id, full_name, preferred_name').in('id', ownerIds)
+        : { data: [] as any[] };
+    const profileById: Record<string, any> = {};
+    for (const pr of ownerProfiles || []) profileById[pr.id] = pr;
+    // The person's full name, for a guest row only. A guest experience is always
+    // audience 'guest' and titled by its Title; a host/trade row ('both'
+    // included) is a business the person typed a name for, so no person byline.
+    const personName = (p: any): string =>
+        p.audience === 'guest'
+            ? adminName(profileById[p.owner_id] || null, '')
+            : '';
+
     const skillRows = rows.length
         ? (await admin
               .from('service_provider_skills')
@@ -134,6 +153,20 @@ export default async function AdminProviders() {
               .select('provider_id, label, radius_miles')
               .in('provider_id', rows.map((r: any) => r.id))).data || []
         : [];
+
+    // The guest menu — what a guest can actually book, with prices. The review
+    // row needs it to show whether a listing is bookable at all (a listing with
+    // no priced item never appears on the marketplace). Host trades price
+    // elsewhere on the row, so this only feeds guest rows.
+    const itemRows = rows.length
+        ? (await admin
+              .from('service_provider_items')
+              .select('provider_id, name, description, price, unit, sort_order, active')
+              .in('provider_id', rows.map((r: any) => r.id))
+              .order('sort_order', { ascending: true })).data || []
+        : [];
+    const itemsFor = (id: string) =>
+        itemRows.filter((it: any) => it.provider_id === id && it.active !== false);
 
     // A guest covers named regions, not a radius, so the "· N mi" that reads
     // right for a tradesman's town would be a meaningless "· 0 mi" for them.
@@ -185,21 +218,35 @@ export default async function AdminProviders() {
     // components/admin/WaitingOnApplicant.tsx.
     const { data: unclaimedRows } = await admin
         .from('service_applications')
-        .select('id, business_name, trade, email, contact_phone, created_at, resend_count')
+        .select('id, business_name, trade, email, contact_phone, created_at, resend_count, payload')
         .is('claimed_at', null)
         .order('created_at', { ascending: true })
         .limit(100);
 
-    const unclaimed = (unclaimedRows || []).map((r: any) => ({
-        id: r.id,
-        business_name: r.business_name,
-        trade: r.trade,
-        email: r.email,
-        contact_phone: r.contact_phone,
-        resend_count: Number(r.resend_count || 0),
-        daysWaiting: daysWaiting(r),
-        daysLeft: daysUntilDeleted(r),
-    }));
+    const unclaimed = (unclaimedRows || []).map((r: any) => {
+        // The application payload carries the same content a claimed row does —
+        // { provider: {...}, items: [...] } — so it feeds the SAME renderer,
+        // closing the audit's "payload is invisible at review" blind spot.
+        const pl = r.payload || {};
+        const prov = pl.provider || {};
+        return {
+            id: r.id,
+            business_name: r.business_name,
+            trade: r.trade,
+            email: r.email,
+            contact_phone: r.contact_phone,
+            resend_count: Number(r.resend_count || 0),
+            daysWaiting: daysWaiting(r),
+            daysLeft: daysUntilDeleted(r),
+            content: reviewContentFrom({
+                audience: prov.audience,
+                guest_details: prov.guest_details,
+                declarations: prov.declarations,
+                dietary_note: prov.dietary_note,
+                items: pl.items,
+            }),
+        };
+    });
 
     return (
         <div className="max-w-4xl mx-auto px-4 sm:px-6 py-10">
@@ -242,7 +289,7 @@ export default async function AdminProviders() {
                         {waiting.map((p: any) => (
                             <ProviderReviewRow
                                 key={p.id}
-                                provider={{ ...p, tradeLabel: tradeLabel(p.trade), logoUrl: p.logo ? getImageUrl(p.logo) : null, initials: initialsFor(p.business_name), calloutLine: calloutLine(p.callout_fee, p.callout_waived) }}
+                                provider={{ ...p, tradeLabel: tradeLabel(p.trade), logoUrl: p.logo ? getImageUrl(p.logo) : null, initials: initialsFor(p.business_name), calloutLine: calloutLine(p.callout_fee, p.callout_waived), personName: personName(p), items: itemsFor(p.id) }}
                                 areas={areasFor(p.id)}
                                 photoUrls={(p.photos || []).slice(0, 3).map((x: string) => getImageUrl(x))}
                                 registrations={regsFor(p.id)}
@@ -281,6 +328,8 @@ export default async function AdminProviders() {
                                     initials: initialsFor(p.business_name),
                                     changedFields: changedFields(p).map(fieldLabel),
                                     calloutLine: calloutLine(p.callout_fee, p.callout_waived),
+                                    personName: personName(p),
+                                    items: itemsFor(p.id),
                                 }}
                                 areas={areasFor(p.id)}
                                 photoUrls={(p.photos || []).slice(0, 3).map((x: string) => getImageUrl(x))}
@@ -315,7 +364,7 @@ export default async function AdminProviders() {
                         {rest.map((p: any) => (
                             <ProviderReviewRow
                                 key={p.id}
-                                provider={{ ...p, tradeLabel: tradeLabel(p.trade), logoUrl: p.logo ? getImageUrl(p.logo) : null, initials: initialsFor(p.business_name), calloutLine: calloutLine(p.callout_fee, p.callout_waived) }}
+                                provider={{ ...p, tradeLabel: tradeLabel(p.trade), logoUrl: p.logo ? getImageUrl(p.logo) : null, initials: initialsFor(p.business_name), calloutLine: calloutLine(p.callout_fee, p.callout_waived), personName: personName(p), items: itemsFor(p.id) }}
                                 areas={areasFor(p.id)}
                                 photoUrls={(p.photos || []).slice(0, 3).map((x: string) => getImageUrl(x))}
                                 registrations={regsFor(p.id)}

@@ -16,9 +16,20 @@ interface Order {
     guest_name: string | null; guest_phone: string | null; guest_email: string | null;
 }
 
+// How one upcoming time has sold — the seat truth from slot_sessions plus the
+// options it sold as. `closed` is the shared helper's answer: no option can take
+// another booking.
+interface SlotSession {
+    date: string; time: string;
+    capacity: number; seats_taken: number; seats_left: number;
+    private: boolean; closed: boolean;
+    sold: { item_name: string; unit: string; seats: number }[];
+}
+
 export default function ProviderSlotDashboard({ providerId, editHref }: { providerId: string; editHref?: string }) {
     const [payouts, setPayouts] = useState<null | { connected: boolean; payouts_enabled: boolean }>(null);
     const [orders, setOrders] = useState<Order[]>([]);
+    const [sessions, setSessions] = useState<SlotSession[]>([]);
     const [blocks, setBlocks] = useState<string[]>([]);
     // null until loaded; false means no weekly hours, so nothing is bookable.
     const [hasHours, setHasHours] = useState<boolean | null>(null);
@@ -50,7 +61,15 @@ export default function ProviderSlotDashboard({ providerId, editHref }: { provid
         } catch { /* ignore */ }
     }, [providerId]);
 
-    useEffect(() => { loadPayouts(); loadOrders(); loadSchedule(); }, [loadPayouts, loadOrders, loadSchedule]);
+    const loadSessions = useCallback(async () => {
+        try {
+            const r = await fetch('/api/services/slots/sessions?provider=' + encodeURIComponent(providerId));
+            const d = await r.json();
+            if (d && d.ok) setSessions(d.sessions || []);
+        } catch { /* ignore */ }
+    }, [providerId]);
+
+    useEffect(() => { loadPayouts(); loadOrders(); loadSchedule(); loadSessions(); }, [loadPayouts, loadOrders, loadSchedule, loadSessions]);
 
     async function setUpPayouts() {
         setBusy('payouts'); setError(null);
@@ -105,6 +124,15 @@ export default function ProviderSlotDashboard({ providerId, editHref }: { provid
         const last = byDay[byDay.length - 1];
         if (last && last.date === o.service_date) last.rows.push(o);
         else byDay.push({ date: o.service_date, rows: [o] });
+    }
+
+    // How each upcoming TIME has filled, grouped by day (the endpoint sorts by
+    // date then time and drops empty times).
+    const sessByDay: { date: string; rows: SlotSession[] }[] = [];
+    for (const s of sessions) {
+        const last = sessByDay[sessByDay.length - 1];
+        if (last && last.date === s.date) last.rows.push(s);
+        else sessByDay.push({ date: s.date, rows: [s] });
     }
 
     return (
@@ -172,6 +200,43 @@ export default function ProviderSlotDashboard({ providerId, editHref }: { provid
                     </div>
                 )}
             </div>
+
+            {/* How each time sold — the seat state per upcoming time, not per
+                booking: which option, how many seats, how many left, and whether
+                it's now closed to everything. */}
+            {sessByDay.length > 0 && (
+                <div>
+                    <p className="font-semibold text-gray-900">How each time is filling</p>
+                    <p className="mt-0.5 text-sm text-gray-500">Every upcoming time that’s taken a booking — what it sold as, and what’s left on it.</p>
+                    <div className="mt-3 space-y-4">
+                        {sessByDay.map((day) => (
+                            <div key={day.date}>
+                                <div className="text-xs font-semibold uppercase tracking-wide text-gray-500">{dateLabel(day.date)}</div>
+                                <div className="mt-2 space-y-2">
+                                    {day.rows.map((s) => (
+                                        <div key={s.time} className="flex flex-wrap items-center gap-x-3 gap-y-1 rounded-xl border border-gray-200 bg-white p-3">
+                                            <span className="text-sm font-semibold text-gray-900">{timeLabel(s.time)}</span>
+                                            <span className="text-sm text-gray-700">
+                                                {s.sold.length
+                                                    ? s.sold.map((o) => o.item_name + (o.unit === 'person' ? ' × ' + o.seats : '')).join(', ')
+                                                    : '—'}
+                                            </span>
+                                            <span className="ml-auto flex items-center gap-2 text-sm">
+                                                {s.private
+                                                    ? <span className="text-gray-600">Private hire · whole room</span>
+                                                    : <span className="text-gray-600">{s.seats_taken} of {s.capacity} seat{s.capacity === 1 ? '' : 's'}{s.seats_left > 0 ? ' · ' + s.seats_left + ' left' : ''}</span>}
+                                                {s.closed
+                                                    ? <span className="rounded-full bg-rose-100 px-2 py-0.5 text-xs font-semibold text-rose-800">Closed</span>
+                                                    : <span className="rounded-full bg-emerald-100 px-2 py-0.5 text-xs font-semibold text-emerald-800">Open</span>}
+                                            </span>
+                                        </div>
+                                    ))}
+                                </div>
+                            </div>
+                        ))}
+                    </div>
+                </div>
+            )}
 
             {/* Block a day */}
             <div className="rounded-xl border border-gray-200 p-4">
