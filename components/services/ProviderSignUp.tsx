@@ -17,6 +17,7 @@ import { compressImage } from '@/lib/compressImage';
 import { getImageUrl, generateRandomNumber, backfillName, firstName } from '@/lib/utils';
 import { buildStreetAddress } from '@/lib/address';
 import { ORDER_UNITS } from '@/lib/serviceOrders';
+import { slotOfferingFromUnits, offeringHasShared, type SlotOffering } from '@/lib/serviceSlots';
 import Env from '@/config/Env';
 import {
     skillKey,
@@ -653,12 +654,16 @@ function ApplicationForm() {
     // provider chooses to type it by hand, when a lookup fills or fails, or when a
     // returning provider already has an address loaded (see showCollectionFields).
     const [collectionManual, setCollectionManual] = useState(false);
-    // Slot only. `slotPrivate` is the private/shared answer (null until asked):
-    // private → the whole session for one group (sells as one booking, flat
-    // price); shared → several people join (per-person price, seats = capacity).
-    // It is inferred on load from the session item's UNIT, not the capacity
-    // number, so a private slot can hold many yet still sell whole.
-    const [slotPrivate, setSlotPrivate] = useState<boolean | null>(null);
+    // Slot only. `slotOffer` is what the provider sells: 'private' (the whole
+    // session for one group — a flat price, one booking fills it), 'shared'
+    // (several people join — a per-person price, seats = capacity), or 'both'
+    // (offer either; each TIME is then sold as whichever a guest books first).
+    // Null until asked. Inferred on load from the session items' UNITS, not the
+    // capacity number — a private slot can hold many yet still sell whole — so a
+    // returning host who set up under the old single-item model sees exactly what
+    // they had (one flat item → 'private', one per-person item → 'shared'), never
+    // silently upgraded to 'both'.
+    const [slotOffer, setSlotOffer] = useState<SlotOffering | null>(null);
     // Maximum guests — the group size. Asked on its own screen in the Pricing
     // section (g_capacity). For a slot it is written to the slot_capacity column
     // (a shared slot sells that many seats via sessionCapacity; a private slot
@@ -673,6 +678,24 @@ function ApplicationForm() {
     // shown only for a shared slot; the booking route is the real gate, this is
     // the convenience floor. Loaded from slot_min_people on return.
     const [slotMinPeople, setSlotMinPeople] = useState('');
+    // Choosing the offering (re)shapes the slot's item list to match: a private
+    // hire is one flat item, a shared table one per-person item, 'both' is one of
+    // each. Existing rows are kept BY UNIT, so a price already entered survives a
+    // change of mind and a returning host's single item is preserved when they
+    // add the second product; a fresh product gets a default name (so the row is
+    // not nameless and dropped) and an empty price to set on the menu step.
+    const applyOffer = (offer: SlotOffering) => {
+        setSlotOffer(offer);
+        setItems((prev) => {
+            const flat = prev.find((r) => String(r.unit) === 'flat');
+            const person = prev.find((r) => String(r.unit) === 'person');
+            const blankFlat = { id: undefined as string | undefined, name: 'Private hire', description: '', price: '', unit: 'flat', image: null as string | null };
+            const blankPerson = { id: undefined as string | undefined, name: 'Per person', description: '', price: '', unit: 'person', image: null as string | null };
+            if (offer === 'private') return [flat || blankFlat];
+            if (offer === 'shared') return [person || blankPerson];
+            return [flat || blankFlat, person || blankPerson];
+        });
+    };
     // The declarations jsonb, loaded from a returning provider's row. It now holds
     // the terms acceptance ({ terms_version, terms_agreed_at }), so values are not
     // all booleans — kept only to derive whether they've agreed to the CURRENT
@@ -908,14 +931,15 @@ function ApplicationForm() {
                     if (ex.slot_capacity !== null && ex.slot_capacity !== undefined) {
                         setMaxGuests(String(ex.slot_capacity));
                     }
-                    // Private vs shared comes from the session item's UNIT, not
-                    // the capacity number — a private slot can hold six yet sell
-                    // whole, so capacity no longer implies the answer. Slots are
-                    // single-item with a uniform unit, but read it as "any
-                    // per-person item ⇒ shared" so a stray can't mis-load it.
+                    // The offering comes from the session items' UNITS, not the
+                    // capacity number — a private slot can hold six yet sell whole.
+                    // A flat item is a private hire, a per-person item a shared
+                    // table; both present is 'both'. This is the returning-host
+                    // path: someone who set up under the old single-item model has
+                    // one item and no stored offering, and loads as exactly what
+                    // that item is — 'private' or 'shared' — never flipped.
                     if (ex.shape === 'slot') {
-                        const anyPerson = (itemRows || []).some((r: any) => String(r.unit) === 'person');
-                        setSlotPrivate(!anyPerson);
+                        setSlotOffer(slotOfferingFromUnits((itemRows || []).map((r: any) => r.unit)));
                         // The per-person minimum, only meaningful for a shared
                         // slot. Load it back so a returning host edits what they
                         // set; 1 (or unset) reads as no minimum.
@@ -1210,7 +1234,8 @@ function ApplicationForm() {
             if (d.collectionStreet) setCollectionStreet(d.collectionStreet);
             if (d.collectionTown) setCollectionTown(d.collectionTown);
             if (d.collectionPostcode) setCollectionPostcode(d.collectionPostcode);
-            if (d.slotPrivate !== undefined && d.slotPrivate !== null) setSlotPrivate(d.slotPrivate === true);
+            if (d.slotOffer) setSlotOffer(d.slotOffer);
+            else if (d.slotPrivate !== undefined && d.slotPrivate !== null) setSlotOffer(d.slotPrivate === true ? 'private' : 'shared');
             if (d.maxGuests) setMaxGuests(d.maxGuests);
             if (d.slotLength) setSlotLength(d.slotLength);
             if (d.slotMinPeople) setSlotMinPeople(d.slotMinPeople);
@@ -1280,7 +1305,7 @@ function ApplicationForm() {
                     // as a live step during restore, and a signed-in applicant
                     // with any saved draft is resolved onto the email screen they
                     // should never see. A signed-in user has no g_verify step.
-                    ? { category: d.guestCategory, shape: d.shape, hasSession: !!sessionArg, slotPrivate: (d.slotPrivate === undefined || d.slotPrivate === null) ? null : d.slotPrivate === true }
+                    ? { category: d.guestCategory, shape: d.shape, hasSession: !!sessionArg, slotOffer: d.slotOffer ?? (d.slotPrivate === true ? 'private' : d.slotPrivate === false ? 'shared' : null) }
                     : undefined;
             const landing = resolveStep(restoreTrade, d.step, restoreCtx);
             setStep(landing);
@@ -1346,7 +1371,7 @@ function ApplicationForm() {
                     // address is the provider's own, in their own browser's draft
                     // — never shared, and it's a private column server-side.
                     fulfilment, collectionStreet, collectionTown, collectionPostcode,
-                    slotPrivate, maxGuests, slotLength, slotMinPeople, schedule, blockedDates,
+                    slotOffer, maxGuests, slotLength, slotMinPeople, schedule, blockedDates,
                     // The checks they've ticked so far.
                     declarations,
                 })
@@ -1366,7 +1391,7 @@ function ApplicationForm() {
         whatToExpect,
         guestCategory, shape, leadTimeDays,
         fulfilment, collectionStreet, collectionTown, collectionPostcode,
-        slotPrivate, maxGuests, slotLength, slotMinPeople, schedule, blockedDates,
+        slotOffer, maxGuests, slotLength, slotMinPeople, schedule, blockedDates,
         declarations,
     ]);
 
@@ -1403,7 +1428,7 @@ function ApplicationForm() {
         scheduleCount: schedule.length,
         // The slot pricing basis and its two group numbers, so the min ≤ capacity
         // rule can be checked. slotMinPeople blank reads as no minimum.
-        slotPrivate,
+        slotOffer,
         slotCapacity: maxGuests,
         slotMinPeople,
         // Items priced above zero — the marketplace lists only priced providers,
@@ -1841,7 +1866,7 @@ function ApplicationForm() {
     // saves the category, not the group) still resolves its steps correctly.
     const stepCtx: StepContext | undefined =
         isGuest
-            ? { group: guestGroup || (guestCategoryByKey(guestCategory)?.group || ''), category: guestCategory, shape, hasSession: !!session, slotPrivate }
+            ? { group: guestGroup || (guestCategoryByKey(guestCategory)?.group || ''), category: guestCategory, shape, hasSession: !!session, slotOffer }
             : undefined;
 
     const problemFor = (field: string) => {
@@ -1965,7 +1990,7 @@ function ApplicationForm() {
             ? GUEST_SCREEN_COPY.qualsGate
             // The pricing basis gates Next until it's answered — say so rather
             // than leaving a greyed button with no reason.
-            : step === 'g_slot_basis' && slotPrivate === null
+            : step === 'g_slot_basis' && slotOffer === null
             ? GUEST_SCREEN_COPY.slotBasisGate
             // The come-to-me / travel fork, same rule.
             : step === 'g_slot_where' && !fulfilment
@@ -2633,7 +2658,7 @@ function ApplicationForm() {
             // slot; a private/flat slot is one booking whatever the head count, so
             // it stores 1 (no minimum). Floored at 1 to satisfy the column's
             // check; the min ≤ capacity rule is enforced before send (submitProblems).
-            slot_min_people: (isSlot && slotPrivate === false) ? Math.max(1, num(slotMinPeople, 1) ?? 1) : 1,
+            slot_min_people: (isSlot && offeringHasShared(slotOffer)) ? Math.max(1, num(slotMinPeople, 1) ?? 1) : 1,
             ...fulfilmentFields,
             declarations: acceptance,
         };
@@ -2795,14 +2820,15 @@ function ApplicationForm() {
         // The menu, for a guest trade. Only rows with a name and a real price;
         // everyone names their items now, so a nameless row is an empty one and
         // drops out, and a half-filled form does not create a phantom item.
-        const slotUnit = slotPrivate === false ? 'person' : 'flat';
         const items_ = audienceForTrade(trade) === 'guest'
             ? items
                 .map((it, i) => ({
                     name: String(it.name || '').trim(),
                     description: String(it.description || '').trim() || null,
                     price: String(it.price || '').trim() !== '' ? Number(it.price) : null,
-                    unit: shape === 'slot' ? slotUnit : String(it.unit || 'flat'),
+                    // A slot keeps each item's OWN unit — flat for a private hire,
+                    // person for a shared table — so 'both' can carry two.
+                    unit: shape === 'slot' ? (String(it.unit) === 'person' ? 'person' : 'flat') : String(it.unit || 'flat'),
                     image: it.image || null,
                     sort_order: i,
                     active: true,
@@ -3368,10 +3394,10 @@ function ApplicationForm() {
         // deleted. The order snapshots what it was for, so none of this touches
         // a placed order. Empty rows (no name or no price) are dropped.
         if (audienceForTrade(trade) === 'guest') {
-            // A slot's single offering has no unit picker: private is a flat
-            // price for the session, shared is per person. Derived here so the
-            // one place a unit is stored agrees with the private/shared answer.
-            const slotUnit = slotPrivate === false ? 'person' : 'flat';
+            // A slot keeps each item's OWN unit — flat for a private hire, person
+            // for a shared table — so a 'both' provider stores two items with two
+            // units. The unit is set when the offering is chosen, not picked per
+            // row, so a slot row is only ever flat or person.
             const valid = items
                 .map((it, i) => ({
                     id: it.id,
@@ -3379,7 +3405,7 @@ function ApplicationForm() {
                     name: String(it.name || '').trim(),
                     description: String(it.description || '').trim() || null,
                     price: String(it.price || '').trim() !== '' ? Number(it.price) : null,
-                    unit: shape === 'slot' ? slotUnit : String(it.unit || 'flat'),
+                    unit: shape === 'slot' ? (String(it.unit) === 'person' ? 'person' : 'flat') : String(it.unit || 'flat'),
                     image: it.image || null,
                     sort_order: i,
                     active: true,
@@ -4458,7 +4484,7 @@ function ApplicationForm() {
 
                     const UNIT_WORD: Record<string, string> = GUEST_SCREEN_COPY.priceUnitLabels;
                     const unitWord = (r: { unit: string }) => isSlot
-                        ? (slotPrivate === false ? 'per person' : slotPrivate === true ? 'for the session' : '')
+                        ? (String(r.unit) === 'person' ? 'per person' : 'for the session')
                         : (UNIT_WORD[r.unit || 'flat'] || '');
                     const rowSummary = (r: { price: string; unit: string }) => {
                         const p = String(r.price || '').trim();
@@ -4467,13 +4493,15 @@ function ApplicationForm() {
                             : GUEST_SCREEN_COPY.menuRowPrompt;
                     };
 
-                    const rows = isSlot ? (items.length ? [items[0]] : []) : items;
+                    // A slot now has 1 or 2 rows (a private hire and/or a shared
+                    // table), authored when the offering is chosen — so its rows
+                    // are just its items, the same as a menu, only fixed (no add).
+                    const rows = items;
                     const setField = (i: number, field: 'name' | 'description' | 'price' | 'unit', val: string) =>
                         setItems((prev) => prev.map((r, j) => (j === i ? { ...r, [field]: val } : r)));
 
                     const openEdit = (i: number) => { setMenuIndex(i); setMenuStep(0); setPayoutOpen(false); };
                     const openAdd = () => { setItems((prev) => [...prev, { ...blank }]); setMenuIndex(items.length); setMenuStep(0); setPayoutOpen(false); };
-                    const openSlot = () => { if (!items.length) setItems([{ ...blank }]); setMenuIndex(0); setMenuStep(0); setPayoutOpen(false); };
                     // A blank abandoned by cancelling an add (no name and no price)
                     // is dropped on close, so a cancelled add leaves nothing behind.
                     const closeItem = () => {
@@ -4513,14 +4541,17 @@ function ApplicationForm() {
 
                             <div className="mt-8 space-y-1">
                                 {isSlot ? (
-                                    <HubRow
-                                        filled={rows.length > 0 && String(rows[0].name || '').trim() !== ''}
-                                        thumb={rows[0] && rows[0].image ? getImageUrl(rows[0].image) : null}
-                                        label={(rows[0] && rows[0].name.trim()) || GUEST_SCREEN_COPY.menuSlotRowLabel}
-                                        prompt={GUEST_SCREEN_COPY.menuRowPrompt}
-                                        summary={rows.length ? rowSummary(rows[0]) : null}
-                                        onOpen={openSlot}
-                                    />
+                                    rows.map((r, i) => (
+                                        <HubRow
+                                            key={r.id || String(r.unit) || i}
+                                            filled={String(r.name || '').trim() !== ''}
+                                            thumb={r.image ? getImageUrl(r.image) : null}
+                                            label={(r.name && r.name.trim()) || GUEST_SCREEN_COPY.menuSlotRowLabel}
+                                            prompt={GUEST_SCREEN_COPY.menuRowPrompt}
+                                            summary={rowSummary(r)}
+                                            onOpen={() => openEdit(i)}
+                                        />
+                                    ))
                                 ) : (
                                     <>
                                         {rows.map((r, i) => (
@@ -4963,14 +4994,15 @@ function ApplicationForm() {
                     cards. */}
                 {onStep('g_slot_basis') && isGuest && shape === 'slot' && (
                 <section className="mb-8 md:max-w-xl md:mx-auto">
-                    <div className="grid gap-3 sm:grid-cols-2">
-                        {[
-                            { v: true, t: 'One group at a time', d: 'The whole thing is theirs — a private sauna. One booking fills it.' },
-                            { v: false, t: 'Several people join', d: 'A class or a walk. Priced per person, up to a number you set.' },
-                        ].map((o) => {
-                            const on = slotPrivate === o.v;
+                    <div className="grid gap-3 sm:grid-cols-3">
+                        {([
+                            { v: 'private', t: 'One group at a time', d: 'The whole thing is theirs — a private hire. One booking fills it.' },
+                            { v: 'shared', t: 'Several people join', d: 'A class or a tasting. Priced per person, up to a number you set.' },
+                            { v: 'both', t: 'Offer both', d: 'Let guests pick a private hire or a single place.' },
+                        ] as const).map((o) => {
+                            const on = slotOffer === o.v;
                             return (
-                                <button key={String(o.v)} type="button" onClick={() => setSlotPrivate(o.v)} aria-pressed={on}
+                                <button key={o.v} type="button" onClick={() => applyOffer(o.v)} aria-pressed={on}
                                     className={'flex flex-col rounded-2xl border p-4 text-left transition ' + (on ? 'border-emerald-600 bg-emerald-50 ring-1 ring-emerald-600' : 'border-slate-300 hover:border-emerald-400')}>
                                     <span className="font-semibold text-slate-900">{o.t}</span>
                                     <span className="mt-1 text-xs leading-snug text-slate-500">{o.d}</span>
@@ -4978,6 +5010,16 @@ function ApplicationForm() {
                             );
                         })}
                     </div>
+                    {/* The consequence of 'both', at the moment they choose it — a
+                        highlighted line, not a tick to click past. Each TIME is sold
+                        as whichever a guest books first; the other closes for it. */}
+                    {slotOffer === 'both' && (
+                        <div className="mt-4 rounded-xl border border-emerald-600/40 bg-emerald-50 p-4 text-sm leading-relaxed text-emerald-900">
+                            <span className="font-semibold">Each time sells as one or the other.</span>{' '}
+                            A guest books any given time as a private hire <em>or</em> as individual places —
+                            whichever comes first. Once a time is booked one way, the other closes for that time.
+                        </div>
+                    )}
                 </section>
                 )}
 
@@ -4992,7 +5034,7 @@ function ApplicationForm() {
                     ceiling (g_capacity) is the max above it, so the stepper caps
                     there; default 1 = no minimum. The route is the real gate —
                     this is the convenience floor. */}
-                {onStep('g_slot_min') && isGuest && shape === 'slot' && slotPrivate === false && (
+                {onStep('g_slot_min') && isGuest && shape === 'slot' && offeringHasShared(slotOffer) && (
                 <section className="flex-1 flex flex-col items-center justify-center">
                     <NumberStepper value={slotMinPeople} onChange={setSlotMinPeople} min={1} max={Math.max(1, parseInt(maxGuests, 10) || CAPACITY_DEFAULT_SLOT)} suggestion={1} size="lg" solid suffix={GUEST_SCREEN_COPY.slotMinSuffix} />
                 </section>
@@ -7120,9 +7162,14 @@ function ApplicationForm() {
                             : step === 'g_photos' ? photos.length === 0
                             // The pricing basis must be answered before moving on —
                             // it sets the unit and decides the next screen.
-                            : step === 'g_slot_basis' ? slotPrivate === null
+                            : step === 'g_slot_basis' ? slotOffer === null
                             // The come-to-me / travel fork sets the location screen.
                             : step === 'g_slot_where' ? !fulfilment
+                            // A 'both' slot must have BOTH products priced, or a
+                            // host who chose both quietly ships only one.
+                            : step === 'g_menu' && shape === 'slot' && slotOffer === 'both'
+                                ? !(items.some((r) => String(r.unit) === 'flat' && Number(r.price) > 0)
+                                    && items.some((r) => String(r.unit) === 'person' && Number(r.price) > 0))
                             : step === 'g_area' ? (stepProblems.length > 0 || !!whereMissing)
                             : stepProblems.length > 0
                         );

@@ -2532,10 +2532,10 @@ export interface ProviderDraft {
     // How many items have a price above zero. A guest listing needs at least one
     // — the marketplace lists only priced providers, so a no-price one is unbookable.
     pricedItemCount?: number;
-    // A slot's pricing basis and the two group numbers. slotPrivate false means
-    // per person, where a minimum-people rule can apply; the minimum may not
-    // exceed the capacity ceiling, or the session could never be booked.
-    slotPrivate?: boolean | null;
+    // What a slot provider offers and the two group numbers. A shared table
+    // ('shared' or 'both') is where a minimum-people rule can apply; the minimum
+    // may not exceed the capacity ceiling, or the session could never be booked.
+    slotOffer?: 'private' | 'shared' | 'both' | null;
     slotCapacity?: any;
     slotMinPeople?: any;
 }
@@ -2688,12 +2688,12 @@ export function submitProblems(draft: ProviderDraft): Problem[] {
         problems.push({ field: 'menu', message: GUEST_SCREEN_COPY.menuRequiredGate });
     }
 
-    // A per-person slot's minimum can't exceed its capacity ceiling: a session
-    // that needs at least four but seats at most two could never be booked. Only
-    // a shared/per-person slot has a minimum (a private one is one booking
-    // whatever the head count), so the rule is gated on slotPrivate === false.
-    // A minimum of 1 (or blank) is no minimum and never trips this.
-    if (draft.audience === 'guest' && draft.shape === 'slot' && draft.slotPrivate === false) {
+    // A shared table's minimum can't exceed its capacity ceiling: a session that
+    // needs at least four but seats at most two could never be booked. Only a
+    // shared table has a minimum (a private hire is one booking whatever the head
+    // count), so the rule is gated on the offering including shared. A minimum of
+    // 1 (or blank) is no minimum and never trips this.
+    if (draft.audience === 'guest' && draft.shape === 'slot' && (draft.slotOffer === 'shared' || draft.slotOffer === 'both')) {
         const min = Number(draft.slotMinPeople);
         const cap = Number(draft.slotCapacity);
         if (Number.isFinite(min) && min > 1 && Number.isFinite(cap) && cap >= 1 && min > cap) {

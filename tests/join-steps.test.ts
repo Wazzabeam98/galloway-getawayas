@@ -643,8 +643,8 @@ test('the come-to-me / travel fork is asked only for yoga, massage and painting'
 });
 
 test('the per-person minimum screen exists only for a shared/per-person slot', () => {
-    const shared = { group: 'crafts', category: 'pottery', shape: 'slot', slotPrivate: false };
-    const priv = { group: 'wellness', category: 'sauna', shape: 'slot', slotPrivate: true };
+    const shared = { group: 'crafts', category: 'pottery', shape: 'slot', slotOffer: 'shared' };
+    const priv = { group: 'wellness', category: 'sauna', shape: 'slot', slotOffer: 'private' };
     const unanswered = { group: 'crafts', category: 'pottery', shape: 'slot' };
     // Per person: … g_capacity → g_slot_min → g_menu.
     assert.equal(stepApplies('g_slot_min', 'guest', shared), true, 'per person has a minimum');
@@ -657,8 +657,8 @@ test('the per-person minimum screen exists only for a shared/per-person slot', (
     // The basis and the minimum are slot-only — a chef and a cake maker never
     // see either.
     for (const nonSlot of [
-        { group: 'food', category: 'chef', shape: 'comes_to_you', slotPrivate: false },
-        { group: 'food', category: 'food_order', shape: 'made_to_order', slotPrivate: false },
+        { group: 'food', category: 'chef', shape: 'comes_to_you', slotOffer: 'shared' },
+        { group: 'food', category: 'food_order', shape: 'made_to_order', slotOffer: 'shared' },
     ]) {
         assert.equal(stepApplies('g_slot_basis', 'guest', nonSlot), false, 'non-slot has no basis screen');
         assert.equal(stepApplies('g_slot_min', 'guest', nonSlot), false, 'non-slot has no minimum screen');
