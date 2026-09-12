@@ -118,11 +118,25 @@ export function generateSessions(
 // Per-person price ⇒ capacity is people, a booking takes its quantity of them.
 // Whole-slot (flat) price ⇒ capacity is one booking, quantity is always one.
 
+/**
+ * True when the provider has a real per-person capacity. A shared table needs a
+ * set number of seats; a per-person item without one is misconfigured. Left to
+ * sessionCapacity() it would fall back to a single seat and the "shared" table
+ * would sell as a one-seat private hire at a per-person price. The booking route
+ * uses this to refuse such an item before the seat is claimed.
+ */
+export function hasSlotCapacity(provider: any): boolean {
+    const n = Number(provider && provider.slot_capacity);
+    return Number.isInteger(n) && n >= 1;
+}
+
 /** The capacity a materialised session should carry, from the provider config. */
 export function sessionCapacity(provider: any, unit: string): number {
     if (String(unit) === 'flat') return 1;               // a private/whole slot
-    const n = Number(provider && provider.slot_capacity);
-    return Number.isInteger(n) && n >= 1 ? n : 1;
+    // The fallback to 1 stays as a last-ditch safety, but the booking route no
+    // longer relies on it: a per-person item with no capacity is refused up front
+    // (see hasSlotCapacity), never quietly sold as a single seat.
+    return hasSlotCapacity(provider) ? Number(provider.slot_capacity) : 1;
 }
 
 /** Places still open on a session. Never negative. */

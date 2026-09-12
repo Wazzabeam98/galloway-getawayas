@@ -1,6 +1,8 @@
 // Slot item choice — proving /slots/book honours the guest's chosen itemId
 // rather than the provider's first item, and derives unit, capacity, the mode
-// (private/shared) and the minimum from THAT item.
+// (private/shared) and the minimum from THAT item. Scenario 4 additionally
+// guards the capacity invariant: a per-person item on a provider with no
+// slot_capacity is refused up front, never sold as a one-seat shared table.
 //
 //   GUEST_EXPERIENCES_OPEN=true PORT=3190 npm run dev
 //   SITE_URL=<that dev server> node scripts/slot-item-choice-scenarios.mjs
@@ -103,6 +105,14 @@ async function main() {
     // A second provider's item, to prove a foreign id can't be booked.
     const [prov2] = await db.insert('service_providers', { owner_id: owner.id, business_name: 'Other', trade: 'other', audience: 'guest', status: 'approved', plan: 'commission', commission_rate: 0.10, shape: 'slot', slot_capacity: 4, stripe_account_id: account, stripe_payouts_enabled: true });
     const [foreign] = await db.insert('service_provider_items', { provider_id: prov2.id, name: 'Elsewhere', price: 50, unit: 'flat', active: true, sort_order: 0 });
+    // A MISCONFIGURED slot: live to guests, but slot_capacity is null. A
+    // per-person item on it has no seats — the state that used to sell a shared
+    // table as a one-seat private hire. It also carries a flat item, to prove the
+    // guard bites per-person only and a private hire on the same provider is fine.
+    const [provNoCap] = await db.insert('service_providers', { owner_id: owner.id, business_name: 'No Capacity', trade: 'nocap', audience: 'guest', status: 'approved', plan: 'commission', commission_rate: 0.10, shape: 'slot', slot_length_minutes: 60, slot_capacity: null, cancellation_window_hours: 12, contact_email: 'owner@' + DOMAIN, stripe_account_id: account, stripe_payouts_enabled: true, stripe_charges_enabled: true, stripe_details_submitted: true });
+    const [noCapPerson] = await db.insert('service_provider_items', { provider_id: provNoCap.id, name: 'Seat, no seats set', description: 'per person, but the host set no capacity', price: 40, unit: 'person', active: true, sort_order: 0 });
+    const [noCapFlat] = await db.insert('service_provider_items', { provider_id: provNoCap.id, name: 'Whole table', description: 'a private hire needs no capacity', price: 150, unit: 'flat', active: true, sort_order: 1 });
+    for (let d = 0; d < 7; d++) await db.insert('slot_availability', { provider_id: provNoCap.id, day_of_week: d, open_time: '09:00', close_time: '17:00' });
 
     const cookie = await asUser('guest');
     console.log('  items: shared(person,£30,sort0)=' + shared.id.slice(0, 8) + '  private(flat,£120,sort1)=' + priv.id.slice(0, 8));
@@ -149,6 +159,23 @@ async function main() {
         check('another provider’s item id is refused (400)', foreignRes.status === 400, 'HTTP ' + foreignRes.status + ' ' + (foreignRes.body.error || ''));
         const s = await sessionRow(prov.id, V, time);
         check('no seat was claimed for the refused bookings', !s || s.seats_taken === 0, s && String(s.seats_taken));
+    }
+
+    /* ===== 4. the capacity invariant — a per-person item with no capacity is refused */
+    scenario('4', 'A per-person item with no slot_capacity is refused before the seat claim and before Stripe; a flat item on the same provider still books');
+    {
+        const X = dayOffset(9), time = '14:00';
+        const bad = await bookSlot(cookie, provNoCap.id, booking.id, X, time, noCapPerson.id, 1);
+        check('the per-person item is refused (400)', bad.status === 400, 'HTTP ' + bad.status + ' ' + (bad.body.error || ''));
+        check('the guest is told the host has not set how many people it is for', /how many people|isn.t bookable/i.test(bad.body.error || ''), bad.body.error || '');
+        const s = await sessionRow(provNoCap.id, X, time);
+        check('no seat was claimed (no session row, or zero seats)', !s || s.seats_taken === 0, s && String(s.seats_taken));
+        const o = await latestOrder(provNoCap.id, X, time);
+        check('no holding order was created — refused before Stripe', !o, o && ('order ' + o.status));
+        // The guard is per-person only: a private hire needs no capacity.
+        const flat = await bookSlot(cookie, provNoCap.id, booking.id, X, time, noCapFlat.id, 1);
+        check('the flat item on the same capacity-less provider still books (a private hire is one booking)', flat.status === 200 && flat.body.ok, 'HTTP ' + flat.status + ' ' + JSON.stringify(flat.body).slice(0, 100));
+        note('The bad state used to sell a shared table as a one-seat private hire at a per-person price; it is now refused up front.');
     }
 
     const passed = results.filter((r) => r.status === 'passed').length, failed = results.filter((r) => r.status === 'failed').length;

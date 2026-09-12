@@ -12,7 +12,7 @@ installAliases();
 
 import {
     SHAPES, shapeOf, isSlot, isExclusiveShape, shapeCue,
-    generateSessions, sessionCapacity, seatsLeft,
+    generateSessions, sessionCapacity, hasSlotCapacity, seatsLeft,
     freeCancelDeadline, guestMayCancelFree, SLOT_HOLD_MINUTES,
     bookingIsPrivate, slotClaimKind,
     slotOfferingFromUnits, offeringHasShared, offeringHasPrivate,
@@ -85,6 +85,19 @@ test('a whole-slot price is one booking; a per-person price is the provider coun
     assert.equal(sessionCapacity({ slot_capacity: 8 }, 'person'), 8, 'a walk holds the set number of people');
     assert.equal(sessionCapacity({ slot_capacity: null }, 'person'), 1, 'a missing count is a safe one');
     assert.equal(sessionCapacity({}, 'person'), 1);
+});
+
+// The predicate the booking route uses to refuse a misconfigured per-person item
+// up front. (The real guard is the scenario suite, which drives the route; this
+// pins the pure rule the route depends on.)
+test('hasSlotCapacity is true only for a real, whole, positive count', () => {
+    assert.equal(hasSlotCapacity({ slot_capacity: 8 }), true);
+    assert.equal(hasSlotCapacity({ slot_capacity: 1 }), true);
+    assert.equal(hasSlotCapacity({ slot_capacity: null }), false, 'null is no capacity');
+    assert.equal(hasSlotCapacity({ slot_capacity: 0 }), false, 'zero seats is no capacity');
+    assert.equal(hasSlotCapacity({ slot_capacity: -3 }), false, 'negative is no capacity');
+    assert.equal(hasSlotCapacity({}), false, 'absent is no capacity');
+    assert.equal(hasSlotCapacity(null), false);
 });
 
 test('seats left never goes negative', () => {

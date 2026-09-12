@@ -9,7 +9,7 @@ import {
     normaliseUnit, unitMultiplies, orderQuantity, orderTotal, MAX_ORDER_QUANTITY, expiryFrom,
 } from '@/lib/serviceOrders';
 import {
-    isSlot, sessionCapacity, generateSessions, SLOT_HOLD_MINUTES,
+    isSlot, sessionCapacity, hasSlotCapacity, generateSessions, SLOT_HOLD_MINUTES,
     bookingIsPrivate, slotClaimKind,
 } from '@/lib/serviceSlots';
 import { dateFromKey, dateKey } from '@/lib/pricing';
@@ -124,6 +124,21 @@ export async function POST(request: Request) {
         // The session must still be in the future.
         if (new Date(sessionDate + 'T' + (sessionTime.length === 5 ? sessionTime + ':00' : sessionTime) + 'Z').getTime() <= Date.now()) {
             return NextResponse.json({ ok: false, error: 'That time has passed. Pick another.' }, { status: 400 });
+        }
+
+        // A per-person item is a shared table, and a shared table needs a real
+        // number of seats. Without a capacity, sessionCapacity() falls back to 1
+        // and the "shared" table would sell a single seat at a per-person price —
+        // a private hire in all but name, at the wrong price and mode. Refuse a
+        // misconfigured item HERE, before the seat is claimed and before Stripe,
+        // exactly as the minimum is: an unbookable listing must not be booked, not
+        // quietly sold as something it isn't. (A flat item needs no capacity — a
+        // private hire is always one booking — so this bites per-person only.)
+        if (unitMultiplies(unit) && !hasSlotCapacity(provider)) {
+            return NextResponse.json(
+                { ok: false, error: 'This session isn’t bookable yet — the host hasn’t set how many people it’s for. Try again later or message them.' },
+                { status: 400 }
+            );
         }
 
         const capacity = sessionCapacity(provider, unit);
