@@ -60,7 +60,10 @@ export default function BookingPanel({ bookingId, checkIn, checkOut, provider }:
     const [busy, setBusy] = useState(false);
     const [error, setError] = useState<string | null>(null);
 
-    const item = isSlot ? provider.items[0] : (provider.items.find((i) => i.id === itemId) || null);
+    // The guest's chosen product, for every shape. A single-item provider
+    // auto-selects it (itemId defaults to the one id above); a provider offering
+    // two — a private hire and a shared table — is picked below.
+    const item = provider.items.find((i) => i.id === itemId) || null;
     const multiplies = !!item && unitMultiplies(item.unit);
 
     // Sessions grouped by day, for the slot picker.
@@ -108,7 +111,7 @@ export default function BookingPanel({ bookingId, checkIn, checkOut, provider }:
                 ? [allergyTags.join(', '), allergy.trim()].filter(Boolean).join(allergyTags.length && allergy.trim() ? ' — ' : '')
                 : '';
             const body = isSlot
-                ? { providerId: provider.id, bookingId, sessionDate: session!.date, sessionTime: session!.time, quantity, note: trimmedNote, allergy: trimmedAllergy }
+                ? { providerId: provider.id, itemId: item.id, bookingId, sessionDate: session!.date, sessionTime: session!.time, quantity, note: trimmedNote, allergy: trimmedAllergy }
                 : { itemId: item.id, bookingId, serviceDate: date, quantity, note: trimmedNote, allergy: trimmedAllergy };
             const res = await fetch(url, {
                 method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body),
@@ -126,7 +129,7 @@ export default function BookingPanel({ bookingId, checkIn, checkOut, provider }:
                 <div className="text-2xl font-semibold text-slate-900">
                     {item ? itemPriceLabel(item.price, item.unit) : (provider.items.length ? itemPriceLabel(Math.min(...provider.items.map((i) => i.price)), provider.items[0].unit) : '')}
                 </div>
-                {!isSlot && provider.items.length > 1 && !item ? (
+                {provider.items.length > 1 && !item ? (
                     <span className="text-sm text-slate-400">choose below</span>
                 ) : null}
             </div>
@@ -145,8 +148,9 @@ export default function BookingPanel({ bookingId, checkIn, checkOut, provider }:
                 )}
             </div>
 
-            {/* Menu pick — request shapes with more than one item */}
-            {!isSlot && provider.items.length > 1 && (
+            {/* Menu pick — any provider offering more than one product, slots
+                included (a private hire vs a shared table are two items). */}
+            {provider.items.length > 1 && (
                 <fieldset className="mt-4">
                     <legend className="text-xs font-semibold uppercase tracking-wide text-slate-500">Choose</legend>
                     <div className="mt-2 space-y-1.5">
