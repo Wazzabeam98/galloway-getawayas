@@ -131,6 +131,43 @@ export function seatsLeft(session: { capacity: number; seats_taken: number }): n
 }
 
 // ---------------------------------------------------------------------------
+// PRIVATE HIRE vs SHARED TABLE — a slot time is sold as one or the other
+// ---------------------------------------------------------------------------
+//
+// The item's unit decides which a BOOKING is: a flat (whole-session) price is a
+// private hire; a per-person price is a seat at a shared table. The mode is then
+// pinned to the TIME by whoever books it first, recorded on slot_sessions.private
+// (see 20260912090000_slot_session_mode.sql). These are the pure rules; the
+// booking route carries them out atomically.
+
+/** A booking of this item is a private hire — it takes the whole session. */
+export function bookingIsPrivate(unit: string | null | undefined): boolean {
+    return String(unit) === 'flat';
+}
+
+// What a claim may do to a session, given the session's current state and
+// whether this booking is a private hire.
+//
+//   'establish'  the session is empty — fresh, or reopened by a cancellation.
+//                This booking sets its mode and capacity. A 0-seat row has no
+//                effective mode, so its stored `private` is ignored here.
+//   'join'       the session already has this same mode — take a seat / fill it.
+//   'mode-clash' the session is the OTHER mode with someone already in it: a
+//                private hire on a table people have joined, or a seat on a
+//                privately-hired room. REFUSED. This is the guard: without it a
+//                private booking silently takes ONE seat of a shared table, and
+//                the guest pays a whole-room price for a single chair.
+export type SlotClaim = 'establish' | 'join' | 'mode-clash';
+export function slotClaimKind(
+    session: { seats_taken: number; private: boolean } | null | undefined,
+    isPrivate: boolean,
+): SlotClaim {
+    if (!session || Number(session.seats_taken) === 0) return 'establish';
+    if (Boolean(session.private) !== Boolean(isPrivate)) return 'mode-clash';
+    return 'join';
+}
+
+// ---------------------------------------------------------------------------
 // CANCELLATION — SHAPE-AWARE
 // ---------------------------------------------------------------------------
 //

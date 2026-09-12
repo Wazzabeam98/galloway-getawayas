@@ -10,6 +10,7 @@ import {
 } from '@/lib/serviceOrders';
 import {
     isSlot, sessionCapacity, generateSessions, SLOT_HOLD_MINUTES,
+    bookingIsPrivate, slotClaimKind,
 } from '@/lib/serviceSlots';
 import { dateFromKey, dateKey } from '@/lib/pricing';
 
@@ -116,6 +117,10 @@ export async function POST(request: Request) {
         }
 
         const capacity = sessionCapacity(provider, unit);
+        // A flat item is a private hire (takes the whole session); a per-person
+        // item is a seat at a shared table. The first booking pins the time to
+        // one mode; a later booking of the other kind is refused below.
+        const isPrivate = bookingIsPrivate(unit);
         const quantity = orderQuantity(unit, unitMultiplies(unit) ? requestedQuantity : 1);
         if (quantity === null) {
             return NextResponse.json(
@@ -143,17 +148,46 @@ export async function POST(request: Request) {
         // seats by compare-and-swap. A lost swap means someone else moved it
         // between our read and our write, so re-read and try again; a full
         // session is a clean 409.
+        //
+        // THE MODE IS PINNED HERE. The booking that fills an EMPTY session (fresh,
+        // or reopened by a cancellation) sets whether the time is a private hire
+        // or a shared table, and its capacity, in the same CAS. A later booking of
+        // the OTHER kind — a private hire on a table people have joined, or a seat
+        // on a privately-hired room — is refused (mode-clash). This is what stops
+        // a private booking silently taking one seat of a shared table.
         await admin.from('slot_sessions')
-            .upsert({ provider_id: provider.id, session_date: sessionDate, session_time: sessionTime, capacity, seats_taken: 0 },
+            .upsert({ provider_id: provider.id, session_date: sessionDate, session_time: sessionTime, capacity, seats_taken: 0, private: isPrivate },
                 { onConflict: 'provider_id,session_date,session_time', ignoreDuplicates: true });
 
         let claimed = false;
+        let modeClash = false;
         for (let attempt = 0; attempt < 5 && !claimed; attempt++) {
             const { data: sess } = await admin.from('slot_sessions')
-                .select('id, capacity, seats_taken')
+                .select('id, capacity, seats_taken, private')
                 .eq('provider_id', provider.id).eq('session_date', sessionDate).eq('session_time', sessionTime)
                 .maybeSingle();
             if (!sess) break;
+
+            const kind = slotClaimKind(sess, isPrivate);
+            if (kind === 'mode-clash') { modeClash = true; break; }
+
+            if (kind === 'establish') {
+                // Empty session: this booking sets the mode AND the capacity, on a
+                // CAS guarded by seats_taken = 0. Of two bookings racing on a fresh
+                // (or reopened) time, exactly one wins; the loser retries, now sees
+                // the mode it set, and either joins it or clashes.
+                if (quantity > capacity) {
+                    return NextResponse.json({ ok: false, error: 'That time just filled up. Pick another.' }, { status: 409 });
+                }
+                const { data: swapped } = await admin.from('slot_sessions')
+                    .update({ seats_taken: quantity, private: isPrivate, capacity })
+                    .eq('id', sess.id).eq('seats_taken', 0)   // CAS guard: still empty
+                    .select('id');
+                if (swapped && swapped.length) claimed = true;
+                continue;
+            }
+
+            // kind === 'join' — same mode, take seats against the pinned capacity.
             if (sess.seats_taken + quantity > sess.capacity) {
                 return NextResponse.json(
                     { ok: false, error: 'That time just filled up. Pick another.' },
@@ -165,6 +199,17 @@ export async function POST(request: Request) {
                 .eq('id', sess.id).eq('seats_taken', sess.seats_taken)   // CAS guard
                 .select('id');
             if (swapped && swapped.length) claimed = true;
+        }
+        if (modeClash) {
+            return NextResponse.json(
+                {
+                    ok: false,
+                    error: isPrivate
+                        ? 'That time is already a shared table — choose another for a private hire.'
+                        : 'That time is booked as a private hire — choose another to join a group.',
+                },
+                { status: 409 }
+            );
         }
         if (!claimed) {
             return NextResponse.json({ ok: false, error: 'That time just filled up. Pick another.' }, { status: 409 });

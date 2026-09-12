@@ -14,6 +14,7 @@ import {
     SHAPES, shapeOf, isSlot, isExclusiveShape, shapeCue,
     generateSessions, sessionCapacity, seatsLeft,
     freeCancelDeadline, guestMayCancelFree, SLOT_HOLD_MINUTES,
+    bookingIsPrivate, slotClaimKind,
 } from '@/lib/serviceSlots';
 import { exclusivePerDate } from '@/lib/serviceOrders';
 
@@ -118,4 +119,41 @@ test('the seat hold lives as long as Stripe’s Checkout floor (30 min)', () => 
     // Stripe won't expire a Checkout Session in under 30 minutes, and the hold
     // must expire with it, so the hold is 30 — not the 15 first sketched.
     assert.equal(SLOT_HOLD_MINUTES, 30);
+});
+
+// --- private hire vs shared table: the mode rules the booking route enforces ---
+
+test('a flat price is a private hire; anything per-unit is a shared seat', () => {
+    assert.equal(bookingIsPrivate('flat'), true, 'a whole-session price hires the room');
+    assert.equal(bookingIsPrivate('person'), false, 'a per-person price is a seat');
+    assert.equal(bookingIsPrivate(null), false, 'a missing unit is not a private hire');
+});
+
+test('an empty session — fresh or reopened — is established by the next booking', () => {
+    // No row yet.
+    assert.equal(slotClaimKind(null, true), 'establish');
+    assert.equal(slotClaimKind(null, false), 'establish');
+    // A row sitting at zero seats has NO effective mode, whatever its stale flag
+    // says, so a cancellation that empties a private time reopens it as EITHER.
+    assert.equal(slotClaimKind({ seats_taken: 0, private: true }, false), 'establish',
+        'a cancelled private time can be re-established as a shared table');
+    assert.equal(slotClaimKind({ seats_taken: 0, private: false }, true), 'establish',
+        'a cancelled shared time can be re-established as a private hire');
+});
+
+test('a booking of the same mode joins the session', () => {
+    assert.equal(slotClaimKind({ seats_taken: 2, private: false }, false), 'join', 'another seat at a shared table');
+    assert.equal(slotClaimKind({ seats_taken: 1, private: true }, true), 'join',
+        'a second private booking is a join here — the capacity check then refuses it as full');
+});
+
+test('THE GUARD: a private hire on an occupied shared table is a mode-clash, not a seat', () => {
+    // The bug. A flat booking on a shared session that already has someone in it
+    // must be refused, never silently take a single seat.
+    assert.equal(slotClaimKind({ seats_taken: 1, private: false }, true), 'mode-clash');
+    assert.equal(slotClaimKind({ seats_taken: 8, private: false }, true), 'mode-clash');
+});
+
+test('a seat on a privately-hired room is also a mode-clash', () => {
+    assert.equal(slotClaimKind({ seats_taken: 1, private: true }, false), 'mode-clash');
 });
