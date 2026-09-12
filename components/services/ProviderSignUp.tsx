@@ -712,8 +712,6 @@ function ApplicationForm() {
     const [hoursMode, setHoursMode] = useState<'simple' | 'perday'>('simple');
     const [sharedOpen, setSharedOpen] = useState('10:00');
     const [sharedClose, setSharedClose] = useState('18:00');
-    // Dates taken off (block-a-date), as 'yyyy-mm-dd' keys.
-    const [blockedDates, setBlockedDates] = useState<string[]>([]);
     // Keyed by extra. Price stays a string for the same reason band prices
     // do — a half-typed number should not be coerced mid-keystroke.
     const [extras, setExtras] = useState<Record<string, { offered: boolean; price: string; notes: string }>>({});
@@ -1008,13 +1006,6 @@ function ApplicationForm() {
                         if (uniform) { setSharedOpen(rows[0].open); setSharedClose(rows[0].close); setHoursMode('simple'); }
                         else setHoursMode('perday');
                     }
-                    const { data: blks } = await supabase
-                        .from('slot_blocks')
-                        .select('blocked_date')
-                        .eq('provider_id', existing.id)
-                        .order('blocked_date', { ascending: true });
-                    if (blks && blks.length) setBlockedDates(blks.map((b: any) => b.blocked_date));
-
                     // The numbers only. Whether one has been checked is not
                     // read here and not shown here — it is not theirs to see
                     // or to change, and a form that displayed it would invite
@@ -1256,7 +1247,6 @@ function ApplicationForm() {
             if (d.slotLength) setSlotLength(d.slotLength);
             if (d.slotMinPeople) setSlotMinPeople(d.slotMinPeople);
             if (Array.isArray(d.schedule)) setSchedule(d.schedule);
-            if (Array.isArray(d.blockedDates)) setBlockedDates(d.blockedDates);
 
             // Whether there is anything in here worth calling kept work.
             //
@@ -1387,7 +1377,7 @@ function ApplicationForm() {
                     // address is the provider's own, in their own browser's draft
                     // — never shared, and it's a private column server-side.
                     fulfilment, collectionStreet, collectionTown, collectionPostcode,
-                    slotOffer, maxGuests, slotLength, slotMinPeople, schedule, blockedDates,
+                    slotOffer, maxGuests, slotLength, slotMinPeople, schedule,
                     // The checks they've ticked so far.
                     declarations,
                 })
@@ -1407,7 +1397,7 @@ function ApplicationForm() {
         whatToExpect,
         guestCategory, shape, leadTimeDays,
         fulfilment, collectionStreet, collectionTown, collectionPostcode,
-        slotOffer, maxGuests, slotLength, slotMinPeople, schedule, blockedDates,
+        slotOffer, maxGuests, slotLength, slotMinPeople, schedule,
         declarations,
     ]);
 
@@ -2708,15 +2698,16 @@ function ApplicationForm() {
         };
     };
 
-    // The weekly opening hours and days off, as child rows for the slot tables.
-    // Only meaningful for a slot; empty for every other shape.
+    // The weekly opening hours, as child rows for the slot_availability table.
+    // Only meaningful for a slot; empty for every other shape. Days off are NOT
+    // set here any more — the slot diary owns them (app/api/services/slots/
+    // schedule), so the wizard never writes slot_blocks.
     const guestScheduleRows = () => {
-        if (audienceForTrade(trade) !== 'guest' || shape !== 'slot') return { availability: [], blocks: [] };
+        if (audienceForTrade(trade) !== 'guest' || shape !== 'slot') return { availability: [] };
         return {
             availability: schedule
                 .filter((r) => r.open && r.close)
                 .map((r) => ({ day_of_week: r.day, open_time: r.open, close_time: r.close })),
-            blocks: blockedDates.map((d) => ({ blocked_date: d })),
         };
     };
 
@@ -2852,7 +2843,7 @@ function ApplicationForm() {
                 .filter((r) => r.name && r.price !== null && Number(r.price) > 0)
             : [];
 
-        const { availability, blocks } = guestScheduleRows();
+        const { availability } = guestScheduleRows();
 
         return {
             provider,
@@ -2863,7 +2854,6 @@ function ApplicationForm() {
             items: items_,
             skills: hasSkills ? skills : [],
             slotAvailability: availability,
-            slotBlocks: blocks,
         };
     };
 
@@ -3382,22 +3372,17 @@ function ApplicationForm() {
             }
         }
 
-        // The slot schedule — the weekly opening hours and the days off. Replaced
+        // The slot schedule — the weekly opening hours. Replaced
         // wholesale like the areas: a handful of rows, and the provider owns them
         // under RLS (the slot_shape migration's "owners manage their own"
         // policies). Only a slot has them; for any other shape the delete clears
         // any left behind by a shape the provider changed away from.
         if (audienceForTrade(trade) === 'guest') {
-            const { availability, blocks } = guestScheduleRows();
+            const { availability } = guestScheduleRows();
             await supabase.from('slot_availability').delete().eq('provider_id', id);
             if (availability.length) {
                 const { error } = await supabase.from('slot_availability').insert(availability.map((a) => ({ ...a, provider_id: id })));
                 if (error) { console.error('[provider-save] slot_availability insert failed', error); savedButFailed.push('your weekly hours'); }
-            }
-            await supabase.from('slot_blocks').delete().eq('provider_id', id);
-            if (blocks.length) {
-                const { error } = await supabase.from('slot_blocks').insert(blocks.map((b) => ({ ...b, provider_id: id })));
-                if (error) { console.error('[provider-save] slot_blocks insert failed', error); savedButFailed.push('your days off'); }
             }
         }
 
@@ -4828,22 +4813,27 @@ function ApplicationForm() {
                         setSchedule(schedule.map((r) => ({ ...r, open: o, close: c })));
                         setHoursMode('simple');
                     };
-                    const addBlock = (val: string) => {
-                        if (val && blockedDates.indexOf(val) === -1) setBlockedDates([...blockedDates, val].sort());
+                    // Select-all: turns every day on (keeping any hours already set,
+                    // new days taking the shared hours), and clears when all are on.
+                    // Writes nothing until pressed, like the day toggles themselves.
+                    const allDaysOn = schedule.length === 7;
+                    const toggleAllDays = () => {
+                        if (allDaysOn) { setSchedule([]); return; }
+                        const byDay = new Map(schedule.map((r) => [r.day, r]));
+                        setSchedule([0, 1, 2, 3, 4, 5, 6].map((d) => byDay.get(d) || { day: d, open: sharedOpen, close: sharedClose }));
                     };
-                    const removeBlock = (val: string) => setBlockedDates(blockedDates.filter((b) => b !== val));
                     const timeField = 'rounded-lg border border-slate-300 px-3 py-2 text-slate-800 focus:outline-none focus:ring-2 focus:ring-emerald-700';
                     // ONE decision then an optional refinement: pick the days, set one
                     // set of hours for all of them, and only reach for per-day hours
                     // if you actually want them. No seven-row settings table.
                     return (
                         <section className="mb-8 md:max-w-xl md:mx-auto">
-                            <h1 className="text-2xl font-extrabold tracking-tight text-slate-900 [text-wrap:balance] sm:text-3xl">When are you open?</h1>
-                            <p className="mt-2 text-sm leading-relaxed text-slate-500">Pick your days, then set the hours. You can give particular days their own hours after.</p>
+                            <h1 className="font-extrabold tracking-tight text-slate-900 [text-wrap:balance] text-3xl sm:text-4xl text-center">When are you open?</h1>
+                            <p className="mt-2 text-center text-sm leading-relaxed text-slate-500">Pick your days, then set the hours. You can give particular days their own hours after.</p>
 
                             <div className="mt-10 flex flex-col items-center gap-8">
-                                {/* One row of seven day toggles. */}
-                                <div className="flex flex-wrap justify-center gap-2">
+                                {/* One row of seven day toggles, then a select-all. */}
+                                <div className="flex flex-wrap items-center justify-center gap-2">
                                     {DAYS.map((label, d) => {
                                         const on = dayOpen(d);
                                         return (
@@ -4853,6 +4843,10 @@ function ApplicationForm() {
                                             </button>
                                         );
                                     })}
+                                    <button type="button" onClick={toggleAllDays} aria-pressed={allDaysOn}
+                                        className={'h-11 rounded-full px-4 text-sm font-semibold transition ' + (allDaysOn ? 'bg-emerald-700 text-white' : 'bg-slate-100 text-slate-500 hover:bg-slate-200')}>
+                                        {allDaysOn ? 'Clear' : 'Every day'}
+                                    </button>
                                 </div>
 
                                 {/* The hours — a single control for all the chosen days,
@@ -4885,23 +4879,6 @@ function ApplicationForm() {
                                 ))}
                             </div>
 
-                            {/* Days off — the block-a-date exception. LEFT UNCHANGED;
-                                the owner will rework this separately. */}
-                            <div className="mt-10">
-                                <label className="block text-xs font-medium text-slate-500 mb-2">Days off</label>
-                                <div className="flex flex-wrap items-center gap-2">
-                                    {blockedDates.map((b) => (
-                                        <span key={b} className="inline-flex items-center gap-1.5 rounded-full bg-slate-100 px-3 py-1 text-xs font-medium text-slate-700">
-                                            {b}
-                                            <button type="button" onClick={() => removeBlock(b)} aria-label={'Remove ' + b} className="text-slate-400 hover:text-slate-700">
-                                                <X className="w-3 h-3" />
-                                            </button>
-                                        </span>
-                                    ))}
-                                    <input type="date" onChange={(e) => { addBlock(e.target.value); e.target.value = ''; }}
-                                        className="rounded-lg border border-slate-300 px-2 py-1.5 text-sm text-slate-600 focus:outline-none focus:ring-2 focus:ring-emerald-700" />
-                                </div>
-                            </div>
                         </section>
                     );
                 })()}
