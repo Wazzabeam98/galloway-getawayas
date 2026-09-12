@@ -5,17 +5,32 @@ import { Calendar } from 'react-date-range';
 import 'react-date-range/dist/styles.css';
 import 'react-date-range/dist/theme/default.css';
 import { unitMultiplies, orderTotal, MAX_ORDER_QUANTITY } from '@/lib/serviceOrders';
+import { optionAvailability, bookingIsPrivate, type OptionAvailability } from '@/lib/serviceSlots';
 import { itemPriceLabel, unitPhrase, dateLabel, timeLabel } from '@/components/marketplace/present';
 import { londonDayKey, shiftDayKey } from '@/lib/dayKey';
 
 interface PanelItem { id: string; name: string; description: string | null; price: number; unit: string; image: string | null; }
-interface PanelSession { date: string; time: string; capacity: number; seatsLeft: number; }
+interface PanelSession {
+    date: string; time: string;
+    // The pinned seat row for this time, or null if nobody has booked it yet.
+    row: { capacity: number; seats_taken: number; private: boolean } | null;
+}
 interface PanelProvider {
     id: string; business_name: string; who: string; shape: string; isFood: boolean;
     items: PanelItem[]; sessions: PanelSession[]; leadTimeDays: number;
     // Per-person slots only: the smallest group a single booking may be. 1 = no
     // minimum. Floors the quantity picker; the booking route is the real gate.
     minPeople: number;
+    // The whole-table size, so a per-person option can be sized on a fresh time.
+    slotCapacity: number;
+}
+
+// A word for why an option can't be booked on a time, from the shared helper's
+// reason. Kept human: the guest sees "why not", never a silent dead button.
+function unavailableLabel(a: OptionAvailability, unit: string): string {
+    if (a.reason === 'other-mode') return bookingIsPrivate(unit) ? 'Shared table' : 'Private hire';
+    if (a.reason === 'too-small') return 'Almost full';
+    return 'Full';
 }
 
 // Between a yyyy-mm-dd key and a local Date at midnight. Constructing from the
@@ -66,6 +81,15 @@ export default function BookingPanel({ bookingId, checkIn, checkOut, provider }:
     const item = provider.items.find((i) => i.id === itemId) || null;
     const multiplies = !!item && unitMultiplies(item.unit);
 
+    // The provider config the shared helper reads — the SAME optionAvailability
+    // the booking route checks and the host diary renders, so what the guest is
+    // shown as bookable is exactly what the claim will accept. A time impossible
+    // for the chosen option is greyed here, not discovered at the claim.
+    const cfg = { slot_capacity: provider.slotCapacity, slot_min_people: provider.minPeople };
+    const availOf = (s: PanelSession, unit: string): OptionAvailability => optionAvailability(s.row, unit, cfg);
+    // The chosen option's availability on the chosen time.
+    const sel = isSlot && session && item ? availOf(session, item.unit) : null;
+
     // Sessions grouped by day, for the slot picker.
     const days = useMemo(() => {
         const m: Record<string, PanelSession[]> = {};
@@ -73,7 +97,7 @@ export default function BookingPanel({ bookingId, checkIn, checkOut, provider }:
         return Object.keys(m).sort().map((d) => ({ date: d, times: m[d].sort((a, b) => a.time.localeCompare(b.time)) }));
     }, [provider.sessions]);
 
-    const seatCap = isSlot && session ? Math.min(MAX_ORDER_QUANTITY, session.seatsLeft) : MAX_ORDER_QUANTITY;
+    const seatCap = sel ? Math.min(MAX_ORDER_QUANTITY, sel.seatsLeft) : MAX_ORDER_QUANTITY;
     // The per-person floor: the smallest group this session runs for. A
     // convenience only — the booking route is the real gate. Applies only when
     // the unit multiplies; 1 (no minimum) otherwise.
@@ -83,7 +107,7 @@ export default function BookingPanel({ bookingId, checkIn, checkOut, provider }:
 
     // Enough picked to book. Drives the mobile bottom bar: when it isn't ready,
     // the bar scrolls up to the form rather than firing a hidden error.
-    const ready = !!item && (isSlot ? !!session : !!date);
+    const ready = !!item && (isSlot ? (!!session && (!sel || sel.possible)) : !!date);
     const ctaLabel = busy
         ? (isSlot ? 'Booking…' : 'Sending…')
         : isSlot ? (total ? `Book · £${total.toFixed(2)}` : 'Book') : 'Send request';
@@ -158,7 +182,14 @@ export default function BookingPanel({ bookingId, checkIn, checkOut, provider }:
                             const on = itemId === it.id;
                             return (
                                 <label key={it.id} className={`flex cursor-pointer items-center gap-3 rounded-lg border p-2.5 ${on ? 'border-emerald-600 bg-emerald-50/60' : 'border-slate-200 hover:border-slate-300'}`}>
-                                    <input type="radio" name="item" checked={on} onChange={() => setItemId(it.id)} className="accent-emerald-600" />
+                                    <input type="radio" name="item" checked={on} onChange={() => {
+                                        setItemId(it.id);
+                                        // A time picked for the old option may be
+                                        // impossible for this one (a private hire on a
+                                        // shared table, say) — drop it rather than let
+                                        // the guest book what would be refused.
+                                        if (session && !availOf(session, it.unit).possible) setSession(null);
+                                    }} className="accent-emerald-600" />
                                     {it.image ? (
                                         // eslint-disable-next-line @next/next/no-img-element
                                         <img src={it.image} alt="" className="h-9 w-9 rounded-md object-cover" />
@@ -202,13 +233,25 @@ export default function BookingPanel({ bookingId, checkIn, checkOut, provider }:
                                 <div className="mt-1.5 flex flex-wrap gap-1.5">
                                     {day.times.map((s) => {
                                         const on = session && session.date === s.date && session.time === s.time;
-                                        const low = s.capacity > 1 && s.seatsLeft >= 1 && s.seatsLeft <= 2;
+                                        // Per the CHOSEN option: impossible times are
+                                        // greyed with the reason, not hidden and not
+                                        // left to fail at the claim. Only per-person
+                                        // shows "N left"; a whole-hire time never reads
+                                        // "1 left" (false scarcity on every slot).
+                                        const a = item ? availOf(s, item.unit) : null;
+                                        const disabled = !!a && !a.possible;
+                                        const low = !!item && !bookingIsPrivate(item.unit) && !!a && a.possible && a.seatsLeft >= 1 && a.seatsLeft <= 2;
                                         return (
-                                            <button key={s.time} type="button"
-                                                onClick={() => { setSession(s); setQty(minPeople); }}
-                                                className={`rounded-lg border px-2.5 py-1.5 text-sm transition ${on ? 'border-emerald-600 bg-emerald-600 text-white' : 'border-slate-300 text-slate-700 hover:border-slate-400'}`}>
+                                            <button key={s.time} type="button" disabled={disabled} aria-disabled={disabled}
+                                                onClick={() => { if (disabled) return; setSession(s); setQty(minPeople); }}
+                                                title={disabled && a && item ? unavailableLabel(a, item.unit) : undefined}
+                                                className={`rounded-lg border px-2.5 py-1.5 text-sm transition ${
+                                                    disabled ? 'cursor-not-allowed border-slate-200 bg-slate-50 text-slate-400'
+                                                        : on ? 'border-emerald-600 bg-emerald-600 text-white'
+                                                            : 'border-slate-300 text-slate-700 hover:border-slate-400'}`}>
                                                 {timeLabel(s.time)}
-                                                {low ? <span className={`ml-1 text-[10px] ${on ? 'text-emerald-100' : 'text-amber-600'}`}>{s.seatsLeft} left</span> : null}
+                                                {disabled && a && item ? <span className="ml-1 text-[10px] font-medium text-slate-400">{unavailableLabel(a, item.unit)}</span> : null}
+                                                {low && a ? <span className={`ml-1 text-[10px] ${on ? 'text-emerald-100' : 'text-amber-600'}`}>{a.seatsLeft} left</span> : null}
                                             </button>
                                         );
                                     })}
@@ -228,7 +271,7 @@ export default function BookingPanel({ bookingId, checkIn, checkOut, provider }:
                     <input type="number" min={minPeople} max={seatCap} inputMode="numeric" value={qty}
                         onChange={(e) => setQty(Math.min(Math.max(minPeople, Math.floor(Number(e.target.value) || minPeople)), seatCap))}
                         className="mt-1 block w-24 rounded-lg border border-slate-300 px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-emerald-600" />
-                    {isSlot && session ? <span className="ml-2 text-xs text-slate-400">{session.seatsLeft} place{session.seatsLeft === 1 ? '' : 's'} left</span> : null}
+                    {isSlot && sel ? <span className="ml-2 text-xs text-slate-400">{sel.seatsLeft} place{sel.seatsLeft === 1 ? '' : 's'} left</span> : null}
                     {minPeople > 1 ? <p className="mt-1 text-xs text-slate-500">This session is for {minPeople} people or more.</p> : null}
                 </label>
             )}

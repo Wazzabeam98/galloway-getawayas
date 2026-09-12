@@ -212,6 +212,76 @@ export function slotClaimKind(
 }
 
 // ---------------------------------------------------------------------------
+// PER-OPTION AVAILABILITY — the one truth the two displays share
+// ---------------------------------------------------------------------------
+//
+// A slot time can carry several priced options (a per-person seat AND a private
+// hire), and what is still bookable differs per option because they share the one
+// session: a private hire needs the whole, empty room; a per-person seat needs
+// only room for the smallest group. This is the SAME rule the booking route
+// enforces atomically — establish on an empty time, join the same mode, refuse
+// the other — written once here as a read-time predicate, so the guest panel and
+// the host diary READ it rather than each re-deriving it and drifting. The route
+// keeps the atomic claim (the CAS on seats_taken); this only says, for a session's
+// CURRENT state, whether an option is still possible and how many seats it fits.
+//
+// The route (app/api/services/slots/book) calls this too, on each read of the
+// session inside its claim loop, so the possibility check there and the two
+// displays are literally one function — see slotClaimKind for the CAS guard the
+// route layers on top.
+
+export type OptionReason = 'open' | 'other-mode' | 'full' | 'too-small' | 'misconfigured';
+export interface OptionAvailability { possible: boolean; seatsLeft: number; reason: OptionReason; }
+
+export function optionAvailability(
+    row: { capacity: number; seats_taken: number; private: boolean } | null | undefined,
+    unit: string | null | undefined,
+    provider: { slot_capacity?: number | null; slot_min_people?: number | null },
+): OptionAvailability {
+    const isPrivate = bookingIsPrivate(unit);
+    const claim = slotClaimKind(row ?? null, isPrivate);
+    if (claim === 'mode-clash') return { possible: false, seatsLeft: 0, reason: 'other-mode' };
+
+    // establish ⇒ the time is empty, so capacity is what THIS option would pin
+    // from the provider config; join ⇒ the capacity already pinned on the row.
+    const empty = claim === 'establish';
+    const capacity = empty ? sessionCapacity(provider, String(unit)) : Number(row!.capacity);
+    const taken = empty ? 0 : Number(row!.seats_taken);
+    const left = Math.max(0, capacity - taken);
+
+    if (isPrivate) {
+        // A private hire takes the whole room; it can only land on an empty one.
+        return left >= 1
+            ? { possible: true, seatsLeft: left, reason: 'open' }
+            : { possible: false, seatsLeft: 0, reason: 'full' };
+    }
+    // A per-person seat: the smallest group the session runs for must still fit.
+    // A per-person item with no capacity set is misconfigured — the route refuses
+    // it up front (hasSlotCapacity), so the display must not offer it either.
+    if (empty && !hasSlotCapacity(provider)) return { possible: false, seatsLeft: 0, reason: 'misconfigured' };
+    const minPeople = Math.max(1, Number(provider.slot_min_people) || 1);
+    if (left <= 0) return { possible: false, seatsLeft: 0, reason: 'full' };
+    if (left < minPeople) return { possible: false, seatsLeft: left, reason: 'too-small' };
+    return { possible: true, seatsLeft: left, reason: 'open' };
+}
+
+/**
+ * Is a session closed to EVERY option the provider offers? A time is closed when
+ * no unit the provider sells can still be booked on it — a private hire taken, or
+ * a shared table with fewer seats left than its minimum group. Used by the host
+ * diary to mark a time "closed". `units` are the provider's own item units.
+ */
+export function sessionClosedToAll(
+    row: { capacity: number; seats_taken: number; private: boolean } | null | undefined,
+    units: Array<string | null | undefined>,
+    provider: { slot_capacity?: number | null; slot_min_people?: number | null },
+): boolean {
+    const distinct = Array.from(new Set((units || []).map((u) => (bookingIsPrivate(u) ? 'flat' : 'person'))));
+    if (!distinct.length) return false;
+    return distinct.every((u) => !optionAvailability(row, u, provider).possible);
+}
+
+// ---------------------------------------------------------------------------
 // CANCELLATION — SHAPE-AWARE
 // ---------------------------------------------------------------------------
 //

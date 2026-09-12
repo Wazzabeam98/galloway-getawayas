@@ -16,6 +16,7 @@ import {
     freeCancelDeadline, guestMayCancelFree, SLOT_HOLD_MINUTES,
     bookingIsPrivate, slotClaimKind,
     slotOfferingFromUnits, offeringHasShared, offeringHasPrivate,
+    optionAvailability, sessionClosedToAll,
 } from '@/lib/serviceSlots';
 import { exclusivePerDate } from '@/lib/serviceOrders';
 
@@ -199,4 +200,74 @@ test('the minimum and the private gates read the offering', () => {
     assert.equal(offeringHasPrivate('private'), true);
     assert.equal(offeringHasPrivate('both'), true);
     assert.equal(offeringHasPrivate('shared'), false);
+});
+
+// --- per-option availability: the one truth the guest panel and host diary share ---
+
+// A room of six that sells per-person, with a minimum group of two.
+const P = { slot_capacity: 6, slot_min_people: 2 };
+
+test('an empty time is possible for every option', () => {
+    // No row yet: a per-person seat can take up to the whole room; a private hire
+    // can take the empty room.
+    const person = optionAvailability(null, 'person', P);
+    assert.equal(person.possible, true);
+    assert.equal(person.seatsLeft, 6, 'the whole room is open to the shared table');
+    const priv = optionAvailability(null, 'flat', P);
+    assert.equal(priv.possible, true);
+});
+
+test('a partly-filled shared table: per-person fits while it clears the minimum, private cannot', () => {
+    // Two seats sold of six. Four left.
+    const row = { capacity: 6, seats_taken: 2, private: false };
+    const person = optionAvailability(row, 'person', P);
+    assert.equal(person.possible, true);
+    assert.equal(person.seatsLeft, 4, 'four seats remain sellable');
+    // The private hire is refused — the room is no longer whole (mode-clash).
+    const priv = optionAvailability(row, 'flat', P);
+    assert.equal(priv.possible, false);
+    assert.equal(priv.reason, 'other-mode');
+});
+
+test('a shared table with fewer seats than the minimum is closed to per-person', () => {
+    // Five of six taken, minimum group two: one seat left, no group of two fits.
+    const row = { capacity: 6, seats_taken: 5, private: false };
+    const person = optionAvailability(row, 'person', P);
+    assert.equal(person.possible, false);
+    assert.equal(person.reason, 'too-small');
+    assert.equal(person.seatsLeft, 1, 'one seat is left, but not a bookable group');
+});
+
+test('a full shared table is closed', () => {
+    const row = { capacity: 6, seats_taken: 6, private: false };
+    assert.equal(optionAvailability(row, 'person', P).possible, false);
+    assert.equal(optionAvailability(row, 'person', P).reason, 'full');
+});
+
+test('a privately-hired time is closed to everything', () => {
+    const row = { capacity: 1, seats_taken: 1, private: true };
+    assert.equal(optionAvailability(row, 'flat', P).possible, false, 'no second private hire');
+    assert.equal(optionAvailability(row, 'person', P).possible, false, 'no seat on a hired room');
+    assert.equal(optionAvailability(row, 'person', P).reason, 'other-mode');
+});
+
+test('a per-person item with no capacity set is offered by nobody (matches the route refusal)', () => {
+    const noCap = { slot_capacity: null, slot_min_people: 1 };
+    assert.equal(optionAvailability(null, 'person', noCap).possible, false);
+    assert.equal(optionAvailability(null, 'person', noCap).reason, 'misconfigured');
+});
+
+test('sessionClosedToAll reads the provider’s own units', () => {
+    // A both-provider (flat + person). A two-of-six shared table is NOT closed:
+    // per-person still fits, even though the private hire cannot.
+    const partial = { capacity: 6, seats_taken: 2, private: false };
+    assert.equal(sessionClosedToAll(partial, ['flat', 'person'], P), false);
+    // Five of six, minimum two: per-person can't fit a group and private clashes.
+    const nearlyFull = { capacity: 6, seats_taken: 5, private: false };
+    assert.equal(sessionClosedToAll(nearlyFull, ['flat', 'person'], P), true);
+    // A private hire closes a both-provider's time entirely.
+    const hired = { capacity: 1, seats_taken: 1, private: true };
+    assert.equal(sessionClosedToAll(hired, ['flat', 'person'], P), true);
+    // An empty time is open.
+    assert.equal(sessionClosedToAll(null, ['flat', 'person'], P), false);
 });

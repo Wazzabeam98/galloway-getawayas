@@ -202,6 +202,7 @@ export default async function ListingPage(
                                 sessions: p.sessions,
                                 leadTimeDays: p.lead_time_days,
                                 minPeople: p.minPeople,
+                                slotCapacity: p.slotCapacity,
                             }}
                         />
                     </div>

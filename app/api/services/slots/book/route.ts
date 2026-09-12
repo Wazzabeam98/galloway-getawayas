@@ -10,7 +10,7 @@ import {
 } from '@/lib/serviceOrders';
 import {
     isSlot, sessionCapacity, hasSlotCapacity, generateSessions, SLOT_HOLD_MINUTES,
-    bookingIsPrivate, slotClaimKind,
+    bookingIsPrivate, slotClaimKind, optionAvailability,
 } from '@/lib/serviceSlots';
 import { dateFromKey, dateKey } from '@/lib/pricing';
 
@@ -196,14 +196,22 @@ export async function POST(request: Request) {
             const kind = slotClaimKind(sess, isPrivate);
             if (kind === 'mode-clash') { modeClash = true; break; }
 
+            // WHETHER THIS OPTION STILL FITS is the one truth optionAvailability
+            // holds — the same function the guest panel greys times with and the
+            // host diary reads. Checked here against the row we just read; the CAS
+            // below is what makes the take atomic, so a race that slips between
+            // this read and the write loses the swap and retries. One source, not
+            // a capacity rule re-implemented per surface.
+            const avail = optionAvailability(sess, unit, provider);
+            if (!avail.possible || quantity > avail.seatsLeft) {
+                return NextResponse.json({ ok: false, error: 'That time just filled up. Pick another.' }, { status: 409 });
+            }
+
             if (kind === 'establish') {
                 // Empty session: this booking sets the mode AND the capacity, on a
                 // CAS guarded by seats_taken = 0. Of two bookings racing on a fresh
                 // (or reopened) time, exactly one wins; the loser retries, now sees
                 // the mode it set, and either joins it or clashes.
-                if (quantity > capacity) {
-                    return NextResponse.json({ ok: false, error: 'That time just filled up. Pick another.' }, { status: 409 });
-                }
                 const { data: swapped } = await admin.from('slot_sessions')
                     .update({ seats_taken: quantity, private: isPrivate, capacity })
                     .eq('id', sess.id).eq('seats_taken', 0)   // CAS guard: still empty
@@ -213,12 +221,6 @@ export async function POST(request: Request) {
             }
 
             // kind === 'join' — same mode, take seats against the pinned capacity.
-            if (sess.seats_taken + quantity > sess.capacity) {
-                return NextResponse.json(
-                    { ok: false, error: 'That time just filled up. Pick another.' },
-                    { status: 409 }
-                );
-            }
             const { data: swapped } = await admin.from('slot_sessions')
                 .update({ seats_taken: sess.seats_taken + quantity })
                 .eq('id', sess.id).eq('seats_taken', sess.seats_taken)   // CAS guard
