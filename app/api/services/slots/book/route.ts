@@ -42,6 +42,12 @@ export async function POST(request: Request) {
         const bookingId: string = body && body.bookingId;
         const sessionDate: string = body && body.sessionDate;
         const sessionTime: string = body && body.sessionTime;      // "HH:MM"
+        // The product the guest picked off the provider's menu. A slot provider
+        // can offer more than one — a private hire AND a shared table — so the
+        // guest's choice decides which, and with it the unit, capacity, minimum
+        // and mode. Absent for a single-item provider (the shape before two
+        // products), where we fall back to their one item.
+        const requestedItemId: string = body && body.itemId;
         const requestedQuantity: unknown = body && body.quantity;
         const note: string = (body && body.note ? String(body.note) : '').slice(0, 500);
         // The allergy field, separate from note — see the order route. A slot
@@ -72,17 +78,21 @@ export async function POST(request: Request) {
             return NextResponse.json({ ok: false, error: 'That isn’t available.' }, { status: 400 });
         }
 
-        // The single item carries the price, the unit and the name. A slot
-        // provider has a list of one (its session type).
-        const { data: item } = await admin
+        // The chosen item carries the price, the unit, the name — and so the mode
+        // (a flat item is a private hire, a per-person item a shared seat). Read
+        // it by the id the guest picked, scoped to THIS provider so a foreign or
+        // inactive id cannot be booked; fall back to the provider's single item
+        // when none was sent. Everything downstream — unit, capacity, minimum,
+        // private/shared — derives from this row, never from the browser.
+        const itemQuery = admin
             .from('service_provider_items')
             .select('id, name, description, price, unit, active')
             .eq('provider_id', provider.id)
             .eq('active', true)
-            .gt('price', 0)
-            .order('sort_order', { ascending: true })
-            .limit(1)
-            .maybeSingle();
+            .gt('price', 0);
+        const { data: item } = requestedItemId
+            ? await itemQuery.eq('id', requestedItemId).maybeSingle()
+            : await itemQuery.order('sort_order', { ascending: true }).limit(1).maybeSingle();
         if (!item) return NextResponse.json({ ok: false, error: 'That isn’t available.' }, { status: 400 });
 
         const unit = normaliseUnit(item.unit);
