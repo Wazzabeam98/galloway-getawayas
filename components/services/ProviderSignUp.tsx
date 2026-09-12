@@ -123,16 +123,6 @@ interface AreaRow {
 // it on. Per trade, because somebody can be part-way through two.
 const draftKey = (trade: string) => 'gg.provider-draft.' + trade;
 
-// A guest covers whole REGIONS, so a radius is meaningless to them — nothing on
-// the guest path reads it. But service_areas has CHECK (radius_miles > 0 …), so
-// writing the guest's real 0 was silently rejected and their coverage never
-// saved. Store a positive sentinel instead: it satisfies the check (which is
-// doing a real job on the trade side, so it stays), and the guest surfaces read
-// coverage by region label, never by radius. (The centre is already 0,0 for a
-// region, which pointForListing treats as "no point", so nothing distance-sorts
-// a guest by this anyway.)
-const GUEST_COVERAGE_RADIUS = 1;
-
 // The number the years opener shows from load. It is the accepted answer, not a
 // placeholder: someone whose real answer is this presses Next straight through
 // and it is stored (see the years case in the footer's onNext). Shown solid
@@ -3455,10 +3445,11 @@ function ApplicationForm() {
                     label: a.town,
                     centre_lat: town ? town.lat : 0,
                     centre_lng: town ? town.lng : 0,
-                    // A guest's region has no radius; store a positive sentinel so
-                    // the service_areas check (radius_miles > 0) accepts it. A host
-                    // keeps their real radius.
-                    radius_miles: isGuest ? GUEST_COVERAGE_RADIUS : a.radius_miles,
+                    // A guest's region has no radius, so this is 0 for them (the
+                    // check allows it, and nothing on the guest path reads it); a
+                    // host keeps their real radius. Same honest value the finish
+                    // route writes, so the two save paths never disagree.
+                    radius_miles: a.radius_miles,
                 };
             });
             const { error } = await supabase.from('service_areas').insert(rows);

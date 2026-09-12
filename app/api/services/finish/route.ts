@@ -177,7 +177,18 @@ export async function POST(req: Request) {
         // The children. Written after the parent so a failure here leaves a
         // real application rather than an orphan.
         const areas = (payload.areas || []).map((a: any) => ({ ...a, provider_id: id }));
-        if (areas.length) await admin.from('service_areas').insert(areas);
+        if (areas.length) {
+            // The error used to be thrown away here, so a rejected coverage
+            // insert (the radius check was the one that bit) left the provider
+            // with no coverage and nobody any the wiser. It does not abort the
+            // finish — the application is real and better saved without coverage
+            // than not saved at all — but it is logged so it surfaces at
+            // /admin/errors instead of only when a provider notices and asks.
+            const { error: areasError } = await admin.from('service_areas').insert(areas);
+            if (areasError) {
+                await logError('service-finish-areas', { application: row.id, provider: id, message: areasError.message });
+            }
+        }
 
         const extras = (payload.extras || []).map((e: any) => ({ ...e, provider_id: id }));
         if (extras.length) await admin.from('service_provider_extras').insert(extras);
