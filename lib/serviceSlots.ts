@@ -145,6 +145,36 @@ export function bookingIsPrivate(unit: string | null | undefined): boolean {
     return String(unit) === 'flat';
 }
 
+// WHAT A SLOT PROVIDER OFFERS — private hire, a shared table, or both.
+//
+// There is no stored "offering" column: it is inferred from which item units
+// the provider has — a flat item is a private hire, a per-person item a shared
+// table. This is what a RETURNING host who set up under the old single-item
+// model sees: their one flat item loads as 'private', their one per-person item
+// as 'shared'. They are never silently upgraded to 'both'; they see what they
+// had, and opt into the second product only if they add it. A provider with no
+// items yet has made no choice (null) and is asked.
+export type SlotOffering = 'private' | 'shared' | 'both';
+export function slotOfferingFromUnits(
+    units: Array<string | null | undefined>,
+): SlotOffering | null {
+    const hasFlat = units.some((u) => String(u) === 'flat');
+    const hasPerson = units.some((u) => String(u) === 'person');
+    if (hasFlat && hasPerson) return 'both';
+    if (hasPerson) return 'shared';
+    if (hasFlat) return 'private';
+    return null;
+}
+
+/** Does this offering include a shared table (so the per-person minimum applies)? */
+export function offeringHasShared(offer: SlotOffering | null): boolean {
+    return offer === 'shared' || offer === 'both';
+}
+/** Does this offering include a private hire? */
+export function offeringHasPrivate(offer: SlotOffering | null): boolean {
+    return offer === 'private' || offer === 'both';
+}
+
 // What a claim may do to a session, given the session's current state and
 // whether this booking is a private hire.
 //

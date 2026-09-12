@@ -15,6 +15,7 @@ import {
     generateSessions, sessionCapacity, seatsLeft,
     freeCancelDeadline, guestMayCancelFree, SLOT_HOLD_MINUTES,
     bookingIsPrivate, slotClaimKind,
+    slotOfferingFromUnits, offeringHasShared, offeringHasPrivate,
 } from '@/lib/serviceSlots';
 import { exclusivePerDate } from '@/lib/serviceOrders';
 
@@ -156,4 +157,33 @@ test('THE GUARD: a private hire on an occupied shared table is a mode-clash, not
 
 test('a seat on a privately-hired room is also a mode-clash', () => {
     assert.equal(slotClaimKind({ seats_taken: 1, private: true }, false), 'mode-clash');
+});
+
+// --- the offering a slot provider makes, inferred from its item units ---
+
+test('THE RETURNING HOST: one flat item reads as private, one per-person as shared', () => {
+    // The quiet-break case — an existing single-item provider has no stored
+    // offering, so the wizard infers it from the unit. They must see what they
+    // set up, never be flipped to something else.
+    assert.equal(slotOfferingFromUnits(['flat']), 'private', 'a private-hire host stays private');
+    assert.equal(slotOfferingFromUnits(['person']), 'shared', 'a shared-table host stays shared');
+});
+
+test('two items of different units read as both; order does not matter', () => {
+    assert.equal(slotOfferingFromUnits(['flat', 'person']), 'both');
+    assert.equal(slotOfferingFromUnits(['person', 'flat']), 'both');
+});
+
+test('no items yet means no choice has been made (asked, not defaulted)', () => {
+    assert.equal(slotOfferingFromUnits([]), null);
+});
+
+test('the minimum and the private gates read the offering', () => {
+    assert.equal(offeringHasShared('shared'), true);
+    assert.equal(offeringHasShared('both'), true);
+    assert.equal(offeringHasShared('private'), false);
+    assert.equal(offeringHasShared(null), false);
+    assert.equal(offeringHasPrivate('private'), true);
+    assert.equal(offeringHasPrivate('both'), true);
+    assert.equal(offeringHasPrivate('shared'), false);
 });

@@ -83,14 +83,15 @@ export interface StepContext {
     // (g_verify) only exists while there is NO session: a returning applicant
     // who is already signed in never sees it.
     hasSession?: boolean;
-    // A slot's pricing basis: false = per person (several people join), true =
-    // the whole session for one group (private), null = not yet answered. The
-    // per-person MINIMUM screen (g_slot_min) exists only when this is false — a
-    // whole-group flat price is one booking regardless of head count, so a
-    // minimum-people rule is meaningless for it. Carried into the context so the
-    // step model can add or drop that one screen from the runtime answer, the
-    // same way shape adds or drops g_capacity.
-    slotPrivate?: boolean | null;
+    // What a slot provider offers: 'private' (the whole session for one group),
+    // 'shared' (several people join, per person), 'both' (either — each time sold
+    // as whichever books first), null = not yet answered. The per-person MINIMUM
+    // screen (g_slot_min) exists only when a SHARED table is offered ('shared' or
+    // 'both') — a whole-group flat price is one booking regardless of head count,
+    // so a minimum-people rule is meaningless for private-only. Carried into the
+    // context so the step model can add or drop that one screen, the same way
+    // shape adds or drops g_capacity.
+    slotOffer?: 'private' | 'shared' | 'both' | null;
 }
 
 export interface Step {
@@ -251,7 +252,7 @@ export function stepApplies(step: StepKey, trade: string, ctx?: StepContext): bo
             // null (not yet answered) hides it too — the basis screen comes
             // first, so by the time this could apply the answer exists.
             case 'g_slot_min':
-                return shape === 'slot' && ctx.slotPrivate === false;
+                return shape === 'slot' && (ctx.slotOffer === 'shared' || ctx.slotOffer === 'both');
             // The notice period, made-to-order only — its own screen before the
             // delivery areas. Other shapes have no notice (a slot has a schedule
             // inside g_area; a traveller arranges it on the enquiry).

@@ -78,9 +78,9 @@ test('a travelling slot requires a region, not an address', () => {
 // The wizard's stepper caps the minimum at the capacity, but the rule is
 // enforced in submitProblems too, so a crafted/edited draft can't send a
 // minimum a session could never satisfy. Only a per-person slot has a minimum
-// (slotPrivate === false); a private/whole-group slot is one booking whatever
+// (a shared table); a private hire is one booking whatever
 // the head count, so the rule never applies to it. A minimum of 1 is no minimum.
-const slot = (over: any) => ({ trade: 'guest', audience: 'guest', shape: 'slot', slotPrivate: false, areaCount: 1, scheduleCount: 1, pricedItemCount: 1, ...over });
+const slot = (over: any) => ({ trade: 'guest', audience: 'guest', shape: 'slot', slotOffer: 'shared', areaCount: 1, scheduleCount: 1, pricedItemCount: 1, ...over });
 
 test('a per-person minimum above the capacity is a problem', () => {
     assert.equal(has(slot({ slotCapacity: 4, slotMinPeople: 6 }), 'slot_min'), true, 'min 6 with room for 4 is unbookable');
@@ -98,9 +98,9 @@ test('a minimum of 1 (or blank) is no minimum and never trips the rule', () => {
 test('the minimum rule applies only to a per-person slot', () => {
     // A private/whole-group slot: one booking whatever the head count, so a
     // stray high slotMinPeople must not be treated as a rule.
-    assert.equal(has(slot({ slotPrivate: true, slotCapacity: 2, slotMinPeople: 6 }), 'slot_min'), false, 'private slot has no minimum rule');
+    assert.equal(has(slot({ slotOffer: 'private', slotCapacity: 2, slotMinPeople: 6 }), 'slot_min'), false, 'private slot has no minimum rule');
     // A made-to-order product isn't a slot at all.
-    assert.equal(has({ trade: 'guest', audience: 'guest', shape: 'made_to_order', slotPrivate: false, slotCapacity: 2, slotMinPeople: 6, fulfilment: 'delivery', areaCount: 1, pricedItemCount: 1 }, 'slot_min'), false, 'made-to-order has no minimum rule');
+    assert.equal(has({ trade: 'guest', audience: 'guest', shape: 'made_to_order', slotOffer: 'shared', slotCapacity: 2, slotMinPeople: 6, fulfilment: 'delivery', areaCount: 1, pricedItemCount: 1 }, 'slot_min'), false, 'made-to-order has no minimum rule');
 });
 
 // --- the overwrite safety (the case to prove, not reason about) ------------
