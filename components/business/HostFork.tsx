@@ -34,10 +34,22 @@ const CHOICES: Choice[] = [
     { key: 'service', href: '/services/join', title: 'Offer a service', Icon: Wrench },
 ];
 
-export default function HostFork() {
+// Guest experiences are held until the host terms are back from the solicitor.
+// The `guestExperiencesOpen` flag (read on the server in app/business/page.tsx
+// and passed in — it is server-only and a client component cannot read it)
+// decides whether the guest tile is live or shown as "coming soon". Nothing
+// about the flow behind the tile changes; when the flag flips the tile comes
+// back on its own.
+export default function HostFork({ guestExperiencesOpen = true }: { guestExperiencesOpen?: boolean }) {
     const router = useRouter();
     const [selected, setSelected] = useState<string | null>(null);
-    const chosen = CHOICES.find((c) => c.key === selected) || null;
+
+    // A tile is available unless it is the held guest-experience one.
+    const isAvailable = (key: string) => key !== 'guest' || guestExperiencesOpen;
+
+    // Only an available tile can be the chosen one — so a held tile can never
+    // arm the Next button, even if its key somehow reached `selected`.
+    const chosen = CHOICES.find((c) => c.key === selected && isAvailable(c.key)) || null;
 
     return (
         <div className="fixed inset-0 z-50 flex flex-col bg-white">
@@ -69,6 +81,32 @@ export default function HostFork() {
 
                     <div className="mt-12 grid gap-5 sm:grid-cols-3">
                         {CHOICES.map(({ key, title, Icon }) => {
+                            const available = isAvailable(key);
+
+                            // Held tile: greyed, not a button, cannot be chosen —
+                            // so nobody starts a twelve-screen sign-up that can't
+                            // finish. The "Coming soon" line says why it is inert
+                            // rather than leaving it looking broken.
+                            if (!available) {
+                                return (
+                                    <div
+                                        key={key}
+                                        aria-disabled="true"
+                                        className="flex cursor-not-allowed flex-col items-center gap-6 rounded-3xl border-2 border-dashed border-slate-200 bg-slate-50 px-6 py-10 text-center opacity-60"
+                                    >
+                                        <span className="flex h-28 items-center justify-center sm:h-36">
+                                            <Icon className="h-16 w-16 text-slate-400 sm:h-24 sm:w-24" strokeWidth={1.5} aria-hidden />
+                                        </span>
+                                        <span className="flex flex-col items-center gap-1.5">
+                                            <span className="text-lg font-semibold text-slate-500">{title}</span>
+                                            <span className="rounded-full bg-slate-200 px-3 py-0.5 text-xs font-medium text-slate-600">
+                                                Coming soon
+                                            </span>
+                                        </span>
+                                    </div>
+                                );
+                            }
+
                             const isOn = selected === key;
                             return (
                                 <button
