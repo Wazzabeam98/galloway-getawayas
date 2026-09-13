@@ -550,6 +550,11 @@ function ApplicationForm() {
     // `payoutOpen` toggles the quiet "You keep £X" line into its maths card.
     const [menuIndex, setMenuIndex] = useState<number | null>(null);
     const [menuStep, setMenuStep] = useState(0);
+    // True while authoring an item whose unit is already decided — a slot shape the
+    // host opened from its named guidance row (a per-person seat, or the whole
+    // session). Such an item skips the 'both' unit step: tapping the shape WAS the
+    // unit choice. An "Add another option" item leaves this false and is asked.
+    const [unitLocked, setUnitLocked] = useState(false);
     const [payoutOpen, setPayoutOpen] = useState(false);
     // The pricing-basis picker (the "How this is priced" sub-flow), opened from a
     // row on the price step — the last native <select> on this flow, replaced with
@@ -702,14 +707,15 @@ function ApplicationForm() {
     // not nameless and dropped) and an empty price to set on the menu step.
     const applyOffer = (offer: SlotOffering) => {
         setSlotOffer(offer);
+        // Keep the host's REAL items for the shapes this offer includes, and nothing
+        // else — no blank starters. The pricing screen shows an unfilled shape as
+        // named guidance that writes nothing to the draft or the record until the
+        // host opens it and enters a price (the same rule as the years and capacity
+        // steppers). A narrowed offer trims items to the shapes it still sells.
         setItems((prev) => {
-            const flat = prev.find((r) => String(r.unit) === 'flat');
-            const person = prev.find((r) => String(r.unit) === 'person');
-            const blankFlat = { id: undefined as string | undefined, name: 'Private hire', description: '', price: '', unit: 'flat', image: null as string | null };
-            const blankPerson = { id: undefined as string | undefined, name: 'Per person', description: '', price: '', unit: 'person', image: null as string | null };
-            if (offer === 'private') return [flat || blankFlat];
-            if (offer === 'shared') return [person || blankPerson];
-            return [flat || blankFlat, person || blankPerson];
+            if (offer === 'private') return prev.filter((r) => String(r.unit) === 'flat');
+            if (offer === 'shared') return prev.filter((r) => String(r.unit) === 'person');
+            return prev;
         });
     };
     // The declarations jsonb, loaded from a returning provider's row. It now holds
@@ -1383,8 +1389,12 @@ function ApplicationForm() {
                     // the bucket.
                     photos, logo, buildingType, panes,
                     // The guest-trade fields: the price, and who they are. The
-                    // headshot is a storage path like the photos.
-                    items, providerName, headshot, dietaryNote, dietaryOptions,
+                    // headshot is a storage path like the photos. A SLOT item with
+                    // no price is not persisted — a guidance shape the host has
+                    // opened but not priced writes nothing to the draft, so an
+                    // abandoned one is never restored (the stepper rule).
+                    items: shape === 'slot' ? items.filter((r) => Number(r.price) > 0) : items,
+                    providerName, headshot, dietaryNote, dietaryOptions,
                     // The Airbnb-shaped content answers.
                     yearsDoing, professionalTitle, qualifications, recognition,
                     whatToExpect,
@@ -4594,33 +4604,63 @@ function ApplicationForm() {
                     const isRowComplete = (r: { name: string; price: string }) =>
                         String(r.name || '').trim() !== '' && Number(r.price) > 0;
 
-                    // A slot now has 1 or 2 rows (a private hire and/or a shared
-                    // table), authored when the offering is chosen — so its rows
-                    // are just its items, the same as a menu, only fixed (no add).
+                    // The slot shapes this offer prices as — the whole session (a
+                    // flat, private hire) and/or a per-person seat — each shown as a
+                    // NAMED guidance row until the host fills it, so the screen is
+                    // never a blank list. private/shared show only their one shape;
+                    // 'both' shows both. A shape the host has already priced shows
+                    // their real item; guidance never appears over real data.
+                    const offerUnits: string[] = slotOffer === 'private' ? ['flat']
+                        : slotOffer === 'shared' ? ['person']
+                            : ['flat', 'person'];
+                    const shapeMeta: Record<string, { label: string; hint: string }> = {
+                        flat: { label: GUEST_SCREEN_COPY.menuSlotUnitFlat, hint: GUEST_SCREEN_COPY.menuSlotUnitFlatHint },
+                        person: { label: GUEST_SCREEN_COPY.menuSlotUnitPerson, hint: GUEST_SCREEN_COPY.menuSlotUnitPersonHint },
+                    };
+                    const shapeRows = offerUnits.map((unit) => {
+                        const index = items.findIndex((r) => String(r.unit) === unit);
+                        return { unit, label: shapeMeta[unit].label, hint: shapeMeta[unit].hint, index, item: index >= 0 ? items[index] : null };
+                    });
+                    const usedIdx = new Set(shapeRows.filter((r) => r.index >= 0).map((r) => r.index));
+                    // Any item beyond the one-per-shape starters (a 'both' host who
+                    // added a further option), rendered as its own row after them.
+                    const extraRows = items.map((r, i) => ({ r, i })).filter(({ i }) => !usedIdx.has(i));
+
                     const rows = items;
                     const setField = (i: number, field: 'name' | 'description' | 'price' | 'unit', val: string) =>
                         setItems((prev) => prev.map((r, j) => (j === i ? { ...r, [field]: val } : r)));
 
-                    const openEdit = (i: number) => { setMenuIndex(i); setMenuStep(0); setPayoutOpen(false); };
-                    const openAdd = () => { setItems((prev) => [...prev, { ...blank }]); setMenuIndex(items.length); setMenuStep(0); setPayoutOpen(false); };
-                    // A blank abandoned by cancelling an add (no name and no price)
-                    // is dropped on close, so a cancelled add leaves nothing behind.
-                    const closeItem = () => {
-                        setItems((prev) => prev.filter((r) => String(r.name || '').trim() !== '' || String(r.price || '').trim() !== ''));
-                        setMenuIndex(null);
+                    const openEdit = (i: number) => { setMenuIndex(i); setUnitLocked(false); setMenuStep(0); setPayoutOpen(false); };
+                    const openAdd = () => { setItems((prev) => [...prev, { ...blank }]); setMenuIndex(items.length); setUnitLocked(false); setMenuStep(0); setPayoutOpen(false); };
+                    // Opening a named shape guidance row. The item's unit IS the shape
+                    // (locked, so 'both' skips the unit step — tapping the shape was
+                    // the unit choice); its name is the host's to write and its price
+                    // is empty. It lives in state so the sub-flow can edit it, but is
+                    // dropped on cancel and kept OUT of the draft until it has a price
+                    // (see the draft filter) — the suggestion itself persists nothing.
+                    const openGuidance = (unit: string) => {
+                        setItems((prev) => [...prev, { id: undefined as string | undefined, name: '', description: '', price: '', unit, image: null as string | null }]);
+                        setMenuIndex(items.length); setUnitLocked(true); setMenuStep(0); setPayoutOpen(false);
                     };
-                    const removeItem = (i: number) => { setItems((prev) => prev.filter((_, j) => j !== i)); setMenuIndex(null); };
+                    // On close, a slot drops any item with no real price — so a
+                    // guidance shape opened and abandoned leaves nothing behind and its
+                    // row returns to guidance. A full menu keeps a named-but-unpriced
+                    // draft as before (its final save drops it).
+                    const closeItem = () => {
+                        setItems((prev) => prev.filter((r) => isSlot ? Number(r.price) > 0 : (String(r.name || '').trim() !== '' || String(r.price || '').trim() !== '')));
+                        setMenuIndex(null); setUnitLocked(false);
+                    };
+                    const removeItem = (i: number) => { setItems((prev) => prev.filter((_, j) => j !== i)); setMenuIndex(null); setUnitLocked(false); };
 
                     const it = menuIndex !== null ? items[menuIndex] : null;
                     const nameFilled = !!it && String(it.name || '').trim() !== '';
                     const priceNum = it ? (Number(it.price) || 0) : 0;
                     const priceFilled = priceNum > 0;
-                    // The sub-flow is one question a screen. A 'both' slot gets an
-                    // extra screen — the unit choice — between price and description;
-                    // every other item derives its unit, so it has no such screen.
-                    // Steps are addressed by KIND, not a bare index, so inserting one
-                    // can't silently shift the others.
-                    const stepKinds: Array<'name' | 'price' | 'unit' | 'desc' | 'photo'> = slotBoth
+                    // The sub-flow is one question a screen. A 'both' slot gets the
+                    // unit-choice screen between price and description — but only when
+                    // the unit is not already decided by the shape the host opened
+                    // (unitLocked). Steps are addressed by KIND, not a bare index.
+                    const stepKinds: Array<'name' | 'price' | 'unit' | 'desc' | 'photo'> = (slotBoth && !unitLocked)
                         ? ['name', 'price', 'unit', 'desc', 'photo']
                         : ['name', 'price', 'desc', 'photo'];
                     const LAST = stepKinds.length - 1;
@@ -4650,29 +4690,60 @@ function ApplicationForm() {
                             </div>
 
                             <div className="mt-8 space-y-1">
-                                {(isSlot && !slotBoth) ? (
-                                    // private/shared: a single fixed offering, no add.
-                                    rows.map((r, i) => (
-                                        <HubRow
-                                            key={r.id || i}
-                                            filled={isRowComplete(r)}
-                                            thumb={r.image ? getImageUrl(r.image) : null}
-                                            label={(r.name && r.name.trim()) || GUEST_SCREEN_COPY.menuSlotRowLabel}
-                                            prompt={GUEST_SCREEN_COPY.menuRowPrompt}
-                                            summary={rowSummary(r)}
-                                            onOpen={() => openEdit(i)}
-                                        />
-                                    ))
+                                {isSlot ? (
+                                    // A slot's shapes as named rows: a priced one shows
+                                    // the host's real item; an unfilled one is guidance
+                                    // (the shape's name + what it means) that persists
+                                    // nothing until opened and priced. 'both' can add a
+                                    // further option beyond the two; private/shared can't.
+                                    <>
+                                        {shapeRows.map((s) => (s.item
+                                            ? <HubRow
+                                                key={s.unit}
+                                                filled={isRowComplete(s.item)}
+                                                thumb={s.item.image ? getImageUrl(s.item.image) : null}
+                                                label={s.item.name.trim() || s.label}
+                                                prompt={GUEST_SCREEN_COPY.menuRowPrompt}
+                                                summary={rowSummary(s.item)}
+                                                onOpen={() => openEdit(s.index)}
+                                            />
+                                            : <HubRow
+                                                key={s.unit}
+                                                filled={false}
+                                                label={s.label}
+                                                prompt={s.hint}
+                                                onOpen={() => openGuidance(s.unit)}
+                                            />
+                                        ))}
+                                        {extraRows.map(({ r, i }) => (
+                                            <HubRow
+                                                key={r.id || i}
+                                                filled={isRowComplete(r)}
+                                                thumb={r.image ? getImageUrl(r.image) : null}
+                                                label={r.name.trim() || GUEST_SCREEN_COPY.menuSlotRowLabel}
+                                                prompt={GUEST_SCREEN_COPY.menuRowPrompt}
+                                                summary={rowSummary(r)}
+                                                onOpen={() => openEdit(i)}
+                                            />
+                                        ))}
+                                        {slotBoth && (
+                                            <HubRow
+                                                filled={false}
+                                                label={GUEST_SCREEN_COPY.menuSlotAddRow}
+                                                prompt={GUEST_SCREEN_COPY.menuRowPrompt}
+                                                onOpen={openAdd}
+                                            />
+                                        )}
+                                    </>
                                 ) : (
-                                    // a full menu (non-slot) or 'both' (private hire +
-                                    // shared table, plus any extra option): add-style.
+                                    // A full menu (non-slot): the host's items, add-style.
                                     <>
                                         {rows.map((r, i) => (
                                             <HubRow
                                                 key={r.id || i}
                                                 filled={isRowComplete(r)}
                                                 thumb={r.image ? getImageUrl(r.image) : null}
-                                                label={r.name.trim() || (isSlot ? GUEST_SCREEN_COPY.menuSlotRowLabel : GUEST_SCREEN_COPY.menuUntitled)}
+                                                label={r.name.trim() || GUEST_SCREEN_COPY.menuUntitled}
                                                 prompt={GUEST_SCREEN_COPY.menuRowPrompt}
                                                 summary={rowSummary(r)}
                                                 onOpen={() => openEdit(i)}
@@ -4680,7 +4751,7 @@ function ApplicationForm() {
                                         ))}
                                         <HubRow
                                             filled={false}
-                                            label={isSlot ? GUEST_SCREEN_COPY.menuSlotAddRow : GUEST_SCREEN_COPY.menuAddRow}
+                                            label={GUEST_SCREEN_COPY.menuAddRow}
                                             prompt={GUEST_SCREEN_COPY.menuRowPrompt}
                                             onOpen={openAdd}
                                         />
