@@ -39,7 +39,8 @@ const PROVIDER_WRITABLE = new Set([
     'description', 'dietary_note', 'does_gas', 'does_oil', 'exclusive_per_date',
     'experience_price', 'fulfilment', 'guest_details', 'headshot', 'hourly_rate',
     'lead_time_days', 'logo', 'owner_id', 'photos', 'pricing_choice', 'provider_name',
-    'shape', 'slot_capacity', 'slot_length_minutes', 'slot_min_people', 'sms_opt_out',
+    'shape', 'slot_capacity', 'slot_length_minutes', 'slot_min_people',
+    'slot_turnaround_minutes', 'sms_opt_out',
     'trade', 'updated_at',
 ]);
 
