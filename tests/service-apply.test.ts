@@ -310,3 +310,34 @@ test('the guest content answers and the declarations reach the stored payload; a
         'the declarations are kept');
     assert.equal('status' in stored, false, 'a platform field a stranger sends is still dropped');
 });
+
+test('the fulfilment fork and collection address reach the stored payload', async () => {
+    // The bug this guards: fulfilment and collection_street/town/postcode were
+    // absent from PROVIDER_COLUMNS, so pick(incoming, APPLICATION_PAYLOAD_KEYS)
+    // at intake stripped them and an emailed-link applicant never stored a
+    // collection town — leaving the based_line trigger nothing to derive from
+    // for exactly the collecting providers it serves. The private street and
+    // postcode belong in the payload (service_applications is service-role only)
+    // and are materialised to columns at /finish on the same private terms as
+    // the signed-in path.
+    const { route, inserted } = load();
+    await route.POST(call({
+        ...APPLICATION,
+        provider: {
+            ...APPLICATION.provider,
+            trade: 'guest',
+            shape: 'made_to_order',
+            fulfilment: 'collection',
+            collection_street: 'Ann Street',
+            collection_town: 'Gatehouse of Fleet',
+            collection_postcode: 'DG7 2HU',
+        },
+    }));
+
+    const stored = inserted.service_applications[0].payload.provider;
+    assert.equal(stored.fulfilment, 'collection', 'the fulfilment fork is kept');
+    assert.equal(stored.collection_town, 'Gatehouse of Fleet',
+        'the town the based_line trigger derives from is kept');
+    assert.equal(stored.collection_street, 'Ann Street', 'the private street is carried to /finish');
+    assert.equal(stored.collection_postcode, 'DG7 2HU', 'the private postcode is carried to /finish');
+});

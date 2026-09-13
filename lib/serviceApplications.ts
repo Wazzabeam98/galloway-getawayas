@@ -73,6 +73,17 @@ export const PROVIDER_COLUMNS = [
     'dietary_note',
     'custom_label', 'shape', 'exclusive_per_date',
     'lead_time_days', 'slot_length_minutes', 'slot_capacity',
+    // The fulfilment fork and its collection address. The signed-in wizard writes
+    // these straight onto the provider row; without them here they were stripped
+    // from the anonymous apply→finish path, so an emailed-link applicant never
+    // stored a collection town — and the based_line trigger, which derives the
+    // public town FROM collection_town, had nothing to derive from for exactly
+    // the people it serves. collection_street/postcode are PRIVATE: they ride in
+    // the payload (service_applications is RLS-on/no-policies/grants-revoked —
+    // service role only, swept at 90 days) and land in columns revoked from
+    // authenticated, read back only via provider_private or a confirmed order —
+    // the same terms as the signed-in path. based_line stays public (town only).
+    'fulfilment', 'collection_street', 'collection_town', 'collection_postcode',
     // A real jsonb column: the per-category declarations the guest confirmed.
     'declarations',
     // A real jsonb column (20260906143712): the guest's content answers in their
