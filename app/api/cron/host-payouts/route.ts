@@ -321,7 +321,24 @@ export async function GET(request: Request) {
                     'payout-' + booking.id
                 );
 
-                await admin.from('payouts').insert({
+                // The transfer has gone. Two independent records are meant to
+                // stop the next run sending it again, and BOTH were written with
+                // their error thrown away — the one case this route never
+                // defended, because the failure it feared was the transfer, not
+                // the bookkeeping after it.
+                //
+                //   the payouts row (status 'succeeded')  the reconcile guard at
+                //       the top of this loop reads it and stamps paid_out_at
+                //   paid_out_at on the booking            the due-query excludes
+                //       any booking that has it
+                //
+                // While EITHER lands, the stay cannot be paid twice — so both are
+                // still attempted, in that order, before we judge the result. If
+                // one failed the other has covered it; what must never happen is
+                // that we then report this as a clean payout, so the errors are
+                // captured and a failure stops the iteration here (no "you've been
+                // paid" email over a payout we could not record).
+                const { error: ledgerError } = await admin.from('payouts').insert({
                     booking_id: booking.id,
                     host_id: booking.host_id,
                     amount: toSend,
@@ -331,7 +348,7 @@ export async function GET(request: Request) {
                     note: deduction > 0 ? 'After £' + deduction.toFixed(2) + ' owed was deducted' : null,
                 });
 
-                await admin
+                const { error: stampError } = await admin
                     .from('bookings')
                     .update({
                         paid_out_at: new Date().toISOString(),
@@ -339,6 +356,38 @@ export async function GET(request: Request) {
                         payout_transfer_id: transfer && transfer.id,
                     })
                     .eq('id', booking.id);
+
+                if (ledgerError || stampError) {
+                    // If BOTH failed, neither record exists: the next run will
+                    // re-select this stay (paid_out_at still null) and clear the
+                    // reconcile guard (no succeeded row), and once Stripe's 24-hour
+                    // idempotency key has expired — one daily run later — it sends
+                    // a genuine second transfer. That window cannot be closed from
+                    // the database alone, because the money moves at Stripe before
+                    // any row is written; it is logged at the severity that gets it
+                    // reconciled by hand before the next run, with the transfer id
+                    // as the proof of what already went. A lone failure is not
+                    // dangerous (the other record guards it) but still must not
+                    // read as paid — so either way this counts as failed, never
+                    // sent, and the deduction/settlement/email steps below (which
+                    // all assume a clean payout) are skipped.
+                    failed++;
+                    await logError(
+                        (ledgerError && stampError)
+                            ? 'host-payouts: transfer SENT but NEITHER the payout row nor paid_out_at was written — the next run may pay this stay again once Stripe’s 24h key expires; reconcile by hand now'
+                            : 'host-payouts: transfer sent but recording it was incomplete — do not re-pay, reconcile',
+                        {
+                            booking_id: booking.id,
+                            transfer_id: transfer && transfer.id,
+                            amount: toSend,
+                            deduction: deduction > 0 ? deduction : 0,
+                            ledger_error: ledgerError ? ledgerError.message : null,
+                            stamp_error: stampError ? stampError.message : null,
+                        },
+                        { path: '/api/cron/host-payouts', userId: booking.host_id }
+                    );
+                    continue;
+                }
             } else {
                 // The whole payout went towards what was owed.
                 await admin.from('payouts').insert({
