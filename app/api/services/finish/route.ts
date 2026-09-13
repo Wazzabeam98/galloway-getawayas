@@ -190,21 +190,71 @@ export async function POST(req: Request) {
             }
         }
 
+        // Extras are optional add-ons on a host trade — a surcharge for a big
+        // garden, an out-of-hours callout. Losing them degrades the listing but
+        // does not stop it being enquired about, so this logs like areas and
+        // carries on rather than failing the finish.
         const extras = (payload.extras || []).map((e: any) => ({ ...e, provider_id: id }));
-        if (extras.length) await admin.from('service_provider_extras').insert(extras);
+        if (extras.length) {
+            const { error: extrasError } = await admin.from('service_provider_extras').insert(extras);
+            if (extrasError) {
+                await logError('service-finish-extras', { application: row.id, provider: id, message: extrasError.message });
+            }
+        }
 
+        // Prices are a host trade's rate bands. A trade is contacted by enquiry,
+        // not booked on a price the way a guest experience is, so a listing that
+        // lost its bands is still reachable — degraded, not broken. Log and carry
+        // on, the same as extras and areas.
         const prices = (payload.prices || []).map((p: any) => ({ ...p, provider_id: id }));
-        if (prices.length) await admin.from('service_provider_prices').insert(prices);
+        if (prices.length) {
+            const { error: pricesError } = await admin.from('service_provider_prices').insert(prices);
+            if (pricesError) {
+                await logError('service-finish-prices', { application: row.id, provider: id, message: pricesError.message });
+            }
+        }
 
         // The menu — a guest trade's items, one for a chef, many for a baker.
         // Stamped with provider_id here, the same as the other children.
+        //
+        // This one is NOT log-and-continue. The marketplace lists only providers
+        // with a priced item; a guest listing whose menu failed to save cannot be
+        // booked at all. Better the applicant is told now — with an account and a
+        // pending_review listing they can sign in and finish — than shown a
+        // success screen over a listing that silently takes no bookings. The row
+        // stays unclaimed (still on the chase list) and pending_review (never
+        // live), so nothing reaches a guest; only the finish stops here.
         const items = (payload.items || []).map((it: any) => ({ ...it, provider_id: id }));
-        if (items.length) await admin.from('service_provider_items').insert(items);
+        if (items.length) {
+            const { error: itemsError } = await admin.from('service_provider_items').insert(items);
+            if (itemsError) {
+                await logError('service-finish-items', { application: row.id, provider: id, message: itemsError.message });
+                return NextResponse.json({
+                    ok: false,
+                    error: 'We made your account, but could not save the things you offer — without them the '
+                        + 'listing can’t take bookings. Sign in and add them, and it will be waiting.',
+                }, { status: 500 });
+            }
+        }
 
         // A slot's weekly opening hours and days off. Stamped with provider_id
         // here like the other children; only a slot has them.
+        //
+        // The hours are as load-bearing as the menu: sessions are generated from
+        // them, so a slot with none has no times to book. Fail loud for the same
+        // reason as items — a told applicant over a silently unbookable listing.
         const availability = (payload.slotAvailability || []).map((a: any) => ({ ...a, provider_id: id }));
-        if (availability.length) await admin.from('slot_availability').insert(availability);
+        if (availability.length) {
+            const { error: availabilityError } = await admin.from('slot_availability').insert(availability);
+            if (availabilityError) {
+                await logError('service-finish-slot-hours', { application: row.id, provider: id, message: availabilityError.message });
+                return NextResponse.json({
+                    ok: false,
+                    error: 'We made your account, but could not save your opening times — without them there are '
+                        + 'no sessions to book. Sign in and set them, and it will be waiting.',
+                }, { status: 500 });
+            }
+        }
 
         const blocks = (payload.slotBlocks || []).map((b: any) => ({ ...b, provider_id: id }));
         if (blocks.length) await admin.from('slot_blocks').insert(blocks);
