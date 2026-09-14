@@ -3971,7 +3971,9 @@ function ApplicationForm() {
                                     : (step === 'g_area' && shape === 'made_to_order')
                                         ? GUEST_SCREEN_COPY.fulfilmentHeading
                                     : (step === 'g_area' && shape === 'slot')
-                                        ? (fulfilment === 'delivery'
+                                        ? (fulfilment === 'both'
+                                            ? GUEST_SCREEN_COPY.slotPlaceHeadingBoth
+                                            : fulfilment === 'delivery'
                                             ? GUEST_SCREEN_COPY.slotPlaceHeadingTravel
                                             : slotIsMeetingPoint(guestCategory)
                                                 ? GUEST_SCREEN_COPY.slotPlaceHeadingMeeting
@@ -7139,9 +7141,14 @@ function ApplicationForm() {
                             : (areaList || '—'))
                     // A slot follows its fulfilment: a come-to-me slot has no
                     // regions but a public town (the address they gave); a
-                    // travelling slot shows the areas it covers.
+                    // travelling slot shows the areas it covers; a 'both' slot
+                    // shows the studio town AND the areas it travels to.
                     : shape === 'slot'
-                        ? (fulfilment === 'delivery' ? (areaList || '—') : (collectionTown.trim() || '—'))
+                        ? (fulfilment === 'delivery'
+                            ? (areaList || '—')
+                            : fulfilment === 'both'
+                                ? ((collectionTown.trim() || '—') + (areaList ? GUEST_SCREEN_COPY.finishCoverageTravelSuffix + areaList : ''))
+                                : (collectionTown.trim() || '—'))
                         : (areaList || '—');
                 const whenVal = shape === 'slot'
                     ? `${(schedule || []).length} weekly time${(schedule || []).length === 1 ? '' : 's'}`

@@ -377,6 +377,12 @@ export const GUEST_SCREEN_COPY = {
     slotPlaceHeadingPremises: 'What’s the address guests come to?',
     slotPlaceHeadingMeeting: 'Where do guests meet you?',
     slotPlaceHeadingTravel: 'Which parts of Dumfries & Galloway do you cover?',
+    // A 'both' provider gives BOTH an address (for the studio sessions) and the
+    // areas they travel to (for the cottage ones), so the heading says both.
+    slotPlaceHeadingBoth: 'Your address, and where you travel',
+    // Finish-summary coverage for a 'both' slot: the studio's town and the areas
+    // travelled to, joined — "Kirkcudbright · travels to Stewartry, Wigtownshire".
+    finishCoverageTravelSuffix: ' · travels to ',
     // The address-block label, slot variants (the made-to-order one is "Where
     // guests collect"). Same three fields underneath.
     slotAddressLabelPremises: 'Your address',
