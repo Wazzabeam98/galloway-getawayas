@@ -337,6 +337,23 @@ export async function POST(request: Request) {
         const itemName = item.name || business;
         const nowIso = new Date().toISOString();
 
+        // A TRAVELLING session freezes the DESTINATION address onto the order —
+        // where the provider goes. This is the pick-your-stay path: the guest has
+        // a booking with us, so the address is their stay's cottage, composed
+        // server-side from the trusted booking -> listing (the same booking whose
+        // guest_id we already checked is this user), NEVER from the browser. Only
+        // for a delivery slot; NULL otherwise. A guest with no booking types an
+        // address into this same column — scoped separately, not built here.
+        let serviceAddress: string | null = null;
+        if (provider.fulfilment === 'delivery' && booking.listing_id) {
+            const { data: stay } = await admin.from('listings')
+                .select('street_address, postcode, location')
+                .eq('id', booking.listing_id).maybeSingle();
+            if (stay) {
+                serviceAddress = [stay.street_address, stay.postcode, stay.location].filter(Boolean).join(', ') || null;
+            }
+        }
+
         // The holding order — created HERE, not in the webhook, because the seat
         // is already taken and the hold must exist to be swept if unpaid.
         const { data: order, error: orderErr } = await admin.from('service_orders')
@@ -360,6 +377,8 @@ export async function POST(request: Request) {
                 // reads this, never the provider's live value. The address stays
                 // live from the provider — only the direction is the deal.
                 fulfilment: provider.fulfilment ?? null,
+                // The frozen destination for a travelling session (see above).
+                service_address: serviceAddress,
                 guests: booking.guests ?? null,
                 attendees,
                 quantity,

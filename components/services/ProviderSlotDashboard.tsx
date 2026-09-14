@@ -1,6 +1,7 @@
 'use client';
 
 import { useCallback, useEffect, useState } from 'react';
+import { MapPin } from 'lucide-react';
 import { dateLabel, timeLabel } from '@/components/marketplace/present';
 import { londonDayKey } from '@/lib/dayKey';
 
@@ -14,6 +15,9 @@ interface Order {
     id: string; status: string; service_date: string; service_time: string | null; shape: string;
     price: number; quantity: number | null; attendees: number | null; item_name: string | null; item_unit: string | null;
     guest_name: string | null; guest_phone: string | null; guest_email: string | null;
+    // Travelling sessions: where to go, frozen on the order. Released by the API
+    // only once the booking is confirmed (== paid), so it is null before then.
+    fulfilment?: string | null; service_address?: string | null;
 }
 
 // How one upcoming time has sold — the seat truth from slot_sessions plus the
@@ -236,6 +240,13 @@ export default function ProviderSlotDashboard({ providerId, editHref }: { provid
                                                     {busy === o.id ? 'Refunding…' : 'Cancel & refund'}
                                                 </button>
                                             </span>
+                                            {/* A travelling session: where to go, released now the booking is paid. */}
+                                            {o.fulfilment === 'delivery' && o.service_address ? (
+                                                <span className="flex w-full items-start gap-1.5 text-xs text-gray-600">
+                                                    <MapPin className="mt-0.5 h-3.5 w-3.5 shrink-0 text-gray-400" aria-hidden />
+                                                    <span>Comes to {o.service_address}</span>
+                                                </span>
+                                            ) : null}
                                         </div>
                                     ))}
                                 </div>

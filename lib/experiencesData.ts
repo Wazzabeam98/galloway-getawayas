@@ -65,6 +65,11 @@ export interface MpProvider {
     what_happens: string | null;
     description: string | null;
     shape: string;
+    // The fulfilment direction: 'delivery' = the provider travels to the guest's
+    // cottage (a travelling session, which needs a destination address),
+    // 'collection'/null = come-to-me. Lets the panel ask a travelling session for
+    // the stay it should come to.
+    fulfilment: string | null;
     priceFrom: number;
     // A slot provider's per-person vs whole-slot reading comes off the item unit.
     items: MpItem[];
@@ -118,7 +123,7 @@ export interface MpProvider {
 export interface Marketplace {
     open: boolean;
     stay: { check_in: string; check_out: string; guests: number } | null;
-    listing: { id: string; location: string | null } | null;
+    listing: { id: string; title: string | null; location: string | null } | null;
     providers: MpProvider[];
 }
 
@@ -150,16 +155,16 @@ export async function loadMarketplace(
     if (!booking || booking.guest_id !== userId) return { open: true, stay: null, listing: null, providers: [] };
 
     const { data: listing } = await admin
-        .from('listings').select('id, location, latitude, longitude').eq('id', booking.listing_id).maybeSingle();
+        .from('listings').select('id, title, location, latitude, longitude').eq('id', booking.listing_id).maybeSingle();
     if (!listing) return { open: true, stay: staySpan(booking), listing: null, providers: [] };
 
     const { data: rows } = await admin
         .from('service_providers')
-        .select('id, owner_id, business_name, provider_name, based_line, headshot, trade, custom_label, stripe_mcc, description, status, stripe_payouts_enabled, shape, slot_length_minutes, slot_turnaround_minutes, slot_capacity, slot_min_people, cancellation_window_hours, lead_time_days, dietary_note, guest_details')
+        .select('id, owner_id, business_name, provider_name, based_line, headshot, trade, custom_label, stripe_mcc, description, status, stripe_payouts_enabled, shape, slot_length_minutes, slot_turnaround_minutes, slot_capacity, slot_min_people, cancellation_window_hours, lead_time_days, dietary_note, guest_details, fulfilment')
         .eq('audience', 'guest').eq('status', 'approved').eq('stripe_payouts_enabled', true);
 
     const ids = (rows || []).map((r: any) => r.id);
-    if (!ids.length) return { open: true, stay: staySpan(booking), listing: { id: listing.id, location: listing.location }, providers: [] };
+    if (!ids.length) return { open: true, stay: staySpan(booking), listing: { id: listing.id, title: listing.title, location: listing.location }, providers: [] };
 
     // The byline (first name) comes from the owner's profile, live, so it tracks
     // the name and the show_full_name switch rather than a stored snapshot.
@@ -272,6 +277,7 @@ export async function loadMarketplace(
             what_happens: (p.guest_details && p.guest_details.what_to_expect) || null,
             description: p.description,
             shape,
+            fulfilment: p.fulfilment || null,
             priceFrom: Math.min(...items.map((i: MpItem) => i.price)),
             items,
             sessions,
@@ -318,7 +324,7 @@ export async function loadMarketplace(
         return ah !== bh ? ah - bh : a.business_name.localeCompare(b.business_name);
     });
 
-    return { open: true, stay: staySpan(booking), listing: { id: listing.id, location: listing.location }, providers };
+    return { open: true, stay: staySpan(booking), listing: { id: listing.id, title: listing.title, location: listing.location }, providers };
 }
 
 /** One provider from a marketplace load, or null. */
