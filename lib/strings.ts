@@ -141,12 +141,28 @@ export const GUEST_SCREEN_COPY = {
     capacitySubtextVenue: 'The most guests your space or session fits at once.',
     capacitySuffix: 'guests',
 
-    // The slot pricing-basis screen (g_slot_basis) — private (the whole session
-    // for one group, one flat booking) vs shared (several people join, priced
-    // per person). Lifted off the schedule screen to its own question. The two
-    // option cards' words live in the component; this is the heading.
-    slotBasisQuestion: 'Who is a session for?',
-    slotBasisGate: 'Pick who a session is for to carry on.',
+    // The slot pricing-basis screen (g_slot_basis) — how a booking works: one
+    // group takes the whole thing (a private booking, one flat price) vs several
+    // separate bookings each taking a place (priced per person). Lifted off the
+    // schedule screen to its own question. Shown for the GROUP categories only —
+    // sauna, tastings, cooking, workshops, outdoors, water; the one-at-a-time
+    // (massage) and mixed (yoga/pottery/painting) shapes decide this elsewhere.
+    //
+    // The words describe the BOOKING MECHANIC, never the product: "the whole
+    // thing" and "individual places" are true of a sauna, a tasting and a guided
+    // walk alike, so ONE wording serves all six and no per-category copy is
+    // needed. Naming the product ("a class or a tasting") is the leak that put
+    // class/table copy on a sauna — keep the mechanic, drop the noun. The card
+    // labels live here now (they were inline in the component); the values 'private'
+    // /'shared'/'both' are the logic and stay in code.
+    slotBasisQuestion: 'How do guests book it?',
+    slotBasisGate: 'Choose how guests book it to carry on.',
+    slotBasisPrivateLabel: 'One group takes the whole thing',
+    slotBasisPrivateHint: 'A private booking — that group has it to themselves and no one else can join. One price for the whole thing.',
+    slotBasisSharedLabel: 'People book individual places',
+    slotBasisSharedHint: 'Several separate bookings share the same time, each priced per person, up to a number you set.',
+    slotBasisBothLabel: 'Offer both',
+    slotBasisBothHint: 'Let guests choose — book the whole thing, or take a single place.',
     // The per-person minimum screen (g_slot_min) — shared slots only. The
     // smallest group a single booking may be, Airbnb-style: the guest books and
     // pays for at least this many. Default 1 means no minimum.
@@ -220,10 +236,10 @@ export const GUEST_SCREEN_COPY = {
     // the provider offers both. 'flat' = a private hire (the whole session, one
     // booking), 'person' = a seat at a shared table.
     menuSlotUnitTitle: 'How is this priced?',
-    menuSlotUnitFlat: 'For the session',
-    menuSlotUnitFlatHint: 'One price for the whole session — a private hire.',
+    menuSlotUnitFlat: 'For the whole thing',
+    menuSlotUnitFlatHint: 'One price for a private booking — one group has it to themselves.',
     menuSlotUnitPerson: 'Per person',
-    menuSlotUnitPersonHint: 'A price each — a shared table or class.',
+    menuSlotUnitPersonHint: 'A price each — guests book individual places, up to the number you set.',
     // The mixed shape's per-item choice (yoga, pottery, painting): what the host
     // is SELLING, not the booking mechanic. One set of words serves all three — a
     // yoga class / pottery class / painting class read as "a shared class"; a 1:1
@@ -242,8 +258,8 @@ export const GUEST_SCREEN_COPY = {
     // Shown beside the greyed Next on the slot price screen when 'offer both' is
     // missing one side, so the reason is never left unsaid. The no-price-at-all
     // case falls to menuRequiredGate.
-    menuSlotBothGatePrivate: 'Set a price for the private hire to carry on.',
-    menuSlotBothGateShared: 'Set a price for the shared table to carry on.',
+    menuSlotBothGatePrivate: 'Set a price for the whole-thing booking to carry on.',
+    menuSlotBothGateShared: 'Set a price for the individual places to carry on.',
     menuDescTitle: 'Add a short description',
     menuDescPlaceholder: 'A line about what’s included.',
     menuPhotoTitle: 'Add a photo',

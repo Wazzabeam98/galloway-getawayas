@@ -5389,9 +5389,9 @@ function ApplicationForm() {
                 <section className="mb-8 sm:mb-0 sm:flex-1 sm:flex sm:flex-col sm:justify-center md:max-w-xl md:mx-auto">
                     <div className="grid gap-3 sm:grid-cols-3">
                         {([
-                            { v: 'private', t: 'One group at a time', d: 'The whole thing is theirs — a private hire. One booking fills it.' },
-                            { v: 'shared', t: 'Several people join', d: 'A class or a tasting. Priced per person, up to a number you set.' },
-                            { v: 'both', t: 'Offer both', d: 'Let guests pick a private hire or a single place.' },
+                            { v: 'private', t: GUEST_SCREEN_COPY.slotBasisPrivateLabel, d: GUEST_SCREEN_COPY.slotBasisPrivateHint },
+                            { v: 'shared', t: GUEST_SCREEN_COPY.slotBasisSharedLabel, d: GUEST_SCREEN_COPY.slotBasisSharedHint },
+                            { v: 'both', t: GUEST_SCREEN_COPY.slotBasisBothLabel, d: GUEST_SCREEN_COPY.slotBasisBothHint },
                         ] as const).map((o) => (
                             <ChoiceCard key={o.v} selected={slotOffer === o.v} onSelect={() => applyOffer(o.v)} title={o.t} hint={o.d} />
                         ))}
