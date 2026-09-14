@@ -34,6 +34,11 @@ export default function ProviderSlotDashboard({ providerId, editHref }: { provid
     // null until loaded; false means no weekly hours, so nothing is bookable.
     const [hasHours, setHasHours] = useState<boolean | null>(null);
     const [blockDate, setBlockDate] = useState('');
+    // Partial blocks: ranges within a day the provider has closed off.
+    const [partialBlocks, setPartialBlocks] = useState<Array<{ id: string; date: string; start: string; end: string }>>([]);
+    const [pbDate, setPbDate] = useState('');
+    const [pbStart, setPbStart] = useState('');
+    const [pbEnd, setPbEnd] = useState('');
     const [busy, setBusy] = useState<string | null>(null);
     const [error, setError] = useState<string | null>(null);
 
@@ -69,7 +74,15 @@ export default function ProviderSlotDashboard({ providerId, editHref }: { provid
         } catch { /* ignore */ }
     }, [providerId]);
 
-    useEffect(() => { loadPayouts(); loadOrders(); loadSchedule(); loadSessions(); }, [loadPayouts, loadOrders, loadSchedule, loadSessions]);
+    const loadPartialBlocks = useCallback(async () => {
+        try {
+            const r = await fetch('/api/services/slots/blocks?provider=' + encodeURIComponent(providerId));
+            const d = await r.json();
+            if (d && d.ok) setPartialBlocks(d.blocks || []);
+        } catch { /* ignore */ }
+    }, [providerId]);
+
+    useEffect(() => { loadPayouts(); loadOrders(); loadSchedule(); loadSessions(); loadPartialBlocks(); }, [loadPayouts, loadOrders, loadSchedule, loadSessions, loadPartialBlocks]);
 
     async function setUpPayouts() {
         setBusy('payouts'); setError(null);
@@ -109,6 +122,35 @@ export default function ProviderSlotDashboard({ providerId, editHref }: { provid
             if (d && d.ok) { setBlocks(next); setBlockDate(''); }
             else setError((d && d.error) || 'Could not save that.');
         } catch { setError('Could not save that.'); }
+        setBusy(null);
+    }
+
+    async function addPartialBlock() {
+        if (!pbDate || !pbStart || !pbEnd) return;
+        setBusy('pblock'); setError(null);
+        try {
+            const r = await fetch('/api/services/slots/blocks', {
+                method: 'POST', headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ providerId, date: pbDate, start: pbStart, end: pbEnd }),
+            });
+            const d = await r.json();
+            if (d && d.ok) { setPbStart(''); setPbEnd(''); await loadPartialBlocks(); }
+            else setError((d && d.error) || 'Could not block that time.');
+        } catch { setError('Could not block that time.'); }
+        setBusy(null);
+    }
+
+    async function removePartialBlock(id: string) {
+        setBusy(id); setError(null);
+        try {
+            const r = await fetch('/api/services/slots/blocks', {
+                method: 'DELETE', headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ providerId, id }),
+            });
+            const d = await r.json();
+            if (d && d.ok) await loadPartialBlocks();
+            else setError((d && d.error) || 'Could not remove that block.');
+        } catch { setError('Could not remove that block.'); }
         setBusy(null);
     }
 
@@ -259,6 +301,36 @@ export default function ProviderSlotDashboard({ providerId, editHref }: { provid
                             </span>
                         ))}
                     </div>
+                )}
+            </div>
+
+            {/* Block part of a day */}
+            <div className="rounded-xl border border-gray-200 p-4">
+                <p className="text-sm font-semibold text-gray-900">Block part of a day</p>
+                <p className="mt-0.5 text-sm text-gray-500">Close off a time range — a lunch break, an afternoon — and nothing can be booked inside it. The rest of the day stays open. A range that clashes with a booking you’ve already taken is refused.</p>
+                <div className="mt-3 flex flex-wrap items-center gap-2">
+                    <input type="date" min={todayIso} value={pbDate} onChange={(e) => setPbDate(e.target.value)}
+                        aria-label="Date to block part of" className="rounded-md border border-gray-300 px-2 py-1 text-sm" />
+                    <input type="time" value={pbStart} onChange={(e) => setPbStart(e.target.value)}
+                        aria-label="Block from" className="rounded-md border border-gray-300 px-2 py-1 text-sm" />
+                    <span className="text-sm text-gray-400">to</span>
+                    <input type="time" value={pbEnd} onChange={(e) => setPbEnd(e.target.value)}
+                        aria-label="Block until" className="rounded-md border border-gray-300 px-2 py-1 text-sm" />
+                    <button type="button" disabled={!pbDate || !pbStart || !pbEnd || busy === 'pblock'} onClick={addPartialBlock}
+                        className="rounded-md bg-gray-900 px-3 py-1.5 text-sm font-medium text-white disabled:opacity-50">Block this time</button>
+                </div>
+                {partialBlocks.length > 0 && (
+                    <ul className="mt-3 space-y-1.5">
+                        {partialBlocks.map((b) => (
+                            <li key={b.id} className="flex items-center gap-2 text-sm text-gray-700">
+                                <span className="inline-flex items-center gap-1.5 rounded-full bg-gray-100 px-2.5 py-1 text-xs">
+                                    {dateLabel(b.date)} · {b.start}–{b.end}
+                                    <button type="button" disabled={busy === b.id} onClick={() => removePartialBlock(b.id)}
+                                        aria-label="Remove block" className="text-gray-400 hover:text-gray-700 disabled:opacity-50">×</button>
+                                </span>
+                            </li>
+                        ))}
+                    </ul>
                 )}
             </div>
 
