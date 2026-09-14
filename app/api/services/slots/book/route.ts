@@ -297,8 +297,8 @@ export async function POST(request: Request) {
                 {
                     ok: false,
                     error: isPrivate
-                        ? 'That time is already a shared table — choose another for a private hire.'
-                        : 'That time is booked as a private hire — choose another to join a group.',
+                        ? 'That time already has others joining — pick another to book it privately.'
+                        : 'That time is booked privately — pick another to join a group.',
                 },
                 { status: 409 }
             );

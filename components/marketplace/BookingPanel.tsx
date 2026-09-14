@@ -50,8 +50,12 @@ interface PanelProvider {
 
 // A word for why an option can't be booked on a time, from the shared helper's
 // reason. Kept human: the guest sees "why not", never a silent dead button.
+// Worded by the BOOKING, not the product ("Shared table"/"Private hire" was the
+// same noun-leak as the host wizard — wrong on a sauna or a walk): a whole-thing
+// option is blocked because others are already joining that time; a place is
+// blocked because the time is booked privately.
 function unavailableLabel(a: OptionAvailability, unit: string): string {
-    if (a.reason === 'other-mode') return bookingIsPrivate(unit) ? 'Shared table' : 'Private hire';
+    if (a.reason === 'other-mode') return bookingIsPrivate(unit) ? 'Others joining' : 'Booked privately';
     if (a.reason === 'too-small') return 'Almost full';
     return 'Full';
 }

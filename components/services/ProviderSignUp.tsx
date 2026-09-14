@@ -4665,8 +4665,8 @@ function ApplicationForm() {
                         return '£' + p + (qualifier ? ' · ' + qualifier : '');
                     };
                     // An item is done only when it has BOTH a name and a real price —
-                    // the tick has to mean that. A seeded 'both' row ('Private hire',
-                    // 'Per person') has a name from the start, so keying the tick off
+                    // the tick has to mean that. A seeded 'both' row ('For the whole
+                    // thing', 'Per person') has a name from the start, so keying the tick off
                     // the name alone showed it as done while it still read "Name it
                     // and set a price". This is the completeness the row displays.
                     const isRowComplete = (r: { name: string; price: string }) =>
