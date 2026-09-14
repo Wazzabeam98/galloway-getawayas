@@ -34,18 +34,19 @@ const CHOICES: Choice[] = [
     { key: 'service', href: '/services/join', title: 'Offer a service', Icon: Wrench },
 ];
 
-// Guest experiences are held until the host terms are back from the solicitor.
-// The `guestExperiencesOpen` flag (read on the server in app/business/page.tsx
+// All three tiles are held until the host/provider terms are back from the
+// solicitor. The `signupsOpen` flag (read on the server in app/business/page.tsx
 // and passed in — it is server-only and a client component cannot read it)
-// decides whether the guest tile is live or shown as "coming soon". Nothing
-// about the flow behind the tile changes; when the flag flips the tile comes
-// back on its own.
-export default function HostFork({ guestExperiencesOpen = true }: { guestExperiencesOpen?: boolean }) {
+// decides whether the tiles are live or shown as "coming soon": held on
+// production, open on previews and local. Nothing about the flows behind the
+// tiles changes; when the one flag flips, all three tiles come back together.
+export default function HostFork({ signupsOpen = true }: { signupsOpen?: boolean }) {
     const router = useRouter();
     const [selected, setSelected] = useState<string | null>(null);
 
-    // A tile is available unless it is the held guest-experience one.
-    const isAvailable = (key: string) => key !== 'guest' || guestExperiencesOpen;
+    // Every tile is available only while sign-ups are open; held, they all show
+    // "coming soon" and none can be chosen.
+    const isAvailable = (_key: string) => signupsOpen;
 
     // Only an available tile can be the chosen one — so a held tile can never
     // arm the Next button, even if its key somehow reached `selected`.
