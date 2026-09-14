@@ -275,10 +275,20 @@ export function stepApplies(step: StepKey, trade: string, ctx?: StepContext): bo
             // The per-person minimum — a slot that is priced per person (the
             // shared answer). A private/whole-group slot is one booking whatever
             // the head count, so it has no minimum-people rule and no screen.
-            // null (not yet answered) hides it too — the basis screen comes
-            // first, so by the time this could apply the answer exists.
+            //
+            // For a fixed-basis slot that answer is the provider-level slotOffer;
+            // null (not yet answered) hides it too — the basis screen comes first.
+            // A MIXED provider (yoga, pottery, painting) answers shared-vs-private
+            // PER ITEM, so slotOffer is never set — but a come-to-me mixed provider
+            // can still run a shared class (which is exactly why its capacity screen
+            // is shown), and that class needs a minimum. The minimum is capacity's
+            // twin, so it must appear on the same path. A TRAVELLING mixed provider
+            // sells only private sessions, so it correctly keeps no minimum.
             case 'g_slot_min':
-                return shape === 'slot' && (ctx.slotOffer === 'shared' || ctx.slotOffer === 'both');
+                return shape === 'slot' && (
+                    ctx.slotOffer === 'shared' || ctx.slotOffer === 'both'
+                    || (slotMixedDuration(ctx.category) && !travellingMixedSlot(ctx))
+                );
             // The notice period, made-to-order only — its own screen before the
             // delivery areas. Other shapes have no notice (a slot has a schedule
             // inside g_area; a traveller arranges it on the enquiry).

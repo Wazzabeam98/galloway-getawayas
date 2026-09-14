@@ -169,8 +169,18 @@ function NumberStepper({
     // starting position, not a greyed placeholder, and there is no visual
     // difference between touched and untouched. It STILL stores nothing until
     // touched: the parent value stays empty until a nudge or a type commits, so
-    // an untouched starting number never reaches the draft or the record. The
-    // years opener uses this; the slot counts keep the greyed-suggestion style.
+    // an untouched starting number never reaches the draft or the record.
+    //
+    // Use solid ONLY where the step is NOT gated — the screens whose Next is
+    // enabled from load and whose onNext stores the shown default (years,
+    // capacity, notice, session length). There a plus/minus genuinely MOVES the
+    // number, because the shown value is already the accepted answer.
+    //
+    // A GATED stepper (Next/Save disabled until touched) must NOT be solid: the
+    // greyed path below adopts the suggestion on the first press of either
+    // button — so accepting the suggestion is one press, not a press up and back
+    // down — and turns solid once touched, which is the signal that the required
+    // input has been given. The per-treatment duration is the gated one.
     solid?: boolean;
 }) {
     const has = String(value).trim() !== '' && Number.isFinite(Number(value));
@@ -275,11 +285,18 @@ function ChoiceCard({ selected, onSelect, title, hint, radio }: {
     radio?: boolean;
 }) {
     return (
+        // Content is top-aligned, not centred: these cards sit in a stretched
+        // grid row (all as tall as the wordiest one), and a centred body would
+        // float each title to a different height — a staircase, when they are
+        // one row of choices. Anchored to the top, every title lines up and the
+        // hint hangs beneath it, however many lines each runs to. The title
+        // reserves two lines so a one-line title (Both) starts its hint at the
+        // same place as a two-line one.
         <button type="button" onClick={onSelect}
             {...(radio ? { role: 'radio', 'aria-checked': selected } : { 'aria-pressed': selected })}
-            className={'flex min-h-[9rem] flex-col items-center justify-center gap-1.5 rounded-2xl border-2 bg-white px-5 text-center transition hover:shadow-sm focus:outline-none focus-visible:ring-2 focus-visible:ring-emerald-600 sm:min-h-[14rem] '
+            className={'flex min-h-[9rem] flex-col items-center justify-start gap-1.5 rounded-2xl border-2 bg-white px-5 py-7 text-center transition hover:shadow-sm focus:outline-none focus-visible:ring-2 focus-visible:ring-emerald-600 sm:min-h-[13rem] sm:py-9 '
                 + (selected ? 'border-emerald-600 shadow-sm' : 'border-slate-200 hover:border-slate-300')}>
-            <span className="text-lg font-semibold text-slate-900">{title}</span>
+            <span className="flex items-center text-lg font-semibold text-slate-900 sm:min-h-[3.5rem]">{title}</span>
             <span className="text-sm text-slate-500">{hint}</span>
         </button>
     );
@@ -1452,6 +1469,21 @@ function ApplicationForm() {
         number: registrations[scheme] || '',
     }));
 
+    // The effective slot offering. A fixed-basis slot answers private/shared/both
+    // once, up front (slotOffer). A MIXED provider answers it per item, so
+    // slotOffer stays null — the truth is in the item units, so derive it from
+    // them. This is what decides whether the per-person minimum is stored and
+    // whether the min ≤ capacity rule is checked; both must see a mixed provider's
+    // shared class, which only the item units reveal.
+    const slotOfferEffective = shape === 'slot' && slotMixedDuration(guestCategory)
+        ? slotOfferingFromUnits((items || []).map((i) => String(i.unit)))
+        : slotOffer;
+
+    // A come-to-me mixed provider may run a shared class, so it is asked the
+    // minimum (its capacity's twin). Its screen is offered before any item
+    // exists, so the gate is the category + direction, not the item units.
+    const slotMixedComeToMe = shape === 'slot' && slotMixedDuration(guestCategory) && fulfilment !== 'delivery';
+
     const problems = submitProblems({
         business_name: businessName,
         trade,
@@ -1474,8 +1506,10 @@ function ApplicationForm() {
         shape,
         scheduleCount: schedule.length,
         // The slot pricing basis and its two group numbers, so the min ≤ capacity
-        // rule can be checked. slotMinPeople blank reads as no minimum.
-        slotOffer,
+        // rule can be checked. slotMinPeople blank reads as no minimum. The
+        // effective offering (derived from item units for a mixed provider) so a
+        // mixed shared class is covered by the rule, not just a fixed-basis one.
+        slotOffer: slotOfferEffective,
         slotCapacity: maxGuests,
         slotMinPeople,
         // Items priced above zero — the marketplace lists only priced providers,
@@ -2060,6 +2094,14 @@ function ApplicationForm() {
                 : items.some((r) => String(r.unit) === 'flat' && Number(r.price) > 0)
                     ? GUEST_SCREEN_COPY.menuSlotBothGateShared
                     : GUEST_SCREEN_COPY.menuSlotBothGatePrivate)
+            // The 'both' place screen carries two answers. When BOTH are still
+            // empty the footer named only the areas (the first problem), so the
+            // address looked optional — name both. If just one is missing this
+            // falls through to that field's own problem via stepProblems below.
+            : step === 'g_area' && shape === 'slot' && fulfilment === 'both'
+                && areas.length === 0
+                && !(collectionStreet.trim() && collectionTown.trim() && collectionPostcode.trim())
+            ? GUEST_SCREEN_COPY.slotBothPlaceGate
             : whereMissing)
         : null;
 
@@ -2781,7 +2823,7 @@ function ApplicationForm() {
             // slot; a private/flat slot is one booking whatever the head count, so
             // it stores 1 (no minimum). Floored at 1 to satisfy the column's
             // check; the min ≤ capacity rule is enforced before send (submitProblems).
-            slot_min_people: (isSlot && offeringHasShared(slotOffer)) ? Math.max(1, num(slotMinPeople, 1) ?? 1) : 1,
+            slot_min_people: (isSlot && offeringHasShared(slotOfferEffective)) ? Math.max(1, num(slotMinPeople, 1) ?? 1) : 1,
             ...fulfilmentFields,
             declarations: acceptance,
         };
@@ -4991,12 +5033,19 @@ function ApplicationForm() {
                                         // provider-length used, now per treatment, in
                                         // 15-minute steps. The guest sees this length;
                                         // the day reserves it (plus any reset gap).
+                                        //
+                                        // NOT solid: this is the one gated stepper — its
+                                        // Next is disabled until a duration is set
+                                        // (durationFilled). Greyed means the first press
+                                        // of + or − adopts the shown 60 (staying, not
+                                        // jumping to 75) and turns it solid, so accepting
+                                        // the suggestion is one press, not a round trip.
                                         <div className="flex flex-col items-center">
                                             <NumberStepper
                                                 value={it.duration || ''}
                                                 onChange={(v: string) => setField(menuIndex, 'duration', v)}
                                                 min={15} max={480} step={15} suggestion={60}
-                                                size="lg" solid suffix=" min"
+                                                size="lg" suffix=" min"
                                             />
                                             <p className="mt-4 text-center text-sm text-slate-500">How long a guest books this treatment for.</p>
                                         </div>
@@ -5483,7 +5532,7 @@ function ApplicationForm() {
                     ceiling (g_capacity) is the max above it, so the stepper caps
                     there; default 1 = no minimum. The route is the real gate —
                     this is the convenience floor. */}
-                {onStep('g_slot_min') && isGuest && shape === 'slot' && offeringHasShared(slotOffer) && (
+                {onStep('g_slot_min') && isGuest && shape === 'slot' && (offeringHasShared(slotOffer) || slotMixedComeToMe) && (
                 <section className="flex-1 flex flex-col items-center justify-center">
                     <NumberStepper value={slotMinPeople} onChange={setSlotMinPeople} min={1} max={Math.max(1, parseInt(maxGuests, 10) || CAPACITY_DEFAULT_SLOT)} suggestion={1} size="lg" solid suffix={GUEST_SCREEN_COPY.slotMinSuffix} />
                 </section>
@@ -6736,6 +6785,10 @@ function ApplicationForm() {
                         const delivers = fulfilment === 'delivery' || fulfilment === 'both';
                         const showRegions = usesFulfilment ? delivers : true;
                         const showCollection = usesFulfilment && collects;
+                        // A 'both' slot shows the two together — the only screen in
+                        // the wizard with two answers. Each gets its own sub-heading
+                        // and a gap so it reads as two questions, not one form.
+                        const bothPlaces = showRegions && showCollection;
                         // Slot copy forks on premises vs meeting point (outdoors,
                         // water) — data identical, wording only.
                         const slotMeeting = shape === 'slot' && slotIsMeetingPoint(guestCategory);
@@ -6785,7 +6838,12 @@ function ApplicationForm() {
                                     {shape === 'made_to_order' ? (
                                         <label className="block text-xs font-medium text-slate-500 mb-3">{GUEST_SCREEN_COPY.locationHeadingDeliver}</label>
                                     ) : (
-                                        <p className="text-sm text-slate-500 mb-4 md:max-w-xl">{GUEST_SCREEN_COPY.locationSubtextTravel}</p>
+                                        <>
+                                            {bothPlaces && (
+                                                <h2 className="text-lg font-semibold text-slate-900 mb-1">{GUEST_SCREEN_COPY.slotBothAreasHeading}</h2>
+                                            )}
+                                            <p className="text-sm text-slate-500 mb-4 md:max-w-xl">{GUEST_SCREEN_COPY.locationSubtextTravel}</p>
+                                        </>
                                     )}
 
                                     <div className="space-y-1 md:max-w-xl">
@@ -6811,12 +6869,22 @@ function ApplicationForm() {
                                 confirmed order (see the order page). Optional
                                 postcode lookup on top; manual entry always works. */}
                             {showCollection && (
-                                <div className="mt-8 md:max-w-xl">
-                                    <span className="block text-xs font-medium text-slate-500 mb-2">{
-                                        shape === 'slot'
-                                            ? (slotMeeting ? GUEST_SCREEN_COPY.slotAddressLabelMeeting : GUEST_SCREEN_COPY.slotAddressLabelPremises)
-                                            : GUEST_SCREEN_COPY.collectionAddressLabel
-                                    }</span>
+                                <div className={(bothPlaces ? 'mt-12' : 'mt-8') + ' md:max-w-xl'}>
+                                    {bothPlaces ? (
+                                        // The second answer on the 'both' screen: its own
+                                        // heading and subtext, matching the areas block, with
+                                        // a wider gap above so the two don't run together.
+                                        <>
+                                            <h2 className="text-lg font-semibold text-slate-900 mb-1">{GUEST_SCREEN_COPY.slotBothAddressHeading}</h2>
+                                            <p className="text-sm text-slate-500 mb-4">{GUEST_SCREEN_COPY.slotBothAddressSubtext}</p>
+                                        </>
+                                    ) : (
+                                        <span className="block text-xs font-medium text-slate-500 mb-2">{
+                                            shape === 'slot'
+                                                ? (slotMeeting ? GUEST_SCREEN_COPY.slotAddressLabelMeeting : GUEST_SCREEN_COPY.slotAddressLabelPremises)
+                                                : GUEST_SCREEN_COPY.collectionAddressLabel
+                                        }</span>
+                                    )}
 
                                     {showCollectionFields ? (
                                         // FIELDS MODE — a chosen or hand-typed address. The
