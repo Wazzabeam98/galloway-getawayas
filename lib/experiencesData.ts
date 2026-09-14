@@ -18,6 +18,10 @@ export interface MpItem {
     // single-length category (sauna, a class), where the provider's slot length is
     // used. When any item carries one, the times a guest sees depend on the item.
     duration_minutes: number | null;
+    // Per-item location for a 'both' provider: 'delivery' = travelled to the guest
+    // (private, capped only by the cottage), 'collection' = at the provider's
+    // place, null = inherit the provider's single answer.
+    fulfilment: string | null;
 }
 // A booked session's interval on the provider's day, for greying overlapping
 // starts client-side: the same rule the claim and the DB exclusion enforce. Also
@@ -177,7 +181,7 @@ export async function loadMarketplace(
 
     const [{ data: areas }, { data: itemRows }, { data: avail }, { data: blocks }, { data: sessRows }, { data: orderRows }] = await Promise.all([
         admin.from('service_areas').select('provider_id, label').in('provider_id', ids),
-        admin.from('service_provider_items').select('id, provider_id, name, description, price, unit, image, sort_order, created_at, duration_minutes')
+        admin.from('service_provider_items').select('id, provider_id, name, description, price, unit, image, sort_order, created_at, duration_minutes, fulfilment')
             .in('provider_id', ids).eq('active', true).gt('price', 0)
             .order('sort_order', { ascending: true }).order('created_at', { ascending: true }),
         admin.from('slot_availability').select('provider_id, day_of_week, open_time, close_time').in('provider_id', ids),
@@ -213,6 +217,7 @@ export async function loadMarketplace(
             id: it.id, name: it.name, description: it.description, price: Number(it.price),
             unit: normaliseUnit(it.unit), image: it.image ? getImageUrl(it.image) : null,
             duration_minutes: it.duration_minutes == null ? null : Number(it.duration_minutes),
+            fulfilment: it.fulfilment || null,
         }));
         if (!items.length) continue;
         const perItemDurations = items.some((it: MpItem) => it.duration_minutes != null && it.duration_minutes > 0);

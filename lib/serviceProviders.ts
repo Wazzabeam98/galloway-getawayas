@@ -236,6 +236,38 @@ export function defaultSlotFulfilment(category: string | null | undefined): stri
     return slotAsksWhereFork(category) ? '' : 'collection';
 }
 
+// PER-ITEM LOCATION — a slot provider who answers 'both' to "where does it
+// happen?" runs some sessions at their studio and travels for others, so the
+// location is asked once PER ITEM. Every provider who picks a single place
+// answers it once and every item inherits it (item.fulfilment stays null).
+export function slotLocationPerItem(providerFulfilment: string | null | undefined): boolean {
+    return String(providerFulfilment || '') === 'both';
+}
+
+// The effective location of one item: its own answer for a 'both' provider, else
+// the provider's single answer. 'delivery' = travelled to the guest's cottage,
+// 'collection' = at the provider's place. Null only for a 'both' provider whose
+// item has not been answered yet (an unresolved, unbookable state).
+export function itemFulfilment(
+    item: { fulfilment?: string | null } | null | undefined,
+    providerFulfilment: string | null | undefined,
+): string | null {
+    const own = String((item && item.fulfilment) || '');
+    if (own === 'collection' || own === 'delivery') return own;
+    const prov = String(providerFulfilment || '');
+    return prov === 'both' ? null : (prov || null);
+}
+
+// A travelling item — the provider goes to the guest. Always private, no cap:
+// one group at one fixed price whoever turns up. The counterpart of the
+// provider-level travellingMixedSlot, but keyed on the ITEM.
+export function itemTravels(
+    item: { fulfilment?: string | null } | null | undefined,
+    providerFulfilment: string | null | undefined,
+): boolean {
+    return itemFulfilment(item, providerFulfilment) === 'delivery';
+}
+
 // HOW HARD WE ASK ABOUT THE PERSON BEHIND THE EXPERIENCE.
 //
 // Not every category should be asked its years and qualifications, and forcing

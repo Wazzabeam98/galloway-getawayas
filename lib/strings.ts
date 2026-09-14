@@ -364,12 +364,25 @@ export const GUEST_SCREEN_COPY = {
     slotWhereAtPlaceHint: 'Guests come to you',
     slotWhereTravel: 'I come to the guest',
     slotWhereTravelHint: 'You go to their cottage',
+    // The third option — some sessions at the provider's place, some travelled to
+    // the guest. Picking it moves the location question into each item's sub-flow.
+    slotWhereBoth: 'Both',
+    slotWhereBothHint: 'Some at your place, some you travel for — you’ll say which per session',
     slotWhereGate: 'Choose where it happens to carry on.',
+    // Asked per item, in the menu sub-flow, only for a 'both' provider: where THIS
+    // one happens. Reuses the At-my-place / I-come-to-the-guest cards.
+    menuLocationTitle: 'Where’s this one?',
     // The g_area heading for a slot, by where it happens. Premises vs meeting
     // point is copy only — the stored address is identical.
     slotPlaceHeadingPremises: 'What’s the address guests come to?',
     slotPlaceHeadingMeeting: 'Where do guests meet you?',
     slotPlaceHeadingTravel: 'Which parts of Dumfries & Galloway do you cover?',
+    // A 'both' provider gives BOTH an address (for the studio sessions) and the
+    // areas they travel to (for the cottage ones), so the heading says both.
+    slotPlaceHeadingBoth: 'Your address, and where you travel',
+    // Finish-summary coverage for a 'both' slot: the studio's town and the areas
+    // travelled to, joined — "Kirkcudbright · travels to Stewartry, Wigtownshire".
+    finishCoverageTravelSuffix: ' · travels to ',
     // The address-block label, slot variants (the made-to-order one is "Where
     // guests collect"). Same three fields underneath.
     slotAddressLabelPremises: 'Your address',

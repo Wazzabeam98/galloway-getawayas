@@ -17,6 +17,9 @@ interface PanelItem {
     // The treatment's own length; null for a single-length category. Present ⇒ the
     // grid the guest sees is generated from THIS, not the provider number.
     duration_minutes?: number | null;
+    // Per-item location for a 'both' provider; 'delivery' ⇒ travelled, so it's
+    // private and capped only by the cottage, not the provider's studio size.
+    fulfilment?: string | null;
 }
 interface PanelSession {
     date: string; time: string;
@@ -130,7 +133,11 @@ export default function BookingPanel({ bookingId, checkIn, checkOut, cottageGues
     // where it has one (a room/table size), else the cottage's guest count (a
     // traveller declares none). Only asked when that cap leaves a real choice (>1).
     const isPrivateSlot = isSlot && !!item && !multiplies;
-    const declaredCap = provider.slotCapacity && provider.slotCapacity > 0 ? provider.slotCapacity : null;
+    // A travelling item (the provider comes to the cottage) ignores the studio
+    // capacity — its only cap is the cottage's guest count, so its head count is
+    // free up to that. A studio item uses the declared studio size.
+    const itemTravels = !!item && String(item.fulfilment) === 'delivery';
+    const declaredCap = itemTravels ? null : (provider.slotCapacity && provider.slotCapacity > 0 ? provider.slotCapacity : null);
     const attendeesCap = Math.max(1, declaredCap != null ? Math.min(declaredCap, cottageGuests) : cottageGuests);
     const chosenAttendees = Math.min(Math.max(1, Math.floor(attendees) || 1), attendeesCap);
     // The per-treatment shape (massage): the grid depends on the chosen treatment.
