@@ -17,6 +17,8 @@ import {
     bookingIsPrivate, slotClaimKind,
     slotOfferingFromUnits, offeringHasShared, offeringHasPrivate,
     optionAvailability, sessionClosedToAll,
+    resolvedDuration, itemHasOwnDuration, blockInterval, intervalsOverlap,
+    overlapsBooked, minutesOfDay,
 } from '@/lib/serviceSlots';
 import { exclusivePerDate } from '@/lib/serviceOrders';
 
@@ -270,4 +272,65 @@ test('sessionClosedToAll reads the provider’s own units', () => {
     assert.equal(sessionClosedToAll(hired, ['flat', 'person'], P), true);
     // An empty time is open.
     assert.equal(sessionClosedToAll(null, ['flat', 'person'], P), false);
+});
+
+// ---------------------------------------------------------------------------
+// INTERVAL OVERLAP — the per-treatment shape
+// ---------------------------------------------------------------------------
+
+test('resolvedDuration prefers the item’s own length, else the provider’s', () => {
+    assert.equal(resolvedDuration({ duration_minutes: 90 }, { slot_length_minutes: 60 }), 90);
+    assert.equal(resolvedDuration({ duration_minutes: null }, { slot_length_minutes: 60 }), 60);
+    assert.equal(resolvedDuration({}, { slot_length_minutes: 45 }), 45);
+    // No length anywhere falls back to a sane 60, never 0 (which would be a
+    // zero-length booking that blocks nothing).
+    assert.equal(resolvedDuration({}, {}), 60);
+    // A non-positive item duration is ignored in favour of the provider length.
+    assert.equal(resolvedDuration({ duration_minutes: 0 }, { slot_length_minutes: 30 }), 30);
+});
+
+test('itemHasOwnDuration is the per-treatment tell — true only for a positive length', () => {
+    assert.equal(itemHasOwnDuration({ duration_minutes: 30 }), true);
+    assert.equal(itemHasOwnDuration({ duration_minutes: null }), false);
+    assert.equal(itemHasOwnDuration({ duration_minutes: 0 }), false);
+    assert.equal(itemHasOwnDuration({}), false);
+});
+
+test('a block runs [start, start + duration + turnaround), turnaround folded in', () => {
+    assert.deepEqual(blockInterval('10:00', 60, 0), { startMin: 600, endMin: 660 });
+    assert.deepEqual(blockInterval('10:00', 60, 10), { startMin: 600, endMin: 670 });
+    // Tolerant of HH:MM:SS from the database.
+    assert.deepEqual(blockInterval('09:30:00', 30, 0), { startMin: 570, endMin: 600 });
+    assert.equal(minutesOfDay('11:15'), 675);
+});
+
+test('overlap is half-open — touching intervals do not overlap', () => {
+    // 10:00–11:00 and 11:00–12:00 share only the boundary minute → no overlap.
+    assert.equal(intervalsOverlap({ startMin: 600, endMin: 660 }, { startMin: 660, endMin: 720 }), false);
+    // 10:00–11:30 and 11:00–11:30 do overlap.
+    assert.equal(intervalsOverlap({ startMin: 600, endMin: 690 }, { startMin: 660, endMin: 690 }), true);
+});
+
+test('overlapsBooked: a 90 at 10:00 collides with a 30 at 11:00; a back-to-back 60 does not', () => {
+    // 90-min at 10:00 blocks 10:00–11:30; a 30 at 11:00 (11:00–11:30) overlaps.
+    assert.equal(overlapsBooked('11:00', 30, 0, [{ session_time: '10:00', duration_minutes: 90 }]), true);
+    // 60-min at 10:00 (10:00–11:00) and a 60 at 11:00 (11:00–12:00) are adjacent.
+    assert.equal(overlapsBooked('11:00', 60, 0, [{ session_time: '10:00', duration_minutes: 60 }]), false);
+    // The reset gap alone: with a 30-min turnaround the 10:00 block runs to 11:30,
+    // so the same back-to-back 60 at 11:00 now overlaps.
+    assert.equal(overlapsBooked('11:00', 60, 0, [{ session_time: '10:00', duration_minutes: 60, turnaround_minutes: 30 }]), true);
+    // Empty list never overlaps.
+    assert.equal(overlapsBooked('11:00', 60, 0, []), false);
+});
+
+test('generateSessions: step and fit differ for the per-treatment grid', () => {
+    const avail = [{ day_of_week: 0, open_time: '09:00', close_time: '12:00' }]; // 2026-09-20 is a Sunday
+    // A 60-min treatment with a 30-min reset: starts step by 90, but a start only
+    // needs room for the 60 before close. 09:00 and 10:30 fit (10:30+60=11:30<=12:00),
+    // 12:00 would need 90 but only fits 60 — included; a 4th start at 13:30 is past close.
+    const grid = generateSessions(avail, [], 90, '2026-09-20', '2026-09-20', 60).map((s) => s.time);
+    assert.deepEqual(grid, ['09:00', '10:30']);
+    // Same length as step (fitMinutes omitted) reproduces the old back-to-back grid.
+    const legacy = generateSessions(avail, [], 60, '2026-09-20', '2026-09-20').map((s) => s.time);
+    assert.deepEqual(legacy, ['09:00', '10:00', '11:00']);
 });

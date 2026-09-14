@@ -187,6 +187,23 @@ export function slotAsksWhereFork(category: string | null | undefined): boolean 
     return SLOT_WHERE_FORK_CATEGORIES.indexOf(String(category || '')) !== -1;
 }
 
+// The ONE-AT-A-TIME slot categories: a provider selling their own time in
+// variable lengths, who can't be in two places at once — session length belongs
+// to the ITEM (the treatment), not the provider. Massage is the first; barbers,
+// physios, dog groomers, driving instructors and mobile hairdressers are the same
+// shape and join by being ADDED here, with no change to the booking code — it
+// keys off the per-item duration the wizard then writes, never off this list.
+//
+// This list only shapes the WIZARD (ask duration per treatment; don't ask a
+// provider length, a pricing basis, or a capacity — a treatment is one person at
+// a time, priced whole). What the booking model does with the result is decided
+// structurally, by whether an item carries its own duration.
+const SLOT_PER_ITEM_DURATION_CATEGORIES = ['massage'];
+
+export function slotDurationPerItem(category: string | null | undefined): boolean {
+    return SLOT_PER_ITEM_DURATION_CATEGORIES.indexOf(String(category || '')) !== -1;
+}
+
 export function slotIsMeetingPoint(category: string | null | undefined): boolean {
     return SLOT_MEETING_POINT_CATEGORIES.indexOf(String(category || '')) !== -1;
 }

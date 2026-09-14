@@ -5,16 +5,25 @@ import { Calendar } from 'react-date-range';
 import 'react-date-range/dist/styles.css';
 import 'react-date-range/dist/theme/default.css';
 import { unitMultiplies, orderTotal, MAX_ORDER_QUANTITY } from '@/lib/serviceOrders';
-import { optionAvailability, bookingIsPrivate, type OptionAvailability } from '@/lib/serviceSlots';
+import {
+    optionAvailability, bookingIsPrivate, type OptionAvailability,
+    generateSessions, resolvedDuration, overlapsBooked, minutesOfDay,
+} from '@/lib/serviceSlots';
 import { itemPriceLabel, unitPhrase, dateLabel, timeLabel } from '@/components/marketplace/present';
 import { londonDayKey, shiftDayKey } from '@/lib/dayKey';
 
-interface PanelItem { id: string; name: string; description: string | null; price: number; unit: string; image: string | null; }
+interface PanelItem {
+    id: string; name: string; description: string | null; price: number; unit: string; image: string | null;
+    // The treatment's own length; null for a single-length category. Present ⇒ the
+    // grid the guest sees is generated from THIS, not the provider number.
+    duration_minutes?: number | null;
+}
 interface PanelSession {
     date: string; time: string;
     // The pinned seat row for this time, or null if nobody has booked it yet.
     row: { capacity: number; seats_taken: number; private: boolean } | null;
 }
+interface PanelBookedBlock { date: string; time: string; duration_minutes: number | null; turnaround_minutes: number | null; }
 interface PanelProvider {
     id: string; business_name: string; who: string; shape: string; isFood: boolean;
     items: PanelItem[]; sessions: PanelSession[]; leadTimeDays: number;
@@ -23,6 +32,14 @@ interface PanelProvider {
     minPeople: number;
     // The whole-table size, so a per-person option can be sized on a fresh time.
     slotCapacity: number;
+    // The per-treatment shape (massage): the grid depends on the chosen item's
+    // duration, so the panel generates it here rather than reading one server grid.
+    perItemDurations?: boolean;
+    turnaround?: number;
+    slotAvailability?: Array<{ day_of_week: number; open_time: string; close_time: string }>;
+    slotBlocks?: string[];
+    // Every booked session's interval, to grey any start that would overlap one.
+    bookedBlocks?: PanelBookedBlock[];
 }
 
 // A word for why an option can't be booked on a time, from the shared helper's
@@ -80,6 +97,14 @@ export default function BookingPanel({ bookingId, checkIn, checkOut, provider }:
     // two — a private hire and a shared table — is picked below.
     const item = provider.items.find((i) => i.id === itemId) || null;
     const multiplies = !!item && unitMultiplies(item.unit);
+    // The per-treatment shape (massage): the grid depends on the chosen treatment.
+    const perItem = isSlot && !!provider.perItemDurations;
+    const turnaround = Math.max(0, provider.turnaround || 0);
+    // The chosen treatment's length; for a per-item provider it is the item's own.
+    const chosenDuration = item ? resolvedDuration(item, {}) : 0;
+
+    const minDate = maxKey(checkIn.slice(0, 10), dayKeyFromNow(provider.shape === 'made_to_order' ? provider.leadTimeDays : 0));
+    const maxDate = lastNight(checkOut);
 
     // The provider config the shared helper reads — the SAME optionAvailability
     // the booking route checks and the host diary renders, so what the guest is
@@ -90,12 +115,39 @@ export default function BookingPanel({ bookingId, checkIn, checkOut, provider }:
     // The chosen option's availability on the chosen time.
     const sel = isSlot && session && item ? availOf(session, item.unit) : null;
 
+    // The bookable times. For a fixed-grid provider (sauna, class) this is the
+    // server-generated grid, unchanged. For the per-treatment shape it is
+    // generated HERE from the chosen treatment's own length — the times a guest
+    // sees genuinely depend on the treatment picked — with each time carrying its
+    // booked row (so a taken time greys) and overlapping starts dropped below.
+    const panelSessions = useMemo<PanelSession[]>(() => {
+        if (!isSlot) return [];
+        if (!perItem) return provider.sessions;
+        if (!item) return [];   // per-item: the guest picks a treatment first
+        const rowByKey = new Map<string, PanelSession['row']>();
+        for (const b of provider.bookedBlocks || []) rowByKey.set(b.date + ' ' + b.time, { capacity: 1, seats_taken: 1, private: true });
+        const nowMs = Date.now();
+        return generateSessions(provider.slotAvailability || [], provider.slotBlocks || [], chosenDuration + turnaround, minDate, maxDate, chosenDuration)
+            .filter((s) => new Date(s.date + 'T' + s.time + ':00Z').getTime() > nowMs)
+            .map((s) => ({ date: s.date, time: s.time, row: rowByKey.get(s.date + ' ' + s.time) || null }));
+    }, [isSlot, perItem, item, chosenDuration, turnaround, minDate, maxDate, provider.sessions, provider.slotAvailability, provider.slotBlocks, provider.bookedBlocks]);
+
+    // A candidate time is unbookable for the per-treatment shape when its interval
+    // [start, start + duration + turnaround) overlaps a DIFFERENT booked session —
+    // the same rule the claim and the database exclusion enforce, so the guest is
+    // never shown a start the claim would refuse.
+    const overlapsABooking = (s: PanelSession): boolean => {
+        if (!perItem || !item) return false;
+        const others = (provider.bookedBlocks || []).filter((b) => b.date === s.date && minutesOfDay(b.time) !== minutesOfDay(s.time));
+        return overlapsBooked(s.time, chosenDuration, turnaround, others.map((b) => ({ session_time: b.time, duration_minutes: b.duration_minutes, turnaround_minutes: b.turnaround_minutes })));
+    };
+
     // Sessions grouped by day, for the slot picker.
     const days = useMemo(() => {
         const m: Record<string, PanelSession[]> = {};
-        for (const s of provider.sessions) (m[s.date] = m[s.date] || []).push(s);
+        for (const s of panelSessions) (m[s.date] = m[s.date] || []).push(s);
         return Object.keys(m).sort().map((d) => ({ date: d, times: m[d].sort((a, b) => a.time.localeCompare(b.time)) }));
-    }, [provider.sessions]);
+    }, [panelSessions]);
 
     const seatCap = sel ? Math.min(MAX_ORDER_QUANTITY, sel.seatsLeft) : MAX_ORDER_QUANTITY;
     // The per-person floor: the smallest group this session runs for. A
@@ -116,9 +168,6 @@ export default function BookingPanel({ bookingId, checkIn, checkOut, provider }:
             document.getElementById('booking-panel')?.scrollIntoView({ behavior: 'smooth', block: 'start' });
         }
     };
-
-    const minDate = maxKey(checkIn.slice(0, 10), dayKeyFromNow(provider.shape === 'made_to_order' ? provider.leadTimeDays : 0));
-    const maxDate = lastNight(checkOut);
 
     async function go() {
         setError(null);
@@ -185,10 +234,11 @@ export default function BookingPanel({ bookingId, checkIn, checkOut, provider }:
                                     <input type="radio" name="item" checked={on} onChange={() => {
                                         setItemId(it.id);
                                         // A time picked for the old option may be
-                                        // impossible for this one (a private hire on a
-                                        // shared table, say) — drop it rather than let
-                                        // the guest book what would be refused.
-                                        if (session && !availOf(session, it.unit).possible) setSession(null);
+                                        // impossible for this one — a private hire on a
+                                        // shared table, or a treatment whose grid no
+                                        // longer offers that start — so drop it rather
+                                        // than let the guest book what would be refused.
+                                        if (session && (perItem || !availOf(session, it.unit).possible)) setSession(null);
                                     }} className="accent-emerald-600" />
                                     {it.image ? (
                                         // eslint-disable-next-line @next/next/no-img-element
@@ -210,7 +260,9 @@ export default function BookingPanel({ bookingId, checkIn, checkOut, provider }:
                 as false scarcity on every slot. */}
             {isSlot && (
                 <div className="mt-4">
-                    {days.length === 0 ? (
+                    {perItem && !item ? (
+                        <p className="mt-2 text-sm text-slate-500">Pick a treatment to see its times.</p>
+                    ) : days.length === 0 ? (
                         <p className="mt-2 text-sm text-slate-500">No times left during your stay.</p>
                     ) : (() => {
                         const active = Math.min(dayIdx, days.length - 1);
@@ -239,18 +291,23 @@ export default function BookingPanel({ bookingId, checkIn, checkOut, provider }:
                                         // shows "N left"; a whole-hire time never reads
                                         // "1 left" (false scarcity on every slot).
                                         const a = item ? availOf(s, item.unit) : null;
-                                        const disabled = !!a && !a.possible;
-                                        const low = !!item && !bookingIsPrivate(item.unit) && !!a && a.possible && a.seatsLeft >= 1 && a.seatsLeft <= 2;
+                                        // Overlap with a DIFFERENT booking greys a
+                                        // per-treatment time even when its own seat is
+                                        // free — the masseuse is busy across it.
+                                        const overlap = overlapsABooking(s);
+                                        const disabled = (!!a && !a.possible) || overlap;
+                                        const label = overlap && (!a || a.possible) ? 'Unavailable' : (a && item ? unavailableLabel(a, item.unit) : '');
+                                        const low = !overlap && !!item && !bookingIsPrivate(item.unit) && !!a && a.possible && a.seatsLeft >= 1 && a.seatsLeft <= 2;
                                         return (
                                             <button key={s.time} type="button" disabled={disabled} aria-disabled={disabled}
                                                 onClick={() => { if (disabled) return; setSession(s); setQty(minPeople); }}
-                                                title={disabled && a && item ? unavailableLabel(a, item.unit) : undefined}
+                                                title={disabled ? label : undefined}
                                                 className={`rounded-lg border px-2.5 py-1.5 text-sm transition ${
                                                     disabled ? 'cursor-not-allowed border-slate-200 bg-slate-50 text-slate-400'
                                                         : on ? 'border-emerald-600 bg-emerald-600 text-white'
                                                             : 'border-slate-300 text-slate-700 hover:border-slate-400'}`}>
                                                 {timeLabel(s.time)}
-                                                {disabled && a && item ? <span className="ml-1 text-[10px] font-medium text-slate-400">{unavailableLabel(a, item.unit)}</span> : null}
+                                                {disabled && label ? <span className="ml-1 text-[10px] font-medium text-slate-400">{label}</span> : null}
                                                 {low && a ? <span className={`ml-1 text-[10px] ${on ? 'text-emerald-100' : 'text-amber-600'}`}>{a.seatsLeft} left</span> : null}
                                             </button>
                                         );
