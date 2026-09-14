@@ -70,16 +70,22 @@ export default function ResetPasswordPage() {
         );
     }
 
-    // No session means the link was never exchanged — usually because it had
-    // expired or had already been used once.
+    // No session means the callback did not land one before sending you here —
+    // usually because this page was opened directly, or the link was too old to
+    // use. Do NOT diagnose it as "already used": that copy is what hid the bug
+    // where a mail scanner spent the link before the recipient — reported here as
+    // a link the recipient had somehow used up. The interstitial on the callback
+    // now stops the scanner from spending it; if there is still no session, the
+    // honest answer is simply to ask for a fresh link.
     if (!signedIn) {
         return (
             <div className="flex flex-col items-center justify-center min-h-[70vh] space-y-4 text-center px-6">
                 <Logo />
-                <h1 className="text-2xl font-bold text-slate-900">That link has expired</h1>
+                <h1 className="text-2xl font-bold text-slate-900">Ask for a fresh reset link</h1>
                 <p className="text-slate-600 max-w-sm">
-                    Password links can only be used once, and they run out after an hour.
-                    Ask for a new one from the log in box and it will work.
+                    This page needs a live reset link. Request one from the log in box and
+                    open it here, then you can set a new password. Reset links run out after
+                    an hour.
                 </p>
             </div>
         );
