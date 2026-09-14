@@ -38,7 +38,7 @@ export async function GET(request: Request) {
 
         const { data: orders } = await admin
             .from('service_orders')
-            .select('id, status, service_date, service_time, shape, guests, price, item_name, item_unit, unit_price, quantity, attendees, guest_name, guest_phone, guest_email, note, allergy, listing_id, expires_at, created_at')
+            .select('id, status, service_date, service_time, shape, fulfilment, service_address, guests, price, item_name, item_unit, unit_price, quantity, attendees, guest_name, guest_phone, guest_email, note, allergy, listing_id, expires_at, created_at')
             .eq('provider_id', providerId)
             .order('created_at', { ascending: false })
             .limit(50);
@@ -75,6 +75,11 @@ export async function GET(request: Request) {
                 ...o,
                 guest_phone: released ? o.guest_phone : null,
                 guest_email: released ? o.guest_email : null,
+                // The travelling destination, frozen on the order at booking.
+                // Released on confirm (== paid for a slot), NEVER before — a
+                // provider must not have the guest's address until the money is
+                // captured. Held back to null while holding/authorised.
+                service_address: released ? o.service_address : null,
                 // The property, released on confirm. `address` is the exact
                 // address (listing.location); `area` is not separated out here —
                 // the provider is going there, so they get the real thing.

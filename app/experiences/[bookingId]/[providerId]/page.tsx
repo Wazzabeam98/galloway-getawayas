@@ -193,11 +193,13 @@ export default async function ListingPage(
                             checkIn={mp.stay.check_in}
                             checkOut={mp.stay.check_out}
                             cottageGuests={mp.stay.guests}
+                            stay={{ title: mp.listing?.title || null, town: mp.listing?.location || null }}
                             provider={{
                                 id: p.id,
                                 business_name: p.business_name,
                                 who,
                                 shape: p.shape,
+                                fulfilment: p.fulfilment,
                                 isFood: p.isFood,
                                 items: p.items,
                                 sessions: p.sessions,

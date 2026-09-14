@@ -80,7 +80,7 @@ export default async function OrderPage({ params, searchParams }: { params: { or
     const admin = adminClient();
     const { data: order } = await admin
         .from('service_orders')
-        .select('id, guest_id, provider_id, listing_id, booking_id, status, shape, service_date, service_time, price, item_name, item_description, provider_business_name, allergy, note, attendees, duration_minutes, fulfilment')
+        .select('id, guest_id, provider_id, listing_id, booking_id, status, shape, service_date, service_time, price, item_name, item_description, provider_business_name, allergy, note, attendees, duration_minutes, fulfilment, service_address')
         .eq('id', params.orderId)
         .maybeSingle();
     if (!order || order.guest_id !== user.id) redirect('/trips');
@@ -104,9 +104,12 @@ export default async function OrderPage({ params, searchParams }: { params: { or
     }
 
     // "12 Shore Road, DG7 1AB, Kirkcudbright" — the same order the trips page uses.
-    const cottageAddress = listing
+    // Prefer the address FROZEN on the order at booking (a travelling session's
+    // picked stay); fall back to the live listing for orders taken before the
+    // freeze existed. The guest is always allowed their own destination.
+    const cottageAddress = (order.service_address as string | null) || (listing
         ? [listing.street_address, listing.postcode, listing.location].filter(Boolean).join(', ')
-        : '';
+        : '');
 
     const who = order.provider_business_name || (prov && prov.business_name) || 'the provider';
     const windowHours = Number(prov && prov.cancellation_window_hours) || 48;

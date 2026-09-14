@@ -29,6 +29,9 @@ interface PanelBookedBlock {
 }
 interface PanelProvider {
     id: string; business_name: string; who: string; shape: string; isFood: boolean;
+    // 'delivery' = the provider travels to the guest (a travelling session, which
+    // needs a destination — the guest's stay); 'collection'/null = come-to-me.
+    fulfilment?: string | null;
     items: PanelItem[]; sessions: PanelSession[]; leadTimeDays: number;
     // Per-person slots only: the smallest group a single booking may be. 1 = no
     // minimum. Floors the quantity picker; the booking route is the real gate.
@@ -89,10 +92,19 @@ function lastNight(checkOut: string): string {
 }
 function maxKey(a: string, b: string): string { return a > b ? a : b; }
 
-export default function BookingPanel({ bookingId, checkIn, checkOut, cottageGuests, provider }: {
-    bookingId: string; checkIn: string; checkOut: string; cottageGuests: number; provider: PanelProvider;
+export default function BookingPanel({ bookingId, checkIn, checkOut, cottageGuests, stay, provider }: {
+    bookingId: string; checkIn: string; checkOut: string; cottageGuests: number;
+    // The guest's stay — the cottage this booking is for. Shown as the destination
+    // a travelling session comes to (the pick-your-stay path).
+    stay?: { title: string | null; town: string | null };
+    provider: PanelProvider;
 }) {
     const isSlot = provider.shape === 'slot';
+    // A travelling session (the provider comes to the guest) needs a destination.
+    // For the pick-your-stay path the destination is the guest's stay — shown here
+    // and frozen onto the order server-side from the booking's listing.
+    const travels = isSlot && provider.fulfilment === 'delivery';
+    const stayLabel = [stay?.title, stay?.town].filter(Boolean).join(', ');
     const [itemId, setItemId] = useState<string>(provider.items.length === 1 ? provider.items[0].id : '');
     const [qty, setQty] = useState<number>(1);
     // How many people at a PRIVATE session — asked for a flat item, never priced.
@@ -455,6 +467,27 @@ export default function BookingPanel({ bookingId, checkIn, checkOut, cottageGues
                     className="mt-1 block w-full resize-y rounded-lg border border-slate-300 px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-emerald-600"
                 />
             </label>
+
+            {/* Where a TRAVELLING session comes — the guest picks their stay. One
+                option today (the cottage this booking is for), shown selected; a
+                guest with no booking types an address instead (not built here).
+                The address is frozen onto the order server-side; the provider only
+                sees it once the booking is paid. */}
+            {travels && (
+                <div className="mt-4 rounded-lg border border-slate-200 p-3">
+                    <p className="text-xs font-semibold uppercase tracking-wide text-slate-500">Where {provider.who} comes</p>
+                    <div className="mt-2 flex items-start gap-2.5">
+                        <span aria-hidden className="mt-1 inline-block h-3.5 w-3.5 shrink-0 rounded-full border-[4px] border-emerald-600" />
+                        <div className="text-sm">
+                            <div className="font-medium text-slate-900">Your stay{stay?.title ? ' — ' + stay.title : ''}</div>
+                            <div className="text-slate-500">{stayLabel || 'The cottage you booked'}</div>
+                        </div>
+                    </div>
+                    <p className="mt-2 text-[11px] leading-snug text-slate-400">
+                        {provider.who} gets the address once you’ve paid — not before.
+                    </p>
+                </div>
+            )}
 
             {/* Total, spelled out when it multiplies */}
             {item && multiplies && (
