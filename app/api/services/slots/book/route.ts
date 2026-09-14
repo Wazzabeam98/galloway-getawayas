@@ -71,7 +71,7 @@ export async function POST(request: Request) {
 
         const { data: provider } = await admin
             .from('service_providers')
-            .select('id, business_name, trade, shape, status, stripe_account_id, stripe_payouts_enabled, plan, commission_rate, slot_length_minutes, slot_turnaround_minutes, slot_capacity, slot_min_people, cancellation_window_hours')
+            .select('id, business_name, trade, shape, status, stripe_account_id, stripe_payouts_enabled, plan, commission_rate, slot_length_minutes, slot_turnaround_minutes, slot_capacity, slot_min_people, cancellation_window_hours, fulfilment')
             .eq('id', providerId)
             .maybeSingle();
 
@@ -342,6 +342,12 @@ export async function POST(request: Request) {
                 // what the guest bought and the provider is turning up for must not
                 // change if the menu's duration is edited later.
                 duration_minutes: durationMinutes,
+                // Freeze the fulfilment DIRECTION too, beside the duration: what a
+                // guest booked (come-to-me vs the provider travelling) must not
+                // flip if the provider later switches their setup. The order page
+                // reads this, never the provider's live value. The address stays
+                // live from the provider — only the direction is the deal.
+                fulfilment: provider.fulfilment ?? null,
                 guests: booking.guests ?? null,
                 attendees,
                 quantity,
