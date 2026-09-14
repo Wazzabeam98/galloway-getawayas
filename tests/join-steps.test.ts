@@ -617,7 +617,12 @@ const slotFlow = (opts: { fork?: boolean; perPerson?: boolean; expertise?: boole
     // one-at-a-time in its own sub-flow — but keeps the capacity for its classes.
     if (!opts.perItemDuration && !opts.mixed) keys.push('g_slot_basis');
     if (!opts.perItemDuration) keys.push('g_capacity');
-    if (opts.perPerson) keys.push('g_slot_min');
+    // The per-person minimum: a fixed-basis per-person slot (perPerson), OR a
+    // come-to-me mixed slot — whose classes can be shared, so the minimum is the
+    // twin of the capacity above. A travelling mixed slot sells only private
+    // sessions and drops both (the perItemDuration/travelling cases never reach
+    // this helper with mixed set — those are asserted directly via stepApplies).
+    if (opts.perPerson || opts.mixed) keys.push('g_slot_min');
     keys.push('g_menu', 'g_expect', 'finish');
     return keys;
 };
@@ -635,6 +640,7 @@ test('a potter (slot, fixed come-to-me) walks the location + When split, no fork
     assert.equal(stepApplies('g_slot_hours', 'guest', ctx), true, 'a slot sets weekly hours');
     assert.equal(stepApplies('g_slot_basis', 'guest', ctx), false, 'a mixed slot decides shared-vs-1:1 per item, not a provider basis');
     assert.equal(stepApplies('g_capacity', 'guest', ctx), true, 'a mixed slot keeps a capacity for its classes');
+    assert.equal(stepApplies('g_slot_min', 'guest', ctx), true, 'a come-to-me mixed slot keeps a minimum — its classes can be shared');
 });
 
 test('the come-to-me / travel fork is asked only for yoga, massage and painting', () => {
@@ -662,6 +668,7 @@ test('the come-to-me / travel fork is asked only for yoga, massage and painting'
     assert.equal(stepApplies('g_slot_basis', 'guest', mixed), false, 'a mixed slot has no provider basis — each item chooses shared vs 1:1');
     assert.equal(stepApplies('g_slot_length', 'guest', mixed), true, 'a mixed slot keeps a provider length for its classes');
     assert.equal(stepApplies('g_capacity', 'guest', mixed), true, 'a mixed slot keeps a capacity for its classes');
+    assert.equal(stepApplies('g_slot_min', 'guest', mixed), true, 'a come-to-me mixed slot keeps a minimum for its shared classes');
     for (const cat of ['tastings', 'cooking', 'sauna', 'pottery', 'workshops', 'outdoors', 'water']) {
         const ctx = { group: 'x', category: cat, shape: 'slot' };
         assert.equal(stepApplies('g_slot_where', 'guest', ctx), false, cat + ' defaults, no fork');
@@ -677,22 +684,26 @@ test('a TRAVELLING mixed provider drops the session-length and capacity screens'
     const comeToMe = { group: 'wellness', category: 'yoga', shape: 'slot', fulfilment: 'collection' };
     assert.equal(stepApplies('g_slot_length', 'guest', comeToMe), true, 'come-to-me keeps the class length');
     assert.equal(stepApplies('g_capacity', 'guest', comeToMe), true, 'come-to-me keeps the class capacity');
+    assert.equal(stepApplies('g_slot_min', 'guest', comeToMe), true, 'come-to-me keeps the class minimum (capacity’s twin)');
     // Travels to the guest: every item is a private session with its own length,
     // and nobody joins a class in someone's cottage — so both screens drop, the
     // same way the shared-vs-private question does.
     const travels = { group: 'wellness', category: 'yoga', shape: 'slot', fulfilment: 'delivery' };
     assert.equal(stepApplies('g_slot_length', 'guest', travels), false, 'a traveller sets the length per private session');
     assert.equal(stepApplies('g_capacity', 'guest', travels), false, 'a traveller declares no class capacity');
+    assert.equal(stepApplies('g_slot_min', 'guest', travels), false, 'a traveller sells only private sessions, so no minimum');
     assert.equal(stepApplies('g_slot_hours', 'guest', travels), true, 'weekly hours stay either way');
     // The traveller rule is mixed-only — a non-mixed slot is unaffected.
     const tastingTravels = { group: 'food', category: 'tastings', shape: 'slot', fulfilment: 'delivery' };
     assert.equal(stepApplies('g_capacity', 'guest', tastingTravels), true, 'the traveller rule is mixed-only');
 });
 
-test('the per-person minimum screen exists only for a shared/per-person slot', () => {
-    // A group category (tastings) — its basis IS a provider screen, so the whole
-    // flow matches slotFlow. (Pottery is now a mixed shape with no provider basis;
-    // the minimum logic here is category-independent — shape + slotOffer only.)
+test('the per-person minimum screen exists for a shared slot or a come-to-me mixed slot', () => {
+    // A fixed-basis slot's minimum is keyed off its provider slotOffer. A MIXED
+    // slot has no provider basis (slotOffer stays null), so its minimum is keyed
+    // off the category + direction instead: a come-to-me mixed slot can run a
+    // shared class, so it keeps the minimum (see the mixed/travelling tests
+    // above); this test covers the fixed-basis path and the non-slot exclusions.
     const shared = { group: 'food', category: 'tastings', shape: 'slot', slotOffer: 'shared' };
     const priv = { group: 'wellness', category: 'sauna', shape: 'slot', slotOffer: 'private' };
     const unanswered = { group: 'food', category: 'tastings', shape: 'slot' };

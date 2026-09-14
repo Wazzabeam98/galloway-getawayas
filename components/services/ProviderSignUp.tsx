@@ -1469,6 +1469,21 @@ function ApplicationForm() {
         number: registrations[scheme] || '',
     }));
 
+    // The effective slot offering. A fixed-basis slot answers private/shared/both
+    // once, up front (slotOffer). A MIXED provider answers it per item, so
+    // slotOffer stays null — the truth is in the item units, so derive it from
+    // them. This is what decides whether the per-person minimum is stored and
+    // whether the min ≤ capacity rule is checked; both must see a mixed provider's
+    // shared class, which only the item units reveal.
+    const slotOfferEffective = shape === 'slot' && slotMixedDuration(guestCategory)
+        ? slotOfferingFromUnits((items || []).map((i) => String(i.unit)))
+        : slotOffer;
+
+    // A come-to-me mixed provider may run a shared class, so it is asked the
+    // minimum (its capacity's twin). Its screen is offered before any item
+    // exists, so the gate is the category + direction, not the item units.
+    const slotMixedComeToMe = shape === 'slot' && slotMixedDuration(guestCategory) && fulfilment !== 'delivery';
+
     const problems = submitProblems({
         business_name: businessName,
         trade,
@@ -1491,8 +1506,10 @@ function ApplicationForm() {
         shape,
         scheduleCount: schedule.length,
         // The slot pricing basis and its two group numbers, so the min ≤ capacity
-        // rule can be checked. slotMinPeople blank reads as no minimum.
-        slotOffer,
+        // rule can be checked. slotMinPeople blank reads as no minimum. The
+        // effective offering (derived from item units for a mixed provider) so a
+        // mixed shared class is covered by the rule, not just a fixed-basis one.
+        slotOffer: slotOfferEffective,
         slotCapacity: maxGuests,
         slotMinPeople,
         // Items priced above zero — the marketplace lists only priced providers,
@@ -2806,7 +2823,7 @@ function ApplicationForm() {
             // slot; a private/flat slot is one booking whatever the head count, so
             // it stores 1 (no minimum). Floored at 1 to satisfy the column's
             // check; the min ≤ capacity rule is enforced before send (submitProblems).
-            slot_min_people: (isSlot && offeringHasShared(slotOffer)) ? Math.max(1, num(slotMinPeople, 1) ?? 1) : 1,
+            slot_min_people: (isSlot && offeringHasShared(slotOfferEffective)) ? Math.max(1, num(slotMinPeople, 1) ?? 1) : 1,
             ...fulfilmentFields,
             declarations: acceptance,
         };
@@ -5515,7 +5532,7 @@ function ApplicationForm() {
                     ceiling (g_capacity) is the max above it, so the stepper caps
                     there; default 1 = no minimum. The route is the real gate —
                     this is the convenience floor. */}
-                {onStep('g_slot_min') && isGuest && shape === 'slot' && offeringHasShared(slotOffer) && (
+                {onStep('g_slot_min') && isGuest && shape === 'slot' && (offeringHasShared(slotOffer) || slotMixedComeToMe) && (
                 <section className="flex-1 flex flex-col items-center justify-center">
                     <NumberStepper value={slotMinPeople} onChange={setSlotMinPeople} min={1} max={Math.max(1, parseInt(maxGuests, 10) || CAPACITY_DEFAULT_SLOT)} suggestion={1} size="lg" solid suffix={GUEST_SCREEN_COPY.slotMinSuffix} />
                 </section>
