@@ -4626,6 +4626,16 @@ function ApplicationForm() {
                     // length) and a one-at-a-time booking (flat, with its own
                     // duration). Both live on one provider.
                     const mixedShape = isSlot && slotMixedDuration(guestCategory);
+                    // A traveller's session is EXCLUSIVE by definition — nobody books
+                    // a place in a class held in someone else's cottage — so the
+                    // shared-vs-private question is only asked of a come-to-me
+                    // provider. Fulfilment is answered at g_slot_where (or defaulted),
+                    // both BEFORE this menu screen, so it is known here. A travelling
+                    // mixed provider is treated like the pure one-at-a-time shape:
+                    // every item is a private session, timed, no question.
+                    const travels = fulfilment === 'delivery';
+                    const mixedChoice = mixedShape && !travels;   // come-to-me: ask per item
+                    const forcedOneToOne = perItemShape || (mixedShape && travels);
                     // 'offer both' is the only slot where the unit is ambiguous, so
                     // it alone lets the provider add items and choose each one's unit
                     // (session vs person) as a step in the sub-flow. private/shared
@@ -4718,14 +4728,16 @@ function ApplicationForm() {
                     // between name and price — the one added screen, same craft, no
                     // per-person/unit step (a treatment is always flat). 'both' keeps
                     // its unit step; everything else is name → price → desc → photo.
-                    // The mixed shape asks HOW IT IS BOOKED after the name (a shared
-                    // class vs one-at-a-time), and only a one-at-a-time item (unit
-                    // 'flat') then gets the duration screen; a class skips it and
-                    // uses the provider length.
-                    const mixedTimed = mixedShape && String(it && it.unit) === 'flat';
-                    const stepKinds: Array<'name' | 'booked' | 'duration' | 'price' | 'unit' | 'desc' | 'photo'> = perItemShape
+                    // A come-to-me mixed provider is asked HOW IT IS BOOKED after the
+                    // name (a shared class vs a private session), and only a private
+                    // session (unit 'flat') then gets the duration screen; a class
+                    // skips it and uses the provider length. Massage and a TRAVELLING
+                    // mixed provider skip the question entirely — every item is a
+                    // private session, so it goes straight to the duration screen.
+                    const mixedTimed = mixedChoice && String(it && it.unit) === 'flat';
+                    const stepKinds: Array<'name' | 'booked' | 'duration' | 'price' | 'unit' | 'desc' | 'photo'> = forcedOneToOne
                         ? ['name', 'duration', 'price', 'desc', 'photo']
-                        : mixedShape
+                        : mixedChoice
                             ? (mixedTimed
                                 ? ['name', 'booked', 'duration', 'price', 'desc', 'photo']
                                 : ['name', 'booked', 'price', 'desc', 'photo'])

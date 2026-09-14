@@ -228,13 +228,17 @@ export const GUEST_SCREEN_COPY = {
     // is SELLING, not the booking mechanic. One set of words serves all three — a
     // yoga class / pottery class / painting class read as "a shared class"; a 1:1
     // yoga session, private pottery tuition or private painting session all read
-    // as "a private session". The shared hint describes the CLASS (one time, one
-    // length), not the length field on an earlier screen.
+    // as "a private session". The distinction is EXCLUSIVITY (can anyone else book
+    // that time), not head count: a private session may be one guest or a whole
+    // cottage of six, as long as it's one booking that closes the time. The shared
+    // hint describes the CLASS (one time, one length), not a field on an earlier
+    // screen. Only a come-to-me provider is asked this — a traveller's session is
+    // exclusive by definition.
     menuBookedTitle: 'How is it booked?',
     menuBookedSharedLabel: 'A shared class',
     menuBookedSharedHint: 'Several guests book the same time, at one fixed length.',
     menuBookedPrivateLabel: 'A private session',
-    menuBookedPrivateHint: 'You see one guest at a time, and set the length for each session.',
+    menuBookedPrivateHint: 'One group books the whole session, closing that time to everyone else. You set the length.',
     // Shown beside the greyed Next on the slot price screen when 'offer both' is
     // missing one side, so the reason is never left unsaid. The no-price-at-all
     // case falls to menuRequiredGate.
