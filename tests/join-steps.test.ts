@@ -602,11 +602,19 @@ test('a cake maker (made to order) gets the years and expertise screens too', ()
 //     g_slot_min, before g_menu.
 // `expertise` is true for every slot category except the sauna, which skips the
 // years and expertise screens.
-const slotFlow = (opts: { fork?: boolean; perPerson?: boolean; expertise?: boolean } = {}) => {
+const slotFlow = (opts: { fork?: boolean; perPerson?: boolean; expertise?: boolean; perItemDuration?: boolean } = {}) => {
     const keys = ['g_verify', 'trade', 'g_subtype'];
     if (opts.expertise !== false) keys.push('g_you', 'g_creds');
     if (opts.fork) keys.push('g_slot_where');
-    keys.push('g_area', 'g_slot_length', 'g_slot_hours', 'g_photos', 'g_slot_basis', 'g_capacity');
+    keys.push('g_area');
+    // The one-at-a-time shape (massage) asks length PER TREATMENT in the pricing
+    // sub-flow, so it drops the single provider-length screen — but keeps weekly
+    // hours like every slot.
+    if (!opts.perItemDuration) keys.push('g_slot_length');
+    keys.push('g_slot_hours', 'g_photos');
+    // …and drops the pricing basis and the capacity too, both fixed for it (a
+    // treatment is a whole-session price for one person).
+    if (!opts.perItemDuration) keys.push('g_slot_basis', 'g_capacity');
     if (opts.perPerson) keys.push('g_slot_min');
     keys.push('g_menu', 'g_expect', 'finish');
     return keys;
@@ -631,8 +639,18 @@ test('the come-to-me / travel fork is asked only for yoga, massage and painting'
     for (const cat of ['yoga', 'massage', 'painting']) {
         const ctx = { group: 'wellness', category: cat, shape: 'slot' };
         assert.equal(stepApplies('g_slot_where', 'guest', ctx), true, cat + ' is asked the fork');
-        assert.deepEqual(gkeys(ctx), slotFlow({ fork: true }));
+        // Massage is the one-at-a-time shape: length is per treatment, so it drops
+        // the provider-length, basis and capacity screens; yoga and painting keep them.
+        assert.deepEqual(gkeys(ctx), slotFlow({ fork: true, perItemDuration: cat === 'massage' }));
     }
+    // Massage's dropped screens, stated: duration is asked per treatment (in the
+    // item sub-flow), the basis is fixed private and the capacity fixed at one, so
+    // none of the three is a screen — but weekly hours still are.
+    const massage = { group: 'wellness', category: 'massage', shape: 'slot' };
+    assert.equal(stepApplies('g_slot_length', 'guest', massage), false, 'massage asks duration per treatment, not a provider length');
+    assert.equal(stepApplies('g_slot_basis', 'guest', massage), false, 'massage is fixed private, not asked');
+    assert.equal(stepApplies('g_capacity', 'guest', massage), false, 'massage is one at a time, not asked');
+    assert.equal(stepApplies('g_slot_hours', 'guest', massage), true, 'massage still sets weekly hours');
     for (const cat of ['tastings', 'cooking', 'sauna', 'pottery', 'workshops', 'outdoors', 'water']) {
         const ctx = { group: 'x', category: cat, shape: 'slot' };
         assert.equal(stepApplies('g_slot_where', 'guest', ctx), false, cat + ' defaults, no fork');

@@ -14,7 +14,14 @@ import { shiftDayKey } from '@/lib/dayKey';
 
 export interface MpItem {
     id: string; name: string; description: string | null; price: number; unit: string; image: string | null;
+    // The per-treatment length in minutes (massage: 30/45/60/90), or null for a
+    // single-length category (sauna, a class), where the provider's slot length is
+    // used. When any item carries one, the times a guest sees depend on the item.
+    duration_minutes: number | null;
 }
+// A booked session's interval on the provider's day, for greying overlapping
+// starts client-side: the same rule the claim and the DB exclusion enforce.
+export interface MpBookedBlock { date: string; time: string; duration_minutes: number | null; turnaround_minutes: number | null; }
 export interface MpSession {
     date: string; time: string;
     // The established slot_sessions row for this time, or null if nobody has
@@ -67,6 +74,20 @@ export interface MpProvider {
     // per-person option on a FRESH time (no row yet) via the shared helper. 0 when
     // not a slot or unset.
     slotCapacity: number;
+    // The per-treatment shape: true when any item carries its own duration, so the
+    // panel generates the grid from the chosen treatment's length rather than one
+    // provider number. False for sauna/class/tasting — the fixed-grid shape.
+    perItemDurations: boolean;
+    // The provider's reset gap, folded into the blocking interval (not the shown
+    // duration). 0 for everyone who hasn't set one.
+    turnaround: number;
+    // The weekly template and blocked dates, so the panel can generate the chosen
+    // treatment's grid client-side (the same generateSessions the server uses).
+    slotAvailability: Array<{ day_of_week: number; open_time: string; close_time: string }>;
+    slotBlocks: string[];
+    // Every booked session's interval, so the panel greys any start that would
+    // overlap one — the guest never sees, or picks, a time the claim would refuse.
+    bookedBlocks: MpBookedBlock[];
     cancellation_window_hours: number;
     // Made-to-order only: notice needed, in days — gates the earliest bookable date.
     lead_time_days: number;
@@ -123,7 +144,7 @@ export async function loadMarketplace(
 
     const { data: rows } = await admin
         .from('service_providers')
-        .select('id, owner_id, business_name, provider_name, based_line, headshot, trade, custom_label, stripe_mcc, description, status, stripe_payouts_enabled, shape, slot_length_minutes, slot_capacity, slot_min_people, cancellation_window_hours, lead_time_days, dietary_note, guest_details')
+        .select('id, owner_id, business_name, provider_name, based_line, headshot, trade, custom_label, stripe_mcc, description, status, stripe_payouts_enabled, shape, slot_length_minutes, slot_turnaround_minutes, slot_capacity, slot_min_people, cancellation_window_hours, lead_time_days, dietary_note, guest_details')
         .eq('audience', 'guest').eq('status', 'approved').eq('stripe_payouts_enabled', true);
 
     const ids = (rows || []).map((r: any) => r.id);
@@ -140,12 +161,12 @@ export async function loadMarketplace(
 
     const [{ data: areas }, { data: itemRows }, { data: avail }, { data: blocks }, { data: sessRows }, { data: orderRows }] = await Promise.all([
         admin.from('service_areas').select('provider_id, label').in('provider_id', ids),
-        admin.from('service_provider_items').select('id, provider_id, name, description, price, unit, image, sort_order, created_at')
+        admin.from('service_provider_items').select('id, provider_id, name, description, price, unit, image, sort_order, created_at, duration_minutes')
             .in('provider_id', ids).eq('active', true).gt('price', 0)
             .order('sort_order', { ascending: true }).order('created_at', { ascending: true }),
         admin.from('slot_availability').select('provider_id, day_of_week, open_time, close_time').in('provider_id', ids),
         admin.from('slot_blocks').select('provider_id, blocked_date').in('provider_id', ids),
-        admin.from('slot_sessions').select('provider_id, session_date, session_time, capacity, seats_taken, private').in('provider_id', ids),
+        admin.from('slot_sessions').select('provider_id, session_date, session_time, capacity, seats_taken, private, duration_minutes, turnaround_minutes').in('provider_id', ids),
         // Confirmed bookings taken, for the trust count. Only 'confirmed' counts:
         // a held request that was never answered, or one that was cancelled or
         // refunded, is not a booking someone completed with this provider.
@@ -175,8 +196,11 @@ export async function loadMarketplace(
         const items = (itemsBy[p.id] || []).map((it: any) => ({
             id: it.id, name: it.name, description: it.description, price: Number(it.price),
             unit: normaliseUnit(it.unit), image: it.image ? getImageUrl(it.image) : null,
+            duration_minutes: it.duration_minutes == null ? null : Number(it.duration_minutes),
         }));
         if (!items.length) continue;
+        const perItemDurations = items.some((it: MpItem) => it.duration_minutes != null && it.duration_minutes > 0);
+        const turnaround = Math.max(0, Number(p.slot_turnaround_minutes) || 0);
 
         const shape = shapeOf(p);
         let sessions: MpSession[] = [];
@@ -235,6 +259,22 @@ export async function loadMarketplace(
             // whose items[0] happens to be the flat one).
             minPeople: shape === 'slot' ? Math.max(1, Number(p.slot_min_people) || 1) : 1,
             slotCapacity: shape === 'slot' ? Math.max(0, Number(p.slot_capacity) || 0) : 0,
+            perItemDurations: shape === 'slot' ? perItemDurations : false,
+            turnaround: shape === 'slot' ? turnaround : 0,
+            slotAvailability: shape === 'slot'
+                ? (availBy[p.id] || []).map((a: any) => ({ day_of_week: a.day_of_week, open_time: a.open_time, close_time: a.close_time }))
+                : [],
+            slotBlocks: shape === 'slot' ? (blocksBy[p.id] || []).map((b: any) => b.blocked_date) : [],
+            bookedBlocks: shape === 'slot'
+                ? (sessBy[p.id] || [])
+                    .filter((s: any) => Number(s.seats_taken) > 0)
+                    .map((s: any) => ({
+                        date: s.session_date,
+                        time: String(s.session_time).slice(0, 5),
+                        duration_minutes: s.duration_minutes == null ? null : Number(s.duration_minutes),
+                        turnaround_minutes: s.turnaround_minutes == null ? null : Number(s.turnaround_minutes),
+                    }))
+                : [],
             cancellation_window_hours: Number(p.cancellation_window_hours) || 48,
             lead_time_days: Number(p.lead_time_days) || 0,
             hero: (items.find((i: MpItem) => i.image) || {}).image || null,

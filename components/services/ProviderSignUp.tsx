@@ -77,6 +77,7 @@ import {
     guestQualificationsRequired,
     slotAsksWhereFork,
     slotIsMeetingPoint,
+    slotDurationPerItem,
     defaultSlotFulfilment,
     collectionFieldsForWrite,
     DIETARY_OPTIONS,
@@ -539,6 +540,10 @@ function ApplicationForm() {
         unit: string;
         // The item's own photo, a storage path. The gallery is per item now.
         image: string | null;
+        // The one-at-a-time shape (massage) only: this treatment's length in
+        // minutes, as a string like the price. Empty/absent for every other
+        // category, where the session length is the provider's single number.
+        duration?: string;
     }>>([]);
     // Which item row is uploading a photo, by index, so only that row shows a
     // spinner rather than all of them.
@@ -909,7 +914,7 @@ function ApplicationForm() {
                     // The menu, if they have one. Loaded in the order they set.
                     const { data: itemRows } = await supabase
                         .from('service_provider_items')
-                        .select('id, name, description, price, unit, image, sort_order, created_at')
+                        .select('id, name, description, price, unit, image, sort_order, created_at, duration_minutes')
                         .eq('provider_id', existing.id)
                         .order('sort_order', { ascending: true })
                         .order('created_at', { ascending: true });
@@ -921,6 +926,7 @@ function ApplicationForm() {
                             price: r.price === null || r.price === undefined ? '' : String(r.price),
                             unit: r.unit || 'flat',
                             image: r.image || null,
+                            duration: r.duration_minutes === null || r.duration_minutes === undefined ? '' : String(r.duration_minutes),
                         })));
                     }
 
@@ -2703,6 +2709,7 @@ function ApplicationForm() {
         if (audienceForTrade(trade) !== 'guest') return {};
         const cat = guestCategoryByKey(guestCategory);
         const isSlot = shape === 'slot';
+        const slotPerItem = isSlot && slotDurationPerItem(guestCategory);
         const isMTO = shape === 'made_to_order';
         const num = (v: string, min: number) => {
             const n = Math.floor(Number(String(v || '').trim()));
@@ -2750,12 +2757,16 @@ function ApplicationForm() {
             shape: shape || 'made_to_order',
             exclusive_per_date: shape === 'comes_to_you',
             lead_time_days: isMTO ? (num(leadTimeDays, 0) ?? 0) : 0,
-            slot_length_minutes: isSlot ? num(slotLength, 15) : null,
+            // The one-at-a-time shape (massage) has no single provider length —
+            // each treatment carries its own — so it stores none, and capacity is
+            // fixed at 1 (one person at a time, never asked). Every other slot
+            // keeps its provider length and its asked capacity.
+            slot_length_minutes: (isSlot && !slotPerItem) ? num(slotLength, 15) : null,
             // Max guests → slot_capacity for a slot (drives sellable seats for a
             // shared/per-person slot via sessionCapacity; a private/flat slot
             // records it but still sells whole). Written from the one maxGuests
             // state, so it can never disagree with the jsonb copy below.
-            slot_capacity: isSlot ? (num(maxGuests, 1) ?? 1) : null,
+            slot_capacity: slotPerItem ? 1 : (isSlot ? (num(maxGuests, 1) ?? 1) : null),
             // The per-person minimum — a real number only for a shared/per-person
             // slot; a private/flat slot is one booking whatever the head count, so
             // it stores 1 (no minimum). Floored at 1 to satisfy the column's
@@ -3496,6 +3507,11 @@ function ApplicationForm() {
             // for a shared table. private/shared derive it from the offering; 'both'
             // has the provider choose it per item on the unit step. Either way a
             // slot row is only ever flat or person, normalised here.
+            // The one-at-a-time shape (massage): each treatment carries its own
+            // length. NULL for every other category (the provider's single length
+            // is used). This is what makes the times a guest sees depend on the
+            // treatment, and what the interval-overlap claim reads.
+            const slotPerItem = shape === 'slot' && slotDurationPerItem(guestCategory);
             const valid = items
                 .map((it, i) => ({
                     id: it.id,
@@ -3505,16 +3521,28 @@ function ApplicationForm() {
                     price: String(it.price || '').trim() !== '' ? Number(it.price) : null,
                     unit: shape === 'slot' ? (String(it.unit) === 'person' ? 'person' : 'flat') : String(it.unit || 'flat'),
                     image: it.image || null,
+                    duration_minutes: slotPerItem && Number(it.duration) > 0 ? Math.round(Number(it.duration)) : null,
                     sort_order: i,
                     active: true,
                 }))
                 .filter((r) => r.name && r.price !== null && Number(r.price) > 0);
 
+            // ALL-OR-NOTHING for the per-treatment shape: a massage treatment
+            // without a length must never reach the database, or it would fall back
+            // to the provider length and could overlap a timed treatment — the
+            // double-booking again. The duration step is mandatory in the sub-flow,
+            // so this only ever fires as a guard; when it does, the untimed row is
+            // not written and the provider is told, rather than silently accepted.
+            const writable = slotPerItem ? valid.filter((r) => r.duration_minutes != null) : valid;
+            if (slotPerItem && writable.length !== valid.length) {
+                savedButFailed.push('a length on every treatment');
+            }
+
             // Delete only the rows that are in the database but no longer on the
             // form — the ones the provider took off the menu.
             const { data: existingItems } = await supabase
                 .from('service_provider_items').select('id').eq('provider_id', id);
-            const keep = new Set(valid.map((r) => r.id).filter(Boolean));
+            const keep = new Set(writable.map((r) => r.id).filter(Boolean));
             const removed = (existingItems || [])
                 .map((r: any) => r.id)
                 .filter((x: string) => !keep.has(x));
@@ -3525,8 +3553,8 @@ function ApplicationForm() {
             // Edited rows keep their id (update in place); new rows have none
             // (insert, letting the id default). Split so each request carries a
             // uniform set of columns.
-            const toUpdate = valid.filter((r) => r.id);
-            const toInsert = valid.filter((r) => !r.id).map(({ id: _omit, ...rest }) => rest);
+            const toUpdate = writable.filter((r) => r.id);
+            const toInsert = writable.filter((r) => !r.id).map(({ id: _omit, ...rest }) => rest);
             if (toUpdate.length) {
                 const { error } = await supabase.from('service_provider_items').upsert(toUpdate);
                 if (error) { console.error('[provider-save] items upsert failed', error); savedButFailed.push('your prices'); }
@@ -4579,22 +4607,32 @@ function ApplicationForm() {
                     // single row with no add and its price unit read off the
                     // private/shared answer rather than picked here.
                     const isSlot = shape === 'slot';
+                    // The one-at-a-time shape (massage): a repeating list of
+                    // treatments, each with its OWN length, priced whole for one
+                    // person. It is neither the single-offering slot (sauna) nor a
+                    // 'both' provider — a third presentation: the menu hub's
+                    // repeating list, plus a duration step in the item sub-flow.
+                    const perItemShape = isSlot && slotDurationPerItem(guestCategory);
                     // 'offer both' is the only slot where the unit is ambiguous, so
                     // it alone lets the provider add items and choose each one's unit
                     // (session vs person) as a step in the sub-flow. private/shared
                     // stay a single item whose unit is derived, never asked.
                     const slotBoth = isSlot && slotOffer === 'both';
-                    const blank = { id: undefined as string | undefined, name: '', description: '', price: '', unit: 'flat', image: null as string | null };
+                    const blank = { id: undefined as string | undefined, name: '', description: '', price: '', unit: 'flat', image: null as string | null, duration: '' };
 
                     const UNIT_WORD: Record<string, string> = GUEST_SCREEN_COPY.priceUnitLabels;
                     const unitWord = (r: { unit: string }) => isSlot
                         ? (String(r.unit) === 'person' ? 'per person' : 'for the session')
                         : (UNIT_WORD[r.unit || 'flat'] || '');
-                    const rowSummary = (r: { price: string; unit: string }) => {
+                    const rowSummary = (r: { price: string; unit: string; duration?: string }) => {
                         const p = String(r.price || '').trim();
-                        return p !== '' && Number(p) > 0
-                            ? '£' + p + (unitWord(r) ? ' · ' + unitWord(r) : '')
-                            : GUEST_SCREEN_COPY.menuRowPrompt;
+                        if (!(p !== '' && Number(p) > 0)) return GUEST_SCREEN_COPY.menuRowPrompt;
+                        // For a treatment, the length is the useful qualifier ("£60 ·
+                        // 60 min"), not a per-person/session unit that never varies.
+                        const qualifier = perItemShape
+                            ? (Number(r.duration) > 0 ? String(Math.round(Number(r.duration))) + ' min' : '')
+                            : unitWord(r);
+                        return '£' + p + (qualifier ? ' · ' + qualifier : '');
                     };
                     // An item is done only when it has BOTH a name and a real price —
                     // the tick has to mean that. A seeded 'both' row ('Private hire',
@@ -4627,7 +4665,7 @@ function ApplicationForm() {
                     const extraRows = items.map((r, i) => ({ r, i })).filter(({ i }) => !usedIdx.has(i));
 
                     const rows = items;
-                    const setField = (i: number, field: 'name' | 'description' | 'price' | 'unit', val: string) =>
+                    const setField = (i: number, field: 'name' | 'description' | 'price' | 'unit' | 'duration', val: string) =>
                         setItems((prev) => prev.map((r, j) => (j === i ? { ...r, [field]: val } : r)));
 
                     const openEdit = (i: number) => { setMenuIndex(i); setUnitLocked(false); setMenuStep(0); setPayoutOpen(false); };
@@ -4639,7 +4677,7 @@ function ApplicationForm() {
                     // dropped on cancel and kept OUT of the draft until it has a price
                     // (see the draft filter) — the suggestion itself persists nothing.
                     const openGuidance = (unit: string) => {
-                        setItems((prev) => [...prev, { id: undefined as string | undefined, name: '', description: '', price: '', unit, image: null as string | null }]);
+                        setItems((prev) => [...prev, { id: undefined as string | undefined, name: '', description: '', price: '', unit, image: null as string | null, duration: '' }]);
                         setMenuIndex(items.length); setUnitLocked(true); setMenuStep(0); setPayoutOpen(false);
                     };
                     // On close, a slot drops any item with no real price — so a
@@ -4660,11 +4698,18 @@ function ApplicationForm() {
                     // unit-choice screen between price and description — but only when
                     // the unit is not already decided by the shape the host opened
                     // (unitLocked). Steps are addressed by KIND, not a bare index.
-                    const stepKinds: Array<'name' | 'price' | 'unit' | 'desc' | 'photo'> = (slotBoth && !unitLocked)
-                        ? ['name', 'price', 'unit', 'desc', 'photo']
-                        : ['name', 'price', 'desc', 'photo'];
+                    // One question a screen. The per-treatment shape inserts DURATION
+                    // between name and price — the one added screen, same craft, no
+                    // per-person/unit step (a treatment is always flat). 'both' keeps
+                    // its unit step; everything else is name → price → desc → photo.
+                    const stepKinds: Array<'name' | 'duration' | 'price' | 'unit' | 'desc' | 'photo'> = perItemShape
+                        ? ['name', 'duration', 'price', 'desc', 'photo']
+                        : (slotBoth && !unitLocked)
+                            ? ['name', 'price', 'unit', 'desc', 'photo']
+                            : ['name', 'price', 'desc', 'photo'];
                     const LAST = stepKinds.length - 1;
                     const stepKind = stepKinds[menuStep] ?? 'name';
+                    const durationFilled = !!it && (Number(it.duration) || 0) > 0;
 
                     // The borderless fields shared with the expertise hub sub-flow.
                     const fieldWrap = 'relative border-b border-slate-200 pb-2 transition-colors focus-within:border-slate-400';
@@ -4690,7 +4735,7 @@ function ApplicationForm() {
                             </div>
 
                             <div className="mt-8 space-y-1">
-                                {isSlot ? (
+                                {(isSlot && !perItemShape) ? (
                                     // A slot's shapes as named rows: a priced one shows
                                     // the host's real item; an unfilled one is guidance
                                     // (the shape's name + what it means) that persists
@@ -4764,16 +4809,17 @@ function ApplicationForm() {
                                     open
                                     title={
                                         stepKind === 'name' ? (isSlot ? GUEST_SCREEN_COPY.menuNameTitleSlot : GUEST_SCREEN_COPY.menuNameTitle)
-                                            : stepKind === 'price' ? GUEST_SCREEN_COPY.menuPriceTitle
-                                                : stepKind === 'unit' ? GUEST_SCREEN_COPY.menuSlotUnitTitle
-                                                    : stepKind === 'desc' ? GUEST_SCREEN_COPY.menuDescTitle
-                                                        : GUEST_SCREEN_COPY.menuPhotoTitle
+                                            : stepKind === 'duration' ? 'How long is it?'
+                                                : stepKind === 'price' ? GUEST_SCREEN_COPY.menuPriceTitle
+                                                    : stepKind === 'unit' ? GUEST_SCREEN_COPY.menuSlotUnitTitle
+                                                        : stepKind === 'desc' ? GUEST_SCREEN_COPY.menuDescTitle
+                                                            : GUEST_SCREEN_COPY.menuPhotoTitle
                                     }
                                     onClose={closeItem}
                                     onBack={menuStep > 0 ? () => setMenuStep((s) => s - 1) : undefined}
-                                    onRemove={(!isSlot || slotBoth) ? () => removeItem(menuIndex) : undefined}
+                                    onRemove={(!isSlot || slotBoth || perItemShape) ? () => removeItem(menuIndex) : undefined}
                                     saveLabel={menuStep === LAST ? GUEST_SCREEN_COPY.save : GUEST_SCREEN_COPY.menuNext}
-                                    saveDisabled={(stepKind === 'name' && !nameFilled) || (stepKind === 'price' && !priceFilled)}
+                                    saveDisabled={(stepKind === 'name' && !nameFilled) || (stepKind === 'duration' && !durationFilled) || (stepKind === 'price' && !priceFilled)}
                                     onSave={menuStep === LAST ? closeItem : () => setMenuStep((s) => s + 1)}
                                     note={menuStep === LAST ? GUEST_SCREEN_COPY.menuPhotoPrompt : undefined}
                                 >
@@ -4785,6 +4831,22 @@ function ApplicationForm() {
                                                 placeholder={GUEST_SCREEN_COPY.menuNameExamples[guestCategory] ?? GUEST_SCREEN_COPY.menuNameExampleFallback}
                                                 className={bigInput}
                                             />
+                                        </div>
+                                    )}
+                                    {stepKind === 'duration' && (
+                                        // The one added screen for the per-treatment
+                                        // shape — the same NumberStepper the single
+                                        // provider-length used, now per treatment, in
+                                        // 15-minute steps. The guest sees this length;
+                                        // the day reserves it (plus any reset gap).
+                                        <div className="flex flex-col items-center">
+                                            <NumberStepper
+                                                value={it.duration || ''}
+                                                onChange={(v: string) => setField(menuIndex, 'duration', v)}
+                                                min={15} max={480} step={15} suggestion={60}
+                                                size="lg" solid suffix=" min"
+                                            />
+                                            <p className="mt-4 text-center text-sm text-slate-500">How long a guest books this treatment for.</p>
                                         </div>
                                     )}
                                     {stepKind === 'price' && (

@@ -11,6 +11,7 @@ import {
 import {
     isSlot, sessionCapacity, hasSlotCapacity, generateSessions, SLOT_HOLD_MINUTES,
     bookingIsPrivate, slotClaimKind, optionAvailability,
+    resolvedDuration, overlapsBooked, minutesOfDay,
 } from '@/lib/serviceSlots';
 import { dateFromKey, dateKey } from '@/lib/pricing';
 
@@ -70,7 +71,7 @@ export async function POST(request: Request) {
 
         const { data: provider } = await admin
             .from('service_providers')
-            .select('id, business_name, trade, shape, status, stripe_account_id, stripe_payouts_enabled, plan, commission_rate, slot_length_minutes, slot_capacity, slot_min_people, cancellation_window_hours')
+            .select('id, business_name, trade, shape, status, stripe_account_id, stripe_payouts_enabled, plan, commission_rate, slot_length_minutes, slot_turnaround_minutes, slot_capacity, slot_min_people, cancellation_window_hours')
             .eq('id', providerId)
             .maybeSingle();
 
@@ -86,7 +87,7 @@ export async function POST(request: Request) {
         // private/shared — derives from this row, never from the browser.
         const itemQuery = admin
             .from('service_provider_items')
-            .select('id, name, description, price, unit, active')
+            .select('id, name, description, price, unit, active, duration_minutes')
             .eq('provider_id', provider.id)
             .eq('active', true)
             .gt('price', 0);
@@ -107,15 +108,29 @@ export async function POST(request: Request) {
             return NextResponse.json({ ok: false, error: 'Pick a time during your stay.' }, { status: 400 });
         }
 
+        // The length THIS booking runs is the chosen treatment's own duration when
+        // it has one (massage: 30/45/60/90), else the provider's single length
+        // (sauna, a class). The reset gap is the provider's, folded into the block
+        // the day reserves but never shown to the guest. Both come off the trusted
+        // server rows, never the browser.
+        const durationMinutes = resolvedDuration(item, provider);
+        const turnaround = Math.max(0, Number(provider.slot_turnaround_minutes) || 0);
+
         const [{ data: avail }, { data: blocks }] = await Promise.all([
             admin.from('slot_availability').select('day_of_week, open_time, close_time').eq('provider_id', provider.id),
             admin.from('slot_blocks').select('blocked_date').eq('provider_id', provider.id),
         ]);
+        // The grid THIS treatment is offered on: starts step by duration + turnaround
+        // (so consecutive bookings never overlap once the reset gap is counted), and a
+        // start only needs room for the treatment itself before close. For a fixed-grid
+        // provider (no per-item duration, turnaround 0) this is the identical grid as
+        // before — step and fit both equal slot_length_minutes.
         const legit = generateSessions(
             (avail || []).map((a: any) => ({ day_of_week: a.day_of_week, open_time: a.open_time, close_time: a.close_time })),
             (blocks || []).map((b: any) => b.blocked_date),
-            Number(provider.slot_length_minutes) || 60,
+            durationMinutes + turnaround,
             sessionDate, sessionDate,
+            durationMinutes,
         ).some((s) => s.time === sessionTime);
         if (!legit) {
             return NextResponse.json({ ok: false, error: 'That time isn’t available. Pick another.' }, { status: 400 });
@@ -168,6 +183,27 @@ export async function POST(request: Request) {
             );
         }
 
+        // ---- refuse an overlapping interval, before Stripe -----------------
+        // The COURTESY half of the overlap guard. The authority is the database
+        // (slot_sessions_no_overlap); this check exists so a guest whose grid is a
+        // moment stale gets the same friendly "that time just filled up" WITHOUT a
+        // pointless Checkout being spun up, and so this is the same rule the panel
+        // greyed times with. It reads the provider's booked sessions on this date
+        // and refuses if THIS booking's block overlaps a DIFFERENT one. A session
+        // at the same start-time is not an overlap — it is the one session this
+        // booking joins or establishes (the seat CAS below handles it) — so those
+        // are filtered out by start minute (robust to HH:MM vs HH:MM:SS). If a race
+        // slips a new overlap in after this read, the establishing CAS below hits
+        // the exclusion constraint and returns the same 409.
+        const startMin = minutesOfDay(sessionTime);
+        const { data: bookedRows } = await admin.from('slot_sessions')
+            .select('session_time, duration_minutes, turnaround_minutes')
+            .eq('provider_id', provider.id).eq('session_date', sessionDate).gt('seats_taken', 0);
+        const otherBooked = (bookedRows || []).filter((r: any) => minutesOfDay(r.session_time) !== startMin);
+        if (overlapsBooked(sessionTime, durationMinutes, turnaround, otherBooked)) {
+            return NextResponse.json({ ok: false, error: 'That time just filled up. Pick another.' }, { status: 409 });
+        }
+
         // ---- claim the seat, atomically -----------------------------------
         // Materialise the session row (idempotent on the unique key), then take
         // seats by compare-and-swap. A lost swap means someone else moved it
@@ -208,14 +244,28 @@ export async function POST(request: Request) {
             }
 
             if (kind === 'establish') {
-                // Empty session: this booking sets the mode AND the capacity, on a
-                // CAS guarded by seats_taken = 0. Of two bookings racing on a fresh
-                // (or reopened) time, exactly one wins; the loser retries, now sees
-                // the mode it set, and either joins it or clashes.
-                const { data: swapped } = await admin.from('slot_sessions')
-                    .update({ seats_taken: quantity, private: isPrivate, capacity })
+                // Empty session: this booking sets the mode, the capacity AND the
+                // length it runs — duration_minutes and the frozen turnaround, from
+                // which the database computes the block interval this session holds.
+                // The CAS is guarded by seats_taken = 0. Of two bookings racing on a
+                // fresh (or reopened) time, exactly one wins; the loser retries, now
+                // sees the mode it set, and either joins it or clashes.
+                //
+                // As seats go 0 → quantity this row enters the no-overlap exclusion
+                // constraint. If it overlaps a session booked since our courtesy
+                // check above (the race the database is the authority on), the
+                // UPDATE raises exclusion_violation (23P01): the take fails, nothing
+                // is charged, and the guest gets the same "that time just filled up".
+                const { data: swapped, error: swapErr } = await admin.from('slot_sessions')
+                    .update({ seats_taken: quantity, private: isPrivate, capacity, duration_minutes: durationMinutes, turnaround_minutes: turnaround })
                     .eq('id', sess.id).eq('seats_taken', 0)   // CAS guard: still empty
                     .select('id');
+                if (swapErr) {
+                    if ((swapErr as any).code === '23P01') {
+                        return NextResponse.json({ ok: false, error: 'That time just filled up. Pick another.' }, { status: 409 });
+                    }
+                    break;   // any other write error: fall through to the generic 409 below
+                }
                 if (swapped && swapped.length) claimed = true;
                 continue;
             }
@@ -273,6 +323,10 @@ export async function POST(request: Request) {
                 slot_session_id: sessionRow ? sessionRow.id : null,
                 service_date: sessionDate,
                 service_time: sessionTime,
+                // Freeze the treatment length at purchase, beside item_name/price:
+                // what the guest bought and the provider is turning up for must not
+                // change if the menu's duration is edited later.
+                duration_minutes: durationMinutes,
                 guests: booking.guests ?? null,
                 quantity,
                 unit_price: unitPrice,

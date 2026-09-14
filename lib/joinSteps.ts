@@ -30,6 +30,7 @@ import {
     audienceForTrade,
     guestAsksExpertise,
     slotAsksWhereFork,
+    slotDurationPerItem,
 } from '@/lib/serviceProviders';
 import { GUEST_SCREEN_COPY } from '@/lib/strings';
 
@@ -242,10 +243,14 @@ export function stepApplies(step: StepKey, trade: string, ctx?: StepContext): bo
             // 'other' has no shape, so both skip it.
             // The private/shared pricing basis — slot only. A made-to-order
             // product and a traveller price per item/enquiry, not per session.
+            // The private/shared basis and the capacity are BOTH fixed for the
+            // one-at-a-time shape — a treatment is a whole-session price for one
+            // person — so neither is asked; they follow from the shape (see
+            // slotDurationPerItem). Every other slot still asks.
             case 'g_slot_basis':
-                return shape === 'slot';
+                return shape === 'slot' && !slotDurationPerItem(ctx.category);
             case 'g_capacity':
-                return shape === 'comes_to_you' || shape === 'slot';
+                return shape === 'comes_to_you' || (shape === 'slot' && !slotDurationPerItem(ctx.category));
             // The per-person minimum — a slot that is priced per person (the
             // shared answer). A private/whole-group slot is one booking whatever
             // the head count, so it has no minimum-people rule and no screen.
@@ -271,7 +276,11 @@ export function stepApplies(step: StepKey, trade: string, ctx?: StepContext): bo
             case 'g_area':
                 return true;
             // The When section — slots only. Session length, then weekly hours.
+            // The one-at-a-time shape asks length PER TREATMENT (in the item
+            // sub-flow), so it skips the single provider-length screen but still
+            // sets weekly hours.
             case 'g_slot_length':
+                return shape === 'slot' && !slotDurationPerItem(ctx.category);
             case 'g_slot_hours':
                 return shape === 'slot';
             default:

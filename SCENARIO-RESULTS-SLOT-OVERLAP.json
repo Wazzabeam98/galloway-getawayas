@@ -1,0 +1,154 @@
+{
+  "ranAt": "2026-09-14T09:03:57.665Z",
+  "target": "http://localhost:3190",
+  "account": "acct_1UFVhiAQQUL0pK8w",
+  "passed": 5,
+  "failed": 0,
+  "scenarios": [
+    {
+      "number": "1",
+      "title": "A long booking, then a short one that overlaps it — refused (409) before Stripe, first booking untouched",
+      "checks": [
+        {
+          "desc": "the 90-min treatment is booked, paid and confirmed",
+          "ok": true,
+          "detail": "confirmed"
+        },
+        {
+          "desc": "its session froze duration 90, turnaround 0, 1 seat",
+          "ok": true,
+          "detail": "dur=90 turn=0 seats=1"
+        },
+        {
+          "desc": "the frozen order carries duration 90",
+          "ok": true,
+          "detail": "90"
+        },
+        {
+          "desc": "the overlapping 30-min booking is REFUSED with 409",
+          "ok": true,
+          "detail": "HTTP 409"
+        },
+        {
+          "desc": "the guest sees \"that time just filled up\"",
+          "ok": true,
+          "detail": "That time just filled up. Pick another."
+        },
+        {
+          "desc": "no order was created for the refused attempt (no Stripe touched)",
+          "ok": true,
+          "detail": "orders at 10:00"
+        },
+        {
+          "desc": "the first booking is untouched (still 1 seat, dur 90)",
+          "ok": true,
+          "detail": "seats=1"
+        }
+      ],
+      "status": "passed"
+    },
+    {
+      "number": "2",
+      "title": "Two non-overlapping 60-min treatments, back-to-back, both succeed",
+      "checks": [
+        {
+          "desc": "the 10:00 booking is confirmed",
+          "ok": true,
+          "detail": "confirmed"
+        },
+        {
+          "desc": "the 11:00 booking is confirmed",
+          "ok": true,
+          "detail": "confirmed"
+        },
+        {
+          "desc": "both sessions exist, each with 1 seat and duration 60",
+          "ok": true,
+          "detail": "{\"s1\":1,\"s2\":1}"
+        }
+      ],
+      "status": "passed"
+    },
+    {
+      "number": "3",
+      "title": "A shared table still takes several bookings on the same time; the interval guard is inert for it",
+      "checks": [
+        {
+          "desc": "both shared bookings on the same time confirmed",
+          "ok": true,
+          "detail": "confirmed/confirmed"
+        },
+        {
+          "desc": "the one session holds 3 seats (several bookings, same time)",
+          "ok": true,
+          "detail": "seats=3 private=false"
+        },
+        {
+          "desc": "an adjacent group time books fine (no false overlap)",
+          "ok": true,
+          "detail": "confirmed"
+        }
+      ],
+      "status": "passed"
+    },
+    {
+      "number": "4",
+      "title": "The same pair — a 60 at 09:00 then a 30 at 10:00 — both succeed with no reset, but the 30 is refused once a 30-minute reset is counted",
+      "checks": [
+        {
+          "desc": "with reset 0, the 60 then the back-to-back 30 both succeed",
+          "ok": true,
+          "detail": "HTTP 200 {\"ok\":true,\"url\":\"https://checkout.stripe.com/c/pay/cs_test_a1X9ZN8AhQKDxN1VYu5W"
+        },
+        {
+          "desc": "the 60-min session froze the 30-minute reset",
+          "ok": true,
+          "detail": "dur=60 turn=30"
+        },
+        {
+          "desc": "the SAME 30 at 10:00 is now REFUSED (409) — the reset gap alone causes it",
+          "ok": true,
+          "detail": "HTTP 409 {\"ok\":false,\"error\":\"That time just filled up. Pick another.\"}"
+        },
+        {
+          "desc": "no order created for the refused attempt",
+          "ok": true,
+          "detail": "orders at 10:00"
+        },
+        {
+          "desc": "the earlier booking, frozen at reset 0, is untouched by the later change",
+          "ok": true,
+          "detail": "0"
+        }
+      ],
+      "status": "passed"
+    },
+    {
+      "number": "5",
+      "title": "A booked overlap written directly — the race the claim could let through — is refused by the exclusion constraint (23P01)",
+      "checks": [
+        {
+          "desc": "a 60-min booking holds the time",
+          "ok": true,
+          "detail": "confirmed"
+        },
+        {
+          "desc": "the overlapping booked row is REJECTED by the database",
+          "ok": true,
+          "detail": "insert unexpectedly succeeded"
+        },
+        {
+          "desc": "the rejection is the no-overlap exclusion constraint (23P01)",
+          "ok": true,
+          "detail": "POST /slot_sessions: {\"code\":\"23P01\",\"details\":\"Key (provider_id, session_date, block_minutes)=(c265c80a-882e-48ec-833a-"
+        },
+        {
+          "desc": "no overlapping session row exists after the refusal",
+          "ok": true,
+          "detail": "0 rows"
+        }
+      ],
+      "status": "passed"
+    }
+  ]
+}
