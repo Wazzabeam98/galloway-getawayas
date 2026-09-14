@@ -602,19 +602,21 @@ test('a cake maker (made to order) gets the years and expertise screens too', ()
 //     g_slot_min, before g_menu.
 // `expertise` is true for every slot category except the sauna, which skips the
 // years and expertise screens.
-const slotFlow = (opts: { fork?: boolean; perPerson?: boolean; expertise?: boolean; perItemDuration?: boolean } = {}) => {
+const slotFlow = (opts: { fork?: boolean; perPerson?: boolean; expertise?: boolean; perItemDuration?: boolean; mixed?: boolean } = {}) => {
     const keys = ['g_verify', 'trade', 'g_subtype'];
     if (opts.expertise !== false) keys.push('g_you', 'g_creds');
     if (opts.fork) keys.push('g_slot_where');
     keys.push('g_area');
     // The one-at-a-time shape (massage) asks length PER TREATMENT in the pricing
-    // sub-flow, so it drops the single provider-length screen — but keeps weekly
-    // hours like every slot.
+    // sub-flow, so it drops the single provider-length screen — the MIXED shape
+    // keeps it (its group classes need one). Both keep weekly hours.
     if (!opts.perItemDuration) keys.push('g_slot_length');
     keys.push('g_slot_hours', 'g_photos');
-    // …and drops the pricing basis and the capacity too, both fixed for it (a
-    // treatment is a whole-session price for one person).
-    if (!opts.perItemDuration) keys.push('g_slot_basis', 'g_capacity');
+    // massage drops the pricing BASIS and the capacity (both fixed for it). The
+    // mixed shape drops the basis only — each item picks shared-class vs
+    // one-at-a-time in its own sub-flow — but keeps the capacity for its classes.
+    if (!opts.perItemDuration && !opts.mixed) keys.push('g_slot_basis');
+    if (!opts.perItemDuration) keys.push('g_capacity');
     if (opts.perPerson) keys.push('g_slot_min');
     keys.push('g_menu', 'g_expect', 'finish');
     return keys;
@@ -623,14 +625,16 @@ const slotFlow = (opts: { fork?: boolean; perPerson?: boolean; expertise?: boole
 test('a potter (slot, fixed come-to-me) walks the location + When split, no fork', () => {
     // Pottery is a come-to-me slot with no fork (studio, one honest answer), and
     // it is asked its expertise. Its location is g_area (the address) and its
-    // When section is session length then weekly hours.
+    // When section is session length then weekly hours. It is now a MIXED shape
+    // (a group wheel class AND private tuition), so it keeps the length and the
+    // capacity but drops the provider basis — each item chooses shared vs 1:1.
     const ctx = { group: 'crafts', category: 'pottery', shape: 'slot' };
-    assert.deepEqual(gkeys(ctx), slotFlow());
+    assert.deepEqual(gkeys(ctx), slotFlow({ mixed: true }));
     assert.equal(stepApplies('g_slot_where', 'guest', ctx), false, 'a fixed come-to-me slot skips the where fork');
-    assert.equal(stepApplies('g_slot_length', 'guest', ctx), true, 'a slot sets a session length');
+    assert.equal(stepApplies('g_slot_length', 'guest', ctx), true, 'a mixed slot keeps a session length for its classes');
     assert.equal(stepApplies('g_slot_hours', 'guest', ctx), true, 'a slot sets weekly hours');
-    assert.equal(stepApplies('g_slot_basis', 'guest', ctx), true);
-    assert.equal(stepApplies('g_capacity', 'guest', ctx), true);
+    assert.equal(stepApplies('g_slot_basis', 'guest', ctx), false, 'a mixed slot decides shared-vs-1:1 per item, not a provider basis');
+    assert.equal(stepApplies('g_capacity', 'guest', ctx), true, 'a mixed slot keeps a capacity for its classes');
 });
 
 test('the come-to-me / travel fork is asked only for yoga, massage and painting', () => {
@@ -639,9 +643,10 @@ test('the come-to-me / travel fork is asked only for yoga, massage and painting'
     for (const cat of ['yoga', 'massage', 'painting']) {
         const ctx = { group: 'wellness', category: cat, shape: 'slot' };
         assert.equal(stepApplies('g_slot_where', 'guest', ctx), true, cat + ' is asked the fork');
-        // Massage is the one-at-a-time shape: length is per treatment, so it drops
-        // the provider-length, basis and capacity screens; yoga and painting keep them.
-        assert.deepEqual(gkeys(ctx), slotFlow({ fork: true, perItemDuration: cat === 'massage' }));
+        // Massage is pure one-at-a-time (per-treatment length, no basis/capacity).
+        // Yoga and painting are MIXED: they keep the length and capacity (for their
+        // group classes) but drop the basis (each item picks shared vs 1:1).
+        assert.deepEqual(gkeys(ctx), slotFlow({ fork: true, perItemDuration: cat === 'massage', mixed: cat !== 'massage' }));
     }
     // Massage's dropped screens, stated: duration is asked per treatment (in the
     // item sub-flow), the basis is fixed private and the capacity fixed at one, so
@@ -651,6 +656,12 @@ test('the come-to-me / travel fork is asked only for yoga, massage and painting'
     assert.equal(stepApplies('g_slot_basis', 'guest', massage), false, 'massage is fixed private, not asked');
     assert.equal(stepApplies('g_capacity', 'guest', massage), false, 'massage is one at a time, not asked');
     assert.equal(stepApplies('g_slot_hours', 'guest', massage), true, 'massage still sets weekly hours');
+    // A mixed category (yoga) keeps length + capacity but has no provider basis.
+    // (No fulfilment ⇒ treated as come-to-me for the screens it declares.)
+    const mixed = { group: 'wellness', category: 'yoga', shape: 'slot' };
+    assert.equal(stepApplies('g_slot_basis', 'guest', mixed), false, 'a mixed slot has no provider basis — each item chooses shared vs 1:1');
+    assert.equal(stepApplies('g_slot_length', 'guest', mixed), true, 'a mixed slot keeps a provider length for its classes');
+    assert.equal(stepApplies('g_capacity', 'guest', mixed), true, 'a mixed slot keeps a capacity for its classes');
     for (const cat of ['tastings', 'cooking', 'sauna', 'pottery', 'workshops', 'outdoors', 'water']) {
         const ctx = { group: 'x', category: cat, shape: 'slot' };
         assert.equal(stepApplies('g_slot_where', 'guest', ctx), false, cat + ' defaults, no fork');
@@ -660,10 +671,31 @@ test('the come-to-me / travel fork is asked only for yoga, massage and painting'
     assert.equal(stepApplies('g_slot_where', 'guest', { category: 'food_order', shape: 'made_to_order' }), false);
 });
 
+test('a TRAVELLING mixed provider drops the session-length and capacity screens', () => {
+    // Come-to-me: guests come to the studio, so its group classes need a length
+    // and a capacity — both asked.
+    const comeToMe = { group: 'wellness', category: 'yoga', shape: 'slot', fulfilment: 'collection' };
+    assert.equal(stepApplies('g_slot_length', 'guest', comeToMe), true, 'come-to-me keeps the class length');
+    assert.equal(stepApplies('g_capacity', 'guest', comeToMe), true, 'come-to-me keeps the class capacity');
+    // Travels to the guest: every item is a private session with its own length,
+    // and nobody joins a class in someone's cottage — so both screens drop, the
+    // same way the shared-vs-private question does.
+    const travels = { group: 'wellness', category: 'yoga', shape: 'slot', fulfilment: 'delivery' };
+    assert.equal(stepApplies('g_slot_length', 'guest', travels), false, 'a traveller sets the length per private session');
+    assert.equal(stepApplies('g_capacity', 'guest', travels), false, 'a traveller declares no class capacity');
+    assert.equal(stepApplies('g_slot_hours', 'guest', travels), true, 'weekly hours stay either way');
+    // The traveller rule is mixed-only — a non-mixed slot is unaffected.
+    const tastingTravels = { group: 'food', category: 'tastings', shape: 'slot', fulfilment: 'delivery' };
+    assert.equal(stepApplies('g_capacity', 'guest', tastingTravels), true, 'the traveller rule is mixed-only');
+});
+
 test('the per-person minimum screen exists only for a shared/per-person slot', () => {
-    const shared = { group: 'crafts', category: 'pottery', shape: 'slot', slotOffer: 'shared' };
+    // A group category (tastings) — its basis IS a provider screen, so the whole
+    // flow matches slotFlow. (Pottery is now a mixed shape with no provider basis;
+    // the minimum logic here is category-independent — shape + slotOffer only.)
+    const shared = { group: 'food', category: 'tastings', shape: 'slot', slotOffer: 'shared' };
     const priv = { group: 'wellness', category: 'sauna', shape: 'slot', slotOffer: 'private' };
-    const unanswered = { group: 'crafts', category: 'pottery', shape: 'slot' };
+    const unanswered = { group: 'food', category: 'tastings', shape: 'slot' };
     // Per person: … g_capacity → g_slot_min → g_menu.
     assert.equal(stepApplies('g_slot_min', 'guest', shared), true, 'per person has a minimum');
     assert.deepEqual(gkeys(shared), slotFlow({ perPerson: true }));

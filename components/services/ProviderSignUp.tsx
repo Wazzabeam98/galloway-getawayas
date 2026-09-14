@@ -78,6 +78,7 @@ import {
     slotAsksWhereFork,
     slotIsMeetingPoint,
     slotDurationPerItem,
+    slotMixedDuration,
     defaultSlotFulfilment,
     collectionFieldsForWrite,
     DIETARY_OPTIONS,
@@ -1340,7 +1341,7 @@ function ApplicationForm() {
                     // as a live step during restore, and a signed-in applicant
                     // with any saved draft is resolved onto the email screen they
                     // should never see. A signed-in user has no g_verify step.
-                    ? { category: d.guestCategory, shape: d.shape, hasSession: !!sessionArg, slotOffer: d.slotOffer ?? (d.slotPrivate === true ? 'private' : d.slotPrivate === false ? 'shared' : null) }
+                    ? { category: d.guestCategory, shape: d.shape, hasSession: !!sessionArg, slotOffer: d.slotOffer ?? (d.slotPrivate === true ? 'private' : d.slotPrivate === false ? 'shared' : null), fulfilment: d.fulfilment }
                     : undefined;
             const landing = resolveStep(restoreTrade, d.step, restoreCtx);
             setStep(landing);
@@ -1913,7 +1914,7 @@ function ApplicationForm() {
     // saves the category, not the group) still resolves its steps correctly.
     const stepCtx: StepContext | undefined =
         isGuest
-            ? { group: guestGroup || (guestCategoryByKey(guestCategory)?.group || ''), category: guestCategory, shape, hasSession: !!session, slotOffer }
+            ? { group: guestGroup || (guestCategoryByKey(guestCategory)?.group || ''), category: guestCategory, shape, hasSession: !!session, slotOffer, fulfilment }
             : undefined;
 
     const problemFor = (field: string) => {
@@ -2710,6 +2711,10 @@ function ApplicationForm() {
         const cat = guestCategoryByKey(guestCategory);
         const isSlot = shape === 'slot';
         const slotPerItem = isSlot && slotDurationPerItem(guestCategory);
+        // A travelling mixed provider sells only private sessions — no provider
+        // length (each item has its own) and no declared capacity (its head-count
+        // cap is the cottage, not a class size), so both are stored null.
+        const travellingMixed = isSlot && slotMixedDuration(guestCategory) && fulfilment === 'delivery';
         const isMTO = shape === 'made_to_order';
         const num = (v: string, min: number) => {
             const n = Math.floor(Number(String(v || '').trim()));
@@ -2761,12 +2766,12 @@ function ApplicationForm() {
             // each treatment carries its own — so it stores none, and capacity is
             // fixed at 1 (one person at a time, never asked). Every other slot
             // keeps its provider length and its asked capacity.
-            slot_length_minutes: (isSlot && !slotPerItem) ? num(slotLength, 15) : null,
+            slot_length_minutes: (isSlot && !slotPerItem && !travellingMixed) ? num(slotLength, 15) : null,
             // Max guests → slot_capacity for a slot (drives sellable seats for a
             // shared/per-person slot via sessionCapacity; a private/flat slot
             // records it but still sells whole). Written from the one maxGuests
             // state, so it can never disagree with the jsonb copy below.
-            slot_capacity: slotPerItem ? 1 : (isSlot ? (num(maxGuests, 1) ?? 1) : null),
+            slot_capacity: slotPerItem ? 1 : travellingMixed ? null : (isSlot ? (num(maxGuests, 1) ?? 1) : null),
             // The per-person minimum — a real number only for a shared/per-person
             // slot; a private/flat slot is one booking whatever the head count, so
             // it stores 1 (no minimum). Floored at 1 to satisfy the column's
@@ -3512,6 +3517,12 @@ function ApplicationForm() {
             // is used). This is what makes the times a guest sees depend on the
             // treatment, and what the interval-overlap claim reads.
             const slotPerItem = shape === 'slot' && slotDurationPerItem(guestCategory);
+            const slotMixed = shape === 'slot' && slotMixedDuration(guestCategory);
+            // A TIMED item carries its own length: every item on the pure
+            // one-at-a-time shape (massage), and a mixed provider's one-at-a-time
+            // items (unit 'flat'). A mixed shared CLASS (unit 'person') is untimed —
+            // it uses the provider's single length — so it stores no duration.
+            const isTimed = (unit: string) => (slotPerItem || slotMixed) && String(unit) === 'flat';
             const valid = items
                 .map((it, i) => ({
                     id: it.id,
@@ -3521,7 +3532,7 @@ function ApplicationForm() {
                     price: String(it.price || '').trim() !== '' ? Number(it.price) : null,
                     unit: shape === 'slot' ? (String(it.unit) === 'person' ? 'person' : 'flat') : String(it.unit || 'flat'),
                     image: it.image || null,
-                    duration_minutes: slotPerItem && Number(it.duration) > 0 ? Math.round(Number(it.duration)) : null,
+                    duration_minutes: isTimed(it.unit) && Number(it.duration) > 0 ? Math.round(Number(it.duration)) : null,
                     sort_order: i,
                     active: true,
                 }))
@@ -4613,6 +4624,22 @@ function ApplicationForm() {
                     // 'both' provider — a third presentation: the menu hub's
                     // repeating list, plus a duration step in the item sub-flow.
                     const perItemShape = isSlot && slotDurationPerItem(guestCategory);
+                    // The mixed shape (yoga, pottery, painting): the menu is a
+                    // repeating list and EACH item chooses, in its own sub-flow,
+                    // between a shared class (per-person, untimed — the provider
+                    // length) and a one-at-a-time booking (flat, with its own
+                    // duration). Both live on one provider.
+                    const mixedShape = isSlot && slotMixedDuration(guestCategory);
+                    // A traveller's session is EXCLUSIVE by definition — nobody books
+                    // a place in a class held in someone else's cottage — so the
+                    // shared-vs-private question is only asked of a come-to-me
+                    // provider. Fulfilment is answered at g_slot_where (or defaulted),
+                    // both BEFORE this menu screen, so it is known here. A travelling
+                    // mixed provider is treated like the pure one-at-a-time shape:
+                    // every item is a private session, timed, no question.
+                    const travels = fulfilment === 'delivery';
+                    const mixedChoice = mixedShape && !travels;   // come-to-me: ask per item
+                    const forcedOneToOne = perItemShape || (mixedShape && travels);
                     // 'offer both' is the only slot where the unit is ambiguous, so
                     // it alone lets the provider add items and choose each one's unit
                     // (session vs person) as a step in the sub-flow. private/shared
@@ -4629,14 +4656,17 @@ function ApplicationForm() {
                         if (!(p !== '' && Number(p) > 0)) return GUEST_SCREEN_COPY.menuRowPrompt;
                         // For a treatment, the length is the useful qualifier ("£60 ·
                         // 60 min"), not a per-person/session unit that never varies.
-                        const qualifier = perItemShape
+                        // A timed row (a treatment, or a mixed provider's flat 1:1)
+                        // reads by its length; a shared class reads by its unit.
+                        const timedRow = perItemShape || (mixedShape && String(r.unit) === 'flat');
+                        const qualifier = timedRow
                             ? (Number(r.duration) > 0 ? String(Math.round(Number(r.duration))) + ' min' : '')
                             : unitWord(r);
                         return '£' + p + (qualifier ? ' · ' + qualifier : '');
                     };
                     // An item is done only when it has BOTH a name and a real price —
-                    // the tick has to mean that. A seeded 'both' row ('Private hire',
-                    // 'Per person') has a name from the start, so keying the tick off
+                    // the tick has to mean that. A seeded 'both' row ('For the whole
+                    // thing', 'Per person') has a name from the start, so keying the tick off
                     // the name alone showed it as done while it still read "Name it
                     // and set a price". This is the completeness the row displays.
                     const isRowComplete = (r: { name: string; price: string }) =>
@@ -4702,11 +4732,22 @@ function ApplicationForm() {
                     // between name and price — the one added screen, same craft, no
                     // per-person/unit step (a treatment is always flat). 'both' keeps
                     // its unit step; everything else is name → price → desc → photo.
-                    const stepKinds: Array<'name' | 'duration' | 'price' | 'unit' | 'desc' | 'photo'> = perItemShape
+                    // A come-to-me mixed provider is asked HOW IT IS BOOKED after the
+                    // name (a shared class vs a private session), and only a private
+                    // session (unit 'flat') then gets the duration screen; a class
+                    // skips it and uses the provider length. Massage and a TRAVELLING
+                    // mixed provider skip the question entirely — every item is a
+                    // private session, so it goes straight to the duration screen.
+                    const mixedTimed = mixedChoice && String(it && it.unit) === 'flat';
+                    const stepKinds: Array<'name' | 'booked' | 'duration' | 'price' | 'unit' | 'desc' | 'photo'> = forcedOneToOne
                         ? ['name', 'duration', 'price', 'desc', 'photo']
-                        : (slotBoth && !unitLocked)
-                            ? ['name', 'price', 'unit', 'desc', 'photo']
-                            : ['name', 'price', 'desc', 'photo'];
+                        : mixedChoice
+                            ? (mixedTimed
+                                ? ['name', 'booked', 'duration', 'price', 'desc', 'photo']
+                                : ['name', 'booked', 'price', 'desc', 'photo'])
+                            : (slotBoth && !unitLocked)
+                                ? ['name', 'price', 'unit', 'desc', 'photo']
+                                : ['name', 'price', 'desc', 'photo'];
                     const LAST = stepKinds.length - 1;
                     const stepKind = stepKinds[menuStep] ?? 'name';
                     const durationFilled = !!it && (Number(it.duration) || 0) > 0;
@@ -4735,7 +4776,7 @@ function ApplicationForm() {
                             </div>
 
                             <div className="mt-8 space-y-1">
-                                {(isSlot && !perItemShape) ? (
+                                {(isSlot && !perItemShape && !mixedShape) ? (
                                     // A slot's shapes as named rows: a priced one shows
                                     // the host's real item; an unfilled one is guidance
                                     // (the shape's name + what it means) that persists
@@ -4809,6 +4850,7 @@ function ApplicationForm() {
                                     open
                                     title={
                                         stepKind === 'name' ? (isSlot ? GUEST_SCREEN_COPY.menuNameTitleSlot : GUEST_SCREEN_COPY.menuNameTitle)
+                                            : stepKind === 'booked' ? GUEST_SCREEN_COPY.menuBookedTitle
                                             : stepKind === 'duration' ? 'How long is it?'
                                                 : stepKind === 'price' ? GUEST_SCREEN_COPY.menuPriceTitle
                                                     : stepKind === 'unit' ? GUEST_SCREEN_COPY.menuSlotUnitTitle
@@ -4817,7 +4859,7 @@ function ApplicationForm() {
                                     }
                                     onClose={closeItem}
                                     onBack={menuStep > 0 ? () => setMenuStep((s) => s - 1) : undefined}
-                                    onRemove={(!isSlot || slotBoth || perItemShape) ? () => removeItem(menuIndex) : undefined}
+                                    onRemove={(!isSlot || slotBoth || perItemShape || mixedShape) ? () => removeItem(menuIndex) : undefined}
                                     saveLabel={menuStep === LAST ? GUEST_SCREEN_COPY.save : GUEST_SCREEN_COPY.menuNext}
                                     saveDisabled={(stepKind === 'name' && !nameFilled) || (stepKind === 'duration' && !durationFilled) || (stepKind === 'price' && !priceFilled)}
                                     onSave={menuStep === LAST ? closeItem : () => setMenuStep((s) => s + 1)}
@@ -4831,6 +4873,45 @@ function ApplicationForm() {
                                                 placeholder={GUEST_SCREEN_COPY.menuNameExamples[guestCategory] ?? GUEST_SCREEN_COPY.menuNameExampleFallback}
                                                 className={bigInput}
                                             />
+                                        </div>
+                                    )}
+                                    {stepKind === 'booked' && (
+                                        // The per-item timed-or-not choice for a mixed
+                                        // provider. A shared class is per-person and uses
+                                        // the provider's session length; a one-at-a-time
+                                        // booking is a whole session for one, with its own
+                                        // length asked next. Switching to a class clears any
+                                        // length it may have carried.
+                                        <div role="radiogroup" aria-label={GUEST_SCREEN_COPY.menuBookedTitle} className="mx-auto w-full max-w-md space-y-3">
+                                            {([
+                                                ['person', GUEST_SCREEN_COPY.menuBookedSharedLabel, GUEST_SCREEN_COPY.menuBookedSharedHint],
+                                                ['flat', GUEST_SCREEN_COPY.menuBookedPrivateLabel, GUEST_SCREEN_COPY.menuBookedPrivateHint],
+                                            ] as const).map(([u, label, hint]) => {
+                                                const on = String(it.unit) === u;
+                                                return (
+                                                    <button
+                                                        key={u}
+                                                        type="button"
+                                                        role="radio"
+                                                        aria-checked={on}
+                                                        onClick={() => {
+                                                            setField(menuIndex, 'unit', u);
+                                                            if (u === 'person') setField(menuIndex, 'duration', '');
+                                                        }}
+                                                        className={'flex w-full items-start gap-3 rounded-2xl border px-4 py-4 text-left transition '
+                                                            + (on ? 'border-emerald-600 bg-emerald-50 ring-1 ring-emerald-600' : 'border-slate-200 hover:border-emerald-400')}
+                                                    >
+                                                        <span className={'mt-0.5 flex h-6 w-6 flex-none items-center justify-center rounded-full border transition '
+                                                            + (on ? 'border-emerald-600 bg-emerald-600 text-white' : 'border-slate-300 text-transparent')}>
+                                                            <Check className="h-4 w-4" strokeWidth={3} />
+                                                        </span>
+                                                        <span>
+                                                            <span className="block font-semibold text-slate-900">{label}</span>
+                                                            <span className="block text-sm text-slate-500">{hint}</span>
+                                                        </span>
+                                                    </button>
+                                                );
+                                            })}
                                         </div>
                                     )}
                                     {stepKind === 'duration' && (
@@ -5308,9 +5389,9 @@ function ApplicationForm() {
                 <section className="mb-8 sm:mb-0 sm:flex-1 sm:flex sm:flex-col sm:justify-center md:max-w-xl md:mx-auto">
                     <div className="grid gap-3 sm:grid-cols-3">
                         {([
-                            { v: 'private', t: 'One group at a time', d: 'The whole thing is theirs — a private hire. One booking fills it.' },
-                            { v: 'shared', t: 'Several people join', d: 'A class or a tasting. Priced per person, up to a number you set.' },
-                            { v: 'both', t: 'Offer both', d: 'Let guests pick a private hire or a single place.' },
+                            { v: 'private', t: GUEST_SCREEN_COPY.slotBasisPrivateLabel, d: GUEST_SCREEN_COPY.slotBasisPrivateHint },
+                            { v: 'shared', t: GUEST_SCREEN_COPY.slotBasisSharedLabel, d: GUEST_SCREEN_COPY.slotBasisSharedHint },
+                            { v: 'both', t: GUEST_SCREEN_COPY.slotBasisBothLabel, d: GUEST_SCREEN_COPY.slotBasisBothHint },
                         ] as const).map((o) => (
                             <ChoiceCard key={o.v} selected={slotOffer === o.v} onSelect={() => applyOffer(o.v)} title={o.t} hint={o.d} />
                         ))}

@@ -1,0 +1,75 @@
+{
+  "ranAt": "2026-09-14T11:14:09.941Z",
+  "target": "http://localhost:3192",
+  "account": "acct_1UFVhiAQQUL0pK8w",
+  "passed": 3,
+  "failed": 0,
+  "scenarios": [
+    {
+      "number": "1",
+      "title": "A private session booked for SIX carries the count on the order; the price is unchanged, quantity is 1",
+      "checks": [
+        {
+          "desc": "the order carries attendees = 6",
+          "ok": true,
+          "detail": "attendees=6"
+        },
+        {
+          "desc": "the price is the item price (£50), unchanged by the count",
+          "ok": true,
+          "detail": "price=50"
+        },
+        {
+          "desc": "it is one booking (quantity 1), not six",
+          "ok": true,
+          "detail": "quantity=1"
+        },
+        {
+          "desc": "a second private session for TWO carries attendees = 2",
+          "ok": true,
+          "detail": "attendees=2"
+        },
+        {
+          "desc": "and the SAME price (£50) — the head count never touches price",
+          "ok": true,
+          "detail": "price=50"
+        }
+      ],
+      "status": "passed"
+    },
+    {
+      "number": "2",
+      "title": "The provider sees the head count on their orders",
+      "checks": [
+        {
+          "desc": "the provider’s orders feed returns the 10:00 booking",
+          "ok": true,
+          "detail": "found=true count=2"
+        },
+        {
+          "desc": "and it shows attendees = 6",
+          "ok": true,
+          "detail": "attendees=6"
+        }
+      ],
+      "status": "passed"
+    },
+    {
+      "number": "3",
+      "title": "The cap is honest per shape: a small studio (capacity 4) binds at 4; a traveller (no capacity) binds at the cottage (6)",
+      "checks": [
+        {
+          "desc": "a come-to-me studio of capacity 4 clamps an over-ask (99) to 4",
+          "ok": true,
+          "detail": "attendees=4"
+        },
+        {
+          "desc": "a travelling provider (no capacity) clamps the same over-ask to the cottage’s 6",
+          "ok": true,
+          "detail": "attendees=6"
+        }
+      ],
+      "status": "passed"
+    }
+  ]
+}

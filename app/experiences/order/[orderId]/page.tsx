@@ -1,11 +1,12 @@
 import { redirect } from 'next/navigation';
 import Link from 'next/link';
-import { ArrowLeft, CalendarDays, MapPin, Info, CheckCircle2, Clock3, XCircle, AlertTriangle } from 'lucide-react';
+import { ArrowLeft, CalendarDays, MapPin, Info, CheckCircle2, Clock3, XCircle, AlertTriangle, Users } from 'lucide-react';
 import { createServerComponentClient } from '@supabase/auth-helpers-nextjs';
 import { cookies } from 'next/headers';
 import { adminClient } from '@/lib/supabaseAdmin';
 import { logError } from '@/lib/logError';
 import { guestMayCancelFree } from '@/lib/serviceSlots';
+import { orderLocation } from '@/lib/orderLocation';
 import { cancellationSentence } from '@/components/marketplace/present';
 import OrderThread from '@/components/marketplace/OrderThread';
 import OrderCancel from '@/components/marketplace/OrderCancel';
@@ -79,7 +80,7 @@ export default async function OrderPage({ params, searchParams }: { params: { or
     const admin = adminClient();
     const { data: order } = await admin
         .from('service_orders')
-        .select('id, guest_id, provider_id, listing_id, booking_id, status, shape, service_date, service_time, price, item_name, item_description, provider_business_name, allergy, note')
+        .select('id, guest_id, provider_id, listing_id, booking_id, status, shape, service_date, service_time, price, item_name, item_description, provider_business_name, allergy, note, attendees, duration_minutes, fulfilment')
         .eq('id', params.orderId)
         .maybeSingle();
     if (!order || order.guest_id !== user.id) redirect('/trips');
@@ -116,19 +117,22 @@ export default async function OrderPage({ params, searchParams }: { params: { or
 
     const meta = STATUS[order.status] || { label: order.status, tone: 'over' as const };
     const live = order.status === 'authorised' || order.status === 'confirmed' || order.status === 'holding';
-    // A slot now carries fulfilment too: 'collection' = the guest comes to the
-    // host's address, 'delivery' = the host runs the session at the guest's
-    // cottage. So "comes to your cottage" is a comes-to-you shape OR a travelling
-    // slot; the address block covers a collecting baker OR a come-to-me slot.
+    // The fulfilment DIRECTION is read off the ORDER, not the provider's live
+    // setup: 'collection' = the guest comes to the host's address, 'delivery' =
+    // the host runs the session at the guest's cottage. It was frozen at booking
+    // (the claim / the webhook), so a provider who later switches their setup
+    // never rewrites what this guest booked. The ADDRESS below still comes live
+    // from the provider — only the direction is the frozen deal. "Comes to your
+    // cottage" is a comes-to-you shape OR a travelling slot; the address block
+    // covers a collecting baker OR a come-to-me slot.
+    // For a SLOT the direction is derived from the ORDER's frozen fulfilment, so
+    // a later setup edit can't rewrite what the guest booked; a made-to-order
+    // product still reads the provider's live value (its freeze is a follow-up),
+    // passed in here. The collection ADDRESS, by contrast, is private and released
+    // only once the order is confirmed (i.e. paid — `charged`), read live from the
+    // provider below so a moved studio still directs the guest.
     const isSlot = order.shape === 'slot';
-    const slotTravels = isSlot && prov?.fulfilment === 'delivery';
-    const comesToCottage = order.shape === 'comes_to_you' || slotTravels;
-    // Made-to-order collection / a come-to-me slot: the provider's address is
-    // private and released only once the order is confirmed (i.e. paid —
-    // `charged`). Read via the service role above; never sent to the browser
-    // before then. Delivery and "both" still deliver, so only pure collection
-    // (or a come-to-me slot) shows the address on the day-of line.
-    const collects = prov?.fulfilment === 'collection' || prov?.fulfilment === 'both';
+    const { comesToCottage, collects } = orderLocation(order, prov?.fulfilment);
     // Assembled from the three private fields, same order the cottage address
     // uses: "The Old Bakery, 4 Shore Road, Kirkcudbright, DG6 4JT".
     const collectionAddress = charged && collects
@@ -188,7 +192,7 @@ export default async function OrderPage({ params, searchParams }: { params: { or
                                             time: order.service_time || null,
                                             where: comesToCottage ? (cottageAddress || 'Your cottage') : isSlot ? (collectionAddress || prov?.based_line || who) : (collectionAddress || cottageAddress || 'Your cottage'),
                                             details: (order.item_description || '') + (order.note ? '\n\nYour note: ' + order.note : ''),
-                                            durationMin: Number(prov?.slot_length_minutes) || 60,
+                                            durationMin: Number(order.duration_minutes) || Number(prov?.slot_length_minutes) || 60,
                                         })}
                                         download={`${(order.item_name || 'experience').toLowerCase().replace(/[^a-z0-9]+/g, '-')}.ics`}
                                         className="inline-flex items-center gap-1.5 rounded-lg bg-white px-3.5 py-2 text-sm font-semibold text-emerald-800 ring-1 ring-emerald-600/20 hover:bg-emerald-50"
@@ -219,6 +223,18 @@ export default async function OrderPage({ params, searchParams }: { params: { or
                                         <dd className="text-sm text-slate-800">{longWhen(order.service_date, isSlot ? order.service_time : null)}</dd>
                                     </div>
                                 </div>
+                                {/* Head count on a private session — the whole session
+                                    is theirs, so the provider knows how many to set up
+                                    for. Only for a private booking that has one. */}
+                                {isSlot && Number(order.attendees) > 1 ? (
+                                    <div className="flex gap-3">
+                                        <Users className="mt-0.5 h-5 w-5 flex-none text-slate-400" />
+                                        <div>
+                                            <dt className="text-xs font-semibold uppercase tracking-wide text-slate-500">Party</dt>
+                                            <dd className="text-sm text-slate-800">{order.attendees} people — the whole session is yours.</dd>
+                                        </div>
+                                    </div>
+                                ) : null}
                                 <div className="flex gap-3">
                                     <MapPin className="mt-0.5 h-5 w-5 flex-none text-slate-400" />
                                     <div>

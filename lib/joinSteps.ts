@@ -31,6 +31,7 @@ import {
     guestAsksExpertise,
     slotAsksWhereFork,
     slotDurationPerItem,
+    slotMixedDuration,
 } from '@/lib/serviceProviders';
 import { GUEST_SCREEN_COPY } from '@/lib/strings';
 
@@ -93,6 +94,15 @@ export interface StepContext {
     // context so the step model can add or drop that one screen, the same way
     // shape adds or drops g_capacity.
     slotOffer?: 'private' | 'shared' | 'both' | null;
+    // How a slot is fulfilled: 'collection' (guests come to the provider),
+    // 'delivery' (the provider travels to the guest), '' = not yet / n/a. A
+    // MIXED provider (yoga, pottery, painting) who travels sells only private
+    // sessions — no one books a place in a class held in someone's cottage — so
+    // the provider-level session-length and capacity screens have no meaning and
+    // drop, the same way the shared-vs-private question does. Carried here so the
+    // step model can derive that, rather than the wizard hiding the screen while
+    // still asking underneath.
+    fulfilment?: string | null;
 }
 
 export interface Step {
@@ -182,6 +192,14 @@ const ALL_STEPS: Step[] = [
 //
 // Written as one function per step rather than a table, because each answer is
 // a different question and a table would hide that behind a column of trues.
+// A mixed slot provider (yoga, pottery, painting) who TRAVELS to the guest sells
+// only private sessions — nobody joins a class held in someone else's cottage —
+// so the provider-level session-length and capacity screens have no meaning and
+// drop. Come-to-me mixed providers keep both (their group classes need them).
+function travellingMixedSlot(ctx: StepContext): boolean {
+    return ctx.shape === 'slot' && slotMixedDuration(ctx.category) && ctx.fulfilment === 'delivery';
+}
+
 export function stepApplies(step: StepKey, trade: string, ctx?: StepContext): boolean {
     const key = String(trade || '');
 
@@ -243,14 +261,17 @@ export function stepApplies(step: StepKey, trade: string, ctx?: StepContext): bo
             // 'other' has no shape, so both skip it.
             // The private/shared pricing basis — slot only. A made-to-order
             // product and a traveller price per item/enquiry, not per session.
-            // The private/shared basis and the capacity are BOTH fixed for the
-            // one-at-a-time shape — a treatment is a whole-session price for one
-            // person — so neither is asked; they follow from the shape (see
-            // slotDurationPerItem). Every other slot still asks.
+            // The private/shared basis is fixed for the one-at-a-time shape (a
+            // treatment is a whole-session price for one person) AND not asked for
+            // the mixed shape (there each item picks shared-class vs one-at-a-time
+            // in its own sub-flow) — so both skip it. Every other slot still asks.
+            // Capacity stays asked for a COME-TO-ME mixed provider (its classes need
+            // a size); a TRAVELLING mixed provider sells only private sessions, so
+            // capacity is meaningless and drops — same as pure one-at-a-time.
             case 'g_slot_basis':
-                return shape === 'slot' && !slotDurationPerItem(ctx.category);
+                return shape === 'slot' && !slotDurationPerItem(ctx.category) && !slotMixedDuration(ctx.category);
             case 'g_capacity':
-                return shape === 'comes_to_you' || (shape === 'slot' && !slotDurationPerItem(ctx.category));
+                return shape === 'comes_to_you' || (shape === 'slot' && !slotDurationPerItem(ctx.category) && !travellingMixedSlot(ctx));
             // The per-person minimum — a slot that is priced per person (the
             // shared answer). A private/whole-group slot is one booking whatever
             // the head count, so it has no minimum-people rule and no screen.
@@ -277,10 +298,11 @@ export function stepApplies(step: StepKey, trade: string, ctx?: StepContext): bo
                 return true;
             // The When section — slots only. Session length, then weekly hours.
             // The one-at-a-time shape asks length PER TREATMENT (in the item
-            // sub-flow), so it skips the single provider-length screen but still
-            // sets weekly hours.
+            // sub-flow), so it skips the single provider-length screen; a
+            // TRAVELLING mixed provider does too (every item is a private session
+            // with its own length). Both still set weekly hours.
             case 'g_slot_length':
-                return shape === 'slot' && !slotDurationPerItem(ctx.category);
+                return shape === 'slot' && !slotDurationPerItem(ctx.category) && !travellingMixedSlot(ctx);
             case 'g_slot_hours':
                 return shape === 'slot';
             default:

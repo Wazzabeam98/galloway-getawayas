@@ -23,7 +23,10 @@ interface PanelSession {
     // The pinned seat row for this time, or null if nobody has booked it yet.
     row: { capacity: number; seats_taken: number; private: boolean } | null;
 }
-interface PanelBookedBlock { date: string; time: string; duration_minutes: number | null; turnaround_minutes: number | null; }
+interface PanelBookedBlock {
+    date: string; time: string; duration_minutes: number | null; turnaround_minutes: number | null;
+    capacity: number; seats_taken: number; private: boolean;
+}
 interface PanelProvider {
     id: string; business_name: string; who: string; shape: string; isFood: boolean;
     items: PanelItem[]; sessions: PanelSession[]; leadTimeDays: number;
@@ -36,6 +39,9 @@ interface PanelProvider {
     // duration, so the panel generates it here rather than reading one server grid.
     perItemDurations?: boolean;
     turnaround?: number;
+    // The provider's single session length — the fallback for an UNTIMED item (a
+    // shared class), so it uses the host's real length rather than a hard default.
+    slotLength?: number;
     slotAvailability?: Array<{ day_of_week: number; open_time: string; close_time: string }>;
     slotBlocks?: string[];
     // Every booked session's interval, to grey any start that would overlap one.
@@ -44,8 +50,12 @@ interface PanelProvider {
 
 // A word for why an option can't be booked on a time, from the shared helper's
 // reason. Kept human: the guest sees "why not", never a silent dead button.
+// Worded by the BOOKING, not the product ("Shared table"/"Private hire" was the
+// same noun-leak as the host wizard — wrong on a sauna or a walk): a whole-thing
+// option is blocked because others are already joining that time; a place is
+// blocked because the time is booked privately.
 function unavailableLabel(a: OptionAvailability, unit: string): string {
-    if (a.reason === 'other-mode') return bookingIsPrivate(unit) ? 'Shared table' : 'Private hire';
+    if (a.reason === 'other-mode') return bookingIsPrivate(unit) ? 'Others joining' : 'Booked privately';
     if (a.reason === 'too-small') return 'Almost full';
     return 'Full';
 }
@@ -77,12 +87,14 @@ function lastNight(checkOut: string): string {
 }
 function maxKey(a: string, b: string): string { return a > b ? a : b; }
 
-export default function BookingPanel({ bookingId, checkIn, checkOut, provider }: {
-    bookingId: string; checkIn: string; checkOut: string; provider: PanelProvider;
+export default function BookingPanel({ bookingId, checkIn, checkOut, cottageGuests, provider }: {
+    bookingId: string; checkIn: string; checkOut: string; cottageGuests: number; provider: PanelProvider;
 }) {
     const isSlot = provider.shape === 'slot';
     const [itemId, setItemId] = useState<string>(provider.items.length === 1 ? provider.items[0].id : '');
     const [qty, setQty] = useState<number>(1);
+    // How many people at a PRIVATE session — asked for a flat item, never priced.
+    const [attendees, setAttendees] = useState<number>(1);
     const [date, setDate] = useState<string>('');
     const [session, setSession] = useState<PanelSession | null>(null);
     const [dayIdx, setDayIdx] = useState<number>(0);
@@ -97,11 +109,21 @@ export default function BookingPanel({ bookingId, checkIn, checkOut, provider }:
     // two — a private hire and a shared table — is picked below.
     const item = provider.items.find((i) => i.id === itemId) || null;
     const multiplies = !!item && unitMultiplies(item.unit);
+    // A private (flat) slot session takes a HEAD COUNT — how many are coming — that
+    // does not change the price. The honest cap is the provider's declared capacity
+    // where it has one (a room/table size), else the cottage's guest count (a
+    // traveller declares none). Only asked when that cap leaves a real choice (>1).
+    const isPrivateSlot = isSlot && !!item && !multiplies;
+    const declaredCap = provider.slotCapacity && provider.slotCapacity > 0 ? provider.slotCapacity : null;
+    const attendeesCap = Math.max(1, declaredCap != null ? Math.min(declaredCap, cottageGuests) : cottageGuests);
+    const chosenAttendees = Math.min(Math.max(1, Math.floor(attendees) || 1), attendeesCap);
     // The per-treatment shape (massage): the grid depends on the chosen treatment.
     const perItem = isSlot && !!provider.perItemDurations;
     const turnaround = Math.max(0, provider.turnaround || 0);
-    // The chosen treatment's length; for a per-item provider it is the item's own.
-    const chosenDuration = item ? resolvedDuration(item, {}) : 0;
+    // The chosen item's length: its own duration if it has one (a timed 1:1), else
+    // the PROVIDER'S session length (an untimed shared class) — NOT a hard 60
+    // default, which would silently mis-grid a mixed provider's classes.
+    const chosenDuration = item ? resolvedDuration(item, { slot_length_minutes: provider.slotLength }) : 0;
 
     const minDate = maxKey(checkIn.slice(0, 10), dayKeyFromNow(provider.shape === 'made_to_order' ? provider.leadTimeDays : 0));
     const maxDate = lastNight(checkOut);
@@ -124,8 +146,10 @@ export default function BookingPanel({ bookingId, checkIn, checkOut, provider }:
         if (!isSlot) return [];
         if (!perItem) return provider.sessions;
         if (!item) return [];   // per-item: the guest picks a treatment first
+        // The real seat row per booked time, so a shared class shows its true
+        // seats-left (a 1:1 is capacity 1 and reads full once taken, as before).
         const rowByKey = new Map<string, PanelSession['row']>();
-        for (const b of provider.bookedBlocks || []) rowByKey.set(b.date + ' ' + b.time, { capacity: 1, seats_taken: 1, private: true });
+        for (const b of provider.bookedBlocks || []) rowByKey.set(b.date + ' ' + b.time, { capacity: b.capacity, seats_taken: b.seats_taken, private: b.private });
         const nowMs = Date.now();
         return generateSessions(provider.slotAvailability || [], provider.slotBlocks || [], chosenDuration + turnaround, minDate, maxDate, chosenDuration)
             .filter((s) => new Date(s.date + 'T' + s.time + ':00Z').getTime() > nowMs)
@@ -184,7 +208,7 @@ export default function BookingPanel({ bookingId, checkIn, checkOut, provider }:
                 ? [allergyTags.join(', '), allergy.trim()].filter(Boolean).join(allergyTags.length && allergy.trim() ? ' — ' : '')
                 : '';
             const body = isSlot
-                ? { providerId: provider.id, itemId: item.id, bookingId, sessionDate: session!.date, sessionTime: session!.time, quantity, note: trimmedNote, allergy: trimmedAllergy }
+                ? { providerId: provider.id, itemId: item.id, bookingId, sessionDate: session!.date, sessionTime: session!.time, quantity, attendees: chosenAttendees, note: trimmedNote, allergy: trimmedAllergy }
                 : { itemId: item.id, bookingId, serviceDate: date, quantity, note: trimmedNote, allergy: trimmedAllergy };
             const res = await fetch(url, {
                 method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body),
@@ -330,6 +354,19 @@ export default function BookingPanel({ bookingId, checkIn, checkOut, provider }:
                         className="mt-1 block w-24 rounded-lg border border-slate-300 px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-emerald-600" />
                     {isSlot && sel ? <span className="ml-2 text-xs text-slate-400">{sel.seatsLeft} place{sel.seatsLeft === 1 ? '' : 's'} left</span> : null}
                     {minPeople > 1 ? <p className="mt-1 text-xs text-slate-500">This session is for {minPeople} people or more.</p> : null}
+                </label>
+            )}
+
+            {/* Head count on a PRIVATE session — the whole session is theirs, so
+                this doesn't change the price; it tells the provider how many to
+                set up for. Only shown when the cap leaves a choice. */}
+            {isPrivateSlot && !!session && attendeesCap > 1 && (
+                <label className="mt-4 block">
+                    <span className="text-xs font-semibold uppercase tracking-wide text-slate-500">How many people are coming?</span>
+                    <input type="number" min={1} max={attendeesCap} inputMode="numeric" value={attendees}
+                        onChange={(e) => setAttendees(Math.min(Math.max(1, Math.floor(Number(e.target.value) || 1)), attendeesCap))}
+                        className="mt-1 block w-24 rounded-lg border border-slate-300 px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-emerald-600" />
+                    <p className="mt-1 text-xs text-slate-500">The price is for the whole session, however many come (up to {attendeesCap}).</p>
                 </label>
             )}
 
