@@ -7,7 +7,7 @@ import 'react-date-range/dist/theme/default.css';
 import { unitMultiplies, orderTotal, MAX_ORDER_QUANTITY } from '@/lib/serviceOrders';
 import {
     optionAvailability, bookingIsPrivate, type OptionAvailability,
-    generateSessions, resolvedDuration, overlapsBooked, minutesOfDay,
+    generateSessions, resolvedDuration, overlapsBooked, minutesOfDay, type PartialBlock,
 } from '@/lib/serviceSlots';
 import { itemPriceLabel, unitPhrase, dateLabel, timeLabel } from '@/components/marketplace/present';
 import { londonDayKey, shiftDayKey } from '@/lib/dayKey';
@@ -44,6 +44,8 @@ interface PanelProvider {
     slotLength?: number;
     slotAvailability?: Array<{ day_of_week: number; open_time: string; close_time: string }>;
     slotBlocks?: string[];
+    // Partial blocks — ranges the provider closed off; the grid skips them.
+    partialBlocks?: PartialBlock[];
     // Every booked session's interval, to grey any start that would overlap one.
     bookedBlocks?: PanelBookedBlock[];
 }
@@ -151,10 +153,10 @@ export default function BookingPanel({ bookingId, checkIn, checkOut, cottageGues
         const rowByKey = new Map<string, PanelSession['row']>();
         for (const b of provider.bookedBlocks || []) rowByKey.set(b.date + ' ' + b.time, { capacity: b.capacity, seats_taken: b.seats_taken, private: b.private });
         const nowMs = Date.now();
-        return generateSessions(provider.slotAvailability || [], provider.slotBlocks || [], chosenDuration + turnaround, minDate, maxDate, chosenDuration)
+        return generateSessions(provider.slotAvailability || [], provider.slotBlocks || [], chosenDuration + turnaround, minDate, maxDate, chosenDuration, provider.partialBlocks || [])
             .filter((s) => new Date(s.date + 'T' + s.time + ':00Z').getTime() > nowMs)
             .map((s) => ({ date: s.date, time: s.time, row: rowByKey.get(s.date + ' ' + s.time) || null }));
-    }, [isSlot, perItem, item, chosenDuration, turnaround, minDate, maxDate, provider.sessions, provider.slotAvailability, provider.slotBlocks, provider.bookedBlocks]);
+    }, [isSlot, perItem, item, chosenDuration, turnaround, minDate, maxDate, provider.sessions, provider.slotAvailability, provider.slotBlocks, provider.partialBlocks, provider.bookedBlocks]);
 
     // A candidate time is unbookable for the per-treatment shape when its interval
     // [start, start + duration + turnaround) overlaps a DIFFERENT booked session —

@@ -8,7 +8,7 @@
 
 import { isLiveToGuests, mccForProvider, isFoodProvider, normaliseUnit } from '@/lib/serviceOrders';
 import { guestCategory, knownDietaryOptions } from '@/lib/serviceProviders';
-import { shapeOf, generateSessions, sessionClosedToAll } from '@/lib/serviceSlots';
+import { shapeOf, generateSessions, sessionClosedToAll, minutesOfDay, type PartialBlock } from '@/lib/serviceSlots';
 import { getImageUrl, firstName } from '@/lib/utils';
 import { shiftDayKey } from '@/lib/dayKey';
 
@@ -90,6 +90,9 @@ export interface MpProvider {
     // treatment's grid client-side (the same generateSessions the server uses).
     slotAvailability: Array<{ day_of_week: number; open_time: string; close_time: string }>;
     slotBlocks: string[];
+    // Partial blocks — ranges within a day the provider closed off. The panel
+    // drops any start they cover, the same rule the database enforces.
+    partialBlocks: PartialBlock[];
     // Every booked session's interval, so the panel greys any start that would
     // overlap one — the guest never sees, or picks, a time the claim would refuse.
     bookedBlocks: MpBookedBlock[];
@@ -174,7 +177,7 @@ export async function loadMarketplace(
             .order('sort_order', { ascending: true }).order('created_at', { ascending: true }),
         admin.from('slot_availability').select('provider_id, day_of_week, open_time, close_time').in('provider_id', ids),
         admin.from('slot_blocks').select('provider_id, blocked_date').in('provider_id', ids),
-        admin.from('slot_sessions').select('provider_id, session_date, session_time, capacity, seats_taken, private, duration_minutes, turnaround_minutes').in('provider_id', ids),
+        admin.from('slot_sessions').select('provider_id, session_date, session_time, capacity, seats_taken, private, duration_minutes, turnaround_minutes, blocked').in('provider_id', ids),
         // Confirmed bookings taken, for the trust count. Only 'confirmed' counts:
         // a held request that was never answered, or one that was cancelled or
         // refunded, is not a booking someone completed with this provider.
@@ -212,6 +215,7 @@ export async function loadMarketplace(
 
         const shape = shapeOf(p);
         let sessions: MpSession[] = [];
+        let providerPartialBlocks: PartialBlock[] = [];
         if (shape === 'slot') {
             // The pinned seat row for a (date,time), if anyone has booked it. A
             // fresh time has none and is open to any option. Whichever option
@@ -227,11 +231,20 @@ export async function loadMarketplace(
                     capacity: Number(s.capacity), seats_taken: Number(s.seats_taken), private: Boolean(s.private),
                 };
             }
+            // Partial blocks: the provider's blocked rows become [start,end) ranges
+            // the grid skips, so a closed-off part of a day never shows a start.
+            providerPartialBlocks = (sessBy[p.id] || [])
+                .filter((s: any) => s.blocked)
+                .map((s: any) => {
+                    const startMin = minutesOfDay(String(s.session_time).slice(0, 5));
+                    return { date: s.session_date, startMin, endMin: startMin + (Number(s.duration_minutes) || 0) };
+                });
             const units = items.map((it: MpItem) => it.unit);
             sessions = generateSessions(
                 (availBy[p.id] || []).map((a: any) => ({ day_of_week: a.day_of_week, open_time: a.open_time, close_time: a.close_time })),
                 (blocksBy[p.id] || []).map((b: any) => b.blocked_date),
                 Number(p.slot_length_minutes) || 60, fromKey, toKey,
+                undefined, providerPartialBlocks,
             )
                 .filter((s) => new Date(s.date + 'T' + s.time + ':00Z').getTime() > nowMs)
                 .map((s) => ({ date: s.date, time: s.time, row: rowByKey[s.date + ' ' + s.time] || null }))
@@ -273,6 +286,7 @@ export async function loadMarketplace(
                 ? (availBy[p.id] || []).map((a: any) => ({ day_of_week: a.day_of_week, open_time: a.open_time, close_time: a.close_time }))
                 : [],
             slotBlocks: shape === 'slot' ? (blocksBy[p.id] || []).map((b: any) => b.blocked_date) : [],
+            partialBlocks: providerPartialBlocks,
             bookedBlocks: shape === 'slot'
                 ? (sessBy[p.id] || [])
                     .filter((s: any) => Number(s.seats_taken) > 0)

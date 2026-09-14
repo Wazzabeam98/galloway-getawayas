@@ -116,21 +116,33 @@ export async function POST(request: Request) {
         const durationMinutes = resolvedDuration(item, provider);
         const turnaround = Math.max(0, Number(provider.slot_turnaround_minutes) || 0);
 
-        const [{ data: avail }, { data: blocks }] = await Promise.all([
+        const [{ data: avail }, { data: blocks }, { data: partialRows }] = await Promise.all([
             admin.from('slot_availability').select('day_of_week, open_time, close_time').eq('provider_id', provider.id),
             admin.from('slot_blocks').select('blocked_date').eq('provider_id', provider.id),
+            // The provider's PARTIAL blocks on this date — rows the host closed off.
+            // The database exclusion is the authority (the establishing CAS below
+            // hits it), but feeding them into the grid here refuses a covered start
+            // up front, with a friendly message and no wasted Checkout.
+            admin.from('slot_sessions').select('session_time, duration_minutes')
+                .eq('provider_id', provider.id).eq('session_date', sessionDate).eq('blocked', true),
         ]);
+        const partialBlocks = (partialRows || []).map((b: any) => {
+            const startMin = minutesOfDay(String(b.session_time).slice(0, 5));
+            return { date: sessionDate, startMin, endMin: startMin + (Number(b.duration_minutes) || 0) };
+        });
         // The grid THIS treatment is offered on: starts step by duration + turnaround
         // (so consecutive bookings never overlap once the reset gap is counted), and a
         // start only needs room for the treatment itself before close. For a fixed-grid
         // provider (no per-item duration, turnaround 0) this is the identical grid as
-        // before — step and fit both equal slot_length_minutes.
+        // before — step and fit both equal slot_length_minutes. Partial blocks drop
+        // any covered start, the same rule the guest panel greyed with.
         const legit = generateSessions(
             (avail || []).map((a: any) => ({ day_of_week: a.day_of_week, open_time: a.open_time, close_time: a.close_time })),
             (blocks || []).map((b: any) => b.blocked_date),
             durationMinutes + turnaround,
             sessionDate, sessionDate,
             durationMinutes,
+            partialBlocks,
         ).some((s) => s.time === sessionTime);
         if (!legit) {
             return NextResponse.json({ ok: false, error: 'That time isn’t available. Pick another.' }, { status: 400 });

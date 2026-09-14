@@ -51,6 +51,13 @@ export interface Availability { day_of_week: number; open_time: string; close_ti
 
 export interface GeneratedSession { date: string; time: string; }
 
+// A partial block: a range [startMin, endMin) on one date that no booking may
+// touch. The database is the authority (a block is a slot_sessions row counted by
+// the no-overlap exclusion); this shape is what the wizard-free surfaces — the
+// guest grid and the claim's legibility check — use to grey/skip covered starts,
+// so the guest never even sees a start the database would then refuse.
+export interface PartialBlock { date: string; startMin: number; endMin: number; }
+
 /** "HH:MM[:SS]" → minutes past midnight. */
 function toMinutes(t: string): number {
     const [h, m] = String(t).split(':');
@@ -94,23 +101,33 @@ export function generateSessions(
     stepMinutes: number,
     fromDate: string,
     toDate: string,
-    fitMinutes?: number
+    fitMinutes?: number,
+    partialBlocks?: PartialBlock[]
 ): GeneratedSession[] {
     const step = Math.max(1, Number(stepMinutes) || 0);
     const fit = Math.max(1, Number(fitMinutes) || step);
     const blocked = new Set(blocks);
     const byDow: Record<number, Availability[]> = {};
     for (const a of availability || []) (byDow[a.day_of_week] = byDow[a.day_of_week] || []).push(a);
+    // Partial blocks grouped by date. A start is dropped when the interval a
+    // booking there would occupy — [start, start + step), the same span the
+    // database exclusion measures — overlaps a block. Mirrors the DB guard so the
+    // grid never offers a start the claim would then refuse.
+    const blocksByDate: Record<string, PartialBlock[]> = {};
+    for (const pb of partialBlocks || []) (blocksByDate[pb.date] = blocksByDate[pb.date] || []).push(pb);
 
     const out: GeneratedSession[] = [];
     let date = fromDate;
     for (let guard = 0; guard < 400 && date <= toDate; guard++, date = nextDay(date)) {
         if (blocked.has(date)) continue;
+        const dayBlocks = blocksByDate[date] || [];
         const windows = byDow[dowOf(date)] || [];
         for (const w of windows) {
             const open = toMinutes(w.open_time);
             const close = toMinutes(w.close_time);
             for (let start = open; start + fit <= close; start += step) {
+                const busy = { startMin: start, endMin: start + step };
+                if (dayBlocks.some((pb) => intervalsOverlap(busy, { startMin: pb.startMin, endMin: pb.endMin }))) continue;
                 out.push({ date, time: toClock(start) });
             }
         }

@@ -209,6 +209,7 @@ export default async function ListingPage(
                                 slotLength: p.slotLength,
                                 slotAvailability: p.slotAvailability,
                                 slotBlocks: p.slotBlocks,
+                                partialBlocks: p.partialBlocks,
                                 bookedBlocks: p.bookedBlocks,
                             }}
                         />
