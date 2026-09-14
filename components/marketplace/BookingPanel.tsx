@@ -481,8 +481,14 @@ export default function BookingPanel({ bookingId, checkIn, checkOut, cottageGues
                 option today (the cottage this booking is for), shown selected; a
                 guest with no booking types an address instead (not built here).
                 The address is frozen onto the order server-side; the provider only
-                sees it once the booking is paid. */}
-            {travels && (
+                sees it once the booking is paid.
+
+                Shown when the BOOKED thing travels: a whole-listing traveller
+                (provider.fulfilment === 'delivery', so it shows straight away) OR
+                a 'both' provider's chosen item that travels (itemTravels — shows
+                once that item is picked). The freeze is already per-item on the
+                server; this is the display catching up. */}
+            {(travels || itemTravels) && (
                 <div className="mt-4 rounded-lg border border-slate-200 p-3">
                     <p className="text-xs font-semibold uppercase tracking-wide text-slate-500">Where {provider.who} comes</p>
                     <div className="mt-2 flex items-start gap-2.5">
