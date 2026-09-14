@@ -169,8 +169,18 @@ function NumberStepper({
     // starting position, not a greyed placeholder, and there is no visual
     // difference between touched and untouched. It STILL stores nothing until
     // touched: the parent value stays empty until a nudge or a type commits, so
-    // an untouched starting number never reaches the draft or the record. The
-    // years opener uses this; the slot counts keep the greyed-suggestion style.
+    // an untouched starting number never reaches the draft or the record.
+    //
+    // Use solid ONLY where the step is NOT gated — the screens whose Next is
+    // enabled from load and whose onNext stores the shown default (years,
+    // capacity, notice, session length). There a plus/minus genuinely MOVES the
+    // number, because the shown value is already the accepted answer.
+    //
+    // A GATED stepper (Next/Save disabled until touched) must NOT be solid: the
+    // greyed path below adopts the suggestion on the first press of either
+    // button — so accepting the suggestion is one press, not a press up and back
+    // down — and turns solid once touched, which is the signal that the required
+    // input has been given. The per-treatment duration is the gated one.
     solid?: boolean;
 }) {
     const has = String(value).trim() !== '' && Number.isFinite(Number(value));
@@ -5006,12 +5016,19 @@ function ApplicationForm() {
                                         // provider-length used, now per treatment, in
                                         // 15-minute steps. The guest sees this length;
                                         // the day reserves it (plus any reset gap).
+                                        //
+                                        // NOT solid: this is the one gated stepper — its
+                                        // Next is disabled until a duration is set
+                                        // (durationFilled). Greyed means the first press
+                                        // of + or − adopts the shown 60 (staying, not
+                                        // jumping to 75) and turns it solid, so accepting
+                                        // the suggestion is one press, not a round trip.
                                         <div className="flex flex-col items-center">
                                             <NumberStepper
                                                 value={it.duration || ''}
                                                 onChange={(v: string) => setField(menuIndex, 'duration', v)}
                                                 min={15} max={480} step={15} suggestion={60}
-                                                size="lg" solid suffix=" min"
+                                                size="lg" suffix=" min"
                                             />
                                             <p className="mt-4 text-center text-sm text-slate-500">How long a guest books this treatment for.</p>
                                         </div>
