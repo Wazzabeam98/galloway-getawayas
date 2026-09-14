@@ -41,11 +41,11 @@ const TABLES: TableDecision[] = [
         // the listing and public reads go through the service role.
         granted: new Set([
             'approved_at', 'approved_digest', 'audience', 'billable_hourly_rate', 'business_name',
-            'callout_fee', 'callout_waived', 'changes_pending_at', 'commission_rate', 'covered_bands',
+            'callout_fee', 'callout_waived', 'changes_pending_at', 'covered_bands',
             'created_at', 'custom_label', 'declarations', 'declined_at', 'description', 'dietary_note',
             'does_gas', 'does_oil', 'guest_details', 'headshot', 'hourly_rate', 'id', 'kind',
             'fulfilment', 'lead_time_days', 'logo', 'notify_user_ids', 'owner_id', 'photos', 'plan', 'pricing_choice',
-            'review_note', 'settlement', 'shape', 'slot_capacity', 'slot_length_minutes', 'slot_min_people',
+            'review_note', 'shape', 'slot_capacity', 'slot_length_minutes', 'slot_min_people',
             'slot_turnaround_minutes', 'sms_opt_out',
             'status', 'submitted_at', 'subscription_status', 'trade', 'trial_ends_at', 'updated_at',
         ]),
@@ -54,6 +54,8 @@ const TABLES: TableDecision[] = [
             provider_name: 'retired with the "Your name" step; dropped from the wizard select — unread by any browser',
             category_assigned_at: 'admin audit — when the category was assigned; no provider reads it',
             category_assigned_by: 'admin audit — who assigned the category; no provider reads it',
+            commission_rate: 'the platform\'s per-provider cut; commercial, not guest-facing — read only via the service role in the pricing routes (order, slots/book). Revoked from the browser roles 20260914091719, matching listings.commission_rate which was never granted',
+            settlement: 'payout-settlement mode; commercial and unread anywhere in the app. Revoked from the browser roles 20260914091719',
             cancellation_window_hours: 'booking rule read only via the service role in the order/booking routes',
             exclusive_per_date: 'booking rule read only via the service role in the order/booking routes',
             experience_price: 'legacy price column; unread anywhere',
