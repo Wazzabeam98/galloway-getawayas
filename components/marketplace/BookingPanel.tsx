@@ -83,12 +83,14 @@ function lastNight(checkOut: string): string {
 }
 function maxKey(a: string, b: string): string { return a > b ? a : b; }
 
-export default function BookingPanel({ bookingId, checkIn, checkOut, provider }: {
-    bookingId: string; checkIn: string; checkOut: string; provider: PanelProvider;
+export default function BookingPanel({ bookingId, checkIn, checkOut, cottageGuests, provider }: {
+    bookingId: string; checkIn: string; checkOut: string; cottageGuests: number; provider: PanelProvider;
 }) {
     const isSlot = provider.shape === 'slot';
     const [itemId, setItemId] = useState<string>(provider.items.length === 1 ? provider.items[0].id : '');
     const [qty, setQty] = useState<number>(1);
+    // How many people at a PRIVATE session — asked for a flat item, never priced.
+    const [attendees, setAttendees] = useState<number>(1);
     const [date, setDate] = useState<string>('');
     const [session, setSession] = useState<PanelSession | null>(null);
     const [dayIdx, setDayIdx] = useState<number>(0);
@@ -103,6 +105,14 @@ export default function BookingPanel({ bookingId, checkIn, checkOut, provider }:
     // two — a private hire and a shared table — is picked below.
     const item = provider.items.find((i) => i.id === itemId) || null;
     const multiplies = !!item && unitMultiplies(item.unit);
+    // A private (flat) slot session takes a HEAD COUNT — how many are coming — that
+    // does not change the price. The honest cap is the provider's declared capacity
+    // where it has one (a room/table size), else the cottage's guest count (a
+    // traveller declares none). Only asked when that cap leaves a real choice (>1).
+    const isPrivateSlot = isSlot && !!item && !multiplies;
+    const declaredCap = provider.slotCapacity && provider.slotCapacity > 0 ? provider.slotCapacity : null;
+    const attendeesCap = Math.max(1, declaredCap != null ? Math.min(declaredCap, cottageGuests) : cottageGuests);
+    const chosenAttendees = Math.min(Math.max(1, Math.floor(attendees) || 1), attendeesCap);
     // The per-treatment shape (massage): the grid depends on the chosen treatment.
     const perItem = isSlot && !!provider.perItemDurations;
     const turnaround = Math.max(0, provider.turnaround || 0);
@@ -194,7 +204,7 @@ export default function BookingPanel({ bookingId, checkIn, checkOut, provider }:
                 ? [allergyTags.join(', '), allergy.trim()].filter(Boolean).join(allergyTags.length && allergy.trim() ? ' — ' : '')
                 : '';
             const body = isSlot
-                ? { providerId: provider.id, itemId: item.id, bookingId, sessionDate: session!.date, sessionTime: session!.time, quantity, note: trimmedNote, allergy: trimmedAllergy }
+                ? { providerId: provider.id, itemId: item.id, bookingId, sessionDate: session!.date, sessionTime: session!.time, quantity, attendees: chosenAttendees, note: trimmedNote, allergy: trimmedAllergy }
                 : { itemId: item.id, bookingId, serviceDate: date, quantity, note: trimmedNote, allergy: trimmedAllergy };
             const res = await fetch(url, {
                 method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body),
@@ -340,6 +350,19 @@ export default function BookingPanel({ bookingId, checkIn, checkOut, provider }:
                         className="mt-1 block w-24 rounded-lg border border-slate-300 px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-emerald-600" />
                     {isSlot && sel ? <span className="ml-2 text-xs text-slate-400">{sel.seatsLeft} place{sel.seatsLeft === 1 ? '' : 's'} left</span> : null}
                     {minPeople > 1 ? <p className="mt-1 text-xs text-slate-500">This session is for {minPeople} people or more.</p> : null}
+                </label>
+            )}
+
+            {/* Head count on a PRIVATE session — the whole session is theirs, so
+                this doesn't change the price; it tells the provider how many to
+                set up for. Only shown when the cap leaves a choice. */}
+            {isPrivateSlot && !!session && attendeesCap > 1 && (
+                <label className="mt-4 block">
+                    <span className="text-xs font-semibold uppercase tracking-wide text-slate-500">How many people are coming?</span>
+                    <input type="number" min={1} max={attendeesCap} inputMode="numeric" value={attendees}
+                        onChange={(e) => setAttendees(Math.min(Math.max(1, Math.floor(Number(e.target.value) || 1)), attendeesCap))}
+                        className="mt-1 block w-24 rounded-lg border border-slate-300 px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-emerald-600" />
+                    <p className="mt-1 text-xs text-slate-500">The price is for the whole session, however many come (up to {attendeesCap}).</p>
                 </label>
             )}
 

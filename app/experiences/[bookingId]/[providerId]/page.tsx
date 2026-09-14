@@ -192,6 +192,7 @@ export default async function ListingPage(
                             bookingId={params.bookingId}
                             checkIn={mp.stay.check_in}
                             checkOut={mp.stay.check_out}
+                            cottageGuests={mp.stay.guests}
                             provider={{
                                 id: p.id,
                                 business_name: p.business_name,

@@ -114,12 +114,12 @@ export interface MpProvider {
 
 export interface Marketplace {
     open: boolean;
-    stay: { check_in: string; check_out: string } | null;
+    stay: { check_in: string; check_out: string; guests: number } | null;
     listing: { id: string; location: string | null } | null;
     providers: MpProvider[];
 }
 
-function staySpan(b: any) { return { check_in: b.check_in, check_out: b.check_out }; }
+function staySpan(b: any) { return { check_in: b.check_in, check_out: b.check_out, guests: Math.max(1, Number(b.guests) || 1) }; }
 
 // yyyy-mm-dd of the last night (check_out is the morning they leave).
 function lastNightKey(checkOut: string): string {
@@ -141,7 +141,7 @@ export async function loadMarketplace(
 
     const { data: booking } = await admin
         .from('bookings')
-        .select('id, guest_id, listing_id, check_in, check_out')
+        .select('id, guest_id, listing_id, check_in, check_out, guests')
         .eq('id', bookingId)
         .maybeSingle();
     if (!booking || booking.guest_id !== userId) return { open: true, stay: null, listing: null, providers: [] };

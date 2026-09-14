@@ -169,6 +169,21 @@ export async function POST(request: Request) {
             );
         }
 
+        // THE HEAD COUNT on a PRIVATE session. A flat item is bought once at one
+        // price whatever the head count, but the provider still needs to know how
+        // many are coming (mats, chairs, cups). The honest cap is the provider's
+        // declared capacity where it has one (a room/table size), else the cottage
+        // booking's guest count — you cannot bring more people than are staying,
+        // and a traveller declares no capacity. Clamped here, never trusted from
+        // the browser; NULL for a per-person booking, where the quantity IS the
+        // head count. It does not touch price.
+        const cottageGuests = Math.max(1, Number(booking.guests) || 1);
+        const declaredCap = Number(provider.slot_capacity) > 0 ? Number(provider.slot_capacity) : null;
+        const attendeesCap = declaredCap != null ? Math.min(declaredCap, cottageGuests) : cottageGuests;
+        const attendees = isPrivate
+            ? Math.min(Math.max(1, Math.floor(Number(body.attendees) || 1)), attendeesCap)
+            : null;
+
         // THE PER-PERSON MINIMUM — the real invariant, not the picker floor.
         // A tasting or class priced per person may set a smallest group it will
         // run for (slot_min_people, default 1 = no minimum). It bites only when
@@ -328,6 +343,7 @@ export async function POST(request: Request) {
                 // change if the menu's duration is edited later.
                 duration_minutes: durationMinutes,
                 guests: booking.guests ?? null,
+                attendees,
                 quantity,
                 unit_price: unitPrice,
                 item_unit: unit,

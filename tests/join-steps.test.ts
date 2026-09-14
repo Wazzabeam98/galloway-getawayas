@@ -657,6 +657,7 @@ test('the come-to-me / travel fork is asked only for yoga, massage and painting'
     assert.equal(stepApplies('g_capacity', 'guest', massage), false, 'massage is one at a time, not asked');
     assert.equal(stepApplies('g_slot_hours', 'guest', massage), true, 'massage still sets weekly hours');
     // A mixed category (yoga) keeps length + capacity but has no provider basis.
+    // (No fulfilment ⇒ treated as come-to-me for the screens it declares.)
     const mixed = { group: 'wellness', category: 'yoga', shape: 'slot' };
     assert.equal(stepApplies('g_slot_basis', 'guest', mixed), false, 'a mixed slot has no provider basis — each item chooses shared vs 1:1');
     assert.equal(stepApplies('g_slot_length', 'guest', mixed), true, 'a mixed slot keeps a provider length for its classes');
@@ -668,6 +669,24 @@ test('the come-to-me / travel fork is asked only for yoga, massage and painting'
     // Non-slot shapes never see the fork.
     assert.equal(stepApplies('g_slot_where', 'guest', { category: 'chef', shape: 'comes_to_you' }), false);
     assert.equal(stepApplies('g_slot_where', 'guest', { category: 'food_order', shape: 'made_to_order' }), false);
+});
+
+test('a TRAVELLING mixed provider drops the session-length and capacity screens', () => {
+    // Come-to-me: guests come to the studio, so its group classes need a length
+    // and a capacity — both asked.
+    const comeToMe = { group: 'wellness', category: 'yoga', shape: 'slot', fulfilment: 'collection' };
+    assert.equal(stepApplies('g_slot_length', 'guest', comeToMe), true, 'come-to-me keeps the class length');
+    assert.equal(stepApplies('g_capacity', 'guest', comeToMe), true, 'come-to-me keeps the class capacity');
+    // Travels to the guest: every item is a private session with its own length,
+    // and nobody joins a class in someone's cottage — so both screens drop, the
+    // same way the shared-vs-private question does.
+    const travels = { group: 'wellness', category: 'yoga', shape: 'slot', fulfilment: 'delivery' };
+    assert.equal(stepApplies('g_slot_length', 'guest', travels), false, 'a traveller sets the length per private session');
+    assert.equal(stepApplies('g_capacity', 'guest', travels), false, 'a traveller declares no class capacity');
+    assert.equal(stepApplies('g_slot_hours', 'guest', travels), true, 'weekly hours stay either way');
+    // The traveller rule is mixed-only — a non-mixed slot is unaffected.
+    const tastingTravels = { group: 'food', category: 'tastings', shape: 'slot', fulfilment: 'delivery' };
+    assert.equal(stepApplies('g_capacity', 'guest', tastingTravels), true, 'the traveller rule is mixed-only');
 });
 
 test('the per-person minimum screen exists only for a shared/per-person slot', () => {

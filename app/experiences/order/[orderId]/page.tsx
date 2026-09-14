@@ -1,6 +1,6 @@
 import { redirect } from 'next/navigation';
 import Link from 'next/link';
-import { ArrowLeft, CalendarDays, MapPin, Info, CheckCircle2, Clock3, XCircle, AlertTriangle } from 'lucide-react';
+import { ArrowLeft, CalendarDays, MapPin, Info, CheckCircle2, Clock3, XCircle, AlertTriangle, Users } from 'lucide-react';
 import { createServerComponentClient } from '@supabase/auth-helpers-nextjs';
 import { cookies } from 'next/headers';
 import { adminClient } from '@/lib/supabaseAdmin';
@@ -79,7 +79,7 @@ export default async function OrderPage({ params, searchParams }: { params: { or
     const admin = adminClient();
     const { data: order } = await admin
         .from('service_orders')
-        .select('id, guest_id, provider_id, listing_id, booking_id, status, shape, service_date, service_time, price, item_name, item_description, provider_business_name, allergy, note')
+        .select('id, guest_id, provider_id, listing_id, booking_id, status, shape, service_date, service_time, price, item_name, item_description, provider_business_name, allergy, note, attendees, duration_minutes')
         .eq('id', params.orderId)
         .maybeSingle();
     if (!order || order.guest_id !== user.id) redirect('/trips');
@@ -188,7 +188,7 @@ export default async function OrderPage({ params, searchParams }: { params: { or
                                             time: order.service_time || null,
                                             where: comesToCottage ? (cottageAddress || 'Your cottage') : isSlot ? (collectionAddress || prov?.based_line || who) : (collectionAddress || cottageAddress || 'Your cottage'),
                                             details: (order.item_description || '') + (order.note ? '\n\nYour note: ' + order.note : ''),
-                                            durationMin: Number(prov?.slot_length_minutes) || 60,
+                                            durationMin: Number(order.duration_minutes) || Number(prov?.slot_length_minutes) || 60,
                                         })}
                                         download={`${(order.item_name || 'experience').toLowerCase().replace(/[^a-z0-9]+/g, '-')}.ics`}
                                         className="inline-flex items-center gap-1.5 rounded-lg bg-white px-3.5 py-2 text-sm font-semibold text-emerald-800 ring-1 ring-emerald-600/20 hover:bg-emerald-50"
@@ -219,6 +219,18 @@ export default async function OrderPage({ params, searchParams }: { params: { or
                                         <dd className="text-sm text-slate-800">{longWhen(order.service_date, isSlot ? order.service_time : null)}</dd>
                                     </div>
                                 </div>
+                                {/* Head count on a private session — the whole session
+                                    is theirs, so the provider knows how many to set up
+                                    for. Only for a private booking that has one. */}
+                                {isSlot && Number(order.attendees) > 1 ? (
+                                    <div className="flex gap-3">
+                                        <Users className="mt-0.5 h-5 w-5 flex-none text-slate-400" />
+                                        <div>
+                                            <dt className="text-xs font-semibold uppercase tracking-wide text-slate-500">Party</dt>
+                                            <dd className="text-sm text-slate-800">{order.attendees} people — the whole session is yours.</dd>
+                                        </div>
+                                    </div>
+                                ) : null}
                                 <div className="flex gap-3">
                                     <MapPin className="mt-0.5 h-5 w-5 flex-none text-slate-400" />
                                     <div>

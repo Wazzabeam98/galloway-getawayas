@@ -1341,7 +1341,7 @@ function ApplicationForm() {
                     // as a live step during restore, and a signed-in applicant
                     // with any saved draft is resolved onto the email screen they
                     // should never see. A signed-in user has no g_verify step.
-                    ? { category: d.guestCategory, shape: d.shape, hasSession: !!sessionArg, slotOffer: d.slotOffer ?? (d.slotPrivate === true ? 'private' : d.slotPrivate === false ? 'shared' : null) }
+                    ? { category: d.guestCategory, shape: d.shape, hasSession: !!sessionArg, slotOffer: d.slotOffer ?? (d.slotPrivate === true ? 'private' : d.slotPrivate === false ? 'shared' : null), fulfilment: d.fulfilment }
                     : undefined;
             const landing = resolveStep(restoreTrade, d.step, restoreCtx);
             setStep(landing);
@@ -1914,7 +1914,7 @@ function ApplicationForm() {
     // saves the category, not the group) still resolves its steps correctly.
     const stepCtx: StepContext | undefined =
         isGuest
-            ? { group: guestGroup || (guestCategoryByKey(guestCategory)?.group || ''), category: guestCategory, shape, hasSession: !!session, slotOffer }
+            ? { group: guestGroup || (guestCategoryByKey(guestCategory)?.group || ''), category: guestCategory, shape, hasSession: !!session, slotOffer, fulfilment }
             : undefined;
 
     const problemFor = (field: string) => {
@@ -2711,6 +2711,10 @@ function ApplicationForm() {
         const cat = guestCategoryByKey(guestCategory);
         const isSlot = shape === 'slot';
         const slotPerItem = isSlot && slotDurationPerItem(guestCategory);
+        // A travelling mixed provider sells only private sessions — no provider
+        // length (each item has its own) and no declared capacity (its head-count
+        // cap is the cottage, not a class size), so both are stored null.
+        const travellingMixed = isSlot && slotMixedDuration(guestCategory) && fulfilment === 'delivery';
         const isMTO = shape === 'made_to_order';
         const num = (v: string, min: number) => {
             const n = Math.floor(Number(String(v || '').trim()));
@@ -2762,12 +2766,12 @@ function ApplicationForm() {
             // each treatment carries its own — so it stores none, and capacity is
             // fixed at 1 (one person at a time, never asked). Every other slot
             // keeps its provider length and its asked capacity.
-            slot_length_minutes: (isSlot && !slotPerItem) ? num(slotLength, 15) : null,
+            slot_length_minutes: (isSlot && !slotPerItem && !travellingMixed) ? num(slotLength, 15) : null,
             // Max guests → slot_capacity for a slot (drives sellable seats for a
             // shared/per-person slot via sessionCapacity; a private/flat slot
             // records it but still sells whole). Written from the one maxGuests
             // state, so it can never disagree with the jsonb copy below.
-            slot_capacity: slotPerItem ? 1 : (isSlot ? (num(maxGuests, 1) ?? 1) : null),
+            slot_capacity: slotPerItem ? 1 : travellingMixed ? null : (isSlot ? (num(maxGuests, 1) ?? 1) : null),
             // The per-person minimum — a real number only for a shared/per-person
             // slot; a private/flat slot is one booking whatever the head count, so
             // it stores 1 (no minimum). Floored at 1 to satisfy the column's

@@ -12,7 +12,7 @@ import { londonDayKey } from '@/lib/dayKey';
 
 interface Order {
     id: string; status: string; service_date: string; service_time: string | null; shape: string;
-    price: number; quantity: number | null; item_name: string | null; item_unit: string | null;
+    price: number; quantity: number | null; attendees: number | null; item_name: string | null; item_unit: string | null;
     guest_name: string | null; guest_phone: string | null; guest_email: string | null;
 }
 
@@ -182,6 +182,8 @@ export default function ProviderSlotDashboard({ providerId, editHref }: { provid
                                             <span className="text-sm font-semibold text-gray-900">{o.service_time ? timeLabel(o.service_time) : ''}</span>
                                             <span className="text-sm text-gray-700">{o.item_name}</span>
                                             {o.quantity && o.quantity > 1 ? <span className="text-sm text-gray-500">· {o.quantity} people</span> : null}
+                                            {/* A private session: how many are coming (a flat booking is quantity 1, so this is the real head count). */}
+                                            {o.attendees && o.attendees > 1 ? <span className="text-sm text-gray-500">· party of {o.attendees}</span> : null}
                                             <span className="text-sm text-gray-500">· £{o.price.toFixed(2)}</span>
                                             {o.guest_name ? <span className="text-sm text-gray-500">· {o.guest_name}</span> : null}
                                             <span className="ml-auto flex items-center gap-2">
