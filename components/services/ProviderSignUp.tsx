@@ -275,11 +275,18 @@ function ChoiceCard({ selected, onSelect, title, hint, radio }: {
     radio?: boolean;
 }) {
     return (
+        // Content is top-aligned, not centred: these cards sit in a stretched
+        // grid row (all as tall as the wordiest one), and a centred body would
+        // float each title to a different height — a staircase, when they are
+        // one row of choices. Anchored to the top, every title lines up and the
+        // hint hangs beneath it, however many lines each runs to. The title
+        // reserves two lines so a one-line title (Both) starts its hint at the
+        // same place as a two-line one.
         <button type="button" onClick={onSelect}
             {...(radio ? { role: 'radio', 'aria-checked': selected } : { 'aria-pressed': selected })}
-            className={'flex min-h-[9rem] flex-col items-center justify-center gap-1.5 rounded-2xl border-2 bg-white px-5 text-center transition hover:shadow-sm focus:outline-none focus-visible:ring-2 focus-visible:ring-emerald-600 sm:min-h-[14rem] '
+            className={'flex min-h-[9rem] flex-col items-center justify-start gap-1.5 rounded-2xl border-2 bg-white px-5 py-7 text-center transition hover:shadow-sm focus:outline-none focus-visible:ring-2 focus-visible:ring-emerald-600 sm:min-h-[13rem] sm:py-9 '
                 + (selected ? 'border-emerald-600 shadow-sm' : 'border-slate-200 hover:border-slate-300')}>
-            <span className="text-lg font-semibold text-slate-900">{title}</span>
+            <span className="flex items-center text-lg font-semibold text-slate-900 sm:min-h-[3.5rem]">{title}</span>
             <span className="text-sm text-slate-500">{hint}</span>
         </button>
     );
@@ -2060,6 +2067,14 @@ function ApplicationForm() {
                 : items.some((r) => String(r.unit) === 'flat' && Number(r.price) > 0)
                     ? GUEST_SCREEN_COPY.menuSlotBothGateShared
                     : GUEST_SCREEN_COPY.menuSlotBothGatePrivate)
+            // The 'both' place screen carries two answers. When BOTH are still
+            // empty the footer named only the areas (the first problem), so the
+            // address looked optional — name both. If just one is missing this
+            // falls through to that field's own problem via stepProblems below.
+            : step === 'g_area' && shape === 'slot' && fulfilment === 'both'
+                && areas.length === 0
+                && !(collectionStreet.trim() && collectionTown.trim() && collectionPostcode.trim())
+            ? GUEST_SCREEN_COPY.slotBothPlaceGate
             : whereMissing)
         : null;
 
@@ -6736,6 +6751,10 @@ function ApplicationForm() {
                         const delivers = fulfilment === 'delivery' || fulfilment === 'both';
                         const showRegions = usesFulfilment ? delivers : true;
                         const showCollection = usesFulfilment && collects;
+                        // A 'both' slot shows the two together — the only screen in
+                        // the wizard with two answers. Each gets its own sub-heading
+                        // and a gap so it reads as two questions, not one form.
+                        const bothPlaces = showRegions && showCollection;
                         // Slot copy forks on premises vs meeting point (outdoors,
                         // water) — data identical, wording only.
                         const slotMeeting = shape === 'slot' && slotIsMeetingPoint(guestCategory);
@@ -6785,7 +6804,12 @@ function ApplicationForm() {
                                     {shape === 'made_to_order' ? (
                                         <label className="block text-xs font-medium text-slate-500 mb-3">{GUEST_SCREEN_COPY.locationHeadingDeliver}</label>
                                     ) : (
-                                        <p className="text-sm text-slate-500 mb-4 md:max-w-xl">{GUEST_SCREEN_COPY.locationSubtextTravel}</p>
+                                        <>
+                                            {bothPlaces && (
+                                                <h2 className="text-lg font-semibold text-slate-900 mb-1">{GUEST_SCREEN_COPY.slotBothAreasHeading}</h2>
+                                            )}
+                                            <p className="text-sm text-slate-500 mb-4 md:max-w-xl">{GUEST_SCREEN_COPY.locationSubtextTravel}</p>
+                                        </>
                                     )}
 
                                     <div className="space-y-1 md:max-w-xl">
@@ -6811,12 +6835,22 @@ function ApplicationForm() {
                                 confirmed order (see the order page). Optional
                                 postcode lookup on top; manual entry always works. */}
                             {showCollection && (
-                                <div className="mt-8 md:max-w-xl">
-                                    <span className="block text-xs font-medium text-slate-500 mb-2">{
-                                        shape === 'slot'
-                                            ? (slotMeeting ? GUEST_SCREEN_COPY.slotAddressLabelMeeting : GUEST_SCREEN_COPY.slotAddressLabelPremises)
-                                            : GUEST_SCREEN_COPY.collectionAddressLabel
-                                    }</span>
+                                <div className={(bothPlaces ? 'mt-12' : 'mt-8') + ' md:max-w-xl'}>
+                                    {bothPlaces ? (
+                                        // The second answer on the 'both' screen: its own
+                                        // heading and subtext, matching the areas block, with
+                                        // a wider gap above so the two don't run together.
+                                        <>
+                                            <h2 className="text-lg font-semibold text-slate-900 mb-1">{GUEST_SCREEN_COPY.slotBothAddressHeading}</h2>
+                                            <p className="text-sm text-slate-500 mb-4">{GUEST_SCREEN_COPY.slotBothAddressSubtext}</p>
+                                        </>
+                                    ) : (
+                                        <span className="block text-xs font-medium text-slate-500 mb-2">{
+                                            shape === 'slot'
+                                                ? (slotMeeting ? GUEST_SCREEN_COPY.slotAddressLabelMeeting : GUEST_SCREEN_COPY.slotAddressLabelPremises)
+                                                : GUEST_SCREEN_COPY.collectionAddressLabel
+                                        }</span>
+                                    )}
 
                                     {showCollectionFields ? (
                                         // FIELDS MODE — a chosen or hand-typed address. The
