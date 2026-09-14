@@ -224,6 +224,17 @@ export const GUEST_SCREEN_COPY = {
     menuSlotUnitFlatHint: 'One price for the whole session — a private hire.',
     menuSlotUnitPerson: 'Per person',
     menuSlotUnitPersonHint: 'A price each — a shared table or class.',
+    // The mixed shape's per-item choice (yoga, pottery, painting): what the host
+    // is SELLING, not the booking mechanic. One set of words serves all three — a
+    // yoga class / pottery class / painting class read as "a shared class"; a 1:1
+    // yoga session, private pottery tuition or private painting session all read
+    // as "a private session". The shared hint describes the CLASS (one time, one
+    // length), not the length field on an earlier screen.
+    menuBookedTitle: 'How is it booked?',
+    menuBookedSharedLabel: 'A shared class',
+    menuBookedSharedHint: 'Several guests book the same time, at one fixed length.',
+    menuBookedPrivateLabel: 'A private session',
+    menuBookedPrivateHint: 'You see one guest at a time, and set the length for each session.',
     // Shown beside the greyed Next on the slot price screen when 'offer both' is
     // missing one side, so the reason is never left unsaid. The no-price-at-all
     // case falls to menuRequiredGate.

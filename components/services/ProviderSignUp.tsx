@@ -4834,7 +4834,7 @@ function ApplicationForm() {
                                     open
                                     title={
                                         stepKind === 'name' ? (isSlot ? GUEST_SCREEN_COPY.menuNameTitleSlot : GUEST_SCREEN_COPY.menuNameTitle)
-                                            : stepKind === 'booked' ? 'How is it booked?'
+                                            : stepKind === 'booked' ? GUEST_SCREEN_COPY.menuBookedTitle
                                             : stepKind === 'duration' ? 'How long is it?'
                                                 : stepKind === 'price' ? GUEST_SCREEN_COPY.menuPriceTitle
                                                     : stepKind === 'unit' ? GUEST_SCREEN_COPY.menuSlotUnitTitle
@@ -4866,10 +4866,10 @@ function ApplicationForm() {
                                         // booking is a whole session for one, with its own
                                         // length asked next. Switching to a class clears any
                                         // length it may have carried.
-                                        <div role="radiogroup" aria-label="How is it booked?" className="mx-auto w-full max-w-md space-y-3">
+                                        <div role="radiogroup" aria-label={GUEST_SCREEN_COPY.menuBookedTitle} className="mx-auto w-full max-w-md space-y-3">
                                             {([
-                                                ['person', 'A shared class', 'Several guests book the same time. Uses your standard session length.'],
-                                                ['flat', 'One at a time', 'You see one guest at a time and set how long each booking is.'],
+                                                ['person', GUEST_SCREEN_COPY.menuBookedSharedLabel, GUEST_SCREEN_COPY.menuBookedSharedHint],
+                                                ['flat', GUEST_SCREEN_COPY.menuBookedPrivateLabel, GUEST_SCREEN_COPY.menuBookedPrivateHint],
                                             ] as const).map(([u, label, hint]) => {
                                                 const on = String(it.unit) === u;
                                                 return (
