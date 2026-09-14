@@ -20,8 +20,13 @@ export interface MpItem {
     duration_minutes: number | null;
 }
 // A booked session's interval on the provider's day, for greying overlapping
-// starts client-side: the same rule the claim and the DB exclusion enforce.
-export interface MpBookedBlock { date: string; time: string; duration_minutes: number | null; turnaround_minutes: number | null; }
+// starts client-side: the same rule the claim and the DB exclusion enforce. Also
+// carries the seat state, so a mixed provider's shared CLASS (capacity > 1) reads
+// its real seats-left rather than being treated as a full one-seat slot.
+export interface MpBookedBlock {
+    date: string; time: string; duration_minutes: number | null; turnaround_minutes: number | null;
+    capacity: number; seats_taken: number; private: boolean;
+}
 export interface MpSession {
     date: string; time: string;
     // The established slot_sessions row for this time, or null if nobody has
@@ -88,6 +93,9 @@ export interface MpProvider {
     // Every booked session's interval, so the panel greys any start that would
     // overlap one — the guest never sees, or picks, a time the claim would refuse.
     bookedBlocks: MpBookedBlock[];
+    // The provider's single session length (minutes), the fallback for an untimed
+    // item. 0 when unset (a pure one-at-a-time provider) or not a slot.
+    slotLength: number;
     cancellation_window_hours: number;
     // Made-to-order only: notice needed, in days — gates the earliest bookable date.
     lead_time_days: number;
@@ -273,8 +281,14 @@ export async function loadMarketplace(
                         time: String(s.session_time).slice(0, 5),
                         duration_minutes: s.duration_minutes == null ? null : Number(s.duration_minutes),
                         turnaround_minutes: s.turnaround_minutes == null ? null : Number(s.turnaround_minutes),
+                        capacity: Number(s.capacity), seats_taken: Number(s.seats_taken), private: Boolean(s.private),
                     }))
                 : [],
+            // The one provider session length, for the panel to fall an UNTIMED
+            // item (a shared class) back onto — a mixed provider's classes use it
+            // while its 1:1s carry their own. 0 for a pure one-at-a-time provider
+            // (massage stores none) and for non-slots.
+            slotLength: shape === 'slot' ? Math.max(0, Number(p.slot_length_minutes) || 0) : 0,
             cancellation_window_hours: Number(p.cancellation_window_hours) || 48,
             lead_time_days: Number(p.lead_time_days) || 0,
             hero: (items.find((i: MpItem) => i.image) || {}).image || null,

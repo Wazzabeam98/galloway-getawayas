@@ -205,6 +205,7 @@ export default async function ListingPage(
                                 slotCapacity: p.slotCapacity,
                                 perItemDurations: p.perItemDurations,
                                 turnaround: p.turnaround,
+                                slotLength: p.slotLength,
                                 slotAvailability: p.slotAvailability,
                                 slotBlocks: p.slotBlocks,
                                 bookedBlocks: p.bookedBlocks,

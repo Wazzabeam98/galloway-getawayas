@@ -31,6 +31,7 @@ import {
     guestAsksExpertise,
     slotAsksWhereFork,
     slotDurationPerItem,
+    slotMixedDuration,
 } from '@/lib/serviceProviders';
 import { GUEST_SCREEN_COPY } from '@/lib/strings';
 
@@ -243,12 +244,14 @@ export function stepApplies(step: StepKey, trade: string, ctx?: StepContext): bo
             // 'other' has no shape, so both skip it.
             // The private/shared pricing basis — slot only. A made-to-order
             // product and a traveller price per item/enquiry, not per session.
-            // The private/shared basis and the capacity are BOTH fixed for the
-            // one-at-a-time shape — a treatment is a whole-session price for one
-            // person — so neither is asked; they follow from the shape (see
-            // slotDurationPerItem). Every other slot still asks.
+            // The private/shared basis is fixed for the one-at-a-time shape (a
+            // treatment is a whole-session price for one person) AND not asked for
+            // the mixed shape (there each item picks shared-class vs one-at-a-time
+            // in its own sub-flow) — so both skip it. Every other slot still asks.
+            // Capacity stays asked for the mixed shape: its untimed group classes
+            // need a size; only pure one-at-a-time (massage) skips it.
             case 'g_slot_basis':
-                return shape === 'slot' && !slotDurationPerItem(ctx.category);
+                return shape === 'slot' && !slotDurationPerItem(ctx.category) && !slotMixedDuration(ctx.category);
             case 'g_capacity':
                 return shape === 'comes_to_you' || (shape === 'slot' && !slotDurationPerItem(ctx.category));
             // The per-person minimum — a slot that is priced per person (the

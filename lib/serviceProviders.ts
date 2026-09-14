@@ -204,6 +204,25 @@ export function slotDurationPerItem(category: string | null | undefined): boolea
     return SLOT_PER_ITEM_DURATION_CATEGORIES.indexOf(String(category || '')) !== -1;
 }
 
+// The MIXED categories — a provider who genuinely runs both shapes: a yoga
+// teacher with group classes AND 1:1s, a potter with a group wheel class AND
+// private tuition. Unlike massage (pure one-at-a-time, every item timed), these
+// ask the timed-or-not question PER ITEM: a shared class is untimed and uses the
+// provider's one session length + capacity; a one-at-a-time booking is flat with
+// its OWN duration. The booking code doesn't branch on this — it keys off the
+// item's duration either way; this only shapes the wizard.
+const SLOT_MIXED_DURATION_CATEGORIES = ['yoga', 'pottery', 'painting'];
+
+export function slotMixedDuration(category: string | null | undefined): boolean {
+    return SLOT_MIXED_DURATION_CATEGORIES.indexOf(String(category || '')) !== -1;
+}
+
+// Does this category's item sub-flow ask a per-treatment duration at all — either
+// because every item is timed (massage) or because some may be (the mixed ones)?
+export function slotAsksItemDuration(category: string | null | undefined): boolean {
+    return slotDurationPerItem(category) || slotMixedDuration(category);
+}
+
 export function slotIsMeetingPoint(category: string | null | undefined): boolean {
     return SLOT_MEETING_POINT_CATEGORIES.indexOf(String(category || '')) !== -1;
 }

@@ -1,0 +1,90 @@
+{
+  "ranAt": "2026-09-14T10:28:27.577Z",
+  "target": "http://localhost:3191",
+  "account": "acct_1UFVhiAQQUL0pK8w",
+  "passed": 3,
+  "failed": 0,
+  "scenarios": [
+    {
+      "number": "1",
+      "title": "A shared class takes several guests on one time; the untimed class uses the provider length (75), not the 60 default",
+      "checks": [
+        {
+          "desc": "both class bookings on the same time confirmed",
+          "ok": true,
+          "detail": "confirmed/confirmed"
+        },
+        {
+          "desc": "the one class session holds 5 seats out of a capacity of 12, shared",
+          "ok": true,
+          "detail": "seats=5/12 private=false"
+        },
+        {
+          "desc": "the UNTIMED class session froze duration 75 — the provider length, not the 60 fallback",
+          "ok": true,
+          "detail": "duration=75"
+        },
+        {
+          "desc": "the class order also froze the provider length (75)",
+          "ok": true,
+          "detail": "75"
+        }
+      ],
+      "status": "passed"
+    },
+    {
+      "number": "2",
+      "title": "A 1:1 that overlaps the running class is refused before Stripe; the class is untouched",
+      "checks": [
+        {
+          "desc": "the overlapping 1:1 is REFUSED with 409",
+          "ok": true,
+          "detail": "HTTP 409 {\"ok\":false,\"error\":\"That time just filled up. Pick another.\"}"
+        },
+        {
+          "desc": "the guest sees \"that time just filled up\"",
+          "ok": true,
+          "detail": "That time just filled up. Pick another."
+        },
+        {
+          "desc": "no order was created for the refused 1:1",
+          "ok": true,
+          "detail": "orders at 09:30"
+        },
+        {
+          "desc": "the class is untouched (still 5 seats)",
+          "ok": true,
+          "detail": "5"
+        }
+      ],
+      "status": "passed"
+    },
+    {
+      "number": "3",
+      "title": "A 1:1 at a free time succeeds, with ITS OWN length — both shapes live on one provider, one day",
+      "checks": [
+        {
+          "desc": "the 1:1 is booked, paid and confirmed",
+          "ok": true,
+          "detail": "confirmed"
+        },
+        {
+          "desc": "the TIMED 1:1 session froze its own duration 60, capacity 1, private",
+          "ok": true,
+          "detail": "duration=60 cap=1 private=true"
+        },
+        {
+          "desc": "the 1:1 order froze its own length (60), not the provider 75",
+          "ok": true,
+          "detail": "60"
+        },
+        {
+          "desc": "the class (75, shared, 5 seats) and the 1:1 (60, private) both exist on the same day",
+          "ok": true,
+          "detail": "{\"class\":75,\"oneToOne\":60}"
+        }
+      ],
+      "status": "passed"
+    }
+  ]
+}

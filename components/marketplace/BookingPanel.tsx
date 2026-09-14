@@ -23,7 +23,10 @@ interface PanelSession {
     // The pinned seat row for this time, or null if nobody has booked it yet.
     row: { capacity: number; seats_taken: number; private: boolean } | null;
 }
-interface PanelBookedBlock { date: string; time: string; duration_minutes: number | null; turnaround_minutes: number | null; }
+interface PanelBookedBlock {
+    date: string; time: string; duration_minutes: number | null; turnaround_minutes: number | null;
+    capacity: number; seats_taken: number; private: boolean;
+}
 interface PanelProvider {
     id: string; business_name: string; who: string; shape: string; isFood: boolean;
     items: PanelItem[]; sessions: PanelSession[]; leadTimeDays: number;
@@ -36,6 +39,9 @@ interface PanelProvider {
     // duration, so the panel generates it here rather than reading one server grid.
     perItemDurations?: boolean;
     turnaround?: number;
+    // The provider's single session length — the fallback for an UNTIMED item (a
+    // shared class), so it uses the host's real length rather than a hard default.
+    slotLength?: number;
     slotAvailability?: Array<{ day_of_week: number; open_time: string; close_time: string }>;
     slotBlocks?: string[];
     // Every booked session's interval, to grey any start that would overlap one.
@@ -100,8 +106,10 @@ export default function BookingPanel({ bookingId, checkIn, checkOut, provider }:
     // The per-treatment shape (massage): the grid depends on the chosen treatment.
     const perItem = isSlot && !!provider.perItemDurations;
     const turnaround = Math.max(0, provider.turnaround || 0);
-    // The chosen treatment's length; for a per-item provider it is the item's own.
-    const chosenDuration = item ? resolvedDuration(item, {}) : 0;
+    // The chosen item's length: its own duration if it has one (a timed 1:1), else
+    // the PROVIDER'S session length (an untimed shared class) — NOT a hard 60
+    // default, which would silently mis-grid a mixed provider's classes.
+    const chosenDuration = item ? resolvedDuration(item, { slot_length_minutes: provider.slotLength }) : 0;
 
     const minDate = maxKey(checkIn.slice(0, 10), dayKeyFromNow(provider.shape === 'made_to_order' ? provider.leadTimeDays : 0));
     const maxDate = lastNight(checkOut);
@@ -124,8 +132,10 @@ export default function BookingPanel({ bookingId, checkIn, checkOut, provider }:
         if (!isSlot) return [];
         if (!perItem) return provider.sessions;
         if (!item) return [];   // per-item: the guest picks a treatment first
+        // The real seat row per booked time, so a shared class shows its true
+        // seats-left (a 1:1 is capacity 1 and reads full once taken, as before).
         const rowByKey = new Map<string, PanelSession['row']>();
-        for (const b of provider.bookedBlocks || []) rowByKey.set(b.date + ' ' + b.time, { capacity: 1, seats_taken: 1, private: true });
+        for (const b of provider.bookedBlocks || []) rowByKey.set(b.date + ' ' + b.time, { capacity: b.capacity, seats_taken: b.seats_taken, private: b.private });
         const nowMs = Date.now();
         return generateSessions(provider.slotAvailability || [], provider.slotBlocks || [], chosenDuration + turnaround, minDate, maxDate, chosenDuration)
             .filter((s) => new Date(s.date + 'T' + s.time + ':00Z').getTime() > nowMs)
