@@ -364,7 +364,14 @@ export const GUEST_SCREEN_COPY = {
     slotWhereAtPlaceHint: 'Guests come to you',
     slotWhereTravel: 'I come to the guest',
     slotWhereTravelHint: 'You go to their cottage',
+    // The third option — some sessions at the provider's place, some travelled to
+    // the guest. Picking it moves the location question into each item's sub-flow.
+    slotWhereBoth: 'Both',
+    slotWhereBothHint: 'Some at your place, some you travel for — you’ll say which per session',
     slotWhereGate: 'Choose where it happens to carry on.',
+    // Asked per item, in the menu sub-flow, only for a 'both' provider: where THIS
+    // one happens. Reuses the At-my-place / I-come-to-the-guest cards.
+    menuLocationTitle: 'Where’s this one?',
     // The g_area heading for a slot, by where it happens. Premises vs meeting
     // point is copy only — the stored address is identical.
     slotPlaceHeadingPremises: 'What’s the address guests come to?',

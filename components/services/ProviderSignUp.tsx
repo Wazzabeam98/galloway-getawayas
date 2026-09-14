@@ -545,6 +545,10 @@ function ApplicationForm() {
         // minutes, as a string like the price. Empty/absent for every other
         // category, where the session length is the provider's single number.
         duration?: string;
+        // Per-item location, only for a provider who answered 'both' to "where
+        // does it happen?": 'collection' (at my place) | 'delivery' (I travel).
+        // Absent for every single-place provider (the item inherits theirs).
+        fulfilment?: string;
     }>>([]);
     // Which item row is uploading a photo, by index, so only that row shows a
     // spinner rather than all of them.
@@ -915,7 +919,7 @@ function ApplicationForm() {
                     // The menu, if they have one. Loaded in the order they set.
                     const { data: itemRows } = await supabase
                         .from('service_provider_items')
-                        .select('id, name, description, price, unit, image, sort_order, created_at, duration_minutes')
+                        .select('id, name, description, price, unit, image, sort_order, created_at, duration_minutes, fulfilment')
                         .eq('provider_id', existing.id)
                         .order('sort_order', { ascending: true })
                         .order('created_at', { ascending: true });
@@ -928,6 +932,7 @@ function ApplicationForm() {
                             unit: r.unit || 'flat',
                             image: r.image || null,
                             duration: r.duration_minutes === null || r.duration_minutes === undefined ? '' : String(r.duration_minutes),
+                            fulfilment: r.fulfilment || undefined,
                         })));
                     }
 
@@ -3530,9 +3535,16 @@ function ApplicationForm() {
                     name: String(it.name || '').trim(),
                     description: String(it.description || '').trim() || null,
                     price: String(it.price || '').trim() !== '' ? Number(it.price) : null,
-                    unit: shape === 'slot' ? (String(it.unit) === 'person' ? 'person' : 'flat') : String(it.unit || 'flat'),
+                    // A travelling item is always private (flat), whatever the row
+                    // carries — nobody joins a class in someone else's cottage.
+                    unit: shape === 'slot'
+                        ? ((fulfilment === 'both' && String(it.fulfilment) === 'delivery') ? 'flat' : (String(it.unit) === 'person' ? 'person' : 'flat'))
+                        : String(it.unit || 'flat'),
                     image: it.image || null,
                     duration_minutes: isTimed(it.unit) && Number(it.duration) > 0 ? Math.round(Number(it.duration)) : null,
+                    // Per-item location, only when the provider answered 'both'; null
+                    // otherwise (the item inherits the provider's single answer).
+                    fulfilment: (shape === 'slot' && fulfilment === 'both') ? (String(it.fulfilment) === 'delivery' ? 'delivery' : 'collection') : null,
                     sort_order: i,
                     active: true,
                 }))
@@ -4637,9 +4649,10 @@ function ApplicationForm() {
                     // both BEFORE this menu screen, so it is known here. A travelling
                     // mixed provider is treated like the pure one-at-a-time shape:
                     // every item is a private session, timed, no question.
+                    // Provider-level travel: true only when the whole listing travels
+                    // ('delivery'). A 'both' provider is false here and resolves travel
+                    // PER ITEM below (itemTravels), where the item's location is known.
                     const travels = fulfilment === 'delivery';
-                    const mixedChoice = mixedShape && !travels;   // come-to-me: ask per item
-                    const forcedOneToOne = perItemShape || (mixedShape && travels);
                     // 'offer both' is the only slot where the unit is ambiguous, so
                     // it alone lets the provider add items and choose each one's unit
                     // (session vs person) as a step in the sub-flow. private/shared
@@ -4695,7 +4708,7 @@ function ApplicationForm() {
                     const extraRows = items.map((r, i) => ({ r, i })).filter(({ i }) => !usedIdx.has(i));
 
                     const rows = items;
-                    const setField = (i: number, field: 'name' | 'description' | 'price' | 'unit' | 'duration', val: string) =>
+                    const setField = (i: number, field: 'name' | 'description' | 'price' | 'unit' | 'duration' | 'fulfilment', val: string) =>
                         setItems((prev) => prev.map((r, j) => (j === i ? { ...r, [field]: val } : r)));
 
                     const openEdit = (i: number) => { setMenuIndex(i); setUnitLocked(false); setMenuStep(0); setPayoutOpen(false); };
@@ -4724,6 +4737,16 @@ function ApplicationForm() {
                     const nameFilled = !!it && String(it.name || '').trim() !== '';
                     const priceNum = it ? (Number(it.price) || 0) : 0;
                     const priceFilled = priceNum > 0;
+                    // PER-ITEM LOCATION. A provider who answered 'both' to "where does
+                    // it happen?" (fulfilment === 'both') sets each item's location in
+                    // its own sub-flow. So `travels` becomes a per-ITEM fact here — a
+                    // travelling item drives the same forced-private+timed path the
+                    // pure-delivery provider gets, a studio item the come-to-me path.
+                    // Until the item's location is answered it reads as not-travelling.
+                    const locationPerItem = isSlot && fulfilment === 'both';
+                    const itemTravels = travels || (locationPerItem && String(it && it.fulfilment) === 'delivery');
+                    const mixedChoiceItem = mixedShape && !itemTravels;
+                    const forcedOneToOneItem = perItemShape || (mixedShape && itemTravels);
                     // The sub-flow is one question a screen. A 'both' slot gets the
                     // unit-choice screen between price and description — but only when
                     // the unit is not already decided by the shape the host opened
@@ -4738,16 +4761,19 @@ function ApplicationForm() {
                     // skips it and uses the provider length. Massage and a TRAVELLING
                     // mixed provider skip the question entirely — every item is a
                     // private session, so it goes straight to the duration screen.
-                    const mixedTimed = mixedChoice && String(it && it.unit) === 'flat';
-                    const stepKinds: Array<'name' | 'booked' | 'duration' | 'price' | 'unit' | 'desc' | 'photo'> = forcedOneToOne
-                        ? ['name', 'duration', 'price', 'desc', 'photo']
-                        : mixedChoice
+                    const mixedTimed = mixedChoiceItem && String(it && it.unit) === 'flat';
+                    // A 'both' provider is asked the item's LOCATION right after its
+                    // name — before booked/duration, which depend on whether it travels.
+                    const locStep: Array<'location'> = locationPerItem ? ['location'] : [];
+                    const stepKinds: Array<'name' | 'location' | 'booked' | 'duration' | 'price' | 'unit' | 'desc' | 'photo'> = forcedOneToOneItem
+                        ? ['name', ...locStep, 'duration', 'price', 'desc', 'photo']
+                        : mixedChoiceItem
                             ? (mixedTimed
-                                ? ['name', 'booked', 'duration', 'price', 'desc', 'photo']
-                                : ['name', 'booked', 'price', 'desc', 'photo'])
+                                ? ['name', ...locStep, 'booked', 'duration', 'price', 'desc', 'photo']
+                                : ['name', ...locStep, 'booked', 'price', 'desc', 'photo'])
                             : (slotBoth && !unitLocked)
                                 ? ['name', 'price', 'unit', 'desc', 'photo']
-                                : ['name', 'price', 'desc', 'photo'];
+                                : ['name', ...locStep, 'price', 'desc', 'photo'];
                     const LAST = stepKinds.length - 1;
                     const stepKind = stepKinds[menuStep] ?? 'name';
                     const durationFilled = !!it && (Number(it.duration) || 0) > 0;
@@ -4850,6 +4876,7 @@ function ApplicationForm() {
                                     open
                                     title={
                                         stepKind === 'name' ? (isSlot ? GUEST_SCREEN_COPY.menuNameTitleSlot : GUEST_SCREEN_COPY.menuNameTitle)
+                                            : stepKind === 'location' ? GUEST_SCREEN_COPY.menuLocationTitle
                                             : stepKind === 'booked' ? GUEST_SCREEN_COPY.menuBookedTitle
                                             : stepKind === 'duration' ? 'How long is it?'
                                                 : stepKind === 'price' ? GUEST_SCREEN_COPY.menuPriceTitle
@@ -4861,7 +4888,7 @@ function ApplicationForm() {
                                     onBack={menuStep > 0 ? () => setMenuStep((s) => s - 1) : undefined}
                                     onRemove={(!isSlot || slotBoth || perItemShape || mixedShape) ? () => removeItem(menuIndex) : undefined}
                                     saveLabel={menuStep === LAST ? GUEST_SCREEN_COPY.save : GUEST_SCREEN_COPY.menuNext}
-                                    saveDisabled={(stepKind === 'name' && !nameFilled) || (stepKind === 'duration' && !durationFilled) || (stepKind === 'price' && !priceFilled)}
+                                    saveDisabled={(stepKind === 'name' && !nameFilled) || (stepKind === 'location' && !String(it.fulfilment || '')) || (stepKind === 'duration' && !durationFilled) || (stepKind === 'price' && !priceFilled)}
                                     onSave={menuStep === LAST ? closeItem : () => setMenuStep((s) => s + 1)}
                                     note={menuStep === LAST ? GUEST_SCREEN_COPY.menuPhotoPrompt : undefined}
                                 >
@@ -4873,6 +4900,48 @@ function ApplicationForm() {
                                                 placeholder={GUEST_SCREEN_COPY.menuNameExamples[guestCategory] ?? GUEST_SCREEN_COPY.menuNameExampleFallback}
                                                 className={bigInput}
                                             />
+                                        </div>
+                                    )}
+                                    {stepKind === 'location' && (
+                                        // The per-item location, for a provider who runs
+                                        // both studio and travelling sessions. Picking
+                                        // "I come to the guest" makes the item a private
+                                        // session (unit 'flat') — nobody joins a class held
+                                        // in someone else's cottage — so the shared/private
+                                        // question is skipped for it and it goes straight to
+                                        // its own length. A studio item keeps the normal
+                                        // path (a class or a private session, its choice).
+                                        <div role="radiogroup" aria-label={GUEST_SCREEN_COPY.menuLocationTitle} className="mx-auto w-full max-w-md space-y-3">
+                                            {([
+                                                ['collection', GUEST_SCREEN_COPY.slotWhereAtPlace, GUEST_SCREEN_COPY.slotWhereAtPlaceHint],
+                                                ['delivery', GUEST_SCREEN_COPY.slotWhereTravel, GUEST_SCREEN_COPY.slotWhereTravelHint],
+                                            ] as const).map(([f, label, hint]) => {
+                                                const on = String(it.fulfilment) === f;
+                                                return (
+                                                    <button
+                                                        key={f}
+                                                        type="button"
+                                                        role="radio"
+                                                        aria-checked={on}
+                                                        onClick={() => {
+                                                            setField(menuIndex, 'fulfilment', f);
+                                                            // A travelling item is always private.
+                                                            if (f === 'delivery') setField(menuIndex, 'unit', 'flat');
+                                                        }}
+                                                        className={'flex w-full items-start gap-3 rounded-2xl border px-4 py-4 text-left transition '
+                                                            + (on ? 'border-emerald-600 bg-emerald-50 ring-1 ring-emerald-600' : 'border-slate-200 hover:border-emerald-400')}
+                                                    >
+                                                        <span className={'mt-0.5 flex h-6 w-6 flex-none items-center justify-center rounded-full border transition '
+                                                            + (on ? 'border-emerald-600 bg-emerald-600 text-white' : 'border-slate-300 text-transparent')}>
+                                                            <Check className="h-4 w-4" strokeWidth={3} />
+                                                        </span>
+                                                        <span>
+                                                            <span className="block font-semibold text-slate-900">{label}</span>
+                                                            <span className="block text-sm text-slate-500">{hint}</span>
+                                                        </span>
+                                                    </button>
+                                                );
+                                            })}
                                         </div>
                                     )}
                                     {stepKind === 'booked' && (
@@ -5122,10 +5191,12 @@ function ApplicationForm() {
                     question; here are the two cards. */}
                 {onStep('g_slot_where') && isGuest && shape === 'slot' && (
                 <section className="mb-8 sm:mb-0 sm:flex-1 sm:flex sm:flex-col sm:justify-center md:max-w-xl md:mx-auto">
-                    <div className="grid gap-3 sm:grid-cols-2">
+                    <div className="grid gap-3 sm:grid-cols-3">
                         {[
                             { v: 'collection', t: GUEST_SCREEN_COPY.slotWhereAtPlace, d: GUEST_SCREEN_COPY.slotWhereAtPlaceHint },
                             { v: 'delivery', t: GUEST_SCREEN_COPY.slotWhereTravel, d: GUEST_SCREEN_COPY.slotWhereTravelHint },
+                            // 'both' moves the location into each item's sub-flow.
+                            { v: 'both', t: GUEST_SCREEN_COPY.slotWhereBoth, d: GUEST_SCREEN_COPY.slotWhereBothHint },
                         ].map((o) => (
                             <ChoiceCard key={o.v} selected={fulfilment === o.v} onSelect={() => setFulfilment(o.v)} title={o.t} hint={o.d} />
                         ))}

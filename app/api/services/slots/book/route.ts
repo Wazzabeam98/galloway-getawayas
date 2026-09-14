@@ -13,6 +13,7 @@ import {
     bookingIsPrivate, slotClaimKind, optionAvailability,
     resolvedDuration, overlapsBooked, minutesOfDay,
 } from '@/lib/serviceSlots';
+import { itemFulfilment } from '@/lib/serviceProviders';
 import { dateFromKey, dateKey } from '@/lib/pricing';
 
 export const dynamic = 'force-dynamic';
@@ -87,7 +88,7 @@ export async function POST(request: Request) {
         // private/shared — derives from this row, never from the browser.
         const itemQuery = admin
             .from('service_provider_items')
-            .select('id, name, description, price, unit, active, duration_minutes')
+            .select('id, name, description, price, unit, active, duration_minutes, fulfilment')
             .eq('provider_id', provider.id)
             .eq('active', true)
             .gt('price', 0);
@@ -190,7 +191,13 @@ export async function POST(request: Request) {
         // the browser; NULL for a per-person booking, where the quantity IS the
         // head count. It does not touch price.
         const cottageGuests = Math.max(1, Number(booking.guests) || 1);
-        const declaredCap = Number(provider.slot_capacity) > 0 ? Number(provider.slot_capacity) : null;
+        // The booked item's location: its own for a 'both' provider, else the
+        // provider's single answer. A TRAVELLING item ignores the provider's
+        // studio capacity — no cap on a session in the guest's own cottage beyond
+        // who is staying there — so its head-count cap is the cottage alone.
+        const bookedFulfilment = itemFulfilment(item, provider.fulfilment);
+        const itemIsTravelling = bookedFulfilment === 'delivery';
+        const declaredCap = itemIsTravelling ? null : (Number(provider.slot_capacity) > 0 ? Number(provider.slot_capacity) : null);
         const attendeesCap = declaredCap != null ? Math.min(declaredCap, cottageGuests) : cottageGuests;
         const attendees = isPrivate
             ? Math.min(Math.max(1, Math.floor(Number(body.attendees) || 1)), attendeesCap)
@@ -342,10 +349,12 @@ export async function POST(request: Request) {
         // a booking with us, so the address is their stay's cottage, composed
         // server-side from the trusted booking -> listing (the same booking whose
         // guest_id we already checked is this user), NEVER from the browser. Only
-        // for a delivery slot; NULL otherwise. A guest with no booking types an
-        // address into this same column — scoped separately, not built here.
+        // for a travelling ITEM; NULL otherwise. For a 'both' provider that means
+        // the booked item's own direction (itemIsTravelling), not the provider's
+        // 'both'. A guest with no booking types an address into this same column —
+        // scoped separately, not built here.
         let serviceAddress: string | null = null;
-        if (provider.fulfilment === 'delivery' && booking.listing_id) {
+        if (itemIsTravelling && booking.listing_id) {
             const { data: stay } = await admin.from('listings')
                 .select('street_address, postcode, location')
                 .eq('id', booking.listing_id).maybeSingle();
@@ -371,12 +380,13 @@ export async function POST(request: Request) {
                 // what the guest bought and the provider is turning up for must not
                 // change if the menu's duration is edited later.
                 duration_minutes: durationMinutes,
-                // Freeze the fulfilment DIRECTION too, beside the duration: what a
-                // guest booked (come-to-me vs the provider travelling) must not
-                // flip if the provider later switches their setup. The order page
-                // reads this, never the provider's live value. The address stays
-                // live from the provider — only the direction is the deal.
-                fulfilment: provider.fulfilment ?? null,
+                // Freeze the fulfilment DIRECTION beside the duration: what a guest
+                // booked (come-to-me vs the provider travelling) must not flip if
+                // the provider later switches their setup. For a 'both' provider
+                // this is the booked ITEM's direction, not the provider's 'both' —
+                // an order is at one place. The order page reads this, never the
+                // provider's live value.
+                fulfilment: bookedFulfilment,
                 // The frozen destination for a travelling session (see above).
                 service_address: serviceAddress,
                 guests: booking.guests ?? null,
