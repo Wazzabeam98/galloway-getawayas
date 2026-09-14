@@ -33,6 +33,27 @@ export function guestExperiencesOpen(): boolean {
     return process.env.GUEST_EXPERIENCES_OPEN === 'true';
 }
 
+// The three /business sign-up tiles — holiday let, offer a service, and host a
+// guest experience — are held behind a "coming soon" state on PRODUCTION until
+// the host/provider terms are back from the solicitor. This is a front-door
+// flag only: it greys the tiles on the fork and nothing else. The flows behind
+// them (/addhome, /services/join, /services/join?trade=guest) are untouched, and
+// so is every existing host and tradesman — none of their routes read this.
+//
+// Releasing is ONE step for all three: set BUSINESS_SIGNUPS_OPEN=true on
+// Production (a redeploy binds it, same as GUEST_EXPERIENCES_OPEN above). All
+// three tiles read this one flag, so they come back together.
+//
+// Held on PRODUCTION only — previews and local always return open, so the whole
+// of each flow stays walkable while the terms are outstanding. Defaulting to
+// held on prod (absent, or anything but 'true') is the safe direction: the
+// RESEND_API_KEY-set-on-Production-not-Preview class of scoping slip can only
+// ever leave a preview more open, never expose production before the terms land.
+export function businessSignupsOpen(): boolean {
+    if (process.env.VERCEL_ENV !== 'production') return true;
+    return process.env.BUSINESS_SIGNUPS_OPEN === 'true';
+}
+
 // ---------------------------------------------------------------------------
 // WHO STRIPE THINKS EACH PROVIDER IS
 // ---------------------------------------------------------------------------
