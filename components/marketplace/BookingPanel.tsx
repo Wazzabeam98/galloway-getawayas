@@ -104,7 +104,9 @@ export default function BookingPanel({ bookingId, checkIn, checkOut, cottageGues
     // For the pick-your-stay path the destination is the guest's stay — shown here
     // and frozen onto the order server-side from the booking's listing.
     const travels = isSlot && provider.fulfilment === 'delivery';
-    const stayLabel = [stay?.title, stay?.town].filter(Boolean).join(', ');
+    // Just the town for the sub-line — the cottage name is already in the line
+    // above it, so repeating it there reads as a stutter.
+    const stayTown = stay?.town || '';
     const [itemId, setItemId] = useState<string>(provider.items.length === 1 ? provider.items[0].id : '');
     const [qty, setQty] = useState<number>(1);
     // How many people at a PRIVATE session — asked for a flat item, never priced.
@@ -480,7 +482,7 @@ export default function BookingPanel({ bookingId, checkIn, checkOut, cottageGues
                         <span aria-hidden className="mt-1 inline-block h-3.5 w-3.5 shrink-0 rounded-full border-[4px] border-emerald-600" />
                         <div className="text-sm">
                             <div className="font-medium text-slate-900">Your stay{stay?.title ? ' — ' + stay.title : ''}</div>
-                            <div className="text-slate-500">{stayLabel || 'The cottage you booked'}</div>
+                            <div className="text-slate-500">{stayTown || 'The cottage you booked'}</div>
                         </div>
                     </div>
                     <p className="mt-2 text-[11px] leading-snug text-slate-400">
