@@ -96,16 +96,25 @@ export const GUEST_SCREEN_COPY = {
     // optional row; the only sometimes-required one is qualifications.
     optionalSuffix: '(optional)',
 
-    // Row: your title — one field, no caption, a 0/40 counter. This is the
-    // listing's DISPLAY NAME now (it becomes business_name at submit), so a guest
-    // reads it as the heading; the provider's own name is the byline beneath.
-    titleRowLabel: 'Intro',
-    titleRowPrompt: 'Add your title',
-    // The gate under a greyed Next when the (now required) title is still empty —
-    // shown for every category.
-    titleGate: 'Add your title — it’s the first thing a guest reads.',
-    titleModalTitle: 'Add your title',
-    titlePlaceholder: 'What you do — your title or trade',
+    // The listing's own name — what the EXPERIENCE is called, asked on its own
+    // step (g_title) and separate from the person's professional title below. It
+    // becomes business_name (the h1, the card, the sort, the order emails), so
+    // the guest's first line names the thing they're buying.
+    experienceTitleQuestion: 'What’s your experience called?',
+    experienceTitleSubtext: 'A short name a guest sees first — the thing, not you.',
+    experienceTitlePlaceholder: 'e.g. “Sunrise wild swim”, “Beginners’ wheel throwing”',
+    // The gate under a greyed Next when the (required) listing name is still empty.
+    experienceTitleGate: 'Give your experience a name — it’s the first thing a guest reads.',
+
+    // Row: the person's professional title — one field, a 0/40 counter. NOT the
+    // listing name (that is g_title); this is their credential, shown in the
+    // "About {first name}" block beneath the listing heading.
+    titleRowLabel: 'Your title',
+    titleRowPrompt: 'Add your professional title',
+    // The gate under a greyed Next when the (required) professional title is empty.
+    titleGate: 'Add your title — a guest reads it as your credential.',
+    titleModalTitle: 'Your title',
+    titlePlaceholder: 'What you do — e.g. “Cold-water swimming guide”',
 
     // Row: qualifications. Required for the four safety categories (no
     // suffix, gates Next), optional everywhere else (the suffix shows).

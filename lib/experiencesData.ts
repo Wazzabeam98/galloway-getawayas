@@ -62,10 +62,11 @@ export interface MpProvider {
     // guest_details jsonb. Shown as chips; the note carries the caveats.
     dietary_options: string[];
     // The person's professional title ("Chef and restaurant owner"), from
-    // guest_details jsonb. For a guest provider this is ALSO their Title —
-    // business_name is written from the same field at sign-up — so it is already
-    // the h1. Kept here only so a legacy row whose business_name diverged can be
-    // reconciled; the listing does NOT render it a second time beneath the h1.
+    // guest_details jsonb. Shown as a credential in the "About {first name}"
+    // block, beneath the listing name (which is business_name / the h1 now). The
+    // listing page dedupes it against business_name so a provider who predates the
+    // listing-title question — whose business_name is still their professional
+    // title — doesn't show the same words as both the h1 and the credential.
     professional_title: string | null;
     // The person, in their own words — the credibility layer collected at sign-up
     // and, until now, never shown. All from guest_details jsonb; all guest-safe by

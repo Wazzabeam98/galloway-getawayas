@@ -628,6 +628,13 @@ function ApplicationForm() {
     // page (guest_details.what_to_expect → experiencesData), so it earns its keep.
     const [yearsDoing, setYearsDoing] = useState('');
     const [professionalTitle, setProfessionalTitle] = useState('');
+    // The listing's own name (g_title) — what the experience is CALLED, distinct
+    // from professionalTitle above (what the PERSON is). It is written to
+    // business_name at submit; professionalTitle rides in guest_details and shows
+    // in the About block. On edit it loads from business_name, so an existing
+    // provider — whose business_name is today their professional title — sees that
+    // as the starting name and can refine it.
+    const [listingTitle, setListingTitle] = useState('');
     const [qualifications, setQualifications] = useState('');
     const [recognition, setRecognition] = useState('');
     const [whatToExpect, setWhatToExpect] = useState('');
@@ -898,6 +905,10 @@ function ApplicationForm() {
                 if (existing) {
                     setProviderId(existing.id);
                     setBusinessName(existing.business_name || '');
+                    // A guest's business_name IS the listing name, so seed the
+                    // listing-title field from it. (A host reads business_name in
+                    // its own field; this is guest-only and harmless otherwise.)
+                    setListingTitle(existing.business_name || '');
                     setTrade(existing.trade || tradeFromUrl);
                     setDescription(existing.description || '');
                     // His own, through the view. The columns are revoked from
@@ -1273,6 +1284,7 @@ function ApplicationForm() {
             if (Array.isArray(d.dietaryOptions)) setDietaryOptions(d.dietaryOptions);
             if (d.headshot) setHeadshot(d.headshot);
             if (d.yearsDoing) setYearsDoing(d.yearsDoing);
+            if (d.listingTitle) setListingTitle(d.listingTitle);
             if (d.professionalTitle) setProfessionalTitle(d.professionalTitle);
             if (d.qualifications) setQualifications(d.qualifications);
             if (d.recognition) setRecognition(d.recognition);
@@ -1425,7 +1437,7 @@ function ApplicationForm() {
                     items: shape === 'slot' ? items.filter((r) => Number(r.price) > 0) : items,
                     providerName, headshot, dietaryNote, dietaryOptions,
                     // The Airbnb-shaped content answers.
-                    yearsDoing, professionalTitle, qualifications, recognition,
+                    yearsDoing, listingTitle, professionalTitle, qualifications, recognition,
                     whatToExpect,
                     // The category (and the group above it, so the sub-type screen
                     // still has its cards after a reload), the inferred shape and
@@ -1451,7 +1463,7 @@ function ApplicationForm() {
         doesGas, doesOil, registrations, calloutWaived, skills,
         photos, logo, buildingType, panes,
         items, providerName, headshot, dietaryNote, dietaryOptions,
-        yearsDoing, professionalTitle, qualifications, recognition,
+        yearsDoing, listingTitle, professionalTitle, qualifications, recognition,
         whatToExpect,
         guestGroup, guestCategory, shape, leadTimeDays,
         fulfilment, collectionStreet, collectionTown, collectionPostcode,
@@ -2075,6 +2087,9 @@ function ApplicationForm() {
             ? GUEST_SCREEN_COPY.titleGate
             : step === 'g_creds' && catQualsRequired && !qualifications.trim()
             ? GUEST_SCREEN_COPY.qualsGate
+            // The listing must be named before Next — it is the h1 a guest reads.
+            : step === 'g_title' && !listingTitle.trim()
+            ? GUEST_SCREEN_COPY.experienceTitleGate
             // The booking-shape fork gates Next until answered.
             : step === 'g_shape' && !shape
             ? GUEST_SCREEN_COPY.shapeGate
@@ -2300,6 +2315,7 @@ function ApplicationForm() {
     };
 
     const clearOfferingAnswers = () => {
+        setListingTitle('');
         setProfessionalTitle('');
         setDescription('');
         setQualifications('');
@@ -3181,7 +3197,11 @@ function ApplicationForm() {
         setSaving(true);
         setAcctError('');
 
-        const title = audienceForTrade(trade) === 'guest' ? professionalTitle.trim() : businessName.trim();
+        // A guest's business_name is now the LISTING title (g_title) — the name of
+        // the experience — not their professional title, which rides in
+        // guest_details and shows as a credential. A host trades under the business
+        // name they typed.
+        const title = audienceForTrade(trade) === 'guest' ? listingTitle.trim() : businessName.trim();
         const rows = applicationRows(new Date(), title);
 
         try {
@@ -3300,9 +3320,10 @@ function ApplicationForm() {
 
         const now = new Date();
 
-        // A guest's title is their Title (the Intro field, mandatory); a host
-        // trades under the business name they typed.
-        const title = audienceForTrade(trade) === 'guest' ? professionalTitle.trim() : businessName.trim();
+        // A guest's business_name is the LISTING title (g_title, required) — the
+        // name of the experience; the professional title rides in guest_details.
+        // A host trades under the business name they typed.
+        const title = audienceForTrade(trade) === 'guest' ? listingTitle.trim() : businessName.trim();
 
         const payload: any = {
             ...guestProviderFields(),
@@ -4030,13 +4051,13 @@ function ApplicationForm() {
                         have no section, so it shows nothing there. */}
                     {isGuest && currentSection && (
                         <p className={'text-xs font-bold uppercase tracking-[0.12em] text-emerald-700 mb-3 '
-                            + ((step === 'g_you' || step === 'g_creds' || step === 'g_menu' || step === 'g_capacity' || step === 'g_notice' || step === 'g_photos' || step === 'g_shape' || step === 'g_slot_basis' || step === 'g_slot_min' || step === 'g_slot_where' || step === 'g_slot_length') ? 'text-center' : '')}>
+                            + ((step === 'g_you' || step === 'g_creds' || step === 'g_menu' || step === 'g_capacity' || step === 'g_notice' || step === 'g_photos' || step === 'g_shape' || step === 'g_slot_basis' || step === 'g_slot_min' || step === 'g_slot_where' || step === 'g_slot_length' || step === 'g_title') ? 'text-center' : '')}>
                             {currentSection.label}
                         </p>
                     )}
                     {isGuest && step !== 'finish' && step !== 'g_creds' && step !== 'g_menu' && step !== 'g_capacity' && step !== 'g_slot_min' && step !== 'g_slot_length' && step !== 'g_slot_hours' && (
                         <h1 className={'font-extrabold tracking-tight text-slate-900 [text-wrap:balance] text-3xl sm:text-4xl '
-                            + ((step === 'trade' || step === 'g_subtype' || step === 'g_you' || step === 'g_notice' || step === 'g_shape' || step === 'g_slot_basis' || step === 'g_slot_where') ? 'mb-10 text-center'
+                            + ((step === 'trade' || step === 'g_subtype' || step === 'g_you' || step === 'g_notice' || step === 'g_shape' || step === 'g_slot_basis' || step === 'g_slot_where' || step === 'g_title') ? 'mb-10 text-center'
                                 /* g_photos is centred (this screen only, to match
                                    Airbnb) with a tight gap so "Add at least 3 photos."
                                    reads as a subtitle, not a stranded paragraph. */
@@ -4630,9 +4651,10 @@ function ApplicationForm() {
                         </div>
 
 
-                        {/* ---- Your title (the listing's display name): one
-                            borderless field, no caption, counter at the right
-                            above the underline. ---- */}
+                        {/* ---- Your title (the person's PROFESSIONAL title — a
+                            credential shown in the About block, NOT the listing
+                            name, which is g_title): one borderless field, no
+                            caption, counter at the right above the underline. ---- */}
                         <SubFlowModal
                             open={expertiseModal === 'title'}
                             title={GUEST_SCREEN_COPY.titleModalTitle}
@@ -5597,6 +5619,29 @@ function ApplicationForm() {
                 <section className="flex-1 flex flex-col items-center justify-center">
                     <NumberStepper value={slotMinPeople} onChange={setSlotMinPeople} min={1} max={Math.max(1, parseInt(maxGuests, 10) || CAPACITY_DEFAULT_SLOT)} suggestion={1} size="lg" solid suffix={GUEST_SCREEN_COPY.slotMinSuffix} />
                 </section>
+                )}
+
+                {/* THE LISTING'S NAME — what the experience is called. The h1 a
+                    guest reads, written to business_name. One centred field, like
+                    the years/guests openers; the professional title (a credential)
+                    is asked separately on g_creds and shows in the About block. */}
+                {onStep('g_title') && isGuest && (
+                    <section className="mb-8 md:max-w-xl md:mx-auto">
+                        <p className="-mt-6 mb-10 text-center text-sm text-slate-500 [text-wrap:balance]">
+                            {GUEST_SCREEN_COPY.experienceTitleSubtext}
+                        </p>
+                        <div className="relative border-b border-slate-200 pb-2 transition-colors focus-within:border-slate-400">
+                            <input
+                                type="text"
+                                value={listingTitle}
+                                onChange={(e) => setListingTitle(e.target.value.slice(0, 60))}
+                                placeholder={GUEST_SCREEN_COPY.experienceTitlePlaceholder}
+                                className="w-full bg-transparent pr-12 text-center text-2xl text-slate-900 placeholder:text-slate-300 focus:outline-none"
+                                autoFocus
+                            />
+                            <span className="pointer-events-none absolute bottom-1 right-0 text-xs text-slate-400">{listingTitle.length}/60</span>
+                        </div>
+                    </section>
                 )}
 
                 {/* WHAT A GUEST CAN EXPECT — rebuilt to the flow's own craft: no
@@ -7742,6 +7787,8 @@ function ApplicationForm() {
                             // g_you has no gate: Next is enabled from load. The
                             // shown number is the accepted answer, stored on Next.
                             : step === 'g_creds' ? (!professionalTitle.trim() || (catQualsRequired && !qualifications.trim()))
+                            // The listing needs a name — it is the h1 and the card.
+                            : step === 'g_title' ? !listingTitle.trim()
                             : step === 'g_photos' ? photos.length === 0
                             // The booking-shape fork ('something else') must be
                             // answered — it decides the location screen and the rest.

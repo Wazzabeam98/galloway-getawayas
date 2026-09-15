@@ -82,7 +82,7 @@ function describeListings(ids: string[] | null | undefined): string {
 // Highlights the placeholders inside the box you actually type in.
 //
 interface Field {
-    key: 'full_name' | 'preferred_name' | 'trading_name' | 'phone' | 'residential_address';
+    key: 'full_name' | 'preferred_name' | 'phone' | 'residential_address';
     label: string;
     hint?: string;
 }
@@ -90,10 +90,6 @@ interface Field {
 const FIELDS: Field[] = [
     { key: 'full_name', label: 'Legal name' },
     { key: 'preferred_name', label: 'Preferred name' },
-    // Optional, and never asked at sign-up: a guest experience is listed under
-    // the person's own name unless they trade under one. When set, it takes over
-    // as the listing title.
-    { key: 'trading_name', label: 'Trading name', hint: 'Optional. The name your experience is listed under, if you trade under one. Leave it blank and your listing shows under your own name.' },
     { key: 'phone', label: 'Phone number' },
 ];
 
@@ -103,8 +99,7 @@ export default function AccountSettings() {
     const [email, setEmail] = useState('');
     const [activeSection, setActiveSection] = useState('personal');
 
-    const [profile, setProfile] = useState<{ full_name: string; preferred_name: string; trading_name: string; phone: string; residential_address: string }>({
-        trading_name: '',
+    const [profile, setProfile] = useState<{ full_name: string; preferred_name: string; phone: string; residential_address: string }>({
         full_name: '',
         preferred_name: '',
         phone: '',
@@ -204,22 +199,11 @@ export default function AccountSettings() {
                     setProfile({
                         full_name: profileData.full_name || '',
                         preferred_name: profileData.preferred_name || '',
-                        trading_name: '',
                         phone: profileData.phone || '',
                         residential_address: profileData.residential_address || '',
                     });
                     setShowFullName(profileData.show_full_name !== false);
                     setAvatarUrl(profileData.avatar_url || null);
-                }
-
-                // trading_name is public (granted like full_name), so it is read
-                // straight off profiles rather than the private view. Defensive:
-                // if the column is not deployed yet the whole page must still
-                // load, so a failure just leaves it blank.
-                const { data: tn } = await supabase
-                    .from('profiles').select('trading_name').eq('id', session.user.id).maybeSingle();
-                if (tn && (tn as any).trading_name) {
-                    setProfile((prev) => ({ ...prev, trading_name: (tn as any).trading_name }));
                 }
 
                 // host_bio lives on profiles (public-readable), not on the

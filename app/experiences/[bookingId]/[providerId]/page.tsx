@@ -59,11 +59,22 @@ export default async function ListingPage(
     const where = p.based_line || coverageLabel(p);
     const groupSize = groupSizeLabel(p.maxGuests);
 
+    // The person's professional title — a credential, shown in the About block
+    // beneath their name. The h1 is the listing title (business_name) now, so
+    // this reads as "who they are", not a repeat of the heading. Hidden when it
+    // would only echo the h1 — an existing provider whose business_name is still
+    // their professional title (they predate the listing-title question) would
+    // otherwise show the same words twice until they name their experience.
+    const proTitle = p.professional_title && p.professional_title.trim()
+        && p.professional_title.trim().toLowerCase() !== p.business_name.trim().toLowerCase()
+        ? p.professional_title.trim()
+        : null;
+
     // Is there anything to say ABOUT the person beyond their name and face? The
     // About block leads with the credentials they gave; with none of them it
     // collapses to a quiet "Meet {first name}" rather than an empty heading.
     const years = yearsLabel(p.yearsExperience);
-    const hasCreds = Boolean(years || p.qualifications || p.recognition);
+    const hasCreds = Boolean(proTitle || years || p.qualifications || p.recognition);
 
     return (
         <div className="min-h-screen bg-slate-50">
@@ -112,10 +123,13 @@ export default async function ListingPage(
                 <div className="grid grid-cols-1 gap-8 lg:grid-cols-[1fr_360px] lg:gap-12">
                     {/* Left — who and what */}
                     <div className="min-w-0">
-                        {/* Identity. The heading is the Title (for a guest provider
-                            that is their professional title, written from the same
-                            field at sign-up), so the professional title is NOT
-                            repeated below — it is already the h1. */}
+                        {/* Identity. The heading is the LISTING title (business_name)
+                            — what the experience is called. The person's professional
+                            title is a credential in the About block below, not the
+                            heading. (A provider who predates the listing-title
+                            question still has their professional title in
+                            business_name; the About block dedupes so it isn't shown
+                            twice until they name their experience.) */}
                         <div className="flex flex-wrap items-center gap-x-3 gap-y-1">
                             <p className="text-xs font-semibold uppercase tracking-[0.14em] text-emerald-700">{p.category}</p>
                             <span className="rounded-full bg-slate-100 px-2.5 py-0.5 text-xs font-medium text-slate-600">
@@ -170,9 +184,14 @@ export default async function ListingPage(
                                     <h2 className="text-base font-semibold text-slate-900">
                                         {p.byline ? 'Meet ' + p.byline : 'Your host'}
                                     </h2>
+                                    {/* The professional title, then years — the
+                                        "who they are" line beneath their name. */}
+                                    {proTitle ? (
+                                        <p className="text-sm font-medium text-slate-700">{proTitle}</p>
+                                    ) : null}
                                     {years ? (
                                         <p className="text-sm text-slate-500">{years}</p>
-                                    ) : p.based_line ? (
+                                    ) : (!proTitle && p.based_line) ? (
                                         <p className="text-sm text-slate-500">{p.based_line}</p>
                                     ) : null}
                                 </div>

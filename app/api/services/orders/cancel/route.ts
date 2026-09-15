@@ -4,6 +4,7 @@ import { cookies } from 'next/headers';
 import { NextResponse } from 'next/server';
 import { stripeRequest } from '@/lib/stripe';
 import { canTransition } from '@/lib/serviceOrders';
+import { providerFirstName } from '@/lib/providerName';
 import { guestMayCancelFree, shapeOf } from '@/lib/serviceSlots';
 import { sendEmail, emailLayout, escapeHtml, button, SITE_URL } from '@/lib/email';
 import { logError } from '@/lib/logError';
@@ -95,7 +96,9 @@ export async function POST(request: Request) {
                 .select('cancellation_window_hours, business_name, contact_email, owner_id')
                 .eq('id', order.provider_id).maybeSingle();
             const windowHours = Number(prov && prov.cancellation_window_hours) || 48;
-            const business = order.provider_business_name || (prov && prov.business_name) || 'the provider';
+            // Name the person in the guest-facing prompts below ("Inside Fiona's
+            // window", "Fiona's to decide"), not the listing.
+            const business = await providerFirstName(admin, order.provider_id, order.provider_business_name || (prov && prov.business_name) || 'the provider');
             const free = guestMayCancelFree(shape, String(order.service_date), order.service_time || null, windowHours, now);
 
             // BEFORE THE CUTOFF: a full refund, automatic. mode is irrelevant here.
