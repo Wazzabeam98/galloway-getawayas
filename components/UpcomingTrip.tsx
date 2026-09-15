@@ -18,6 +18,7 @@ import DirectionsPicker from '@/components/arrival/DirectionsPicker';
 import TripGroup from '@/components/TripGroup';
 import HomeCancelPanel from '@/components/HomeCancelPanel';
 import GuestExperiences from '@/components/GuestExperiences';
+import StayBookableGrid from '@/components/marketplace/StayBookableGrid';
 import { MessageSquare, CalendarDays } from 'lucide-react';
 
 // Shown at the top of the home page to someone with a stay coming up. The
@@ -304,6 +305,10 @@ export default async function UpcomingTrip() {
                         checkOut={booking.check_out}
                         town={publicArea(listing.location)}
                     />
+                    {/* The bookable experiences themselves, as cards scoped to
+                        this stay — the grid that takes the place of the property
+                        grid for a guest who already has accommodation. */}
+                    <StayBookableGrid userId={auth.session.user.id} bookingId={booking.id} />
                 </div>
             )}
         </section>

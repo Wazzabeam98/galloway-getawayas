@@ -1,15 +1,18 @@
 import Link from 'next/link';
 import { shapeCue } from '@/lib/serviceSlots';
-import { BadgeCheck, MapPin } from 'lucide-react';
+import { BadgeCheck, MapPin, Star } from 'lucide-react';
 import { fromPriceLabel, nextSessionLabel, coverageLabel } from '@/components/marketplace/present';
+import { hasPublicScore } from '@/lib/reviews';
 import type { MpProvider } from '@/lib/experiencesData';
 
 // One provider card, shared by the against-a-stay grid and the public browse
 // grid — same shop window either way. The only difference is where it links, so
-// the caller passes the href. Rules: first name only, "Verified business" (no
-// stars, no bookings count).
+// the caller passes the href. Rules: first name only; a real rating once there
+// are enough published reviews, and the "Verified business" badge until then —
+// never an invented score.
 export default function ProviderCard({ p, href }: { p: MpProvider; href: string }) {
     const who = p.byline || p.business_name;
+    const showRating = p.ratingAvg !== null && hasPublicScore(p.ratingCount);
     return (
         <Link
             href={href}
@@ -46,9 +49,17 @@ export default function ProviderCard({ p, href }: { p: MpProvider; href: string 
                     <span className="min-w-0 truncate text-xs text-slate-500">
                         {p.byline || p.based_line || 'Local provider'}
                     </span>
-                    <span className="ml-auto flex-none inline-flex items-center gap-1 rounded-full bg-emerald-50 px-2 py-0.5 text-[11px] font-semibold text-emerald-700 ring-1 ring-emerald-600/15">
-                        <BadgeCheck className="h-3.5 w-3.5" aria-hidden="true" /> Verified business
-                    </span>
+                    {showRating ? (
+                        <span className="ml-auto flex-none inline-flex items-center gap-1 text-[13px] font-semibold text-slate-900">
+                            <Star className="h-3.5 w-3.5 fill-amber-400 text-amber-400" aria-hidden="true" />
+                            {p.ratingAvg!.toFixed(2)}
+                            <span className="font-normal text-slate-400">({p.ratingCount})</span>
+                        </span>
+                    ) : (
+                        <span className="ml-auto flex-none inline-flex items-center gap-1 rounded-full bg-emerald-50 px-2 py-0.5 text-[11px] font-semibold text-emerald-700 ring-1 ring-emerald-600/15">
+                            <BadgeCheck className="h-3.5 w-3.5" aria-hidden="true" /> Verified business
+                        </span>
+                    )}
                 </div>
 
                 {p.description ? (

@@ -10,6 +10,7 @@ import Link from 'next/link';
 import ListingCard from '@/components/ListingCard';
 import HomeExperiences from '@/components/HomeExperiences';
 import TownsCarousel from '@/components/TownsCarousel';
+import { liveForGuestCard } from '@/lib/bookingWindows';
 import { AREAS, hasCopy } from '@/config/areas';
 import fs from 'fs';
 import path from 'path';
@@ -100,6 +101,25 @@ export default async function HomePage({
     // Anyone who hasn't chosen is a traveller.
     const mode: 'host' | 'travel' =
         cookieStore.get('gg_mode')?.value === 'host' ? 'host' : 'travel';
+
+    // A signed-in traveller with a live upcoming stay already has accommodation,
+    // so the properties grid gives way to their trip and its experiences (both
+    // rendered by UpcomingTrip). Same "live" rule the trip card itself uses, so
+    // the two never disagree; a past stay does not count, so that guest still
+    // sees properties. Host mode is unaffected.
+    let bookedGuest = false;
+    if (mode === 'travel') {
+        const { data: auth } = await supabase.auth.getSession();
+        if (auth?.session?.user) {
+            const { data: liveBookings } = await supabase
+                .from('bookings')
+                .select('status, check_out')
+                .eq('guest_id', auth.session.user.id)
+                .in('status', ['confirmed', 'pending'])
+                .limit(20);
+            bookedGuest = (liveBookings || []).some((b) => liveForGuestCard(b as any, new Date()));
+        }
+    }
 
     // What the hero's search button put in the URL. Every part is optional —
     // a bare `/` still means "show me everything".
@@ -232,6 +252,11 @@ export default async function HomePage({
             {mode === 'host' ? <HostReservations /> : <UpcomingTrip />}
 
             <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-16">
+                {/* Properties lead for a visitor or a guest with no live stay.
+                    A guest who already has a stay gets their trip and its
+                    experiences above instead — unless they're actively searching
+                    for a property, in which case the results still show. */}
+                {(searching || !bookedGuest) && (<>
                 {/* Section Heading */}
                 <div className="mb-10 border-b border-stone-200 pb-4 flex flex-wrap items-end justify-between gap-3">
                     <div>
@@ -301,13 +326,15 @@ export default async function HomePage({
                     </div>
                     )) : null;
                 })()}
+                </>)}
 
                 {/* Experiences, alongside the properties. Below the grid so the
                     cottages lead, above the editorial so it reads as a second
                     thing to book. Self-gating on the launch flag and on there
                     being any to show; hidden while a property search is on, the
-                    same as the towns carousel below. */}
-                {!searching && <HomeExperiences />}
+                    same as the towns carousel below. Not for a booked guest —
+                    they get experiences scoped to their stay, above. */}
+                {!searching && !bookedGuest && <HomeExperiences />}
 
                 {!searching && <TownsCarousel towns={carouselTowns} />}
 
