@@ -166,12 +166,15 @@ home is one listing's editor + diary, not a portfolio.
    below hangs on this. *(Recommend: sectioned editor.)*
 3. **Where the deferred fields land. DECIDED (2026-09-15):** the one-off "Things to
    know" page (`/services/dashboard/details` → min age / activity / what-to-bring)
-   **ships now** — it's needed for the demo and the fields are real. The editor
-   **absorbs it later**: when the sectioned editor exists, the page's route
-   redirects into the right editor section — a small change, not a rebuild. So this
-   is a keep-now / fold-later, not a retire. The **turnaround** screen and the
-   itinerary still land as editor sections under decision 2. Depends on 2 for the
-   fold-in only.
+   **stays unmerged for now.** The fields are real, but the page lives on
+   `feat/experiences-on-public-site` (PR #147), which tangles **demo scaffolding
+   with real product** and carries an **unapplied production reviews migration** —
+   merging it now would put seed/demo decisions into master and force a real prod
+   deploy mid-demo, on a branch still being pushed to. So it waits. The **editor
+   absorbs these fields when it's built** (a section for min age / activity /
+   what-to-bring), rather than the one-off page being merged as a permanent
+   surface. The **turnaround** screen and the itinerary land the same way — editor
+   sections under decision 2. Depends on 2.
 4. **Availability's home.** Move **weekly-hours** editing out of the wizard into the
    editor/diary, unified with the days-off / partial blocks already there. Depends
    on 2.
