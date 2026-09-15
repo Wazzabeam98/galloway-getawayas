@@ -164,10 +164,14 @@ home is one listing's editor + diary, not a portfolio.
 2. **The editor model — the pivot.** A **sectioned editor that owns edit**, with the
    wizard reduced to first-time create — vs keeping wizard-as-editor. Everything
    below hangs on this. *(Recommend: sectioned editor.)*
-3. **Where the deferred fields land.** Fold the one-off "things to know" (min age /
-   activity / what-to-bring), the **turnaround** screen, and the itinerary into
-   editor sections — and **retire the bolted-on page** rather than merge it as a
-   permanent one-off. Depends on 2.
+3. **Where the deferred fields land. DECIDED (2026-09-15):** the one-off "Things to
+   know" page (`/services/dashboard/details` → min age / activity / what-to-bring)
+   **ships now** — it's needed for the demo and the fields are real. The editor
+   **absorbs it later**: when the sectioned editor exists, the page's route
+   redirects into the right editor section — a small change, not a rebuild. So this
+   is a keep-now / fold-later, not a retire. The **turnaround** screen and the
+   itinerary still land as editor sections under decision 2. Depends on 2 for the
+   fold-in only.
 4. **Availability's home.** Move **weekly-hours** editing out of the wizard into the
    editor/diary, unified with the days-off / partial blocks already there. Depends
    on 2.
