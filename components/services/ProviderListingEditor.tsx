@@ -3,6 +3,11 @@
 import { useState } from 'react';
 import Link from 'next/link';
 import { toast } from 'react-toastify';
+import { createClientComponentClient } from '@supabase/auth-helpers-nextjs';
+import Env from '@/config/Env';
+import { getImageUrl, generateRandomNumber } from '@/lib/utils';
+import { compressImage } from '@/lib/compressImage';
+import { PhotoEditorGrid } from './PhotoEditorGrid';
 import {
     FileText, User, Info, Salad, Image as ImageIcon,
     ShoppingBag, MapPin, CalendarRange, Eye, EyeOff, ExternalLink, Check,
@@ -41,7 +46,7 @@ export interface EditorProvider {
 
 type SectionKey = 'title' | 'about' | 'happens' | 'things' | 'dietary' | 'photos' | 'menu' | 'where' | 'availability';
 
-const BUILT: Record<string, boolean> = { title: true, about: true, happens: true, things: true, dietary: true, availability: true };
+const BUILT: Record<string, boolean> = { title: true, about: true, photos: true, happens: true, things: true, dietary: true, availability: true };
 
 async function saveSection(providerId: string, section: string, data: any): Promise<boolean> {
     const res = await fetch('/api/services/listing/save', {
@@ -119,6 +124,50 @@ export default function ProviderListingEditor({ provider }: { provider: EditorPr
     const [leadDays, setLeadDays] = useState(String(p.lead_time_days || 0));
     const [cancelHours, setCancelHours] = useState(String(p.cancellation_window_hours ?? 48));
 
+    // Photos: gallery keys (storage paths), plus the headshot and logo. Uploaded
+    // to the bucket immediately (like the wizard), so the section saves keys.
+    const supabase = createClientComponentClient();
+    const [photos, setPhotos] = useState<string[]>(p.photos);
+    const [headshot, setHeadshot] = useState<string | null>(p.headshot);
+    const [logo, setLogo] = useState<string | null>(p.logo);
+    const [uploading, setUploading] = useState(false);
+
+    async function uploadOne(file: File, prefix: string): Promise<string | null> {
+        const { data: { user } } = await supabase.auth.getUser();
+        if (!user) { toast.error('Please sign in again.', { theme: 'colored' }); return null; }
+        try {
+            const ready = await compressImage(file);
+            const path = 'providers/' + prefix + '-' + user.id + '-' + Date.now() + '-' + generateRandomNumber() + '.jpg';
+            const { error } = await supabase.storage.from(Env.S3_BUCKET).upload(path, ready, { contentType: 'image/jpeg' });
+            if (error) { toast.error(error.message, { theme: 'colored' }); return null; }
+            return path;
+        } catch {
+            toast.error('That image couldn’t be read. Try a different one.', { theme: 'colored' });
+            return null;
+        }
+    }
+
+    async function addGalleryPhotos(e: React.ChangeEvent<HTMLInputElement>) {
+        const files = Array.from(e.target.files || []);
+        e.target.value = '';
+        if (!files.length) return;
+        setUploading(true);
+        const keys: string[] = [];
+        for (const f of files) { const k = await uploadOne(f, 'photo'); if (k) keys.push(k); }
+        if (keys.length) setPhotos((prev) => [...prev, ...keys]);
+        setUploading(false);
+    }
+
+    async function changeHeadshot(e: React.ChangeEvent<HTMLInputElement>) {
+        const file = (e.target.files || [])[0];
+        e.target.value = '';
+        if (!file) return;
+        setUploading(true);
+        const k = await uploadOne(file, 'headshot');
+        if (k) setHeadshot(k);
+        setUploading(false);
+    }
+
     async function run(section: string, data: any) {
         setSavingKey(section);
         await saveSection(p.id, section, data);
@@ -145,8 +194,7 @@ export default function ProviderListingEditor({ provider }: { provider: EditorPr
     if (p.min_age == null) missing.push('a minimum age');
     if (!p.activity_level.trim()) missing.push('the activity level');
 
-    // The two hard visibility facts, shown as gentle guards (never blocks).
-    const noPhotoWillVanish = !p.photos.length && !p.items.some((i) => i.hasImage);
+    // Shown as a gentle guard on the menu section (never blocks).
     const noPricedItem = !p.items.some((i) => i.active && i.price > 0);
 
     const SECTIONS: { key: SectionKey; label: string; icon: any }[] = [
@@ -310,8 +358,52 @@ export default function ProviderListingEditor({ provider }: { provider: EditorPr
                         </SectionCard>
                     )}
 
+                    {active === 'photos' && (
+                        <SectionCard title="Photos" hint="Your gallery leads the listing. The first photo is the cover — drag to reorder." saving={savingKey === 'photos'}
+                            onSave={() => run('photos', { photos, headshot, logo })}>
+                            {/* Last-photo guard: removing every photo hides the listing
+                                from the homepage and both marketplace grids (they filter
+                                on a hero). Said, never blocked. */}
+                            {photos.length === 0 && !p.items.some((i) => i.hasImage) && (
+                                <div className="flex items-start gap-2 rounded-xl border border-amber-300 bg-amber-50 p-3 text-sm text-amber-900">
+                                    <Check className="mt-0.5 h-4 w-4 flex-none" />
+                                    With no photo, your listing is hidden from the homepage and both marketplace grids. Add at least one to appear.
+                                </div>
+                            )}
+                            <div>
+                                <span className="block text-xs font-semibold uppercase tracking-wide text-slate-500">Gallery</span>
+                                <div className="mt-2">
+                                    <PhotoEditorGrid
+                                        items={photos.map((k) => ({ key: k, src: getImageUrl(k) }))}
+                                        onReorder={(from, to) => setPhotos((prev) => { const n = [...prev]; const [m] = n.splice(from, 1); n.splice(to, 0, m); return n; })}
+                                        onRemove={(i) => setPhotos((prev) => prev.filter((_, j) => j !== i))}
+                                        onAdd={addGalleryPhotos}
+                                        uploading={uploading}
+                                        addLabel="Add photos"
+                                    />
+                                </div>
+                            </div>
+                            <div>
+                                <span className="block text-xs font-semibold uppercase tracking-wide text-slate-500">A photo of yourself</span>
+                                <p className="mt-0.5 text-xs text-slate-400">The person a guest is meeting — shown beside your name.</p>
+                                <div className="mt-2 flex items-center gap-3">
+                                    {headshot ? (
+                                        // eslint-disable-next-line @next/next/no-img-element
+                                        <img src={getImageUrl(headshot)} alt="" className="h-16 w-16 rounded-full object-cover ring-1 ring-slate-200" />
+                                    ) : (
+                                        <span className="flex h-16 w-16 items-center justify-center rounded-full bg-slate-100 text-slate-400"><User className="h-6 w-6" /></span>
+                                    )}
+                                    <label className="cursor-pointer rounded-xl border border-slate-300 px-3 py-2 text-sm font-semibold text-slate-700 hover:border-slate-500">
+                                        {headshot ? 'Replace' : 'Add a photo'}
+                                        <input type="file" accept="image/png, image/jpeg" onChange={changeHeadshot} className="hidden" disabled={uploading} />
+                                    </label>
+                                    {headshot && <button type="button" onClick={() => setHeadshot(null)} className="text-sm text-slate-500 hover:text-red-600">Remove</button>}
+                                </div>
+                            </div>
+                        </SectionCard>
+                    )}
+
                     {/* Sections landing next — shown so the shape is honest. */}
-                    {active === 'photos' && <ComingSection title="Photos" note={noPhotoWillVanish ? 'Heads up: with no photo here your listing is hidden from the homepage and both marketplace grids.' : undefined} />}
                     {active === 'menu' && <ComingSection title="What you offer" note={noPricedItem ? 'Heads up: with no priced item your listing can’t be booked and won’t be shown.' : undefined} />}
                     {active === 'where' && <ComingSection title="Where it happens" />}
 
