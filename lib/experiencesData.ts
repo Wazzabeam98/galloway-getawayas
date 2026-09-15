@@ -22,6 +22,12 @@ export interface MpItem {
     // (private, capped only by the cottage), 'collection' = at the provider's
     // place, null = inherit the provider's single answer.
     fulfilment: string | null;
+    // Per-item seats and minimum (per-person items only). null = fall back to the
+    // provider's slot_capacity / slot_min_people — the phased override. The panel
+    // resolves these through seatConfig(), the SAME function the book route uses,
+    // so the display and the enforcement never read a different number.
+    capacity: number | null;
+    minPeople: number | null;
 }
 // A booked session's interval on the provider's day, for greying overlapping
 // starts client-side: the same rule the claim and the DB exclusion enforce. Also
@@ -260,7 +266,7 @@ async function shapeProviders(admin: any, fromKey: string, toKey: string): Promi
 
     const [{ data: areas }, { data: itemRows }, { data: avail }, { data: blocks }, { data: sessRows }, { data: orderRows }] = await Promise.all([
         admin.from('service_areas').select('provider_id, label').in('provider_id', ids),
-        admin.from('service_provider_items').select('id, provider_id, name, description, price, unit, image, sort_order, created_at, duration_minutes, fulfilment')
+        admin.from('service_provider_items').select('id, provider_id, name, description, price, unit, image, sort_order, created_at, duration_minutes, fulfilment, capacity, min_people')
             .in('provider_id', ids).eq('active', true).gt('price', 0)
             .order('sort_order', { ascending: true }).order('created_at', { ascending: true }),
         admin.from('slot_availability').select('provider_id, day_of_week, open_time, close_time').in('provider_id', ids),
@@ -295,6 +301,8 @@ async function shapeProviders(admin: any, fromKey: string, toKey: string): Promi
             unit: normaliseUnit(it.unit), image: it.image ? getImageUrl(it.image) : null,
             duration_minutes: it.duration_minutes == null ? null : Number(it.duration_minutes),
             fulfilment: it.fulfilment || null,
+            capacity: it.capacity == null ? null : Number(it.capacity),
+            minPeople: it.min_people == null ? null : Number(it.min_people),
         }));
         if (!items.length) continue;
         const perItemDurations = items.some((it: MpItem) => it.duration_minutes != null && it.duration_minutes > 0);
@@ -326,7 +334,7 @@ async function shapeProviders(admin: any, fromKey: string, toKey: string): Promi
                     const startMin = minutesOfDay(String(s.session_time).slice(0, 5));
                     return { date: s.session_date, startMin, endMin: startMin + (Number(s.duration_minutes) || 0) };
                 });
-            const units = items.map((it: MpItem) => it.unit);
+            const closedItems = items.map((it: MpItem) => ({ unit: it.unit, capacity: it.capacity, min_people: it.minPeople }));
             sessions = generateSessions(
                 (availBy[p.id] || []).map((a: any) => ({ day_of_week: a.day_of_week, open_time: a.open_time, close_time: a.close_time })),
                 (blocksBy[p.id] || []).map((b: any) => b.blocked_date),
@@ -339,7 +347,7 @@ async function shapeProviders(admin: any, fromKey: string, toKey: string): Promi
                 // offers (a private hire taken, or a shared table too full for its
                 // minimum). A time still bookable by SOME option stays — the panel
                 // greys the options it isn't bookable by, per the shared helper.
-                .filter((s) => !sessionClosedToAll(s.row, units, p));
+                .filter((s) => !sessionClosedToAll(s.row, closedItems, p));
             // A slot with no bookable session in the stay is not shown.
             if (!sessions.length) continue;
         }

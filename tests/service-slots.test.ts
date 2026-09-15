@@ -259,19 +259,23 @@ test('a per-person item with no capacity set is offered by nobody (matches the r
     assert.equal(optionAvailability(null, 'person', noCap).reason, 'misconfigured');
 });
 
-test('sessionClosedToAll reads the provider’s own units', () => {
-    // A both-provider (flat + person). A two-of-six shared table is NOT closed:
-    // per-person still fits, even though the private hire cannot.
+test('sessionClosedToAll reads each item’s own config (null falls back to provider)', () => {
+    // Items now carry their own seats/minimum; null falls back to the provider, so
+    // these both-provider (flat + person) items with null values behave exactly as
+    // the old unit-list form did.
+    const both = [{ unit: 'flat' }, { unit: 'person' }];
+    // A two-of-six shared table is NOT closed: per-person still fits, even though
+    // the private hire cannot.
     const partial = { capacity: 6, seats_taken: 2, private: false };
-    assert.equal(sessionClosedToAll(partial, ['flat', 'person'], P), false);
+    assert.equal(sessionClosedToAll(partial, both, P), false);
     // Five of six, minimum two: per-person can't fit a group and private clashes.
     const nearlyFull = { capacity: 6, seats_taken: 5, private: false };
-    assert.equal(sessionClosedToAll(nearlyFull, ['flat', 'person'], P), true);
+    assert.equal(sessionClosedToAll(nearlyFull, both, P), true);
     // A private hire closes a both-provider's time entirely.
     const hired = { capacity: 1, seats_taken: 1, private: true };
-    assert.equal(sessionClosedToAll(hired, ['flat', 'person'], P), true);
+    assert.equal(sessionClosedToAll(hired, both, P), true);
     // An empty time is open.
-    assert.equal(sessionClosedToAll(null, ['flat', 'person'], P), false);
+    assert.equal(sessionClosedToAll(null, both, P), false);
 });
 
 // ---------------------------------------------------------------------------
