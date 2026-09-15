@@ -513,17 +513,19 @@ test('a guest with no context still sees the old three steps', () => {
 // straight after, Photos (g_photos) BEFORE the writing, Pricing (g_menu),
 // Details (g_expect), and the Finish screen (the account). The booking shape is
 // inferred from the category and never a step; availability folds into g_area;
-// dietary folds into g_expect; the business step is host-only (a guest's title
-// is derived from the account). There is NO naming step, NO contact step (a
+// dietary folds into g_expect; the business step is host-only. The Details
+// section opens with a NAMING step (g_title — what the experience is CALLED,
+// written to business_name), then g_expect; the professional title is asked
+// separately on g_creds and is NOT the listing name. There is NO contact step (a
 // guest signs in up front, so the account address is the contact address, and
 // the phone lives on the profile) and NO checks step (the per-category checks
 // collapsed to one responsibility confirmation folded onto the finish screen).
-// So an anonymous applicant with a sub-type walks these ten keys — g_verify
+// So an anonymous applicant with a sub-type walks these keys — g_verify
 // leading, because they have no session yet. A signed-in applicant skips
 // g_verify (see the test below).
 const TEN = [
     'g_verify', 'trade', 'g_subtype', 'g_you', 'g_creds', 'g_area', 'g_photos',
-    'g_menu', 'g_expect', 'finish',
+    'g_menu', 'g_title', 'g_expect', 'finish',
 ];
 
 // A comes-to-you or slot category also has a max-guests step (g_capacity) at the
@@ -623,7 +625,7 @@ const slotFlow = (opts: { fork?: boolean; perPerson?: boolean; expertise?: boole
     // sessions and drops both (the perItemDuration/travelling cases never reach
     // this helper with mixed set — those are asserted directly via stepApplies).
     if (opts.perPerson || opts.mixed) keys.push('g_slot_min');
-    keys.push('g_menu', 'g_expect', 'finish');
+    keys.push('g_menu', 'g_title', 'g_expect', 'finish');
     return keys;
 };
 
@@ -804,7 +806,7 @@ test('the something-else group skips the sub-type screen but is asked its shape'
     // g_shape sits between About-you and the location step.
     assert.deepEqual(
         gkeys(ctx),
-        ['g_verify', 'trade', 'g_you', 'g_creds', 'g_shape', 'g_area', 'g_photos', 'g_menu', 'g_expect', 'finish'],
+        ['g_verify', 'trade', 'g_you', 'g_creds', 'g_shape', 'g_area', 'g_photos', 'g_menu', 'g_title', 'g_expect', 'finish'],
     );
 });
 
@@ -815,15 +817,19 @@ test('the guest split never touches a host trade', () => {
         stepsFor('plumber', ctx).map((s: any) => s.key),
         stepsFor('plumber').map((s: any) => s.key),
     );
-    for (const k of ['g_subtype', 'g_verify', 'g_you', 'g_creds', 'g_capacity', 'g_menu', 'g_expect', 'g_photos', 'g_area']) {
+    for (const k of ['g_subtype', 'g_verify', 'g_you', 'g_creds', 'g_capacity', 'g_menu', 'g_title', 'g_expect', 'g_photos', 'g_area']) {
         assert.equal(stepApplies(k as any, 'plumber', ctx), false, k + ' is off for a host trade');
     }
 });
 
 test('guest movement and the last step honour the context', () => {
     const ctx = { group: 'wellness', category: 'sauna', shape: 'slot' };
-    assert.equal(nextStep('guest', 'g_menu', ctx), 'g_expect');
-    assert.equal(previousStep('guest', 'g_expect', ctx), 'g_menu');
+    // The Details section opens on the naming step (g_title) now, between the
+    // price and what-happens.
+    assert.equal(nextStep('guest', 'g_menu', ctx), 'g_title');
+    assert.equal(nextStep('guest', 'g_title', ctx), 'g_expect');
+    assert.equal(previousStep('guest', 'g_expect', ctx), 'g_title');
+    assert.equal(previousStep('guest', 'g_title', ctx), 'g_menu');
     assert.equal(isLastStep('guest', 'finish', ctx), true);
     assert.equal(isLastStep('guest', 'g_expect', ctx), false);
     // The business step is off for a guest-with-context, so it resolves back to
