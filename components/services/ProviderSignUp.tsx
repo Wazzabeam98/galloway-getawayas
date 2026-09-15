@@ -2075,6 +2075,9 @@ function ApplicationForm() {
             ? GUEST_SCREEN_COPY.titleGate
             : step === 'g_creds' && catQualsRequired && !qualifications.trim()
             ? GUEST_SCREEN_COPY.qualsGate
+            // The booking-shape fork gates Next until answered.
+            : step === 'g_shape' && !shape
+            ? GUEST_SCREEN_COPY.shapeGate
             // The pricing basis gates Next until it's answered — say so rather
             // than leaving a greyed button with no reason.
             : step === 'g_slot_basis' && slotOffer === null
@@ -2268,16 +2271,15 @@ function ApplicationForm() {
     // experience: their years, their photos and their headshot. shape and the
     // fulfilment default are then reset to the new category's by
     // selectGuestCategory.
-    const clearOfferingAnswers = () => {
-        setProfessionalTitle('');
-        setDescription('');
-        setQualifications('');
-        setRecognition('');
+    // The offering answers that depend on the SHAPE — the items, the slot counts
+    // and schedule, the notice, the areas and collection address. Cleared when the
+    // shape itself changes (the 'something else' shape screen) so a switch from,
+    // say, a slot to comes-to-you can't leave a stale slot capacity or a stale
+    // studio address behind to be saved. About-you (title, expertise) and the
+    // photos are NOT shape-specific, so they survive a shape change.
+    const clearShapeDependentAnswers = () => {
         setItems([]);
         setMenuIndex(null);
-        setWhatToExpect('');
-        setDietaryNote('');
-        setDietaryOptions([]);
         setSlotOffer(null);
         setMaxGuests('');
         setSlotMinPeople('');
@@ -2290,7 +2292,22 @@ function ApplicationForm() {
         setCollectionStreet('');
         setCollectionTown('');
         setCollectionPostcode('');
+        // Collection UI that belongs to the offering: drop the manual-entry toggle
+        // so the address screen returns to its lookup default rather than showing
+        // the previous offering's opened (now empty) manual boxes.
+        setCollectionManual(false);
         setAreas([]);
+    };
+
+    const clearOfferingAnswers = () => {
+        setProfessionalTitle('');
+        setDescription('');
+        setQualifications('');
+        setRecognition('');
+        setWhatToExpect('');
+        setDietaryNote('');
+        setDietaryOptions([]);
+        clearShapeDependentAnswers();
         // The STRUCTURAL answers, not just the offering's contents. shape and
         // fulfilment decide which screens render and how the location screen reads,
         // so a category change must clear them too — otherwise a switch FROM a slot
@@ -2300,10 +2317,19 @@ function ApplicationForm() {
         // category right after (it is the only caller that knows them).
         setShape('');
         setFulfilment('');
-        // Collection UI that belongs to the offering: drop the manual-entry toggle
-        // so the address screen returns to its lookup default rather than showing
-        // the previous offering's opened (now empty) manual boxes.
-        setCollectionManual(false);
+    };
+
+    // 'Something else' answering its booking shape (the g_shape screen). Setting the
+    // shape here is the equivalent of a real category's DECLARED shape: it drives
+    // which screens follow and how the location screen reads. A slot defaults to
+    // come-to-me ('collection'), like a fixed slot category (a sauna), so g_area
+    // shows the address; made-to-order leaves fulfilment blank so g_area asks the
+    // delivery/collection fork; comes-to-you doesn't use fulfilment. Changing the
+    // answer clears the previous shape's offering but keeps About-you and photos.
+    const pickShape = (next: string) => {
+        if (shape && shape !== next) clearShapeDependentAnswers();
+        setShape(next);
+        setFulfilment(next === 'slot' ? 'collection' : '');
     };
 
     // Screen two: select a sub-type. Records the category (a starting point,
@@ -4004,13 +4030,13 @@ function ApplicationForm() {
                         have no section, so it shows nothing there. */}
                     {isGuest && currentSection && (
                         <p className={'text-xs font-bold uppercase tracking-[0.12em] text-emerald-700 mb-3 '
-                            + ((step === 'g_you' || step === 'g_creds' || step === 'g_menu' || step === 'g_capacity' || step === 'g_notice' || step === 'g_photos' || step === 'g_slot_basis' || step === 'g_slot_min' || step === 'g_slot_where' || step === 'g_slot_length') ? 'text-center' : '')}>
+                            + ((step === 'g_you' || step === 'g_creds' || step === 'g_menu' || step === 'g_capacity' || step === 'g_notice' || step === 'g_photos' || step === 'g_shape' || step === 'g_slot_basis' || step === 'g_slot_min' || step === 'g_slot_where' || step === 'g_slot_length') ? 'text-center' : '')}>
                             {currentSection.label}
                         </p>
                     )}
                     {isGuest && step !== 'finish' && step !== 'g_creds' && step !== 'g_menu' && step !== 'g_capacity' && step !== 'g_slot_min' && step !== 'g_slot_length' && step !== 'g_slot_hours' && (
                         <h1 className={'font-extrabold tracking-tight text-slate-900 [text-wrap:balance] text-3xl sm:text-4xl '
-                            + ((step === 'trade' || step === 'g_subtype' || step === 'g_you' || step === 'g_notice' || step === 'g_slot_basis' || step === 'g_slot_where') ? 'mb-10 text-center'
+                            + ((step === 'trade' || step === 'g_subtype' || step === 'g_you' || step === 'g_notice' || step === 'g_shape' || step === 'g_slot_basis' || step === 'g_slot_where') ? 'mb-10 text-center'
                                 /* g_photos is centred (this screen only, to match
                                    Airbnb) with a tight gap so "Add at least 3 photos."
                                    reads as a subtitle, not a stranded paragraph. */
@@ -5257,6 +5283,24 @@ function ApplicationForm() {
                     way made-to-order's own fork does, so g_area then shows an
                     address or the coverage regions. The centred H1 asks the
                     question; here are the two cards. */}
+                {/* THE BOOKING-SHAPE FORK — 'something else' only. Three cards in
+                    what the provider sells; the pick sets shape (and a matching
+                    fulfilment default) so everything after follows a real category
+                    of that shape. Sits before g_area, which reads the shape. */}
+                {onStep('g_shape') && isGuest && (
+                <section className="mb-8 sm:mb-0 sm:flex-1 sm:flex sm:flex-col sm:justify-center md:max-w-xl md:mx-auto">
+                    <div className="grid gap-3 sm:grid-cols-3">
+                        {[
+                            { v: 'slot', t: GUEST_SCREEN_COPY.shapeSlotLabel, d: GUEST_SCREEN_COPY.shapeSlotHint },
+                            { v: 'made_to_order', t: GUEST_SCREEN_COPY.shapeMadeLabel, d: GUEST_SCREEN_COPY.shapeMadeHint },
+                            { v: 'comes_to_you', t: GUEST_SCREEN_COPY.shapeTravelLabel, d: GUEST_SCREEN_COPY.shapeTravelHint },
+                        ].map((o) => (
+                            <ChoiceCard key={o.v} selected={shape === o.v} onSelect={() => pickShape(o.v)} title={o.t} hint={o.d} />
+                        ))}
+                    </div>
+                </section>
+                )}
+
                 {onStep('g_slot_where') && isGuest && shape === 'slot' && (
                 <section className="mb-8 sm:mb-0 sm:flex-1 sm:flex sm:flex-col sm:justify-center md:max-w-xl md:mx-auto">
                     <div className="grid gap-3 sm:grid-cols-3">
@@ -7699,6 +7743,9 @@ function ApplicationForm() {
                             // shown number is the accepted answer, stored on Next.
                             : step === 'g_creds' ? (!professionalTitle.trim() || (catQualsRequired && !qualifications.trim()))
                             : step === 'g_photos' ? photos.length === 0
+                            // The booking-shape fork ('something else') must be
+                            // answered — it decides the location screen and the rest.
+                            : step === 'g_shape' ? !shape
                             // The pricing basis must be answered before moving on —
                             // it sets the unit and decides the next screen.
                             : step === 'g_slot_basis' ? slotOffer === null

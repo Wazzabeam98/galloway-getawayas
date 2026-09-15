@@ -29,6 +29,7 @@ import {
     asksAboutFuel,
     audienceForTrade,
     guestAsksExpertise,
+    guestNeedsShapeChoice,
     slotAsksWhereFork,
     slotDurationPerItem,
     slotMixedDuration,
@@ -44,7 +45,7 @@ import { GUEST_SCREEN_COPY } from '@/lib/strings';
 // ever gains one. See stepApplies.
 export type StepKey =
     | 'trade' | 'g_subtype' | 'g_verify' | 'business'
-    | 'g_you' | 'g_creds' | 'g_about' | 'g_slot_basis' | 'g_capacity' | 'g_slot_min' | 'g_menu' | 'g_expect' | 'g_photos' | 'g_notice' | 'g_slot_where' | 'g_area' | 'g_slot_length' | 'g_slot_hours'
+    | 'g_you' | 'g_creds' | 'g_about' | 'g_shape' | 'g_slot_basis' | 'g_capacity' | 'g_slot_min' | 'g_menu' | 'g_expect' | 'g_photos' | 'g_notice' | 'g_slot_where' | 'g_area' | 'g_slot_length' | 'g_slot_hours'
     | 'credentials' | 'prices' | 'finish';
 
 // The guest-only steps, in flow order. Rebuilt against Airbnb's host-an-
@@ -68,7 +69,7 @@ export type StepKey =
 // account address is the contact address, and the phone lives on the profile).
 const GUEST_STEP_KEYS: StepKey[] = [
     'g_verify', 'g_subtype',
-    'g_you', 'g_creds', 'g_notice', 'g_slot_where', 'g_area', 'g_slot_length', 'g_slot_hours', 'g_photos', 'g_slot_basis', 'g_capacity', 'g_slot_min', 'g_menu', 'g_expect',
+    'g_you', 'g_creds', 'g_shape', 'g_notice', 'g_slot_where', 'g_area', 'g_slot_length', 'g_slot_hours', 'g_photos', 'g_slot_basis', 'g_capacity', 'g_slot_min', 'g_menu', 'g_expect',
 ];
 
 // What a guest's steps branch on, all from earlier answers: the top-level group
@@ -138,6 +139,12 @@ const ALL_STEPS: Step[] = [
     // Made-to-order only: the notice period, its own single-question screen before
     // the delivery areas (a big stepper, like the years/guests screens). The other
     // shapes carry their "when" inside g_area (a slot's schedule) or not at all.
+    // "Something else" has no sub-type, so it never declared a booking shape. This
+    // asks it — in what the provider sells, not engine words — and everything after
+    // (the location model, the When/Pricing screens, what's stored) then follows
+    // exactly as it does for a real category of that shape. Only shown for a
+    // null-shape category; every real one answered this at its sub-type pick.
+    { key: 'g_shape', label: 'Format', title: GUEST_SCREEN_COPY.shapeQuestion },
     { key: 'g_notice', label: 'Notice', title: GUEST_SCREEN_COPY.noticeQuestion },
     // Slot only, and only the three either-way categories (yoga, massage,
     // painting): does the guest come to a place the host names, or does the host
@@ -289,6 +296,12 @@ export function stepApplies(step: StepKey, trade: string, ctx?: StepContext): bo
                     ctx.slotOffer === 'shared' || ctx.slotOffer === 'both'
                     || (slotMixedDuration(ctx.category) && !travellingMixedSlot(ctx))
                 );
+            // The booking-shape question — only for a category that never declared
+            // one ("something else"). A real sub-type settled its shape at the
+            // picker, so it never sees this. Sits before the location step, which
+            // reads the shape it sets.
+            case 'g_shape':
+                return guestNeedsShapeChoice(ctx.category);
             // The notice period, made-to-order only — its own screen before the
             // delivery areas. Other shapes have no notice (a slot has a schedule
             // inside g_area; a traveller arranges it on the enquiry).
@@ -386,7 +399,7 @@ export function stepsFor(trade: string, ctx?: StepContext): Step[] {
 
 const GUEST_SECTIONS: { key: string; label: string; steps: StepKey[] }[] = [
     { key: 'about', label: GUEST_SCREEN_COPY.sectionAboutYou, steps: ['g_you', 'g_creds'] },
-    { key: 'location', label: GUEST_SCREEN_COPY.sectionLocation, steps: ['g_notice', 'g_slot_where', 'g_area'] },
+    { key: 'location', label: GUEST_SCREEN_COPY.sectionLocation, steps: ['g_shape', 'g_notice', 'g_slot_where', 'g_area'] },
     // Slots only: session length + weekly hours. A section with no live steps
     // drops out of the rail (sectionsFor filters by stepApplies), so a
     // made-to-order or comes-to-you guest never sees a "When" section at all.
@@ -515,6 +528,7 @@ const STEP_FIELDS: Record<StepKey, string[]> = {
     g_you: [],
     g_creds: [],
     g_about: [],
+    g_shape: [],
     g_slot_basis: [],
     g_capacity: [],
     g_slot_min: [],
