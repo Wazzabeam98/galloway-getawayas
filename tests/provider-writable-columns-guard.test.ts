@@ -71,6 +71,7 @@ const PLATFORM_ONLY: Record<string, string> = {
     category_assigned_by: 'admin audit — who assigned the category',
     // Service-role booking rule and server bookkeeping.
     cancellation_window_hours: 'booking rule read/written only via the service role',
+    owner_paused: 'owner take-down flag — written only via the listing editor\'s service-role route (ownership-checked), never a direct browser write, so it is not in the write allow-list',
     reminders_sent: 'server-side reminder bookkeeping',
     notify_user_ids: 'server-managed notify list',
     // Stripe — every field is set by the connect/webhook flow under the service role.
