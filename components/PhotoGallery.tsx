@@ -17,10 +17,15 @@ export default function PhotoGallery({
     images,
     title,
     area,
+    mobileStrip = false,
 }: {
     images: string[];
     title: string;
     area?: string;
+    // Opt-in (experience pages): on a phone, show a swipeable strip of every
+    // photo rather than the hero alone. Off by default, so cottage listings keep
+    // their hero-only phone view untouched.
+    mobileStrip?: boolean;
 }) {
     const place = (area || '').trim() || 'Dumfries & Galloway';
     // Photo 1 carries the plain description; the rest are numbered off it so a
@@ -77,7 +82,32 @@ export default function PhotoGallery({
                         />
                     </div>
                 ) : (
-                    <div className="grid grid-cols-1 md:grid-cols-4 md:grid-rows-2 gap-2 h-[300px] md:h-[460px] rounded-2xl overflow-hidden">
+                <>
+                    {/* Phone (opt-in): a swipeable strip of every photo, the peek of
+                        the next one cueing the swipe. The desktop mosaic below is
+                        hidden here. */}
+                    {mobileStrip && (
+                        <div className="md:hidden -mx-4 flex snap-x snap-mandatory gap-2 overflow-x-auto px-4 [scrollbar-width:none] [&::-webkit-scrollbar]:hidden">
+                            {images.map((img, i) => (
+                                <button
+                                    key={i}
+                                    type="button"
+                                    onClick={() => setOpen(true)}
+                                    className="relative h-[280px] w-[86%] flex-none snap-center overflow-hidden rounded-2xl"
+                                >
+                                    <Image
+                                        src={getImageUrl(img)}
+                                        alt={describe(i + 1)}
+                                        fill
+                                        priority={i === 0}
+                                        sizes="86vw"
+                                        className="object-cover"
+                                    />
+                                </button>
+                            ))}
+                        </div>
+                    )}
+                    <div className={`${mobileStrip ? 'hidden md:grid' : 'grid'} grid-cols-1 md:grid-cols-4 md:grid-rows-2 gap-2 h-[300px] md:h-[460px] rounded-2xl overflow-hidden`}>
                         <button
                             type="button"
                             onClick={() => setOpen(true)}
@@ -121,6 +151,7 @@ export default function PhotoGallery({
                             <div key={`blank-${i}`} className="hidden md:block bg-slate-100" />
                         ))}
                     </div>
+                </>
                 )}
 
                 {images.length > 1 && (

@@ -1,9 +1,6 @@
 'use client';
 
 import { useMemo, useState } from 'react';
-import { Calendar } from 'react-date-range';
-import 'react-date-range/dist/styles.css';
-import 'react-date-range/dist/theme/default.css';
 import { unitMultiplies, orderTotal, MAX_ORDER_QUANTITY } from '@/lib/serviceOrders';
 import {
     optionAvailability, bookingIsPrivate, type OptionAvailability,
@@ -76,17 +73,6 @@ function unavailableLabel(a: OptionAvailability, unit: string): string {
 // wouldn't type it out. Free text below still catches anything not listed.
 const COMMON_ALLERGENS = ['Nuts', 'Peanuts', 'Gluten', 'Dairy', 'Eggs', 'Fish', 'Shellfish', 'Soya', 'Sesame'];
 
-function keyToDate(key: string): Date {
-    const [y, m, d] = key.split('-').map(Number);
-    return new Date(y, (m || 1) - 1, d || 1);
-}
-function dateToKey(dt: Date): string {
-    const y = dt.getFullYear();
-    const m = String(dt.getMonth() + 1).padStart(2, '0');
-    const d = String(dt.getDate()).padStart(2, '0');
-    return `${y}-${m}-${d}`;
-}
-
 // yyyy-mm-dd for (today + days), on the London calendar via the shared helper.
 function dayKeyFromNow(days: number): string {
     return shiftDayKey(londonDayKey(), days);
@@ -151,6 +137,16 @@ export default function BookingPanel({ bookingId, checkIn, checkOut, cottageGues
 
     const minDate = maxKey(checkIn.slice(0, 10), dayKeyFromNow(provider.shape === 'made_to_order' ? provider.leadTimeDays : 0));
     const maxDate = lastNight(checkOut);
+
+    // The bookable days INSIDE the stay, as a short list — a guest is booking
+    // within a few nights, so a month grid is mostly greyed-out noise. minDate
+    // already folds in a made-to-order lead time; maxDate is the last night.
+    const stayDays = useMemo(() => {
+        const out: string[] = [];
+        let d = minDate;
+        for (let i = 0; i < 62 && d <= maxDate; i++) { out.push(d); d = shiftDayKey(d, 1); }
+        return out;
+    }, [minDate, maxDate]);
 
     // The provider config the shared helper reads — the SAME optionAvailability
     // the booking route checks and the host diary renders, so what the guest is
@@ -403,28 +399,33 @@ export default function BookingPanel({ bookingId, checkIn, checkOut, cottageGues
                 </label>
             )}
 
-            {/* Date — request shapes. A real calendar, matching the cottage
-                booking: the dates inside the stay are live, everything else is
-                greyed. minDate/maxDate do the greying; the same yyyy-mm-dd the
-                server re-validates is what a click produces. */}
+            {/* Date — request shapes. Not a month grid (mostly greyed noise for a
+                three-night stay) but the actual bookable days inside the stay, as a
+                short list of pills. The same yyyy-mm-dd the server re-validates is
+                what a click produces. */}
             {!isSlot && (
                 <div className="mt-4">
-                    <span className="text-xs font-semibold uppercase tracking-wide text-slate-500">Date during your stay</span>
-                    <div className="airbnb-compact-calendar mt-1.5 overflow-hidden rounded-xl border border-slate-200">
-                        <Calendar
-                            date={date ? keyToDate(date) : undefined}
-                            onChange={(d: Date) => setDate(dateToKey(d))}
-                            minDate={keyToDate(minDate)}
-                            maxDate={keyToDate(maxDate)}
-                            shownDate={keyToDate(minDate)}
-                            color="#047857"
-                            months={1}
-                            showMonthAndYearPickers={false}
-                            weekdayDisplayFormat="EEEEE"
-                        />
-                    </div>
+                    <span className="text-xs font-semibold uppercase tracking-wide text-slate-500">
+                        {provider.shape === 'made_to_order' ? 'Ready for a day in your stay' : 'Pick a day in your stay'}
+                    </span>
+                    {stayDays.length === 0 ? (
+                        <p className="mt-2 text-sm text-slate-500">No bookable days left in this stay.</p>
+                    ) : (
+                        <div className="mt-2 flex flex-wrap gap-1.5">
+                            {stayDays.map((d) => {
+                                const on = date === d;
+                                return (
+                                    <button key={d} type="button" onClick={() => setDate(d)}
+                                        aria-pressed={on}
+                                        className={`rounded-lg border px-3 py-2 text-sm font-medium transition ${on ? 'border-emerald-600 bg-emerald-50 text-emerald-800' : 'border-slate-200 text-slate-700 hover:border-slate-300'}`}>
+                                        {dateLabel(d)}
+                                    </button>
+                                );
+                            })}
+                        </div>
+                    )}
                     {provider.shape === 'made_to_order' && provider.leadTimeDays > 0 ? (
-                        <span className="mt-1 block text-xs text-slate-400">{provider.who} needs {provider.leadTimeDays} day{provider.leadTimeDays === 1 ? '' : 's'} notice.</span>
+                        <span className="mt-2 block text-xs text-slate-400">{provider.who} needs {provider.leadTimeDays} day{provider.leadTimeDays === 1 ? '' : 's'} notice.</span>
                     ) : null}
                 </div>
             )}

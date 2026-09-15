@@ -86,6 +86,11 @@ export interface MpProvider {
     // are the hero shots; item images supplement them. Storage keys resolved to
     // URLs. Empty for a legacy row that predates the photos step.
     photos: string[];
+    // The gallery as RAW storage keys (provider photos first, then item images,
+    // deduped) — for the shared PhotoGallery, which resolves keys itself (so the
+    // experience mosaic is the same component, and the same craft, as a cottage
+    // listing's). `photos` above stays resolved for the card hero.
+    galleryKeys: string[];
     // The provider's own walk-through of the experience, from guest_details jsonb.
     // Displayed on the experience page; null when they didn't write one.
     what_happens: string | null;
@@ -321,6 +326,10 @@ export async function loadMarketplace(
             yearsExperience: (p.guest_details && strOrNull(p.guest_details.years_experience)) || null,
             maxGuests: shape === 'slot' ? null : intOrNull(p.guest_details && p.guest_details.max_guests),
             photos: Array.isArray(p.photos) ? p.photos.filter(Boolean).map((k: string) => getImageUrl(k)) : [],
+            galleryKeys: Array.from(new Set([
+                ...(Array.isArray(p.photos) ? p.photos.filter(Boolean) : []),
+                ...(itemsBy[p.id] || []).map((it: any) => it.image).filter(Boolean),
+            ])) as string[],
             what_happens: (p.guest_details && p.guest_details.what_to_expect) || null,
             description: p.description,
             shape,
