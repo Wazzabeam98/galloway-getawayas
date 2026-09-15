@@ -2916,19 +2916,6 @@ function ApplicationForm() {
         };
     };
 
-    // The weekly opening hours, as child rows for the slot_availability table.
-    // Only meaningful for a slot; empty for every other shape. Days off are NOT
-    // set here any more — the slot diary owns them (app/api/services/slots/
-    // schedule), so the wizard never writes slot_blocks.
-    const guestScheduleRows = () => {
-        if (audienceForTrade(trade) !== 'guest' || shape !== 'slot') return { availability: [] };
-        return {
-            availability: schedule
-                .filter((r) => r.open && r.close)
-                .map((r) => ({ day_of_week: r.day, open_time: r.open, close_time: r.close })),
-        };
-    };
-
     // The listing title for a guest is now the Title (their Intro field), so it
     // is not derived from the name any more. What we still derive from the
     // account is the BYLINE — the person's FIRST name, shown beneath their photo
@@ -3061,8 +3048,6 @@ function ApplicationForm() {
                 .filter((r) => r.name && r.price !== null && Number(r.price) > 0)
             : [];
 
-        const { availability } = guestScheduleRows();
-
         return {
             provider,
             registrations: registrations_,
@@ -3071,7 +3056,9 @@ function ApplicationForm() {
             areas: areas_,
             items: items_,
             skills: hasSkills ? skills : [],
-            slotAvailability: availability,
+            // Weekly hours no longer come from the wizard — set in the listing
+            // editor's Availability section after create.
+            slotAvailability: [],
         };
     };
 
@@ -3596,19 +3583,11 @@ function ApplicationForm() {
             }
         }
 
-        // The slot schedule — the weekly opening hours. Replaced
-        // wholesale like the areas: a handful of rows, and the provider owns them
-        // under RLS (the slot_shape migration's "owners manage their own"
-        // policies). Only a slot has them; for any other shape the delete clears
-        // any left behind by a shape the provider changed away from.
-        if (audienceForTrade(trade) === 'guest') {
-            const { availability } = guestScheduleRows();
-            await supabase.from('slot_availability').delete().eq('provider_id', id);
-            if (availability.length) {
-                const { error } = await supabase.from('slot_availability').insert(availability.map((a) => ({ ...a, provider_id: id })));
-                if (error) { console.error('[provider-save] slot_availability insert failed', error); savedButFailed.push('your weekly hours'); }
-            }
-        }
+        // Weekly opening hours are NOT written here any more. They moved out of
+        // the wizard to the listing editor's Availability section, which is the
+        // single home for the weekly template — so the wizard neither asks for
+        // hours nor writes slot_availability. A new slot provider sets them in the
+        // editor after create; the diary still owns the dated exceptions.
 
         // The menu — UPSERTED BY ID, not deleted and re-inserted. A guest trade
         // only; a host trade never has items. An item now carries a photo, and

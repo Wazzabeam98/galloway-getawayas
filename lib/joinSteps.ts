@@ -69,6 +69,11 @@ export type StepKey =
 // account address is the contact address, and the phone lives on the profile).
 const GUEST_STEP_KEYS: StepKey[] = [
     'g_verify', 'g_subtype',
+    // g_slot_hours stays in this registry — it is what marks it a GUEST step and
+    // gates it away from host trades (stepApplies returns false for non-guests on
+    // a listed key). It is retired for guests too, by its case returning false and
+    // by its removal from the When section rail; it is never shown, but it must
+    // remain listed here or it leaks into host flows.
     'g_you', 'g_creds', 'g_shape', 'g_notice', 'g_slot_where', 'g_area', 'g_slot_length', 'g_slot_hours', 'g_photos', 'g_slot_basis', 'g_capacity', 'g_slot_min', 'g_menu', 'g_title', 'g_expect',
 ];
 
@@ -335,8 +340,10 @@ export function stepApplies(step: StepKey, trade: string, ctx?: StepContext): bo
             // with its own length). Both still set weekly hours.
             case 'g_slot_length':
                 return shape === 'slot' && !slotDurationPerItem(ctx.category) && !travellingMixedSlot(ctx);
+            // g_slot_hours retired from the wizard — weekly hours are set in the
+            // listing editor's Availability section, not at sign-up.
             case 'g_slot_hours':
-                return shape === 'slot';
+                return false;
             default:
                 return false;
         }
@@ -409,10 +416,13 @@ export function stepsFor(trade: string, ctx?: StepContext): Step[] {
 const GUEST_SECTIONS: { key: string; label: string; steps: StepKey[] }[] = [
     { key: 'about', label: GUEST_SCREEN_COPY.sectionAboutYou, steps: ['g_you', 'g_creds'] },
     { key: 'location', label: GUEST_SCREEN_COPY.sectionLocation, steps: ['g_shape', 'g_notice', 'g_slot_where', 'g_area'] },
-    // Slots only: session length + weekly hours. A section with no live steps
-    // drops out of the rail (sectionsFor filters by stepApplies), so a
-    // made-to-order or comes-to-you guest never sees a "When" section at all.
-    { key: 'when', label: GUEST_SCREEN_COPY.sectionWhen, steps: ['g_slot_length', 'g_slot_hours'] },
+    // Slots only: session length. Weekly HOURS have left the wizard — they live
+    // in the listing editor's Availability section now (one home for the weekly
+    // template), so a slot provider sets a length at create and their hours after,
+    // in the editor. A section with no live steps drops out of the rail
+    // (sectionsFor filters by stepApplies), so a made-to-order or comes-to-you
+    // guest never sees a "When" section at all.
+    { key: 'when', label: GUEST_SCREEN_COPY.sectionWhen, steps: ['g_slot_length'] },
     { key: 'photos', label: GUEST_SCREEN_COPY.sectionPhotos, steps: ['g_photos'] },
     { key: 'pricing', label: GUEST_SCREEN_COPY.sectionPricing, steps: ['g_slot_basis', 'g_capacity', 'g_slot_min', 'g_menu'] },
     { key: 'details', label: GUEST_SCREEN_COPY.sectionDetails, steps: ['g_title', 'g_expect'] },

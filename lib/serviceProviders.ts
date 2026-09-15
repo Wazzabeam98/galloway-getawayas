@@ -2747,15 +2747,13 @@ export function submitProblems(draft: ProviderDraft): Problem[] {
         problems.push({ field: 'collection_address', message: GUEST_SCREEN_COPY.collectionAddressGate });
     }
 
-    // A guest slot provider with no weekly hours would finish sign-up and then
-    // be invisible — no availability, no sessions, dropped from the shop, with
-    // no error to tell them why. Require at least one row before they can send.
-    if (draft.audience === 'guest' && draft.shape === 'slot' && !(Number(draft.scheduleCount) > 0)) {
-        problems.push({
-            field: 'availability',
-            message: 'Add your weekly hours so guests can book a time — without them your listing can’t be booked.',
-        });
-    }
+    // Weekly hours are no longer asked at sign-up — they moved to the listing
+    // editor's Availability section (one home for the weekly template). So the
+    // wizard no longer gates submit on them: a slot provider finishes create with
+    // a length but no hours, and sets hours in the editor before they go live.
+    // Being invisible until then is expected (a slot with no hours generates no
+    // sessions and is dropped), and the editor surfaces it with a go-live prompt
+    // rather than the wizard blocking on a field it no longer shows.
 
     // A guest listing with no PRICED item is a dead end: the marketplace only
     // lists providers with an item priced above zero, so a no-price listing never
