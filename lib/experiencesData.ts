@@ -243,8 +243,8 @@ export async function loadPublicMarketplace(
 async function shapeProviders(admin: any, fromKey: string, toKey: string): Promise<MpProvider[]> {
     const { data: rows } = await admin
         .from('service_providers')
-        .select('id, owner_id, business_name, provider_name, based_line, headshot, photos, trade, custom_label, stripe_mcc, description, status, stripe_payouts_enabled, shape, slot_length_minutes, slot_turnaround_minutes, slot_capacity, slot_min_people, cancellation_window_hours, lead_time_days, dietary_note, guest_details, fulfilment')
-        .eq('audience', 'guest').eq('status', 'approved').eq('stripe_payouts_enabled', true);
+        .select('id, owner_id, business_name, provider_name, based_line, headshot, photos, trade, custom_label, stripe_mcc, description, status, stripe_payouts_enabled, owner_paused, shape, slot_length_minutes, slot_turnaround_minutes, slot_capacity, slot_min_people, cancellation_window_hours, lead_time_days, dietary_note, guest_details, fulfilment')
+        .eq('audience', 'guest').eq('status', 'approved').eq('stripe_payouts_enabled', true).eq('owner_paused', false);
 
     const ids = (rows || []).map((r: any) => r.id);
     if (!ids.length) return [];
