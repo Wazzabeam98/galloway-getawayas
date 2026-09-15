@@ -192,7 +192,12 @@ export function stripeProfileForProvider(
 // This is the single reason "approved" stopped meaning "live" for guest trades.
 export function isLiveToGuests(provider: any): boolean {
     if (!provider) return false;
-    return provider.status === 'approved' && provider.stripe_payouts_enabled === true;
+    // owner_paused is the provider's own take-down: approved and payout-ready, but
+    // hidden by their choice for now. Undefined (a caller that didn't select the
+    // column) reads as not-paused, so this stays inert everywhere but the
+    // marketplace reads that select it.
+    return provider.status === 'approved' && provider.stripe_payouts_enabled === true
+        && !provider.owner_paused;
 }
 
 // A provider who has been approved but has not finished Stripe. Not a guest's
