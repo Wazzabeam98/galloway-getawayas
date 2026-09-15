@@ -103,6 +103,7 @@ export default async function ProviderListingPage() {
                     price: Number(it.price), unit: it.unit || 'flat',
                     image: it.image || null,
                     duration_minutes: it.duration_minutes ?? null,
+                    fulfilment: it.fulfilment || null,
                     active: it.active !== false,
                 })),
                 availability: (avail || []).map((a: any) => ({
