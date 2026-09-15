@@ -19,6 +19,7 @@ const itemClass = 'hover:bg-slate-200 rounded-md p-2 cursor-pointer';
 
 const NavMenu = ({
     session,
+    experiencesOpen = false,
     isHost = false,
     isAdmin = false,
     mode = 'travel',
@@ -28,6 +29,7 @@ const NavMenu = ({
     initial = '',
 }: {
     session: object | undefined;
+    experiencesOpen?: boolean;
     isHost?: boolean;
     isAdmin?: boolean;
     mode?: 'host' | 'travel';
@@ -78,6 +80,17 @@ const NavMenu = ({
             </PopoverTrigger>
             <PopoverContent className='mr-6'>
                 <ul>
+                    {/* Experiences is a public destination — the mobile and
+                        in-menu counterpart of the top-bar link, shown to
+                        everyone once the feature is live. */}
+                    {experiencesOpen && (
+                        <>
+                            <li className={itemClass}>
+                                <Link href='/experiences/browse'>Experiences</Link>
+                            </li>
+                            <div className='border-t my-1' />
+                        </>
+                    )}
                     {session != null ? (
                         <>
                             {hostView ? (
