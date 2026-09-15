@@ -15,8 +15,15 @@ import {
 } from '@/lib/serviceSlots';
 import { itemFulfilment } from '@/lib/serviceProviders';
 import { dateFromKey, dateKey } from '@/lib/pricing';
+import { londonDayKey, shiftDayKey } from '@/lib/dayKey';
+import { displayName } from '@/lib/utils';
 
 export const dynamic = 'force-dynamic';
+
+// How far ahead a bookingless (standalone) slot may be booked — the same horizon
+// the public marketplace browses over. A stay bounds the against-a-cottage path;
+// standalone has none.
+const STANDALONE_HORIZON_DAYS = 90;
 
 // A guest booking a slot — the instant shape. Unlike the request shapes, there is
 // no provider to confirm: the seat is claimed here, the card is charged on the
@@ -56,19 +63,31 @@ export async function POST(request: Request) {
         // auto-confirms, so this is the guest's one chance to state it up front.
         const allergy: string = (body && body.allergy ? String(body.allergy) : '').slice(0, 500);
 
-        if (!providerId || !bookingId || !sessionDate || !sessionTime) {
+        if (!providerId || !sessionDate || !sessionTime) {
             return NextResponse.json({ ok: false, error: 'Missing details' }, { status: 400 });
         }
 
+        // STANDALONE (bookingless) vs against-a-stay. A standalone buyer is a
+        // signed-in user (checked above) with no booking: identity is their
+        // account, the date is any day the provider is open within the horizon (not
+        // a stay window), the head count is asked, and a travelling session's
+        // address is typed in — none of it derived from a booking. When a bookingId
+        // IS supplied it is validated and owned exactly as before.
+        const standalone = !bookingId;
+
         const admin = adminClient();
 
-        const { data: booking } = await admin
-            .from('bookings')
-            .select('id, guest_id, listing_id, check_in, check_out, guests')
-            .eq('id', bookingId)
-            .maybeSingle();
-        if (!booking) return NextResponse.json({ ok: false, error: 'Booking not found' }, { status: 404 });
-        if (booking.guest_id !== user.id) return NextResponse.json({ ok: false, error: 'Not your booking' }, { status: 403 });
+        let booking: any = null;
+        if (!standalone) {
+            const { data } = await admin
+                .from('bookings')
+                .select('id, guest_id, listing_id, check_in, check_out, guests')
+                .eq('id', bookingId)
+                .maybeSingle();
+            if (!data) return NextResponse.json({ ok: false, error: 'Booking not found' }, { status: 404 });
+            if (data.guest_id !== user.id) return NextResponse.json({ ok: false, error: 'Not your booking' }, { status: 403 });
+            booking = data;
+        }
 
         const { data: provider } = await admin
             .from('service_providers')
@@ -102,11 +121,21 @@ export async function POST(request: Request) {
         // The date must fall inside the stay, and the (date, time) must be a real
         // session the template offers and the provider has not blocked. Never
         // trust the pair from the browser.
-        const start = dateFromKey(booking.check_in);
-        const end = dateFromKey(booking.check_out);
         const when = dateFromKey(sessionDate);
-        if (when < start || when >= end) {
-            return NextResponse.json({ ok: false, error: 'Pick a time during your stay.' }, { status: 400 });
+        if (standalone) {
+            // No stay to bound it: any day from today to the horizon. The
+            // future-time check below still rejects a time already past today.
+            const today = dateFromKey(londonDayKey());
+            const horizon = dateFromKey(shiftDayKey(londonDayKey(), STANDALONE_HORIZON_DAYS));
+            if (when < today || when > horizon) {
+                return NextResponse.json({ ok: false, error: 'Pick a day within the next few months.' }, { status: 400 });
+            }
+        } else {
+            const start = dateFromKey(booking.check_in);
+            const end = dateFromKey(booking.check_out);
+            if (when < start || when >= end) {
+                return NextResponse.json({ ok: false, error: 'Pick a time during your stay.' }, { status: 400 });
+            }
         }
 
         // The length THIS booking runs is the chosen treatment's own duration when
@@ -190,7 +219,13 @@ export async function POST(request: Request) {
         // and a traveller declares no capacity. Clamped here, never trusted from
         // the browser; NULL for a per-person booking, where the quantity IS the
         // head count. It does not touch price.
-        const cottageGuests = Math.max(1, Number(booking.guests) || 1);
+        // The head-count ceiling for a private/travelling session. Against a stay
+        // it's the cottage party; standalone has no cottage, so it's the provider's
+        // declared capacity (a studio/table size), or a sane ceiling for a
+        // traveller who declares none.
+        const cottageGuests = standalone
+            ? (Number(provider.slot_capacity) > 0 ? Number(provider.slot_capacity) : 20)
+            : Math.max(1, Number(booking.guests) || 1);
         // The booked item's location: its own for a 'both' provider, else the
         // provider's single answer. A TRAVELLING item ignores the provider's
         // studio capacity — no cap on a session in the guest's own cottage beyond
@@ -354,13 +389,36 @@ export async function POST(request: Request) {
         // 'both'. A guest with no booking types an address into this same column —
         // scoped separately, not built here.
         let serviceAddress: string | null = null;
-        if (itemIsTravelling && booking.listing_id) {
-            const { data: stay } = await admin.from('listings')
-                .select('street_address, postcode, location')
-                .eq('id', booking.listing_id).maybeSingle();
-            if (stay) {
-                serviceAddress = [stay.street_address, stay.postcode, stay.location].filter(Boolean).join(', ') || null;
+        if (itemIsTravelling) {
+            if (standalone) {
+                // No cottage to travel to — the buyer types where. Required for a
+                // travelling session, or the provider has nowhere to go.
+                serviceAddress = (body && body.serviceAddress ? String(body.serviceAddress) : '').slice(0, 300).trim() || null;
+                if (!serviceAddress) {
+                    return NextResponse.json({ ok: false, error: 'Add the address the provider should come to.' }, { status: 400 });
+                }
+            } else if (booking.listing_id) {
+                const { data: stay } = await admin.from('listings')
+                    .select('street_address, postcode, location')
+                    .eq('id', booking.listing_id).maybeSingle();
+                if (stay) {
+                    serviceAddress = [stay.street_address, stay.postcode, stay.location].filter(Boolean).join(', ') || null;
+                }
             }
+        }
+
+        // The contact snapshot the provider needs, frozen at purchase from the
+        // buyer's own profile — honouring show_full_name, never a surname beyond it.
+        // Against a stay the webhook writes this; a standalone slot order is inserted
+        // here and paid instantly, so write it here too (same shape, no
+        // profile_private, no widening of the guest/host privacy view).
+        let guestName: string | null = null, guestPhone: string | null = null, guestEmail: string | null = user.email || null;
+        if (standalone) {
+            const { data: prof } = await admin.from('profiles')
+                .select('full_name, preferred_name, show_full_name, phone, email').eq('id', user.id).maybeSingle();
+            guestName = displayName(prof, '') || null;
+            guestPhone = prof ? prof.phone : null;
+            guestEmail = (prof && prof.email) || user.email || null;
         }
 
         // The holding order — created HERE, not in the webhook, because the seat
@@ -369,8 +427,13 @@ export async function POST(request: Request) {
             .insert({
                 provider_id: provider.id,
                 guest_id: user.id,
-                listing_id: booking.listing_id || null,
-                booking_id: booking.id,
+                listing_id: standalone ? null : (booking.listing_id || null),
+                booking_id: standalone ? null : booking.id,
+                // The buyer's contact, for the provider — written here for a
+                // standalone order (the webhook writes it for the against-a-stay one).
+                guest_name: standalone ? guestName : undefined,
+                guest_phone: standalone ? guestPhone : undefined,
+                guest_email: standalone ? guestEmail : undefined,
                 trade: provider.trade || null,
                 shape: 'slot',
                 slot_session_id: sessionRow ? sessionRow.id : null,
@@ -389,7 +452,7 @@ export async function POST(request: Request) {
                 fulfilment: bookedFulfilment,
                 // The frozen destination for a travelling session (see above).
                 service_address: serviceAddress,
-                guests: booking.guests ?? null,
+                guests: standalone ? (attendees ?? quantity ?? null) : (booking.guests ?? null),
                 attendees,
                 quantity,
                 unit_price: unitPrice,
@@ -438,7 +501,7 @@ export async function POST(request: Request) {
                     application_fee_amount: pricing.applicationFeePence,
                     transfer_data: { destination: provider.stripe_account_id },
                     description: 'Galloway experience — ' + business + ' · ' + itemName,
-                    metadata: { kind: 'slot_order', order_id: order.id, provider_id: provider.id, booking_id: booking.id },
+                    metadata: { kind: 'slot_order', order_id: order.id, provider_id: provider.id, booking_id: standalone ? '' : booking.id },
                 },
                 // Land on the booking itself — a real confirmation with what
                 // happens next and an add-to-calendar — not a banner on /trips.
@@ -447,7 +510,7 @@ export async function POST(request: Request) {
                 // Give up on the Checkout at the hold's edge, so an abandoned one
                 // stops being payable at the same moment the seat is released.
                 expires_at: Math.floor(Date.now() / 1000) + SLOT_HOLD_MINUTES * 60,
-                metadata: { kind: 'slot_order', order_id: order.id, provider_id: provider.id, booking_id: booking.id, guest_id: user.id },
+                metadata: { kind: 'slot_order', order_id: order.id, provider_id: provider.id, booking_id: standalone ? '' : booking.id, guest_id: user.id },
             });
 
             return NextResponse.json({ ok: true, url: checkout.url });
