@@ -5,23 +5,30 @@ import {
     itemPriceLabel, cancellationSentence, coverageLabel,
     durationLabel, durationSummary, yearsLabel, groupSizeLabel,
 } from '@/components/marketplace/present';
-import { MapPin, Clock, Users, User, BadgeCheck, Award } from 'lucide-react';
+import { MapPin, Clock, Users, User, BadgeCheck, Award, Star } from 'lucide-react';
 import PhotoGallery from '@/components/PhotoGallery';
+import ReviewStars from '@/components/ReviewStars';
+import ProviderReplyBox from '@/components/marketplace/ProviderReplyBox';
+import { capitializeFirst } from '@/lib/utils';
 import type { MpProvider } from '@/lib/experiencesData';
+import type { ExperienceReviewsBlock } from '@/lib/experienceReviews';
 
 // The listing body, in the cottage-page craft (photo mosaic, facts icon-list,
 // section rhythm). Shared by the against-a-stay page and the public/standalone
 // page so both read as one listing; the caller passes the right-hand `panel` (the
 // stay booking panel, the standalone one, or the honest "book with a stay"
-// notice). A plain server component. Rules: first name only, no ratings/counts,
-// no address before payment.
+// notice). A plain server component. Rules: first name only, no address before
+// payment. Reviews (`reviews`) render only once at least one exists — a brand-new
+// listing shows no section at all and leans on the Verified badge; the average is
+// withheld until there are enough of them to mean something (see lib/reviews).
 export default function ExperienceListingBody({
-    p, backHref, backLabel, panel,
+    p, backHref, backLabel, panel, reviews,
 }: {
     p: MpProvider;
     backHref: string;
     backLabel: string;
     panel: React.ReactNode;
+    reviews?: ExperienceReviewsBlock | null;
 }) {
     const who = p.byline || p.business_name;
     const town = p.based_line || coverageLabel(p);
@@ -209,6 +216,50 @@ export default function ExperienceListingBody({
                                 </p>
                             ) : null}
                         </section>
+
+                        {reviews && reviews.count > 0 && (
+                            <section className="mt-8 border-t border-slate-200 pt-8">
+                                <div className="flex items-baseline gap-2.5">
+                                    <h2 className="text-xl md:text-2xl font-bold text-slate-900">Reviews</h2>
+                                    {reviews.avg !== null ? (
+                                        <span className="flex items-baseline gap-1.5 text-slate-900">
+                                            <Star className="h-4 w-4 self-center fill-amber-400 text-amber-400" aria-hidden />
+                                            <span className="text-lg font-semibold">{reviews.avg.toFixed(2)}</span>
+                                            <span className="text-sm text-slate-500">
+                                                · {reviews.count} review{reviews.count > 1 ? 's' : ''}
+                                            </span>
+                                        </span>
+                                    ) : (
+                                        <span className="text-sm text-slate-500">
+                                            {reviews.count} review{reviews.count > 1 ? 's' : ''} so far
+                                        </span>
+                                    )}
+                                </div>
+
+                                <ul className="mt-5 space-y-6">
+                                    {reviews.items.map((r) => (
+                                        <li key={r.id} className="border-b border-slate-100 pb-6 last:border-0 last:pb-0">
+                                            <div className="flex items-center gap-2">
+                                                <span className="font-semibold text-slate-900">{capitializeFirst(r.firstName || 'Guest')}</span>
+                                                <ReviewStars value={r.rating} size={14} />
+                                                {r.itemName ? (
+                                                    <span className="rounded-full bg-slate-100 px-2 py-0.5 text-[11px] font-medium text-slate-600">
+                                                        {r.itemName}
+                                                    </span>
+                                                ) : null}
+                                            </div>
+                                            <p className="mt-2 whitespace-pre-line text-[15px] leading-relaxed text-slate-700">{r.comment}</p>
+                                            <ProviderReplyBox
+                                                reviewId={r.id}
+                                                existingReply={r.reply}
+                                                providerFirstName={reviews.providerFirstName}
+                                                canReply={reviews.canReply}
+                                            />
+                                        </li>
+                                    ))}
+                                </ul>
+                            </section>
+                        )}
                     </div>
 
                     <div className="lg:sticky lg:top-6 lg:self-start">{panel}</div>
