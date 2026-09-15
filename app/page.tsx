@@ -254,10 +254,10 @@ export default async function HomePage({
                     )}
                 </div>
 
-                {/* Property Grid */}
+                {/* Property Grid — two across, up to eight on the default view. */}
                 {listings && listings.length > 0 ? (
-                    <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-x-6 gap-y-10">
-                        {listings.map((property) => (
+                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-x-6 gap-y-10">
+                        {(searching ? listings : listings.slice(0, 8)).map((property) => (
                             <ListingCard key={property.id} listing={property} />
                         ))}
                     </div>

@@ -14,7 +14,7 @@ import ProviderCard from '@/components/marketplace/ProviderCard';
 // feature is dormant until then), and nothing when there are no live providers,
 // so the home page never advertises an empty shelf. Public — no auth needed to
 // see or to reach the browse page.
-const MAX_ON_HOME = 4;
+const MAX_ON_HOME = 8;
 
 export default async function HomeExperiences() {
     if (!guestExperiencesOpen()) return null;
@@ -45,7 +45,7 @@ export default async function HomeExperiences() {
                 </Link>
             </div>
 
-            <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-x-6 gap-y-10">
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-x-6 gap-y-10">
                 {shown.map((p) => (
                     <ProviderCard key={p.id} p={p} href={`/experiences/browse/${p.id}`} />
                 ))}
