@@ -41,7 +41,7 @@ export interface EditorProvider {
 
 type SectionKey = 'title' | 'about' | 'happens' | 'things' | 'dietary' | 'photos' | 'menu' | 'where' | 'availability';
 
-const BUILT: Record<string, boolean> = { title: true, about: true, happens: true, things: true, dietary: true };
+const BUILT: Record<string, boolean> = { title: true, about: true, happens: true, things: true, dietary: true, availability: true };
 
 async function saveSection(providerId: string, section: string, data: any): Promise<boolean> {
     const res = await fetch('/api/services/listing/save', {
@@ -102,6 +102,22 @@ export default function ProviderListingEditor({ provider }: { provider: EditorPr
     const [activity, setActivity] = useState(p.activity_level);
     const [whatToBring, setWhatToBring] = useState(p.what_to_bring);
     const [dietaryNote, setDietaryNote] = useState(p.dietary_note);
+
+    // Availability (slot providers): the weekly template. Seven rows, Sun..Sat,
+    // each on/off with an open and close time — the single home for weekly hours
+    // now they've left the wizard. Dated days-off and part-day blocks stay in the
+    // diary.
+    const DAY_NAMES = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
+    const [hours, setHours] = useState(() => DAY_NAMES.map((_, d) => {
+        const row = p.availability.find((a) => a.day_of_week === d);
+        return { on: !!row, open: row?.open_time || '09:00', close: row?.close_time || '17:00' };
+    }));
+    const [slotLength, setSlotLength] = useState(p.slot_length_minutes != null ? String(p.slot_length_minutes) : '');
+    const [turnaround, setTurnaround] = useState(String(p.slot_turnaround_minutes || 0));
+    const [capacity, setCapacity] = useState(p.slot_capacity != null ? String(p.slot_capacity) : '');
+    const [minPeople, setMinPeople] = useState(String(p.slot_min_people || 1));
+    const [leadDays, setLeadDays] = useState(String(p.lead_time_days || 0));
+    const [cancelHours, setCancelHours] = useState(String(p.cancellation_window_hours ?? 48));
 
     async function run(section: string, data: any) {
         setSavingKey(section);
@@ -182,6 +198,24 @@ export default function ProviderListingEditor({ provider }: { provider: EditorPr
                     </button>
                 </div>
             </div>
+
+            {/* Go-live gate for a slot provider with no weekly hours: a slot with
+                no availability generates no sessions and is dropped from the
+                marketplace, so it's the one thing that keeps a new provider
+                invisible. Said loudly, with a jump to fix it — never a hard block. */}
+            {p.isSlot && p.availability.length === 0 && !paused && (
+                <div className="mb-6 rounded-2xl border border-amber-300 bg-amber-50 p-4">
+                    <div className="font-semibold text-amber-900">You’re not bookable yet — add your weekly hours</div>
+                    <p className="mt-1 text-sm text-amber-900/80">
+                        Guests book a time from your weekly hours. Until you set them, your listing generates no
+                        times and won’t appear in the marketplace.
+                    </p>
+                    <button type="button" onClick={() => setActive('availability')}
+                        className="mt-3 rounded-md bg-amber-700 px-3 py-2 text-sm font-medium text-white">
+                        Set your hours
+                    </button>
+                </div>
+            )}
 
             {/* Missing-field prompts */}
             {missing.length > 0 && (
@@ -280,7 +314,49 @@ export default function ProviderListingEditor({ provider }: { provider: EditorPr
                     {active === 'photos' && <ComingSection title="Photos" note={noPhotoWillVanish ? 'Heads up: with no photo here your listing is hidden from the homepage and both marketplace grids.' : undefined} />}
                     {active === 'menu' && <ComingSection title="What you offer" note={noPricedItem ? 'Heads up: with no priced item your listing can’t be booked and won’t be shown.' : undefined} />}
                     {active === 'where' && <ComingSection title="Where it happens" />}
-                    {active === 'availability' && <ComingSection title="Availability" />}
+
+                    {active === 'availability' && (
+                        <SectionCard title="Availability" hint="Your weekly hours and booking rules. A specific day off, or part of a day, is set in your diary." saving={savingKey === 'availability'}
+                            onSave={() => run('availability', {
+                                slot_length_minutes: slotLength, slot_turnaround_minutes: turnaround,
+                                slot_capacity: capacity, slot_min_people: minPeople,
+                                lead_time_days: leadDays, cancellation_window_hours: cancelHours,
+                                availability: hours
+                                    .map((h, d) => ({ ...h, day_of_week: d }))
+                                    .filter((h) => h.on && h.open && h.close && h.open < h.close)
+                                    .map((h) => ({ day_of_week: h.day_of_week, open_time: h.open, close_time: h.close })),
+                            })}>
+                            <div>
+                                <span className="block text-xs font-semibold uppercase tracking-wide text-slate-500">Weekly hours</span>
+                                <div className="mt-2 space-y-1.5">
+                                    {DAY_NAMES.map((name, d) => (
+                                        <div key={d} className="flex items-center gap-3">
+                                            <button type="button" onClick={() => setHours(hours.map((h, j) => j === d ? { ...h, on: !h.on } : h))}
+                                                className={`w-16 rounded-lg border px-2 py-1.5 text-sm font-medium ${hours[d].on ? 'border-emerald-700 bg-emerald-50 text-slate-900' : 'border-slate-300 text-slate-400'}`}>
+                                                {name}
+                                            </button>
+                                            {hours[d].on ? (
+                                                <>
+                                                    <input type="time" value={hours[d].open} onChange={(e) => setHours(hours.map((h, j) => j === d ? { ...h, open: e.target.value } : h))} className="rounded-lg border border-slate-300 p-1.5 text-sm" />
+                                                    <span className="text-slate-400">to</span>
+                                                    <input type="time" value={hours[d].close} onChange={(e) => setHours(hours.map((h, j) => j === d ? { ...h, close: e.target.value } : h))} className="rounded-lg border border-slate-300 p-1.5 text-sm" />
+                                                </>
+                                            ) : <span className="text-sm text-slate-400">Closed</span>}
+                                        </div>
+                                    ))}
+                                </div>
+                            </div>
+                            <div className="grid grid-cols-2 gap-4">
+                                <Field label="Session length (min)"><input className={inputCls} type="number" min={15} value={slotLength} onChange={(e) => setSlotLength(e.target.value)} /></Field>
+                                <Field label="Turnaround / gap (min)"><input className={inputCls} type="number" min={0} value={turnaround} onChange={(e) => setTurnaround(e.target.value)} /></Field>
+                                <Field label="Group size (max)"><input className={inputCls} type="number" min={1} value={capacity} onChange={(e) => setCapacity(e.target.value)} /></Field>
+                                <Field label="Minimum per booking"><input className={inputCls} type="number" min={1} value={minPeople} onChange={(e) => setMinPeople(e.target.value)} /></Field>
+                                <Field label="Lead time (days)"><input className={inputCls} type="number" min={0} value={leadDays} onChange={(e) => setLeadDays(e.target.value)} /></Field>
+                                <Field label="Cancellation window (hrs)"><input className={inputCls} type="number" min={0} value={cancelHours} onChange={(e) => setCancelHours(e.target.value)} /></Field>
+                            </div>
+                            <p className="text-xs text-slate-500">To close a specific day, or part of one, use your diary — those are exceptions to these weekly hours.</p>
+                        </SectionCard>
+                    )}
                 </div>
             </div>
         </div>
