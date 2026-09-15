@@ -56,11 +56,8 @@ async function main() {
     console.log('--- baseline (table-level SELECT granted to authenticated) ---');
     let r = await readSensitive(attackerTok, 'listings');
     ok(r.status === 200 && r.data[0] && r.data[0].ical_token === ICAL, 'LEAK read: a stranger reads another host\'s street_address/ical_token/commission_rate  [' + JSON.stringify(r.data) + ']');
-    // The commission-WRITE hole (reported separately, NOT fixed by this migration):
-    r = await req(hostTok, 'PATCH', '/listings?id=eq.' + listing.id, { commission_rate: 0 });
-    let comm = (await db.select('listings', '?id=eq.' + listing.id + '&select=commission_rate'))[0].commission_rate;
-    console.log('  · (separate finding) host lowered own commission_rate to ' + comm + '  [HTTP ' + r.status + '] — fix scoped separately');
-    await runSql("update listings set commission_rate=15 where id='" + listing.id + "'");
+    // The commission-WRITE hole is proven and fixed in its own harness
+    // (prove-listings-update-allow-list.mjs); this proof is about READ privacy.
 
     await applyFile('supabase/migrations/20260903154419_listing_private_columns.sql');
     await runSql("notify pgrst, 'reload schema'");
