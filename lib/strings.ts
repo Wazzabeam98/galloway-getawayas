@@ -325,15 +325,18 @@ export const GUEST_SCREEN_COPY = {
     // settled its shape at the picker). Three cards, in what the provider sells
     // rather than engine words: slot / made_to_order / comes_to_you. The answer
     // drives the location model and every screen after, exactly as a real
-    // category's declared shape does.
-    shapeQuestion: 'How do guests get it?',
+    // category's declared shape does. Worded as the FORMAT of the offering, not
+    // "how do guests get it?" — that phrasing belongs to the made-to-order
+    // fulfilment fork (fulfilmentHeading), which lands on the same path, and two
+    // screens asking the same question read as a bug.
+    shapeQuestion: 'How does it work?',
     shapeSlotLabel: 'People book a time with you',
     shapeSlotHint: 'A session, class or slot they turn up for',
     shapeMadeLabel: 'You make something they collect or you deliver',
     shapeMadeHint: 'A thing you prepare — they pick it up, or you drop it off',
     shapeTravelLabel: 'You come to them and do it',
     shapeTravelHint: 'At the guest’s cottage — you travel to them',
-    shapeGate: 'Choose how guests get it to carry on.',
+    shapeGate: 'Choose how it works to carry on.',
     // Made-to-order's two logistics screens, split so each asks one thing.
     // First the notice (a big stepper, like the other single-number screens); then
     // the delivery areas — a baker doesn't TRAVEL to a guest, they collect or drop
