@@ -234,8 +234,13 @@ export default function ProviderListingEditor({ provider }: { provider: EditorPr
     if (!p.activity_level.trim()) missing.push('the activity level');
 
     const SECTIONS: { key: SectionKey; label: string; icon: any }[] = [
+        // Grouped as a provider thinks: identity (who/where) → content (photos,
+        // offerings, the experience) → operations (availability, status). Where it
+        // happens sits high — Airbnb asks location early, and the menu's per-item
+        // location depends on the come-to-me/travel/both choice being set first.
         { key: 'title', label: 'Title & category', icon: FileText },
         { key: 'about', label: 'About you', icon: User },
+        { key: 'where', label: 'Where it happens', icon: MapPin },
         { key: 'photos', label: 'Photos', icon: ImageIcon },
         { key: 'menu', label: 'What you offer', icon: ShoppingBag },
         { key: 'happens', label: 'What happens', icon: FileText },
@@ -243,7 +248,6 @@ export default function ProviderListingEditor({ provider }: { provider: EditorPr
         // Food & dietary is only meaningful for a food business (chef, baker,
         // hamper) — a sauna or a guide never caters, so it doesn't see this.
         ...(p.isFood ? [{ key: 'dietary' as SectionKey, label: 'Food & dietary', icon: Salad }] : []),
-        { key: 'where', label: 'Where it happens', icon: MapPin },
         ...(p.isSlot ? [{ key: 'availability' as SectionKey, label: 'Availability', icon: CalendarRange }] : []),
         { key: 'status', label: 'Listing status', icon: paused ? EyeOff : Eye },
     ];
@@ -338,8 +342,25 @@ export default function ProviderListingEditor({ provider }: { provider: EditorPr
                     )}
 
                     {active === 'about' && (
-                        <SectionCard title="About you" hint="Your credibility — shown beneath your listing name." saving={savingKey === 'about'}
-                            onSave={() => run('about', { professional_title: profTitle, years_experience: years, qualifications: quals, recognition })}>
+                        <SectionCard title="About you" hint="You, and why a guest can trust you — shown beneath your listing name." saving={savingKey === 'about'}
+                            onSave={() => run('about', { professional_title: profTitle, years_experience: years, qualifications: quals, recognition, headshot })}>
+                            <div>
+                                <span className="block text-xs font-semibold uppercase tracking-wide text-slate-500">Your photo</span>
+                                <p className="mt-0.5 text-xs text-slate-400">The person a guest is meeting — shown beside your name.</p>
+                                <div className="mt-2 flex items-center gap-3">
+                                    {headshot ? (
+                                        // eslint-disable-next-line @next/next/no-img-element
+                                        <img src={getImageUrl(headshot)} alt="" className="h-16 w-16 rounded-full object-cover ring-1 ring-slate-200" />
+                                    ) : (
+                                        <span className="flex h-16 w-16 items-center justify-center rounded-full bg-slate-100 text-slate-400"><User className="h-6 w-6" /></span>
+                                    )}
+                                    <label className="cursor-pointer rounded-xl border border-slate-300 px-3 py-2 text-sm font-semibold text-slate-700 hover:border-slate-500">
+                                        {headshot ? 'Replace' : 'Add a photo'}
+                                        <input type="file" accept="image/png, image/jpeg" onChange={changeHeadshot} className="hidden" disabled={uploading} />
+                                    </label>
+                                    {headshot && <button type="button" onClick={() => setHeadshot(null)} className="text-sm text-slate-500 hover:text-red-600">Remove</button>}
+                                </div>
+                            </div>
                             <Field label="Professional title"><input className={inputCls} value={profTitle} onChange={(e) => setProfTitle(e.target.value)} placeholder="Chef and restaurant owner" /></Field>
                             <Field label="Years of experience"><input className={inputCls} value={years} onChange={(e) => setYears(e.target.value)} placeholder="5" /></Field>
                             <Field label="Qualifications"><textarea className={inputCls} rows={2} value={quals} onChange={(e) => setQuals(e.target.value)} /></Field>
@@ -408,8 +429,8 @@ export default function ProviderListingEditor({ provider }: { provider: EditorPr
                     )}
 
                     {active === 'photos' && (
-                        <SectionCard title="Photos" hint="Your gallery leads the listing. The first photo is the cover — drag to reorder." saving={savingKey === 'photos'}
-                            onSave={() => run('photos', { photos, headshot, logo })}>
+                        <SectionCard title="Photos" hint="Photos of the experience — these lead the listing. The first is the cover; drag to reorder. (Your own photo is under About you.)" saving={savingKey === 'photos'}
+                            onSave={() => run('photos', { photos, logo })}>
                             {/* Last-photo guard: removing every photo hides the listing
                                 from the homepage and both marketplace grids (they filter
                                 on a hero). Said, never blocked. */}
@@ -430,23 +451,6 @@ export default function ProviderListingEditor({ provider }: { provider: EditorPr
                                         uploading={uploading}
                                         addLabel="Add photos"
                                     />
-                                </div>
-                            </div>
-                            <div>
-                                <span className="block text-xs font-semibold uppercase tracking-wide text-slate-500">A photo of yourself</span>
-                                <p className="mt-0.5 text-xs text-slate-400">The person a guest is meeting — shown beside your name.</p>
-                                <div className="mt-2 flex items-center gap-3">
-                                    {headshot ? (
-                                        // eslint-disable-next-line @next/next/no-img-element
-                                        <img src={getImageUrl(headshot)} alt="" className="h-16 w-16 rounded-full object-cover ring-1 ring-slate-200" />
-                                    ) : (
-                                        <span className="flex h-16 w-16 items-center justify-center rounded-full bg-slate-100 text-slate-400"><User className="h-6 w-6" /></span>
-                                    )}
-                                    <label className="cursor-pointer rounded-xl border border-slate-300 px-3 py-2 text-sm font-semibold text-slate-700 hover:border-slate-500">
-                                        {headshot ? 'Replace' : 'Add a photo'}
-                                        <input type="file" accept="image/png, image/jpeg" onChange={changeHeadshot} className="hidden" disabled={uploading} />
-                                    </label>
-                                    {headshot && <button type="button" onClick={() => setHeadshot(null)} className="text-sm text-slate-500 hover:text-red-600">Remove</button>}
                                 </div>
                             </div>
                         </SectionCard>
@@ -642,7 +646,21 @@ export default function ProviderListingEditor({ provider }: { provider: EditorPr
                                 <Field label="Notice needed (days)" hint="How far ahead a guest must book — 2 means at least 2 days’ notice. 0 = same-day is fine."><input className={inputCls} type="number" min={0} value={leadDays} onChange={(e) => setLeadDays(e.target.value)} /></Field>
                                 <Field label="Cancellation window (hrs)" hint="How long before the start a guest can still cancel for a refund."><input className={inputCls} type="number" min={0} value={cancelHours} onChange={(e) => setCancelHours(e.target.value)} /></Field>
                             </div>
-                            <p className="text-xs text-slate-500">To close a specific day, or part of one, use your diary — those are exceptions to these weekly hours.</p>
+                            {/* Dated exceptions have one home — the diary, where a
+                                provider also sees their bookings. The editor owns the
+                                weekly template and points clearly to the diary rather
+                                than becoming a second place to block a date. */}
+                            <Link href="/services/dashboard"
+                                className="flex items-center justify-between gap-3 rounded-xl border border-slate-300 bg-slate-50 p-4 transition hover:border-slate-400">
+                                <div className="flex items-start gap-3">
+                                    <CalendarRange className="mt-0.5 h-5 w-5 flex-none text-slate-500" />
+                                    <div>
+                                        <div className="text-sm font-semibold text-slate-900">Blocking a specific day, or part of one?</div>
+                                        <p className="text-xs text-slate-500">Those are exceptions to your weekly hours — set them in your diary, alongside your bookings.</p>
+                                    </div>
+                                </div>
+                                <span className="flex-none text-sm font-semibold text-emerald-700">Open diary →</span>
+                            </Link>
                         </SectionCard>
                     )}
 
