@@ -602,17 +602,3 @@ export default function ProviderListingEditor({ provider }: { provider: EditorPr
         </div>
     );
 }
-
-function ComingSection({ title, note }: { title: string; note?: string }) {
-    return (
-        <section className="rounded-2xl border border-dashed border-slate-300 bg-slate-50 p-6">
-            <h2 className="text-xl font-bold text-slate-900">{title}</h2>
-            <p className="mt-1 text-sm text-slate-500">This section is being wired into the new editor next.</p>
-            {note && (
-                <div className="mt-3 flex items-start gap-2 rounded-xl border border-amber-300 bg-amber-50 p-3 text-sm text-amber-900">
-                    <Check className="mt-0.5 h-4 w-4 flex-none" /> {note}
-                </div>
-            )}
-        </section>
-    );
-}
