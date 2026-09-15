@@ -232,7 +232,7 @@ export default async function ListingPage(
                                                 {it.image ? (
                                                     // eslint-disable-next-line @next/next/no-img-element
                                                     <img src={it.image} alt="" loading="lazy" className="h-16 w-16 flex-none rounded-lg object-cover" />
-                                                ) : <div className="h-16 w-16 flex-none rounded-lg bg-slate-100" />}
+                                                ) : null}
                                                 <div className="min-w-0 flex-1">
                                                     <div className="flex items-baseline justify-between gap-3">
                                                         <span className="font-medium text-slate-900">{it.name}</span>
