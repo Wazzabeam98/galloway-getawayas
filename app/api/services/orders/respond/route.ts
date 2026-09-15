@@ -4,6 +4,7 @@ import { cookies } from 'next/headers';
 import { NextResponse } from 'next/server';
 import { stripeRequest } from '@/lib/stripe';
 import { canTransition } from '@/lib/serviceOrders';
+import { providerFirstName } from '@/lib/providerName';
 import { sendEmail, emailLayout, escapeHtml, SITE_URL } from '@/lib/email';
 import { logError } from '@/lib/logError';
 
@@ -28,11 +29,14 @@ export const dynamic = 'force-dynamic';
 // told nothing when it turned into a charge or was let go. Both are worth an
 // email, and the money one especially: a card charged with no word is how a
 // £180 line item becomes a dispute.
-async function notifyGuest(order: any, outcome: 'confirmed' | 'declined' | 'refunded'): Promise<void> {
+async function notifyGuest(order: any, outcome: 'confirmed' | 'declined' | 'refunded', providerName: string): Promise<void> {
     const to = String(order.guest_email || '').trim();
     if (!to) return;
 
-    const who = escapeHtml(order.provider_business_name || 'your experience');
+    // Name the PERSON, not the listing — "Your booking with Fiona", not "…with
+    // Sunrise wild swim". Falls back to the frozen listing name, then a generic.
+    const name = providerName || order.provider_business_name || 'your experience';
+    const who = escapeHtml(name);
     const date = escapeHtml(String(order.service_date || ''));
     const amount = '£' + Number(order.price || 0).toFixed(2);
 
@@ -40,7 +44,7 @@ async function notifyGuest(order: any, outcome: 'confirmed' | 'declined' | 'refu
     let html: string;
 
     if (outcome === 'refunded') {
-        subject = 'You’ve been refunded for ' + (order.provider_business_name || 'your experience');
+        subject = name + ' has cancelled your booking';
         html = emailLayout(
             '<p style="margin:0 0 16px;font-size:16px;"><strong>' + who
             + '</strong> has cancelled your booking for <strong>' + date + '</strong> and refunded you '
@@ -50,7 +54,7 @@ async function notifyGuest(order: any, outcome: 'confirmed' | 'declined' | 'refu
             'You’re receiving this because you booked an experience through Galloway Getaways.'
         );
     } else if (outcome === 'confirmed') {
-        subject = 'Your booking with ' + (order.provider_business_name || 'your experience') + ' is confirmed';
+        subject = 'Your booking with ' + name + ' is confirmed';
         html = emailLayout(
             '<p style="margin:0 0 16px;font-size:16px;">Good news — <strong>' + who
             + '</strong> has confirmed your booking for <strong>' + date + '</strong>.</p>'
@@ -59,7 +63,7 @@ async function notifyGuest(order: any, outcome: 'confirmed' | 'declined' | 'refu
             'You’re receiving this because you booked an experience through Galloway Getaways.'
         );
     } else {
-        subject = 'About your booking with ' + (order.provider_business_name || 'your experience');
+        subject = 'About your booking with ' + name;
         html = emailLayout(
             '<p style="margin:0 0 16px;font-size:16px;">Unfortunately <strong>' + who
             + '</strong> can’t make <strong>' + date + '</strong>.</p>'
@@ -104,6 +108,10 @@ export async function POST(request: Request) {
         if (!order) {
             return NextResponse.json({ ok: false, error: 'No such order' }, { status: 404 });
         }
+
+        // The provider's first name for the guest emails below — names the person,
+        // falling back to the frozen listing name. Fetched once for all outcomes.
+        const providerName = await providerFirstName(admin, order.provider_id, order.provider_business_name || 'your experience');
 
         // The provider on the order has to be one the caller owns.
         const { data: provider } = await admin
@@ -157,7 +165,7 @@ export async function POST(request: Request) {
                 }
             }
 
-            await notifyGuest(order, 'refunded');
+            await notifyGuest(order, 'refunded', providerName);
 
             return NextResponse.json({ ok: true, status: 'refunded' });
         }
@@ -196,7 +204,7 @@ export async function POST(request: Request) {
             // on. Until now they heard nothing back after requesting — the money
             // moved in silence. Best-effort: the booking stands whether or not
             // the mail sends, but a failure is reported, not swallowed.
-            await notifyGuest(order, 'confirmed');
+            await notifyGuest(order, 'confirmed', providerName);
 
             return NextResponse.json({ ok: true, status: 'confirmed' });
         }
@@ -216,7 +224,7 @@ export async function POST(request: Request) {
 
         // Tell the guest the provider could not take it and their card was
         // released — so a pending hold vanishing is explained, not a mystery.
-        await notifyGuest(order, 'declined');
+        await notifyGuest(order, 'declined', providerName);
 
         return NextResponse.json({ ok: true, status: 'declined' });
     } catch (err: any) {
