@@ -148,8 +148,12 @@ export async function POST(request: Request) {
                 // Coverage regions: replace the set.
                 if (Array.isArray(data.areas)) {
                     await admin.from('service_areas').delete().eq('provider_id', providerId);
+                    // A guest's coverage is a named region, informational only — no
+                    // radius, no point. centre_lat/lng are NOT NULL on the table, so
+                    // they're written as 0 (nothing on the guest path reads them);
+                    // radius_miles takes its column default. Same shape the wizard writes.
                     const rows = data.areas.map((label: any) => strOrNull(label)).filter(Boolean)
-                        .map((label: string) => ({ provider_id: providerId, label }));
+                        .map((label: string) => ({ provider_id: providerId, label, centre_lat: 0, centre_lng: 0 }));
                     if (rows.length) await admin.from('service_areas').insert(rows);
                 }
                 break;

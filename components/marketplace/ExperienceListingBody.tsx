@@ -5,9 +5,18 @@ import {
     itemPriceLabel, cancellationSentence, coverageLabel,
     durationLabel, durationSummary, yearsLabel, groupSizeLabel,
 } from '@/components/marketplace/present';
-import { MapPin, Clock, Users, User, BadgeCheck, Award } from 'lucide-react';
+import { MapPin, Clock, Users, User, BadgeCheck, Award, Compass, Flag, Activity, Backpack, ShieldAlert } from 'lucide-react';
 import PhotoGallery from '@/components/PhotoGallery';
 import type { MpProvider } from '@/lib/experiencesData';
+
+// Icon for an itinerary phase, by its title (the editor writes Arrival / During /
+// Finish; anything else falls to the neutral "during" glyph).
+function phaseIcon(title: string) {
+    const t = title.toLowerCase();
+    if (t.includes('arriv')) return MapPin;
+    if (t.includes('finish') || t.includes('end')) return Flag;
+    return Compass;
+}
 
 // The listing body, in the cottage-page craft (photo mosaic, facts icon-list,
 // section rhythm). Shared by the against-a-stay page and the public/standalone
@@ -126,10 +135,56 @@ export default function ExperienceListingBody({
                             </section>
                         )}
 
-                        {p.what_happens ? (
+                        {(p.what_happens || p.itinerary.length > 0) ? (
                             <section className="mt-8 border-t border-slate-200 pt-8">
                                 <h2 className="text-xl md:text-2xl font-bold text-slate-900">What happens</h2>
-                                <p className="mt-3 whitespace-pre-line text-[15px] leading-relaxed text-slate-700">{p.what_happens}</p>
+                                {p.what_happens ? (
+                                    <p className="mt-3 whitespace-pre-line text-[15px] leading-relaxed text-slate-700">{p.what_happens}</p>
+                                ) : null}
+                                {p.itinerary.length > 0 ? (
+                                    <ol className="mt-5 space-y-5">
+                                        {p.itinerary.map((step, i) => {
+                                            const Icon = phaseIcon(step.title);
+                                            return (
+                                                <li key={i} className="flex gap-3.5">
+                                                    <span className="flex h-9 w-9 flex-none items-center justify-center rounded-full bg-emerald-50 text-emerald-700 ring-1 ring-emerald-100">
+                                                        <Icon className="h-4 w-4" aria-hidden />
+                                                    </span>
+                                                    <div className="min-w-0">
+                                                        <div className="font-semibold text-slate-900">{step.title}</div>
+                                                        <p className="mt-0.5 whitespace-pre-line text-[15px] leading-relaxed text-slate-700">{step.detail}</p>
+                                                    </div>
+                                                </li>
+                                            );
+                                        })}
+                                    </ol>
+                                ) : null}
+                            </section>
+                        ) : null}
+
+                        {(p.minAge != null || p.activityLevel || p.whatToBring) ? (
+                            <section className="mt-8 border-t border-slate-200 pt-8">
+                                <h2 className="text-xl md:text-2xl font-bold text-slate-900">Things to know</h2>
+                                <div className="mt-4 space-y-4">
+                                    {p.minAge != null ? (
+                                        <div className="flex items-start gap-3">
+                                            <ShieldAlert className="mt-0.5 h-5 w-5 flex-none text-slate-500" aria-hidden />
+                                            <div><div className="font-semibold text-slate-900">Minimum age</div><p className="text-sm text-slate-600">{p.minAge} and over</p></div>
+                                        </div>
+                                    ) : null}
+                                    {p.activityLevel ? (
+                                        <div className="flex items-start gap-3">
+                                            <Activity className="mt-0.5 h-5 w-5 flex-none text-slate-500" aria-hidden />
+                                            <div><div className="font-semibold text-slate-900">Activity level</div><p className="text-sm capitalize text-slate-600">{p.activityLevel}</p></div>
+                                        </div>
+                                    ) : null}
+                                    {p.whatToBring ? (
+                                        <div className="flex items-start gap-3">
+                                            <Backpack className="mt-0.5 h-5 w-5 flex-none text-slate-500" aria-hidden />
+                                            <div><div className="font-semibold text-slate-900">What to bring</div><p className="whitespace-pre-line text-sm leading-relaxed text-slate-600">{p.whatToBring}</p></div>
+                                        </div>
+                                    ) : null}
+                                </div>
                             </section>
                         ) : null}
 
