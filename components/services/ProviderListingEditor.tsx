@@ -26,7 +26,7 @@ import {
 // rather than hidden.
 
 export interface EditorProvider {
-    id: string; shape: string; isSlot: boolean;
+    id: string; shape: string; isSlot: boolean; isFood: boolean;
     business_name: string; category_label: string; description: string;
     status: string; owner_paused: boolean;
     photos: string[]; headshot: string | null; logo: string | null;
@@ -44,9 +44,9 @@ export interface EditorProvider {
     availability: Array<{ day_of_week: number; open_time: string; close_time: string }>;
 }
 
-type SectionKey = 'title' | 'about' | 'happens' | 'things' | 'dietary' | 'photos' | 'menu' | 'where' | 'availability';
+type SectionKey = 'title' | 'about' | 'happens' | 'things' | 'dietary' | 'photos' | 'menu' | 'where' | 'availability' | 'status';
 
-const BUILT: Record<string, boolean> = { title: true, about: true, photos: true, menu: true, happens: true, things: true, dietary: true, where: true, availability: true };
+const BUILT: Record<string, boolean> = { title: true, about: true, photos: true, menu: true, happens: true, things: true, dietary: true, where: true, availability: true, status: true };
 
 async function saveSection(providerId: string, section: string, data: any): Promise<boolean> {
     const res = await fetch('/api/services/listing/save', {
@@ -77,11 +77,12 @@ function SectionCard({ title, hint, children, onSave, saving }: {
     );
 }
 
-function Field({ label, children }: { label: string; children: React.ReactNode }) {
+function Field({ label, hint, children }: { label: string; hint?: string; children: React.ReactNode }) {
     return (
         <label className="block">
             <span className="block text-xs font-semibold uppercase tracking-wide text-slate-500">{label}</span>
             <div className="mt-1">{children}</div>
+            {hint && <p className="mt-1 text-xs text-slate-400">{hint}</p>}
         </label>
     );
 }
@@ -102,7 +103,13 @@ export default function ProviderListingEditor({ provider }: { provider: EditorPr
     const [quals, setQuals] = useState(p.qualifications);
     const [recognition, setRecognition] = useState(p.recognition);
     const [whatToExpect, setWhatToExpect] = useState(p.what_to_expect);
-    const [itinerary, setItinerary] = useState(p.itinerary.map((s) => ({ title: s.title || '', detail: s.detail || '' })));
+    // What happens is an ordered arrival → during → finish flow (Airbnb's "What
+    // you'll do"), not a bare paragraph or empty step rows. Stored as the itinerary
+    // array, keyed by phase title; a phase with no detail simply isn't saved.
+    const phaseDetail = (title: string) => (p.itinerary.find((s) => (s.title || '').toLowerCase() === title.toLowerCase())?.detail) || '';
+    const [arrival, setArrival] = useState(phaseDetail('Arrival'));
+    const [during, setDuring] = useState(phaseDetail('During'));
+    const [finish, setFinish] = useState(phaseDetail('Finish'));
     const [minAge, setMinAge] = useState(p.min_age != null ? String(p.min_age) : '');
     const [activity, setActivity] = useState(p.activity_level);
     const [whatToBring, setWhatToBring] = useState(p.what_to_bring);
@@ -233,9 +240,12 @@ export default function ProviderListingEditor({ provider }: { provider: EditorPr
         { key: 'menu', label: 'What you offer', icon: ShoppingBag },
         { key: 'happens', label: 'What happens', icon: FileText },
         { key: 'things', label: 'Things to know', icon: Info },
-        { key: 'dietary', label: 'Food & dietary', icon: Salad },
+        // Food & dietary is only meaningful for a food business (chef, baker,
+        // hamper) — a sauna or a guide never caters, so it doesn't see this.
+        ...(p.isFood ? [{ key: 'dietary' as SectionKey, label: 'Food & dietary', icon: Salad }] : []),
         { key: 'where', label: 'Where it happens', icon: MapPin },
         ...(p.isSlot ? [{ key: 'availability' as SectionKey, label: 'Availability', icon: CalendarRange }] : []),
+        { key: 'status', label: 'Listing status', icon: paused ? EyeOff : Eye },
     ];
 
     return (
@@ -249,32 +259,31 @@ export default function ProviderListingEditor({ provider }: { provider: EditorPr
                 </div>
                 <Link href={`/experiences/browse/${p.id}`} target="_blank"
                     className="inline-flex items-center gap-1.5 rounded-xl border border-slate-300 px-3.5 py-2 text-sm font-semibold text-slate-700 hover:border-slate-500">
-                    <ExternalLink className="h-4 w-4" /> See it as a guest
+                    <ExternalLink className="h-4 w-4" /> View listing
                 </Link>
             </div>
 
-            {/* Take-down banner */}
-            <div className={`mb-6 rounded-2xl border p-4 ${paused ? 'border-amber-300 bg-amber-50' : 'border-slate-200 bg-white'}`}>
-                <div className="flex flex-wrap items-center justify-between gap-3">
-                    <div className="flex items-start gap-2.5">
-                        {paused ? <EyeOff className="mt-0.5 h-5 w-5 text-amber-700" /> : <Eye className="mt-0.5 h-5 w-5 text-emerald-700" />}
-                        <div>
-                            <div className="font-semibold text-slate-900">
-                                {paused ? 'Your listing is taken down' : 'Your listing is live'}
+            {/* Only when paused: an informative strip so a hidden listing is never a
+                silent surprise. The "take it down" control itself lives at the bottom,
+                in the Listing status section — the editor doesn't push a live provider
+                toward taking their listing down. */}
+            {paused && (
+                <div className="mb-6 rounded-2xl border border-amber-300 bg-amber-50 p-4">
+                    <div className="flex flex-wrap items-center justify-between gap-3">
+                        <div className="flex items-start gap-2.5">
+                            <EyeOff className="mt-0.5 h-5 w-5 text-amber-700" />
+                            <div>
+                                <div className="font-semibold text-slate-900">Your listing is taken down</div>
+                                <p className="text-sm text-slate-600">Guests can’t find or book it. Bookings you’ve already confirmed still stand.</p>
                             </div>
-                            <p className="text-sm text-slate-600">
-                                {paused
-                                    ? 'Guests can’t find or book it. Bookings you’ve already confirmed still stand — put it back up whenever you’re ready.'
-                                    : 'Take it down to stop new bookings for a while. Bookings already confirmed are unaffected, and putting it back up is instant — no review.'}
-                            </p>
                         </div>
+                        <button type="button" onClick={togglePaused} disabled={pausing}
+                            className="rounded-xl bg-emerald-700 px-4 py-2 text-sm font-bold text-white hover:bg-emerald-800 disabled:opacity-60">
+                            {pausing ? '…' : 'Put it back up'}
+                        </button>
                     </div>
-                    <button type="button" onClick={togglePaused} disabled={pausing}
-                        className={`rounded-xl px-4 py-2 text-sm font-bold text-white disabled:opacity-60 ${paused ? 'bg-emerald-700 hover:bg-emerald-800' : 'bg-slate-800 hover:bg-slate-900'}`}>
-                        {pausing ? '…' : paused ? 'Put it back up' : 'Take it down'}
-                    </button>
                 </div>
-            </div>
+            )}
 
             {/* Go-live gate for a slot provider with no weekly hours: a slot with
                 no availability generates no sessions and is dropped from the
@@ -325,7 +334,6 @@ export default function ProviderListingEditor({ provider }: { provider: EditorPr
                             <Field label="Listing title">
                                 <input className={inputCls} value={businessName} onChange={(e) => setBusinessName(e.target.value)} maxLength={80} />
                             </Field>
-                            <p className="text-xs text-slate-500">Category: {p.category_label || 'set at review'}</p>
                         </SectionCard>
                     )}
 
@@ -333,30 +341,42 @@ export default function ProviderListingEditor({ provider }: { provider: EditorPr
                         <SectionCard title="About you" hint="Your credibility — shown beneath your listing name." saving={savingKey === 'about'}
                             onSave={() => run('about', { professional_title: profTitle, years_experience: years, qualifications: quals, recognition })}>
                             <Field label="Professional title"><input className={inputCls} value={profTitle} onChange={(e) => setProfTitle(e.target.value)} placeholder="Chef and restaurant owner" /></Field>
-                            <Field label="Years of experience"><input className={inputCls} value={years} onChange={(e) => setYears(e.target.value)} placeholder="30" /></Field>
+                            <Field label="Years of experience"><input className={inputCls} value={years} onChange={(e) => setYears(e.target.value)} placeholder="5" /></Field>
                             <Field label="Qualifications"><textarea className={inputCls} rows={2} value={quals} onChange={(e) => setQuals(e.target.value)} /></Field>
                             <Field label="Recognition (optional)"><textarea className={inputCls} rows={2} value={recognition} onChange={(e) => setRecognition(e.target.value)} /></Field>
                         </SectionCard>
                     )}
 
                     {active === 'happens' && (
-                        <SectionCard title="What happens" hint="Walk a guest through the experience." saving={savingKey === 'happens'}
-                            onSave={() => run('happens', { what_to_expect: whatToExpect, itinerary })}>
-                            <Field label="What happens"><textarea className={inputCls} rows={5} value={whatToExpect} onChange={(e) => setWhatToExpect(e.target.value)} /></Field>
+                        <SectionCard title="What happens" hint="A line on what it is, then walk a guest through it start to finish." saving={savingKey === 'happens'}
+                            onSave={() => run('happens', {
+                                what_to_expect: whatToExpect,
+                                itinerary: [
+                                    { title: 'Arrival', detail: arrival },
+                                    { title: 'During', detail: during },
+                                    { title: 'Finish', detail: finish },
+                                ],
+                            })}>
+                            <Field label="In a sentence, what is it?">
+                                <textarea className={inputCls} rows={3} value={whatToExpect} onChange={(e) => setWhatToExpect(e.target.value)} placeholder="A wood-fired lakeside sauna with cold-water dips between rounds." />
+                            </Field>
                             <div>
-                                <span className="block text-xs font-semibold uppercase tracking-wide text-slate-500">Itinerary (optional)</span>
-                                <p className="mt-0.5 text-xs text-slate-400">The steps of the experience, in order.</p>
-                                <div className="mt-2 space-y-2">
-                                    {itinerary.map((step, i) => (
-                                        <div key={i} className="flex gap-2">
-                                            <input className="w-40 rounded-xl border border-slate-300 p-2.5 text-sm" placeholder="Step" value={step.title}
-                                                onChange={(e) => setItinerary(itinerary.map((s, j) => j === i ? { ...s, title: e.target.value } : s))} />
-                                            <input className="flex-1 rounded-xl border border-slate-300 p-2.5 text-sm" placeholder="What happens in it" value={step.detail}
-                                                onChange={(e) => setItinerary(itinerary.map((s, j) => j === i ? { ...s, detail: e.target.value } : s))} />
-                                            <button type="button" onClick={() => setItinerary(itinerary.filter((_, j) => j !== i))} className="px-2 text-slate-400 hover:text-red-600">&times;</button>
+                                <span className="block text-xs font-semibold uppercase tracking-wide text-slate-500">The flow</span>
+                                <p className="mt-0.5 text-xs text-slate-400">Take a guest through it, start to finish. Leave a step blank to skip it.</p>
+                                <div className="mt-3 space-y-3">
+                                    {[
+                                        { n: 1, label: 'Arrival', value: arrival, set: setArrival, ph: 'Where to meet, how to find you, what to expect first.' },
+                                        { n: 2, label: 'During', value: during, set: setDuring, ph: 'The heart of it — what you’ll actually do together.' },
+                                        { n: 3, label: 'Finish', value: finish, set: setFinish, ph: 'How it wraps up — and anything to do after.' },
+                                    ].map((s) => (
+                                        <div key={s.label} className="flex gap-3">
+                                            <div className="flex h-7 w-7 flex-none items-center justify-center rounded-full bg-emerald-700 text-xs font-bold text-white">{s.n}</div>
+                                            <div className="flex-1">
+                                                <div className="text-sm font-semibold text-slate-900">{s.label}</div>
+                                                <textarea className="mt-1 w-full rounded-xl border border-slate-300 p-3 text-sm" rows={2} value={s.value} onChange={(e) => s.set(e.target.value)} placeholder={s.ph} />
+                                            </div>
                                         </div>
                                     ))}
-                                    <button type="button" onClick={() => setItinerary([...itinerary, { title: '', detail: '' }])} className="text-sm font-semibold text-emerald-700 hover:text-emerald-800">+ Add a step</button>
                                 </div>
                             </div>
                         </SectionCard>
@@ -453,7 +473,22 @@ export default function ProviderListingEditor({ provider }: { provider: EditorPr
                             <div className="space-y-4">
                                 {menu.map((r, i) => (
                                     <div key={r.id || `new-${i}`} className="rounded-xl border border-slate-200 p-4">
-                                        <div className="flex items-start gap-3">
+                                        <div className="flex items-start gap-4">
+                                            <label className="group relative flex-none cursor-pointer">
+                                                {r.image ? (
+                                                    // eslint-disable-next-line @next/next/no-img-element
+                                                    <img src={getImageUrl(r.image)} alt="" className="h-28 w-28 rounded-2xl object-cover ring-1 ring-slate-200" />
+                                                ) : (
+                                                    <span className="flex h-28 w-28 flex-col items-center justify-center gap-1 rounded-2xl border-2 border-dashed border-slate-300 text-slate-400">
+                                                        <ImageIcon className="h-6 w-6" />
+                                                        <span className="text-xs font-medium">Add photo</span>
+                                                    </span>
+                                                )}
+                                                {r.image && (
+                                                    <span className="absolute inset-x-0 bottom-0 rounded-b-2xl bg-black/45 py-1 text-center text-[11px] font-semibold text-white opacity-0 transition group-hover:opacity-100">Change</span>
+                                                )}
+                                                <input type="file" accept="image/png, image/jpeg" onChange={(e) => changeItemImage(i, e)} className="hidden" disabled={uploading} />
+                                            </label>
                                             <div className="flex-1 space-y-3">
                                                 <input className={inputCls} placeholder="Name (e.g. 90-minute private sauna)" value={r.name} onChange={(e) => setRow(i, { name: e.target.value })} />
                                                 {/* Per-item location: only a slot provider who offers BOTH
@@ -500,18 +535,6 @@ export default function ProviderListingEditor({ provider }: { provider: EditorPr
                                                     )}
                                                 </div>
                                                 <textarea className={inputCls} rows={2} placeholder="Description (optional)" value={r.description} onChange={(e) => setRow(i, { description: e.target.value })} />
-                                            </div>
-                                            <div className="flex flex-col items-center gap-2">
-                                                {r.image ? (
-                                                    // eslint-disable-next-line @next/next/no-img-element
-                                                    <img src={getImageUrl(r.image)} alt="" className="h-16 w-16 rounded-lg object-cover ring-1 ring-slate-200" />
-                                                ) : (
-                                                    <span className="flex h-16 w-16 items-center justify-center rounded-lg bg-slate-100 text-slate-300"><ImageIcon className="h-5 w-5" /></span>
-                                                )}
-                                                <label className="cursor-pointer text-xs font-semibold text-emerald-700 hover:text-emerald-800">
-                                                    {r.image ? 'Change' : 'Photo'}
-                                                    <input type="file" accept="image/png, image/jpeg" onChange={(e) => changeItemImage(i, e)} className="hidden" disabled={uploading} />
-                                                </label>
                                             </div>
                                         </div>
                                         <div className="mt-3 flex items-center justify-between">
@@ -612,15 +635,40 @@ export default function ProviderListingEditor({ provider }: { provider: EditorPr
                                 </div>
                             </div>
                             <div className="grid grid-cols-2 gap-4">
-                                <Field label="Session length (min)"><input className={inputCls} type="number" min={15} value={slotLength} onChange={(e) => setSlotLength(e.target.value)} /></Field>
-                                <Field label="Turnaround / gap (min)"><input className={inputCls} type="number" min={0} value={turnaround} onChange={(e) => setTurnaround(e.target.value)} /></Field>
-                                <Field label="Group size (max)"><input className={inputCls} type="number" min={1} value={capacity} onChange={(e) => setCapacity(e.target.value)} /></Field>
-                                <Field label="Minimum per booking"><input className={inputCls} type="number" min={1} value={minPeople} onChange={(e) => setMinPeople(e.target.value)} /></Field>
-                                <Field label="Lead time (days)"><input className={inputCls} type="number" min={0} value={leadDays} onChange={(e) => setLeadDays(e.target.value)} /></Field>
-                                <Field label="Cancellation window (hrs)"><input className={inputCls} type="number" min={0} value={cancelHours} onChange={(e) => setCancelHours(e.target.value)} /></Field>
+                                <Field label="Session length (min)" hint="How long one session runs."><input className={inputCls} type="number" min={15} value={slotLength} onChange={(e) => setSlotLength(e.target.value)} /></Field>
+                                <Field label="Gap between sessions (min)" hint="Time to reset or clean up before the next one can start."><input className={inputCls} type="number" min={0} value={turnaround} onChange={(e) => setTurnaround(e.target.value)} /></Field>
+                                <Field label="Most people per session" hint="The largest group one session can hold."><input className={inputCls} type="number" min={1} value={capacity} onChange={(e) => setCapacity(e.target.value)} /></Field>
+                                <Field label="Fewest people per booking" hint="For a shared, per-person session — the smallest group one booking can be for. Leave at 1 for no minimum."><input className={inputCls} type="number" min={1} value={minPeople} onChange={(e) => setMinPeople(e.target.value)} /></Field>
+                                <Field label="Notice needed (days)" hint="How far ahead a guest must book — 2 means at least 2 days’ notice. 0 = same-day is fine."><input className={inputCls} type="number" min={0} value={leadDays} onChange={(e) => setLeadDays(e.target.value)} /></Field>
+                                <Field label="Cancellation window (hrs)" hint="How long before the start a guest can still cancel for a refund."><input className={inputCls} type="number" min={0} value={cancelHours} onChange={(e) => setCancelHours(e.target.value)} /></Field>
                             </div>
                             <p className="text-xs text-slate-500">To close a specific day, or part of one, use your diary — those are exceptions to these weekly hours.</p>
                         </SectionCard>
+                    )}
+
+                    {active === 'status' && (
+                        <section className="rounded-2xl border border-slate-200 bg-white p-5 sm:p-6">
+                            <h2 className="text-xl font-bold text-slate-900">Listing status</h2>
+                            <p className="mt-1 text-sm text-slate-500">
+                                {paused
+                                    ? 'Your listing is taken down — guests can’t find or book it.'
+                                    : 'Your listing is live and bookable.'}
+                            </p>
+                            <div className="mt-4 rounded-xl border border-slate-200 p-4">
+                                <div className="font-semibold text-slate-900">
+                                    {paused ? 'Put your listing back up' : 'Take your listing down for a while'}
+                                </div>
+                                <p className="mt-1 text-sm text-slate-600">
+                                    {paused
+                                        ? 'It goes back live immediately — no review. Guests can find and book it again.'
+                                        : 'It stops taking new bookings and disappears from the marketplace. Bookings you’ve already confirmed still stand and stay in your diary — putting it back up later is instant, with no re-approval.'}
+                                </p>
+                                <button type="button" onClick={togglePaused} disabled={pausing}
+                                    className={`mt-4 rounded-xl px-5 py-2.5 text-sm font-bold text-white disabled:opacity-60 ${paused ? 'bg-emerald-700 hover:bg-emerald-800' : 'bg-slate-800 hover:bg-slate-900'}`}>
+                                    {pausing ? '…' : paused ? 'Put it back up' : 'Take it down'}
+                                </button>
+                            </div>
+                        </section>
                     )}
                 </div>
             </div>
