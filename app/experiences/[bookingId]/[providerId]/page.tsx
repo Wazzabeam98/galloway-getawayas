@@ -4,6 +4,7 @@ import { cookies } from 'next/headers';
 import { adminClient } from '@/lib/supabaseAdmin';
 import { guestExperiencesOpen } from '@/lib/serviceOrders';
 import { loadMarketplace, pickProvider } from '@/lib/experiencesData';
+import { loadExperienceReviews } from '@/lib/experienceReviews';
 import ExperienceListingBody from '@/components/marketplace/ExperienceListingBody';
 import BookingPanel from '@/components/marketplace/BookingPanel';
 
@@ -26,6 +27,8 @@ export default async function ListingPage(
     const p = pickProvider(mp, params.providerId);
     if (!p) redirect(`/experiences/${params.bookingId}`);
 
+    const reviews = await loadExperienceReviews(admin, p.id, user.id);
+
     const who = p.byline || p.business_name;
 
     return (
@@ -33,6 +36,7 @@ export default async function ListingPage(
             p={p}
             backHref={`/experiences/${params.bookingId}`}
             backLabel="All experiences"
+            reviews={reviews}
             panel={
                 <BookingPanel
                     bookingId={params.bookingId}
