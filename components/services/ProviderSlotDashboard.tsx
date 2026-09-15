@@ -4,6 +4,7 @@ import { useCallback, useEffect, useState } from 'react';
 import { MapPin } from 'lucide-react';
 import { dateLabel, timeLabel } from '@/components/marketplace/present';
 import { londonDayKey } from '@/lib/dayKey';
+import SlotCalendar from '@/components/services/SlotCalendar';
 
 // A slot provider's home — a diary, not an inbox. There is nothing to confirm:
 // the booking already happened and the money is already taken. So this shows the
@@ -35,14 +36,14 @@ export default function ProviderSlotDashboard({ providerId, editHref }: { provid
     const [orders, setOrders] = useState<Order[]>([]);
     const [sessions, setSessions] = useState<SlotSession[]>([]);
     const [blocks, setBlocks] = useState<string[]>([]);
+    // The weekly template's open weekdays (day_of_week), so the calendar shades a
+    // day the provider isn't open anyway. Editing hours lives in the listing
+    // editor; here they're read-only.
+    const [availability, setAvailability] = useState<Array<{ day_of_week: number }>>([]);
     // null until loaded; false means no weekly hours, so nothing is bookable.
     const [hasHours, setHasHours] = useState<boolean | null>(null);
-    const [blockDate, setBlockDate] = useState('');
     // Partial blocks: ranges within a day the provider has closed off.
     const [partialBlocks, setPartialBlocks] = useState<Array<{ id: string; date: string; start: string; end: string }>>([]);
-    const [pbDate, setPbDate] = useState('');
-    const [pbStart, setPbStart] = useState('');
-    const [pbEnd, setPbEnd] = useState('');
     const [busy, setBusy] = useState<string | null>(null);
     const [error, setError] = useState<string | null>(null);
 
@@ -66,7 +67,7 @@ export default function ProviderSlotDashboard({ providerId, editHref }: { provid
         try {
             const r = await fetch('/api/services/slots/schedule?provider=' + encodeURIComponent(providerId));
             const d = await r.json();
-            if (d && d.ok) { setBlocks(d.blocks || []); setHasHours((d.availability || []).length > 0); }
+            if (d && d.ok) { setBlocks(d.blocks || []); setAvailability(d.availability || []); setHasHours((d.availability || []).length > 0); }
         } catch { /* ignore */ }
     }, [providerId]);
 
@@ -123,22 +124,22 @@ export default function ProviderSlotDashboard({ providerId, editHref }: { provid
                 method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ providerId, blocks: next }),
             });
             const d = await r.json();
-            if (d && d.ok) { setBlocks(next); setBlockDate(''); }
+            if (d && d.ok) setBlocks(next);
             else setError((d && d.error) || 'Could not save that.');
         } catch { setError('Could not save that.'); }
         setBusy(null);
     }
 
-    async function addPartialBlock() {
-        if (!pbDate || !pbStart || !pbEnd) return;
+    async function addPartialBlock(date: string, start: string, end: string) {
+        if (!date || !start || !end) return;
         setBusy('pblock'); setError(null);
         try {
             const r = await fetch('/api/services/slots/blocks', {
                 method: 'POST', headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({ providerId, date: pbDate, start: pbStart, end: pbEnd }),
+                body: JSON.stringify({ providerId, date, start, end }),
             });
             const d = await r.json();
-            if (d && d.ok) { setPbStart(''); setPbEnd(''); await loadPartialBlocks(); }
+            if (d && d.ok) await loadPartialBlocks();
             else setError((d && d.error) || 'Could not block that time.');
         } catch { setError('Could not block that time.'); }
         setBusy(null);
@@ -180,6 +181,15 @@ export default function ProviderSlotDashboard({ providerId, editHref }: { provid
         if (last && last.date === s.date) last.rows.push(s);
         else sessByDay.push({ date: s.date, rows: [s] });
     }
+
+    // Per-day maps the calendar reads. bookedByDate makes a day with bookings show
+    // green ("N booked") — never mistaken for a grey day off.
+    const openWeekdays = new Set(availability.map((a) => a.day_of_week));
+    const blockedDates = new Set(blocks);
+    const partialByDate: Record<string, { id: string; start: string; end: string }[]> = {};
+    for (const b of partialBlocks) (partialByDate[b.date] = partialByDate[b.date] || []).push({ id: b.id, start: b.start, end: b.end });
+    const bookedByDate: Record<string, number> = {};
+    for (const o of confirmed) bookedByDate[o.service_date] = (bookedByDate[o.service_date] || 0) + 1;
 
     return (
         <div className="mt-5 space-y-6">
@@ -293,57 +303,20 @@ export default function ProviderSlotDashboard({ providerId, editHref }: { provid
                 </div>
             )}
 
-            {/* Block a day */}
-            <div className="rounded-xl border border-gray-200 p-4">
-                <p className="text-sm font-semibold text-gray-900">Days off</p>
-                <p className="mt-0.5 text-sm text-gray-500">Block a day and none of its times can be booked. Existing bookings aren’t affected.</p>
-                <div className="mt-3 flex flex-wrap items-center gap-2">
-                    <input type="date" min={todayIso} value={blockDate} onChange={(e) => setBlockDate(e.target.value)}
-                        className="rounded-md border border-gray-300 px-2 py-1 text-sm" />
-                    <button type="button" disabled={!blockDate || busy === 'block'} onClick={() => blockDate && toggleBlock(blockDate, true)}
-                        className="rounded-md bg-gray-900 px-3 py-1.5 text-sm font-medium text-white disabled:opacity-50">Block this day</button>
-                </div>
-                {blocks.length > 0 && (
-                    <div className="mt-3 flex flex-wrap gap-2">
-                        {blocks.map((b) => (
-                            <span key={b} className="inline-flex items-center gap-1.5 rounded-full bg-gray-100 px-2.5 py-1 text-xs text-gray-700">
-                                {dateLabel(b)}
-                                <button type="button" onClick={() => toggleBlock(b, false)} aria-label="Unblock" className="text-gray-400 hover:text-gray-700">×</button>
-                            </span>
-                        ))}
-                    </div>
-                )}
-            </div>
-
-            {/* Block part of a day */}
-            <div className="rounded-xl border border-gray-200 p-4">
-                <p className="text-sm font-semibold text-gray-900">Block part of a day</p>
-                <p className="mt-0.5 text-sm text-gray-500">Close off a time range — a lunch break, an afternoon — and nothing can be booked inside it. The rest of the day stays open. A range that clashes with a booking you’ve already taken is refused.</p>
-                <div className="mt-3 flex flex-wrap items-center gap-2">
-                    <input type="date" min={todayIso} value={pbDate} onChange={(e) => setPbDate(e.target.value)}
-                        aria-label="Date to block part of" className="rounded-md border border-gray-300 px-2 py-1 text-sm" />
-                    <input type="time" value={pbStart} onChange={(e) => setPbStart(e.target.value)}
-                        aria-label="Block from" className="rounded-md border border-gray-300 px-2 py-1 text-sm" />
-                    <span className="text-sm text-gray-400">to</span>
-                    <input type="time" value={pbEnd} onChange={(e) => setPbEnd(e.target.value)}
-                        aria-label="Block until" className="rounded-md border border-gray-300 px-2 py-1 text-sm" />
-                    <button type="button" disabled={!pbDate || !pbStart || !pbEnd || busy === 'pblock'} onClick={addPartialBlock}
-                        className="rounded-md bg-gray-900 px-3 py-1.5 text-sm font-medium text-white disabled:opacity-50">Block this time</button>
-                </div>
-                {partialBlocks.length > 0 && (
-                    <ul className="mt-3 space-y-1.5">
-                        {partialBlocks.map((b) => (
-                            <li key={b.id} className="flex items-center gap-2 text-sm text-gray-700">
-                                <span className="inline-flex items-center gap-1.5 rounded-full bg-gray-100 px-2.5 py-1 text-xs">
-                                    {dateLabel(b.date)} · {b.start}–{b.end}
-                                    <button type="button" disabled={busy === b.id} onClick={() => removePartialBlock(b.id)}
-                                        aria-label="Remove block" className="text-gray-400 hover:text-gray-700 disabled:opacity-50">×</button>
-                                </span>
-                            </li>
-                        ))}
-                    </ul>
-                )}
-            </div>
+            {/* One home for dated exceptions: the calendar, where the provider also
+                sees their bookings. Blocking a whole day or part of one runs through
+                the same routes the lists used to. */}
+            <SlotCalendar
+                openWeekdays={openWeekdays}
+                blockedDates={blockedDates}
+                partialByDate={partialByDate}
+                bookedByDate={bookedByDate}
+                todayIso={todayIso}
+                busy={busy}
+                onToggleFullBlock={toggleBlock}
+                onAddPartial={addPartialBlock}
+                onRemovePartial={removePartialBlock}
+            />
 
             {earlier.length > 0 && (
                 <div>
