@@ -2291,6 +2291,19 @@ function ApplicationForm() {
         setCollectionTown('');
         setCollectionPostcode('');
         setAreas([]);
+        // The STRUCTURAL answers, not just the offering's contents. shape and
+        // fulfilment decide which screens render and how the location screen reads,
+        // so a category change must clear them too — otherwise a switch FROM a slot
+        // TO a null-shape category ('something else') left shape='slot' behind and
+        // the whole flow ran as a slot (an empty "What's the address" screen). Reset
+        // to empty here; selectGuestCategory sets the real values for the new
+        // category right after (it is the only caller that knows them).
+        setShape('');
+        setFulfilment('');
+        // Collection UI that belongs to the offering: drop the manual-entry toggle
+        // so the address screen returns to its lookup default rather than showing
+        // the previous offering's opened (now empty) manual boxes.
+        setCollectionManual(false);
     };
 
     // Screen two: select a sub-type. Records the category (a starting point,
@@ -2303,7 +2316,11 @@ function ApplicationForm() {
         if (guestCategory && key !== guestCategory) clearOfferingAnswers();
         setGuestCategory(key);
         const cat = guestCategoryByKey(key);
-        if (cat && cat.shape) setShape(cat.shape);
+        // Set the shape unconditionally — including to '' for a null-shape category
+        // ('something else'). The old `if (cat.shape)` guard meant a switch from a
+        // slot to 'something else' kept the slot shape, and the flow ran as a slot
+        // (the empty "What's the address" screen). '' is the honest "no shape yet".
+        setShape(cat?.shape || '');
         // A slot's location fork: the seven fixed categories default to come-to-me
         // ('collection') and skip g_slot_where; the three either-way ones (yoga,
         // massage, painting) start blank so that screen asks. Made-to-order forks
