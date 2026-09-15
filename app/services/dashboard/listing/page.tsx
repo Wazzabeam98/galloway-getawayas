@@ -101,7 +101,9 @@ export default async function ProviderListingPage() {
                 items: (items || []).map((it: any) => ({
                     id: it.id, name: it.name || '', description: it.description || '',
                     price: Number(it.price), unit: it.unit || 'flat',
-                    hasImage: !!it.image, active: it.active !== false,
+                    image: it.image || null,
+                    duration_minutes: it.duration_minutes ?? null,
+                    active: it.active !== false,
                 })),
                 availability: (avail || []).map((a: any) => ({
                     day_of_week: Number(a.day_of_week), open_time: String(a.open_time).slice(0, 5), close_time: String(a.close_time).slice(0, 5),

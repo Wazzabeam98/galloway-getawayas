@@ -175,6 +175,46 @@ export async function POST(request: Request) {
                 break;
             }
 
+            case 'menu': {
+                // The menu — UPSERTED BY ID, never deleted-and-reinserted, so an
+                // item keeps its id (bookings and its photo reference it). Only a
+                // named, priced row persists (the marketplace lists priced items
+                // only); a blank row is dropped, and an existing item removed from
+                // the list is deleted. The last-priced-item guard is a UI warning —
+                // the route still honours an empty menu (the provider was warned).
+                const incoming: any[] = Array.isArray(data.items) ? data.items : [];
+                const { data: existing } = await admin.from('service_provider_items').select('id').eq('provider_id', providerId);
+                const existingIds = new Set((existing || []).map((r: any) => r.id));
+                const keep = new Set<string>();
+                const nowIso = new Date().toISOString();
+                for (let i = 0; i < incoming.length; i++) {
+                    const it = incoming[i];
+                    const name = String(it.name || '').trim();
+                    const price = Number(it.price);
+                    if (!name || !(price > 0)) continue; // a blank / priceless row
+                    const row: any = {
+                        name, description: strOrNull(it.description), price,
+                        unit: String(it.unit || 'flat'),
+                        image: strOrNull(it.image),
+                        duration_minutes: (it.duration_minutes == null || it.duration_minutes === '')
+                            ? null : Math.max(1, Math.floor(Number(it.duration_minutes))),
+                        active: it.active !== false,
+                        sort_order: i, updated_at: nowIso,
+                    };
+                    if (it.id && existingIds.has(it.id)) {
+                        keep.add(it.id);
+                        await admin.from('service_provider_items').update(row).eq('id', it.id).eq('provider_id', providerId);
+                    } else {
+                        const { data: ins } = await admin.from('service_provider_items')
+                            .insert({ ...row, provider_id: providerId }).select('id').maybeSingle();
+                        if (ins?.id) keep.add(ins.id);
+                    }
+                }
+                const remove = Array.from(existingIds).filter((id) => !keep.has(id as string));
+                if (remove.length) await admin.from('service_provider_items').delete().in('id', remove).eq('provider_id', providerId);
+                break;
+            }
+
             case 'status':
                 // The take-down toggle. Hides the listing and stops new bookings;
                 // confirmed bookings already made are untouched (nothing here

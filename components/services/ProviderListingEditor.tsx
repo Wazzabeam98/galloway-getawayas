@@ -40,13 +40,13 @@ export interface EditorProvider {
     min_age: number | null; activity_level: string; what_to_bring: string;
     dietary_options: string[];
     areas: string[];
-    items: Array<{ id: string; name: string; description: string; price: number; unit: string; hasImage: boolean; active: boolean }>;
+    items: Array<{ id: string; name: string; description: string; price: number; unit: string; image: string | null; duration_minutes: number | null; active: boolean }>;
     availability: Array<{ day_of_week: number; open_time: string; close_time: string }>;
 }
 
 type SectionKey = 'title' | 'about' | 'happens' | 'things' | 'dietary' | 'photos' | 'menu' | 'where' | 'availability';
 
-const BUILT: Record<string, boolean> = { title: true, about: true, photos: true, happens: true, things: true, dietary: true, availability: true };
+const BUILT: Record<string, boolean> = { title: true, about: true, photos: true, menu: true, happens: true, things: true, dietary: true, availability: true };
 
 async function saveSection(providerId: string, section: string, data: any): Promise<boolean> {
     const res = await fetch('/api/services/listing/save', {
@@ -168,6 +168,26 @@ export default function ProviderListingEditor({ provider }: { provider: EditorPr
         setUploading(false);
     }
 
+    // The menu. Each row edits in place; prices are strings while typing. New rows
+    // have no id (the save route inserts them); removed rows drop out (the route
+    // deletes them). ids are preserved so an item keeps its photo and bookings.
+    type MenuRow = { id?: string; name: string; description: string; price: string; unit: string; image: string | null; duration: string; active: boolean };
+    const [menu, setMenu] = useState<MenuRow[]>(p.items.map((it) => ({
+        id: it.id, name: it.name, description: it.description, price: String(it.price),
+        unit: it.unit, image: it.image, duration: it.duration_minutes != null ? String(it.duration_minutes) : '', active: it.active,
+    })));
+    const setRow = (i: number, patch: Partial<MenuRow>) => setMenu(menu.map((r, j) => j === i ? { ...r, ...patch } : r));
+
+    async function changeItemImage(i: number, e: React.ChangeEvent<HTMLInputElement>) {
+        const file = (e.target.files || [])[0];
+        e.target.value = '';
+        if (!file) return;
+        setUploading(true);
+        const k = await uploadOne(file, 'item');
+        if (k) setRow(i, { image: k });
+        setUploading(false);
+    }
+
     async function run(section: string, data: any) {
         setSavingKey(section);
         await saveSection(p.id, section, data);
@@ -193,9 +213,6 @@ export default function ProviderListingEditor({ provider }: { provider: EditorPr
     if (!p.what_to_bring.trim()) missing.push('what to bring');
     if (p.min_age == null) missing.push('a minimum age');
     if (!p.activity_level.trim()) missing.push('the activity level');
-
-    // Shown as a gentle guard on the menu section (never blocks).
-    const noPricedItem = !p.items.some((i) => i.active && i.price > 0);
 
     const SECTIONS: { key: SectionKey; label: string; icon: any }[] = [
         { key: 'title', label: 'Title & category', icon: FileText },
@@ -364,7 +381,7 @@ export default function ProviderListingEditor({ provider }: { provider: EditorPr
                             {/* Last-photo guard: removing every photo hides the listing
                                 from the homepage and both marketplace grids (they filter
                                 on a hero). Said, never blocked. */}
-                            {photos.length === 0 && !p.items.some((i) => i.hasImage) && (
+                            {photos.length === 0 && !p.items.some((i) => i.image) && (
                                 <div className="flex items-start gap-2 rounded-xl border border-amber-300 bg-amber-50 p-3 text-sm text-amber-900">
                                     <Check className="mt-0.5 h-4 w-4 flex-none" />
                                     With no photo, your listing is hidden from the homepage and both marketplace grids. Add at least one to appear.
@@ -403,8 +420,79 @@ export default function ProviderListingEditor({ provider }: { provider: EditorPr
                         </SectionCard>
                     )}
 
-                    {/* Sections landing next — shown so the shape is honest. */}
-                    {active === 'menu' && <ComingSection title="What you offer" note={noPricedItem ? 'Heads up: with no priced item your listing can’t be booked and won’t be shown.' : undefined} />}
+                    {active === 'menu' && (
+                        <SectionCard title="What you offer" hint="What a guest books, with a price. A slot prices per person or as a whole session." saving={savingKey === 'menu'}
+                            onSave={() => run('menu', {
+                                items: menu.map((r) => ({
+                                    id: r.id, name: r.name, description: r.description, price: r.price,
+                                    unit: r.unit, image: r.image, duration_minutes: r.duration, active: r.active,
+                                })),
+                            })}>
+                            {/* Last-priced-item guard: a listing with no active priced
+                                item can't be booked and is dropped from the shop.
+                                Warned, never blocked. */}
+                            {!menu.some((r) => r.active && r.name.trim() && Number(r.price) > 0) && (
+                                <div className="flex items-start gap-2 rounded-xl border border-amber-300 bg-amber-50 p-3 text-sm text-amber-900">
+                                    <Check className="mt-0.5 h-4 w-4 flex-none" />
+                                    You have no priced item. Until you add one, your listing can’t be booked and won’t appear.
+                                </div>
+                            )}
+                            <div className="space-y-4">
+                                {menu.map((r, i) => (
+                                    <div key={r.id || `new-${i}`} className="rounded-xl border border-slate-200 p-4">
+                                        <div className="flex items-start gap-3">
+                                            <div className="flex-1 space-y-3">
+                                                <input className={inputCls} placeholder="Name (e.g. 90-minute private sauna)" value={r.name} onChange={(e) => setRow(i, { name: e.target.value })} />
+                                                <div className="flex flex-wrap gap-3">
+                                                    <label className="flex items-center gap-1 text-sm">
+                                                        <span className="text-slate-500">£</span>
+                                                        <input className="w-24 rounded-xl border border-slate-300 p-2.5 text-sm" type="number" min={0} step="0.01" value={r.price} onChange={(e) => setRow(i, { price: e.target.value })} />
+                                                    </label>
+                                                    <select className="rounded-xl border border-slate-300 p-2.5 text-sm" value={r.unit} onChange={(e) => setRow(i, { unit: e.target.value })}>
+                                                        <option value="flat">whole session</option>
+                                                        <option value="person">per person</option>
+                                                        {!p.isSlot && <option value="hour">per hour</option>}
+                                                        {!p.isSlot && <option value="night">per night</option>}
+                                                        {!p.isSlot && <option value="ticket">per ticket</option>}
+                                                        {!p.isSlot && <option value="item">per item</option>}
+                                                    </select>
+                                                    {p.isSlot && (
+                                                        <label className="flex items-center gap-1 text-sm text-slate-500">
+                                                            <input className="w-20 rounded-xl border border-slate-300 p-2.5 text-sm" type="number" min={1} placeholder="mins" value={r.duration} onChange={(e) => setRow(i, { duration: e.target.value })} />
+                                                            <span>min</span>
+                                                        </label>
+                                                    )}
+                                                </div>
+                                                <textarea className={inputCls} rows={2} placeholder="Description (optional)" value={r.description} onChange={(e) => setRow(i, { description: e.target.value })} />
+                                            </div>
+                                            <div className="flex flex-col items-center gap-2">
+                                                {r.image ? (
+                                                    // eslint-disable-next-line @next/next/no-img-element
+                                                    <img src={getImageUrl(r.image)} alt="" className="h-16 w-16 rounded-lg object-cover ring-1 ring-slate-200" />
+                                                ) : (
+                                                    <span className="flex h-16 w-16 items-center justify-center rounded-lg bg-slate-100 text-slate-300"><ImageIcon className="h-5 w-5" /></span>
+                                                )}
+                                                <label className="cursor-pointer text-xs font-semibold text-emerald-700 hover:text-emerald-800">
+                                                    {r.image ? 'Change' : 'Photo'}
+                                                    <input type="file" accept="image/png, image/jpeg" onChange={(e) => changeItemImage(i, e)} className="hidden" disabled={uploading} />
+                                                </label>
+                                            </div>
+                                        </div>
+                                        <div className="mt-3 flex items-center justify-between">
+                                            <button type="button" onClick={() => setRow(i, { active: !r.active })}
+                                                className={`text-xs font-semibold ${r.active ? 'text-emerald-700' : 'text-slate-400'}`}>
+                                                {r.active ? 'Active' : 'Hidden'}
+                                            </button>
+                                            <button type="button" onClick={() => setMenu(menu.filter((_, j) => j !== i))} className="text-xs text-slate-500 hover:text-red-600">Remove</button>
+                                        </div>
+                                    </div>
+                                ))}
+                            </div>
+                            <button type="button" onClick={() => setMenu([...menu, { name: '', description: '', price: '', unit: p.isSlot ? 'flat' : 'flat', image: null, duration: '', active: true }])}
+                                className="text-sm font-semibold text-emerald-700 hover:text-emerald-800">+ Add an item</button>
+                        </SectionCard>
+                    )}
+
                     {active === 'where' && <ComingSection title="Where it happens" />}
 
                     {active === 'availability' && (
