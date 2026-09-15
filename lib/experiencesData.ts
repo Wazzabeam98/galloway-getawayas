@@ -10,7 +10,7 @@ import { isLiveToGuests, mccForProvider, isFoodProvider, normaliseUnit } from '@
 import { guestCategory, knownDietaryOptions } from '@/lib/serviceProviders';
 import { shapeOf, generateSessions, sessionClosedToAll, minutesOfDay, type PartialBlock } from '@/lib/serviceSlots';
 import { getImageUrl, firstName } from '@/lib/utils';
-import { shiftDayKey } from '@/lib/dayKey';
+import { shiftDayKey, londonDayKey } from '@/lib/dayKey';
 
 export interface MpItem {
     id: string; name: string; description: string | null; price: number; unit: string; image: string | null;
@@ -204,13 +204,50 @@ export async function loadMarketplace(
         .from('listings').select('id, title, location, latitude, longitude').eq('id', booking.listing_id).maybeSingle();
     if (!listing) return { open: true, stay: staySpan(booking), listing: null, providers: [] };
 
+    const providers = await shapeProviders(admin, booking.check_in.slice(0, 10), lastNightKey(booking.check_out));
+    return { open: true, stay: staySpan(booking), listing: { id: listing.id, title: listing.title, location: listing.location }, providers };
+}
+
+// How far ahead a bookingless browse looks for slot sessions. A stay bounds the
+// against-a-cottage path; standalone has no stay, so it looks a season ahead.
+const PUBLIC_HORIZON_DAYS = 90;
+
+/**
+ * The bookingless (public / standalone) marketplace: everyone can browse without
+ * a stay. Same eligibility and the same provider shaping as the against-a-stay
+ * path (shapeProviders), so a listing reads identically whichever way it was
+ * reached; only the date range differs — from today to a horizon, not a stay
+ * window — and there is no stay/listing/guest attached. Identity, the date, the
+ * head count and (for a travelling shape) the address are supplied at checkout,
+ * behind a sign-in, rather than taken from a booking.
+ */
+export async function loadPublicMarketplace(
+    admin: any,
+    open: boolean,
+    horizonDays: number = PUBLIC_HORIZON_DAYS
+): Promise<Marketplace> {
+    if (!open) return { open: false, stay: null, listing: null, providers: [] };
+    const fromKey = londonDayKey(new Date());
+    const toKey = shiftDayKey(fromKey, Math.max(1, horizonDays));
+    const providers = await shapeProviders(admin, fromKey, toKey);
+    return { open: true, stay: null, listing: null, providers };
+}
+
+/**
+ * Fetch every eligible guest provider and shape it for the marketplace over the
+ * date window [fromKey, toKey] — the ONLY thing that differs between the
+ * against-a-stay and the standalone paths. Booking-free: it knows nothing about a
+ * stay, a listing or a guest, so the two callers can't drift apart on
+ * eligibility, pricing, seat availability or privacy.
+ */
+async function shapeProviders(admin: any, fromKey: string, toKey: string): Promise<MpProvider[]> {
     const { data: rows } = await admin
         .from('service_providers')
         .select('id, owner_id, business_name, provider_name, based_line, headshot, photos, trade, custom_label, stripe_mcc, description, status, stripe_payouts_enabled, shape, slot_length_minutes, slot_turnaround_minutes, slot_capacity, slot_min_people, cancellation_window_hours, lead_time_days, dietary_note, guest_details, fulfilment')
         .eq('audience', 'guest').eq('status', 'approved').eq('stripe_payouts_enabled', true);
 
     const ids = (rows || []).map((r: any) => r.id);
-    if (!ids.length) return { open: true, stay: staySpan(booking), listing: { id: listing.id, title: listing.title, location: listing.location }, providers: [] };
+    if (!ids.length) return [];
 
     // The byline (first name) comes from the owner's profile, live, so it tracks
     // the name and the show_full_name switch rather than a stored snapshot.
@@ -248,8 +285,6 @@ export async function loadMarketplace(
     const blocksBy = by<any>(blocks, 'provider_id');
     const sessBy = by<any>(sessRows, 'provider_id');
 
-    const fromKey = booking.check_in.slice(0, 10);
-    const toKey = lastNightKey(booking.check_out);
     const nowMs = Date.now();
 
     const providers: MpProvider[] = [];
@@ -380,7 +415,7 @@ export async function loadMarketplace(
         return ah !== bh ? ah - bh : a.business_name.localeCompare(b.business_name);
     });
 
-    return { open: true, stay: staySpan(booking), listing: { id: listing.id, title: listing.title, location: listing.location }, providers };
+    return providers;
 }
 
 /** One provider from a marketplace load, or null. */
