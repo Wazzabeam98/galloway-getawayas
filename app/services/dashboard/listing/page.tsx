@@ -5,6 +5,7 @@ import { createServerComponentClient } from '@supabase/auth-helpers-nextjs';
 import { cookies } from 'next/headers';
 import { adminClient } from '@/lib/supabaseAdmin';
 import { audienceForTrade } from '@/lib/serviceProviders';
+import { isFoodProvider } from '@/lib/serviceOrders';
 import { shapeOf } from '@/lib/serviceSlots';
 import ProviderListingEditor from '@/components/services/ProviderListingEditor';
 
@@ -29,7 +30,7 @@ export default async function ProviderListingPage() {
     const admin = adminClient();
     const { data: providers } = await admin
         .from('service_providers')
-        .select('id, owner_id, business_name, trade, custom_label, audience, status, shape, description, '
+        .select('id, owner_id, business_name, trade, custom_label, stripe_mcc, audience, status, shape, description, '
             + 'photos, headshot, logo, dietary_note, guest_details, fulfilment, '
             + 'collection_street, collection_town, collection_postcode, '
             + 'slot_length_minutes, slot_turnaround_minutes, slot_capacity, slot_min_people, '
@@ -68,6 +69,7 @@ export default async function ProviderListingPage() {
                 id: provider.id,
                 shape: provider.shape,
                 isSlot,
+                isFood: isFoodProvider(provider),
                 business_name: provider.business_name || '',
                 category_label: provider.custom_label || '',
                 description: provider.description || '',

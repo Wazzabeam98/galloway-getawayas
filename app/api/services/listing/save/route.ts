@@ -94,11 +94,13 @@ export async function POST(request: Request) {
             case 'happens':
                 gd = {
                     what_to_expect: strOrNull(data.what_to_expect),
-                    // Itinerary: an array of { title, detail } steps, empties dropped.
+                    // Itinerary: the ordered arrival/during/finish phases. A phase is
+                    // kept only when it has a detail — an empty phase (a title with no
+                    // text) is dropped, so a half-filled flow stores nothing junk.
                     itinerary: Array.isArray(data.itinerary)
                         ? data.itinerary
                             .map((s: any) => ({ title: strOrNull(s?.title), detail: strOrNull(s?.detail) }))
-                            .filter((s: any) => s.title || s.detail)
+                            .filter((s: any) => s.detail)
                         : [],
                 };
                 break;
