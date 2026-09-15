@@ -36,12 +36,11 @@ export default async function EditBusinessPage() {
     if (provider.status !== 'approved') redirect(`/services/join?trade=${provider.trade}`);
 
     // This editor is host-shaped — rates, service groups, registrations. A
-    // guest-trade provider edits their listing (the gallery, their price, and
-    // who they are) on the sign-up itself, which loads their row and shows the
-    // guest fields, so send them there rather than to a screen that does not
-    // ask for any of what they need to change.
+    // guest-experience provider now has its OWN sectioned listing editor, which
+    // owns edit (the wizard is first-time create only). Send them there rather
+    // than back into the sign-up flow.
     if (audienceForTrade(provider.trade) === 'guest') {
-        redirect(`/services/join?trade=${provider.trade}`);
+        redirect('/services/dashboard/listing');
     }
 
     const { data: areas } = await admin
