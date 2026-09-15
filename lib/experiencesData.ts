@@ -10,6 +10,7 @@ import { isLiveToGuests, mccForProvider, isFoodProvider, normaliseUnit } from '@
 import { guestCategory, knownDietaryOptions } from '@/lib/serviceProviders';
 import { shapeOf, generateSessions, sessionClosedToAll, minutesOfDay, type PartialBlock } from '@/lib/serviceSlots';
 import { getImageUrl, firstName } from '@/lib/utils';
+import { meanTo2dp } from '@/lib/reviews';
 import { shiftDayKey, londonDayKey } from '@/lib/dayKey';
 
 export interface MpItem {
@@ -91,6 +92,11 @@ export interface MpProvider {
     // experience mosaic is the same component, and the same craft, as a cottage
     // listing's). `photos` above stays resolved for the card hero.
     galleryKeys: string[];
+    // "Things to know", all optional, all guest_details jsonb keys — a provider
+    // fills what they like after approval and only those rows show.
+    minAge: number | null;
+    activityLevel: string | null; // 'gentle' | 'moderate' | 'challenging'
+    whatToBring: string | null;
     // The provider's own walk-through of the experience, from guest_details jsonb.
     // Displayed on the experience page; null when they didn't write one.
     what_happens: string | null;
@@ -149,6 +155,10 @@ export interface MpProvider {
     // their cottage deserves to know which it is. (There are no provider reviews
     // yet; when there are, they lead and this becomes the secondary line.)
     bookingsCount: number;
+    // Published-review rating, computed on read. avg is null below the public
+    // threshold or with none; the card shows the Verified badge instead then.
+    ratingCount: number;
+    ratingAvg: number | null;
 }
 
 export interface Marketplace {
@@ -258,7 +268,7 @@ async function shapeProviders(admin: any, fromKey: string, toKey: string): Promi
     const profileById: Record<string, any> = {};
     for (const pr of ownerProfiles || []) profileById[pr.id] = pr;
 
-    const [{ data: areas }, { data: itemRows }, { data: avail }, { data: blocks }, { data: sessRows }, { data: orderRows }] = await Promise.all([
+    const [{ data: areas }, { data: itemRows }, { data: avail }, { data: blocks }, { data: sessRows }, { data: orderRows }, { data: reviewRows }] = await Promise.all([
         admin.from('service_areas').select('provider_id, label').in('provider_id', ids),
         admin.from('service_provider_items').select('id, provider_id, name, description, price, unit, image, sort_order, created_at, duration_minutes, fulfilment')
             .in('provider_id', ids).eq('active', true).gt('price', 0)
@@ -270,6 +280,9 @@ async function shapeProviders(admin: any, fromKey: string, toKey: string): Promi
         // a held request that was never answered, or one that was cancelled or
         // refunded, is not a booking someone completed with this provider.
         admin.from('service_orders').select('provider_id, status').in('provider_id', ids).eq('status', 'confirmed'),
+        // Published, un-hidden provider reviews, for the card's rating. Computed
+        // on read (service_providers keeps no counter, by design).
+        admin.from('reviews').select('provider_id, rating').eq('review_type', 'guest_to_provider').eq('is_published', true).is('hidden_at', null).in('provider_id', ids),
     ]);
 
     const by = <T,>(list: any[], key: string) => {
@@ -281,6 +294,9 @@ async function shapeProviders(admin: any, fromKey: string, toKey: string): Promi
     const itemsBy = by<any>(itemRows, 'provider_id');
     const bookingsCountBy: Record<string, number> = {};
     for (const o of orderRows || []) bookingsCountBy[o.provider_id] = (bookingsCountBy[o.provider_id] || 0) + 1;
+    // Per-provider rating: mean of published reviews, rounded the shared way.
+    const ratingsBy: Record<string, number[]> = {};
+    for (const r of reviewRows || []) (ratingsBy[r.provider_id] = ratingsBy[r.provider_id] || []).push(Number(r.rating));
     const availBy = by<any>(avail, 'provider_id');
     const blocksBy = by<any>(blocks, 'provider_id');
     const sessBy = by<any>(sessRows, 'provider_id');
@@ -366,6 +382,9 @@ async function shapeProviders(admin: any, fromKey: string, toKey: string): Promi
                 ...(itemsBy[p.id] || []).map((it: any) => it.image).filter(Boolean),
             ])) as string[],
             what_happens: (p.guest_details && p.guest_details.what_to_expect) || null,
+            minAge: intOrNull(p.guest_details && p.guest_details.min_age),
+            activityLevel: (p.guest_details && strOrNull(p.guest_details.activity_level)) || null,
+            whatToBring: (p.guest_details && strOrNull(p.guest_details.what_to_bring)) || null,
             description: p.description,
             shape,
             fulfilment: p.fulfilment || null,
@@ -405,6 +424,8 @@ async function shapeProviders(admin: any, fromKey: string, toKey: string): Promi
             hero: (items.find((i: MpItem) => i.image) || {}).image || null,
             areas: (areasBy[p.id] || []).map((a: any) => a.label).filter(Boolean),
             bookingsCount: bookingsCountBy[p.id] || 0,
+            ratingCount: (ratingsBy[p.id] || []).length,
+            ratingAvg: meanTo2dp(ratingsBy[p.id] || []),
         });
     }
 

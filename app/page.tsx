@@ -8,7 +8,9 @@ import { cookies } from 'next/headers';
 import { format, parseISO } from 'date-fns';
 import Link from 'next/link';
 import ListingCard from '@/components/ListingCard';
+import HomeExperiences from '@/components/HomeExperiences';
 import TownsCarousel from '@/components/TownsCarousel';
+import { liveForGuestCard } from '@/lib/bookingWindows';
 import { AREAS, hasCopy } from '@/config/areas';
 import fs from 'fs';
 import path from 'path';
@@ -99,6 +101,25 @@ export default async function HomePage({
     // Anyone who hasn't chosen is a traveller.
     const mode: 'host' | 'travel' =
         cookieStore.get('gg_mode')?.value === 'host' ? 'host' : 'travel';
+
+    // A signed-in traveller with a live upcoming stay already has accommodation,
+    // so the properties grid gives way to their trip and its experiences (both
+    // rendered by UpcomingTrip). Same "live" rule the trip card itself uses, so
+    // the two never disagree; a past stay does not count, so that guest still
+    // sees properties. Host mode is unaffected.
+    let bookedGuest = false;
+    if (mode === 'travel') {
+        const { data: auth } = await supabase.auth.getSession();
+        if (auth?.session?.user) {
+            const { data: liveBookings } = await supabase
+                .from('bookings')
+                .select('status, check_out')
+                .eq('guest_id', auth.session.user.id)
+                .in('status', ['confirmed', 'pending'])
+                .limit(20);
+            bookedGuest = (liveBookings || []).some((b) => liveForGuestCard(b as any, new Date()));
+        }
+    }
 
     // What the hero's search button put in the URL. Every part is optional —
     // a bare `/` still means "show me everything".
@@ -231,6 +252,10 @@ export default async function HomePage({
             {mode === 'host' ? <HostReservations /> : <UpcomingTrip />}
 
             <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-16">
+                {/* Properties show for everyone. A booked guest sees them BELOW
+                    their trip and its experiences (UpcomingTrip renders above),
+                    so the order reads trip → their experiences → properties;
+                    a visitor sees them first. */}
                 {/* Section Heading */}
                 <div className="mb-10 border-b border-stone-200 pb-4 flex flex-wrap items-end justify-between gap-3">
                     <div>
@@ -253,14 +278,25 @@ export default async function HomePage({
                     )}
                 </div>
 
-                {/* Property Grid */}
-                {listings && listings.length > 0 ? (
-                    <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-x-6 gap-y-10">
-                        {listings.map((property) => (
-                            <ListingCard key={property.id} listing={property} />
-                        ))}
-                    </div>
-                ) : searching ? (
+                {/* Property Grid — four across, up to eight on the default view,
+                    and only listings that actually have a photo: a card on a grey
+                    placeholder reads as broken, so it is not shown at all. */}
+                {(() => {
+                    const withPhoto = (listings || []).filter(
+                        (l) => Array.isArray(l.images) && l.images.length > 0 && !!l.images[0]
+                    );
+                    const shown = searching ? withPhoto : withPhoto.slice(0, 8);
+                    return shown.length > 0 ? (
+                        <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-x-6 gap-y-10">
+                            {shown.map((property) => (
+                                <ListingCard key={property.id} listing={property} />
+                            ))}
+                        </div>
+                    ) : null;
+                })()}
+                {(() => {
+                    const anyPhoto = (listings || []).some((l) => Array.isArray(l.images) && l.images.length > 0 && !!l.images[0]);
+                    return !anyPhoto ? (searching ? (
                     /* A search that found nothing is not an empty site, and must not
                        be described as one. */
                     <div className="text-center py-16 bg-white rounded-2xl shadow-sm border border-stone-200">
@@ -287,7 +323,16 @@ export default async function HomePage({
                             Ready to list your Kirkcudbright holiday stay? Click <strong>Add homes</strong> in the top menu to publish your first property!
                         </p>
                     </div>
-                )}
+                    )) : null;
+                })()}
+
+                {/* Experiences, alongside the properties. Below the grid so the
+                    cottages lead, above the editorial so it reads as a second
+                    thing to book. Self-gating on the launch flag and on there
+                    being any to show; hidden while a property search is on, the
+                    same as the towns carousel below. Not for a booked guest —
+                    they get experiences scoped to their stay, above. */}
+                {!searching && !bookedGuest && <HomeExperiences />}
 
                 {!searching && <TownsCarousel towns={carouselTowns} />}
 

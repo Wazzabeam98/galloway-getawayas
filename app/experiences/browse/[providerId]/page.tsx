@@ -5,6 +5,7 @@ import { cookies } from 'next/headers';
 import { adminClient } from '@/lib/supabaseAdmin';
 import { guestExperiencesOpen } from '@/lib/serviceOrders';
 import { loadPublicMarketplace, pickProvider } from '@/lib/experiencesData';
+import { loadExperienceReviews } from '@/lib/experienceReviews';
 import ExperienceListingBody from '@/components/marketplace/ExperienceListingBody';
 import StandaloneBookingPanel from '@/components/marketplace/StandaloneBookingPanel';
 
@@ -24,6 +25,8 @@ export default async function PublicListingPage({ params }: { params: { provider
     const mp = await loadPublicMarketplace(admin, guestExperiencesOpen());
     const p = pickProvider(mp, params.providerId);
     if (!p) redirect('/experiences/browse');
+
+    const reviews = await loadExperienceReviews(admin, p.id, user?.id ?? null);
 
     const who = p.byline || p.business_name;
     const here = `/experiences/browse/${params.providerId}`;
@@ -58,6 +61,7 @@ export default async function PublicListingPage({ params }: { params: { provider
             backHref="/experiences/browse"
             backLabel="All experiences"
             panel={panel}
+            reviews={reviews}
         />
     );
 }
