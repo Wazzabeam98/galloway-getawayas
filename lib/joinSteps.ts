@@ -45,7 +45,7 @@ import { GUEST_SCREEN_COPY } from '@/lib/strings';
 // ever gains one. See stepApplies.
 export type StepKey =
     | 'trade' | 'g_subtype' | 'g_verify' | 'business'
-    | 'g_you' | 'g_creds' | 'g_about' | 'g_shape' | 'g_slot_basis' | 'g_capacity' | 'g_slot_min' | 'g_menu' | 'g_expect' | 'g_photos' | 'g_notice' | 'g_slot_where' | 'g_area' | 'g_slot_length' | 'g_slot_hours'
+    | 'g_you' | 'g_creds' | 'g_about' | 'g_shape' | 'g_slot_basis' | 'g_capacity' | 'g_slot_min' | 'g_menu' | 'g_title' | 'g_expect' | 'g_photos' | 'g_notice' | 'g_slot_where' | 'g_area' | 'g_slot_length' | 'g_slot_hours'
     | 'credentials' | 'prices' | 'finish';
 
 // The guest-only steps, in flow order. Rebuilt against Airbnb's host-an-
@@ -69,7 +69,7 @@ export type StepKey =
 // account address is the contact address, and the phone lives on the profile).
 const GUEST_STEP_KEYS: StepKey[] = [
     'g_verify', 'g_subtype',
-    'g_you', 'g_creds', 'g_shape', 'g_notice', 'g_slot_where', 'g_area', 'g_slot_length', 'g_slot_hours', 'g_photos', 'g_slot_basis', 'g_capacity', 'g_slot_min', 'g_menu', 'g_expect',
+    'g_you', 'g_creds', 'g_shape', 'g_notice', 'g_slot_where', 'g_area', 'g_slot_length', 'g_slot_hours', 'g_photos', 'g_slot_basis', 'g_capacity', 'g_slot_min', 'g_menu', 'g_title', 'g_expect',
 ];
 
 // What a guest's steps branch on, all from earlier answers: the top-level group
@@ -182,6 +182,14 @@ const ALL_STEPS: Step[] = [
     // M" as one thought. Dropped entirely for a private/whole-group slot.
     { key: 'g_slot_min', label: 'Minimum', title: GUEST_SCREEN_COPY.slotMinQuestion },
     { key: 'g_menu', label: 'Price', title: 'What you offer, and what it costs' },
+    // The listing's own name — what the EXPERIENCE is called, not what the person
+    // is. It becomes business_name (the denormalised display copy the card, the
+    // marketplace sort, the review queue and the order/emails all read), so the
+    // guest's first line describes the thing they're buying; the professional
+    // title moved to the About block as a credential. Its own step, first in the
+    // Details section, near the end — the naming/describing moment the original
+    // flow always placed here.
+    { key: 'g_title', label: 'Title', title: GUEST_SCREEN_COPY.experienceTitleQuestion },
     { key: 'g_expect', label: 'Details', title: 'What can a guest expect?' },
     // Not "Registration". Registration and skills never co-occur across the
     // trade list — the electrician and plumber give numbers, the handyman gives
@@ -253,12 +261,13 @@ export function stepApplies(step: StepKey, trade: string, ctx?: StepContext): bo
             case 'g_you':
             case 'g_creds':
                 return guestAsksExpertise(ctx.category);
-            // Asked of every guest: the price (g_menu), what a guest can expect
-            // (g_expect) and the photos (g_photos). There is no naming step (the
-            // title is derived from the account), no contact step (the account
-            // address is the contact address) and no checks step (collapsed to
-            // one confirmation on the finish screen).
+            // Asked of every guest: the price (g_menu), the listing's name
+            // (g_title — what the experience is called), what a guest can expect
+            // (g_expect) and the photos (g_photos). No contact step (the account
+            // address is the contact address) and no checks step (collapsed to one
+            // confirmation on the finish screen).
             case 'g_menu':
+            case 'g_title':
             case 'g_expect':
             case 'g_photos':
                 return true;
@@ -406,7 +415,7 @@ const GUEST_SECTIONS: { key: string; label: string; steps: StepKey[] }[] = [
     { key: 'when', label: GUEST_SCREEN_COPY.sectionWhen, steps: ['g_slot_length', 'g_slot_hours'] },
     { key: 'photos', label: GUEST_SCREEN_COPY.sectionPhotos, steps: ['g_photos'] },
     { key: 'pricing', label: GUEST_SCREEN_COPY.sectionPricing, steps: ['g_slot_basis', 'g_capacity', 'g_slot_min', 'g_menu'] },
-    { key: 'details', label: GUEST_SCREEN_COPY.sectionDetails, steps: ['g_expect'] },
+    { key: 'details', label: GUEST_SCREEN_COPY.sectionDetails, steps: ['g_title', 'g_expect'] },
     // Finish is now a single screen: the account, with one responsibility
     // confirmation folded in above submit. The old checks and contact steps that
     // shared this section are gone.
@@ -533,6 +542,7 @@ const STEP_FIELDS: Record<StepKey, string[]> = {
     g_capacity: [],
     g_slot_min: [],
     g_menu: [],
+    g_title: [],
     g_expect: [],
     g_photos: [],
     g_notice: [],
