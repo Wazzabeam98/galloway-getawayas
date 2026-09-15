@@ -46,7 +46,7 @@ export interface EditorProvider {
 
 type SectionKey = 'title' | 'about' | 'happens' | 'things' | 'dietary' | 'photos' | 'menu' | 'where' | 'availability';
 
-const BUILT: Record<string, boolean> = { title: true, about: true, photos: true, menu: true, happens: true, things: true, dietary: true, availability: true };
+const BUILT: Record<string, boolean> = { title: true, about: true, photos: true, menu: true, happens: true, things: true, dietary: true, where: true, availability: true };
 
 async function saveSection(providerId: string, section: string, data: any): Promise<boolean> {
     const res = await fetch('/api/services/listing/save', {
@@ -187,6 +187,17 @@ export default function ProviderListingEditor({ provider }: { provider: EditorPr
         if (k) setRow(i, { image: k });
         setUploading(false);
     }
+
+    // Where it happens: how a guest reaches the experience, the private venue
+    // address (a guest only ever sees the town), and the regions a travelling
+    // provider covers.
+    const [fulfilment, setFulfilment] = useState(p.fulfilment || 'collection');
+    const [street, setStreet] = useState(p.collection_street);
+    const [town, setTown] = useState(p.collection_town);
+    const [postcode, setPostcode] = useState(p.collection_postcode);
+    const [areas, setAreas] = useState<string[]>(p.areas);
+    const collects = fulfilment === 'collection' || fulfilment === 'both';
+    const travels = fulfilment === 'delivery' || fulfilment === 'both';
 
     async function run(section: string, data: any) {
         setSavingKey(section);
@@ -493,7 +504,56 @@ export default function ProviderListingEditor({ provider }: { provider: EditorPr
                         </SectionCard>
                     )}
 
-                    {active === 'where' && <ComingSection title="Where it happens" />}
+                    {active === 'where' && (
+                        <SectionCard title="Where it happens" hint="How guests reach you. They only ever see the town — the street and postcode stay private until a booking is confirmed." saving={savingKey === 'where'}
+                            onSave={() => run('where', {
+                                fulfilment,
+                                collection_street: street, collection_town: town, collection_postcode: postcode,
+                                areas: travels ? areas : [],
+                            })}>
+                            <Field label="How guests get it">
+                                <div className="space-y-2">
+                                    {[
+                                        { key: 'collection', label: 'Guests come to me', note: 'At your studio, sauna, kitchen — one place.' },
+                                        { key: 'delivery', label: 'I travel to the guest', note: 'You go to their cottage.' },
+                                        { key: 'both', label: 'Both', note: 'Guests can come to you, or you travel to them.' },
+                                    ].map((o) => (
+                                        <button key={o.key} type="button" onClick={() => setFulfilment(o.key)}
+                                            className={`w-full rounded-xl border px-4 py-3 text-left text-sm transition ${fulfilment === o.key ? 'border-emerald-700 ring-2 ring-emerald-700 bg-emerald-50' : 'border-slate-300 hover:border-slate-400'}`}>
+                                            <div className="font-semibold text-slate-900">{o.label}</div>
+                                            <div className="text-xs text-slate-500">{o.note}</div>
+                                        </button>
+                                    ))}
+                                </div>
+                            </Field>
+
+                            {collects && (
+                                <div className="space-y-3">
+                                    <Field label="Street address (private)"><input className={inputCls} value={street} onChange={(e) => setStreet(e.target.value)} placeholder="e.g. 18 Dovecroft" /></Field>
+                                    <div className="grid grid-cols-2 gap-3">
+                                        <Field label="Town (shown to guests)"><input className={inputCls} value={town} onChange={(e) => setTown(e.target.value)} placeholder="Kirkcudbright" /></Field>
+                                        <Field label="Postcode (private)"><input className={inputCls} value={postcode} onChange={(e) => setPostcode(e.target.value)} placeholder="DG6 4JS" /></Field>
+                                    </div>
+                                    <p className="text-xs text-slate-500">Guests see <span className="font-medium text-slate-700">{town.trim() || 'your town'}</span>. The street and postcode are released only when a booking is confirmed.</p>
+                                </div>
+                            )}
+
+                            {travels && (
+                                <div>
+                                    <span className="block text-xs font-semibold uppercase tracking-wide text-slate-500">Regions you travel to</span>
+                                    <div className="mt-2 space-y-2">
+                                        {areas.map((a, i) => (
+                                            <div key={i} className="flex gap-2">
+                                                <input className="flex-1 rounded-xl border border-slate-300 p-2.5 text-sm" value={a} placeholder="e.g. The Stewartry" onChange={(e) => setAreas(areas.map((x, j) => j === i ? e.target.value : x))} />
+                                                <button type="button" onClick={() => setAreas(areas.filter((_, j) => j !== i))} className="px-2 text-slate-400 hover:text-red-600">&times;</button>
+                                            </div>
+                                        ))}
+                                        <button type="button" onClick={() => setAreas([...areas, ''])} className="text-sm font-semibold text-emerald-700 hover:text-emerald-800">+ Add a region</button>
+                                    </div>
+                                </div>
+                            )}
+                        </SectionCard>
+                    )}
 
                     {active === 'availability' && (
                         <SectionCard title="Availability" hint="Your weekly hours and booking rules. A specific day off, or part of a day, is set in your diary." saving={savingKey === 'availability'}
