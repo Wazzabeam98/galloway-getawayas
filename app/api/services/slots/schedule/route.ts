@@ -5,10 +5,15 @@ import { NextResponse } from 'next/server';
 
 export const dynamic = 'force-dynamic';
 
-// A slot provider's schedule — the weekly opening hours, the slot length and
-// capacity, and the blocked days. Read on the dashboard (to block a day) and in
-// the sign-up (to set it up). Owner-checked both ways: a provider touches only
-// their own schedule.
+// A slot provider's diary. GET reads the weekly hours, slot length and capacity
+// (to show whether hours are set) plus the blocked days. POST writes ONLY the
+// blocked days — the dated exceptions the diary owns.
+//
+// The weekly TEMPLATE (hours, length, capacity) lives in the listing editor's
+// Availability section and is written only through /api/services/listing/save.
+// This route used to be able to write it too; those params were stripped so a
+// later caller cannot resurrect a second writer for one field. Owner-checked: a
+// provider touches only their own diary.
 
 async function ownProvider(admin: any, providerId: string, userId: string) {
     const { data: p } = await admin
@@ -63,28 +68,10 @@ export async function POST(request: Request) {
         const p = await ownProvider(admin, providerId, user.id);
         if (!p) return NextResponse.json({ ok: false, error: 'Not your business' }, { status: 403 });
 
-        // Provider-level config, clamped to sane bounds.
-        const patch: any = {};
-        if (body.slot_length_minutes !== undefined) {
-            patch.slot_length_minutes = Math.min(600, Math.max(15, Math.floor(Number(body.slot_length_minutes) || 60)));
-        }
-        if (body.slot_capacity !== undefined) {
-            patch.slot_capacity = Math.min(200, Math.max(1, Math.floor(Number(body.slot_capacity) || 1)));
-        }
-        if (Object.keys(patch).length) await admin.from('service_providers').update(patch).eq('id', providerId);
-
-        if (Array.isArray(body.availability)) {
-            await admin.from('slot_availability').delete().eq('provider_id', providerId);
-            const rows = body.availability
-                .map((a: any) => ({
-                    provider_id: providerId,
-                    day_of_week: Math.max(0, Math.min(6, Math.floor(Number(a.day_of_week)))),
-                    open_time: String(a.open_time || '').slice(0, 5),
-                    close_time: String(a.close_time || '').slice(0, 5),
-                }))
-                .filter((r: any) => /^\d\d:\d\d$/.test(r.open_time) && /^\d\d:\d\d$/.test(r.close_time) && r.open_time < r.close_time);
-            if (rows.length) await admin.from('slot_availability').insert(rows);
-        }
+        // The weekly template (slot_length_minutes, slot_capacity, weekly hours)
+        // is NOT written here — it belongs to the listing editor's Availability
+        // section (/api/services/listing/save). This route writes only the dated
+        // blocks below, so those params are ignored even if a caller sends them.
 
         if (Array.isArray(body.blocks)) {
             await admin.from('slot_blocks').delete().eq('provider_id', providerId);
