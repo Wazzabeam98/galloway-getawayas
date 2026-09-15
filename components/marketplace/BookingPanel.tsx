@@ -3,7 +3,7 @@
 import { useMemo, useState } from 'react';
 import { unitMultiplies, orderTotal, MAX_ORDER_QUANTITY } from '@/lib/serviceOrders';
 import {
-    optionAvailability, bookingIsPrivate, type OptionAvailability,
+    optionAvailability, bookingIsPrivate, seatConfig, type OptionAvailability,
     generateSessions, resolvedDuration, overlapsBooked, minutesOfDay, type PartialBlock,
 } from '@/lib/serviceSlots';
 import { itemPriceLabel, unitPhrase, dateLabel, timeLabel } from '@/components/marketplace/present';
@@ -18,6 +18,10 @@ interface PanelItem {
     // Per-item location for a 'both' provider; 'delivery' ⇒ travelled, so it's
     // private and capped only by the cottage, not the provider's studio size.
     fulfilment?: string | null;
+    // Per-item seats/minimum (per-person items); null ⇒ fall back to the provider.
+    // Resolved through seatConfig() so the panel greys exactly what the route claims.
+    capacity: number | null;
+    minPeople: number | null;
 }
 interface PanelSession {
     date: string; time: string;
@@ -152,10 +156,15 @@ export default function BookingPanel({ bookingId, checkIn, checkOut, cottageGues
     // the booking route checks and the host diary renders, so what the guest is
     // shown as bookable is exactly what the claim will accept. A time impossible
     // for the chosen option is greyed here, not discovered at the claim.
-    const cfg = { slot_capacity: provider.slotCapacity, slot_min_people: provider.minPeople };
-    const availOf = (s: PanelSession, unit: string): OptionAvailability => optionAvailability(s.row, unit, cfg);
+    // The provider config the shared helper reads, resolved PER ITEM through the
+    // same seatConfig() the book route uses (the item's seats/minimum win when set,
+    // else the provider's). So what the guest is shown as bookable is exactly what
+    // the claim will accept — one resolver, both surfaces.
+    const providerCfg = { slot_capacity: provider.slotCapacity, slot_min_people: provider.minPeople };
+    const availOf = (s: PanelSession, itm: { unit: string; capacity: number | null; minPeople: number | null }): OptionAvailability =>
+        optionAvailability(s.row, itm.unit, seatConfig(itm.capacity, itm.minPeople, providerCfg));
     // The chosen option's availability on the chosen time.
-    const sel = isSlot && session && item ? availOf(session, item.unit) : null;
+    const sel = isSlot && session && item ? availOf(session, item) : null;
 
     // The bookable times. For a fixed-grid provider (sauna, class) this is the
     // server-generated grid, unchanged. For the per-treatment shape it is
@@ -197,7 +206,7 @@ export default function BookingPanel({ bookingId, checkIn, checkOut, cottageGues
     // The per-person floor: the smallest group this session runs for. A
     // convenience only — the booking route is the real gate. Applies only when
     // the unit multiplies; 1 (no minimum) otherwise.
-    const minPeople = isSlot && multiplies ? Math.max(1, provider.minPeople || 1) : 1;
+    const minPeople = isSlot && multiplies && item ? Math.max(1, seatConfig(item.capacity, item.minPeople, providerCfg).slot_min_people || 1) : 1;
     const quantity = multiplies ? Math.min(Math.max(minPeople, Math.floor(qty) || minPeople), seatCap) : 1;
     const total = item ? orderTotal(item.price, quantity) : 0;
 
@@ -291,7 +300,7 @@ export default function BookingPanel({ bookingId, checkIn, checkOut, cottageGues
                                         // shared table, or a treatment whose grid no
                                         // longer offers that start — so drop it rather
                                         // than let the guest book what would be refused.
-                                        if (session && (perItem || !availOf(session, it.unit).possible)) setSession(null);
+                                        if (session && (perItem || !availOf(session, it).possible)) setSession(null);
                                     }} className="accent-emerald-600" />
                                     {it.image ? (
                                         // eslint-disable-next-line @next/next/no-img-element
@@ -343,7 +352,7 @@ export default function BookingPanel({ bookingId, checkIn, checkOut, cottageGues
                                         // left to fail at the claim. Only per-person
                                         // shows "N left"; a whole-hire time never reads
                                         // "1 left" (false scarcity on every slot).
-                                        const a = item ? availOf(s, item.unit) : null;
+                                        const a = item ? availOf(s, item) : null;
                                         // Overlap with a DIFFERENT booking greys a
                                         // per-treatment time even when its own seat is
                                         // free — the masseuse is busy across it.

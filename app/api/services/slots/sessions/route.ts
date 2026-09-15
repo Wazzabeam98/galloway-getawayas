@@ -46,7 +46,7 @@ export async function GET(request: Request) {
                 .eq('provider_id', providerId)
                 .gte('session_date', today),
             admin.from('service_provider_items')
-                .select('unit').eq('provider_id', providerId).eq('active', true),
+                .select('unit, capacity, min_people').eq('provider_id', providerId).eq('active', true),
             admin.from('service_orders')
                 .select('service_date, service_time, item_name, item_unit, quantity, status')
                 .eq('provider_id', providerId)
@@ -55,7 +55,11 @@ export async function GET(request: Request) {
                 .gte('service_date', today),
         ]);
 
-        const units = (itemRows || []).map((i: any) => normaliseUnit(i.unit));
+        const closedItems = (itemRows || []).map((i: any) => ({
+            unit: normaliseUnit(i.unit),
+            capacity: i.capacity == null ? null : Number(i.capacity),
+            min_people: i.min_people == null ? null : Number(i.min_people),
+        }));
 
         // The confirmed sales on each time, grouped by option name.
         // Both time columns come back as "HH:MM:SS"; key on "HH:MM" so the orders
@@ -83,7 +87,7 @@ export async function GET(request: Request) {
                     seats_taken: row.seats_taken,
                     seats_left: seatsLeft(row),
                     private: row.private,
-                    closed: sessionClosedToAll(row, units, provider),
+                    closed: sessionClosedToAll(row, closedItems, provider),
                     sold: soldByKey[s.session_date + ' ' + hhmm(s.session_time)] || [],
                 };
             })

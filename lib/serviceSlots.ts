@@ -258,6 +258,27 @@ export function slotClaimKind(
 export type OptionReason = 'open' | 'other-mode' | 'full' | 'too-small' | 'misconfigured';
 export interface OptionAvailability { possible: boolean; seatsLeft: number; reason: OptionReason; }
 
+/**
+ * The effective seats and minimum for ONE item — the phased per-item override.
+ * The item's own value wins when set; a null item value falls back to the
+ * provider's slot_capacity / slot_min_people. This is the single resolver every
+ * surface calls (the guest panel, the book route, the host diary) before it hands
+ * the seat engine a config below, so the DISPLAY and the ENFORCEMENT can never
+ * read a different number. It returns a provider-shaped object, so
+ * optionAvailability / sessionCapacity take it unchanged — the seat engine itself
+ * is not cut, only fed the right value.
+ */
+export function seatConfig(
+    itemCapacity: number | null | undefined,
+    itemMinPeople: number | null | undefined,
+    provider: { slot_capacity?: number | null; slot_min_people?: number | null },
+): { slot_capacity: number | null; slot_min_people: number | null } {
+    return {
+        slot_capacity: itemCapacity != null ? Number(itemCapacity) : (provider.slot_capacity ?? null),
+        slot_min_people: itemMinPeople != null ? Number(itemMinPeople) : (provider.slot_min_people ?? null),
+    };
+}
+
 export function optionAvailability(
     row: { capacity: number; seats_taken: number; private: boolean } | null | undefined,
     unit: string | null | undefined,
@@ -296,14 +317,26 @@ export function optionAvailability(
  * a shared table with fewer seats left than its minimum group. Used by the host
  * diary to mark a time "closed". `units` are the provider's own item units.
  */
+// `items` are the provider's own items, each carrying its unit and its per-item
+// seats/minimum (null = fall back to the provider). Per-item capacity means two
+// per-person items can have DIFFERENT seat counts, so the check resolves each
+// item's own config — deduped by the effective (mode, seats, minimum) so
+// identical options don't each cost a call.
 export function sessionClosedToAll(
     row: { capacity: number; seats_taken: number; private: boolean } | null | undefined,
-    units: Array<string | null | undefined>,
+    items: Array<{ unit?: string | null; capacity?: number | null; min_people?: number | null }>,
     provider: { slot_capacity?: number | null; slot_min_people?: number | null },
 ): boolean {
-    const distinct = Array.from(new Set((units || []).map((u) => (bookingIsPrivate(u) ? 'flat' : 'person'))));
-    if (!distinct.length) return false;
-    return distinct.every((u) => !optionAvailability(row, u, provider).possible);
+    if (!items || !items.length) return false;
+    const seen = new Set<string>();
+    for (const it of items) {
+        const cfg = seatConfig(it.capacity, it.min_people, provider);
+        const key = bookingIsPrivate(it.unit) ? 'flat' : ('person:' + cfg.slot_capacity + ':' + cfg.slot_min_people);
+        if (seen.has(key)) continue;
+        seen.add(key);
+        if (optionAvailability(row, it.unit, cfg).possible) return false;
+    }
+    return true;
 }
 
 // ---------------------------------------------------------------------------
