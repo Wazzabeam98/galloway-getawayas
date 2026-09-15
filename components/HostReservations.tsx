@@ -88,9 +88,15 @@ export default async function HostReservations() {
         .select('id, title, location, images, commission_rate')
         .in('id', listingIds);
 
+    // The guest's name and number, read from profiles with the service role —
+    // NOT the profile_private view. That view is scoped by auth.uid(), and the
+    // service role has none, so it returns nothing and every guest fell back to
+    // "Guest". Reading profiles directly is how the bookings page already does
+    // it; the number is still only shown near the stay (contactNumberVisible
+    // below), which is the same gate the view enforced.
     const { data: guests } = guestIds.length
         ? await admin
-            .from('profile_private')
+            .from('profiles')
             .select('id, full_name, preferred_name, show_full_name, phone')
             .in('id', guestIds)
         : { data: [] };
