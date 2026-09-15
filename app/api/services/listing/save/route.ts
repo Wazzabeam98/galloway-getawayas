@@ -83,6 +83,9 @@ export async function POST(request: Request) {
                 break;
 
             case 'about':
+                // The headshot (a column) lives with About you — it's a photo of the
+                // person, shown beside their name, not part of the experience gallery.
+                patch = { headshot: strOrNull(data.headshot) };
                 gd = {
                     professional_title: strOrNull(data.professional_title),
                     years_experience: strOrNull(data.years_experience),
@@ -123,12 +126,12 @@ export async function POST(request: Request) {
                 break;
 
             case 'photos':
-                // The guard against vanishing (no photo → dropped from every grid)
-                // lives in the editor UI as a warning; the row is still allowed to
-                // save, so a provider mid-edit isn't blocked. Store keys as given.
+                // The experience gallery (and logo). The headshot is NOT here — it
+                // moved to About you. The guard against vanishing (no photo → dropped
+                // from every grid) lives in the editor UI as a warning; the row is
+                // still allowed to save, so a provider mid-edit isn't blocked.
                 patch = {
                     photos: Array.isArray(data.photos) ? data.photos.filter(Boolean) : [],
-                    headshot: strOrNull(data.headshot),
                     logo: strOrNull(data.logo),
                 };
                 break;
