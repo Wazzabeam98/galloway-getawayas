@@ -13,6 +13,8 @@ export const dynamic = 'force-dynamic';
 export default async function BrowseExperiencesPage() {
     const admin = adminClient();
     const mp = await loadPublicMarketplace(admin, guestExperiencesOpen());
+    // Only show experiences that have a real photo — never a bare gradient card.
+    const providers = mp.providers.filter((p) => !!p.hero);
 
     return (
         <div className="min-h-screen bg-slate-50">
@@ -33,12 +35,12 @@ export default async function BrowseExperiencesPage() {
                 {mp.open === false ? (
                     <Empty title="Coming soon"
                         body="We’re lining up chefs, bakers, saunas and guides across Dumfries & Galloway. Check back soon." />
-                ) : mp.providers.length === 0 ? (
+                ) : providers.length === 0 ? (
                     <Empty title="Nothing listed yet"
                         body="It’s a new part of the site and filling in fast — check back soon." />
                 ) : (
                     <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-5 sm:gap-6">
-                        {mp.providers.map((p) => (
+                        {providers.map((p) => (
                             <ProviderCard key={p.id} p={p} href={`/experiences/browse/${p.id}`} />
                         ))}
                     </div>

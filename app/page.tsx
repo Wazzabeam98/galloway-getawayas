@@ -254,14 +254,25 @@ export default async function HomePage({
                     )}
                 </div>
 
-                {/* Property Grid — two across, up to eight on the default view. */}
-                {listings && listings.length > 0 ? (
-                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-x-6 gap-y-10">
-                        {(searching ? listings : listings.slice(0, 8)).map((property) => (
-                            <ListingCard key={property.id} listing={property} />
-                        ))}
-                    </div>
-                ) : searching ? (
+                {/* Property Grid — four across, up to eight on the default view,
+                    and only listings that actually have a photo: a card on a grey
+                    placeholder reads as broken, so it is not shown at all. */}
+                {(() => {
+                    const withPhoto = (listings || []).filter(
+                        (l) => Array.isArray(l.images) && l.images.length > 0 && !!l.images[0]
+                    );
+                    const shown = searching ? withPhoto : withPhoto.slice(0, 8);
+                    return shown.length > 0 ? (
+                        <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-x-6 gap-y-10">
+                            {shown.map((property) => (
+                                <ListingCard key={property.id} listing={property} />
+                            ))}
+                        </div>
+                    ) : null;
+                })()}
+                {(() => {
+                    const anyPhoto = (listings || []).some((l) => Array.isArray(l.images) && l.images.length > 0 && !!l.images[0]);
+                    return !anyPhoto ? (searching ? (
                     /* A search that found nothing is not an empty site, and must not
                        be described as one. */
                     <div className="text-center py-16 bg-white rounded-2xl shadow-sm border border-stone-200">
@@ -288,7 +299,8 @@ export default async function HomePage({
                             Ready to list your Kirkcudbright holiday stay? Click <strong>Add homes</strong> in the top menu to publish your first property!
                         </p>
                     </div>
-                )}
+                    )) : null;
+                })()}
 
                 {/* Experiences, alongside the properties. Below the grid so the
                     cottages lead, above the editorial so it reads as a second

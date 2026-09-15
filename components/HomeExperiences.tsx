@@ -23,7 +23,11 @@ export default async function HomeExperiences() {
     const mp = await loadPublicMarketplace(admin, true);
     if (!mp.open || mp.providers.length === 0) return null;
 
-    const shown = mp.providers.slice(0, MAX_ON_HOME);
+    // Only ones with a real photo — a card on a bare gradient block reads as
+    // unfinished, so it is not shown at all.
+    const withPhoto = mp.providers.filter((p) => !!p.hero);
+    if (withPhoto.length === 0) return null;
+    const shown = withPhoto.slice(0, MAX_ON_HOME);
 
     return (
         <section className="mt-16 pt-10 border-t border-stone-200">
@@ -45,7 +49,7 @@ export default async function HomeExperiences() {
                 </Link>
             </div>
 
-            <div className="grid grid-cols-1 sm:grid-cols-2 gap-x-6 gap-y-10">
+            <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-x-6 gap-y-10">
                 {shown.map((p) => (
                     <ProviderCard key={p.id} p={p} href={`/experiences/browse/${p.id}`} />
                 ))}

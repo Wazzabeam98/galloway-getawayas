@@ -50,16 +50,19 @@ const DEACTIVATE = [
     '443efa88-f832-4ce3-93aa-b85988d77a8b', // Sunrise wild swim
 ];
 
-// Eight believable cottages. Real Dumfries & Galloway towns, sensible prices.
+// Eight believable cottages. Real Dumfries & Galloway towns, sensible prices,
+// and the amenities hosts actually tick — 'Hot tub' and 'Pets allowed' are the
+// two that draw a card badge (see lib/listingRules), spread across the grid the
+// way the live listings vary, so the demo reads like the real thing.
 const COTTAGES = [
-    { slug: 'anchorage',  title: 'Anchorage Cottage',      town: 'Kirkcudbright',      street: 'Castlebank',      postcode: 'DG6 4JG', price: 145, guests: 4, kw: 'stone cottage',       pick: 0 },
-    { slug: 'herons',     title: 'Heron’s Rest',           town: 'Gatehouse of Fleet', street: '3 Fleet Street',  postcode: 'DG7 2HP', price: 120, guests: 2, kw: 'english cottage', pick: 8 },
-    { slug: 'harbour',    title: 'The Harbourmaster’s House', town: 'Kirkcudbright',   street: 'Harbour Square',  postcode: 'DG6 4HY', price: 185, guests: 6, kw: 'fishing harbour village', pick: 9 },
-    { slug: 'deeview',    title: 'Dee View Cottage',       town: 'Castle Douglas',     street: '12 Carlingwark', postcode: 'DG7 1TJ', price: 135, guests: 4, kw: 'cottage house',       pick: 2 },
-    { slug: 'bracken',    title: 'Bracken Bothy',          town: 'Newton Stewart',     street: 'Minnigaff',       postcode: 'DG8 6PL', price: 95,  guests: 2, kw: 'log cabin',           pick: 0 },
-    { slug: 'shore',      title: 'Shore Cottage',          town: 'Rockcliffe',         street: 'The Merse',       postcode: 'DG5 4QG', price: 210, guests: 6, kw: 'coastal cottage',     pick: 0 },
-    { slug: 'kirkbrae',   title: 'Kirkbrae Cottage',       town: 'Wigtown',            street: 'North Main St',   postcode: 'DG8 9HN', price: 110, guests: 3, kw: 'cottage exterior', pick: 0 },
-    { slug: 'steading',   title: 'The Old Steading',       town: 'Dalbeattie',         street: 'Buittle',         postcode: 'DG7 1NQ', price: 165, guests: 5, kw: 'farmhouse',          pick: 0 },
+    { slug: 'anchorage',  title: 'Anchorage Cottage',      town: 'Kirkcudbright',      street: 'Castlebank',      postcode: 'DG6 4JG', price: 145, guests: 4, kw: 'stone cottage',       pick: 0, amenities: ['Pets allowed', 'Wifi', 'Free parking on premises', 'Indoor fireplace', 'Kitchen'] },
+    { slug: 'herons',     title: 'Heron’s Rest',           town: 'Gatehouse of Fleet', street: '3 Fleet Street',  postcode: 'DG7 2HP', price: 120, guests: 2, kw: 'english cottage', pick: 8, amenities: ['Hot tub', 'Wifi', 'Waterfront', 'Kitchen', 'Heating'] },
+    { slug: 'harbour',    title: 'The Harbourmaster’s House', town: 'Kirkcudbright',   street: 'Harbour Square',  postcode: 'DG6 4HY', price: 185, guests: 6, kw: 'fishing harbour village', pick: 9, amenities: ['Pets allowed', 'Wifi', 'Beach access', 'Free parking on premises', 'Kitchen'] },
+    { slug: 'deeview',    title: 'Dee View Cottage',       town: 'Castle Douglas',     street: '12 Carlingwark', postcode: 'DG7 1TJ', price: 135, guests: 4, kw: 'cottage house',       pick: 2, amenities: ['Hot tub', 'Pets allowed', 'Wifi', 'Kitchen', 'Washing machine'] },
+    { slug: 'bracken',    title: 'Bracken Bothy',          town: 'Newton Stewart',     street: 'Minnigaff',       postcode: 'DG8 6PL', price: 95,  guests: 2, kw: 'log cabin',           pick: 0, amenities: ['Pets allowed', 'Indoor fireplace', 'Free parking on premises', 'Kitchen'] },
+    { slug: 'shore',      title: 'Shore Cottage',          town: 'Rockcliffe',         street: 'The Merse',       postcode: 'DG5 4QG', price: 210, guests: 6, kw: 'coastal cottage',     pick: 0, amenities: ['Hot tub', 'Waterfront', 'Beach access', 'Wifi', 'Kitchen'] },
+    { slug: 'kirkbrae',   title: 'Kirkbrae Cottage',       town: 'Wigtown',            street: 'North Main St',   postcode: 'DG8 9HN', price: 110, guests: 3, kw: 'cottage exterior', pick: 0, amenities: ['Pets allowed', 'Wifi', 'Dedicated workspace', 'Kitchen', 'Heating'] },
+    { slug: 'steading',   title: 'The Old Steading',       town: 'Dalbeattie',         street: 'Buittle',         postcode: 'DG7 1NQ', price: 165, guests: 5, kw: 'farmhouse',          pick: 0, amenities: ['Hot tub', 'Pets allowed', 'Free parking on premises', 'Wifi', 'EV charger'] },
 ];
 
 const UA = { 'User-Agent': 'gg-demo-seed/1.0 (test data seeding)' };
@@ -167,7 +170,7 @@ async function run() {
             approx_latitude: undefined, approx_longitude: undefined,
             host_id: tmpl.host_id,
             title: c.title, location: c.town, street_address: c.street, postcode: c.postcode,
-            price_per_night: c.price, max_guests: c.guests,
+            price_per_night: c.price, max_guests: c.guests, amenities: c.amenities,
             status: 'published', images: [key], ical_token: crypto.randomUUID(),
             // No fabricated ratings — a fresh listing reads "New".
             rating_avg: null, rating_count: 0,
