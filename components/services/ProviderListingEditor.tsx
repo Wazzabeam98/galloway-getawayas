@@ -40,7 +40,7 @@ export interface EditorProvider {
     min_age: number | null; activity_level: string; what_to_bring: string;
     dietary_options: string[];
     areas: string[];
-    items: Array<{ id: string; name: string; description: string; price: number; unit: string; image: string | null; duration_minutes: number | null; active: boolean }>;
+    items: Array<{ id: string; name: string; description: string; price: number; unit: string; image: string | null; duration_minutes: number | null; fulfilment: string | null; active: boolean }>;
     availability: Array<{ day_of_week: number; open_time: string; close_time: string }>;
 }
 
@@ -171,10 +171,11 @@ export default function ProviderListingEditor({ provider }: { provider: EditorPr
     // The menu. Each row edits in place; prices are strings while typing. New rows
     // have no id (the save route inserts them); removed rows drop out (the route
     // deletes them). ids are preserved so an item keeps its photo and bookings.
-    type MenuRow = { id?: string; name: string; description: string; price: string; unit: string; image: string | null; duration: string; active: boolean };
+    type MenuRow = { id?: string; name: string; description: string; price: string; unit: string; image: string | null; duration: string; fulfilment: string | null; active: boolean };
     const [menu, setMenu] = useState<MenuRow[]>(p.items.map((it) => ({
         id: it.id, name: it.name, description: it.description, price: String(it.price),
-        unit: it.unit, image: it.image, duration: it.duration_minutes != null ? String(it.duration_minutes) : '', active: it.active,
+        unit: it.unit, image: it.image, duration: it.duration_minutes != null ? String(it.duration_minutes) : '',
+        fulfilment: it.fulfilment, active: it.active,
     })));
     const setRow = (i: number, patch: Partial<MenuRow>) => setMenu(menu.map((r, j) => j === i ? { ...r, ...patch } : r));
 
@@ -436,7 +437,8 @@ export default function ProviderListingEditor({ provider }: { provider: EditorPr
                             onSave={() => run('menu', {
                                 items: menu.map((r) => ({
                                     id: r.id, name: r.name, description: r.description, price: r.price,
-                                    unit: r.unit, image: r.image, duration_minutes: r.duration, active: r.active,
+                                    unit: r.unit, image: r.image, duration_minutes: r.duration,
+                                    fulfilment: r.fulfilment, active: r.active,
                                 })),
                             })}>
                             {/* Last-priced-item guard: a listing with no active priced
@@ -454,19 +456,42 @@ export default function ProviderListingEditor({ provider }: { provider: EditorPr
                                         <div className="flex items-start gap-3">
                                             <div className="flex-1 space-y-3">
                                                 <input className={inputCls} placeholder="Name (e.g. 90-minute private sauna)" value={r.name} onChange={(e) => setRow(i, { name: e.target.value })} />
+                                                {/* Per-item location: only a slot provider who offers BOTH
+                                                    sets it — this item at their place, or travelled to the
+                                                    guest. A travelled item is a private whole-cottage hire,
+                                                    so its price is per whole session (not per person). */}
+                                                {p.isSlot && fulfilment === 'both' && (
+                                                    <div>
+                                                        <span className="block text-xs font-semibold uppercase tracking-wide text-slate-500">This one happens</span>
+                                                        <div className="mt-1 flex gap-2">
+                                                            <button type="button" onClick={() => setRow(i, { fulfilment: 'collection' })}
+                                                                className={`rounded-xl border px-3 py-2 text-sm transition ${(r.fulfilment || 'collection') === 'collection' ? 'border-emerald-700 bg-emerald-50 text-slate-900' : 'border-slate-300 text-slate-700 hover:border-slate-400'}`}>
+                                                                At my place
+                                                            </button>
+                                                            <button type="button" onClick={() => setRow(i, { fulfilment: 'delivery', unit: 'flat' })}
+                                                                className={`rounded-xl border px-3 py-2 text-sm transition ${r.fulfilment === 'delivery' ? 'border-emerald-700 bg-emerald-50 text-slate-900' : 'border-slate-300 text-slate-700 hover:border-slate-400'}`}>
+                                                                I travel to them
+                                                            </button>
+                                                        </div>
+                                                    </div>
+                                                )}
                                                 <div className="flex flex-wrap gap-3">
                                                     <label className="flex items-center gap-1 text-sm">
                                                         <span className="text-slate-500">£</span>
                                                         <input className="w-24 rounded-xl border border-slate-300 p-2.5 text-sm" type="number" min={0} step="0.01" value={r.price} onChange={(e) => setRow(i, { price: e.target.value })} />
                                                     </label>
-                                                    <select className="rounded-xl border border-slate-300 p-2.5 text-sm" value={r.unit} onChange={(e) => setRow(i, { unit: e.target.value })}>
-                                                        <option value="flat">whole session</option>
-                                                        <option value="person">per person</option>
-                                                        {!p.isSlot && <option value="hour">per hour</option>}
-                                                        {!p.isSlot && <option value="night">per night</option>}
-                                                        {!p.isSlot && <option value="ticket">per ticket</option>}
-                                                        {!p.isSlot && <option value="item">per item</option>}
-                                                    </select>
+                                                    {p.isSlot && fulfilment === 'both' && r.fulfilment === 'delivery' ? (
+                                                        <span className="flex items-center rounded-xl border border-slate-200 bg-slate-50 px-3 py-2.5 text-sm text-slate-500">Whole session — private, you travel</span>
+                                                    ) : (
+                                                        <select className="rounded-xl border border-slate-300 p-2.5 text-sm" value={r.unit} onChange={(e) => setRow(i, { unit: e.target.value })}>
+                                                            <option value="flat">whole session</option>
+                                                            <option value="person">per person</option>
+                                                            {!p.isSlot && <option value="hour">per hour</option>}
+                                                            {!p.isSlot && <option value="night">per night</option>}
+                                                            {!p.isSlot && <option value="ticket">per ticket</option>}
+                                                            {!p.isSlot && <option value="item">per item</option>}
+                                                        </select>
+                                                    )}
                                                     {p.isSlot && (
                                                         <label className="flex items-center gap-1 text-sm text-slate-500">
                                                             <input className="w-20 rounded-xl border border-slate-300 p-2.5 text-sm" type="number" min={1} placeholder="mins" value={r.duration} onChange={(e) => setRow(i, { duration: e.target.value })} />
@@ -499,7 +524,7 @@ export default function ProviderListingEditor({ provider }: { provider: EditorPr
                                     </div>
                                 ))}
                             </div>
-                            <button type="button" onClick={() => setMenu([...menu, { name: '', description: '', price: '', unit: p.isSlot ? 'flat' : 'flat', image: null, duration: '', active: true }])}
+                            <button type="button" onClick={() => setMenu([...menu, { name: '', description: '', price: '', unit: 'flat', image: null, duration: '', fulfilment: (p.isSlot && fulfilment === 'both') ? 'collection' : null, active: true }])}
                                 className="text-sm font-semibold text-emerald-700 hover:text-emerald-800">+ Add an item</button>
                         </SectionCard>
                     )}

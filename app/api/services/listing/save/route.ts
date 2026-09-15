@@ -25,7 +25,7 @@ export const dynamic = 'force-dynamic';
 async function ownGuestProvider(admin: any, providerId: string, userId: string) {
     const { data: p } = await admin
         .from('service_providers')
-        .select('id, owner_id, trade, audience, guest_details')
+        .select('id, owner_id, trade, audience, guest_details, shape, fulfilment')
         .eq('id', providerId)
         .maybeSingle();
     if (!p || p.owner_id !== userId) return null;
@@ -187,17 +187,29 @@ export async function POST(request: Request) {
                 const existingIds = new Set((existing || []).map((r: any) => r.id));
                 const keep = new Set<string>();
                 const nowIso = new Date().toISOString();
+                // Per-item location only exists for a slot provider who offers BOTH
+                // (studio and travelled). Each item is then 'collection' (at their
+                // place) or 'delivery' (travels to the guest); everyone else's items
+                // inherit (null). A travelling item is a private, whole-cottage hire,
+                // so its unit is forced to 'flat' — the same rule the wizard applies.
+                const perItemLocation = p.shape === 'slot' && p.fulfilment === 'both';
                 for (let i = 0; i < incoming.length; i++) {
                     const it = incoming[i];
                     const name = String(it.name || '').trim();
                     const price = Number(it.price);
                     if (!name || !(price > 0)) continue; // a blank / priceless row
+                    const itemFulfilment = perItemLocation
+                        ? (String(it.fulfilment) === 'delivery' ? 'delivery' : 'collection')
+                        : null;
+                    const unit = (perItemLocation && itemFulfilment === 'delivery')
+                        ? 'flat' : String(it.unit || 'flat');
                     const row: any = {
                         name, description: strOrNull(it.description), price,
-                        unit: String(it.unit || 'flat'),
+                        unit,
                         image: strOrNull(it.image),
                         duration_minutes: (it.duration_minutes == null || it.duration_minutes === '')
                             ? null : Math.max(1, Math.floor(Number(it.duration_minutes))),
+                        fulfilment: itemFulfilment,
                         active: it.active !== false,
                         sort_order: i, updated_at: nowIso,
                     };
