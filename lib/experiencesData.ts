@@ -62,8 +62,29 @@ export interface MpProvider {
     // guest_details jsonb. Shown as chips; the note carries the caveats.
     dietary_options: string[];
     // The person's professional title ("Chef and restaurant owner"), from
-    // guest_details jsonb — shown beneath the title (which is now their name).
+    // guest_details jsonb. For a guest provider this is ALSO their Title —
+    // business_name is written from the same field at sign-up — so it is already
+    // the h1. Kept here only so a legacy row whose business_name diverged can be
+    // reconciled; the listing does NOT render it a second time beneath the h1.
     professional_title: string | null;
+    // The person, in their own words — the credibility layer collected at sign-up
+    // and, until now, never shown. All from guest_details jsonb; all guest-safe by
+    // design (a qualification is; a surname is not, and none of these carry one).
+    //   qualifications  — training/certificates ("required" for the safety four)
+    //   recognition     — endorsements, a press mention (always optional)
+    //   yearsExperience — the bare years number, as they typed it ("30")
+    qualifications: string | null;
+    recognition: string | null;
+    yearsExperience: string | null;
+    // The largest group a non-slot provider will take (guest_details.max_guests),
+    // for a "Good to know" line. A slot sizes seats from slot_capacity instead, so
+    // this is null there. Null when they never answered.
+    maxGuests: number | null;
+    // The provider's own gallery — the dedicated "show guests what it looks like"
+    // photos step (service_providers.photos), which the listing leads on. These
+    // are the hero shots; item images supplement them. Storage keys resolved to
+    // URLs. Empty for a legacy row that predates the photos step.
+    photos: string[];
     // The provider's own walk-through of the experience, from guest_details jsonb.
     // Displayed on the experience page; null when they didn't write one.
     what_happens: string | null;
@@ -133,6 +154,21 @@ export interface Marketplace {
 
 function staySpan(b: any) { return { check_in: b.check_in, check_out: b.check_out, guests: Math.max(1, Number(b.guests) || 1) }; }
 
+// A guest_details value that a provider typed in a free-text field — trimmed, or
+// null when they left it blank (an empty string reads as "present" to the page
+// and would render an empty heading). Numbers (years, entered as text) are
+// stringified so "30" and 30 both survive.
+function strOrNull(v: any): string | null {
+    if (v == null) return null;
+    const s = String(v).trim();
+    return s.length ? s : null;
+}
+// A positive integer from a text field (max_guests), or null. 0/blank/garbage → null.
+function intOrNull(v: any): number | null {
+    const n = Math.floor(Number(v));
+    return Number.isFinite(n) && n > 0 ? n : null;
+}
+
 // yyyy-mm-dd of the last night (check_out is the morning they leave).
 function lastNightKey(checkOut: string): string {
     return shiftDayKey(String(checkOut).slice(0, 10), -1);
@@ -164,7 +200,7 @@ export async function loadMarketplace(
 
     const { data: rows } = await admin
         .from('service_providers')
-        .select('id, owner_id, business_name, provider_name, based_line, headshot, trade, custom_label, stripe_mcc, description, status, stripe_payouts_enabled, shape, slot_length_minutes, slot_turnaround_minutes, slot_capacity, slot_min_people, cancellation_window_hours, lead_time_days, dietary_note, guest_details, fulfilment')
+        .select('id, owner_id, business_name, provider_name, based_line, headshot, photos, trade, custom_label, stripe_mcc, description, status, stripe_payouts_enabled, shape, slot_length_minutes, slot_turnaround_minutes, slot_capacity, slot_min_people, cancellation_window_hours, lead_time_days, dietary_note, guest_details, fulfilment')
         .eq('audience', 'guest').eq('status', 'approved').eq('stripe_payouts_enabled', true);
 
     const ids = (rows || []).map((r: any) => r.id);
@@ -279,6 +315,11 @@ export async function loadMarketplace(
             dietary_note: p.dietary_note || null,
             dietary_options: knownDietaryOptions((p.guest_details && Array.isArray(p.guest_details.dietary_options)) ? p.guest_details.dietary_options : []),
             professional_title: (p.guest_details && p.guest_details.professional_title) || null,
+            qualifications: (p.guest_details && strOrNull(p.guest_details.qualifications)) || null,
+            recognition: (p.guest_details && strOrNull(p.guest_details.recognition)) || null,
+            yearsExperience: (p.guest_details && strOrNull(p.guest_details.years_experience)) || null,
+            maxGuests: shape === 'slot' ? null : intOrNull(p.guest_details && p.guest_details.max_guests),
+            photos: Array.isArray(p.photos) ? p.photos.filter(Boolean).map((k: string) => getImageUrl(k)) : [],
             what_happens: (p.guest_details && p.guest_details.what_to_expect) || null,
             description: p.description,
             shape,

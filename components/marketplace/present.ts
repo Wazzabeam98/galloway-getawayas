@@ -34,6 +34,55 @@ export function itemPriceLabel(price: number, unit: string): string {
     return money + (UNIT_SUFFIX[unit] || '');
 }
 
+/** A length in minutes as a guest reads it: "45 min", "1 hr", "1 hr 30 min",
+ *  "2 hr". Null/0/negative → null, so a caller renders nothing rather than "0 min". */
+export function durationLabel(minutes: number | null | undefined): string | null {
+    const m = Math.round(Number(minutes) || 0);
+    if (m <= 0) return null;
+    const h = Math.floor(m / 60);
+    const mm = m % 60;
+    if (h === 0) return mm + ' min';
+    if (mm === 0) return h + ' hr';
+    return h + ' hr ' + mm + ' min';
+}
+
+/**
+ * The one duration line for the header highlight, read across a provider's
+ * offerings: a single length shows plainly ("45 min"); a spread shows the range
+ * ("30 min – 1 hr 30 min"). Timed items (a massage's per-treatment lengths) win;
+ * an untimed slot provider falls back to its single session length. Null when
+ * nothing carries a length (a chef, a made-to-order baker) — the row disappears.
+ */
+export function durationSummary(p: MpProvider): string | null {
+    const perItem = (p.items || [])
+        .map((i) => Math.round(Number(i.duration_minutes) || 0))
+        .filter((n) => n > 0);
+    const mins = perItem.length ? perItem : (p.slotLength > 0 ? [p.slotLength] : []);
+    if (!mins.length) return null;
+    const lo = Math.min(...mins), hi = Math.max(...mins);
+    return lo === hi ? durationLabel(lo) : durationLabel(lo) + ' – ' + durationLabel(hi);
+}
+
+/** "30 years' experience" from the bare years a provider typed. Tolerant of a
+ *  non-numeric answer ("since 2010") — that is shown as-is with no suffix. Null
+ *  when blank. */
+export function yearsLabel(years: string | null | undefined): string | null {
+    const s = (years || '').trim();
+    if (!s) return null;
+    const n = parseInt(s, 10);
+    if (String(n) === s && n > 0) return n + (n === 1 ? " year's experience" : " years' experience");
+    return s; // free-text answer — show their own words
+}
+
+/** "Up to 8 guests" — a non-slot provider's largest group, for Good to know.
+ *  Null when unknown or nonsensical. */
+export function groupSizeLabel(maxGuests: number | null | undefined): string | null {
+    const n = Math.floor(Number(maxGuests) || 0);
+    if (n <= 0) return null;
+    if (n === 1) return 'One guest at a time';
+    return 'Up to ' + n + ' guests';
+}
+
 /** The full "per person / per night" phrase for prose. Empty for flat. */
 export function unitPhrase(unit: string): string {
     const map: Record<string, string> = {

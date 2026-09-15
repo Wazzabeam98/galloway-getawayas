@@ -11,6 +11,7 @@ import {
 } from '@/lib/serviceSlots';
 import { itemPriceLabel, unitPhrase, dateLabel, timeLabel } from '@/components/marketplace/present';
 import { londonDayKey, shiftDayKey } from '@/lib/dayKey';
+import { CalendarDays } from 'lucide-react';
 
 interface PanelItem {
     id: string; name: string; description: string | null; price: number; unit: string; image: string | null;
@@ -254,9 +255,18 @@ export default function BookingPanel({ bookingId, checkIn, checkOut, cottageGues
                 ) : null}
             </div>
 
+            {/* Reached from inside a cottage booking with the dates already known,
+                so the box states the stay it books against rather than asking a
+                guest to pick dates from scratch. The picker below is bounded to
+                these nights; this line is why. */}
+            <p className="mt-1 flex items-center gap-1.5 text-sm text-slate-500">
+                <CalendarDays className="h-4 w-4 flex-none text-slate-400" aria-hidden />
+                <span>For your stay · {dateLabel(checkIn.slice(0, 10))} – {dateLabel(maxDate)}</span>
+            </p>
+
             {/* How it books — a badge, so instant and 48-hour-hold don't rely on
                 one line of small print above the button to tell them apart. */}
-            <div className="mt-2">
+            <div className="mt-3">
                 {isSlot ? (
                     <span className="inline-flex items-center rounded-full bg-emerald-50 px-2.5 py-0.5 text-xs font-semibold text-emerald-800">
                         Instant book — confirmed straight away
