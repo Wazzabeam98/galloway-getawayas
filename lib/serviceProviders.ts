@@ -322,6 +322,17 @@ export function guestQualificationsRequired(category: string | null | undefined)
     return GUEST_QUALS_REQUIRED.indexOf(String(category || '')) !== -1;
 }
 
+// Whether this category needs the booking-shape question asked in the flow. Every
+// real sub-type declares its shape, so the question is answered by the sub-type
+// pick and never shown. "Something else" (and any future category with a null
+// shape) declares none, so it must be ASKED — otherwise shape falls to a default
+// nobody chose (made_to_order at submit) while the location screen reads as a
+// traveller. Keyed off the declared shape being null, not a hand-coded key.
+export function guestNeedsShapeChoice(category: string | null | undefined): boolean {
+    const c = guestCategoryByKey(category);
+    return !!c && (c.shape === null || c.shape === undefined);
+}
+
 // Whether the years field must be filled in before Next. The four, plus the
 // private chef.
 export function guestYearsRequired(category: string | null | undefined): boolean {

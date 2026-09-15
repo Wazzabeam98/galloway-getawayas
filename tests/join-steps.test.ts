@@ -791,15 +791,20 @@ test('years and qualifications are required only where physical safety is at sta
     assert.equal(guestAsksExpertise('sauna'), false, 'sauna skips the years and expertise screens');
 });
 
-test('the something-else group skips the sub-type screen', () => {
-    // 'other' is alone under its group, so there is no screen two to show.
+test('the something-else group skips the sub-type screen but is asked its shape', () => {
+    // 'other' is alone under its group, so there is no sub-type screen to show —
+    // and because it declares no shape, it never answered the booking shape a
+    // sub-type pick settles for every other category. So it is asked g_shape
+    // instead, before the location step (which reads the shape it sets).
     const ctx = { group: 'other', category: 'other', shape: null };
     assert.equal(stepApplies('g_subtype', 'guest', ctx), false, 'other has no sub-type');
-    // The ten minus the sub-type screen — the verify gate still leads, then
-    // the picker, then straight into the content.
+    assert.equal(stepApplies('g_shape', 'guest', ctx), true, 'other is asked its booking shape');
+    // A real category, whose shape came from its sub-type, is never asked g_shape.
+    assert.equal(stepApplies('g_shape', 'guest', { group: 'wellness', category: 'sauna', shape: 'slot' }), false, 'a real category already has a shape');
+    // g_shape sits between About-you and the location step.
     assert.deepEqual(
         gkeys(ctx),
-        ['g_verify', 'trade', 'g_you', 'g_creds', 'g_area', 'g_photos', 'g_menu', 'g_expect', 'finish'],
+        ['g_verify', 'trade', 'g_you', 'g_creds', 'g_shape', 'g_area', 'g_photos', 'g_menu', 'g_expect', 'finish'],
     );
 });
 
