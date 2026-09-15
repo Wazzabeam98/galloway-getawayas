@@ -58,18 +58,27 @@ export default async function HostReservations() {
     today.setHours(0, 0, 0, 0);
     const todayKey = londonDayKey();
 
-    // Arrivals still to come, so this counts down to a check-in rather than
-    // sitting on a stay that is already under way.
+    // Any stay not yet ended — a guest under the roof today AND arrivals still
+    // to come. `check_out >= today` keeps a current stay in (it was dropped
+    // before, which hid the guest actually here now); ordering by check_in
+    // ascending puts those current stays first, so the block leads with who is
+    // here before who is coming.
     const { data: bookings } = await admin
         .from('bookings')
         .select('id, listing_id, guest_id, check_in, check_out, status, payment_status, guests, total_price, commission_rate, amount_paid, amount_refunded, balance_due_date')
         .in('listing_id', allowed)
         .in('status', ['confirmed', 'pending'])
-        .gte('check_in', todayKey)
+        .gte('check_out', todayKey)
         .order('check_in', { ascending: true })
-        .limit(4);
+        .limit(8);
 
     if (!bookings || bookings.length === 0) return null;
+
+    // Split at today: a stay that began before today is under way ("Staying
+    // now"); one beginning today or later is an arrival that counts down. The
+    // query already ordered check_in ascending, so `staying` comes first.
+    const staying = (bookings || []).filter((b) => String(b.check_in).slice(0, 10) < todayKey);
+    const arriving = (bookings || []).filter((b) => String(b.check_in).slice(0, 10) >= todayKey);
 
     const listingIds = Array.from(new Set(bookings.map((b) => b.listing_id)));
     const guestIds = Array.from(new Set(bookings.map((b) => b.guest_id)));
@@ -123,19 +132,7 @@ export default async function HostReservations() {
         unreadMap[m.booking_id] = (unreadMap[m.booking_id] || 0) + 1;
     });
 
-    return (
-        <section className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 pt-14">
-            <div className="mb-6 border-b border-stone-200 pb-4">
-                <h2 className="text-2xl md:text-3xl font-bold text-stone-900">
-                    {bookings.length === 1 ? 'Your next reservation' : 'Your next reservations'}
-                </h2>
-                <p className="text-stone-600 text-sm md:text-base mt-1">
-                    Who is arriving, and when
-                </p>
-            </div>
-
-            <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-                {bookings.map((booking) => {
+    const renderCard = (booking: any, phase: 'now' | 'arriving') => {
                     const listing = listingMap[booking.listing_id];
                     if (!listing) return null;
 
@@ -147,19 +144,29 @@ export default async function HostReservations() {
                     const days = Math.round((checkIn.getTime() - today.getTime()) / 86400000);
                     const nights = Math.round((checkOut.getTime() - checkIn.getTime()) / 86400000);
 
-                    // The countdown to check-in is the reason a host looks at
-                    // this, so it gets the room. Everything else is detail.
+                    // A current guest leads with the fact that they're here; an
+                    // arrival counts down to check-in — the reason a host looks
+                    // at each. Everything else is detail.
+                    const nightsLeft = Math.max(0, Math.round((checkOut.getTime() - today.getTime()) / 86400000));
                     const headline =
-                        days === 0
-                            ? 'Arriving today'
-                            : days === 1
-                                ? 'Arriving tomorrow'
-                                : days + ' days to go';
+                        phase === 'now'
+                            ? 'Staying now'
+                            : days === 0
+                                ? 'Arriving today'
+                                : days === 1
+                                    ? 'Arriving tomorrow'
+                                    : days + ' days to go';
 
                     // "96 days to go" on its own sends you off to a calendar
                     // to work out what day that actually is. Said beside it,
-                    // it doesn't.
+                    // it doesn't. For a current guest the useful date is when
+                    // they leave.
                     const arrivalShort = checkIn.toLocaleDateString('en-GB', {
+                        weekday: 'short',
+                        day: 'numeric',
+                        month: 'short',
+                    });
+                    const departShort = checkOut.toLocaleDateString('en-GB', {
                         weekday: 'short',
                         day: 'numeric',
                         month: 'short',
@@ -269,11 +276,15 @@ export default async function HostReservations() {
 
                                 <div className="mt-6 text-3xl md:text-4xl font-bold text-stone-900 tracking-tight">
                                     {headline}
-                                    {days > 1 && (
+                                    {phase === 'now' ? (
+                                        <span className="block text-base font-normal text-stone-500 mt-1 tracking-normal">
+                                            {nightsLeft === 0 ? 'Leaves today' : nightsLeft + (nightsLeft === 1 ? ' night' : ' nights') + ' left · leaves ' + departShort}
+                                        </span>
+                                    ) : days > 1 ? (
                                         <span className="block text-base font-normal text-stone-500 mt-1 tracking-normal">
                                             {arrivalShort}
                                         </span>
-                                    )}
+                                    ) : null}
                                 </div>
 
                                 <div className="mt-5 pt-5 border-t border-stone-100 text-stone-700">
@@ -444,9 +455,37 @@ export default async function HostReservations() {
                                 )}
                             </div>
                         </div>
-                    );
-                })}
+        );
+    };
+
+    const groupHeading = 'text-xs font-semibold uppercase tracking-wide text-stone-500 mb-3';
+
+    return (
+        <section className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 pt-14">
+            <div className="mb-6 border-b border-stone-200 pb-4">
+                <h2 className="text-2xl md:text-3xl font-bold text-stone-900">Your guests</h2>
+                <p className="text-stone-600 text-sm md:text-base mt-1">
+                    Who&apos;s here now, and who&apos;s arriving next
+                </p>
             </div>
+
+            {staying.length > 0 && (
+                <div className="mb-10">
+                    <h3 className={groupHeading}>Staying now</h3>
+                    <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+                        {staying.map((b) => renderCard(b, 'now'))}
+                    </div>
+                </div>
+            )}
+
+            {arriving.length > 0 && (
+                <div>
+                    {staying.length > 0 && <h3 className={groupHeading}>Arriving next</h3>}
+                    <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+                        {arriving.map((b) => renderCard(b, 'arriving'))}
+                    </div>
+                </div>
+            )}
         </section>
     );
 }
