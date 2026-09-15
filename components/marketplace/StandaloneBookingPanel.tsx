@@ -72,63 +72,67 @@ export default function StandaloneBookingPanel({ provider, signedIn, signInNext 
                 Instant book — confirmed straight away
             </span>
 
-            {!signedIn ? (
-                <div className="mt-4">
-                    <p className="text-sm text-slate-600">Booking needs an account — it&apos;s how {provider.who} reaches you and how your booking is kept. Browsing is free.</p>
-                    <div className="mt-3"><LoginModel next={signInNext} /></div>
-                    <p className="mt-2 text-xs text-slate-400">Sign in or create an account to book.</p>
-                </div>
-            ) : (
-                <div className="mt-4">
-                    {provider.items.length > 1 && (
-                        <fieldset className="mb-4">
-                            <legend className="text-xs font-semibold uppercase tracking-wide text-slate-500">Choose</legend>
-                            <div className="mt-2 space-y-1.5">
-                                {provider.items.map((it) => (
-                                    <label key={it.id} className={`flex cursor-pointer items-center gap-3 rounded-lg border p-2.5 ${itemId === it.id ? 'border-emerald-600 bg-emerald-50/60' : 'border-slate-200 hover:border-slate-300'}`}>
-                                        <input type="radio" name="item" checked={itemId === it.id} onChange={() => { setItemId(it.id); setTime(''); }} className="accent-emerald-600" />
-                                        <span className="min-w-0 flex-1 truncate text-sm font-medium text-slate-800">{it.name}</span>
-                                        <span className="whitespace-nowrap text-sm font-semibold text-slate-900">{itemPriceLabel(it.price, it.unit)}</span>
-                                    </label>
-                                ))}
-                            </div>
-                        </fieldset>
-                    )}
+            {/* Availability is public — a logged-out visitor sees the days, times
+                and spots left, the same as Airbnb. Only the booking form and
+                button below are gated behind sign-in. */}
+            <div className="mt-4">
+                {provider.items.length > 1 && (
+                    <fieldset className="mb-4">
+                        <legend className="text-xs font-semibold uppercase tracking-wide text-slate-500">Choose</legend>
+                        <div className="mt-2 space-y-1.5">
+                            {provider.items.map((it) => (
+                                <label key={it.id} className={`flex cursor-pointer items-center gap-3 rounded-lg border p-2.5 ${itemId === it.id ? 'border-emerald-600 bg-emerald-50/60' : 'border-slate-200 hover:border-slate-300'}`}>
+                                    <input type="radio" name="item" checked={itemId === it.id} onChange={() => { setItemId(it.id); setTime(''); }} className="accent-emerald-600" />
+                                    <span className="min-w-0 flex-1 truncate text-sm font-medium text-slate-800">{it.name}</span>
+                                    <span className="whitespace-nowrap text-sm font-semibold text-slate-900">{itemPriceLabel(it.price, it.unit)}</span>
+                                </label>
+                            ))}
+                        </div>
+                    </fieldset>
+                )}
 
-                    {days.length === 0 ? (
-                        <p className="text-sm text-slate-500">No times available just now — check back soon.</p>
-                    ) : (
-                        <>
-                            <div className="text-xs font-semibold uppercase tracking-wide text-slate-500">Pick a day</div>
-                            <div className="mt-2 flex gap-1.5 overflow-x-auto pb-1">
-                                {days.map((d) => (
-                                    <button key={d} type="button" onClick={() => { setDate(d); setTime(''); }}
-                                        className={`whitespace-nowrap rounded-lg border px-3 py-2 text-sm font-medium ${date === d ? 'border-emerald-600 bg-emerald-50 text-emerald-800' : 'border-slate-200 text-slate-700 hover:border-slate-300'}`}>
-                                        {dateLabel(d)}
-                                    </button>
-                                ))}
-                            </div>
+                {days.length === 0 ? (
+                    <p className="text-sm text-slate-500">No times available just now — check back soon.</p>
+                ) : (
+                    <>
+                        <div className="text-xs font-semibold uppercase tracking-wide text-slate-500">Pick a day</div>
+                        <div className="mt-2 flex gap-1.5 overflow-x-auto pb-1">
+                            {days.map((d) => (
+                                <button key={d} type="button" onClick={() => { setDate(d); setTime(''); }}
+                                    className={`whitespace-nowrap rounded-lg border px-3 py-2 text-sm font-medium ${date === d ? 'border-emerald-600 bg-emerald-50 text-emerald-800' : 'border-slate-200 text-slate-700 hover:border-slate-300'}`}>
+                                    {dateLabel(d)}
+                                </button>
+                            ))}
+                        </div>
 
-                            {date && (
-                                <>
-                                    <div className="mt-3 text-xs font-semibold uppercase tracking-wide text-slate-500">Pick a time</div>
-                                    <div className="mt-1.5 flex flex-wrap gap-1.5">
-                                        {times.map((s) => {
-                                            const a = item ? optionAvailability(s.row, item.unit, { slot_capacity: provider.slotCapacity, slot_min_people: provider.minPeople }) : null;
-                                            const left = a && s.row && bookingIsPrivate(item!.unit) === false && a.possible ? a.seatsLeft : null;
-                                            return (
-                                                <button key={s.time} type="button" onClick={() => setTime(s.time)}
-                                                    className={`rounded-lg border px-3 py-1.5 text-sm ${time === s.time ? 'border-emerald-600 bg-emerald-50 text-emerald-800' : 'border-slate-200 text-slate-700 hover:border-slate-300'}`}>
-                                                    {timeLabel(s.time)}{left != null && left <= 3 ? ` · ${left} left` : ''}
-                                                </button>
-                                            );
-                                        })}
-                                    </div>
-                                </>
-                            )}
-                        </>
-                    )}
+                        {date && (
+                            <>
+                                <div className="mt-3 text-xs font-semibold uppercase tracking-wide text-slate-500">Pick a time</div>
+                                <div className="mt-1.5 flex flex-wrap gap-1.5">
+                                    {times.map((s) => {
+                                        const a = item ? optionAvailability(s.row, item.unit, { slot_capacity: provider.slotCapacity, slot_min_people: provider.minPeople }) : null;
+                                        const left = a && s.row && bookingIsPrivate(item!.unit) === false && a.possible ? a.seatsLeft : null;
+                                        return (
+                                            <button key={s.time} type="button" onClick={() => setTime(s.time)}
+                                                className={`rounded-lg border px-3 py-1.5 text-sm ${time === s.time ? 'border-emerald-600 bg-emerald-50 text-emerald-800' : 'border-slate-200 text-slate-700 hover:border-slate-300'}`}>
+                                                {timeLabel(s.time)}{left != null && left <= 3 ? ` · ${left} left` : ''}
+                                            </button>
+                                        );
+                                    })}
+                                </div>
+                            </>
+                        )}
+                    </>
+                )}
 
+                {!signedIn ? (
+                    <div className="mt-5 border-t border-slate-100 pt-4">
+                        <p className="text-sm text-slate-600">Booking needs an account — it&apos;s how {provider.who} reaches you and how your booking is kept. Browsing and checking times is free.</p>
+                        <div className="mt-3"><LoginModel next={signInNext} /></div>
+                        <p className="mt-2 text-xs text-slate-400">Sign in or create an account to book.</p>
+                    </div>
+                ) : (
+                <>
                     {item && perPerson && (
                         <label className="mt-4 block">
                             <span className="text-xs font-semibold uppercase tracking-wide text-slate-500">How many people</span>
@@ -161,8 +165,9 @@ export default function StandaloneBookingPanel({ provider, signedIn, signInNext 
                         {busy ? 'Starting…' : 'Book'}
                     </button>
                     <p className="mt-2 text-xs text-slate-400">Paid now, confirmed straight away. Galloway Getaways takes the payment on {provider.who}&apos;s behalf and is not the provider.</p>
-                </div>
-            )}
+                </>
+                )}
+            </div>
         </div>
     );
 }

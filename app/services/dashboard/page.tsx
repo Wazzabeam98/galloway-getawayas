@@ -126,12 +126,20 @@ export default async function ProviderDashboardPage() {
                             {tradeLabel(provider.trade)} · guest experiences
                         </p>
                     </div>
-                    <Link
-                        href={`/services/join?trade=${provider.trade}`}
-                        className="rounded-full border border-slate-300 px-4 py-2 text-sm font-semibold text-slate-700 hover:border-slate-500"
-                    >
-                        Edit your listing
-                    </Link>
+                    <div className="flex flex-wrap gap-2">
+                        <Link
+                            href="/services/dashboard/details"
+                            className="rounded-full border border-slate-300 px-4 py-2 text-sm font-semibold text-slate-700 hover:border-slate-500"
+                        >
+                            Things to know
+                        </Link>
+                        <Link
+                            href={`/services/join?trade=${provider.trade}`}
+                            className="rounded-full border border-slate-300 px-4 py-2 text-sm font-semibold text-slate-700 hover:border-slate-500"
+                        >
+                            Edit your listing
+                        </Link>
+                    </div>
                 </div>
 
                 {/* Two homes by shape: a slot provider gets a DIARY (a booked

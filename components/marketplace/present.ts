@@ -28,10 +28,47 @@ export function coverageLabel(p: MpProvider): string | null {
     return a.slice(0, -1).join(', ') + ' & ' + a[a.length - 1];
 }
 
+/**
+ * Coverage as a guest should read it — a radius as a radius, not a place.
+ * A label like "Kirkcudbright and 25 miles" becomes "Within 25 miles of
+ * Kirkcudbright"; a named-region label ("The Stewartry", "A & B") passes
+ * through unchanged. Null when they cover nowhere.
+ */
+export function coverageDisplay(p: MpProvider): string | null {
+    const raw = coverageLabel(p);
+    if (!raw) return null;
+    const m = raw.match(/^(.+?)\s+and\s+(\d+(?:\.\d+)?)\s*miles?$/i);
+    if (m) return 'Within ' + Math.round(Number(m[2])) + ' miles of ' + m[1].trim();
+    return raw;
+}
+
+/**
+ * The pre-payment "where it happens" line — coverage, never the base town.
+ * A comes-to-you provider happens at the guest's own cottage, so it says so even
+ * with no coverage set (never a blank); a fixed-venue provider with no coverage
+ * has nothing safe to show before payment, so this returns null and the row is
+ * dropped rather than left empty.
+ */
+export function whereLine(p: MpProvider): string | null {
+    if (p.shape === 'comes_to_you' || p.fulfilment === 'delivery') return 'Comes to your cottage';
+    return coverageDisplay(p);
+}
+
 /** The per-item price as the guest reads it on a listing: "£30 pp", "£45". */
 export function itemPriceLabel(price: number, unit: string): string {
     const money = '£' + (Number.isInteger(price) ? String(price) : price.toFixed(2));
     return money + (UNIT_SUFFIX[unit] || '');
+}
+
+/** The activity level as a guest reads it, from the stored key. Null for an
+ *  unknown/blank value, so the row is dropped rather than shown empty. */
+export function activityLevelLabel(level: string | null | undefined): string | null {
+    const map: Record<string, string> = {
+        gentle: 'Gentle — suitable for most',
+        moderate: 'Moderate — some walking or standing',
+        challenging: 'Challenging — a good level of fitness needed',
+    };
+    return map[String(level || '').trim().toLowerCase()] || null;
 }
 
 /** A length in minutes as a guest reads it: "45 min", "1 hr", "1 hr 30 min",

@@ -92,6 +92,11 @@ export interface MpProvider {
     // experience mosaic is the same component, and the same craft, as a cottage
     // listing's). `photos` above stays resolved for the card hero.
     galleryKeys: string[];
+    // "Things to know", all optional, all guest_details jsonb keys — a provider
+    // fills what they like after approval and only those rows show.
+    minAge: number | null;
+    activityLevel: string | null; // 'gentle' | 'moderate' | 'challenging'
+    whatToBring: string | null;
     // The provider's own walk-through of the experience, from guest_details jsonb.
     // Displayed on the experience page; null when they didn't write one.
     what_happens: string | null;
@@ -377,6 +382,9 @@ async function shapeProviders(admin: any, fromKey: string, toKey: string): Promi
                 ...(itemsBy[p.id] || []).map((it: any) => it.image).filter(Boolean),
             ])) as string[],
             what_happens: (p.guest_details && p.guest_details.what_to_expect) || null,
+            minAge: intOrNull(p.guest_details && p.guest_details.min_age),
+            activityLevel: (p.guest_details && strOrNull(p.guest_details.activity_level)) || null,
+            whatToBring: (p.guest_details && strOrNull(p.guest_details.what_to_bring)) || null,
             description: p.description,
             shape,
             fulfilment: p.fulfilment || null,

@@ -252,11 +252,10 @@ export default async function HomePage({
             {mode === 'host' ? <HostReservations /> : <UpcomingTrip />}
 
             <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-16">
-                {/* Properties lead for a visitor or a guest with no live stay.
-                    A guest who already has a stay gets their trip and its
-                    experiences above instead — unless they're actively searching
-                    for a property, in which case the results still show. */}
-                {(searching || !bookedGuest) && (<>
+                {/* Properties show for everyone. A booked guest sees them BELOW
+                    their trip and its experiences (UpcomingTrip renders above),
+                    so the order reads trip → their experiences → properties;
+                    a visitor sees them first. */}
                 {/* Section Heading */}
                 <div className="mb-10 border-b border-stone-200 pb-4 flex flex-wrap items-end justify-between gap-3">
                     <div>
@@ -326,7 +325,6 @@ export default async function HomePage({
                     </div>
                     )) : null;
                 })()}
-                </>)}
 
                 {/* Experiences, alongside the properties. Below the grid so the
                     cottages lead, above the editorial so it reads as a second
