@@ -18,6 +18,15 @@ export interface PricingListing {
     extra_guest_period?: string | null;
 }
 
+// One night, priced, with the reason it cost what it did. `kind` is what a
+// guest reads to see why a night was dearer — the weekend rate, or a date the
+// host priced by hand — rather than taking the subtotal on trust.
+export interface NightRate {
+    date: string; // yyyy-mm-dd
+    rate: number;
+    kind: 'base' | 'weekend' | 'override';
+}
+
 export interface PriceQuote {
     nights: number;
     nightsSubtotal: number;
@@ -25,6 +34,12 @@ export interface PriceQuote {
     petFeeTotal: number;
     cleaningFeeTotal: number;
     total: number;
+    // The per-night series behind nightsSubtotal. Computed here so the one place
+    // that owns the arithmetic is also the one place that can be snapshotted:
+    // the checkout route freezes this onto the booking exactly as it freezes the
+    // cleaning fee and commission, and every later view reads the snapshot
+    // rather than recomputing against a calendar the host may have changed.
+    nightly: NightRate[];
 }
 
 function money(value: number): number {
@@ -63,21 +78,32 @@ export function nightlyRate(
     listing: PricingListing,
     overrides: Record<string, number>
 ): number {
+    return nightlyRateDetail(date, listing, overrides).rate;
+}
+
+// The same decision as nightlyRate, but keeping the reason. nightlyRate is left
+// as the thin wrapper so every existing caller is unchanged and the two can
+// never disagree about the number.
+export function nightlyRateDetail(
+    date: Date,
+    listing: PricingListing,
+    overrides: Record<string, number>
+): { rate: number; kind: NightRate['kind'] } {
     const key = dateKey(date);
     // Tested for presence, not truthiness: an override of 0 is a free night
     // somebody set deliberately, and `if (overrides[key])` silently charged
     // them the standard rate instead.
     const override = overrides ? overrides[key] : undefined;
     if (override !== undefined && override !== null && !isNaN(Number(override))) {
-        return Number(override);
+        return { rate: Number(override), kind: 'override' };
     }
 
     const day = date.getDay(); // 5 = Friday, 6 = Saturday
     if ((day === 5 || day === 6) && listing.weekend_price) {
-        return Number(listing.weekend_price);
+        return { rate: Number(listing.weekend_price), kind: 'weekend' };
     }
 
-    return Number(listing.price_per_night || 0);
+    return { rate: Number(listing.price_per_night || 0), kind: 'base' };
 }
 
 // The full breakdown for a stay. Guest counts follow the widget: the first
@@ -102,13 +128,17 @@ export function quoteBooking(
             petFeeTotal: 0,
             cleaningFeeTotal: 0,
             total: 0,
+            nightly: [],
         };
     }
 
     let nightsSubtotal = 0;
+    const nightly: NightRate[] = [];
     const cursor = new Date(checkIn.getFullYear(), checkIn.getMonth(), checkIn.getDate());
     for (let i = 0; i < nights; i++) {
-        nightsSubtotal += nightlyRate(cursor, listing, overrides);
+        const detail = nightlyRateDetail(cursor, listing, overrides);
+        nightsSubtotal += detail.rate;
+        nightly.push({ date: dateKey(cursor), rate: money(detail.rate), kind: detail.kind });
         cursor.setDate(cursor.getDate() + 1);
     }
 
@@ -136,6 +166,7 @@ export function quoteBooking(
         petFeeTotal: money(petFeeTotal),
         cleaningFeeTotal: money(cleaningFeeTotal),
         total: money(nightsSubtotal + extraGuestTotal + petFeeTotal + cleaningFeeTotal),
+        nightly: nightly,
     };
 }
 
