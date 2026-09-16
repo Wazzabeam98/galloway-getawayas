@@ -13,12 +13,16 @@ export default function ComingSoonBanner() {
         <div className="w-full border-b border-emerald-100 bg-emerald-50">
             <div className="mx-auto flex max-w-6xl items-center justify-between gap-3 px-4 py-2 sm:gap-4">
                 <p className="min-w-0 text-sm leading-snug text-emerald-950">
-                    <span className="mr-2 whitespace-nowrap rounded-full bg-emerald-100 px-2 py-0.5 text-[0.6875rem] font-semibold uppercase tracking-wide text-emerald-700">
+                    {/* Desktop: the "Coming soon" tag plus the full question. */}
+                    <span className="mr-2 hidden whitespace-nowrap rounded-full bg-emerald-100 px-2 py-0.5 text-[0.6875rem] font-semibold uppercase tracking-wide text-emerald-700 sm:inline-block">
                         Coming soon
                     </span>
-                    <span className="align-middle">
+                    <span className="hidden align-middle sm:inline">
                         Own a holiday let, or offer an experience or a service in Dumfries &amp; Galloway?
                     </span>
+                    {/* Mobile: a short phrase that carries "coming soon" itself, so it
+                        stays on one line beside the button. */}
+                    <span className="font-semibold sm:hidden">Hosts &amp; trades &mdash; coming soon</span>
                 </p>
                 <Link
                     href="/register-interest"
