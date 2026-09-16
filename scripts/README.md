@@ -368,6 +368,37 @@ node scripts/migrate.mjs <file> --apply --read "select ..."                # run
 node scripts/migrate.mjs --sql "select ..."                                # read-only query
 ```
 
+### A migration that adds a column to a guarded table
+
+`service_providers` and `profiles` are **column-grant** tables: whether a
+signed-in user may read or write each column is a decision recorded in two guard
+tests (`tests/select-grant-decision-guard.test.ts`,
+`tests/provider-writable-columns-guard.test.ts`). Those guards read the **live
+test database** and check it against that registry — and the test database is
+**shared across every branch**.
+
+So the moment you apply a migration that adds a column to one of those tables,
+the column is live on the shared DB but unclassified in the registry, and **master
+and every branch fail the guard** until it's classified. This is not a
+feature-branch problem — it breaks master's CI too.
+
+`migrate.mjs` catches this. The dry run and `--apply` both flag an unclassified
+guarded column, and it writes the classification for you:
+
+```
+node scripts/migrate.mjs <file> --write-registry --reason "why it is server-role only"
+```
+
+It reads the migration (touches no database), decides GRANTED vs REVOKED and
+PROVIDER_WRITABLE vs PLATFORM_ONLY from whether the migration grants the column to
+`authenticated`, and writes the entry into both guard tests. A server-role-only
+column needs `--reason` (the privacy decision, in writing — the guard fails on a
+blank one); a granted column needs none. **Commit those two guard tests to
+master** in the same change — they're test-only (no schema, no code, no prod
+footprint), and landing them on master is what keeps the shared-DB guard green for
+master and every branch. The feature's migration itself stays on the feature
+branch until it merges.
+
 Needs one line in `.env.local`, which is gitignored:
 
 ```

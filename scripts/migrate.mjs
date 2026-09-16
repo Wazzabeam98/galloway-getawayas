@@ -67,6 +67,7 @@ import { createRequire } from 'node:module';
 // .cjs for the same reason scripts/target.cjs is: the test suite is CommonJS
 // and on Node 20 CommonJS cannot require an ESM file.
 const { classify } = createRequire(import.meta.url)('./sqlRisk.cjs');
+const guarded = createRequire(import.meta.url)('./guardedColumns.cjs');
 
 // galloway-getaways-test. Production is hviwjxigqivjfhmhpjiy, named
 // supabase-pink-elephant, and is not this script's business.
@@ -99,7 +100,7 @@ const valueOf = (name) => {
 // The file is the one bare argument that is not the VALUE of a flag. Listing
 // the value-taking flags in one place, because adding a new one and forgetting
 // it here is how `--target prod` came to be treated as a filename.
-const VALUE_FLAGS = ['--sql', '--read', '--target', '--note', '--check'];
+const VALUE_FLAGS = ['--sql', '--read', '--target', '--note', '--check', '--reason'];
 const file = (() => {
     for (let i = 0; i < args.length; i++) {
         if (args[i].startsWith('--')) continue;
@@ -221,12 +222,63 @@ if (inlineSql && writes && !flag('apply')) {
     die('--sql is for reading. That query writes; put it in a migration file and use --apply.');
 }
 
+/* -------------------------------------------- guarded-column registry ----- */
+// The schema-drift guards read the LIVE test DB against master's registry, so a
+// migration that adds a column to a guarded table (service_providers / profiles)
+// makes master AND every branch fail the moment it's applied — until the column
+// is classified. Detect that here, and write the classification for the author.
+const guardedUnclassified = file ? guarded.unclassified(sql) : [];
+
+// --write-registry writes the classification stub into the two guard tests. It
+// touches no database — reads the migration, edits the tests, exits. The read is
+// GRANTED / write is PROVIDER_WRITABLE when THIS migration grants the column to
+// authenticated; otherwise the safe default (REVOKED / PLATFORM_ONLY), which
+// needs a --reason (the privacy decision, in writing).
+if (flag('write-registry')) {
+    if (!file) die('--write-registry needs a migration file to read the new columns from.');
+    if (!guardedUnclassified.length) {
+        console.log('\n  Every guarded column this migration adds is already classified. Nothing to write.\n');
+        process.exit(0);
+    }
+    const reason = valueOf('reason');
+    const needsReason = guardedUnclassified.some((c) => !c.selectGranted || (c.table === 'service_providers' && !c.writeGranted));
+    if (needsReason && !(reason && reason.trim())) {
+        die('these columns are server-role-only (this migration grants no browser access), so\n'
+            + '  they need a written reason:\n    '
+            + guardedUnclassified.filter((c) => !c.selectGranted || !c.writeGranted).map((c) => c.table + '.' + c.column).join('\n    ')
+            + '\n\n  Re-run with:  --write-registry --reason "why it is server-role only"');
+    }
+    const wrote = [];
+    for (const c of guardedUnclassified) {
+        wrote.push(...guarded.writeRegistryStub({
+            table: c.table, column: c.column,
+            select: c.selectGranted ? 'granted' : 'revoked',
+            write: c.writeGranted ? 'writable' : 'platform',
+            reason,
+        }));
+    }
+    console.log('\n  Wrote the registry classification:\n    ' + wrote.join('\n    '));
+    console.log('\n  These are the two schema-guard tests. Commit them to MASTER (test-only — no');
+    console.log('  schema, no code, no prod footprint) so the shared-DB guard stays green for');
+    console.log('  master and every branch cut from it.\n');
+    process.exit(0);
+}
+
 /* ------------------------------------------------------------------ plan */
 
 console.log('\n  ' + (targetName === 'prod' ? '*** PRODUCTION ***' : 'target') + '   ' + redacted);
 console.log('  source   ' + (file || 'inline --sql'));
 if (structural.length) console.log('  note     structural, loses no data: ' + structural.join(', '));
 if (destructive.length) console.log('  WARNING  LOSES DATA: ' + destructive.join(', '));
+if (guardedUnclassified.length) {
+    console.log('\n  ⚠  GUARDED COLUMN NOT CLASSIFIED: ' + guardedUnclassified.map((c) => c.table + '.' + c.column).join(', '));
+    console.log('     This adds a column on a guarded table. The schema guards read the shared');
+    console.log('     test DB, so once applied, master and every branch fail until it is classified.');
+    console.log('     Write the entry (edits the two guard tests, no DB):');
+    console.log('       node scripts/migrate.mjs ' + file + ' --write-registry --reason "why it is server-role only"');
+    console.log('     Drop --reason if this migration grants the column to authenticated.');
+    console.log('     Then commit the two guard tests to master.');
+}
 
 // A read-only --sql just runs. Requiring --apply to SELECT something taught
 // the flag to be typed by reflex, which is the one thing it must never become:
