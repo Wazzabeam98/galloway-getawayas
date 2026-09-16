@@ -94,6 +94,14 @@ export interface MpProvider {
     // The provider's own walk-through of the experience, from guest_details jsonb.
     // Displayed on the experience page; null when they didn't write one.
     what_happens: string | null;
+    // The ordered flow — arrival / during / finish — from guest_details.itinerary.
+    // Each phase carries a title and the provider's detail; empty when unset.
+    itinerary: Array<{ title: string; detail: string }>;
+    // "Things to know", from guest_details — essential facts a guest needs before
+    // booking. Null/absent when the provider hasn't set them.
+    minAge: number | null;
+    activityLevel: string | null;
+    whatToBring: string | null;
     description: string | null;
     shape: string;
     // The fulfilment direction: 'delivery' = the provider travels to the guest's
@@ -243,8 +251,8 @@ export async function loadPublicMarketplace(
 async function shapeProviders(admin: any, fromKey: string, toKey: string): Promise<MpProvider[]> {
     const { data: rows } = await admin
         .from('service_providers')
-        .select('id, owner_id, business_name, provider_name, based_line, headshot, photos, trade, custom_label, stripe_mcc, description, status, stripe_payouts_enabled, shape, slot_length_minutes, slot_turnaround_minutes, slot_capacity, slot_min_people, cancellation_window_hours, lead_time_days, dietary_note, guest_details, fulfilment')
-        .eq('audience', 'guest').eq('status', 'approved').eq('stripe_payouts_enabled', true);
+        .select('id, owner_id, business_name, provider_name, based_line, headshot, photos, trade, custom_label, stripe_mcc, description, status, stripe_payouts_enabled, owner_paused, shape, slot_length_minutes, slot_turnaround_minutes, slot_capacity, slot_min_people, cancellation_window_hours, lead_time_days, dietary_note, guest_details, fulfilment')
+        .eq('audience', 'guest').eq('status', 'approved').eq('stripe_payouts_enabled', true).eq('owner_paused', false);
 
     const ids = (rows || []).map((r: any) => r.id);
     if (!ids.length) return [];
@@ -366,6 +374,14 @@ async function shapeProviders(admin: any, fromKey: string, toKey: string): Promi
                 ...(itemsBy[p.id] || []).map((it: any) => it.image).filter(Boolean),
             ])) as string[],
             what_happens: (p.guest_details && p.guest_details.what_to_expect) || null,
+            itinerary: (p.guest_details && Array.isArray(p.guest_details.itinerary))
+                ? p.guest_details.itinerary
+                    .map((s: any) => ({ title: String(s?.title || '').trim(), detail: String(s?.detail || '').trim() }))
+                    .filter((s: any) => s.detail)
+                : [],
+            minAge: intOrNull(p.guest_details && p.guest_details.min_age),
+            activityLevel: (p.guest_details && strOrNull(p.guest_details.activity_level)) || null,
+            whatToBring: (p.guest_details && strOrNull(p.guest_details.what_to_bring)) || null,
             description: p.description,
             shape,
             fulfilment: p.fulfilment || null,

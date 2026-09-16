@@ -758,16 +758,10 @@ function ApplicationForm() {
     // terms version on return (see the load below).
     const [declarations, setDeclarations] = useState<Record<string, any>>({});
     // The weekly opening hours — one row per open period. day is 0..6 (0=Sunday).
+    // Vestigial draft state only: weekly hours moved to the listing editor, so the
+    // wizard neither shows nor writes them. The hours control and its
+    // shared-hours/'simple'-vs-'perday' mode state were removed with that cut.
     const [schedule, setSchedule] = useState<Array<{ day: number; open: string; close: string }>>([]);
-    // The When screen's hours control. 'simple' is one set of hours across all
-    // the chosen days; 'perday' gives particular days their own. sharedOpen/close
-    // are the SUGGESTION shown in the control — they write nothing on their own,
-    // exactly like the stepper defaults: the schedule stays empty until a day is
-    // actually picked, and only then does a day take these hours. Derived from an
-    // existing schedule on load.
-    const [hoursMode, setHoursMode] = useState<'simple' | 'perday'>('simple');
-    const [sharedOpen, setSharedOpen] = useState('10:00');
-    const [sharedClose, setSharedClose] = useState('18:00');
     // Keyed by extra. Price stays a string for the same reason band prices
     // do — a half-typed number should not be coerced mid-keystroke.
     const [extras, setExtras] = useState<Record<string, { offered: boolean; price: string; notes: string }>>({});
@@ -1061,12 +1055,6 @@ function ApplicationForm() {
                             close: String(r.close_time || '').slice(0, 5),
                         }));
                         setSchedule(rows);
-                        // If every open day shares the same hours, the simple
-                        // control can represent them; otherwise open on the
-                        // per-day view so nothing already set is flattened.
-                        const uniform = rows.every((r: any) => r.open === rows[0].open && r.close === rows[0].close);
-                        if (uniform) { setSharedOpen(rows[0].open); setSharedClose(rows[0].close); setHoursMode('simple'); }
-                        else setHoursMode('perday');
                     }
                     // The numbers only. Whether one has been checked is not
                     // read here and not shown here — it is not theirs to see
@@ -2300,9 +2288,6 @@ function ApplicationForm() {
         setSlotMinPeople('');
         setSlotLength('');
         setSchedule([]);
-        setHoursMode('simple');
-        setSharedOpen('10:00');
-        setSharedClose('18:00');
         setLeadTimeDays('');
         setCollectionStreet('');
         setCollectionTown('');
@@ -2916,19 +2901,6 @@ function ApplicationForm() {
         };
     };
 
-    // The weekly opening hours, as child rows for the slot_availability table.
-    // Only meaningful for a slot; empty for every other shape. Days off are NOT
-    // set here any more — the slot diary owns them (app/api/services/slots/
-    // schedule), so the wizard never writes slot_blocks.
-    const guestScheduleRows = () => {
-        if (audienceForTrade(trade) !== 'guest' || shape !== 'slot') return { availability: [] };
-        return {
-            availability: schedule
-                .filter((r) => r.open && r.close)
-                .map((r) => ({ day_of_week: r.day, open_time: r.open, close_time: r.close })),
-        };
-    };
-
     // The listing title for a guest is now the Title (their Intro field), so it
     // is not derived from the name any more. What we still derive from the
     // account is the BYLINE — the person's FIRST name, shown beneath their photo
@@ -3061,8 +3033,6 @@ function ApplicationForm() {
                 .filter((r) => r.name && r.price !== null && Number(r.price) > 0)
             : [];
 
-        const { availability } = guestScheduleRows();
-
         return {
             provider,
             registrations: registrations_,
@@ -3071,7 +3041,9 @@ function ApplicationForm() {
             areas: areas_,
             items: items_,
             skills: hasSkills ? skills : [],
-            slotAvailability: availability,
+            // Weekly hours no longer come from the wizard — set in the listing
+            // editor's Availability section after create.
+            slotAvailability: [],
         };
     };
 
@@ -3596,19 +3568,11 @@ function ApplicationForm() {
             }
         }
 
-        // The slot schedule — the weekly opening hours. Replaced
-        // wholesale like the areas: a handful of rows, and the provider owns them
-        // under RLS (the slot_shape migration's "owners manage their own"
-        // policies). Only a slot has them; for any other shape the delete clears
-        // any left behind by a shape the provider changed away from.
-        if (audienceForTrade(trade) === 'guest') {
-            const { availability } = guestScheduleRows();
-            await supabase.from('slot_availability').delete().eq('provider_id', id);
-            if (availability.length) {
-                const { error } = await supabase.from('slot_availability').insert(availability.map((a) => ({ ...a, provider_id: id })));
-                if (error) { console.error('[provider-save] slot_availability insert failed', error); savedButFailed.push('your weekly hours'); }
-            }
-        }
+        // Weekly opening hours are NOT written here any more. They moved out of
+        // the wizard to the listing editor's Availability section, which is the
+        // single home for the weekly template — so the wizard neither asks for
+        // hours nor writes slot_availability. A new slot provider sets them in the
+        // editor after create; the diary still owns the dated exceptions.
 
         // The menu — UPSERTED BY ID, not deleted and re-inserted. A guest trade
         // only; a host trade never has items. An item now carries a photo, and
@@ -5348,103 +5312,6 @@ function ApplicationForm() {
                 </section>
                 )}
 
-                {onStep('g_slot_hours') && audienceForTrade(trade) === 'guest' && shape === 'slot' && (() => {
-                    const DAYS = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
-                    const dayOpen = (d: number) => schedule.some((r) => r.day === d);
-                    const selected = schedule.slice().sort((a, b) => a.day - b.day);
-                    // Tap a day on/off. A newly opened day takes the shared hours as
-                    // its starting point (the same in either mode); the schedule is
-                    // empty until this first tap, so nothing is written before it.
-                    const toggleDay = (d: number) => {
-                        if (dayOpen(d)) setSchedule(schedule.filter((r) => r.day !== d));
-                        else setSchedule([...schedule, { day: d, open: sharedOpen, close: sharedClose }].sort((a, b) => a.day - b.day));
-                    };
-                    // The one hours control: change it and every chosen day follows.
-                    const setShared = (field: 'open' | 'close', val: string) => {
-                        if (field === 'open') setSharedOpen(val); else setSharedClose(val);
-                        setSchedule(schedule.map((r) => ({ ...r, [field]: val })));
-                    };
-                    const setDayTime = (d: number, field: 'open' | 'close', val: string) =>
-                        setSchedule(schedule.map((r) => (r.day === d ? { ...r, [field]: val } : r)));
-                    // Fold the per-day hours back to one set: adopt the first open
-                    // day's hours for all, so the simple control shows the truth.
-                    const collapseToSimple = () => {
-                        const first = selected[0];
-                        const o = first ? first.open : sharedOpen;
-                        const c = first ? first.close : sharedClose;
-                        setSharedOpen(o); setSharedClose(c);
-                        setSchedule(schedule.map((r) => ({ ...r, open: o, close: c })));
-                        setHoursMode('simple');
-                    };
-                    // Select-all: turns every day on (keeping any hours already set,
-                    // new days taking the shared hours), and clears when all are on.
-                    // Writes nothing until pressed, like the day toggles themselves.
-                    const allDaysOn = schedule.length === 7;
-                    const toggleAllDays = () => {
-                        if (allDaysOn) { setSchedule([]); return; }
-                        const byDay = new Map(schedule.map((r) => [r.day, r]));
-                        setSchedule([0, 1, 2, 3, 4, 5, 6].map((d) => byDay.get(d) || { day: d, open: sharedOpen, close: sharedClose }));
-                    };
-                    const timeField = 'rounded-lg border border-slate-300 px-3 py-2 text-slate-800 focus:outline-none focus:ring-2 focus:ring-emerald-700';
-                    // ONE decision then an optional refinement: pick the days, set one
-                    // set of hours for all of them, and only reach for per-day hours
-                    // if you actually want them. No seven-row settings table.
-                    return (
-                        <section className="mb-8 md:max-w-xl md:mx-auto">
-                            <h1 className="font-extrabold tracking-tight text-slate-900 [text-wrap:balance] text-3xl sm:text-4xl text-center">When are you open?</h1>
-                            <p className="mt-2 text-center text-sm leading-relaxed text-slate-500">Pick your days, then set the hours. You can give particular days their own hours after.</p>
-
-                            <div className="mt-10 flex flex-col items-center gap-8">
-                                {/* One row of seven day toggles, then a select-all. */}
-                                <div className="flex flex-wrap items-center justify-center gap-2">
-                                    {DAYS.map((label, d) => {
-                                        const on = dayOpen(d);
-                                        return (
-                                            <button key={d} type="button" onClick={() => toggleDay(d)} aria-pressed={on} title={label}
-                                                className={'h-11 w-11 rounded-full text-sm font-semibold transition ' + (on ? 'bg-emerald-700 text-white' : 'bg-slate-100 text-slate-500 hover:bg-slate-200')}>
-                                                {label[0]}<span className="sr-only">{label}</span>
-                                            </button>
-                                        );
-                                    })}
-                                    <button type="button" onClick={toggleAllDays} aria-pressed={allDaysOn}
-                                        className={'h-11 rounded-full px-4 text-sm font-semibold transition ' + (allDaysOn ? 'bg-emerald-700 text-white' : 'bg-slate-100 text-slate-500 hover:bg-slate-200')}>
-                                        {allDaysOn ? 'Clear' : 'Every day'}
-                                    </button>
-                                </div>
-
-                                {/* The hours — a single control for all the chosen days,
-                                    or, if refined, one row per day. Shown once a day is on. */}
-                                {selected.length > 0 && (hoursMode === 'simple' ? (
-                                    <div className="flex flex-col items-center gap-4">
-                                        <div className="flex items-center gap-3 text-lg">
-                                            <input type="time" value={sharedOpen} onChange={(e) => setShared('open', e.target.value)} className={timeField} aria-label="Opening time" />
-                                            <span className="text-slate-400">to</span>
-                                            <input type="time" value={sharedClose} onChange={(e) => setShared('close', e.target.value)} className={timeField} aria-label="Closing time" />
-                                        </div>
-                                        <button type="button" onClick={() => setHoursMode('perday')} className="text-sm font-medium text-emerald-700 underline-offset-2 hover:underline">
-                                            Set different hours for particular days
-                                        </button>
-                                    </div>
-                                ) : (
-                                    <div className="flex w-full flex-col items-center gap-3">
-                                        {selected.map((r) => (
-                                            <div key={r.day} className="flex items-center gap-3">
-                                                <span className="w-10 text-sm font-semibold text-slate-700">{DAYS[r.day]}</span>
-                                                <input type="time" value={r.open} onChange={(e) => setDayTime(r.day, 'open', e.target.value)} className={timeField} aria-label={DAYS[r.day] + ' opening time'} />
-                                                <span className="text-slate-400">to</span>
-                                                <input type="time" value={r.close} onChange={(e) => setDayTime(r.day, 'close', e.target.value)} className={timeField} aria-label={DAYS[r.day] + ' closing time'} />
-                                            </div>
-                                        ))}
-                                        <button type="button" onClick={collapseToSimple} className="mt-1 text-sm font-medium text-emerald-700 underline-offset-2 hover:underline">
-                                            Use the same hours for every day
-                                        </button>
-                                    </div>
-                                ))}
-                            </div>
-
-                        </section>
-                    );
-                })()}
 
                 {/* Who they are — a guest trade only. A guest is choosing
                     someone to come into the cottage they are staying in, so the
