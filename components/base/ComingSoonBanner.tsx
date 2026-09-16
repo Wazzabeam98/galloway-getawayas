@@ -10,8 +10,8 @@ export default function ComingSoonBanner() {
         <div className="w-full bg-emerald-700 text-white">
             <div className="mx-auto flex max-w-6xl flex-col items-center gap-3 px-4 py-3 text-center sm:flex-row sm:justify-center sm:gap-4 sm:py-2.5">
                 <p className="text-sm leading-snug sm:text-[0.9375rem]">
-                    <span className="font-semibold">Opening soon for hosts &amp; trades.</span>{' '}
-                    <span className="text-emerald-50">Listing a holiday let, a guest experience or a service in Dumfries &amp; Galloway?</span>
+                    <span className="font-semibold">Own a holiday let, or offer an experience or a service?</span>{' '}
+                    <span className="text-emerald-50">We&rsquo;re opening to new hosts and trades across Dumfries &amp; Galloway soon.</span>
                 </p>
                 <Link
                     href="/register-interest"
