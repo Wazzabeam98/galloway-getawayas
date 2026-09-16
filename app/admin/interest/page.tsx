@@ -13,7 +13,7 @@ export default async function AdminInterestPage() {
     const admin = adminClient();
     const { data, error } = await admin
         .from('interest_registrations')
-        .select('id, created_at, updated_at, category, name, email, phone, region, notes, status')
+        .select('id, created_at, updated_at, category, name, email, phone, region, notes, property_count, status')
         .order('created_at', { ascending: false });
 
     if (error) {

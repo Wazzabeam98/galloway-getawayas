@@ -14,6 +14,7 @@ export interface InterestRow {
     phone: string | null;
     region: string | null;
     notes: string | null;
+    property_count: number | null;
     status: string;
 }
 
@@ -90,7 +91,7 @@ export default function InterestTable({ rows }: { rows: InterestRow[] }) {
                         <Th k="name">Name</Th>
                         <th className="px-3 py-2 text-left font-semibold text-slate-600">Contact</th>
                         <Th k="region">Area</Th>
-                        <th className="px-3 py-2 text-left font-semibold text-slate-600">Anything else</th>
+                        <th className="px-3 py-2 text-left font-semibold text-slate-600">Properties / notes</th>
                         <Th k="status">Status</Th>
                         <th className="px-3 py-2 text-left font-semibold text-slate-600">Mark</th>
                     </tr>
@@ -112,7 +113,11 @@ export default function InterestTable({ rows }: { rows: InterestRow[] }) {
                             <td className="whitespace-nowrap px-3 py-3 text-slate-600">
                                 {r.region ? (REGION_LABEL[r.region] || r.region) : '—'}
                             </td>
-                            <td className="max-w-xs px-3 py-3 text-slate-600">{r.notes || '—'}</td>
+                            <td className="max-w-xs px-3 py-3 text-slate-600">
+                                {r.category === 'holiday_let'
+                                    ? (r.property_count ? r.property_count + (r.property_count === 1 ? ' property' : ' properties') : '—')
+                                    : (r.notes || '—')}
+                            </td>
                             <td className="px-3 py-3">
                                 <span className={'inline-block rounded-full px-2.5 py-0.5 text-xs font-medium ' + (STATUS_STYLE[r.status] || 'bg-slate-100 text-slate-600')}>
                                     {r.status}

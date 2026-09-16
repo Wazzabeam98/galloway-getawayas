@@ -7,25 +7,28 @@ import assert from 'node:assert/strict';
 
 import { parseInterest, INTEREST_CATEGORIES, REGION_KEYS } from '../lib/interest';
 
+// A notes-carrying path (guest_experience) as the general fixture, so the
+// name/email/region/notes checks exercise the free-text branch. The holiday-let
+// property-count branch is covered by its own tests below.
 const good = {
-    category: 'holiday_let',
+    category: 'guest_experience',
     name: 'Ada Host',
     email: 'ADA@Example.com',
     phone: '01557 000000',
     region: 'stewartry',
-    notes: 'Two cottages near Kirkcudbright.',
+    notes: 'A pottery class in a barn.',
 };
 
 test('a complete submission parses and normalises', () => {
     const r = parseInterest(good);
     assert.equal(r.ok, true);
     if (!r.ok) return;
-    assert.equal(r.value.category, 'holiday_let');
+    assert.equal(r.value.category, 'guest_experience');
     assert.equal(r.value.name, 'Ada Host');
     // Email is lowercased so the dedupe index and every read agree.
     assert.equal(r.value.email, 'ada@example.com');
     assert.equal(r.value.region, 'stewartry');
-    assert.equal(r.value.notes, 'Two cottages near Kirkcudbright.');
+    assert.equal(r.value.notes, 'A pottery class in a barn.');
 });
 
 test('phone, region and notes are optional and come back null when blank', () => {
@@ -35,6 +38,33 @@ test('phone, region and notes are optional and come back null when blank', () =>
     assert.equal(r.value.phone, null);
     assert.equal(r.value.region, null);
     assert.equal(r.value.notes, null);
+    assert.equal(r.value.propertyCount, null);
+});
+
+test('holiday_let carries a property count and no notes', () => {
+    const r = parseInterest({ category: 'holiday_let', name: 'Ada', email: 'ada@let.co', propertyCount: 3, notes: 'ignored on this path' });
+    assert.equal(r.ok, true);
+    if (!r.ok) return;
+    assert.equal(r.value.propertyCount, 3);
+    assert.equal(r.value.notes, null); // notes dropped on the holiday-let path
+});
+
+test('a missing or junk property count on holiday_let falls back to 1, not a rejection', () => {
+    for (const bad of [undefined, 0, -2, 'lots', NaN]) {
+        const r = parseInterest({ category: 'holiday_let', name: 'Ada', email: 'ada@let.co', propertyCount: bad });
+        assert.equal(r.ok, true, JSON.stringify(bad) + ' should not reject');
+        if (r.ok) assert.equal(r.value.propertyCount, 1, JSON.stringify(bad) + ' -> 1');
+    }
+});
+
+test('guest_experience and tradesman carry notes and no property count', () => {
+    for (const c of ['guest_experience', 'tradesman']) {
+        const r = parseInterest({ category: c, name: 'Bo', email: 'bo@x.co', notes: 'pottery too', propertyCount: 5 });
+        assert.equal(r.ok, true);
+        if (!r.ok) return;
+        assert.equal(r.value.notes, 'pottery too');
+        assert.equal(r.value.propertyCount, null); // count ignored off the let path
+    }
 });
 
 test('a category outside the three is refused', () => {

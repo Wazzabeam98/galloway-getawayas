@@ -48,7 +48,7 @@ export async function POST(req: Request) {
     if (!value) {
         return NextResponse.json({ ok: false, error: 'That did not look right.' }, { status: 400 });
     }
-    const { category, name, email, phone, region, notes } = value;
+    const { category, name, email, phone, region, notes, propertyCount } = value;
 
     // Cheapest and most important first: the site-wide cap is the load-bearing
     // one (it bounds the outbound email whatever address the caller claims);
@@ -106,10 +106,13 @@ export async function POST(req: Request) {
 
     let isNew = false;
 
+    // holiday-let carries property_count and no notes; the others the reverse.
+    const fields = { name, phone, region, notes, property_count: propertyCount, ip, user_agent: userAgent };
+
     if (existing) {
         const { error: updateError } = await admin
             .from('interest_registrations')
-            .update({ name, phone, region, notes, updated_at: new Date().toISOString(), ip, user_agent: userAgent })
+            .update({ ...fields, updated_at: new Date().toISOString() })
             .eq('id', existing.id);
         if (updateError) {
             await logError('[interest] could not update a registration', { message: updateError.message }, { path: 'interest' });
@@ -118,7 +121,7 @@ export async function POST(req: Request) {
     } else {
         const { error: insertError } = await admin
             .from('interest_registrations')
-            .insert({ category, name, email, phone, region, notes, ip, user_agent: userAgent });
+            .insert({ category, email, ...fields });
         if (insertError) {
             // 23505 = unique violation: a first-time submission raced another and
             // lost. Treat it as the repeat it effectively is — the row is there,
@@ -126,7 +129,7 @@ export async function POST(req: Request) {
             if ((insertError as any).code === '23505') {
                 await admin
                     .from('interest_registrations')
-                    .update({ name, phone, region, notes, updated_at: new Date().toISOString(), ip, user_agent: userAgent })
+                    .update({ ...fields, updated_at: new Date().toISOString() })
                     .eq('email', email)
                     .eq('category', category);
             } else {
@@ -142,7 +145,7 @@ export async function POST(req: Request) {
     // not spam the inbox. Sent to the same admin-alert address the services
     // alerts use; if it is unset the send is skipped and said out loud.
     if (isNew) {
-        await notifyOwner({ category, name, email, phone, region, notes });
+        await notifyOwner({ category, name, email, phone, region, notes, propertyCount });
     }
 
     return NextResponse.json({ ok: true });
@@ -150,7 +153,7 @@ export async function POST(req: Request) {
 
 async function notifyOwner(r: {
     category: string; name: string; email: string;
-    phone: string | null; region: string | null; notes: string | null;
+    phone: string | null; region: string | null; notes: string | null; propertyCount: number | null;
 }) {
     const to = recipients(process.env.SERVICES_ALERT_EMAIL);
     if (to.length === 0) {
@@ -170,6 +173,10 @@ async function notifyOwner(r: {
         { label: 'Phone', value: r.phone || '—' },
         { label: 'Area', value: r.region ? (REGION_LABEL[r.region] || r.region) : '—' },
     ];
+    // Holiday-let carries a property count instead of a free-text line.
+    if (r.category === 'holiday_let' && r.propertyCount) {
+        rows.push({ label: 'Properties', value: String(r.propertyCount) });
+    }
     const notesBlock = r.notes
         ? '<p style="margin:18px 0 0 0;"><strong>They said:</strong><br>'
             + escapeHtml(r.notes).replace(/\n/g, '<br>') + '</p>'

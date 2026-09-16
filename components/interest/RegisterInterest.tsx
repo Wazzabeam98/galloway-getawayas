@@ -2,7 +2,7 @@
 
 import { useState } from 'react';
 import Link from 'next/link';
-import { Home, Sparkles, Wrench, X, ArrowRight, ArrowLeft, Check } from 'lucide-react';
+import { Home, Sparkles, Wrench, X, ArrowRight, ArrowLeft, Check, Plus, Minus } from 'lucide-react';
 import { GUEST_REGIONS } from '@/lib/strings';
 
 // Register your interest — the same Airbnb shape as the /business fork and the
@@ -19,8 +19,11 @@ const CHOICES: { key: CategoryKey; title: string; Icon: typeof Home }[] = [
     { key: 'tradesman', title: 'A service or trade', Icon: Wrench },
 ];
 
-type StepId = 'category' | 'name' | 'email' | 'phone' | 'region' | 'notes';
-const STEPS: StepId[] = ['category', 'name', 'email', 'phone', 'region', 'notes'];
+// The last step is 'extra': a number-of-properties stepper on the holiday-let
+// path, the free-text "anything else" on the guest-experience and tradesman
+// paths (a let has a countable answer; the others do not).
+type StepId = 'category' | 'name' | 'email' | 'phone' | 'region' | 'extra';
+const STEPS: StepId[] = ['category', 'name', 'email', 'phone', 'region', 'extra'];
 
 const EMAIL_RE = /^[^@\s]+@[^@\s]+\.[^@\s]+$/;
 
@@ -36,6 +39,9 @@ export default function RegisterInterest() {
     const [phone, setPhone] = useState('');
     const [region, setRegion] = useState<string | null>(null);
     const [notes, setNotes] = useState('');
+    // Holiday-let only: number of properties. Starts at 1 (a let has at least
+    // one) and the stepper cannot go below it.
+    const [propertyCount, setPropertyCount] = useState(1);
     // Honeypot: a real person never fills this; kept off-screen, not hidden from
     // the accessibility tree in a way a bot would notice.
     const [company, setCompany] = useState('');
@@ -50,7 +56,7 @@ export default function RegisterInterest() {
             case 'email': return EMAIL_RE.test(email.trim());
             case 'phone': return phone.trim().length > 0;
             case 'region': return region !== null;
-            case 'notes': return true;
+            case 'extra': return true; // stepper defaults to 1; notes optional
             default: return false;
         }
     })();
@@ -64,7 +70,12 @@ export default function RegisterInterest() {
             const res = await fetch('/api/interest', {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({ category, name, email, phone, region, notes, company }),
+                body: JSON.stringify({
+                    category, name, email, phone, region, company,
+                    // By path: a count for a holiday let, free text for the rest.
+                    notes: category === 'holiday_let' ? null : notes,
+                    propertyCount: category === 'holiday_let' ? propertyCount : null,
+                }),
             });
             const data = await res.json().catch(() => ({}));
             if (!res.ok || !data.ok) {
@@ -240,10 +251,22 @@ export default function RegisterInterest() {
                             </>
                         )}
 
-                        {id === 'notes' && (
+                        {id === 'extra' && category === 'holiday_let' && (
+                            <>
+                                <Heading
+                                    title="How many properties do you have?"
+                                    sub="A rough number is fine &mdash; it helps us see where the lets are."
+                                />
+                                <div className="mt-12 flex justify-center">
+                                    <Stepper value={propertyCount} onChange={setPropertyCount} min={1} max={99} />
+                                </div>
+                            </>
+                        )}
+
+                        {id === 'extra' && category !== 'holiday_let' && (
                             <FieldScreen
                                 title="Anything else?"
-                                sub="Two cottages, an unusual experience, when you&rsquo;d like to start — whatever helps. Optional."
+                                sub="An unusual experience, another thing you offer, when you&rsquo;d like to start &mdash; whatever helps. Optional."
                             >
                                 <textarea
                                     value={notes}
@@ -336,5 +359,43 @@ function TextInput({
             onKeyDown={(e) => { if (e.key === 'Enter') { e.preventDefault(); onEnter(); } }}
             className="w-full rounded-2xl border-2 border-slate-200 px-5 py-4 text-center text-lg text-slate-900 transition placeholder:text-slate-400 focus:border-emerald-600 focus:outline-none"
         />
+    );
+}
+
+// A big display number with a minus and a plus circle either side — the same
+// stepper the sign-up wizard uses for the years screen (NumberStepper, size lg),
+// sized down on a phone so the numeral and both circles fit a 375px screen.
+function Stepper({
+    value, onChange, min = 0, max = 999,
+}: {
+    value: number;
+    onChange: (n: number) => void;
+    min?: number;
+    max?: number;
+}) {
+    const clamp = (n: number) => Math.max(min, Math.min(max, Math.round(n)));
+    const circle =
+        'flex h-14 w-14 flex-none items-center justify-center rounded-full border border-slate-300 '
+        + 'text-slate-600 transition hover:border-slate-500 focus:outline-none focus-visible:ring-2 '
+        + 'focus-visible:ring-emerald-600 disabled:opacity-40 disabled:hover:border-slate-300 sm:h-16 sm:w-16';
+    return (
+        <div className="flex items-center gap-6 sm:gap-10">
+            <button type="button" onClick={() => onChange(clamp(value - 1))} disabled={value <= min}
+                aria-label="Fewer" className={circle}>
+                <Minus className="h-5 w-5 sm:h-6 sm:w-6" strokeWidth={2} />
+            </button>
+            <input
+                type="number"
+                inputMode="numeric"
+                aria-label="Number of properties"
+                value={String(value)}
+                onChange={(e) => { const n = Number(e.target.value); if (Number.isFinite(n)) onChange(clamp(n)); }}
+                className="w-28 bg-transparent text-center text-7xl font-extrabold tabular-nums text-slate-900 focus:outline-none [appearance:textfield] [&::-webkit-outer-spin-button]:appearance-none [&::-webkit-inner-spin-button]:appearance-none sm:w-44 sm:text-9xl"
+            />
+            <button type="button" onClick={() => onChange(clamp(value + 1))} disabled={value >= max}
+                aria-label="More" className={circle}>
+                <Plus className="h-5 w-5 sm:h-6 sm:w-6" strokeWidth={2} />
+            </button>
+        </div>
     );
 }

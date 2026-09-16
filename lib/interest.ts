@@ -34,7 +34,11 @@ export interface InterestInput {
     email: string;
     phone: string | null;
     region: string | null;
+    // A holiday-let registrant answers a number of properties (stepper); the
+    // guest-experience and tradesman paths answer free text. Exactly one of these
+    // is set per row, by category.
     notes: string | null;
+    propertyCount: number | null;
 }
 
 export type InterestParse = { ok: true; value: InterestInput } | { ok: false; error: string };
@@ -75,10 +79,22 @@ export function parseInterest(body: any): InterestParse {
         return { ok: false, error: 'That is not a Dumfries & Galloway region.' };
     }
 
-    const notes = str(body?.notes).slice(0, CAP.notes) || null;
+    // By category: the holiday-let path carries a property count and no notes;
+    // the others carry notes and no count. This is enforced here so the stored
+    // row is clean whatever a client sends.
+    let notes: string | null = null;
+    let propertyCount: number | null = null;
+    if (category === 'holiday_let') {
+        const n = Math.round(Number(body?.propertyCount ?? body?.property_count));
+        // The stepper starts at 1 and cannot go below it; a missing or junk value
+        // falls back to 1 rather than rejecting a holiday-let registration.
+        propertyCount = Number.isFinite(n) && n >= 1 ? Math.min(n, 999) : 1;
+    } else {
+        notes = str(body?.notes).slice(0, CAP.notes) || null;
+    }
 
     return {
         ok: true,
-        value: { category: category as InterestCategory, name, email, phone, region, notes },
+        value: { category: category as InterestCategory, name, email, phone, region, notes, propertyCount },
     };
 }
