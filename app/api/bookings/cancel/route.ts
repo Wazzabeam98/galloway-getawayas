@@ -162,19 +162,54 @@ export async function POST(request: Request) {
             }
         }
 
-        const totalRefunded = round2(alreadyRefunded + refundedNow);
+        // The refunded total moves atomically in the database, not
+        // read-then-written here: a host goodwill refund or a second cancel
+        // landing in the window of this one must SUM, not overwrite the figure
+        // this one read before the money moved. record_booking_refund locks
+        // the row, adds what we just refunded (clamped at what was paid) and
+        // returns the new total, how much actually fit, and the payment_status
+        // derived from it. When nothing was refunded there is nothing to add
+        // and payment_status is left exactly as it was.
+        if (refundedNow > 0) {
+            const { data: appliedRow, error: refundWriteError } = await admin
+                .rpc('record_booking_refund', { p_booking: booking.id, p_amount: refundedNow })
+                .maybeSingle();
+            // The RPC's row type is not in the generated Supabase types.
+            const applied = appliedRow as { applied: number } | null;
 
+            if (refundWriteError || !applied) {
+                // The guest's money has already gone back, so failing to record
+                // it is the dangerous case — the booking then looks less
+                // refunded than it is and its refundable guard reads wrong.
+                await logError(
+                    '[bookings/cancel] refunded £' + refundedNow.toFixed(2)
+                        + ' but could not record it against the booking',
+                    refundWriteError || { booking_id: booking.id, amount: refundedNow },
+                    { path: 'api/bookings/cancel', userId: user.id }
+                );
+            } else if (round2(Number(applied.applied)) < refundedNow) {
+                // Less was added than we asked to: the total hit what was paid
+                // because a concurrent refund took the headroom. The money left
+                // at Stripe, so a person has to reconcile it.
+                await logError(
+                    '[bookings/cancel] £' + refundedNow.toFixed(2) + ' was refunded but only £'
+                        + round2(Number(applied.applied)).toFixed(2)
+                        + ' fit under what was paid — a concurrent refund overlapped; reconcile at Stripe',
+                    Object.assign({ booking_id: booking.id }, applied),
+                    { path: 'api/bookings/cancel', userId: user.id }
+                );
+            }
+        }
+
+        // The stay is off. status / balance / who-called-it-off are not the
+        // contended money column, so they are set here on the booking id and
+        // are idempotent if this races another writer. payment_status is owned
+        // by the RPC above (or left unchanged when nothing was refunded), so it
+        // is deliberately not written here.
         await admin
             .from('bookings')
             .update({
                 status: 'cancelled',
-                amount_refunded: totalRefunded,
-                payment_status:
-                    totalRefunded <= 0
-                        ? booking.payment_status
-                        : totalRefunded >= round2(paid)
-                            ? 'refunded'
-                            : 'partially_refunded',
                 // Nothing further is owed on a stay that isn't happening, so
                 // the balance charge won't pick it up.
                 balance_amount: 0,

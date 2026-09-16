@@ -271,6 +271,45 @@ async function main() {
         round2(Number(after18.balance_amount || 0)) === 0, String(after18.balance_amount));
     await assertAgreesWithStripe(bookings.s18);
 
+    /* ---- 14c: several refunds at once are summed, not lost ---- */
+
+    // The lost update the audit found (ranks 3–5): amount_refunded was read
+    // into JavaScript, added to, and written back, so a refund landing in the
+    // window of another overwrote it — two refunds at Stripe, one on the books.
+    // record_booking_refund now adds inside a locked row. Three host goodwill
+    // refunds of different amounts fired at the same instant must leave the
+    // booking recording every penny of all three, and the books must still
+    // agree with Stripe.
+
+    scenario('14c', 'Three simultaneous refunds on one booking are all recorded, not lost');
+
+    const before14c = await booking(bookings.s31);
+    check('starts fully paid with nothing refunded',
+        round2(Number(before14c.amount_paid)) === 500 && round2(Number(before14c.amount_refunded)) === 0,
+        '£' + before14c.amount_paid + ' paid, £' + before14c.amount_refunded + ' refunded');
+
+    // Distinct amounts, so each is a genuinely different refund at Stripe
+    // rather than one deduplicated by its idempotency key. Fired together.
+    const amounts14c = [10, 20, 30];
+    const responses14c = await Promise.all(
+        amounts14c.map((amount) => post('/api/bookings/host-refund', host, { bookingId: bookings.s31, amount }))
+    );
+    responses14c.forEach((r, i) => console.log('   refund £' + amounts14c[i] + ' → ' + r.status
+        + ' ' + JSON.stringify(r.body).slice(0, 100)));
+    check('all three were accepted', responses14c.every((r) => r.status === 200 && r.body.ok === true),
+        responses14c.map((r) => r.status).join(','));
+
+    const after14c = await booking(bookings.s31);
+    check('the booking records the sum of all three (£60), none lost',
+        round2(Number(after14c.amount_refunded)) === 60, '£' + after14c.amount_refunded);
+    check('payment_status reflects a partial refund',
+        after14c.payment_status === 'partially_refunded', after14c.payment_status);
+
+    const refundRows14c = (await paymentsFor(bookings.s31)).filter((p) => p.kind === 'refund');
+    check('a ledger row was written for each refund', refundRows14c.length === 3,
+        refundRows14c.length + ' refund rows');
+    await assertAgreesWithStripe(bookings.s31);
+
     /* ------------------------------------------------------------ summary */
 
     console.log('\n' + '='.repeat(64));

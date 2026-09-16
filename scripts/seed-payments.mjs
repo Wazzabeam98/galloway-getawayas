@@ -488,6 +488,14 @@ async function main() {
         check_in: dayOffset(-3), check_out: dayOffset(-1),
     });
 
+    // 31 — one fully-paid, confirmed stay that scenario 14c hits with several
+    // host goodwill refunds AT ONCE, to prove the refunded total is summed in
+    // the database and not lost when two refunds overlap.
+    const s31 = await createBooking(listingReady, guest, hostReady, {
+        label: 's31', total_price: 500, amount_paid: 500,
+        check_in: dayOffset(25), check_out: dayOffset(28),
+    });
+
     // 15 — guest cancels with the free window still open. Flexible is full
     // refund up to 1 day before.
     const s15 = await createBooking(listingFlexible, guest, hostReady, {
@@ -630,7 +638,7 @@ async function main() {
             s01: s01.id, s02: s02.id, s04: s04.id, s05: s05.id, s06: s06.id,
             s25: s25.id, s26: s26.id, s27a: s27a.id, s27b: s27b.id, s28: s28.id,
             s03: s03.id, s07: s07.id, s11: s11.id, s29: s29.id,
-            s12: s12.id, s13: s13.id, s14: s14.id, s15: s15.id, s16: s16.id,
+            s12: s12.id, s13: s13.id, s14: s14.id, s15: s15.id, s16: s16.id, s31: s31.id,
             s17: s17.id, s18: s18.id,
             s20: s20.id, s21: s21.id, s22: s22.id, s23: s23.id, s23b: s23b.id, s24: s24.id,
         },

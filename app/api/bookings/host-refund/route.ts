@@ -148,17 +148,41 @@ export async function POST(request: Request) {
             });
         }
 
-        const totalRefunded = round2(alreadyRefunded + refundedNow);
+        // The stay is still happening, so the status is left alone; only the
+        // money changes — and it moves atomically in the database, not
+        // read-then-written here. A guest cancel or a second host refund
+        // landing in the window of this one must SUM, not overwrite the figure
+        // read before the money moved. record_booking_refund locks the row,
+        // adds what we just refunded (clamped at what was paid) and returns how
+        // much actually fit and the payment_status derived from it.
+        const { data: appliedRow, error: refundWriteError } = await admin
+            .rpc('record_booking_refund', { p_booking: booking.id, p_amount: refundedNow })
+            .maybeSingle();
+        // The RPC's row type is not in the generated Supabase types.
+        const applied = appliedRow as { applied: number } | null;
 
-        // The stay is still happening, so the status is left alone. Only the
-        // money changes.
-        await admin
-            .from('bookings')
-            .update({
-                amount_refunded: totalRefunded,
-                payment_status: totalRefunded >= paid ? 'refunded' : 'partially_refunded',
-            })
-            .eq('id', booking.id);
+        if (refundWriteError || !applied) {
+            // The money has already gone back, so failing to record it is the
+            // dangerous case — the booking then looks less refunded than it is
+            // and its refundable guard reads wrong on the next refund.
+            await logError(
+                '[bookings/host-refund] refunded £' + refundedNow.toFixed(2)
+                    + ' but could not record it against the booking',
+                refundWriteError || { booking_id: booking.id, amount: refundedNow },
+                { path: 'api/bookings/host-refund', userId: booking.host_id }
+            );
+        } else if (round2(Number(applied.applied)) < refundedNow) {
+            // Less was added than we asked to: the total hit what was paid
+            // because a concurrent refund took the headroom. The money left at
+            // Stripe, so a person has to reconcile it.
+            await logError(
+                '[bookings/host-refund] £' + refundedNow.toFixed(2) + ' was refunded but only £'
+                    + round2(Number(applied.applied)).toFixed(2)
+                    + ' fit under what was paid — a concurrent refund overlapped; reconcile at Stripe',
+                Object.assign({ booking_id: booking.id }, applied),
+                { path: 'api/bookings/host-refund', userId: booking.host_id }
+            );
+        }
 
         // If they've already been paid for this stay, recover it.
         if (booking.payout_transfer_id) {

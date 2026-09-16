@@ -147,6 +147,12 @@ export async function GET(request: Request) {
                 });
 
                 if (refundAmount > 0 && booking.stripe_payment_intent_id) {
+                    // Keyed on the booking. A booking is given up on and
+                    // refunded once, so if this run dies after the refund and
+                    // Stripe retries — or the same booking is somehow processed
+                    // twice — Stripe replays the one refund rather than sending
+                    // the guest their money back a second time. Without the key
+                    // the refund below was bare, and a retry double-refunded.
                     await stripeRequest('POST', '/refunds', {
                         payment_intent: booking.stripe_payment_intent_id,
                         amount: Math.round(refundAmount * 100),
@@ -155,7 +161,7 @@ export async function GET(request: Request) {
                             reason: 'balance_unpaid',
                             initiated_by: 'system',
                         },
-                    });
+                    }, 'balance-giveup-refund-' + booking.id);
 
                     await admin.from('payments').insert({
                         booking_id: booking.id,
