@@ -72,9 +72,14 @@ function makeAdmin(rows: Record<string, any>, rpcResult?: any) {
         },
         rpc(name: string, args: any) {
             rpcCalls.push({ name, args });
+            // The default models a clean apply: the whole amount fit, and the
+            // amount_paid under the lock is the one the route already read — no
+            // concurrent charge. A test overrides rpcResult to force a clamp,
+            // an error, or an amount_paid that moved underneath.
+            const paid = Math.round(Number((rows.bookings && rows.bookings.amount_paid) || 0) * 100) / 100;
             const result = rpcResult !== undefined
                 ? rpcResult
-                : { data: { new_amount_refunded: null, amount_paid: null, applied: args.p_amount, payment_status: 'partially_refunded' }, error: null };
+                : { data: { new_amount_refunded: args.p_amount, amount_paid: paid, applied: args.p_amount, payment_status: 'partially_refunded' }, error: null };
             return { maybeSingle: async () => result };
         },
         auth: { admin: { getUserById: async () => ({ data: { user: { email: 'guest@example.invalid' } } }) } },
@@ -181,6 +186,30 @@ test('cancel reports when the refund could not be recorded at all', async () => 
 
     assert.ok(logged.some((m) => /could not record it against the booking/i.test(m)),
         'money moved but the record did not — the dangerous case is reported');
+});
+
+test('cancel reports when the amount paid changed under it (a balance charged mid-cancel)', async () => {
+    // The cron-writes-first ordering: this route read amount_paid = £500 and
+    // refunded on it, but the balance job charged the stay to £800 in the
+    // window before the RPC. The RPC saw £800 under the lock. The refund was
+    // worked out on the old figure, so the guest is short — surfaced, not lost.
+    const { route, logged } = loadCancel({
+        data: { new_amount_refunded: 250, amount_paid: 800, applied: 250, payment_status: 'partially_refunded' }, error: null,
+    });
+    await route.POST(cancelReq());
+
+    assert.ok(logged.some((m) => /amount paid changed from £500\.00 to £800\.00/i.test(m)),
+        'the stale-refund race is detected against the locked figure and surfaced');
+    assert.ok(logged.some((m) => /worked out on the old figure/i.test(m)));
+});
+
+test('cancel stays quiet when the amount paid did not move', async () => {
+    // The ordinary path must not cry wolf: with no concurrent charge, the
+    // locked amount_paid equals the one the refund was based on.
+    const { route, logged } = loadCancel();
+    await route.POST(cancelReq());
+
+    assert.ok(!logged.some((m) => /amount paid changed/i.test(m)), 'no false alarm on the normal path');
 });
 
 /* ========================== bookings/host-refund ========================== */

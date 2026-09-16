@@ -182,9 +182,6 @@ export async function POST(request: Request) {
             );
         }
 
-        const totalRefunded = round2(alreadyRefunded + amountRefundedNow);
-        const fullyRefunded = totalRefunded >= round2(paid);
-
         // Cancelling a stay a guest has already had confirmed is the most
         // damaging thing a host can do — they may have travel booked. A
         // declined request costs nothing, but a cancellation carries a fee,
@@ -219,43 +216,27 @@ export async function POST(request: Request) {
             }
         }
 
-        // The stay is called off here, in the same place the money moved, and
-        // only once it has. This used to be left to the browser to do after the
-        // route returned: a closed tab or a dropped connection left the guest
-        // refunded while the booking still read as confirmed and the dates
-        // stayed blocked. Nothing outside this route may set it now.
         const closingStatus =
             reason === 'declined' ? 'declined' : reason === 'cancelled' ? 'cancelled' : null;
 
-        const patch: Record<string, any> = {
-            amount_refunded: totalRefunded,
-            payment_status: fullyRefunded ? 'refunded' : 'partially_refunded',
-        };
-
-        if (closingStatus) {
-            patch.status = closingStatus;
-            // Nothing further is owed on a stay that isn't happening, so the
-            // balance charge can't pick it up.
-            patch.balance_amount = 0;
-
-            // Who did this, in our own records rather than only in the
-            // metadata on the Stripe refund. The 5% fee below turns on
-            // exactly this distinction, so the first time a host disputes one
-            // the answer has to be somewhere we can read it.
-            patch.cancelled_at = new Date().toISOString();
-            patch.cancelled_by_user = user.id;
-            patch.cancelled_by_role = isHost ? 'host' : 'guest';
-        }
-
-        const { error: updateError } = await admin
-            .from('bookings')
-            .update(patch)
-            .eq('id', booking.id);
+        // amount_refunded moves atomically in the database, not read-then-
+        // written here: a guest cancel or a second refund landing in the window
+        // of this one must SUM, not overwrite the figure read before the money
+        // moved. The same lost update the other two refund routes had — this is
+        // the third. record_booking_refund locks the row, adds what actually
+        // went back (clamped at what was paid) and returns how much fit and the
+        // payment_status derived from it.
+        const { data: appliedRow, error: refundWriteError } = await admin
+            .rpc('record_booking_refund', { p_booking: booking.id, p_amount: amountRefundedNow })
+            .maybeSingle();
+        // The RPC's row type is not in the generated Supabase types.
+        const applied = appliedRow as { applied: number } | null;
 
         // The guest's money has already gone back at this point, so a failure
-        // here is the dangerous one — it is the case that used to be silent.
-        if (updateError) {
-            await logError('[stripe/refund] refunded but could not update the booking', updateError, {
+        // to record it is the dangerous one — it is the case that used to be
+        // silent, and it must not be swallowed.
+        if (refundWriteError || !applied) {
+            await logError('[stripe/refund] refunded but could not record it against the booking', refundWriteError || { booking_id: booking.id, amount: amountRefundedNow }, {
                 path: 'stripe/refund',
                 userId: user.id,
             });
@@ -268,6 +249,60 @@ export async function POST(request: Request) {
                 },
                 { status: 500 }
             );
+        }
+
+        if (round2(Number(applied.applied)) < amountRefundedNow) {
+            // Less was added than we asked to: the total hit what was paid
+            // because a concurrent refund took the headroom. The money left at
+            // Stripe, so a person has to reconcile it.
+            await logError(
+                '[stripe/refund] £' + amountRefundedNow.toFixed(2) + ' was refunded but only £'
+                    + round2(Number(applied.applied)).toFixed(2)
+                    + ' fit under what was paid — a concurrent refund overlapped; reconcile at Stripe',
+                Object.assign({ booking_id: booking.id }, applied),
+                { path: 'stripe/refund', userId: user.id }
+            );
+        }
+
+        // The stay is called off here, in the same place the money moved, and
+        // only once it has — status / balance / who-did-it, which are not the
+        // contended money column and so are set on the booking id. This used to
+        // be left to the browser after the route returned: a closed tab left
+        // the guest refunded while the booking still read confirmed and the
+        // dates stayed blocked. Nothing outside this route may set it now.
+        if (closingStatus) {
+            const { error: closeError } = await admin
+                .from('bookings')
+                .update({
+                    status: closingStatus,
+                    // Nothing further is owed on a stay that isn't happening, so
+                    // the balance charge can't pick it up.
+                    balance_amount: 0,
+                    // Who did this, in our own records rather than only in the
+                    // metadata on the Stripe refund. The 5% fee above turns on
+                    // exactly this distinction, so the first time a host
+                    // disputes one the answer has to be somewhere we can read it.
+                    cancelled_at: new Date().toISOString(),
+                    cancelled_by_user: user.id,
+                    cancelled_by_role: isHost ? 'host' : 'guest',
+                })
+                .eq('id', booking.id);
+
+            if (closeError) {
+                await logError('[stripe/refund] refunded but could not close the booking', closeError, {
+                    path: 'stripe/refund',
+                    userId: user.id,
+                });
+                return NextResponse.json(
+                    {
+                        ok: false,
+                        error: 'The refund went through but the booking could not be updated. '
+                            + 'Please check it before trying again.',
+                        refunded: amountRefundedNow,
+                    },
+                    { status: 500 }
+                );
+            }
         }
 
         // The stay is off, so its experiences go too — the same failure the

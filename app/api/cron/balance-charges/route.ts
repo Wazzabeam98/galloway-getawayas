@@ -459,23 +459,12 @@ export async function GET(request: Request) {
                 // reconciles the same charge once and never a second time.
                 if (!paidRows || paidRows.length === 0) {
                     if (succeededIntentId) {
-                        await stripeRequest('POST', '/refunds', {
-                            payment_intent: succeededIntentId,
-                            amount: Math.round(amount * 100),
-                            metadata: {
-                                booking_id: booking.id,
-                                reason: 'balance_charged_after_cancellation',
-                                initiated_by: 'system',
-                            },
-                        }, 'balance-reconcile-' + attemptRowId);
-
-                        // The charge really happened and was then given back.
-                        // Record both against the claimed row so the ledger is
-                        // not silently short a charge and a refund, and Stripe
-                        // and the books still agree. The booking's own
-                        // amount_refunded is left to the guest's cancel — this
-                        // round-trip nets to zero and is not part of what the
-                        // guest was refunded of their original payment.
+                        // The charge really happened, so record THAT first —
+                        // settle the claimed row to succeeded before the refund
+                        // is attempted. If the refund then fails, the money-in
+                        // is still on the books rather than lost with it, and a
+                        // succeeded balance charge on a cancelled booking with
+                        // no refund beside it is the thing to reconcile.
                         await admin
                             .from('payments')
                             .update({
@@ -484,23 +473,81 @@ export async function GET(request: Request) {
                             })
                             .eq('id', attemptRowId);
 
-                        await admin.from('payments').insert({
-                            booking_id: booking.id,
-                            kind: 'refund',
-                            amount: amount,
-                            status: 'succeeded',
-                            stripe_payment_intent_id: succeededIntentId,
-                        });
-                    }
+                        // Hand the balance back — GUARDED. This is the one
+                        // refund with no safety net anywhere else: the booking
+                        // is already cancelled, so it will never come back
+                        // through the due query, and a swallowed failure here is
+                        // money taken from a guest for a stay they are not
+                        // taking and never returned. Keyed on the attempt so a
+                        // replay refunds the one charge and never a second.
+                        let reconcileError: any = null;
+                        let reconcileResult: any = null;
+                        try {
+                            reconcileResult = await stripeRequest('POST', '/refunds', {
+                                payment_intent: succeededIntentId,
+                                amount: Math.round(amount * 100),
+                                metadata: {
+                                    booking_id: booking.id,
+                                    reason: 'balance_charged_after_cancellation',
+                                    initiated_by: 'system',
+                                },
+                            }, 'balance-reconcile-' + attemptRowId);
+                        } catch (err: any) {
+                            reconcileError = err;
+                        }
 
-                    await logError(
-                        'balance-charges: charged the balance for booking ' + booking.id
-                            + ' but it was no longer live (cancelled mid-charge); refunded £'
-                            + amount + ' at Stripe',
-                        null,
-                        { path: '/api/cron/balance-charges' }
-                    );
-                    reconciled++;
+                        const refundLanded = !reconcileError && reconcileResult
+                            && (reconcileResult.status === 'succeeded' || reconcileResult.status === 'pending');
+
+                        if (refundLanded) {
+                            // The round-trip: a charge and a refund against it,
+                            // so the ledger is not silently short either. The
+                            // booking's own amount_refunded is left to the
+                            // guest's cancel — this nets to zero and is not part
+                            // of what the guest was refunded of their payment.
+                            await admin.from('payments').insert({
+                                booking_id: booking.id,
+                                kind: 'refund',
+                                amount: amount,
+                                status: 'succeeded',
+                                stripe_payment_intent_id: succeededIntentId,
+                            });
+
+                            await logError(
+                                'balance-charges: charged the balance for booking ' + booking.id
+                                    + ' but it was no longer live (cancelled mid-charge); refunded £'
+                                    + amount + ' at Stripe',
+                                null,
+                                { path: '/api/cron/balance-charges' }
+                            );
+                            reconciled++;
+                        } else {
+                            // The money is with us and owed back, and nothing
+                            // else will retry it. Surfaced as loudly as the code
+                            // can: the replay key is in the message so a person
+                            // can return it without minting a second refund.
+                            await logError(
+                                'balance-charges: URGENT — charged £' + amount + ' for booking '
+                                    + booking.id + ' which was cancelled mid-charge, and the reconciling '
+                                    + 'refund FAILED. The money is held and owed back to the guest. Replay '
+                                    + 'refund idempotency key balance-reconcile-' + attemptRowId
+                                    + ' against intent ' + succeededIntentId + ' to return it.',
+                                reconcileError || reconcileResult,
+                                { path: '/api/cron/balance-charges' }
+                            );
+                            failed++;
+                        }
+                    } else {
+                        // succeeded with no intent id is not meant to happen;
+                        // record the anomaly rather than pass over it silently.
+                        await logError(
+                            'balance-charges: booking ' + booking.id + ' was cancelled mid-charge but '
+                                + 'no charge intent was recorded, so nothing could be reconciled',
+                            null,
+                            { path: '/api/cron/balance-charges' }
+                        );
+                        reconciled++;
+                    }
                     continue;
                 }
 

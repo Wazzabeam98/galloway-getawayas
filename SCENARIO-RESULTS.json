@@ -1,8 +1,8 @@
 {
   "runners": {
     "payout": {
-      "ranAt": "2026-09-16T21:16:21.379Z",
-      "target": "http://localhost:3100",
+      "ranAt": "2026-09-18T22:49:16.567Z",
+      "target": "http://localhost:3000",
       "passed": 7,
       "failed": 0,
       "untestable": 0,
@@ -52,8 +52,8 @@
       ]
     },
     "refund": {
-      "ranAt": "2026-09-16T21:17:27.238Z",
-      "target": "http://localhost:3100",
+      "ranAt": "2026-09-18T22:50:22.923Z",
+      "target": "http://localhost:3000",
       "passed": 8,
       "failed": 0,
       "untestable": 0,
@@ -109,9 +109,9 @@
       ]
     },
     "balance": {
-      "ranAt": "2026-09-16T21:18:17.311Z",
-      "target": "http://localhost:3100",
-      "passed": 7,
+      "ranAt": "2026-09-18T22:51:18.315Z",
+      "target": "http://localhost:3000",
+      "passed": 8,
       "failed": 0,
       "untestable": 0,
       "scenarios": [
@@ -156,13 +156,19 @@
           "title": "Fourth run cancels the booking and refunds per the tier in force",
           "status": "passed",
           "failedChecks": []
+        },
+        {
+          "number": "3b",
+          "title": "A dangling claim from a crashed run is replayed at Stripe, not charged again",
+          "status": "passed",
+          "failedChecks": []
         }
       ]
     },
     "crosscutting": {
-      "ranAt": "2026-09-16T21:19:20.269Z",
-      "target": "http://localhost:3100",
-      "passed": 6,
+      "ranAt": "2026-09-18T22:52:34.045Z",
+      "target": "http://localhost:3000",
+      "passed": 7,
       "failed": 0,
       "untestable": 0,
       "scenarios": [
@@ -201,18 +207,24 @@
           "title": "A webhook delivered twice, or a scheduled job run twice",
           "status": "passed",
           "failedChecks": []
+        },
+        {
+          "number": "30",
+          "title": "A guest cancel racing the balance charge stays consistent, whichever wins",
+          "status": "passed",
+          "failedChecks": []
         }
       ]
     }
   },
-  "updatedAt": "2026-09-16T21:19:20.269Z",
+  "updatedAt": "2026-09-18T22:52:34.045Z",
   "fingerprint": {
     "app/api/cron/host-payouts/route.ts": "6f592c9618305ff9",
-    "app/api/cron/balance-charges/route.ts": "c68af11f95313a20",
-    "app/api/stripe/refund/route.ts": "668329efa9c7eee5",
+    "app/api/cron/balance-charges/route.ts": "dd5480e70ab02f81",
+    "app/api/stripe/refund/route.ts": "55bc225e0af18417",
     "app/api/stripe/checkout/route.ts": "312815c26709b0ba",
-    "app/api/stripe/webhook/route.ts": "8822785c1cdcf436",
-    "app/api/bookings/cancel/route.ts": "39fa1aa7310bf78b",
+    "app/api/stripe/webhook/route.ts": "cbb851dd77504274",
+    "app/api/bookings/cancel/route.ts": "f82931cf971fea69",
     "app/api/bookings/host-refund/route.ts": "601bf8b7410f7750",
     "lib/clawback.ts": "11a032e0004870fa",
     "lib/payoutSource.ts": "b00c942802e9f678",
@@ -222,10 +234,10 @@
     "lib/fees.ts": "eee8370bca28610e",
     "lib/pricing.ts": "b448a43e9bc66e81",
     "lib/cancellation.ts": "17829661b2f52ab4",
-    "scripts/seed-payments.mjs": "e163081fa5b806e6",
+    "scripts/seed-payments.mjs": "43086226b206a4fb",
     "scripts/payout-scenarios.mjs": "cdb63b1817b61b48",
     "scripts/refund-scenarios.mjs": "e26d179dc89d7a68",
-    "scripts/balance-scenarios.mjs": "dc0bc43fe0254c51",
-    "scripts/crosscutting-scenarios.mjs": "fd1f8b683ad60f1a"
+    "scripts/balance-scenarios.mjs": "cd9d045653faf651",
+    "scripts/crosscutting-scenarios.mjs": "d96b8581a8be7672"
   }
 }

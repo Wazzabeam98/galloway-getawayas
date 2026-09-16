@@ -174,8 +174,11 @@ export async function POST(request: Request) {
             const { data: appliedRow, error: refundWriteError } = await admin
                 .rpc('record_booking_refund', { p_booking: booking.id, p_amount: refundedNow })
                 .maybeSingle();
-            // The RPC's row type is not in the generated Supabase types.
-            const applied = appliedRow as { applied: number } | null;
+            // The RPC's row type is not in the generated Supabase types. It
+            // returns the amount_paid it saw under the lock, which is the
+            // authoritative current figure — not the one this route read before
+            // the refund.
+            const applied = appliedRow as { applied: number; amount_paid: number } | null;
 
             if (refundWriteError || !applied) {
                 // The guest's money has already gone back, so failing to record
@@ -187,17 +190,40 @@ export async function POST(request: Request) {
                     refundWriteError || { booking_id: booking.id, amount: refundedNow },
                     { path: 'api/bookings/cancel', userId: user.id }
                 );
-            } else if (round2(Number(applied.applied)) < refundedNow) {
-                // Less was added than we asked to: the total hit what was paid
-                // because a concurrent refund took the headroom. The money left
-                // at Stripe, so a person has to reconcile it.
-                await logError(
-                    '[bookings/cancel] £' + refundedNow.toFixed(2) + ' was refunded but only £'
-                        + round2(Number(applied.applied)).toFixed(2)
-                        + ' fit under what was paid — a concurrent refund overlapped; reconcile at Stripe',
-                    Object.assign({ booking_id: booking.id }, applied),
-                    { path: 'api/bookings/cancel', userId: user.id }
-                );
+            } else {
+                if (round2(Number(applied.applied)) < refundedNow) {
+                    // Less was added than we asked to: the total hit what was
+                    // paid because a concurrent refund took the headroom. The
+                    // money left at Stripe, so a person has to reconcile it.
+                    await logError(
+                        '[bookings/cancel] £' + refundedNow.toFixed(2) + ' was refunded but only £'
+                            + round2(Number(applied.applied)).toFixed(2)
+                            + ' fit under what was paid — a concurrent refund overlapped; reconcile at Stripe',
+                        Object.assign({ booking_id: booking.id }, applied),
+                        { path: 'api/bookings/cancel', userId: user.id }
+                    );
+                }
+
+                // Race-safety against the balance charge. This route read
+                // amount_paid before the refund and worked the refund out from
+                // it; if the balance job charged the stay in that window, the
+                // locked amount_paid the RPC saw is higher than the one the
+                // refund was based on, so the guest paid more than we gave back
+                // — the £X-kept-on-a-cancelled-stay case. It cannot be undone
+                // from here without racing again, so it is surfaced: the books
+                // are right (amount_refunded is what actually went back), and
+                // the shortfall is flagged for a person to settle.
+                if (round2(Number(applied.amount_paid)) !== round2(paid)) {
+                    await logError(
+                        '[bookings/cancel] booking ' + booking.id + ': the amount paid changed from £'
+                            + round2(paid).toFixed(2) + ' to £' + round2(Number(applied.amount_paid)).toFixed(2)
+                            + ' while this cancellation was in flight (a balance charge landed underneath it), so '
+                            + 'the £' + refundedNow.toFixed(2) + ' refunded was worked out on the old figure. '
+                            + 'Check what the guest is owed on the amount actually paid and reconcile.',
+                        Object.assign({ booking_id: booking.id, refunded: refundedNow, paid_at_read: round2(paid) }, applied),
+                        { path: 'api/bookings/cancel', userId: user.id }
+                    );
+                }
             }
         }
 
