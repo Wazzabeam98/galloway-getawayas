@@ -538,6 +538,10 @@ async function main() {
     const s03 = await depositBooking('s03', 'pm_card_visa', 50);
     const s07 = await depositBooking('s07', 'tok_chargeCustomerFail', 60);
     const s11 = await depositBooking('s11', 'pm_card_authenticationRequired', 70);
+    // A good card, used by scenario 3b: a run that charged the balance and died
+    // before settling leaves a dangling 'attempting' claim, and the next run
+    // must replay the same idempotency key rather than charge a second time.
+    const s29 = await depositBooking('s29', 'pm_card_visa', 80);
 
     /* ------------------------------------------------ checkout, 1, 2, 4, 5, 6 */
 
@@ -625,7 +629,7 @@ async function main() {
         bookings: {
             s01: s01.id, s02: s02.id, s04: s04.id, s05: s05.id, s06: s06.id,
             s25: s25.id, s26: s26.id, s27a: s27a.id, s27b: s27b.id, s28: s28.id,
-            s03: s03.id, s07: s07.id, s11: s11.id,
+            s03: s03.id, s07: s07.id, s11: s11.id, s29: s29.id,
             s12: s12.id, s13: s13.id, s14: s14.id, s15: s15.id, s16: s16.id,
             s17: s17.id, s18: s18.id,
             s20: s20.id, s21: s21.id, s22: s22.id, s23: s23.id, s23b: s23b.id, s24: s24.id,
