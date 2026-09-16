@@ -3,7 +3,7 @@
 import { useState } from 'react';
 import Link from 'next/link';
 import { Home, Sparkles, Wrench, X, ArrowRight, ArrowLeft, Check, Plus, Minus } from 'lucide-react';
-import { GUEST_REGIONS } from '@/lib/strings';
+import { GUEST_REGIONS, GUEST_COVERAGE_ALL_KEY } from '@/lib/strings';
 
 // Register your interest — the same Airbnb shape as the /business fork and the
 // provider wizard: a full-screen takeover, one question per screen, the three
@@ -48,6 +48,13 @@ export default function RegisterInterest() {
 
     const id = STEPS[step];
 
+    // A cottage is in one place, so "All of Dumfries & Galloway" makes no sense
+    // on the holiday-let path — it stays for guest experiences and trades, where
+    // someone genuinely might cover the whole region.
+    const regions = category === 'holiday_let'
+        ? GUEST_REGIONS.filter((r) => r.key !== GUEST_COVERAGE_ALL_KEY)
+        : GUEST_REGIONS;
+
     // Whether the current screen's answer lets Next arm. notes is optional.
     const canAdvance = (() => {
         switch (id) {
@@ -55,7 +62,10 @@ export default function RegisterInterest() {
             case 'name': return name.trim().length > 0;
             case 'email': return EMAIL_RE.test(email.trim());
             case 'phone': return phone.trim().length > 0;
-            case 'region': return region !== null;
+            // Guard against a stale pick: if they chose "all" and then went back
+            // and switched to the holiday-let path, that option is gone, so the
+            // selection no longer counts until they pick one that is offered.
+            case 'region': return region !== null && regions.some((r) => r.key === region);
             case 'extra': return true; // stepper defaults to 1; notes optional
             default: return false;
         }
@@ -223,7 +233,7 @@ export default function RegisterInterest() {
                                     sub="It tells us where the interest is — the same areas you&rsquo;d pick signing up."
                                 />
                                 <div className="mx-auto mt-10 grid max-w-2xl gap-3">
-                                    {GUEST_REGIONS.map((r) => {
+                                    {regions.map((r) => {
                                         const isOn = region === r.key;
                                         return (
                                             <button
