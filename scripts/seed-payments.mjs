@@ -36,29 +36,42 @@ async function reset() {
 
     const inList = '(' + seeded.map((u) => u.id).join(',') + ')';
 
+    // The seeded listings, needed up front: a listing can be referenced by a
+    // booking or an order that a DIFFERENT (non-seeded) user made against it, and
+    // those rows have to go before the listing does. Clearing children only by
+    // seeded user misses them and the listing delete then fails on a foreign key.
+    const listings = await db.select('listings', '?select=id&host_id=in.' + inList);
+    const listingList = listings.length ? '(' + listings.map((l) => l.id).join(',') + ')' : null;
+
     // Children first — payouts and payments carry a booking_id with no cascade
-    // behind it, so deleting the bookings out from under them would fail.
-    const bookings = await db.select(
-        'bookings',
-        '?select=id&or=(guest_id.in.' + inList + ',host_id.in.' + inList + ')'
-    );
+    // behind it, so deleting the bookings out from under them would fail. Gather
+    // every booking owned by a seeded user OR sitting on a seeded listing.
+    const bookingFilter = listingList
+        ? '?select=id&or=(guest_id.in.' + inList + ',host_id.in.' + inList + ',listing_id.in.' + listingList + ')'
+        : '?select=id&or=(guest_id.in.' + inList + ',host_id.in.' + inList + ')';
+    const bookings = await db.select('bookings', bookingFilter);
     if (bookings.length) {
         const bookingList = '(' + bookings.map((b) => b.id).join(',') + ')';
         for (const table of ['payouts', 'payments', 'booking_guests', 'messages', 'reviews']) {
             await db.remove(table, '?booking_id=in.' + bookingList);
         }
+        await db.remove('bookings', '?id=in.' + bookingList);
     }
 
-    await db.remove('bookings', '?or=(guest_id.in.' + inList + ',host_id.in.' + inList + ')');
-
-    // Anything hanging off a listing has to go before the listing does.
-    const listings = await db.select('listings', '?select=id&host_id=in.' + inList);
-    if (listings.length) {
-        const listingList = '(' + listings.map((l) => l.id).join(',') + ')';
-        for (const table of ['listing_ical_feeds', 'calendar_overrides', 'listing_access']) {
+    // Anything else hanging off a listing has to go before the listing does.
+    // service_orders (guest experiences) postdate this reset and reference a
+    // listing with no cascade, which is why a leftover order once failed the
+    // whole seed on a foreign key.
+    if (listingList) {
+        for (const table of ['service_orders', 'listing_ical_feeds', 'calendar_overrides', 'listing_access']) {
             await db.remove(table, '?listing_id=in.' + listingList);
         }
     }
+
+    // service_orders also carry a guest_id with no cascade, so an order made by a
+    // seeded guest against a listing that is NOT seeded would block the profiles
+    // delete below.
+    await db.remove('service_orders', '?guest_id=in.' + inList);
 
     await db.remove('listings', '?host_id=in.' + inList);
     await db.remove('profiles', '?id=in.' + inList);
