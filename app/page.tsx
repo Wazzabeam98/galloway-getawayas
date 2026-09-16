@@ -2,6 +2,7 @@ import HostReservations from '@/components/HostReservations';
 import { townKey } from '@/lib/places';
 import { icalBlockedListingIds } from '@/lib/availability';
 import Hero from '@/components/base/Hero';
+import ComingSoonBanner from '@/components/base/ComingSoonBanner';
 import UpcomingTrip from '@/components/UpcomingTrip';
 import { createServerComponentClient } from '@supabase/auth-helpers-nextjs';
 import { cookies } from 'next/headers';
@@ -222,6 +223,10 @@ export default async function HomePage({
 
     return (
         <main className="min-h-screen bg-stone-50">
+            {/* Opening soon: the one route in for hosts and trades while sign-up
+          sits behind the coming-soon tiles. Above the hero, seen first. */}
+            <ComingSoonBanner />
+
             {/* Kirkcudbright Hero Banner */}
             <Hero />
 
