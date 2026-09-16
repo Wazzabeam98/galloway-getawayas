@@ -30,9 +30,9 @@ export default function ComingSoonBanner() {
                     <span className="hidden align-middle sm:inline">
                         Own a holiday let, or offer an experience or a service in Dumfries &amp; Galloway?
                     </span>
-                    {/* Mobile: a short phrase that carries "coming soon" itself, so it
-                        stays on one line beside the button. */}
-                    <span className="font-semibold sm:hidden">Hosts &amp; trades &mdash; coming soon</span>
+                    {/* Mobile: a short question (not just "coming soon") so it says
+                        what you'd be registering for, still one line beside the button. */}
+                    <span className="font-semibold sm:hidden">Own a holiday let or offer a service?</span>
                 </p>
                 <Link
                     href="/register-interest"
