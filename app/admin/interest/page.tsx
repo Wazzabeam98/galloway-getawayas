@@ -2,7 +2,12 @@ import { requireAdmin } from '@/lib/access';
 import { adminClient } from '@/lib/supabaseAdmin';
 import InterestTable, { type InterestRow } from '@/components/admin/InterestTable';
 
-export const dynamic = 'force-dynamic';
+// No `force-dynamic`: it streams the response, so the 200 headers go out before
+// requireAdmin() throws notFound(), and a non-admin gets a 200 with a not-found
+// body instead of a real 404. The page is still dynamic — requireAdmin reads
+// cookies() — so nothing is cached; dropping force-dynamic just lets notFound()
+// set a proper 404 status. (The other admin pages still have this; a shared fix
+// is a separate follow-up.)
 
 // The interest list. Owner-only (requireAdmin 404s everyone else). Reads through
 // the service role because the table has no policy for any browser role — this
