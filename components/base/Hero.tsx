@@ -518,21 +518,22 @@ export default function Hero() {
         type="button"
         aria-expanded={open}
         onClick={() => setActivePopover(open ? null : key)}
-        className={`min-w-0 px-4 py-3 flex items-center gap-2 text-left transition ${edges} ${
+        className={`min-w-0 px-4 py-4 flex flex-col gap-1 text-left transition ${edges} ${
           open ? 'bg-white/[0.45]' : 'bg-transparent'
         }`}
       >
-        <span className="shrink-0 text-[11px] font-bold tracking-wider uppercase text-stone-700">
+        {/* Stacked, phone-readable: a small-caps label over a 16px value, with
+            room to breathe. The compact one-line 10/11px version read as tiny on
+            a real handset. */}
+        <span className="text-xs font-bold tracking-wider uppercase text-stone-700">
           {label}
         </span>
         {/* leading-5 on both states so the row is the same height whether it
             holds a hint or a choice — otherwise picking a date would nudge the
             whole card taller. */}
         <span
-          className={`min-w-0 flex-1 truncate leading-5 ${
-            chosen
-              ? 'text-sm font-medium text-stone-900'
-              : 'text-[10px] font-normal text-stone-500'
+          className={`min-w-0 truncate text-base leading-5 ${
+            chosen ? 'font-medium text-stone-900' : 'font-normal text-stone-400'
           }`}
         >
           {chosen || hint}
@@ -664,9 +665,9 @@ export default function Hero() {
               <button
                 type="button"
                 onClick={runSearch}
-                className="bg-emerald-700 hover:bg-emerald-800 text-white flex items-center justify-center gap-2 font-semibold transition"
+                className="bg-emerald-700 hover:bg-emerald-800 text-white flex items-center justify-center gap-2 text-base font-semibold transition"
               >
-                {searchIcon('w-4 h-4')}
+                {searchIcon('w-5 h-5')}
                 Search
               </button>
             </div>

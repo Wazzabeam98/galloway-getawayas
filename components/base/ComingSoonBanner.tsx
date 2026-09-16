@@ -20,19 +20,17 @@ import Link from 'next/link';
 // height is `py-2` on the inner div.
 export default function ComingSoonBanner() {
     return (
-        <div className="w-full border-b border-emerald-100 bg-emerald-50">
+        <div className="w-full border-y border-emerald-200 bg-emerald-50 shadow-[inset_0_1px_0_rgba(255,255,255,0.7)]">
             <div className="mx-auto flex max-w-7xl items-center justify-between gap-3 px-6 py-2 sm:grid sm:grid-cols-[1fr_auto_1fr] sm:gap-4 md:px-10">
                 {/* Desktop only: the COMING SOON tag, left, under the logo. */}
                 <span className="hidden whitespace-nowrap rounded-full bg-emerald-100 px-3 py-1 text-sm font-bold uppercase tracking-wide text-emerald-700 sm:col-start-1 sm:inline-block sm:justify-self-start">
                     Coming soon
                 </span>
-                <p className="min-w-0 text-sm leading-snug text-emerald-950 sm:col-start-2 sm:text-center">
-                    <span className="hidden align-middle sm:inline">
-                        Own a holiday let, or offer an experience or a service in Dumfries &amp; Galloway?
-                    </span>
-                    {/* Mobile: a short question (not just "coming soon") so it says
-                        what you'd be registering for, still one line beside the button. */}
-                    <span className="font-semibold sm:hidden">Own a holiday let or offer a service?</span>
+                {/* Same full question on every size — on a phone it wraps to two
+                    lines beside the button, which is fine; the desktop tag carries
+                    "coming soon" and the mobile short-form is gone. */}
+                <p className="min-w-0 align-middle text-sm leading-snug text-emerald-950 sm:col-start-2 sm:text-center">
+                    Own a holiday let, offer an experience or a service in Dumfries &amp; Galloway?
                 </p>
                 <Link
                     href="/register-interest"
