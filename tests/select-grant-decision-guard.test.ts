@@ -50,6 +50,7 @@ const TABLES: TableDecision[] = [
             'status', 'submitted_at', 'subscription_status', 'trade', 'trial_ends_at', 'updated_at',
         ]),
         revoked: {
+            owner_paused: 'owner\'s self-serve take-down flag; read and written only via the provider editor\'s service-role route (ownership-checked), never browser-read — isLiveToGuests consults it server-side',
             based_line: 'server-derived display line; the wizard dropped it from its select — unread by any browser',
             provider_name: 'retired with the "Your name" step; dropped from the wizard select — unread by any browser',
             category_assigned_at: 'admin audit — when the category was assigned; no provider reads it',
