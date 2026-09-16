@@ -255,7 +255,7 @@ export default function RegisterInterest() {
                             <>
                                 <Heading
                                     title="How many properties do you have?"
-                                    sub="A rough number is fine &mdash; it helps us see where the lets are."
+                                    sub="A rough number is fine."
                                 />
                                 <div className="mt-12 flex justify-center">
                                     <Stepper value={propertyCount} onChange={setPropertyCount} min={1} max={99} />
