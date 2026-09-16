@@ -10,7 +10,7 @@ import {
 } from '@/lib/serviceOrders';
 import {
     isSlot, sessionCapacity, hasSlotCapacity, generateSessions, SLOT_HOLD_MINUTES,
-    bookingIsPrivate, slotClaimKind, optionAvailability,
+    bookingIsPrivate, slotClaimKind, optionAvailability, seatConfig,
     resolvedDuration, overlapsBooked, minutesOfDay,
 } from '@/lib/serviceSlots';
 import { itemFulfilment } from '@/lib/serviceProviders';
@@ -107,7 +107,7 @@ export async function POST(request: Request) {
         // private/shared — derives from this row, never from the browser.
         const itemQuery = admin
             .from('service_provider_items')
-            .select('id, name, description, price, unit, active, duration_minutes, fulfilment')
+            .select('id, name, description, price, unit, active, duration_minutes, fulfilment, capacity, min_people')
             .eq('provider_id', provider.id)
             .eq('active', true)
             .gt('price', 0);
@@ -117,6 +117,12 @@ export async function POST(request: Request) {
         if (!item) return NextResponse.json({ ok: false, error: 'That isn’t available.' }, { status: 400 });
 
         const unit = normaliseUnit(item.unit);
+
+        // The seats and minimum for THIS item — its own when set, else the
+        // provider's (the phased fallback). Every seat read below goes through
+        // `seat`, and it's the SAME object handed to optionAvailability, so the
+        // enforcement here reads exactly what the panel greyed with.
+        const seat = seatConfig(item.capacity, item.min_people, provider);
 
         // The date must fall inside the stay, and the (date, time) must be a real
         // session the template offers and the provider has not blocked. Never
@@ -191,14 +197,14 @@ export async function POST(request: Request) {
         // exactly as the minimum is: an unbookable listing must not be booked, not
         // quietly sold as something it isn't. (A flat item needs no capacity — a
         // private hire is always one booking — so this bites per-person only.)
-        if (unitMultiplies(unit) && !hasSlotCapacity(provider)) {
+        if (unitMultiplies(unit) && !hasSlotCapacity(seat)) {
             return NextResponse.json(
                 { ok: false, error: 'This session isn’t bookable yet — the host hasn’t set how many people it’s for. Try again later or message them.' },
                 { status: 400 }
             );
         }
 
-        const capacity = sessionCapacity(provider, unit);
+        const capacity = sessionCapacity(seat, unit);
         // A flat item is a private hire (takes the whole session); a per-person
         // item is a seat at a shared table. The first booking pins the time to
         // one mode; a later booking of the other kind is refused below.
@@ -224,7 +230,7 @@ export async function POST(request: Request) {
         // declared capacity (a studio/table size), or a sane ceiling for a
         // traveller who declares none.
         const cottageGuests = standalone
-            ? (Number(provider.slot_capacity) > 0 ? Number(provider.slot_capacity) : 20)
+            ? (Number(seat.slot_capacity) > 0 ? Number(seat.slot_capacity) : 20)
             : Math.max(1, Number(booking.guests) || 1);
         // The booked item's location: its own for a 'both' provider, else the
         // provider's single answer. A TRAVELLING item ignores the provider's
@@ -232,7 +238,7 @@ export async function POST(request: Request) {
         // who is staying there — so its head-count cap is the cottage alone.
         const bookedFulfilment = itemFulfilment(item, provider.fulfilment);
         const itemIsTravelling = bookedFulfilment === 'delivery';
-        const declaredCap = itemIsTravelling ? null : (Number(provider.slot_capacity) > 0 ? Number(provider.slot_capacity) : null);
+        const declaredCap = itemIsTravelling ? null : (Number(seat.slot_capacity) > 0 ? Number(seat.slot_capacity) : null);
         const attendeesCap = declaredCap != null ? Math.min(declaredCap, cottageGuests) : cottageGuests;
         const attendees = isPrivate
             ? Math.min(Math.max(1, Math.floor(Number(body.attendees) || 1)), attendeesCap)
@@ -244,7 +250,7 @@ export async function POST(request: Request) {
         // the unit multiplies (per person); a whole-group flat price is one
         // booking regardless of head count. Enforced HERE so a crafted request
         // that goes under the floor is rejected, exactly as the ceiling is.
-        const minPeople = unitMultiplies(unit) ? Math.max(1, Number(provider.slot_min_people) || 1) : 1;
+        const minPeople = unitMultiplies(unit) ? Math.max(1, Number(seat.slot_min_people) || 1) : 1;
         if (quantity < minPeople) {
             return NextResponse.json(
                 { ok: false, error: 'This session is for a minimum of ' + minPeople + ' people.' },
@@ -307,7 +313,7 @@ export async function POST(request: Request) {
             // below is what makes the take atomic, so a race that slips between
             // this read and the write loses the swap and retries. One source, not
             // a capacity rule re-implemented per surface.
-            const avail = optionAvailability(sess, unit, provider);
+            const avail = optionAvailability(sess, unit, seat);
             if (!avail.possible || quantity > avail.seatsLeft) {
                 return NextResponse.json({ ok: false, error: 'That time just filled up. Pick another.' }, { status: 409 });
             }

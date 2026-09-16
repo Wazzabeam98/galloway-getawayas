@@ -3,10 +3,10 @@
 import { useMemo, useState } from 'react';
 import LoginModel from '@/components/auth/LoginModel';
 import { unitMultiplies } from '@/lib/serviceOrders';
-import { optionAvailability, bookingIsPrivate } from '@/lib/serviceSlots';
+import { optionAvailability, bookingIsPrivate, seatConfig } from '@/lib/serviceSlots';
 import { itemPriceLabel, dateLabel, timeLabel } from '@/components/marketplace/present';
 
-interface PanelItem { id: string; name: string; price: number; unit: string; image: string | null; fulfilment?: string | null; }
+interface PanelItem { id: string; name: string; price: number; unit: string; image: string | null; fulfilment?: string | null; capacity: number | null; minPeople: number | null; }
 interface PanelSession { date: string; time: string; row: { capacity: number; seats_taken: number; private: boolean } | null; }
 
 // The standalone (bookingless) booking box for a SLOT experience — the public
@@ -114,7 +114,7 @@ export default function StandaloneBookingPanel({ provider, signedIn, signInNext 
                                     <div className="mt-3 text-xs font-semibold uppercase tracking-wide text-slate-500">Pick a time</div>
                                     <div className="mt-1.5 flex flex-wrap gap-1.5">
                                         {times.map((s) => {
-                                            const a = item ? optionAvailability(s.row, item.unit, { slot_capacity: provider.slotCapacity, slot_min_people: provider.minPeople }) : null;
+                                            const a = item ? optionAvailability(s.row, item.unit, seatConfig(item.capacity, item.minPeople, { slot_capacity: provider.slotCapacity, slot_min_people: provider.minPeople })) : null;
                                             const left = a && s.row && bookingIsPrivate(item!.unit) === false && a.possible ? a.seatsLeft : null;
                                             return (
                                                 <button key={s.time} type="button" onClick={() => setTime(s.time)}
@@ -132,7 +132,7 @@ export default function StandaloneBookingPanel({ provider, signedIn, signInNext 
                     {item && perPerson && (
                         <label className="mt-4 block">
                             <span className="text-xs font-semibold uppercase tracking-wide text-slate-500">How many people</span>
-                            <input type="number" min={provider.minPeople || 1} value={qty}
+                            <input type="number" min={(item ? seatConfig(item.capacity, item.minPeople, { slot_capacity: provider.slotCapacity, slot_min_people: provider.minPeople }).slot_min_people : provider.minPeople) || 1} value={qty}
                                 onChange={(e) => setQty(Math.max(1, parseInt(e.target.value, 10) || 1))}
                                 className="mt-1 block w-24 rounded-lg border border-slate-300 px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-emerald-600" />
                         </label>
