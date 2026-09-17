@@ -3,7 +3,7 @@ import { adminClient } from '@/lib/supabaseAdmin';
 import { cookies } from 'next/headers';
 import { NextResponse } from 'next/server';
 import { collectionFieldsForWrite } from '@/lib/serviceProviders';
-import { audienceForTrade } from '@/lib/serviceProviders';
+import { audienceForTrade, knownExperienceAmenities } from '@/lib/serviceProviders';
 
 export const dynamic = 'force-dynamic';
 
@@ -120,10 +120,12 @@ export async function POST(request: Request) {
                 break;
 
             case 'amenities':
-                // Amenities: what the venue offers a guest. Accessibility and
-                // parking are the first two (each a picked key, or null when not
-                // said); the section has room to grow.
+                // Amenities: what the venue offers a guest. A ticked "what's
+                // included" set (sanitised to known keys) drives the guest listing's
+                // list; accessibility and parking are picked keys, or null when not
+                // said. An empty amenities array is removed by mergedGuestDetails.
                 gd = {
+                    amenities: knownExperienceAmenities(data.amenities),
                     accessibility: strOrNull(data.accessibility),
                     parking: strOrNull(data.parking),
                 };

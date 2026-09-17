@@ -177,6 +177,50 @@ export const PARKING_OPTIONS: { key: string; label: string }[] = [
     { key: 'street', label: 'Street parking' },
     { key: 'none', label: 'No parking' },
 ];
+// What an experience includes, as ticks — a provider picks from a shared list
+// rather than writing prose, and the same keys render a "What's included" list on
+// the guest listing. Deliberately general so one list spans every category (a
+// sauna, a chef, a pottery class): "what's provided" (things they bring/lay on)
+// and "on site" (what's there when you arrive). Stored as guest_details.amenities
+// (an array of keys); the label is what a guest reads.
+export const EXPERIENCE_AMENITY_GROUPS: { group: string; items: { key: string; label: string }[] }[] = [
+    {
+        group: 'What’s provided',
+        items: [
+            { key: 'equipment', label: 'All equipment provided' },
+            { key: 'materials', label: 'Materials included' },
+            { key: 'safety_gear', label: 'Safety gear' },
+            { key: 'towels', label: 'Towels' },
+            { key: 'refreshments', label: 'Hot drinks & refreshments' },
+            { key: 'food', label: 'Food included' },
+            { key: 'takehome', label: 'Take home what you make' },
+            { key: 'photos', label: 'Photos of your session' },
+        ],
+    },
+    {
+        group: 'On site',
+        items: [
+            { key: 'changing', label: 'Changing facilities' },
+            { key: 'showers', label: 'Showers' },
+            { key: 'toilets', label: 'Toilets' },
+            { key: 'shelter', label: 'Shelter from the weather' },
+            { key: 'seating', label: 'Seating area' },
+            { key: 'lockers', label: 'Lockers / storage' },
+            { key: 'wifi', label: 'Wifi' },
+        ],
+    },
+];
+export const EXPERIENCE_AMENITIES = EXPERIENCE_AMENITY_GROUPS.flatMap((g) => g.items);
+const EXPERIENCE_AMENITY_KEYS = new Set(EXPERIENCE_AMENITIES.map((a) => a.key));
+export function experienceAmenityLabel(key: string | null | undefined): string | null {
+    return EXPERIENCE_AMENITIES.find((a) => a.key === String(key || '').trim())?.label || null;
+}
+// Drop anything not in the known list, and de-dupe, keeping the canonical order —
+// so a stored value can never render an unknown or duplicate "included" line.
+export function knownExperienceAmenities(keys: any): string[] {
+    const set = new Set((Array.isArray(keys) ? keys : []).map((k: any) => String(k || '').trim()).filter((k: string) => EXPERIENCE_AMENITY_KEYS.has(k)));
+    return EXPERIENCE_AMENITIES.filter((a) => set.has(a.key)).map((a) => a.key);
+}
 // Cancellation as a named choice for a guest experience — window-based (which
 // fits a timed session), not the holiday-let's day-before tiers. "No refund" is
 // the new option a bare hours field couldn't express. The window presets set the

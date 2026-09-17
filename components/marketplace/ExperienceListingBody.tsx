@@ -1,11 +1,11 @@
 import Link from 'next/link';
 import { shapeCue } from '@/lib/serviceSlots';
-import { dietaryOptionLabel, accessibilityLabel, parkingLabel, experienceCancellationOption } from '@/lib/serviceProviders';
+import { dietaryOptionLabel, accessibilityLabel, parkingLabel, experienceCancellationOption, experienceAmenityLabel } from '@/lib/serviceProviders';
 import {
     itemPriceLabel, cancellationSentence, whereLine, locationTag, travelCoverageLine,
     durationLabel, durationSummary, yearsLabel, groupSizeLabel,
 } from '@/components/marketplace/present';
-import { MapPin, Clock, Users, User, BadgeCheck, Award, Compass, Flag, Activity, Backpack, ShieldAlert, Accessibility, Car } from 'lucide-react';
+import { MapPin, Clock, Users, User, BadgeCheck, Award, Compass, Flag, Activity, Backpack, ShieldAlert, Accessibility, Car, Check } from 'lucide-react';
 import PhotoGallery from '@/components/PhotoGallery';
 import PropertyMap from '@/components/PropertyMap';
 import type { MpProvider } from '@/lib/experiencesData';
@@ -205,11 +205,29 @@ export default function ExperienceListingBody({
                             </section>
                         ) : null}
 
+                        {/* What's included — the provider's ticked amenities, as a
+                            scannable list (no prose). Shown for every shape when they
+                            ticked anything. */}
+                        {p.amenities.length > 0 && (
+                            <section className="mt-8 border-t border-slate-200 pt-8">
+                                <h2 className="text-xl md:text-2xl font-bold text-slate-900">What’s included</h2>
+                                <ul className="mt-4 grid grid-cols-1 gap-x-6 gap-y-3 sm:grid-cols-2">
+                                    {p.amenities.map((k) => {
+                                        const label = experienceAmenityLabel(k);
+                                        return label ? (
+                                            <li key={k} className="flex items-center gap-3">
+                                                <Check className="h-5 w-5 flex-none text-emerald-700" aria-hidden />
+                                                <span className="text-[15px] text-slate-700">{label}</span>
+                                            </li>
+                                        ) : null;
+                                    })}
+                                </ul>
+                            </section>
+                        )}
+
                         {p.shape !== 'slot' && (
                             <section className="mt-8 border-t border-slate-200 pt-8">
-                                <h2 className="text-xl md:text-2xl font-bold text-slate-900">
-                                    {p.items.length > 1 ? 'What’s included' : 'What you get'}
-                                </h2>
+                                <h2 className="text-xl md:text-2xl font-bold text-slate-900">What you get</h2>
                                 <ul className="mt-4 divide-y divide-slate-100">
                                     {p.items.map((it) => {
                                         const dur = durationLabel(it.duration_minutes);

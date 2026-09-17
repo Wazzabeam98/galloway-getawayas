@@ -8,12 +8,12 @@ import Env from '@/config/Env';
 import { getImageUrl, generateRandomNumber } from '@/lib/utils';
 import { compressImage } from '@/lib/compressImage';
 import { GUEST_REGIONS, GUEST_COVERAGE_ALL_KEY } from '@/lib/strings';
-import { slotAsksWhereFork, ACCESSIBILITY_OPTIONS, PARKING_OPTIONS, EXPERIENCE_CANCELLATION_OPTIONS, experienceCancellationOption, guestCategoryByKey } from '@/lib/serviceProviders';
+import { slotAsksWhereFork, ACCESSIBILITY_OPTIONS, PARKING_OPTIONS, EXPERIENCE_CANCELLATION_OPTIONS, experienceCancellationOption, EXPERIENCE_AMENITY_GROUPS } from '@/lib/serviceProviders';
 import { PhotoEditorGrid } from './PhotoEditorGrid';
 import {
     FileText, User, Info, Salad, Image as ImageIcon,
     ShoppingBag, MapPin, CalendarRange, CalendarClock, Sparkles, RotateCcw,
-    Eye, EyeOff, ExternalLink, Check, Minus, Plus, Tag,
+    Eye, EyeOff, ExternalLink, Check, Minus, Plus,
 } from 'lucide-react';
 
 // The guest-experience listing editor. A card list of sections; each opens,
@@ -42,6 +42,7 @@ export interface EditorProvider {
     what_to_expect: string; itinerary: Array<{ title?: string | null; detail?: string | null }>;
     min_age: number | null; activity_level: string; what_to_bring: string;
     accessibility: string; parking: string; no_refund: boolean;
+    amenities: string[];
     dietary_options: string[];
     areas: string[];
     items: Array<{ id: string; name: string; description: string; price: number; unit: string; image: string | null; duration_minutes: number | null; fulfilment: string | null; active: boolean }>;
@@ -195,6 +196,10 @@ export default function ProviderListingEditor({ provider }: { provider: EditorPr
     const [whatToBring, setWhatToBring] = useState(p.what_to_bring);
     const [accessibility, setAccessibility] = useState(p.accessibility);
     const [parking, setParking] = useState(p.parking);
+    // What's included, as ticks — the same keys render the "What's included" list
+    // on the guest listing, so a provider picks rather than writes prose.
+    const [amenities, setAmenities] = useState<string[]>(p.amenities || []);
+    const toggleAmenity = (key: string) => setAmenities((prev) => prev.includes(key) ? prev.filter((k) => k !== key) : [...prev, key]);
     // Cancellation as a named policy (shared by every shape). noRefund is the
     // non-refundable option; cancelHours (declared with the slot fields below)
     // holds the window preset for the refundable ones.
@@ -226,16 +231,6 @@ export default function ProviderListingEditor({ provider }: { provider: EditorPr
     const [maxGuests, setMaxGuests] = useState<number>(
         initialMaxGroup && initialMaxGroup > 0 ? initialMaxGroup : (p.isSlot ? 8 : 6));
 
-    // Read-only facts about the listing's identity — its category and how guests
-    // book. Both are set at sign-up and reshape payments / the booking flow, so
-    // the editor surfaces them plainly (they had no home before) rather than
-    // offering a live edit that could strand data.
-    const catLabel = guestCategoryByKey(p.category)?.label || p.category_label || 'Experience';
-    const shapeDescriptor = p.shape === 'slot'
-        ? 'Guests pick and book a time'
-        : p.shape === 'comes_to_you'
-            ? 'You travel to the guest’s cottage'
-            : 'Made to order for the guest’s dates';
 
     // Photos: gallery keys (storage paths), plus the headshot and logo. Uploaded
     // to the bucket immediately (like the wizard), so the section saves keys.
@@ -371,9 +366,11 @@ export default function ProviderListingEditor({ provider }: { provider: EditorPr
         // offerings, the experience) → operations (availability, status). Where it
         // happens sits high — Airbnb asks location early, and the menu's per-item
         // location depends on the come-to-me/travel/both choice being set first.
-        { key: 'title', label: 'Title & category', icon: FileText },
+        { key: 'title', label: 'Title', icon: FileText },
         { key: 'about', label: 'About you', icon: User },
-        { key: 'where', label: 'Where it happens', icon: MapPin },
+        // A fixed venue (guests always come to one place) has an Address, not a
+        // where-do-you-work choice — there's no travel fork to make.
+        { key: 'where', label: fixedInPlace ? 'Address' : 'Where it happens', icon: MapPin },
         { key: 'photos', label: 'Photos', icon: ImageIcon },
         { key: 'menu', label: 'What you offer', icon: ShoppingBag },
         { key: 'happens', label: 'What happens', icon: FileText },
@@ -470,34 +467,11 @@ export default function ProviderListingEditor({ provider }: { provider: EditorPr
                 {/* Content */}
                 <div className="space-y-6">
                     {active === 'title' && (
-                        <SectionCard title="Title & category" hint="The name at the top of your listing." saving={savingKey === 'title'}
+                        <SectionCard title="Title" hint="The name at the top of your listing." saving={savingKey === 'title'}
                             onSave={() => run('title', { business_name: businessName })}>
                             <Field label="Listing title">
                                 <input className={inputCls} value={businessName} onChange={(e) => setBusinessName(e.target.value)} maxLength={80} />
                             </Field>
-                            {/* Category and booking shape are set at sign-up and
-                                reshape payments and the booking flow, so they show
-                                here as facts (they had no home before) rather than a
-                                live edit. Changing them is a word to us, not a toggle. */}
-                            <div className="rounded-xl border border-slate-200 bg-slate-50 p-4">
-                                <div className="flex flex-wrap gap-6">
-                                    <div className="flex items-start gap-2.5">
-                                        <Tag className="mt-0.5 h-4 w-4 flex-none text-slate-400" />
-                                        <div>
-                                            <div className="text-xs font-semibold uppercase tracking-wide text-slate-500">Category</div>
-                                            <div className="text-sm font-semibold text-slate-900">{catLabel}</div>
-                                        </div>
-                                    </div>
-                                    <div className="flex items-start gap-2.5">
-                                        <CalendarClock className="mt-0.5 h-4 w-4 flex-none text-slate-400" />
-                                        <div>
-                                            <div className="text-xs font-semibold uppercase tracking-wide text-slate-500">How guests book</div>
-                                            <div className="text-sm font-semibold text-slate-900">{shapeDescriptor}</div>
-                                        </div>
-                                    </div>
-                                </div>
-                                <p className="mt-3 text-xs text-slate-500">Set when you signed up. To change your category or how bookings work, get in touch — it affects payments and how guests book.</p>
-                            </div>
                         </SectionCard>
                     )}
 
@@ -595,15 +569,38 @@ export default function ProviderListingEditor({ provider }: { provider: EditorPr
                     )}
 
                     {active === 'amenities' && (
-                        <SectionCard title="Amenities" hint="What guests can count on when they arrive." saving={savingKey === 'amenities'}
-                            onSave={() => run('amenities', { accessibility, parking })}>
-                            <Field label="Accessibility" hint="The nearest option — a guest who needs it wants a clear answer, not a paragraph.">
-                                <OptionPills
-                                    options={ACCESSIBILITY_OPTIONS.map((o) => ({ value: o.key, label: o.label }))}
-                                    value={accessibility}
-                                    onChange={(v) => setAccessibility(accessibility === v ? '' : v)}
-                                />
-                            </Field>
+                        <SectionCard title="Amenities" hint="What guests can count on when they arrive. Everything you tick shows as a “What’s included” list on your listing." saving={savingKey === 'amenities'}
+                            onSave={() => run('amenities', { accessibility, parking, amenities })}>
+                            {/* What's included — a multi-select tick-list. A provider
+                                ticks rather than writing prose, and the same keys drive
+                                the guest listing's "What's included" section. */}
+                            {EXPERIENCE_AMENITY_GROUPS.map((grp) => (
+                                <div key={grp.group}>
+                                    <span className="block text-xs font-semibold uppercase tracking-wide text-slate-500">{grp.group}</span>
+                                    <div className="mt-2 flex flex-wrap gap-2">
+                                        {grp.items.map((a) => {
+                                            const on = amenities.includes(a.key);
+                                            return (
+                                                <button key={a.key} type="button" onClick={() => toggleAmenity(a.key)}
+                                                    aria-pressed={on}
+                                                    className={`inline-flex items-center gap-1.5 rounded-xl border px-4 py-2 text-sm transition ${on ? 'border-emerald-700 ring-2 ring-emerald-700 bg-emerald-50 text-slate-900' : 'border-slate-300 text-slate-700 hover:border-slate-400'}`}>
+                                                    {on && <Check className="h-4 w-4 flex-none text-emerald-700" />}
+                                                    {a.label}
+                                                </button>
+                                            );
+                                        })}
+                                    </div>
+                                </div>
+                            ))}
+                            <div className="border-t border-slate-200 pt-4">
+                                <Field label="Accessibility" hint="The nearest option — a guest who needs it wants a clear answer, not a paragraph.">
+                                    <OptionPills
+                                        options={ACCESSIBILITY_OPTIONS.map((o) => ({ value: o.key, label: o.label }))}
+                                        value={accessibility}
+                                        onChange={(v) => setAccessibility(accessibility === v ? '' : v)}
+                                    />
+                                </Field>
+                            </div>
                             <Field label="Parking">
                                 <OptionPills
                                     options={PARKING_OPTIONS.map((o) => ({ value: o.key, label: o.label }))}
@@ -625,15 +622,9 @@ export default function ProviderListingEditor({ provider }: { provider: EditorPr
                         <SectionCard title="Photos" hint="Photos of the experience — these lead the listing. The first is the cover; drag to reorder." saving={savingKey === 'photos'}
                             disabled={photos.length < 3} disabledLabel={`Add ${3 - photos.length} more photo${3 - photos.length === 1 ? '' : 's'}`}
                             onSave={() => run('photos', { photos, logo })}>
-                            {/* Photo minimum: three, so a listing never leads on a single
-                                weak image. The Save is blocked until then and says how
-                                many more are needed. */}
-                            {photos.length < 3 && (
-                                <div className="flex items-start gap-2 rounded-xl border border-amber-300 bg-amber-50 p-3 text-sm text-amber-900">
-                                    <Check className="mt-0.5 h-4 w-4 flex-none" />
-                                    At least three photos are required. You have {photos.length}; add {3 - photos.length} more.
-                                </div>
-                            )}
+                            {/* Photo minimum stays three (a listing shouldn't lead on
+                                one weak image), but it's carried by the disabled Save
+                                and its "Add N more" label — no separate count banner. */}
                             <div>
                                 <span className="block text-xs font-semibold uppercase tracking-wide text-slate-500">Gallery</span>
                                 <div className="mt-2">
@@ -755,7 +746,7 @@ export default function ProviderListingEditor({ provider }: { provider: EditorPr
                     )}
 
                     {active === 'where' && (
-                        <SectionCard title="Where it happens" hint="How guests reach you. They only ever see the town — the street and postcode stay private until a booking is confirmed." saving={savingKey === 'where'}
+                        <SectionCard title={fixedInPlace ? 'Address' : 'Where it happens'} hint="How guests reach you. They only ever see the town — the street and postcode stay private until a booking is confirmed." saving={savingKey === 'where'}
                             onSave={() => run('where', {
                                 fulfilment,
                                 collection_street: street, collection_town: town, collection_postcode: postcode,
@@ -822,7 +813,7 @@ export default function ProviderListingEditor({ provider }: { provider: EditorPr
                     {active === 'booking' && (
                         <SectionCard title="Booking" hint="How guests book with you — the rules that apply however your listing is booked." saving={savingKey === 'booking'}
                             onSave={() => run('booking', { max_guests: maxGuests, lead_time_days: leadDays, booking_horizon_days: horizonDays })}>
-                            <Field label="Largest group" hint={p.isSlot ? 'The most people one session can take.' : 'The most people you’ll take for one booking.'}>
+                            <Field label="Maximum capacity" hint={p.isSlot ? 'The most people one session can take.' : 'The most people you’ll take for one booking.'}>
                                 <Stepper value={maxGuests} onChange={setMaxGuests} min={1} max={60} />
                             </Field>
                             <Field label="Notice needed" hint="How far ahead a guest has to book.">

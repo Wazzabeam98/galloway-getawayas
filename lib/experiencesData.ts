@@ -7,7 +7,7 @@
 // the bookable sessions inside the stay folded in.
 
 import { isLiveToGuests, mccForProvider, isFoodProvider, normaliseUnit } from '@/lib/serviceOrders';
-import { guestCategory, knownDietaryOptions } from '@/lib/serviceProviders';
+import { guestCategory, knownDietaryOptions, knownExperienceAmenities } from '@/lib/serviceProviders';
 import { shapeOf, generateSessions, sessionClosedToAll, minutesOfDay, type PartialBlock } from '@/lib/serviceSlots';
 import { getImageUrl, firstName } from '@/lib/utils';
 import { shiftDayKey, londonDayKey } from '@/lib/dayKey';
@@ -112,6 +112,9 @@ export interface MpProvider {
     // a guest who needs it really needs it — so it leads. Null when unset.
     accessibility: string | null;
     parking: string | null;
+    // What's included, as a sanitised list of amenity keys — drives the guest
+    // listing's "What's included" section. Empty for a provider who ticked none.
+    amenities: string[];
     // Non-refundable once booked — the "No refund" cancellation policy. The
     // window (cancellation_window_hours) still describes the refundable ones.
     noRefund: boolean;
@@ -420,6 +423,7 @@ async function shapeProviders(admin: any, fromKey: string, toKey: string): Promi
             whatToBring: (p.guest_details && strOrNull(p.guest_details.what_to_bring)) || null,
             accessibility: (p.guest_details && strOrNull(p.guest_details.accessibility)) || null,
             parking: (p.guest_details && strOrNull(p.guest_details.parking)) || null,
+            amenities: knownExperienceAmenities(p.guest_details && p.guest_details.amenities),
             noRefund: !!(p.guest_details && p.guest_details.no_refund),
             description: p.description,
             shape,

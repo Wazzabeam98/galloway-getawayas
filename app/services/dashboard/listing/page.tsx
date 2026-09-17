@@ -108,6 +108,7 @@ export default async function ProviderListingPage() {
                 what_to_bring: gd.what_to_bring || '',
                 accessibility: gd.accessibility || '',
                 parking: gd.parking || '',
+                amenities: Array.isArray(gd.amenities) ? gd.amenities : [],
                 no_refund: gd.no_refund === true,
                 dietary_options: Array.isArray(gd.dietary_options) ? gd.dietary_options : [],
                 areas: (areas || []).map((a: any) => a.label).filter(Boolean),
