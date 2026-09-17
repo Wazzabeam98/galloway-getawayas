@@ -75,6 +75,19 @@ export default function SlotCalendar({
                         : shape && (shape.booked || shape.added)
                             ? [shape.booked ? `${shape.booked} booked` : '', shape.added ? `${shape.added} to fill` : ''].filter(Boolean).join(' · ')
                             : (shape && shape.free ? `${shape.free} open` : '');
+                    // The full label above doesn't fit a phone's ~46px cell, so on
+                    // mobile a compact count carries it — a bare number whose colour
+                    // matches the ticks above it (emerald booked · violet to fill ·
+                    // grey open), so a provider reads it at a glance where they
+                    // actually look. Day off gets a word, it's short enough.
+                    const compact = dayOff ? 'Off'
+                        : shape && shape.booked ? String(shape.booked)
+                            : shape && shape.added ? String(shape.added)
+                                : (shape && shape.free ? String(shape.free) : '');
+                    const compactTone = dayOff ? 'text-slate-400'
+                        : shape && shape.booked ? 'text-emerald-700'
+                            : shape && shape.added ? 'text-violet-600'
+                                : 'text-slate-400';
 
                     let frame = 'bg-white ring-1 ring-slate-200 hover:ring-slate-300';
                     if (past) frame = 'bg-slate-50 ring-1 ring-transparent';
@@ -94,6 +107,7 @@ export default function SlotCalendar({
                                     {ticks.length > 12 && <span className="text-[9px] font-medium text-slate-400">+{ticks.length - 12}</span>}
                                 </div>
                             )}
+                            {compact && <span className={`mt-auto pt-0.5 text-[11px] font-bold sm:hidden ${compactTone}`}>{compact}</span>}
                             {count && <span className="mt-auto hidden pt-1 text-[10px] font-medium text-slate-500 sm:block">{count}</span>}
                         </button>
                     );

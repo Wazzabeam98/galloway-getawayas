@@ -54,6 +54,18 @@ function partyLabel(o: Order): string {
     if (o.item_unit === 'person') return n + (n === 1 ? ' place' : ' places');
     return 'Party of ' + n;
 }
+// The money split for an order, in ONE place so the list and the detail can never
+// disagree: what the guest paid (net of any refund), our fee on it, and what the
+// provider actually gets. The provider's take is the number that must lead the
+// list — a gross figure there reads as their money and it isn't.
+function providerTake(o: Order): { rate: number; refunded: number; gross: number; fee: number; youGet: number } {
+    const rate = Number(o.commission_rate) || 0.10;
+    const refunded = Number(o.amount_refunded) || 0;
+    const gross = Number(o.price || 0);
+    const kept = round2(gross - refunded);
+    const fee = round2(kept * rate);
+    return { rate, refunded, gross, fee, youGet: round2(kept - fee) };
+}
 interface SlotSession { date: string; time: string; capacity: number; seats_taken: number; seats_left: number; private: boolean; closed: boolean; sold: { item_name: string; unit: string; seats: number }[] }
 interface DeclaredSession { id: string; date: string; time: string; capacity: number; seats_taken: number; title: string | null; duration_minutes?: number | null }
 interface DraftSession { time: string; duration: number; capacity: number; title: string }
@@ -79,6 +91,9 @@ export default function ProviderSlotDashboard({ providerId, editHref }: { provid
     const [busy, setBusy] = useState<string | null>(null);
     const [error, setError] = useState<string | null>(null);
     const [notice, setNotice] = useState<string | null>(null);
+    // A load that FAILED (network/server), so an empty calendar can say so rather
+    // than looking like a quiet week.
+    const [loadFailed, setLoadFailed] = useState(false);
 
     const todayIso = londonDayKey();
     const [view, setView] = useState<'month' | 'day'>('month');
@@ -105,8 +120,8 @@ export default function ProviderSlotDashboard({ providerId, editHref }: { provid
 
     const railRef = useRef<HTMLDivElement | null>(null);
 
-    const loadPayouts = useCallback(async () => { try { const r = await fetch('/api/services/connect?provider=' + encodeURIComponent(providerId)); const d = await r.json(); setPayouts({ connected: !!(d && d.connected), payouts_enabled: !!(d && d.payouts_enabled) }); } catch { /* */ } }, [providerId]);
-    const loadOrders = useCallback(async () => { try { const r = await fetch('/api/services/orders?provider=' + encodeURIComponent(providerId)); const d = await r.json(); setOrders(((d && d.orders) || []).filter((o: Order) => o.shape === 'slot')); } catch { /* */ } }, [providerId]);
+    const loadPayouts = useCallback(async () => { try { const r = await fetch('/api/services/connect?provider=' + encodeURIComponent(providerId)); const d = await r.json(); setPayouts({ connected: !!(d && d.connected), payouts_enabled: !!(d && d.payouts_enabled) }); } catch { setLoadFailed(true); } }, [providerId]);
+    const loadOrders = useCallback(async () => { try { const r = await fetch('/api/services/orders?provider=' + encodeURIComponent(providerId)); const d = await r.json(); if (!r.ok) throw new Error('boom'); setOrders(((d && d.orders) || []).filter((o: Order) => o.shape === 'slot')); } catch { setLoadFailed(true); } }, [providerId]);
     const loadSchedule = useCallback(async () => {
         try { const r = await fetch('/api/services/slots/schedule?provider=' + encodeURIComponent(providerId)); const d = await r.json();
             if (d && d.ok) {
@@ -116,12 +131,13 @@ export default function ProviderSlotDashboard({ providerId, editHref }: { provid
                 setSlotDefaults({ duration: dur, capacity: cap }); setSlotMin(Number(d.slot_min_people) || 1); setItems(d.items || []);
                 setDDur((v) => v === 60 ? dur : v); setDCap((v) => v === 1 ? cap : v);
             }
-        } catch { /* */ }
+        } catch { setLoadFailed(true); }
     }, [providerId]);
-    const loadSessions = useCallback(async () => { try { const r = await fetch('/api/services/slots/sessions?provider=' + encodeURIComponent(providerId)); const d = await r.json(); if (d && d.ok) setSessions(d.sessions || []); } catch { /* */ } }, [providerId]);
-    const loadPartialBlocks = useCallback(async () => { try { const r = await fetch('/api/services/slots/blocks?provider=' + encodeURIComponent(providerId)); const d = await r.json(); if (d && d.ok) setPartialBlocks(d.blocks || []); } catch { /* */ } }, [providerId]);
+    const loadSessions = useCallback(async () => { try { const r = await fetch('/api/services/slots/sessions?provider=' + encodeURIComponent(providerId)); const d = await r.json(); if (d && d.ok) setSessions(d.sessions || []); } catch { setLoadFailed(true); } }, [providerId]);
+    const loadPartialBlocks = useCallback(async () => { try { const r = await fetch('/api/services/slots/blocks?provider=' + encodeURIComponent(providerId)); const d = await r.json(); if (d && d.ok) setPartialBlocks(d.blocks || []); } catch { setLoadFailed(true); } }, [providerId]);
 
-    useEffect(() => { loadPayouts(); loadOrders(); loadSchedule(); loadSessions(); loadPartialBlocks(); }, [loadPayouts, loadOrders, loadSchedule, loadSessions, loadPartialBlocks]);
+    const reloadAll = useCallback(() => { setLoadFailed(false); loadPayouts(); loadOrders(); loadSchedule(); loadSessions(); loadPartialBlocks(); }, [loadPayouts, loadOrders, loadSchedule, loadSessions, loadPartialBlocks]);
+    useEffect(() => { reloadAll(); }, [reloadAll]);
     // Phones open on the day, not the month.
     useEffect(() => { if (isNarrow()) setView('day'); }, []);
     useEffect(() => { if (panel !== 'none' && isNarrow()) railRef.current?.scrollIntoView({ behavior: 'smooth', block: 'start' }); }, [panel, activeKey, dayDate]);
@@ -264,11 +280,7 @@ export default function ProviderSlotDashboard({ providerId, editHref }: { provid
     // what they booked, party, a cost breakdown, when they booked and what they
     // paid — plus Call, an in-app Message thread, and Cancel & refund.
     const BookingDetail = (o: Order) => {
-        const rate = Number(o.commission_rate) || 0.10;
-        const refunded = Number(o.amount_refunded) || 0;
-        const kept = round2(Number(o.price || 0) - refunded);           // what the guest actually paid, net of any refund
-        const fee = round2(kept * rate);                                // our cut on what was kept
-        const yours = round2(kept - fee);                               // the provider's take
+        const { rate, refunded, fee, youGet: yours } = providerTake(o);
         const perPerson = o.item_unit === 'person' && o.unit_price && (o.quantity || 0) > 1;
         return (
             <div className="rounded-2xl border border-slate-200 bg-white p-4">
@@ -347,7 +359,13 @@ export default function ProviderSlotDashboard({ providerId, editHref }: { provid
                                     <span className="block truncate text-sm font-semibold text-slate-900">{o.guest_name || 'Guest'}</span>
                                     <span className="block truncate text-xs text-slate-500">{o.item_name}{' · '}{partyLabel(o)}</span>
                                 </span>
-                                <span className="flex-none text-sm font-semibold text-slate-900">{money(o.price || 0)}</span>
+                                {/* The provider's TAKE leads — a gross figure here reads
+                                    as their money and isn't. The guest total is the muted
+                                    second line, so both are present and unambiguous. */}
+                                <span className="flex-none text-right">
+                                    <span className="block text-sm font-semibold text-slate-900">{money(providerTake(o).youGet)}</span>
+                                    <span className="block text-[11px] text-slate-400">you get · {money(o.price || 0)} paid</span>
+                                </span>
                                 <ChevronRight className="h-4 w-4 flex-none text-slate-400" aria-hidden />
                             </button>
                         </li>
@@ -372,6 +390,13 @@ export default function ProviderSlotDashboard({ providerId, editHref }: { provid
 
     return (
         <div className="mt-5">
+            {loadFailed && (
+                <div className="mb-5 rounded-2xl border border-red-200 bg-red-50 p-4">
+                    <p className="font-semibold text-red-800">We couldn’t load your calendar</p>
+                    <p className="mt-1 text-sm text-red-700/80">Some of it didn’t load — that’s a connection problem, not an empty diary. Anything below may be missing until you try again.</p>
+                    <button type="button" onClick={reloadAll} className="mt-3 rounded-lg bg-red-700 px-3 py-2 text-sm font-medium text-white hover:bg-red-800">Try again</button>
+                </div>
+            )}
             {!live && (
                 <div className="mb-5 rounded-2xl border border-amber-300 bg-amber-50 p-4">
                     <p className="font-semibold text-amber-900">One step before guests can book you</p>
