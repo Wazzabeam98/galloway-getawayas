@@ -8,6 +8,7 @@ import Env from '@/config/Env';
 import { getImageUrl, generateRandomNumber } from '@/lib/utils';
 import { compressImage } from '@/lib/compressImage';
 import { GUEST_REGIONS, GUEST_COVERAGE_ALL_KEY } from '@/lib/strings';
+import { slotAsksWhereFork } from '@/lib/serviceProviders';
 import { PhotoEditorGrid } from './PhotoEditorGrid';
 import {
     FileText, User, Info, Salad, Image as ImageIcon,
@@ -28,7 +29,7 @@ import {
 
 export interface EditorProvider {
     id: string; shape: string; isSlot: boolean; isFood: boolean;
-    business_name: string; category_label: string; description: string;
+    business_name: string; category_label: string; category: string; description: string;
     status: string; owner_paused: boolean;
     photos: string[]; headshot: string | null; logo: string | null;
     dietary_note: string; fulfilment: string;
@@ -62,17 +63,20 @@ async function saveSection(providerId: string, section: string, data: any): Prom
 }
 
 // One section shell: header, the fields (children), and its own Save button.
-function SectionCard({ title, hint, children, onSave, saving }: {
+// `disabled` blocks the save while a hard requirement isn't met (e.g. the photo
+// minimum) — the button explains why rather than saving something invalid.
+function SectionCard({ title, hint, children, onSave, saving, disabled, disabledLabel }: {
     title: string; hint?: string; children: React.ReactNode; onSave: () => void; saving: boolean;
+    disabled?: boolean; disabledLabel?: string;
 }) {
     return (
         <section className="rounded-2xl border border-slate-200 bg-white p-5 sm:p-6">
             <h2 className="text-xl font-bold text-slate-900">{title}</h2>
             {hint && <p className="mt-1 text-sm text-slate-500">{hint}</p>}
             <div className="mt-4 space-y-4">{children}</div>
-            <button type="button" onClick={onSave} disabled={saving}
-                className="mt-5 rounded-xl bg-emerald-700 px-5 py-2.5 text-sm font-bold text-white hover:bg-emerald-800 disabled:opacity-60">
-                {saving ? 'Saving…' : 'Save'}
+            <button type="button" onClick={onSave} disabled={saving || disabled}
+                className="mt-5 rounded-xl bg-emerald-700 px-5 py-2.5 text-sm font-bold text-white hover:bg-emerald-800 disabled:cursor-not-allowed disabled:opacity-60">
+                {saving ? 'Saving…' : (disabled && disabledLabel) ? disabledLabel : 'Save'}
             </button>
         </section>
     );
@@ -187,6 +191,15 @@ export default function ProviderListingEditor({ provider }: { provider: EditorPr
     })));
     const setRow = (i: number, patch: Partial<MenuRow>) => setMenu(menu.map((r, j) => j === i ? { ...r, ...patch } : r));
 
+    // Seats and a minimum-to-run only mean anything when something is sold PER
+    // PERSON — a whole-session (private) price is one booking at one price
+    // whoever turns up, so "how many can it hold" and "smallest group to run"
+    // are noise on a sauna. Shown only when an active item is priced per person.
+    // (Capacity/min moved onto the item in feat/per-item-capacity; this reads
+    // the same per-person signal at the provider level until the per-item write
+    // UI lands.)
+    const hasPerPersonItem = menu.some((r) => r.active && r.unit === 'person');
+
     async function changeItemImage(i: number, e: React.ChangeEvent<HTMLInputElement>) {
         const file = (e.target.files || [])[0];
         e.target.value = '';
@@ -200,7 +213,15 @@ export default function ProviderListingEditor({ provider }: { provider: EditorPr
     // Where it happens: how a guest reaches the experience, the private venue
     // address (a guest only ever sees the town), and the regions a travelling
     // provider covers.
-    const [fulfilment, setFulfilment] = useState(p.fulfilment || 'collection');
+    // Whether this experience can travel to the guest. A slot that is fixed by
+    // nature — a sauna, a tasting, a guided walk — happens in one place; only
+    // the yoga/massage/painting kind genuinely goes either way (the same call
+    // the sign-up wizard makes, slotAsksWhereFork). 'other' and any as-yet-
+    // unknown category keep every option rather than be guessed fixed. A fixed
+    // category is pinned to come-to-me and never offered travel.
+    const fixedInPlace = p.isSlot && !!p.category && p.category !== 'other' && !slotAsksWhereFork(p.category);
+    const canTravel = !fixedInPlace;
+    const [fulfilment, setFulfilment] = useState(fixedInPlace ? 'collection' : (p.fulfilment || 'collection'));
     const [street, setStreet] = useState(p.collection_street);
     const [town, setTown] = useState(p.collection_town);
     const [postcode, setPostcode] = useState(p.collection_postcode);
@@ -372,7 +393,7 @@ export default function ProviderListingEditor({ provider }: { provider: EditorPr
                                     {headshot && <button type="button" onClick={() => setHeadshot(null)} className="text-sm text-slate-500 hover:text-red-600">Remove</button>}
                                 </div>
                             </div>
-                            <Field label="Professional title"><input className={inputCls} value={profTitle} onChange={(e) => setProfTitle(e.target.value)} placeholder="Chef and restaurant owner" /></Field>
+                            <Field label="Professional title"><input className={inputCls} value={profTitle} onChange={(e) => setProfTitle(e.target.value)} /></Field>
                             <Field label="Years of experience"><input className={inputCls} value={years} onChange={(e) => setYears(e.target.value)} placeholder="5" /></Field>
                             <Field label="Qualifications"><textarea className={inputCls} rows={2} value={quals} onChange={(e) => setQuals(e.target.value)} /></Field>
                             <Field label="Recognition (optional)"><textarea className={inputCls} rows={2} value={recognition} onChange={(e) => setRecognition(e.target.value)} /></Field>
@@ -441,14 +462,15 @@ export default function ProviderListingEditor({ provider }: { provider: EditorPr
 
                     {active === 'photos' && (
                         <SectionCard title="Photos" hint="Photos of the experience — these lead the listing. The first is the cover; drag to reorder." saving={savingKey === 'photos'}
+                            disabled={photos.length < 3} disabledLabel={`Add ${3 - photos.length} more photo${3 - photos.length === 1 ? '' : 's'}`}
                             onSave={() => run('photos', { photos, logo })}>
-                            {/* Last-photo guard: removing every photo hides the listing
-                                from the homepage and both marketplace grids (they filter
-                                on a hero). Said, never blocked. */}
-                            {photos.length === 0 && !p.items.some((i) => i.image) && (
+                            {/* Photo minimum: three, so a listing never leads on a single
+                                weak image. The Save is blocked until then and says how
+                                many more are needed. */}
+                            {photos.length < 3 && (
                                 <div className="flex items-start gap-2 rounded-xl border border-amber-300 bg-amber-50 p-3 text-sm text-amber-900">
                                     <Check className="mt-0.5 h-4 w-4 flex-none" />
-                                    With no photo, your listing is hidden from the homepage and both marketplace grids. Add at least one to appear.
+                                    At least three photos are required. You have {photos.length}; add {3 - photos.length} more.
                                 </div>
                             )}
                             <div>
@@ -547,7 +569,8 @@ export default function ProviderListingEditor({ provider }: { provider: EditorPr
                                                     )}
                                                     {p.isSlot && (
                                                         <label className="flex items-center gap-1 text-sm text-slate-500">
-                                                            <input className="w-20 rounded-xl border border-slate-300 p-2.5 text-sm" type="number" min={1} placeholder="mins" value={r.duration} onChange={(e) => setRow(i, { duration: e.target.value })} />
+                                                            {/* Minutes, in quarter-hour steps — nothing runs for 17 minutes, and a 1-minute step invited exactly that. */}
+                                                            <input className="w-20 rounded-xl border border-slate-300 p-2.5 text-sm" type="number" min={15} step={15} placeholder="mins" value={r.duration} onChange={(e) => setRow(i, { duration: e.target.value })} />
                                                             <span>min</span>
                                                         </label>
                                                     )}
@@ -565,7 +588,7 @@ export default function ProviderListingEditor({ provider }: { provider: EditorPr
                                     </div>
                                 ))}
                             </div>
-                            <button type="button" onClick={() => setMenu([...menu, { name: '', description: '', price: '', unit: 'flat', image: null, duration: '', fulfilment: (p.isSlot && fulfilment === 'both') ? 'collection' : null, active: true }])}
+                            <button type="button" onClick={() => setMenu([...menu, { name: '', description: '', price: '', unit: 'flat', image: null, duration: p.isSlot ? '60' : '', fulfilment: (p.isSlot && fulfilment === 'both') ? 'collection' : null, active: true }])}
                                 className="text-sm font-semibold text-emerald-700 hover:text-emerald-800">+ Add an item</button>
                         </SectionCard>
                     )}
@@ -577,21 +600,27 @@ export default function ProviderListingEditor({ provider }: { provider: EditorPr
                                 collection_street: street, collection_town: town, collection_postcode: postcode,
                                 areas: travels ? areas : [],
                             })}>
-                            <Field label="How guests get it">
-                                <div className="space-y-2">
-                                    {[
-                                        { key: 'collection', label: 'Guests come to me', note: 'At your studio, sauna, kitchen — one place.' },
-                                        { key: 'delivery', label: 'I travel to the guest', note: 'You go to their cottage.' },
-                                        { key: 'both', label: 'Both', note: 'Guests can come to you, or you travel to them.' },
-                                    ].map((o) => (
-                                        <button key={o.key} type="button" onClick={() => setFulfilment(o.key)}
-                                            className={`w-full rounded-xl border px-4 py-3 text-left text-sm transition ${fulfilment === o.key ? 'border-emerald-700 ring-2 ring-emerald-700 bg-emerald-50' : 'border-slate-300 hover:border-slate-400'}`}>
-                                            <div className="font-semibold text-slate-900">{o.label}</div>
-                                            <div className="text-xs text-slate-500">{o.note}</div>
-                                        </button>
-                                    ))}
-                                </div>
-                            </Field>
+                            {canTravel ? (
+                                <Field label="How guests get it">
+                                    <div className="space-y-2">
+                                        {[
+                                            { key: 'collection', label: 'Guests come to me', note: 'At your studio, sauna, kitchen — one place.' },
+                                            { key: 'delivery', label: 'I travel to the guest', note: 'You go to their cottage.' },
+                                            { key: 'both', label: 'Both', note: 'Guests can come to you, or you travel to them.' },
+                                        ].map((o) => (
+                                            <button key={o.key} type="button" onClick={() => setFulfilment(o.key)}
+                                                className={`w-full rounded-xl border px-4 py-3 text-left text-sm transition ${fulfilment === o.key ? 'border-emerald-700 ring-2 ring-emerald-700 bg-emerald-50' : 'border-slate-300 hover:border-slate-400'}`}>
+                                                <div className="font-semibold text-slate-900">{o.label}</div>
+                                                <div className="text-xs text-slate-500">{o.note}</div>
+                                            </button>
+                                        ))}
+                                    </div>
+                                </Field>
+                            ) : (
+                                // Fixed by nature — it happens in one place, so there is no
+                                // travel choice to make. Just the address below.
+                                <p className="text-sm text-slate-600">Guests come to you — this kind of experience happens in one place.</p>
+                            )}
 
                             {collects && (
                                 <div className="space-y-3">
@@ -661,10 +690,19 @@ export default function ProviderListingEditor({ provider }: { provider: EditorPr
                                 </div>
                             </div>
                             <div className="grid grid-cols-2 gap-4">
-                                <Field label="Session length (min)" hint="How long one session runs."><input className={inputCls} type="number" min={15} value={slotLength} onChange={(e) => setSlotLength(e.target.value)} /></Field>
+                                <Field label="Session length (min)" hint="How long one session runs."><input className={inputCls} type="number" min={15} step={15} value={slotLength} onChange={(e) => setSlotLength(e.target.value)} /></Field>
                                 <Field label="Gap between sessions (min)" hint="Time to reset or clean up before the next one can start."><input className={inputCls} type="number" min={0} value={turnaround} onChange={(e) => setTurnaround(e.target.value)} /></Field>
-                                <Field label="Seats, if sold per person" hint="How many seats a per-person session has. A whole-session (private) price is sold whole whoever comes, so this doesn’t apply to it."><input className={inputCls} type="number" min={1} value={capacity} onChange={(e) => setCapacity(e.target.value)} /></Field>
-                                <Field label="Minimum to run, if per person" hint="For a per-person session: how many must book before it goes ahead. 1 = no minimum. A whole-session price ignores this."><input className={inputCls} type="number" min={1} value={minPeople} onChange={(e) => setMinPeople(e.target.value)} /></Field>
+                                {/* Only for a per-person item. Same wording as the sign-up
+                                    wizard's g_capacity and g_slot_min screens (lib/strings
+                                    GUEST_SCREEN_COPY), so a provider meets the same question
+                                    in both places. Hidden for a whole-session-only provider,
+                                    where seats and a minimum-to-run mean nothing. */}
+                                {hasPerPersonItem && (
+                                    <>
+                                        <Field label="How many can it hold?" hint="The most a per-person session fits at once — the individual places you can sell."><input className={inputCls} type="number" min={1} value={capacity} onChange={(e) => setCapacity(e.target.value)} /></Field>
+                                        <Field label="Smallest group you’ll run a session for" hint="A single booking must be at least this many people — leave it at 1 if a session will run for anyone."><input className={inputCls} type="number" min={1} value={minPeople} onChange={(e) => setMinPeople(e.target.value)} /></Field>
+                                    </>
+                                )}
                                 <Field label="Notice needed (days)" hint="How far ahead a guest must book — 2 means at least 2 days’ notice. 0 = same-day is fine."><input className={inputCls} type="number" min={0} value={leadDays} onChange={(e) => setLeadDays(e.target.value)} /></Field>
                                 <Field label="Cancellation window (hrs)" hint="How long before the start a guest can still cancel for a refund."><input className={inputCls} type="number" min={0} value={cancelHours} onChange={(e) => setCancelHours(e.target.value)} /></Field>
                             </div>

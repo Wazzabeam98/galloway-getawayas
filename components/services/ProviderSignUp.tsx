@@ -1011,11 +1011,16 @@ function ApplicationForm() {
                         }
                     }
                     if (audienceForTrade(existing.trade || tradeFromUrl) === 'guest') {
-                        const byLabel = GUEST_CATEGORIES.filter((c) => c.label && c.label === ex.custom_label)[0];
-                        // A real match restores the category; otherwise a sentinel
-                        // ('other') marks "already past the picker" without claiming
+                        // The category key is persisted now (guest_details.category),
+                        // so read it straight back. The label match is kept only as a
+                        // fallback for rows saved before the key existed; 'other' is
+                        // the last resort — "already past the picker" without claiming
                         // a food category it isn't.
-                        setGuestCategory(byLabel ? byLabel.key : 'other');
+                        const storedKey = ex.guest_details && typeof ex.guest_details === 'object'
+                            ? String((ex.guest_details as any).category || '').trim()
+                            : '';
+                        const byLabel = GUEST_CATEGORIES.filter((c) => c.label && c.label === ex.custom_label)[0];
+                        setGuestCategory(storedKey || (byLabel ? byLabel.key : 'other'));
                         // Their declarations, which now hold the terms acceptance.
                         // Pre-tick the agree box only if they already agreed to the
                         // CURRENT terms version — if the terms have moved on since,
@@ -2885,6 +2890,11 @@ function ApplicationForm() {
         if (audienceForTrade(trade) !== 'guest') return {};
         const t = (v: string) => (String(v || '').trim() || null);
         return {
+            // The category KEY the provider picked, persisted so an approved
+            // provider knows its own sub-type. Everything that used to guess it
+            // back from the label or the Stripe code can read this instead — see
+            // the recovery below and lib/serviceProviders guestCategory/isFood.
+            category: t(guestCategory),
             years_experience: t(yearsDoing),
             professional_title: t(professionalTitle),
             qualifications: t(qualifications),

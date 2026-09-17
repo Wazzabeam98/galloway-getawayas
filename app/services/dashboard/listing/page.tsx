@@ -72,6 +72,9 @@ export default async function ProviderListingPage() {
                 isFood: isFoodProvider(provider),
                 business_name: provider.business_name || '',
                 category_label: provider.custom_label || '',
+                // The picked category KEY (guest_details.category) — what the
+                // editor needs to know whether this experience can travel.
+                category: gd.category || '',
                 description: provider.description || '',
                 status: provider.status,
                 owner_paused: provider.owner_paused === true,
