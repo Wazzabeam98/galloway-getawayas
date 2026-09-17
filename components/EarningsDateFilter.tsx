@@ -3,14 +3,14 @@
 import { useRouter, useSearchParams } from 'next/navigation';
 import { SlidersHorizontal } from 'lucide-react';
 
-export default function EarningsDateFilter({ from, to }: { from: string; to: string }) {
+export default function EarningsDateFilter({ from, to, basePath = '/dashboard/earnings' }: { from: string; to: string; basePath?: string }) {
     const router = useRouter();
     const params = useSearchParams();
 
     const update = (key: 'from' | 'to', value: string) => {
         const sp = new URLSearchParams(params?.toString());
         sp.set(key, value);
-        router.push(`/dashboard/earnings?${sp.toString()}`);
+        router.push(`${basePath}?${sp.toString()}`);
     };
 
     return (

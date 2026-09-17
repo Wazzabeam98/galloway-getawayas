@@ -8,8 +8,8 @@ import SlotCalendar, { type DayShape } from '@/components/services/SlotCalendar'
 import SlotDayView from '@/components/services/SlotDayView';
 import { daySlots, dayTicks, type DayInputs, type DaySlotRow } from '@/lib/slotDay';
 import { seatConfig } from '@/lib/serviceSlots';
-import { orderReference } from '@/lib/serviceOrders';
-import OrderThread from '@/components/marketplace/OrderThread';
+import Link from 'next/link';
+import { orderReference, orderNet } from '@/lib/serviceOrders';
 import { OptionPills, Stepper, SESSION_LENGTH_OPTIONS, minutesLabel } from '@/components/services/editorControls';
 
 interface Order {
@@ -25,7 +25,6 @@ interface Order {
 // booking detail (app/dashboard/bookings/[id]) is built from, so an experience
 // booking reads in the same language rather than a second invented one.
 const money = (value: number) => '£' + Number(value || 0).toFixed(2);
-const round2 = (value: number) => Math.round(Number(value) * 100) / 100;
 function Row({ label, value, muted }: { label: string; value: React.ReactNode; muted?: boolean }) {
     return (
         <div className="flex items-baseline justify-between gap-6 border-b border-slate-100 py-2 last:border-0">
@@ -54,18 +53,11 @@ function partyLabel(o: Order): string {
     if (o.item_unit === 'person') return n + (n === 1 ? ' place' : ' places');
     return 'Party of ' + n;
 }
-// The money split for an order, in ONE place so the list and the detail can never
-// disagree: what the guest paid (net of any refund), our fee on it, and what the
-// provider actually gets. The provider's take is the number that must lead the
-// list — a gross figure there reads as their money and it isn't.
-function providerTake(o: Order): { rate: number; refunded: number; gross: number; fee: number; youGet: number } {
-    const rate = Number(o.commission_rate) || 0.10;
-    const refunded = Number(o.amount_refunded) || 0;
-    const gross = Number(o.price || 0);
-    const kept = round2(gross - refunded);
-    const fee = round2(kept * rate);
-    return { rate, refunded, gross, fee, youGet: round2(kept - fee) };
-}
+// The money split for an order — the provider's take leads the list (a gross
+// figure there reads as their money and it isn't). Delegates to the shared
+// lib/serviceOrders.orderNet, so the list, the detail and the earnings page can
+// never disagree.
+const providerTake = orderNet;
 interface SlotSession { date: string; time: string; capacity: number; seats_taken: number; seats_left: number; private: boolean; closed: boolean; sold: { item_name: string; unit: string; seats: number }[] }
 interface DeclaredSession { id: string; date: string; time: string; capacity: number; seats_taken: number; title: string | null; duration_minutes?: number | null }
 interface DraftSession { time: string; duration: number; capacity: number; title: string }
@@ -105,7 +97,6 @@ export default function ProviderSlotDashboard({ providerId, editHref }: { provid
     // Within a session's detail: which guest's booking is open (null = the list),
     // and whether that booking's message thread is showing.
     const [activeOrderId, setActiveOrderId] = useState<string | null>(null);
-    const [threadOpen, setThreadOpen] = useState(false);
     const [selected, setSelected] = useState<Set<string>>(new Set());
     const [anchor, setAnchor] = useState<string | null>(null);
 
@@ -219,7 +210,7 @@ export default function ProviderSlotDashboard({ providerId, editHref }: { provid
         if (shift) { setSelected((prev) => { const next = new Set(prev); if (anchor) { for (const dd of daysBetween(anchor, date)) if (dd >= todayIso) next.add(dd); } else if (next.has(date)) next.delete(date); else next.add(date); return next; }); setAnchor(date); setPanel('bulk'); setDTime(''); setPending([]); }
         else openDay(date);
     };
-    const openRow = (row: DaySlotRow) => { setActiveKey(keyOf(dayDate, row.time)); setPanel('detail'); setActiveOrderId(null); setThreadOpen(false); };
+    const openRow = (row: DaySlotRow) => { setActiveKey(keyOf(dayDate, row.time)); setPanel('detail'); setActiveOrderId(null); };
     const addAt = (time: string) => { setDTime(time); setDDur(slotDefaults.duration || 60); setDCap(slotDefaults.capacity || 1); setDTitle(''); setPending([]); setPanel('add'); };
 
     const fillLine = (r: DaySlotRow) => r.kind === 'private' ? 'Private hire — whole session' : `${r.seatsTaken || 0} of ${r.capacity || 0} booked${(r.seatsLeft || 0) > 0 ? ` · ${r.seatsLeft} left` : ' · full'}`;
@@ -285,7 +276,7 @@ export default function ProviderSlotDashboard({ providerId, editHref }: { provid
         return (
             <div className="rounded-2xl border border-slate-200 bg-white p-4">
                 <div className="flex items-start justify-between">
-                    <button type="button" onClick={() => { setActiveOrderId(null); setThreadOpen(false); }} className="inline-flex items-center gap-1 text-xs font-semibold text-slate-500 hover:text-slate-800"><ArrowLeft className="h-3.5 w-3.5" />All guests</button>
+                    <button type="button" onClick={() => setActiveOrderId(null)} className="inline-flex items-center gap-1 text-xs font-semibold text-slate-500 hover:text-slate-800"><ArrowLeft className="h-3.5 w-3.5" />All guests</button>
                     <button type="button" onClick={() => { setPanel('none'); setActiveKey(null); setActiveOrderId(null); }} className="text-slate-400 hover:text-slate-700" aria-label="Close"><X className="h-4 w-4" /></button>
                 </div>
 
@@ -325,16 +316,13 @@ export default function ProviderSlotDashboard({ providerId, editHref }: { provid
 
                 <div className="mt-3 flex flex-wrap items-center gap-2">
                     {o.guest_phone ? <a href={'tel:' + o.guest_phone} className="inline-flex items-center gap-1.5 rounded-lg border border-slate-300 px-3 py-1.5 text-sm font-medium text-slate-700 hover:border-slate-400"><Phone className="h-4 w-4" />Call</a> : null}
-                    <button type="button" onClick={() => setThreadOpen((v) => !v)} className={`inline-flex items-center gap-1.5 rounded-lg border px-3 py-1.5 text-sm font-medium ${threadOpen ? 'border-slate-900 bg-slate-900 text-white' : 'border-slate-300 text-slate-700 hover:border-slate-400'}`}><MessageSquare className="h-4 w-4" />{threadOpen ? 'Hide messages' : 'Message'}</button>
+                    {/* Message opens the real thread in the messages section — the
+                        same surface the inbox links to — not a panel inside the
+                        calendar. The thread masks the guest's address and emails
+                        them a link back. */}
+                    <Link href={`/services/messages/order/${o.id}`} className="inline-flex items-center gap-1.5 rounded-lg border border-slate-300 px-3 py-1.5 text-sm font-medium text-slate-700 hover:border-slate-400"><MessageSquare className="h-4 w-4" />Message</Link>
                     <button type="button" disabled={busy === o.id} onClick={() => refund(o.id)} className="ml-auto inline-flex items-center gap-1.5 rounded-lg px-3 py-1.5 text-sm font-medium text-slate-500 hover:text-red-600 disabled:opacity-60"><Trash2 className="h-4 w-4" />{busy === o.id ? 'Refunding…' : 'Cancel & refund'}</button>
                 </div>
-
-                {threadOpen ? (
-                    <div className="mt-3 border-t border-slate-100 pt-3">
-                        <p className="mb-2 text-xs text-slate-400">Messages go through Galloway Getaways — {(o.guest_name || 'the guest').split(' ')[0]} gets an email with a link back and never sees your address.</p>
-                        <OrderThread orderId={o.id} />
-                    </div>
-                ) : null}
             </div>
         );
     };
@@ -353,7 +341,7 @@ export default function ProviderSlotDashboard({ providerId, editHref }: { provid
                 <ul className="mt-4 space-y-2">
                     {activeOrders.map((o) => (
                         <li key={o.id}>
-                            <button type="button" onClick={() => { setActiveOrderId(o.id); setThreadOpen(false); }} className="flex w-full items-center gap-3 rounded-xl border border-slate-200 p-3 text-left hover:border-slate-300 hover:bg-slate-50">
+                            <button type="button" onClick={() => setActiveOrderId(o.id)} className="flex w-full items-center gap-3 rounded-xl border border-slate-200 p-3 text-left hover:border-slate-300 hover:bg-slate-50">
                                 <span className="flex h-9 w-9 flex-none items-center justify-center rounded-full bg-slate-100 text-xs font-semibold text-slate-600">{initialsOf(o.guest_name)}</span>
                                 <span className="min-w-0 flex-1">
                                     <span className="block truncate text-sm font-semibold text-slate-900">{o.guest_name || 'Guest'}</span>

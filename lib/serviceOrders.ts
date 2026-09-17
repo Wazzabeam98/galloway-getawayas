@@ -459,3 +459,20 @@ export function orderReference(orderId: string | null | undefined): string {
     }
     return 'GG-' + out;
 }
+
+// The money split for ONE order: what the guest paid net of any refund, our 10%
+// fee on it, and the provider's take. The provider's money is the 90% that lands
+// directly in their own Stripe balance (destination charge). Shared so the
+// calendar panel, the earnings page and anywhere else read the SAME numbers.
+// NOTE commission_rate here is a FRACTION (0.10), not a percent.
+export function orderNet(
+    o: { price?: number | null; commission_rate?: number | null; amount_refunded?: number | null }
+): { rate: number; refunded: number; gross: number; fee: number; youGet: number } {
+    const r2 = (n: number) => Math.round(n * 100) / 100;
+    const rate = Number(o.commission_rate) || 0.10;
+    const refunded = Number(o.amount_refunded) || 0;
+    const gross = Number(o.price || 0);
+    const kept = r2(gross - refunded);        // what the guest actually paid, net of refund
+    const fee = r2(kept * rate);              // our cut on what was kept
+    return { rate, refunded, gross, fee, youGet: r2(kept - fee) };
+}
