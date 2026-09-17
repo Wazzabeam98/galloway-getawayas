@@ -62,17 +62,20 @@ async function saveSection(providerId: string, section: string, data: any): Prom
 }
 
 // One section shell: header, the fields (children), and its own Save button.
-function SectionCard({ title, hint, children, onSave, saving }: {
+// `disabled` blocks the save while a hard requirement isn't met (e.g. the photo
+// minimum) — the button explains why rather than saving something invalid.
+function SectionCard({ title, hint, children, onSave, saving, disabled, disabledLabel }: {
     title: string; hint?: string; children: React.ReactNode; onSave: () => void; saving: boolean;
+    disabled?: boolean; disabledLabel?: string;
 }) {
     return (
         <section className="rounded-2xl border border-slate-200 bg-white p-5 sm:p-6">
             <h2 className="text-xl font-bold text-slate-900">{title}</h2>
             {hint && <p className="mt-1 text-sm text-slate-500">{hint}</p>}
             <div className="mt-4 space-y-4">{children}</div>
-            <button type="button" onClick={onSave} disabled={saving}
-                className="mt-5 rounded-xl bg-emerald-700 px-5 py-2.5 text-sm font-bold text-white hover:bg-emerald-800 disabled:opacity-60">
-                {saving ? 'Saving…' : 'Save'}
+            <button type="button" onClick={onSave} disabled={saving || disabled}
+                className="mt-5 rounded-xl bg-emerald-700 px-5 py-2.5 text-sm font-bold text-white hover:bg-emerald-800 disabled:cursor-not-allowed disabled:opacity-60">
+                {saving ? 'Saving…' : (disabled && disabledLabel) ? disabledLabel : 'Save'}
             </button>
         </section>
     );
@@ -372,7 +375,7 @@ export default function ProviderListingEditor({ provider }: { provider: EditorPr
                                     {headshot && <button type="button" onClick={() => setHeadshot(null)} className="text-sm text-slate-500 hover:text-red-600">Remove</button>}
                                 </div>
                             </div>
-                            <Field label="Professional title"><input className={inputCls} value={profTitle} onChange={(e) => setProfTitle(e.target.value)} placeholder="Chef and restaurant owner" /></Field>
+                            <Field label="Professional title"><input className={inputCls} value={profTitle} onChange={(e) => setProfTitle(e.target.value)} /></Field>
                             <Field label="Years of experience"><input className={inputCls} value={years} onChange={(e) => setYears(e.target.value)} placeholder="5" /></Field>
                             <Field label="Qualifications"><textarea className={inputCls} rows={2} value={quals} onChange={(e) => setQuals(e.target.value)} /></Field>
                             <Field label="Recognition (optional)"><textarea className={inputCls} rows={2} value={recognition} onChange={(e) => setRecognition(e.target.value)} /></Field>
@@ -441,14 +444,15 @@ export default function ProviderListingEditor({ provider }: { provider: EditorPr
 
                     {active === 'photos' && (
                         <SectionCard title="Photos" hint="Photos of the experience — these lead the listing. The first is the cover; drag to reorder." saving={savingKey === 'photos'}
+                            disabled={photos.length < 3} disabledLabel={`Add ${3 - photos.length} more photo${3 - photos.length === 1 ? '' : 's'}`}
                             onSave={() => run('photos', { photos, logo })}>
-                            {/* Last-photo guard: removing every photo hides the listing
-                                from the homepage and both marketplace grids (they filter
-                                on a hero). Said, never blocked. */}
-                            {photos.length === 0 && !p.items.some((i) => i.image) && (
+                            {/* Photo minimum: three, so a listing never leads on a single
+                                weak image. The Save is blocked until then and says how
+                                many more are needed. */}
+                            {photos.length < 3 && (
                                 <div className="flex items-start gap-2 rounded-xl border border-amber-300 bg-amber-50 p-3 text-sm text-amber-900">
                                     <Check className="mt-0.5 h-4 w-4 flex-none" />
-                                    With no photo, your listing is hidden from the homepage and both marketplace grids. Add at least one to appear.
+                                    At least three photos are required — they lead your listing on the homepage and both marketplace grids. You have {photos.length}; add {3 - photos.length} more.
                                 </div>
                             )}
                             <div>
@@ -547,7 +551,8 @@ export default function ProviderListingEditor({ provider }: { provider: EditorPr
                                                     )}
                                                     {p.isSlot && (
                                                         <label className="flex items-center gap-1 text-sm text-slate-500">
-                                                            <input className="w-20 rounded-xl border border-slate-300 p-2.5 text-sm" type="number" min={1} placeholder="mins" value={r.duration} onChange={(e) => setRow(i, { duration: e.target.value })} />
+                                                            {/* Minutes, in quarter-hour steps — nothing runs for 17 minutes, and a 1-minute step invited exactly that. */}
+                                                            <input className="w-20 rounded-xl border border-slate-300 p-2.5 text-sm" type="number" min={15} step={15} placeholder="mins" value={r.duration} onChange={(e) => setRow(i, { duration: e.target.value })} />
                                                             <span>min</span>
                                                         </label>
                                                     )}
@@ -565,7 +570,7 @@ export default function ProviderListingEditor({ provider }: { provider: EditorPr
                                     </div>
                                 ))}
                             </div>
-                            <button type="button" onClick={() => setMenu([...menu, { name: '', description: '', price: '', unit: 'flat', image: null, duration: '', fulfilment: (p.isSlot && fulfilment === 'both') ? 'collection' : null, active: true }])}
+                            <button type="button" onClick={() => setMenu([...menu, { name: '', description: '', price: '', unit: 'flat', image: null, duration: p.isSlot ? '60' : '', fulfilment: (p.isSlot && fulfilment === 'both') ? 'collection' : null, active: true }])}
                                 className="text-sm font-semibold text-emerald-700 hover:text-emerald-800">+ Add an item</button>
                         </SectionCard>
                     )}
@@ -661,10 +666,13 @@ export default function ProviderListingEditor({ provider }: { provider: EditorPr
                                 </div>
                             </div>
                             <div className="grid grid-cols-2 gap-4">
-                                <Field label="Session length (min)" hint="How long one session runs."><input className={inputCls} type="number" min={15} value={slotLength} onChange={(e) => setSlotLength(e.target.value)} /></Field>
+                                <Field label="Session length (min)" hint="How long one session runs."><input className={inputCls} type="number" min={15} step={15} value={slotLength} onChange={(e) => setSlotLength(e.target.value)} /></Field>
                                 <Field label="Gap between sessions (min)" hint="Time to reset or clean up before the next one can start."><input className={inputCls} type="number" min={0} value={turnaround} onChange={(e) => setTurnaround(e.target.value)} /></Field>
-                                <Field label="Seats, if sold per person" hint="How many seats a per-person session has. A whole-session (private) price is sold whole whoever comes, so this doesn’t apply to it."><input className={inputCls} type="number" min={1} value={capacity} onChange={(e) => setCapacity(e.target.value)} /></Field>
-                                <Field label="Minimum to run, if per person" hint="For a per-person session: how many must book before it goes ahead. 1 = no minimum. A whole-session price ignores this."><input className={inputCls} type="number" min={1} value={minPeople} onChange={(e) => setMinPeople(e.target.value)} /></Field>
+                                {/* Same wording as the sign-up wizard's g_capacity and
+                                    g_slot_min screens (lib/strings GUEST_SCREEN_COPY), so a
+                                    provider meets the same question in both places. */}
+                                <Field label="How many can it hold?" hint="The most a session fits at once — and the individual places you sell when it’s priced per person. A whole-session (private) price is sold whole whoever comes, so this doesn’t limit it."><input className={inputCls} type="number" min={1} value={capacity} onChange={(e) => setCapacity(e.target.value)} /></Field>
+                                <Field label="Smallest group you’ll run a session for" hint="A single booking must be at least this many people — leave it at 1 if a session will run for anyone. A whole-session price ignores this."><input className={inputCls} type="number" min={1} value={minPeople} onChange={(e) => setMinPeople(e.target.value)} /></Field>
                                 <Field label="Notice needed (days)" hint="How far ahead a guest must book — 2 means at least 2 days’ notice. 0 = same-day is fine."><input className={inputCls} type="number" min={0} value={leadDays} onChange={(e) => setLeadDays(e.target.value)} /></Field>
                                 <Field label="Cancellation window (hrs)" hint="How long before the start a guest can still cancel for a refund."><input className={inputCls} type="number" min={0} value={cancelHours} onChange={(e) => setCancelHours(e.target.value)} /></Field>
                             </div>
