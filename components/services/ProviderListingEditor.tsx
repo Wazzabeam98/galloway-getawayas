@@ -191,6 +191,15 @@ export default function ProviderListingEditor({ provider }: { provider: EditorPr
     })));
     const setRow = (i: number, patch: Partial<MenuRow>) => setMenu(menu.map((r, j) => j === i ? { ...r, ...patch } : r));
 
+    // Seats and a minimum-to-run only mean anything when something is sold PER
+    // PERSON — a whole-session (private) price is one booking at one price
+    // whoever turns up, so "how many can it hold" and "smallest group to run"
+    // are noise on a sauna. Shown only when an active item is priced per person.
+    // (Capacity/min moved onto the item in feat/per-item-capacity; this reads
+    // the same per-person signal at the provider level until the per-item write
+    // UI lands.)
+    const hasPerPersonItem = menu.some((r) => r.active && r.unit === 'person');
+
     async function changeItemImage(i: number, e: React.ChangeEvent<HTMLInputElement>) {
         const file = (e.target.files || [])[0];
         e.target.value = '';
@@ -461,7 +470,7 @@ export default function ProviderListingEditor({ provider }: { provider: EditorPr
                             {photos.length < 3 && (
                                 <div className="flex items-start gap-2 rounded-xl border border-amber-300 bg-amber-50 p-3 text-sm text-amber-900">
                                     <Check className="mt-0.5 h-4 w-4 flex-none" />
-                                    At least three photos are required — they lead your listing on the homepage and both marketplace grids. You have {photos.length}; add {3 - photos.length} more.
+                                    At least three photos are required. You have {photos.length}; add {3 - photos.length} more.
                                 </div>
                             )}
                             <div>
@@ -683,11 +692,17 @@ export default function ProviderListingEditor({ provider }: { provider: EditorPr
                             <div className="grid grid-cols-2 gap-4">
                                 <Field label="Session length (min)" hint="How long one session runs."><input className={inputCls} type="number" min={15} step={15} value={slotLength} onChange={(e) => setSlotLength(e.target.value)} /></Field>
                                 <Field label="Gap between sessions (min)" hint="Time to reset or clean up before the next one can start."><input className={inputCls} type="number" min={0} value={turnaround} onChange={(e) => setTurnaround(e.target.value)} /></Field>
-                                {/* Same wording as the sign-up wizard's g_capacity and
-                                    g_slot_min screens (lib/strings GUEST_SCREEN_COPY), so a
-                                    provider meets the same question in both places. */}
-                                <Field label="How many can it hold?" hint="The most a session fits at once — and the individual places you sell when it’s priced per person. A whole-session (private) price is sold whole whoever comes, so this doesn’t limit it."><input className={inputCls} type="number" min={1} value={capacity} onChange={(e) => setCapacity(e.target.value)} /></Field>
-                                <Field label="Smallest group you’ll run a session for" hint="A single booking must be at least this many people — leave it at 1 if a session will run for anyone. A whole-session price ignores this."><input className={inputCls} type="number" min={1} value={minPeople} onChange={(e) => setMinPeople(e.target.value)} /></Field>
+                                {/* Only for a per-person item. Same wording as the sign-up
+                                    wizard's g_capacity and g_slot_min screens (lib/strings
+                                    GUEST_SCREEN_COPY), so a provider meets the same question
+                                    in both places. Hidden for a whole-session-only provider,
+                                    where seats and a minimum-to-run mean nothing. */}
+                                {hasPerPersonItem && (
+                                    <>
+                                        <Field label="How many can it hold?" hint="The most a per-person session fits at once — the individual places you can sell."><input className={inputCls} type="number" min={1} value={capacity} onChange={(e) => setCapacity(e.target.value)} /></Field>
+                                        <Field label="Smallest group you’ll run a session for" hint="A single booking must be at least this many people — leave it at 1 if a session will run for anyone."><input className={inputCls} type="number" min={1} value={minPeople} onChange={(e) => setMinPeople(e.target.value)} /></Field>
+                                    </>
+                                )}
                                 <Field label="Notice needed (days)" hint="How far ahead a guest must book — 2 means at least 2 days’ notice. 0 = same-day is fine."><input className={inputCls} type="number" min={0} value={leadDays} onChange={(e) => setLeadDays(e.target.value)} /></Field>
                                 <Field label="Cancellation window (hrs)" hint="How long before the start a guest can still cancel for a refund."><input className={inputCls} type="number" min={0} value={cancelHours} onChange={(e) => setCancelHours(e.target.value)} /></Field>
                             </div>
