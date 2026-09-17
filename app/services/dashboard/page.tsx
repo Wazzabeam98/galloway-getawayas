@@ -115,8 +115,11 @@ export default async function ProviderDashboardPage() {
     // never fill and chips for rates and coverage they do not have. So they
     // branch here, to their own dashboard, rather than being shown a plumber's.
     if (provider.audience === 'guest') {
+        // A slot provider's home is a CALENDAR — a three-column workspace that
+        // wants room; everyone else keeps the narrow inbox column.
+        const isSlotHome = shapeOf(provider) === 'slot';
         return (
-            <div className="max-w-2xl mx-auto px-4 sm:px-6 py-8 pb-24">
+            <div className={`${isSlotHome ? 'max-w-6xl' : 'max-w-2xl'} mx-auto px-4 sm:px-6 py-8 pb-24`}>
                 <div className="flex flex-wrap items-start justify-between gap-3">
                     <div>
                         <h1 className="text-2xl sm:text-3xl font-extrabold tracking-tight text-slate-900">
@@ -134,10 +137,10 @@ export default async function ProviderDashboardPage() {
                     </Link>
                 </div>
 
-                {/* Two homes by shape: a slot provider gets a DIARY (a booked
+                {/* Two homes by shape: a slot provider gets a CALENDAR (a booked
                     week, nothing to approve), everyone else the INBOX (requests
                     to confirm, then coming up). The payouts gate is in both. */}
-                {shapeOf(provider) === 'slot'
+                {isSlotHome
                     ? <ProviderSlotDashboard providerId={provider.id} editHref="/services/dashboard/listing" />
                     : <ProviderExperienceDashboard providerId={provider.id} />}
             </div>

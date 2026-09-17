@@ -131,7 +131,7 @@ const NavMenu = ({
                                         </Link>
                                     </li>
                                     <li className={itemClass}>
-                                        <Link href='/services/dashboard'>Dashboard</Link>
+                                        <Link href='/services/dashboard'>Calendar</Link>
                                     </li>
                                     <li className={itemClass}>
                                         <Link href='/services/dashboard#requests'>Enquiries</Link>
