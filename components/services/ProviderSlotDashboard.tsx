@@ -44,8 +44,13 @@ export default function ProviderSlotDashboard({ providerId, editHref }: { provid
     const [hasHours, setHasHours] = useState<boolean | null>(null);
     // Partial blocks: ranges within a day the provider has closed off.
     const [partialBlocks, setPartialBlocks] = useState<Array<{ id: string; date: string; start: string; end: string }>>([]);
+    // Declared dated sessions (the scheduler's rows) and the provider's defaults
+    // for a new one (its weekly session length / capacity).
+    const [declaredSessions, setDeclaredSessions] = useState<Array<{ id: string; date: string; time: string; capacity: number; seats_taken: number; title: string | null }>>([]);
+    const [slotDefaults, setSlotDefaults] = useState<{ duration: number; capacity: number }>({ duration: 60, capacity: 1 });
     const [busy, setBusy] = useState<string | null>(null);
     const [error, setError] = useState<string | null>(null);
+    const [notice, setNotice] = useState<string | null>(null);
 
     const loadPayouts = useCallback(async () => {
         try {
@@ -67,7 +72,11 @@ export default function ProviderSlotDashboard({ providerId, editHref }: { provid
         try {
             const r = await fetch('/api/services/slots/schedule?provider=' + encodeURIComponent(providerId));
             const d = await r.json();
-            if (d && d.ok) { setBlocks(d.blocks || []); setAvailability(d.availability || []); setHasHours((d.availability || []).length > 0); }
+            if (d && d.ok) {
+                setBlocks(d.blocks || []); setAvailability(d.availability || []); setHasHours((d.availability || []).length > 0);
+                setDeclaredSessions(d.declaredSessions || []);
+                setSlotDefaults({ duration: Number(d.slot_length_minutes) || 60, capacity: Number(d.slot_capacity) || 1 });
+            }
         } catch { /* ignore */ }
     }, [providerId]);
 
@@ -145,6 +154,66 @@ export default function ProviderSlotDashboard({ providerId, editHref }: { provid
         setBusy(null);
     }
 
+    // Declare a session on every selected day at once. Each date is written on its
+    // own, so a clash on one refuses only that date — the summary tells the
+    // provider which landed and which didn't, which is the moment this either reads
+    // solid or confusing.
+    async function addSessions(dates: string[], time: string, duration: number, capacity: number, title: string) {
+        setBusy('declare'); setError(null); setNotice(null);
+        try {
+            const r = await fetch('/api/services/slots/sessions/declare', {
+                method: 'POST', headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ providerId, dates, time, durationMinutes: duration, capacity, title }),
+            });
+            const d = await r.json();
+            if (!d || !d.ok) { setError((d && d.error) || 'Could not add the sessions.'); setBusy(null); return; }
+            const skipped = (d.results || []).filter((x: any) => !x.ok);
+            const when = timeLabel(time + ':00');
+            if (d.added > 0 && skipped.length === 0) {
+                setNotice(`Added a ${when} session to ${d.added} day${d.added === 1 ? '' : 's'}.`);
+            } else if (d.added > 0) {
+                setNotice(`Added a ${when} session to ${d.added} day${d.added === 1 ? '' : 's'}. ${skipped.length} skipped — `
+                    + skipped.map((x: any) => `${dateLabel(x.date)} ${x.reason}`).join('; ') + '.');
+            } else {
+                setError('No sessions added. ' + skipped.map((x: any) => `${dateLabel(x.date)} ${x.reason}`).join('; ') + '.');
+            }
+            await Promise.all([loadSchedule(), loadSessions()]);
+        } catch { setError('Could not add the sessions.'); }
+        setBusy(null);
+    }
+
+    async function removeDeclared(id: string) {
+        setBusy(id); setError(null); setNotice(null);
+        try {
+            const r = await fetch('/api/services/slots/sessions/declare', {
+                method: 'DELETE', headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ providerId, id }),
+            });
+            const d = await r.json();
+            if (d && d.ok) await loadSchedule();
+            else setError((d && d.error) || 'Could not remove that session.');
+        } catch { setError('Could not remove that session.'); }
+        setBusy(null);
+    }
+
+    // Bulk full-day block across a multi-day selection — the wholesale blocked-date
+    // list, same route as a single block.
+    async function blockDays(dates: string[], on: boolean) {
+        setBusy('block'); setError(null); setNotice(null);
+        const next = on
+            ? Array.from(new Set([...blocks, ...dates]))
+            : blocks.filter((b) => !dates.includes(b));
+        try {
+            const r = await fetch('/api/services/slots/schedule', {
+                method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ providerId, blocks: next }),
+            });
+            const d = await r.json();
+            if (d && d.ok) { setBlocks(next); setNotice(`${on ? 'Blocked' : 'Reopened'} ${dates.length} day${dates.length === 1 ? '' : 's'}.`); }
+            else setError((d && d.error) || 'Could not save that.');
+        } catch { setError('Could not save that.'); }
+        setBusy(null);
+    }
+
     async function removePartialBlock(id: string) {
         setBusy(id); setError(null);
         try {
@@ -190,6 +259,8 @@ export default function ProviderSlotDashboard({ providerId, editHref }: { provid
     for (const b of partialBlocks) (partialByDate[b.date] = partialByDate[b.date] || []).push({ id: b.id, start: b.start, end: b.end });
     const bookedByDate: Record<string, number> = {};
     for (const o of confirmed) bookedByDate[o.service_date] = (bookedByDate[o.service_date] || 0) + 1;
+    const declaredByDate: Record<string, { id: string; time: string; capacity: number; seats_taken: number; title: string | null }[]> = {};
+    for (const s of declaredSessions) (declaredByDate[s.date] = declaredByDate[s.date] || []).push({ id: s.id, time: s.time, capacity: s.capacity, seats_taken: s.seats_taken, title: s.title });
 
     return (
         <div className="mt-5 space-y-6">
@@ -209,10 +280,10 @@ export default function ProviderSlotDashboard({ providerId, editHref }: { provid
                 this only catches a provider who cleared their hours or a legacy
                 one — but a slot business with no hours is invisible, so say it
                 loudly and point at where to fix it. */}
-            {hasHours === false && (
+            {hasHours === false && declaredSessions.length === 0 && (
                 <div className="rounded-xl border border-amber-300 bg-amber-50 p-4">
-                    <p className="font-semibold text-amber-900">You have no bookable hours yet</p>
-                    <p className="mt-1 text-sm text-amber-900/80">Guests can’t book you until you add your weekly hours. Add them and your times appear straight away.</p>
+                    <p className="font-semibold text-amber-900">Nothing’s bookable yet</p>
+                    <p className="mt-1 text-sm text-amber-900/80">Set weekly hours for a regular rhythm, or add dated sessions on the calendar below for a schedule that changes — either makes you bookable.</p>
                     {editHref && (
                         <a href={editHref}
                             className="mt-3 inline-block rounded-md bg-amber-700 px-3 py-2 text-sm font-medium text-white">
@@ -311,12 +382,18 @@ export default function ProviderSlotDashboard({ providerId, editHref }: { provid
                 blockedDates={blockedDates}
                 partialByDate={partialByDate}
                 bookedByDate={bookedByDate}
+                declaredByDate={declaredByDate}
+                addDefaults={slotDefaults}
                 todayIso={todayIso}
                 busy={busy}
                 onToggleFullBlock={toggleBlock}
                 onAddPartial={addPartialBlock}
                 onRemovePartial={removePartialBlock}
+                onAddSessions={addSessions}
+                onRemoveDeclared={removeDeclared}
+                onBlockDays={blockDays}
             />
+            {notice ? <p className="rounded-lg border border-violet-200 bg-violet-50 p-3 text-sm text-violet-900">{notice}</p> : null}
 
             {earlier.length > 0 && (
                 <div>

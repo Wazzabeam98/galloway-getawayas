@@ -35,10 +35,18 @@ export async function GET(request: Request) {
         const p = await ownProvider(admin, providerId, user.id);
         if (!p) return NextResponse.json({ ok: false, error: 'Not your business' }, { status: 403 });
 
-        const [{ data: availability }, { data: blocks }] = await Promise.all([
+        // Declared dated sessions (the scheduler's rows) from today on — shown on
+        // the calendar and listed in the day panel so a provider sees what they've
+        // added alongside the weekly template and their bookings.
+        const today = new Date().toISOString().slice(0, 10);
+        const [{ data: availability }, { data: blocks }, { data: declared }] = await Promise.all([
             admin.from('slot_availability').select('day_of_week, open_time, close_time').eq('provider_id', providerId)
                 .order('day_of_week', { ascending: true }),
             admin.from('slot_blocks').select('blocked_date').eq('provider_id', providerId).order('blocked_date', { ascending: true }),
+            admin.from('slot_sessions')
+                .select('id, session_date, session_time, capacity, seats_taken, duration_minutes, title')
+                .eq('provider_id', providerId).eq('declared', true).gte('session_date', today)
+                .order('session_date', { ascending: true }).order('session_time', { ascending: true }),
         ]);
 
         return NextResponse.json({
@@ -47,6 +55,15 @@ export async function GET(request: Request) {
             slot_capacity: p.slot_capacity || 1,
             availability: availability || [],
             blocks: (blocks || []).map((b: any) => b.blocked_date),
+            declaredSessions: (declared || []).map((s: any) => ({
+                id: s.id,
+                date: s.session_date,
+                time: String(s.session_time).slice(0, 5),
+                capacity: Number(s.capacity),
+                seats_taken: Number(s.seats_taken),
+                duration_minutes: s.duration_minutes == null ? null : Number(s.duration_minutes),
+                title: s.title || null,
+            })),
         });
     } catch (err: any) {
         return NextResponse.json({ ok: false, error: 'Could not load the schedule' }, { status: 500 });
