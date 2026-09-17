@@ -17,6 +17,14 @@ const db = supabaseClient(env);
 
 const DOMAIN = 'gallowaymarket.test';
 const PASSWORD = 'market-demo-2026';
+// The GUEST_CATEGORIES key each demo business belongs to, persisted in
+// guest_details.category so an approved provider knows its own sub-type — and
+// the listing editor knows whether it can travel. sauna/tastings/outdoors are
+// fixed in place; yoga travels; the photographer has no sub-type ('other').
+const CATEGORY_BY_SLUG = {
+    bakehouse: 'food_order', hamper: 'food_order', chef: 'chef', lens: 'other',
+    sauna: 'sauna', swim: 'outdoors', whisky: 'tastings', yoga: 'yoga',
+};
 // Kirkcudbright — every provider covers it, the cottage sits in it.
 const LAT = 54.8362, LNG = -4.0530;
 
@@ -259,6 +267,7 @@ async function run() {
             owner_id: owner.id, audience: 'guest', trade: 'guest', status: 'approved',
             business_name: b.name, provider_name: b.person, based_line: b.based, description: b.desc,
             headshot, photos: [],
+            guest_details: { category: CATEGORY_BY_SLUG[b.slug] || null },
             shape: b.shape, stripe_mcc: b.mcc, stripe_product_description: (b.name + ' — for holiday guests.'),
             plan: 'commission', commission_rate: 0.10,
             cancellation_window_hours: b.cancelHours, lead_time_days: b.leadDays || 0,

@@ -8,6 +8,7 @@ import Env from '@/config/Env';
 import { getImageUrl, generateRandomNumber } from '@/lib/utils';
 import { compressImage } from '@/lib/compressImage';
 import { GUEST_REGIONS, GUEST_COVERAGE_ALL_KEY } from '@/lib/strings';
+import { slotAsksWhereFork } from '@/lib/serviceProviders';
 import { PhotoEditorGrid } from './PhotoEditorGrid';
 import {
     FileText, User, Info, Salad, Image as ImageIcon,
@@ -28,7 +29,7 @@ import {
 
 export interface EditorProvider {
     id: string; shape: string; isSlot: boolean; isFood: boolean;
-    business_name: string; category_label: string; description: string;
+    business_name: string; category_label: string; category: string; description: string;
     status: string; owner_paused: boolean;
     photos: string[]; headshot: string | null; logo: string | null;
     dietary_note: string; fulfilment: string;
@@ -203,7 +204,15 @@ export default function ProviderListingEditor({ provider }: { provider: EditorPr
     // Where it happens: how a guest reaches the experience, the private venue
     // address (a guest only ever sees the town), and the regions a travelling
     // provider covers.
-    const [fulfilment, setFulfilment] = useState(p.fulfilment || 'collection');
+    // Whether this experience can travel to the guest. A slot that is fixed by
+    // nature — a sauna, a tasting, a guided walk — happens in one place; only
+    // the yoga/massage/painting kind genuinely goes either way (the same call
+    // the sign-up wizard makes, slotAsksWhereFork). 'other' and any as-yet-
+    // unknown category keep every option rather than be guessed fixed. A fixed
+    // category is pinned to come-to-me and never offered travel.
+    const fixedInPlace = p.isSlot && !!p.category && p.category !== 'other' && !slotAsksWhereFork(p.category);
+    const canTravel = !fixedInPlace;
+    const [fulfilment, setFulfilment] = useState(fixedInPlace ? 'collection' : (p.fulfilment || 'collection'));
     const [street, setStreet] = useState(p.collection_street);
     const [town, setTown] = useState(p.collection_town);
     const [postcode, setPostcode] = useState(p.collection_postcode);
@@ -582,21 +591,27 @@ export default function ProviderListingEditor({ provider }: { provider: EditorPr
                                 collection_street: street, collection_town: town, collection_postcode: postcode,
                                 areas: travels ? areas : [],
                             })}>
-                            <Field label="How guests get it">
-                                <div className="space-y-2">
-                                    {[
-                                        { key: 'collection', label: 'Guests come to me', note: 'At your studio, sauna, kitchen — one place.' },
-                                        { key: 'delivery', label: 'I travel to the guest', note: 'You go to their cottage.' },
-                                        { key: 'both', label: 'Both', note: 'Guests can come to you, or you travel to them.' },
-                                    ].map((o) => (
-                                        <button key={o.key} type="button" onClick={() => setFulfilment(o.key)}
-                                            className={`w-full rounded-xl border px-4 py-3 text-left text-sm transition ${fulfilment === o.key ? 'border-emerald-700 ring-2 ring-emerald-700 bg-emerald-50' : 'border-slate-300 hover:border-slate-400'}`}>
-                                            <div className="font-semibold text-slate-900">{o.label}</div>
-                                            <div className="text-xs text-slate-500">{o.note}</div>
-                                        </button>
-                                    ))}
-                                </div>
-                            </Field>
+                            {canTravel ? (
+                                <Field label="How guests get it">
+                                    <div className="space-y-2">
+                                        {[
+                                            { key: 'collection', label: 'Guests come to me', note: 'At your studio, sauna, kitchen — one place.' },
+                                            { key: 'delivery', label: 'I travel to the guest', note: 'You go to their cottage.' },
+                                            { key: 'both', label: 'Both', note: 'Guests can come to you, or you travel to them.' },
+                                        ].map((o) => (
+                                            <button key={o.key} type="button" onClick={() => setFulfilment(o.key)}
+                                                className={`w-full rounded-xl border px-4 py-3 text-left text-sm transition ${fulfilment === o.key ? 'border-emerald-700 ring-2 ring-emerald-700 bg-emerald-50' : 'border-slate-300 hover:border-slate-400'}`}>
+                                                <div className="font-semibold text-slate-900">{o.label}</div>
+                                                <div className="text-xs text-slate-500">{o.note}</div>
+                                            </button>
+                                        ))}
+                                    </div>
+                                </Field>
+                            ) : (
+                                // Fixed by nature — it happens in one place, so there is no
+                                // travel choice to make. Just the address below.
+                                <p className="text-sm text-slate-600">Guests come to you — this kind of experience happens in one place.</p>
+                            )}
 
                             {collects && (
                                 <div className="space-y-3">
