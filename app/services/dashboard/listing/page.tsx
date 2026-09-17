@@ -92,6 +92,7 @@ export default async function ProviderListingPage() {
                 slot_min_people: provider.slot_min_people ?? 1,
                 lead_time_days: provider.lead_time_days ?? 0,
                 cancellation_window_hours: provider.cancellation_window_hours ?? 48,
+                booking_horizon_days: gd.booking_horizon_days ?? 90,
                 professional_title: gd.professional_title || '',
                 years_experience: gd.years_experience || '',
                 qualifications: gd.qualifications || '',
@@ -103,6 +104,7 @@ export default async function ProviderListingPage() {
                 what_to_bring: gd.what_to_bring || '',
                 accessibility: gd.accessibility || '',
                 parking: gd.parking || '',
+                no_refund: gd.no_refund === true,
                 dietary_options: Array.isArray(gd.dietary_options) ? gd.dietary_options : [],
                 areas: (areas || []).map((a: any) => a.label).filter(Boolean),
                 items: (items || []).map((it: any) => ({

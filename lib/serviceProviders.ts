@@ -161,6 +161,49 @@ export function guestCategoryIsFood(key: string | null | undefined): boolean {
     return !!(c && c.food);
 }
 
+// Accessibility and parking are pick-from-a-list, not prose: a provider ticks
+// the nearest option and a guest reads a consistent phrase, not a paragraph. The
+// stored value is the KEY; the label is what a guest sees. An empty/unknown key
+// means "not said" and the row is dropped.
+export const ACCESSIBILITY_OPTIONS: { key: string; label: string }[] = [
+    { key: 'step_free', label: 'Step-free access' },
+    { key: 'some_steps', label: 'Some steps' },
+    { key: 'not_accessible', label: 'Not step-free' },
+    { key: 'ask', label: 'Ask the host' },
+];
+export const PARKING_OPTIONS: { key: string; label: string }[] = [
+    { key: 'on_site', label: 'Parking on site' },
+    { key: 'nearby', label: 'Parking nearby' },
+    { key: 'street', label: 'Street parking' },
+    { key: 'none', label: 'No parking' },
+];
+// Cancellation as a named choice for a guest experience — window-based (which
+// fits a timed session), not the holiday-let's day-before tiers. "No refund" is
+// the new option a bare hours field couldn't express. The window presets set the
+// existing cancellation_window_hours; "No refund" sets a no_refund flag instead.
+export const EXPERIENCE_CANCELLATION_OPTIONS: { key: string; label: string; hours: number; noRefund?: boolean; blurb: string }[] = [
+    { key: 'flexible', label: 'Flexible', hours: 24, blurb: 'Free to cancel up to 24 hours before.' },
+    { key: 'standard', label: 'Standard', hours: 48, blurb: 'Free to cancel up to 48 hours before.' },
+    { key: 'firm', label: 'Firm', hours: 168, blurb: 'Free to cancel up to 7 days before.' },
+    { key: 'none', label: 'No refund', hours: 0, noRefund: true, blurb: 'Non-refundable once booked.' },
+];
+// The named policy a provider is on, from what's stored — no_refund wins, else
+// the nearest window preset (so a legacy hours value still names cleanly).
+export function experienceCancellationOption(hours: number | null | undefined, noRefund: boolean | null | undefined) {
+    if (noRefund) return EXPERIENCE_CANCELLATION_OPTIONS.find((o) => o.key === 'none')!;
+    const h = Math.max(0, Number(hours) || 0);
+    return EXPERIENCE_CANCELLATION_OPTIONS
+        .filter((o) => !o.noRefund)
+        .reduce((best, o) => (Math.abs(o.hours - h) < Math.abs(best.hours - h) ? o : best));
+}
+
+export function accessibilityLabel(key: string | null | undefined): string | null {
+    return ACCESSIBILITY_OPTIONS.find((o) => o.key === String(key || '').trim())?.label || null;
+}
+export function parkingLabel(key: string | null | undefined): string | null {
+    return PARKING_OPTIONS.find((o) => o.key === String(key || '').trim())?.label || null;
+}
+
 // WHERE A SLOT HAPPENS — the come-to-me / travel fork, per category.
 //
 // A slot is a session at a time, and the axis is the same one made-to-order

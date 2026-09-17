@@ -1,12 +1,13 @@
 import Link from 'next/link';
 import { shapeCue } from '@/lib/serviceSlots';
-import { dietaryOptionLabel } from '@/lib/serviceProviders';
+import { dietaryOptionLabel, accessibilityLabel, parkingLabel, experienceCancellationOption } from '@/lib/serviceProviders';
 import {
     itemPriceLabel, cancellationSentence, whereLine, locationTag, travelCoverageLine,
     durationLabel, durationSummary, yearsLabel, groupSizeLabel,
 } from '@/components/marketplace/present';
 import { MapPin, Clock, Users, User, BadgeCheck, Award, Compass, Flag, Activity, Backpack, ShieldAlert, Accessibility, Car } from 'lucide-react';
 import PhotoGallery from '@/components/PhotoGallery';
+import PropertyMap from '@/components/PropertyMap';
 import type { MpProvider } from '@/lib/experiencesData';
 
 // Icon for an itinerary phase, by its title (the editor writes Arrival / During /
@@ -39,6 +40,7 @@ export default function ExperienceListingBody({
     const where = whereLine(p);
     const tag = locationTag(p);
     const travelCoverage = travelCoverageLine(p);
+    const cancelPolicy = experienceCancellationOption(p.cancellation_window_hours, p.noRefund);
 
     const duration = durationSummary(p);
     const groupSize = groupSizeLabel(p.maxGuests);
@@ -58,10 +60,13 @@ export default function ExperienceListingBody({
     if (duration) facts.push({ icon: <Clock className="h-5 w-5 text-slate-700" aria-hidden />, value: duration, label: 'Duration' });
     if (where) facts.push({ icon: <MapPin className="h-5 w-5 text-slate-700" aria-hidden />, value: where, label: 'Where it happens' });
     if (groupSize) facts.push({ icon: <Users className="h-5 w-5 text-slate-700" aria-hidden />, value: groupSize, label: 'Group size' });
-    // Optional, provider-filled. Accessibility leads — a guest who needs it
-    // really needs it — then parking. They also help the grid fill out.
-    if (p.accessibility) facts.push({ icon: <Accessibility className="h-5 w-5 text-slate-700" aria-hidden />, value: p.accessibility, label: 'Accessibility' });
-    if (p.parking) facts.push({ icon: <Car className="h-5 w-5 text-slate-700" aria-hidden />, value: p.parking, label: 'Parking' });
+    // Optional, provider-picked (a fixed option, not prose). Accessibility leads
+    // — a guest who needs it really needs it — then parking. They also help the
+    // grid fill out.
+    const accessLabel = accessibilityLabel(p.accessibility);
+    const parkLabel = parkingLabel(p.parking);
+    if (accessLabel) facts.push({ icon: <Accessibility className="h-5 w-5 text-slate-700" aria-hidden />, value: accessLabel, label: 'Accessibility' });
+    if (parkLabel) facts.push({ icon: <Car className="h-5 w-5 text-slate-700" aria-hidden />, value: parkLabel, label: 'Parking' });
     // Three facts sit oddly in a two-column grid; give an exact three their own
     // single balanced row, and let four or more flow in the usual two columns.
     const factCols = facts.length === 3 ? 'sm:grid-cols-3' : 'sm:grid-cols-2';
@@ -262,10 +267,20 @@ export default function ExperienceListingBody({
                             </section>
                         )}
 
+                        {/* Roughly-here map for a fixed venue — the same component
+                            and privacy the cottage pages use (a jittered pin, never
+                            the door). A traveller has no one place, so no map. */}
+                        {(!comesToYou && p.mapLat != null && p.mapLng != null) ? (
+                            <PropertyMap latitude={p.mapLat} longitude={p.mapLng} area={tag || undefined} />
+                        ) : null}
+
                         <section className="mt-8 border-t border-slate-200 pt-8">
                             <h2 className="text-xl md:text-2xl font-bold text-slate-900">Cancellation</h2>
-                            <p className="mt-3 text-[15px] leading-relaxed text-slate-600">
-                                {cancellationSentence(p.shape, p.cancellation_window_hours, who)}
+                            <p className="mt-1 text-sm font-semibold text-slate-700">{cancelPolicy.label}</p>
+                            <p className="mt-2 text-[15px] leading-relaxed text-slate-600">
+                                {p.noRefund
+                                    ? 'This experience is non-refundable once booked — please be sure of your plans before you pay.'
+                                    : cancellationSentence(p.shape, p.cancellation_window_hours, who)}
                             </p>
                             {(comesToYou || tag) ? (
                                 <p className="mt-3 flex items-start gap-1.5 text-sm text-slate-500">

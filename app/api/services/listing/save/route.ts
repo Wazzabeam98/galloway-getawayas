@@ -109,12 +109,19 @@ export async function POST(request: Request) {
                 break;
 
             case 'things':
+                // Cancellation lives here (every shape has this section, unlike
+                // the slot-only Availability). The window is a column; the
+                // non-refundable flag is a guest_details value.
+                patch = {
+                    cancellation_window_hours: Math.max(0, Math.floor(Number(data.cancellation_window_hours) || 0)),
+                };
                 gd = {
                     min_age: intOrNull(data.min_age),
                     activity_level: strOrNull(data.activity_level),
                     what_to_bring: strOrNull(data.what_to_bring),
                     accessibility: strOrNull(data.accessibility),
                     parking: strOrNull(data.parking),
+                    no_refund: data.no_refund === true ? true : null,
                 };
                 break;
 
@@ -168,8 +175,11 @@ export async function POST(request: Request) {
                     slot_capacity: intOrNull(data.slot_capacity),
                     slot_min_people: Math.max(1, Math.floor(Number(data.slot_min_people) || 1)),
                     lead_time_days: Math.max(0, Math.floor(Number(data.lead_time_days) || 0)),
-                    cancellation_window_hours: Math.max(0, Math.floor(Number(data.cancellation_window_hours) || 0)),
                 };
+                // How far ahead a guest can book — a guest_details value (no column),
+                // clamped to a sane 1..365. Merged, so the rest of guest_details is
+                // untouched.
+                gd = { booking_horizon_days: Math.max(1, Math.min(365, Math.floor(Number(data.booking_horizon_days) || 90))) };
                 // Weekly hours template: replace. Dated exceptions (days off, partial
                 // blocks) stay in the diary — not touched here.
                 if (Array.isArray(data.availability)) {

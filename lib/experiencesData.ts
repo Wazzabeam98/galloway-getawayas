@@ -112,6 +112,9 @@ export interface MpProvider {
     // a guest who needs it really needs it — so it leads. Null when unset.
     accessibility: string | null;
     parking: string | null;
+    // Non-refundable once booked — the "No refund" cancellation policy. The
+    // window (cancellation_window_hours) still describes the refundable ones.
+    noRefund: boolean;
     description: string | null;
     shape: string;
     // The fulfilment direction: 'delivery' = the provider travels to the guest's
@@ -161,6 +164,10 @@ export interface MpProvider {
     // Informational since coverage stopped filtering; empty for a provider who
     // predates the region picker.
     areas: string[];
+    // A rough map coordinate — the coverage-area centre (town scale), shown as a
+    // "roughly here" pin on a fixed venue's listing. Never the exact address.
+    mapLat: number | null;
+    mapLng: number | null;
     // The only honest trust signal we can show today: how many confirmed
     // bookings this provider has taken through the site. Zero reads as "New
     // here" on the card rather than as nothing — a stranger booking a chef into
@@ -226,9 +233,16 @@ export async function loadMarketplace(
     return { open: true, stay: staySpan(booking), listing: { id: listing.id, title: listing.title, location: listing.location }, providers };
 }
 
-// How far ahead a bookingless browse looks for slot sessions. A stay bounds the
-// against-a-cottage path; standalone has no stay, so it looks a season ahead.
-const PUBLIC_HORIZON_DAYS = 90;
+// The CEILING on how far ahead a bookingless browse looks — the most any
+// provider is allowed to open. Each provider caps its own window below this with
+// its booking horizon (guest_details.booking_horizon_days); a stay bounds the
+// against-a-cottage path tighter still. Kept generous so a provider can choose a
+// long horizon; generateSessions only walks up to each provider's own cap, so
+// the ceiling costs nothing for providers who set less.
+const PUBLIC_HORIZON_DAYS = 365;
+// What a provider's horizon defaults to when they haven't set one — the season
+// ahead the standalone browse always showed.
+const DEFAULT_BOOKING_HORIZON_DAYS = 90;
 
 /**
  * The bookingless (public / standalone) marketplace: everyone can browse without
@@ -277,7 +291,7 @@ async function shapeProviders(admin: any, fromKey: string, toKey: string): Promi
     for (const pr of ownerProfiles || []) profileById[pr.id] = pr;
 
     const [{ data: areas }, { data: itemRows }, { data: avail }, { data: blocks }, { data: sessRows }, { data: orderRows }] = await Promise.all([
-        admin.from('service_areas').select('provider_id, label').in('provider_id', ids),
+        admin.from('service_areas').select('provider_id, label, centre_lat, centre_lng').in('provider_id', ids),
         admin.from('service_provider_items').select('id, provider_id, name, description, price, unit, image, sort_order, created_at, duration_minutes, fulfilment, capacity, min_people')
             .in('provider_id', ids).eq('active', true).gt('price', 0)
             .order('sort_order', { ascending: true }).order('created_at', { ascending: true }),
@@ -347,10 +361,20 @@ async function shapeProviders(admin: any, fromKey: string, toKey: string): Promi
                     return { date: s.session_date, startMin, endMin: startMin + (Number(s.duration_minutes) || 0) };
                 });
             const closedItems = items.map((it: MpItem) => ({ unit: it.unit, capacity: it.capacity, min_people: it.minPeople }));
+            // The provider's own booking horizon caps how far ahead its sessions
+            // are generated — never past the window it was handed (a stay, or the
+            // browse ceiling), never past its own horizon. So a provider open only
+            // 30 days out stops there even on the season-long standalone browse.
+            const horizon = Math.max(1, Math.min(
+                PUBLIC_HORIZON_DAYS,
+                intOrNull(p.guest_details && p.guest_details.booking_horizon_days) ?? DEFAULT_BOOKING_HORIZON_DAYS,
+            ));
+            const provHorizonKey = shiftDayKey(fromKey, horizon);
+            const provToKey = provHorizonKey < toKey ? provHorizonKey : toKey;
             sessions = generateSessions(
                 (availBy[p.id] || []).map((a: any) => ({ day_of_week: a.day_of_week, open_time: a.open_time, close_time: a.close_time })),
                 (blocksBy[p.id] || []).map((b: any) => b.blocked_date),
-                Number(p.slot_length_minutes) || 60, fromKey, toKey,
+                Number(p.slot_length_minutes) || 60, fromKey, provToKey,
                 undefined, providerPartialBlocks,
             )
                 .filter((s) => new Date(s.date + 'T' + s.time + ':00Z').getTime() > nowMs)
@@ -396,6 +420,7 @@ async function shapeProviders(admin: any, fromKey: string, toKey: string): Promi
             whatToBring: (p.guest_details && strOrNull(p.guest_details.what_to_bring)) || null,
             accessibility: (p.guest_details && strOrNull(p.guest_details.accessibility)) || null,
             parking: (p.guest_details && strOrNull(p.guest_details.parking)) || null,
+            noRefund: !!(p.guest_details && p.guest_details.no_refund),
             description: p.description,
             shape,
             fulfilment: p.fulfilment || null,
@@ -434,6 +459,8 @@ async function shapeProviders(admin: any, fromKey: string, toKey: string): Promi
             lead_time_days: Number(p.lead_time_days) || 0,
             hero: (items.find((i: MpItem) => i.image) || {}).image || null,
             areas: (areasBy[p.id] || []).map((a: any) => a.label).filter(Boolean),
+            mapLat: (() => { const c = (areasBy[p.id] || []).find((a: any) => a.centre_lat != null); return c ? Number(c.centre_lat) : null; })(),
+            mapLng: (() => { const c = (areasBy[p.id] || []).find((a: any) => a.centre_lng != null); return c ? Number(c.centre_lng) : null; })(),
             bookingsCount: bookingsCountBy[p.id] || 0,
         });
     }

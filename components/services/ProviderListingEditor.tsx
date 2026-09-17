@@ -8,7 +8,7 @@ import Env from '@/config/Env';
 import { getImageUrl, generateRandomNumber } from '@/lib/utils';
 import { compressImage } from '@/lib/compressImage';
 import { GUEST_REGIONS, GUEST_COVERAGE_ALL_KEY } from '@/lib/strings';
-import { slotAsksWhereFork } from '@/lib/serviceProviders';
+import { slotAsksWhereFork, ACCESSIBILITY_OPTIONS, PARKING_OPTIONS, EXPERIENCE_CANCELLATION_OPTIONS, experienceCancellationOption } from '@/lib/serviceProviders';
 import { PhotoEditorGrid } from './PhotoEditorGrid';
 import {
     FileText, User, Info, Salad, Image as ImageIcon,
@@ -36,11 +36,11 @@ export interface EditorProvider {
     collection_street: string; collection_town: string; collection_postcode: string;
     slot_length_minutes: number | null; slot_turnaround_minutes: number;
     slot_capacity: number | null; slot_min_people: number;
-    lead_time_days: number; cancellation_window_hours: number;
+    lead_time_days: number; cancellation_window_hours: number; booking_horizon_days: number;
     professional_title: string; years_experience: string; qualifications: string; recognition: string;
     what_to_expect: string; itinerary: Array<{ title?: string | null; detail?: string | null }>;
     min_age: number | null; activity_level: string; what_to_bring: string;
-    accessibility: string; parking: string;
+    accessibility: string; parking: string; no_refund: boolean;
     dietary_options: string[];
     areas: string[];
     items: Array<{ id: string; name: string; description: string; price: number; unit: string; image: string | null; duration_minutes: number | null; fulfilment: string | null; active: boolean }>;
@@ -121,6 +121,10 @@ export default function ProviderListingEditor({ provider }: { provider: EditorPr
     const [whatToBring, setWhatToBring] = useState(p.what_to_bring);
     const [accessibility, setAccessibility] = useState(p.accessibility);
     const [parking, setParking] = useState(p.parking);
+    // Cancellation as a named policy (shared by every shape). noRefund is the
+    // non-refundable option; cancelHours (declared with the slot fields below)
+    // holds the window preset for the refundable ones.
+    const [noRefund, setNoRefund] = useState(p.no_refund);
     const [dietaryNote, setDietaryNote] = useState(p.dietary_note);
 
     // Availability (slot providers): the weekly template. Seven rows, Sun..Sat,
@@ -138,6 +142,8 @@ export default function ProviderListingEditor({ provider }: { provider: EditorPr
     const [minPeople, setMinPeople] = useState(String(p.slot_min_people || 1));
     const [leadDays, setLeadDays] = useState(String(p.lead_time_days || 0));
     const [cancelHours, setCancelHours] = useState(String(p.cancellation_window_hours ?? 48));
+    const [horizonDays, setHorizonDays] = useState(String(p.booking_horizon_days || 90));
+    const cancelPolicy = experienceCancellationOption(Number(cancelHours), noRefund);
 
     // Photos: gallery keys (storage paths), plus the headshot and logo. Uploaded
     // to the bucket immediately (like the wizard), so the section saves keys.
@@ -440,13 +446,42 @@ export default function ProviderListingEditor({ provider }: { provider: EditorPr
 
                     {active === 'things' && (
                         <SectionCard title="Things to know" hint="Practical facts a guest wants before booking." saving={savingKey === 'things'}
-                            onSave={() => run('things', { min_age: minAge, activity_level: activity, what_to_bring: whatToBring, accessibility, parking })}>
-                            <Field label="Minimum age"><input className={inputCls} type="number" min={0} value={minAge} onChange={(e) => setMinAge(e.target.value)} placeholder="No minimum" /></Field>
-                            <Field label="Accessibility (optional)" hint="What a guest who needs it should know — step-free access, the terrain, anything that helps them decide.">
-                                <textarea className={inputCls} rows={2} value={accessibility} onChange={(e) => setAccessibility(e.target.value)} placeholder="e.g. Step-free to the deck; one 20cm step into the barrel." />
+                            onSave={() => run('things', { min_age: minAge, activity_level: activity, what_to_bring: whatToBring, accessibility, parking, cancellation_window_hours: cancelPolicy.hours, no_refund: !!cancelPolicy.noRefund })}>
+                            <Field label="Cancellation policy" hint="How long before the start a guest can still cancel for a full refund. After that it’s your call. “No refund” means non-refundable once booked.">
+                                <div className="flex flex-wrap gap-2">
+                                    {EXPERIENCE_CANCELLATION_OPTIONS.map((o) => {
+                                        const on = cancelPolicy.key === o.key;
+                                        return (
+                                            <button key={o.key} type="button"
+                                                onClick={() => { setCancelHours(String(o.hours)); setNoRefund(!!o.noRefund); }}
+                                                className={`rounded-xl border px-4 py-2 text-left text-sm transition ${on ? 'border-emerald-700 bg-emerald-50 text-slate-900' : 'border-slate-300 text-slate-700 hover:border-slate-400'}`}>
+                                                <span className="block font-semibold">{o.label}</span>
+                                                <span className="block text-xs text-slate-500">{o.blurb}</span>
+                                            </button>
+                                        );
+                                    })}
+                                </div>
                             </Field>
-                            <Field label="Parking (optional)" hint="Where a guest parks and how far it is.">
-                                <input className={inputCls} value={parking} onChange={(e) => setParking(e.target.value)} placeholder="e.g. On the cobbles in front, or the harbour car park two minutes away." />
+                            <Field label="Minimum age"><input className={inputCls} type="number" min={0} value={minAge} onChange={(e) => setMinAge(e.target.value)} placeholder="No minimum" /></Field>
+                            <Field label="Accessibility (optional)" hint="The nearest option — a guest who needs it wants a clear answer, not a paragraph.">
+                                <div className="flex flex-wrap gap-2">
+                                    {ACCESSIBILITY_OPTIONS.map((o) => (
+                                        <button key={o.key} type="button" onClick={() => setAccessibility(accessibility === o.key ? '' : o.key)}
+                                            className={`rounded-xl border px-4 py-2 text-sm transition ${accessibility === o.key ? 'border-emerald-700 bg-emerald-50 text-slate-900' : 'border-slate-300 text-slate-700 hover:border-slate-400'}`}>
+                                            {o.label}
+                                        </button>
+                                    ))}
+                                </div>
+                            </Field>
+                            <Field label="Parking (optional)">
+                                <div className="flex flex-wrap gap-2">
+                                    {PARKING_OPTIONS.map((o) => (
+                                        <button key={o.key} type="button" onClick={() => setParking(parking === o.key ? '' : o.key)}
+                                            className={`rounded-xl border px-4 py-2 text-sm transition ${parking === o.key ? 'border-emerald-700 bg-emerald-50 text-slate-900' : 'border-slate-300 text-slate-700 hover:border-slate-400'}`}>
+                                            {o.label}
+                                        </button>
+                                    ))}
+                                </div>
                             </Field>
                             <Field label="Activity level">
                                 <div className="flex gap-2">
@@ -672,7 +707,8 @@ export default function ProviderListingEditor({ provider }: { provider: EditorPr
                             onSave={() => run('availability', {
                                 slot_length_minutes: slotLength, slot_turnaround_minutes: turnaround,
                                 slot_capacity: capacity, slot_min_people: minPeople,
-                                lead_time_days: leadDays, cancellation_window_hours: cancelHours,
+                                lead_time_days: leadDays,
+                                booking_horizon_days: horizonDays,
                                 availability: hours
                                     .map((h, d) => ({ ...h, day_of_week: d }))
                                     .filter((h) => h.on && h.open && h.close && h.open < h.close)
@@ -713,7 +749,7 @@ export default function ProviderListingEditor({ provider }: { provider: EditorPr
                                     </>
                                 )}
                                 <Field label="Notice needed (days)" hint="How far ahead a guest must book — 2 means at least 2 days’ notice. 0 = same-day is fine."><input className={inputCls} type="number" min={0} value={leadDays} onChange={(e) => setLeadDays(e.target.value)} /></Field>
-                                <Field label="Cancellation window (hrs)" hint="How long before the start a guest can still cancel for a refund."><input className={inputCls} type="number" min={0} value={cancelHours} onChange={(e) => setCancelHours(e.target.value)} /></Field>
+                                <Field label="Booking horizon (days)" hint="How far in advance a guest can book — 90 opens the next three months. Sessions past this don’t appear until they come into range."><input className={inputCls} type="number" min={1} max={365} value={horizonDays} onChange={(e) => setHorizonDays(e.target.value)} /></Field>
                             </div>
                             {/* Dated exceptions have one home — the diary, where a
                                 provider also sees their bookings. The editor owns the

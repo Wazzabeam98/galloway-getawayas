@@ -127,10 +127,10 @@ export default async function ProviderDashboardPage() {
                         </p>
                     </div>
                     <Link
-                        href={`/services/join?trade=${provider.trade}`}
+                        href="/services/dashboard/listing"
                         className="rounded-full border border-slate-300 px-4 py-2 text-sm font-semibold text-slate-700 hover:border-slate-500"
                     >
-                        Edit your listing
+                        Your listing
                     </Link>
                 </div>
 
@@ -138,7 +138,7 @@ export default async function ProviderDashboardPage() {
                     week, nothing to approve), everyone else the INBOX (requests
                     to confirm, then coming up). The payouts gate is in both. */}
                 {shapeOf(provider) === 'slot'
-                    ? <ProviderSlotDashboard providerId={provider.id} editHref={`/services/join?trade=${provider.trade}`} />
+                    ? <ProviderSlotDashboard providerId={provider.id} editHref="/services/dashboard/listing" />
                     : <ProviderExperienceDashboard providerId={provider.id} />}
             </div>
         );
