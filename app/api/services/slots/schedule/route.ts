@@ -18,7 +18,7 @@ export const dynamic = 'force-dynamic';
 async function ownProvider(admin: any, providerId: string, userId: string) {
     const { data: p } = await admin
         .from('service_providers')
-        .select('id, owner_id, slot_length_minutes, slot_capacity')
+        .select('id, owner_id, slot_length_minutes, slot_capacity, slot_min_people')
         .eq('id', providerId)
         .maybeSingle();
     return p && p.owner_id === userId ? p : null;
@@ -39,7 +39,7 @@ export async function GET(request: Request) {
         // the calendar and listed in the day panel so a provider sees what they've
         // added alongside the weekly template and their bookings.
         const today = new Date().toISOString().slice(0, 10);
-        const [{ data: availability }, { data: blocks }, { data: declared }] = await Promise.all([
+        const [{ data: availability }, { data: blocks }, { data: declared }, { data: items }] = await Promise.all([
             admin.from('slot_availability').select('day_of_week, open_time, close_time').eq('provider_id', providerId)
                 .order('day_of_week', { ascending: true }),
             admin.from('slot_blocks').select('blocked_date').eq('provider_id', providerId).order('blocked_date', { ascending: true }),
@@ -47,12 +47,18 @@ export async function GET(request: Request) {
                 .select('id, session_date, session_time, capacity, seats_taken, duration_minutes, title')
                 .eq('provider_id', providerId).eq('declared', true).gte('session_date', today)
                 .order('session_date', { ascending: true }).order('session_time', { ascending: true }),
+            // The priced items — the calendar resolves a free slot's seats through
+            // seatConfig (item wins, else the provider default), the same way the
+            // guest panel and the book route do, so the numbers can't disagree.
+            admin.from('service_provider_items').select('unit, capacity, min_people, active, price').eq('provider_id', providerId),
         ]);
 
         return NextResponse.json({
             ok: true,
             slot_length_minutes: p.slot_length_minutes || 60,
             slot_capacity: p.slot_capacity || 1,
+            slot_min_people: p.slot_min_people || 1,
+            items: (items || []).map((it: any) => ({ unit: it.unit, capacity: it.capacity, min_people: it.min_people, active: it.active !== false, price: Number(it.price) })),
             availability: availability || [],
             blocks: (blocks || []).map((b: any) => b.blocked_date),
             declaredSessions: (declared || []).map((s: any) => ({

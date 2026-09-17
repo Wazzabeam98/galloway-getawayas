@@ -7,6 +7,7 @@ import { londonDayKey, shiftDayKey } from '@/lib/dayKey';
 import SlotCalendar, { type DayShape } from '@/components/services/SlotCalendar';
 import SlotDayView from '@/components/services/SlotDayView';
 import { daySlots, dayTicks, type DayInputs, type DaySlotRow } from '@/lib/slotDay';
+import { seatConfig } from '@/lib/serviceSlots';
 import { OptionPills, Stepper, SESSION_LENGTH_OPTIONS, minutesLabel } from '@/components/services/editorControls';
 
 interface Order {
@@ -35,6 +36,8 @@ export default function ProviderSlotDashboard({ providerId, editHref }: { provid
     const [partialBlocks, setPartialBlocks] = useState<Array<{ id: string; date: string; start: string; end: string }>>([]);
     const [declaredSessions, setDeclaredSessions] = useState<DeclaredSession[]>([]);
     const [slotDefaults, setSlotDefaults] = useState<{ duration: number; capacity: number }>({ duration: 60, capacity: 1 });
+    const [slotMin, setSlotMin] = useState(1);
+    const [items, setItems] = useState<Array<{ unit: string; capacity: number | null; min_people: number | null; active: boolean; price: number }>>([]);
     const [busy, setBusy] = useState<string | null>(null);
     const [error, setError] = useState<string | null>(null);
     const [notice, setNotice] = useState<string | null>(null);
@@ -68,7 +71,8 @@ export default function ProviderSlotDashboard({ providerId, editHref }: { provid
                 setBlocks(d.blocks || []); setAvailability(d.availability || []); setHasHours((d.availability || []).length > 0);
                 setDeclaredSessions(d.declaredSessions || []);
                 const dur = Number(d.slot_length_minutes) || 60, cap = Number(d.slot_capacity) || 1;
-                setSlotDefaults({ duration: dur, capacity: cap }); setDDur((v) => v === 60 ? dur : v); setDCap((v) => v === 1 ? cap : v);
+                setSlotDefaults({ duration: dur, capacity: cap }); setSlotMin(Number(d.slot_min_people) || 1); setItems(d.items || []);
+                setDDur((v) => v === 60 ? dur : v); setDCap((v) => v === 1 ? cap : v);
             }
         } catch { /* */ }
     }, [providerId]);
@@ -106,6 +110,14 @@ export default function ProviderSlotDashboard({ providerId, editHref }: { provid
     async function removeDeclared(id: string) { setBusy(id); setError(null); setNotice(null); try { const r = await fetch('/api/services/slots/sessions/declare', { method: 'DELETE', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ providerId, id }) }); const d = await r.json(); if (d && d.ok) { setPanel('none'); setActiveKey(null); await loadSchedule(); } else setError((d && d.error) || 'Could not remove that session.'); } catch { setError('Could not remove that session.'); } setBusy(null); }
 
     // ---- derived --------------------------------------------------------------
+    // What a free slot could hold — resolved through seatConfig (item wins, else
+    // the provider default), so the calendar can't disagree with the guest panel
+    // or the book route. Private-only providers (a flat item, no per-person one)
+    // have no seat count — a free slot is a whole-session hire.
+    const personItems = items.filter((it) => it.active && it.price > 0 && String(it.unit) === 'person');
+    const freeCapacity = personItems.length
+        ? Math.max(...personItems.map((it) => Number(seatConfig(it.capacity, it.min_people, { slot_capacity: slotDefaults.capacity, slot_min_people: slotMin }).slot_capacity) || 0)) || null
+        : null;
     const dayInputs: DayInputs = {
         availabilityRows: availability,
         slotLen: slotDefaults.duration,
@@ -113,6 +125,7 @@ export default function ProviderSlotDashboard({ providerId, editHref }: { provid
         partialBlocks: partialBlocks.map((b) => ({ date: b.date, startMin: minutesOf(b.start), endMin: minutesOf(b.end), id: b.id })),
         sessions,
         declared: declaredSessions,
+        freeCapacity,
     };
     // Month shapes for a rolling window.
     const shapeByDate: Record<string, DayShape> = {};

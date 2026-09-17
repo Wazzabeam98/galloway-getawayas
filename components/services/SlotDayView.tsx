@@ -12,6 +12,7 @@ import { Users, Lock } from 'lucide-react';
 
 const PX_PER_MIN = 1.1;
 const hhmm = (min: number) => `${String(Math.floor(min / 60)).padStart(2, '0')}:${String(min % 60).padStart(2, '0')}`;
+const daysUntil = (a: string, b: string) => Math.round((new Date(a + 'T00:00:00Z').getTime() - new Date(b + 'T00:00:00Z').getTime()) / 86400000);
 
 export default function SlotDayView({
     date, data, todayIso, nowMin, activeTime, onOpenRow, onAddAt, onRemoveBand,
@@ -65,47 +66,59 @@ export default function SlotDayView({
                     </button>
                 ))}
 
-                {/* Slots. */}
+                {/* Slots. Colour carries STATE (free = light, booking = emerald,
+                    class = violet), the bar + numbers carry how-full, and a full
+                    slot reads as complete — the provider's win — not an alarm. */}
                 {rows.map((r) => {
                     const isActive = r.time === activeTime;
-                    const h = Math.max(38, (r.endMin - r.startMin) * PX_PER_MIN - 3);
+                    const h = Math.max(40, (r.endMin - r.startMin) * PX_PER_MIN - 3);
+                    const tall = h > 50;
+                    const priv = r.kind === 'private';
+                    const violet = r.kind === 'declared';
+                    const cap = r.capacity ?? 0;
+                    const taken = r.seatsTaken ?? 0;
+                    const left = r.seatsLeft ?? Math.max(0, cap - taken);
+                    const full = priv || (cap > 0 && left <= 0);
+                    const pct = priv ? 100 : (cap > 0 ? Math.min(100, Math.round((taken / cap) * 100)) : 0);
+                    const soon = daysUntil(date, todayIso) <= 7;
+                    const low = violet && cap > 0 && taken > 0 && taken / cap < 0.5 && soon;
+
                     if (r.kind === 'free') {
                         return (
                             <button key={r.time} type="button" onClick={() => onAddAt(r.time)}
-                                className={`group absolute inset-x-1 rounded-lg border border-dashed text-left transition ${isActive ? 'border-slate-900 bg-slate-50' : 'border-slate-300 bg-white hover:border-slate-400 hover:bg-slate-50'}`}
+                                className={`group absolute inset-x-1 overflow-hidden rounded-lg border px-2 py-1 text-left transition hover:bg-slate-50 hover:shadow-sm ${isActive ? 'border-slate-900 bg-slate-50' : 'border-slate-200 bg-white hover:border-slate-400'}`}
                                 style={{ top: top(r.startMin) + 1, height: h }}>
-                                <span className="flex items-center gap-1.5 px-2 pt-1 text-[11px] text-slate-400">
-                                    <span className="font-semibold text-slate-500">{timeLabel(r.time + ':00')}</span>
-                                    <span className="opacity-0 transition group-hover:opacity-100">· add or block</span>
-                                </span>
+                                <div className="flex items-center gap-1.5">
+                                    <span className="text-xs font-bold text-slate-500">{timeLabel(r.time + ':00')}</span>
+                                    <span className="truncate text-xs text-slate-400 opacity-0 transition group-hover:opacity-100">Add a session</span>
+                                    <span className="ml-auto text-[11px] font-semibold text-slate-400">{cap > 0 ? `${cap} of ${cap} free` : 'Free'}</span>
+                                </div>
+                                {tall && <div className="mt-1 h-1.5 w-full rounded-full bg-slate-100" />}
                             </button>
                         );
                     }
-                    const violet = r.kind === 'declared';
-                    const priv = r.kind === 'private';
-                    const cap = r.capacity || 0, taken = r.seatsTaken || 0;
-                    const pct = cap > 0 ? Math.min(100, Math.round((taken / cap) * 100)) : (taken > 0 ? 100 : 0);
-                    const low = violet && cap > 0 && taken > 0 && taken / cap < 0.5;
+                    const tone = violet
+                        ? (full ? 'border-violet-400 bg-violet-100 ring-violet-500' : 'border-violet-300 bg-violet-50 ring-violet-500 hover:border-violet-400')
+                        : (full ? 'border-emerald-400 bg-emerald-100 ring-emerald-600' : 'border-emerald-300 bg-emerald-50 ring-emerald-600 hover:border-emerald-400');
+                    const rightLabel = priv ? 'whole session'
+                        : (violet && taken === 0) ? `${cap} space${cap === 1 ? '' : 's'}`
+                            : full ? 'Full' : `${left} of ${cap} left`;
                     return (
                         <button key={r.time} type="button" onClick={() => onOpenRow(r)}
-                            className={`absolute inset-x-1 overflow-hidden rounded-lg border px-2 py-1 text-left transition ${isActive ? 'ring-2 ring-offset-1' : ''} ${violet ? 'border-violet-300 bg-violet-50 ring-violet-500' : 'border-emerald-300 bg-emerald-50 ring-emerald-600'}`}
+                            className={`absolute inset-x-1 overflow-hidden rounded-lg border px-2 py-1 text-left transition hover:shadow-sm ${tone} ${isActive ? 'ring-2 ring-offset-1' : ''}`}
                             style={{ top: top(r.startMin) + 1, height: h }}>
                             <div className="flex items-center gap-1.5">
                                 <span className={`text-xs font-bold ${violet ? 'text-violet-900' : 'text-emerald-900'}`}>{timeLabel(r.time + ':00')}</span>
-                                {priv && <Lock className="h-3 w-3 text-emerald-700" aria-hidden />}
-                                <span className={`truncate text-xs ${violet ? 'text-violet-800' : 'text-emerald-800'}`}>
-                                    {priv ? 'Private hire' : (r.title || (violet ? 'Class' : 'Session'))}
-                                </span>
-                                <span className="ml-auto flex items-center gap-1 text-[11px] font-semibold text-slate-500">
-                                    {priv ? 'whole session' : (<><Users className="h-3 w-3" aria-hidden />{taken} / {cap}</>)}
+                                {priv && <Lock className="h-3 w-3 flex-none text-emerald-700" aria-hidden />}
+                                <span className={`truncate text-xs ${violet ? 'text-violet-800' : 'text-emerald-800'}`}>{priv ? 'Private hire' : (r.title || (violet ? 'Class' : 'Session'))}</span>
+                                <span className={`ml-auto flex flex-none items-center gap-1 rounded-full px-1.5 text-[11px] font-bold ${full ? (violet ? 'bg-violet-600 text-white' : 'bg-emerald-600 text-white') : 'text-slate-600'}`}>
+                                    {!full && !priv && <Users className="h-3 w-3" aria-hidden />}{rightLabel}
                                 </span>
                             </div>
-                            {!priv && (
-                                <div className="mt-1 h-1.5 w-full overflow-hidden rounded-full bg-white/70">
-                                    <div className={`h-full ${violet ? 'bg-violet-500' : 'bg-emerald-500'}`} style={{ width: pct + '%' }} />
-                                </div>
-                            )}
-                            {low && h > 46 && <span className="mt-0.5 block text-[10px] font-semibold text-violet-600">filling slowly</span>}
+                            <div className="mt-1 h-1.5 w-full overflow-hidden rounded-full bg-white/80">
+                                <div className={`h-full rounded-full ${violet ? 'bg-violet-500' : 'bg-emerald-500'}`} style={{ width: pct + '%' }} />
+                            </div>
+                            {low && tall && <span className="mt-0.5 block text-[10px] font-semibold text-amber-600">filling slowly</span>}
                         </button>
                     );
                 })}

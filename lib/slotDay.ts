@@ -36,6 +36,11 @@ export interface DayInputs {
     partialBlocks: { date: string; startMin: number; endMin: number; id?: string }[];
     sessions: { date: string; time: string; capacity: number; seats_taken: number; seats_left: number; private: boolean }[];
     declared: { id: string; date: string; time: string; capacity: number; seats_taken: number; title: string | null; duration_minutes?: number | null }[];
+    // What an as-yet-unbooked slot could hold — resolved by the caller through
+    // seatConfig (item wins, else the provider default), so a free slot's "N free"
+    // matches what the guest could actually book. null for a private-only provider
+    // (a free slot is a whole-session hire, no seat count).
+    freeCapacity: number | null;
 }
 
 const dowOf = (dateKey: string) => new Date(dateKey + 'T00:00:00Z').getUTCDay();
@@ -53,7 +58,8 @@ export function daySlots(date: string, i: DayInputs): DayData {
     );
 
     const byTime = new Map<string, DaySlotRow>();
-    for (const g of gen) { const sm = minutesOfDay(g.time); byTime.set(g.time, { startMin: sm, endMin: sm + slotLen, time: g.time, kind: 'free' }); }
+    const freeCap = i.freeCapacity != null && i.freeCapacity > 0 ? i.freeCapacity : undefined;
+    for (const g of gen) { const sm = minutesOfDay(g.time); byTime.set(g.time, { startMin: sm, endMin: sm + slotLen, time: g.time, kind: 'free', capacity: freeCap, seatsTaken: 0, seatsLeft: freeCap }); }
 
     // Declared sessions (violet) win their time — booked or not.
     const declaredHere = i.declared.filter((d) => d.date === date);
