@@ -25,6 +25,18 @@ const CATEGORY_BY_SLUG = {
     bakehouse: 'food_order', hamper: 'food_order', chef: 'chef', lens: 'other',
     sauna: 'sauna', swim: 'outdoors', whisky: 'tastings', yoga: 'yoga',
 };
+// The venue a fixed-in-place provider sits at — the public town derives from
+// collection_town via a DB trigger (based_line), the street stays private until
+// payment. Travellers (chef, photographer, hamper delivery) have no one place,
+// so they get none and show their covered regions instead. Without this, every
+// seeded provider fell back to the trades radius on the listing.
+const PLACE_BY_SLUG = {
+    bakehouse: { street: 'St Cuthbert Street', town: 'Kirkcudbright', postcode: 'DG6 4DZ' },
+    sauna:     { street: 'The Harbour',        town: 'Kirkcudbright', postcode: 'DG6 4HY' },
+    swim:      { street: 'Brighouse Bay',      town: 'Borgue',        postcode: 'DG6 4TS' },
+    whisky:    { street: 'St Mary Street',     town: 'Kirkcudbright', postcode: 'DG6 4AA' },
+    yoga:      { street: 'Harbour Square',     town: 'Kirkcudbright', postcode: 'DG6 4HZ' },
+};
 // Kirkcudbright — every provider covers it, the cottage sits in it.
 const LAT = 54.8362, LNG = -4.0530;
 
@@ -265,7 +277,12 @@ async function run() {
         const now = new Date().toISOString();
         const [prov] = await db.insert('service_providers', [{
             owner_id: owner.id, audience: 'guest', trade: 'guest', status: 'approved',
-            business_name: b.name, provider_name: b.person, based_line: b.based, description: b.desc,
+            business_name: b.name, provider_name: b.person, description: b.desc,
+            // based_line is trigger-derived from collection_town; a traveller has
+            // no venue town, so it's null and the card/listing show coverage.
+            collection_street: (PLACE_BY_SLUG[b.slug] || {}).street || null,
+            collection_town: (PLACE_BY_SLUG[b.slug] || {}).town || null,
+            collection_postcode: (PLACE_BY_SLUG[b.slug] || {}).postcode || null,
             headshot, photos: [],
             guest_details: { category: CATEGORY_BY_SLUG[b.slug] || null },
             shape: b.shape, stripe_mcc: b.mcc, stripe_product_description: (b.name + ' — for holiday guests.'),

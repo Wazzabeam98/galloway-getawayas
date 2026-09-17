@@ -161,6 +161,93 @@ export function guestCategoryIsFood(key: string | null | undefined): boolean {
     return !!(c && c.food);
 }
 
+// Accessibility and parking are pick-from-a-list, not prose: a provider ticks
+// the nearest option and a guest reads a consistent phrase, not a paragraph. The
+// stored value is the KEY; the label is what a guest sees. An empty/unknown key
+// means "not said" and the row is dropped.
+export const ACCESSIBILITY_OPTIONS: { key: string; label: string }[] = [
+    { key: 'step_free', label: 'Step-free access' },
+    { key: 'some_steps', label: 'Some steps' },
+    { key: 'not_accessible', label: 'Not step-free' },
+    { key: 'ask', label: 'Ask the host' },
+];
+export const PARKING_OPTIONS: { key: string; label: string }[] = [
+    { key: 'on_site', label: 'Parking on site' },
+    { key: 'nearby', label: 'Parking nearby' },
+    { key: 'street', label: 'Street parking' },
+    { key: 'none', label: 'No parking' },
+];
+// What an experience includes, as ticks — a provider picks from a shared list
+// rather than writing prose, and the same keys render a "What's included" list on
+// the guest listing. Deliberately general so one list spans every category (a
+// sauna, a chef, a pottery class): "what's provided" (things they bring/lay on)
+// and "on site" (what's there when you arrive). Stored as guest_details.amenities
+// (an array of keys); the label is what a guest reads.
+export const EXPERIENCE_AMENITY_GROUPS: { group: string; items: { key: string; label: string }[] }[] = [
+    {
+        group: 'What’s provided',
+        items: [
+            { key: 'equipment', label: 'All equipment provided' },
+            { key: 'materials', label: 'Materials included' },
+            { key: 'safety_gear', label: 'Safety gear' },
+            { key: 'towels', label: 'Towels' },
+            { key: 'refreshments', label: 'Hot drinks & refreshments' },
+            { key: 'food', label: 'Food included' },
+            { key: 'takehome', label: 'Take home what you make' },
+            { key: 'photos', label: 'Photos of your session' },
+        ],
+    },
+    {
+        group: 'On site',
+        items: [
+            { key: 'changing', label: 'Changing facilities' },
+            { key: 'showers', label: 'Showers' },
+            { key: 'toilets', label: 'Toilets' },
+            { key: 'shelter', label: 'Shelter from the weather' },
+            { key: 'seating', label: 'Seating area' },
+            { key: 'lockers', label: 'Lockers / storage' },
+            { key: 'wifi', label: 'Wifi' },
+        ],
+    },
+];
+export const EXPERIENCE_AMENITIES = EXPERIENCE_AMENITY_GROUPS.flatMap((g) => g.items);
+const EXPERIENCE_AMENITY_KEYS = new Set(EXPERIENCE_AMENITIES.map((a) => a.key));
+export function experienceAmenityLabel(key: string | null | undefined): string | null {
+    return EXPERIENCE_AMENITIES.find((a) => a.key === String(key || '').trim())?.label || null;
+}
+// Drop anything not in the known list, and de-dupe, keeping the canonical order —
+// so a stored value can never render an unknown or duplicate "included" line.
+export function knownExperienceAmenities(keys: any): string[] {
+    const set = new Set((Array.isArray(keys) ? keys : []).map((k: any) => String(k || '').trim()).filter((k: string) => EXPERIENCE_AMENITY_KEYS.has(k)));
+    return EXPERIENCE_AMENITIES.filter((a) => set.has(a.key)).map((a) => a.key);
+}
+// Cancellation as a named choice for a guest experience — window-based (which
+// fits a timed session), not the holiday-let's day-before tiers. "No refund" is
+// the new option a bare hours field couldn't express. The window presets set the
+// existing cancellation_window_hours; "No refund" sets a no_refund flag instead.
+export const EXPERIENCE_CANCELLATION_OPTIONS: { key: string; label: string; hours: number; noRefund?: boolean; blurb: string }[] = [
+    { key: 'flexible', label: 'Flexible', hours: 24, blurb: 'Free to cancel up to 24 hours before.' },
+    { key: 'standard', label: 'Standard', hours: 48, blurb: 'Free to cancel up to 48 hours before.' },
+    { key: 'firm', label: 'Firm', hours: 168, blurb: 'Free to cancel up to 7 days before.' },
+    { key: 'none', label: 'No refund', hours: 0, noRefund: true, blurb: 'Non-refundable once booked.' },
+];
+// The named policy a provider is on, from what's stored — no_refund wins, else
+// the nearest window preset (so a legacy hours value still names cleanly).
+export function experienceCancellationOption(hours: number | null | undefined, noRefund: boolean | null | undefined) {
+    if (noRefund) return EXPERIENCE_CANCELLATION_OPTIONS.find((o) => o.key === 'none')!;
+    const h = Math.max(0, Number(hours) || 0);
+    return EXPERIENCE_CANCELLATION_OPTIONS
+        .filter((o) => !o.noRefund)
+        .reduce((best, o) => (Math.abs(o.hours - h) < Math.abs(best.hours - h) ? o : best));
+}
+
+export function accessibilityLabel(key: string | null | undefined): string | null {
+    return ACCESSIBILITY_OPTIONS.find((o) => o.key === String(key || '').trim())?.label || null;
+}
+export function parkingLabel(key: string | null | undefined): string | null {
+    return PARKING_OPTIONS.find((o) => o.key === String(key || '').trim())?.label || null;
+}
+
 // WHERE A SLOT HAPPENS — the come-to-me / travel fork, per category.
 //
 // A slot is a session at a time, and the axis is the same one made-to-order
@@ -2437,9 +2524,18 @@ const GUEST_MCC_LABEL: Record<string, string> = {
 // requires — so the card never reads a bland "Local experience" for want of a
 // hand-typed word. Only a provider with neither (which the gate should prevent)
 // gets the neutral label.
-export function guestCategory(provider: { trade?: string | null; custom_label?: string | null; stripe_mcc?: string | null }): string {
+export function guestCategory(provider: { trade?: string | null; custom_label?: string | null; stripe_mcc?: string | null; guest_details?: any }): string {
     const label = String(provider.custom_label || '').trim();
     if (label) return label;
+    // The owner's own word is gone, so fall back to the CANONICAL name for the
+    // sub-type they picked — read from the persisted key rather than guessed
+    // from the Stripe code. ('other' has no canonical label, so it drops through
+    // to the code lookup below.)
+    const key = provider.guest_details && typeof provider.guest_details === 'object'
+        ? String(provider.guest_details.category || '').trim()
+        : '';
+    const byKey = key ? guestCategoryByKey(key) : null;
+    if (byKey && byKey.label) return byKey.label;
     const byMcc = GUEST_MCC_LABEL[String(provider.stripe_mcc || '').trim()];
     return byMcc || 'Local experience';
 }

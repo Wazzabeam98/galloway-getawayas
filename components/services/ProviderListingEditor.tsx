@@ -8,11 +8,13 @@ import Env from '@/config/Env';
 import { getImageUrl, generateRandomNumber } from '@/lib/utils';
 import { compressImage } from '@/lib/compressImage';
 import { GUEST_REGIONS, GUEST_COVERAGE_ALL_KEY } from '@/lib/strings';
-import { slotAsksWhereFork } from '@/lib/serviceProviders';
+import { slotAsksWhereFork, ACCESSIBILITY_OPTIONS, PARKING_OPTIONS, EXPERIENCE_CANCELLATION_OPTIONS, experienceCancellationOption, EXPERIENCE_AMENITY_GROUPS } from '@/lib/serviceProviders';
 import { PhotoEditorGrid } from './PhotoEditorGrid';
+import { OptionPills, Stepper, SESSION_LENGTH_OPTIONS, minutesLabel } from './editorControls';
 import {
     FileText, User, Info, Salad, Image as ImageIcon,
-    ShoppingBag, MapPin, CalendarRange, Eye, EyeOff, ExternalLink, Check,
+    ShoppingBag, MapPin, CalendarRange, CalendarClock, Sparkles, RotateCcw,
+    Eye, EyeOff, ExternalLink, Check,
 } from 'lucide-react';
 
 // The guest-experience listing editor. A card list of sections; each opens,
@@ -35,20 +37,45 @@ export interface EditorProvider {
     dietary_note: string; fulfilment: string;
     collection_street: string; collection_town: string; collection_postcode: string;
     slot_length_minutes: number | null; slot_turnaround_minutes: number;
-    slot_capacity: number | null; slot_min_people: number;
-    lead_time_days: number; cancellation_window_hours: number;
+    slot_capacity: number | null; slot_min_people: number; max_guests: number | null;
+    lead_time_days: number; cancellation_window_hours: number; booking_horizon_days: number;
     professional_title: string; years_experience: string; qualifications: string; recognition: string;
     what_to_expect: string; itinerary: Array<{ title?: string | null; detail?: string | null }>;
     min_age: number | null; activity_level: string; what_to_bring: string;
+    accessibility: string; parking: string; no_refund: boolean;
+    amenities: string[];
     dietary_options: string[];
     areas: string[];
-    items: Array<{ id: string; name: string; description: string; price: number; unit: string; image: string | null; duration_minutes: number | null; fulfilment: string | null; active: boolean }>;
+    items: Array<{ id: string; name: string; description: string; price: number; unit: string; image: string | null; duration_minutes: number | null; fulfilment: string | null; active: boolean; capacity: number | null; min_people: number | null }>;
     availability: Array<{ day_of_week: number; open_time: string; close_time: string }>;
 }
 
-type SectionKey = 'title' | 'about' | 'happens' | 'things' | 'dietary' | 'photos' | 'menu' | 'where' | 'availability' | 'status';
+type SectionKey = 'title' | 'about' | 'happens' | 'things' | 'amenities' | 'dietary' | 'photos' | 'menu' | 'where' | 'booking' | 'availability' | 'cancellation' | 'status';
 
-const BUILT: Record<string, boolean> = { title: true, about: true, photos: true, menu: true, happens: true, things: true, dietary: true, where: true, availability: true, status: true };
+const BUILT: Record<string, boolean> = { title: true, about: true, photos: true, menu: true, happens: true, things: true, amenities: true, dietary: true, where: true, booking: true, availability: true, cancellation: true, status: true };
+
+// How far ahead a guest can book — a pick from sensible windows rather than a
+// number box (Airbnb's booking-window control). Stored as days.
+const BOOKING_HORIZON_OPTIONS: { days: number; label: string }[] = [
+    { days: 30, label: '30 days' },
+    { days: 60, label: '60 days' },
+    { days: 90, label: '3 months' },
+    { days: 180, label: '6 months' },
+    { days: 365, label: 'A year' },
+];
+
+// How much notice a guest must give — a pick, not a typed number.
+const LEAD_TIME_OPTIONS: { days: number; label: string }[] = [
+    { days: 0, label: 'Same day' },
+    { days: 1, label: '1 day' },
+    { days: 2, label: '2 days' },
+    { days: 3, label: '3 days' },
+    { days: 7, label: '1 week' },
+];
+
+// The gap between sessions — common picks, in minutes. (Session length and the
+// pill/stepper controls are shared with the scheduler via ./editorControls.)
+const TURNAROUND_OPTIONS = [0, 15, 30, 45, 60];
 
 async function saveSection(providerId: string, section: string, data: any): Promise<boolean> {
     const res = await fetch('/api/services/listing/save', {
@@ -118,6 +145,16 @@ export default function ProviderListingEditor({ provider }: { provider: EditorPr
     const [minAge, setMinAge] = useState(p.min_age != null ? String(p.min_age) : '');
     const [activity, setActivity] = useState(p.activity_level);
     const [whatToBring, setWhatToBring] = useState(p.what_to_bring);
+    const [accessibility, setAccessibility] = useState(p.accessibility);
+    const [parking, setParking] = useState(p.parking);
+    // What's included, as ticks — the same keys render the "What's included" list
+    // on the guest listing, so a provider picks rather than writes prose.
+    const [amenities, setAmenities] = useState<string[]>(p.amenities || []);
+    const toggleAmenity = (key: string) => setAmenities((prev) => prev.includes(key) ? prev.filter((k) => k !== key) : [...prev, key]);
+    // Cancellation as a named policy (shared by every shape). noRefund is the
+    // non-refundable option; cancelHours (declared with the slot fields below)
+    // holds the window preset for the refundable ones.
+    const [noRefund, setNoRefund] = useState(p.no_refund);
     const [dietaryNote, setDietaryNote] = useState(p.dietary_note);
 
     // Availability (slot providers): the weekly template. Seven rows, Sun..Sat,
@@ -129,12 +166,21 @@ export default function ProviderListingEditor({ provider }: { provider: EditorPr
         const row = p.availability.find((a) => a.day_of_week === d);
         return { on: !!row, open: row?.open_time || '09:00', close: row?.close_time || '17:00' };
     }));
-    const [slotLength, setSlotLength] = useState(p.slot_length_minutes != null ? String(p.slot_length_minutes) : '');
-    const [turnaround, setTurnaround] = useState(String(p.slot_turnaround_minutes || 0));
-    const [capacity, setCapacity] = useState(p.slot_capacity != null ? String(p.slot_capacity) : '');
-    const [minPeople, setMinPeople] = useState(String(p.slot_min_people || 1));
-    const [leadDays, setLeadDays] = useState(String(p.lead_time_days || 0));
-    const [cancelHours, setCancelHours] = useState(String(p.cancellation_window_hours ?? 48));
+    const [slotLength, setSlotLength] = useState(p.slot_length_minutes != null ? Number(p.slot_length_minutes) : 60);
+    const [turnaround, setTurnaround] = useState(Number(p.slot_turnaround_minutes || 0));
+    const [leadDays, setLeadDays] = useState(Math.max(0, Number(p.lead_time_days || 0)));
+    const [cancelHours, setCancelHours] = useState(Number(p.cancellation_window_hours ?? 48));
+    const [horizonDays, setHorizonDays] = useState(Math.max(1, Number(p.booking_horizon_days || 90)));
+    const cancelPolicy = experienceCancellationOption(Number(cancelHours), noRefund);
+
+    // Max group size — the largest booking. A slot's is slot_capacity (it sizes
+    // sellable seats); every other shape keeps it in guest_details.max_guests. One
+    // control, reachable by every shape (a chef and a whole-session sauna both had
+    // nowhere to set it). Defaults to a realistic group so it is never blank.
+    const initialMaxGroup = p.isSlot ? p.slot_capacity : p.max_guests;
+    const [maxGuests, setMaxGuests] = useState<number>(
+        initialMaxGroup && initialMaxGroup > 0 ? initialMaxGroup : (p.isSlot ? 8 : 6));
+
 
     // Photos: gallery keys (storage paths), plus the headshot and logo. Uploaded
     // to the bucket immediately (like the wizard), so the section saves keys.
@@ -183,11 +229,13 @@ export default function ProviderListingEditor({ provider }: { provider: EditorPr
     // The menu. Each row edits in place; prices are strings while typing. New rows
     // have no id (the save route inserts them); removed rows drop out (the route
     // deletes them). ids are preserved so an item keeps its photo and bookings.
-    type MenuRow = { id?: string; name: string; description: string; price: string; unit: string; image: string | null; duration: string; fulfilment: string | null; active: boolean };
+    type MenuRow = { id?: string; name: string; description: string; price: string; unit: string; image: string | null; duration: string; fulfilment: string | null; active: boolean; capacity: string };
     const [menu, setMenu] = useState<MenuRow[]>(p.items.map((it) => ({
         id: it.id, name: it.name, description: it.description, price: String(it.price),
         unit: it.unit, image: it.image, duration: it.duration_minutes != null ? String(it.duration_minutes) : '',
         fulfilment: it.fulfilment, active: it.active,
+        // Blank = inherit the provider default; a number here overrides it for this item.
+        capacity: it.capacity != null ? String(it.capacity) : '',
     })));
     const setRow = (i: number, patch: Partial<MenuRow>) => setMenu(menu.map((r, j) => j === i ? { ...r, ...patch } : r));
 
@@ -270,17 +318,23 @@ export default function ProviderListingEditor({ provider }: { provider: EditorPr
         // offerings, the experience) → operations (availability, status). Where it
         // happens sits high — Airbnb asks location early, and the menu's per-item
         // location depends on the come-to-me/travel/both choice being set first.
-        { key: 'title', label: 'Title & category', icon: FileText },
+        { key: 'title', label: 'Title', icon: FileText },
         { key: 'about', label: 'About you', icon: User },
-        { key: 'where', label: 'Where it happens', icon: MapPin },
+        // A fixed venue (guests always come to one place) has an Address, not a
+        // where-do-you-work choice — there's no travel fork to make.
+        { key: 'where', label: fixedInPlace ? 'Address' : 'Where it happens', icon: MapPin },
         { key: 'photos', label: 'Photos', icon: ImageIcon },
         { key: 'menu', label: 'What you offer', icon: ShoppingBag },
         { key: 'happens', label: 'What happens', icon: FileText },
         { key: 'things', label: 'Things to know', icon: Info },
+        { key: 'amenities', label: 'Amenities', icon: Sparkles },
         // Food & dietary is only meaningful for a food business (chef, baker,
         // hamper) — a sauna or a guide never caters, so it doesn't see this.
         ...(p.isFood ? [{ key: 'dietary' as SectionKey, label: 'Food & dietary', icon: Salad }] : []),
+        // Booking rules reach every shape; the weekly template is slot-only.
+        { key: 'booking', label: 'Booking', icon: CalendarClock },
         ...(p.isSlot ? [{ key: 'availability' as SectionKey, label: 'Availability', icon: CalendarRange }] : []),
+        { key: 'cancellation', label: 'Cancellation policy', icon: RotateCcw },
         { key: 'status', label: 'Listing status', icon: paused ? EyeOff : Eye },
     ];
 
@@ -365,7 +419,7 @@ export default function ProviderListingEditor({ provider }: { provider: EditorPr
                 {/* Content */}
                 <div className="space-y-6">
                     {active === 'title' && (
-                        <SectionCard title="Title & category" hint="The name at the top of your listing." saving={savingKey === 'title'}
+                        <SectionCard title="Title" hint="The name at the top of your listing." saving={savingKey === 'title'}
                             onSave={() => run('title', { business_name: businessName })}>
                             <Field label="Listing title">
                                 <input className={inputCls} value={businessName} onChange={(e) => setBusinessName(e.target.value)} maxLength={80} />
@@ -436,20 +490,76 @@ export default function ProviderListingEditor({ provider }: { provider: EditorPr
                     )}
 
                     {active === 'things' && (
-                        <SectionCard title="Things to know" hint="Practical facts a guest wants before booking." saving={savingKey === 'things'}
+                        <SectionCard title="Things to know" hint="A few practical facts a guest wants before booking." saving={savingKey === 'things'}
                             onSave={() => run('things', { min_age: minAge, activity_level: activity, what_to_bring: whatToBring })}>
-                            <Field label="Minimum age"><input className={inputCls} type="number" min={0} value={minAge} onChange={(e) => setMinAge(e.target.value)} placeholder="No minimum" /></Field>
+                            <Field label="Minimum age" hint="The youngest a guest can be to take part.">
+                                <OptionPills
+                                    options={[
+                                        { value: '', label: 'No minimum' },
+                                        { value: '12', label: '12+' },
+                                        { value: '16', label: '16+' },
+                                        { value: '18', label: '18+' },
+                                        { value: '21', label: '21+' },
+                                    ]}
+                                    value={minAge}
+                                    onChange={(v) => setMinAge(v)}
+                                />
+                            </Field>
                             <Field label="Activity level">
-                                <div className="flex gap-2">
-                                    {['gentle', 'moderate', 'challenging'].map((lvl) => (
-                                        <button key={lvl} type="button" onClick={() => setActivity(activity === lvl ? '' : lvl)}
-                                            className={`rounded-xl border px-4 py-2 text-sm capitalize transition ${activity === lvl ? 'border-emerald-700 bg-emerald-50 text-slate-900' : 'border-slate-300 text-slate-700 hover:border-slate-400'}`}>
-                                            {lvl}
-                                        </button>
-                                    ))}
-                                </div>
+                                <OptionPills
+                                    options={[
+                                        { value: 'gentle', label: 'Gentle' },
+                                        { value: 'moderate', label: 'Moderate' },
+                                        { value: 'challenging', label: 'Challenging' },
+                                    ]}
+                                    value={activity}
+                                    onChange={(v) => setActivity(activity === v ? '' : v)}
+                                />
                             </Field>
                             <Field label="What to bring"><textarea className={inputCls} rows={3} value={whatToBring} onChange={(e) => setWhatToBring(e.target.value)} placeholder="Warm layers, sturdy shoes…" /></Field>
+                        </SectionCard>
+                    )}
+
+                    {active === 'amenities' && (
+                        <SectionCard title="Amenities" hint="What guests can count on when they arrive. Everything you tick shows as a “What’s included” list on your listing." saving={savingKey === 'amenities'}
+                            onSave={() => run('amenities', { accessibility, parking, amenities })}>
+                            {/* What's included — a multi-select tick-list. A provider
+                                ticks rather than writing prose, and the same keys drive
+                                the guest listing's "What's included" section. */}
+                            {EXPERIENCE_AMENITY_GROUPS.map((grp) => (
+                                <div key={grp.group}>
+                                    <span className="block text-xs font-semibold uppercase tracking-wide text-slate-500">{grp.group}</span>
+                                    <div className="mt-2 flex flex-wrap gap-2">
+                                        {grp.items.map((a) => {
+                                            const on = amenities.includes(a.key);
+                                            return (
+                                                <button key={a.key} type="button" onClick={() => toggleAmenity(a.key)}
+                                                    aria-pressed={on}
+                                                    className={`inline-flex items-center gap-1.5 rounded-xl border px-4 py-2 text-sm transition ${on ? 'border-emerald-700 ring-2 ring-emerald-700 bg-emerald-50 text-slate-900' : 'border-slate-300 text-slate-700 hover:border-slate-400'}`}>
+                                                    {on && <Check className="h-4 w-4 flex-none text-emerald-700" />}
+                                                    {a.label}
+                                                </button>
+                                            );
+                                        })}
+                                    </div>
+                                </div>
+                            ))}
+                            <div className="border-t border-slate-200 pt-4">
+                                <Field label="Accessibility" hint="The nearest option — a guest who needs it wants a clear answer, not a paragraph.">
+                                    <OptionPills
+                                        options={ACCESSIBILITY_OPTIONS.map((o) => ({ value: o.key, label: o.label }))}
+                                        value={accessibility}
+                                        onChange={(v) => setAccessibility(accessibility === v ? '' : v)}
+                                    />
+                                </Field>
+                            </div>
+                            <Field label="Parking">
+                                <OptionPills
+                                    options={PARKING_OPTIONS.map((o) => ({ value: o.key, label: o.label }))}
+                                    value={parking}
+                                    onChange={(v) => setParking(parking === v ? '' : v)}
+                                />
+                            </Field>
                         </SectionCard>
                     )}
 
@@ -464,15 +574,9 @@ export default function ProviderListingEditor({ provider }: { provider: EditorPr
                         <SectionCard title="Photos" hint="Photos of the experience — these lead the listing. The first is the cover; drag to reorder." saving={savingKey === 'photos'}
                             disabled={photos.length < 3} disabledLabel={`Add ${3 - photos.length} more photo${3 - photos.length === 1 ? '' : 's'}`}
                             onSave={() => run('photos', { photos, logo })}>
-                            {/* Photo minimum: three, so a listing never leads on a single
-                                weak image. The Save is blocked until then and says how
-                                many more are needed. */}
-                            {photos.length < 3 && (
-                                <div className="flex items-start gap-2 rounded-xl border border-amber-300 bg-amber-50 p-3 text-sm text-amber-900">
-                                    <Check className="mt-0.5 h-4 w-4 flex-none" />
-                                    At least three photos are required. You have {photos.length}; add {3 - photos.length} more.
-                                </div>
-                            )}
+                            {/* Photo minimum stays three (a listing shouldn't lead on
+                                one weak image), but it's carried by the disabled Save
+                                and its "Add N more" label — no separate count banner. */}
                             <div>
                                 <span className="block text-xs font-semibold uppercase tracking-wide text-slate-500">Gallery</span>
                                 <div className="mt-2">
@@ -496,6 +600,7 @@ export default function ProviderListingEditor({ provider }: { provider: EditorPr
                                     id: r.id, name: r.name, description: r.description, price: r.price,
                                     unit: r.unit, image: r.image, duration_minutes: r.duration,
                                     fulfilment: r.fulfilment, active: r.active,
+                                    capacity: r.capacity,
                                 })),
                             })}>
                             {/* Last-priced-item guard: a listing with no active priced
@@ -575,6 +680,24 @@ export default function ProviderListingEditor({ provider }: { provider: EditorPr
                                                         </label>
                                                     )}
                                                 </div>
+                                                {/* Per-item capacity — only for a per-person item on a
+                                                    slot. Each priced-per-person item sets how many it
+                                                    holds; blank inherits the Booking default, so two
+                                                    items no longer share one number that means different
+                                                    things. No minimum-per-booking: a shared session's
+                                                    whole point is that individuals can attend, so there
+                                                    is no floor — a provider who won't take one person is
+                                                    describing the whole-session (private) item instead. */}
+                                                {p.isSlot && r.unit === 'person' && (
+                                                    <div className="flex flex-wrap items-center gap-3 rounded-xl bg-slate-50 p-3">
+                                                        <span className="text-xs font-semibold uppercase tracking-wide text-slate-500">Capacity</span>
+                                                        <span className="flex items-center gap-1">
+                                                            <input className="w-20 rounded-lg border border-slate-300 p-2 text-sm" type="number" min={1} placeholder={String(maxGuests)} value={r.capacity} onChange={(e) => setRow(i, { capacity: e.target.value })} />
+                                                            <span className="text-slate-500 text-sm">people</span>
+                                                        </span>
+                                                        <span className="w-full text-xs text-slate-400">Blank uses your default of {maxGuests}.</span>
+                                                    </div>
+                                                )}
                                                 <textarea className={inputCls} rows={2} placeholder="Description (optional)" value={r.description} onChange={(e) => setRow(i, { description: e.target.value })} />
                                             </div>
                                         </div>
@@ -588,13 +711,13 @@ export default function ProviderListingEditor({ provider }: { provider: EditorPr
                                     </div>
                                 ))}
                             </div>
-                            <button type="button" onClick={() => setMenu([...menu, { name: '', description: '', price: '', unit: 'flat', image: null, duration: p.isSlot ? '60' : '', fulfilment: (p.isSlot && fulfilment === 'both') ? 'collection' : null, active: true }])}
+                            <button type="button" onClick={() => setMenu([...menu, { name: '', description: '', price: '', unit: 'flat', image: null, duration: p.isSlot ? '60' : '', fulfilment: (p.isSlot && fulfilment === 'both') ? 'collection' : null, active: true, capacity: '' }])}
                                 className="text-sm font-semibold text-emerald-700 hover:text-emerald-800">+ Add an item</button>
                         </SectionCard>
                     )}
 
                     {active === 'where' && (
-                        <SectionCard title="Where it happens" hint="How guests reach you. They only ever see the town — the street and postcode stay private until a booking is confirmed." saving={savingKey === 'where'}
+                        <SectionCard title={fixedInPlace ? 'Address' : 'Where it happens'} hint="How guests reach you. They only ever see the town — the street and postcode stay private until a booking is confirmed." saving={savingKey === 'where'}
                             onSave={() => run('where', {
                                 fulfilment,
                                 collection_street: street, collection_town: town, collection_postcode: postcode,
@@ -658,12 +781,33 @@ export default function ProviderListingEditor({ provider }: { provider: EditorPr
                         </SectionCard>
                     )}
 
+                    {active === 'booking' && (
+                        <SectionCard title="Booking" hint="How guests book with you — the rules that apply however your listing is booked." saving={savingKey === 'booking'}
+                            onSave={() => run('booking', { max_guests: maxGuests, lead_time_days: leadDays, booking_horizon_days: horizonDays })}>
+                            <Field label="Maximum capacity" hint={p.isSlot ? 'The most people a session can take, as a default — a per-person item can set its own in “What you offer”.' : 'The most people you’ll take for one booking.'}>
+                                <Stepper value={maxGuests} onChange={setMaxGuests} min={1} max={60} />
+                            </Field>
+                            <Field label="Notice needed" hint="How far ahead a guest has to book.">
+                                <OptionPills
+                                    options={LEAD_TIME_OPTIONS.map((o) => ({ value: String(o.days), label: o.label }))}
+                                    value={String(leadDays)}
+                                    onChange={(v) => setLeadDays(Number(v))}
+                                />
+                            </Field>
+                            <Field label="How far ahead guests can book" hint="Beyond this, dates aren’t open yet — they come into range as time passes.">
+                                <OptionPills
+                                    options={BOOKING_HORIZON_OPTIONS.map((o) => ({ value: String(o.days), label: o.label }))}
+                                    value={String(horizonDays)}
+                                    onChange={(v) => setHorizonDays(Number(v))}
+                                />
+                            </Field>
+                        </SectionCard>
+                    )}
+
                     {active === 'availability' && (
-                        <SectionCard title="Availability" hint="Your weekly hours and booking rules. A specific day off, or part of a day, is set in your diary." saving={savingKey === 'availability'}
+                        <SectionCard title="Availability" hint="Your weekly hours and session shape. A specific day off, or part of a day, is set in your diary." saving={savingKey === 'availability'}
                             onSave={() => run('availability', {
                                 slot_length_minutes: slotLength, slot_turnaround_minutes: turnaround,
-                                slot_capacity: capacity, slot_min_people: minPeople,
-                                lead_time_days: leadDays, cancellation_window_hours: cancelHours,
                                 availability: hours
                                     .map((h, d) => ({ ...h, day_of_week: d }))
                                     .filter((h) => h.on && h.open && h.close && h.open < h.close)
@@ -689,23 +833,23 @@ export default function ProviderListingEditor({ provider }: { provider: EditorPr
                                     ))}
                                 </div>
                             </div>
-                            <div className="grid grid-cols-2 gap-4">
-                                <Field label="Session length (min)" hint="How long one session runs."><input className={inputCls} type="number" min={15} step={15} value={slotLength} onChange={(e) => setSlotLength(e.target.value)} /></Field>
-                                <Field label="Gap between sessions (min)" hint="Time to reset or clean up before the next one can start."><input className={inputCls} type="number" min={0} value={turnaround} onChange={(e) => setTurnaround(e.target.value)} /></Field>
-                                {/* Only for a per-person item. Same wording as the sign-up
-                                    wizard's g_capacity and g_slot_min screens (lib/strings
-                                    GUEST_SCREEN_COPY), so a provider meets the same question
-                                    in both places. Hidden for a whole-session-only provider,
-                                    where seats and a minimum-to-run mean nothing. */}
-                                {hasPerPersonItem && (
-                                    <>
-                                        <Field label="How many can it hold?" hint="The most a per-person session fits at once — the individual places you can sell."><input className={inputCls} type="number" min={1} value={capacity} onChange={(e) => setCapacity(e.target.value)} /></Field>
-                                        <Field label="Smallest group you’ll run a session for" hint="A single booking must be at least this many people — leave it at 1 if a session will run for anyone."><input className={inputCls} type="number" min={1} value={minPeople} onChange={(e) => setMinPeople(e.target.value)} /></Field>
-                                    </>
-                                )}
-                                <Field label="Notice needed (days)" hint="How far ahead a guest must book — 2 means at least 2 days’ notice. 0 = same-day is fine."><input className={inputCls} type="number" min={0} value={leadDays} onChange={(e) => setLeadDays(e.target.value)} /></Field>
-                                <Field label="Cancellation window (hrs)" hint="How long before the start a guest can still cancel for a refund."><input className={inputCls} type="number" min={0} value={cancelHours} onChange={(e) => setCancelHours(e.target.value)} /></Field>
-                            </div>
+                            <Field label="Session length" hint="How long one session runs.">
+                                <OptionPills
+                                    options={SESSION_LENGTH_OPTIONS.map((m) => ({ value: String(m), label: minutesLabel(m) }))}
+                                    value={String(slotLength)}
+                                    onChange={(v) => setSlotLength(Number(v))}
+                                />
+                            </Field>
+                            <Field label="Gap between sessions" hint="Time to reset or clean up before the next one can start.">
+                                <OptionPills
+                                    options={TURNAROUND_OPTIONS.map((m) => ({ value: String(m), label: m === 0 ? 'None' : `${m} min` }))}
+                                    value={String(turnaround)}
+                                    onChange={(v) => setTurnaround(Number(v))}
+                                />
+                            </Field>
+                            {/* The minimum-per-booking now lives on each per-person
+                                item in "What you offer" (a whole-session provider has
+                                no per-person minimum at all), so it's gone from here. */}
                             {/* Dated exceptions have one home — the diary, where a
                                 provider also sees their bookings. The editor owns the
                                 weekly template and points clearly to the diary rather
@@ -721,6 +865,31 @@ export default function ProviderListingEditor({ provider }: { provider: EditorPr
                                 </div>
                                 <span className="flex-none text-sm font-semibold text-emerald-700">Open diary →</span>
                             </Link>
+                        </SectionCard>
+                    )}
+
+                    {active === 'cancellation' && (
+                        <SectionCard title="Cancellation policy" hint="How long before the start a guest can cancel for a full refund." saving={savingKey === 'cancellation'}
+                            onSave={() => run('cancellation', { cancellation_window_hours: cancelPolicy.hours, no_refund: !!cancelPolicy.noRefund })}>
+                            <p className="text-xs text-slate-500">
+                                After the window it’s your call. Refunds always exclude the Galloway Getaways service fee.
+                            </p>
+                            <div className="space-y-3">
+                                {EXPERIENCE_CANCELLATION_OPTIONS.map((o) => {
+                                    const on = cancelPolicy.key === o.key;
+                                    return (
+                                        <button key={o.key} type="button"
+                                            onClick={() => { setCancelHours(o.hours); setNoRefund(!!o.noRefund); }}
+                                            className={`w-full rounded-2xl border-2 p-4 text-left transition ${on ? 'border-emerald-700 bg-emerald-50' : 'border-slate-200 hover:border-slate-400'}`}>
+                                            <div className="flex items-center justify-between">
+                                                <span className="font-semibold text-slate-900">{o.label}</span>
+                                                {on && <Check className="h-4 w-4 text-emerald-700" />}
+                                            </div>
+                                            <p className="mt-0.5 text-xs text-slate-500">{o.blurb}</p>
+                                        </button>
+                                    );
+                                })}
+                            </div>
                         </SectionCard>
                     )}
 

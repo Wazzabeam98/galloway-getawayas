@@ -93,13 +93,17 @@ export async function POST(request: Request) {
 
             const { data: prov } = await admin
                 .from('service_providers')
-                .select('cancellation_window_hours, business_name, contact_email, owner_id')
+                .select('cancellation_window_hours, business_name, contact_email, owner_id, guest_details')
                 .eq('id', order.provider_id).maybeSingle();
             const windowHours = Number(prov && prov.cancellation_window_hours) || 48;
+            // A non-refundable policy: there is never an automatic full refund,
+            // whatever the clock says. The provider can still choose to refund
+            // (the 'ask' door below); the walk-away ('forfeit') is unchanged.
+            const noRefund = !!(prov && prov.guest_details && prov.guest_details.no_refund);
             // Name the person in the guest-facing prompts below ("Inside Fiona's
             // window", "Fiona's to decide"), not the listing.
             const business = await providerFirstName(admin, order.provider_id, order.provider_business_name || (prov && prov.business_name) || 'the provider');
-            const free = guestMayCancelFree(shape, String(order.service_date), order.service_time || null, windowHours, now);
+            const free = !noRefund && guestMayCancelFree(shape, String(order.service_date), order.service_time || null, windowHours, now);
 
             // BEFORE THE CUTOFF: a full refund, automatic. mode is irrelevant here.
             if (free) {

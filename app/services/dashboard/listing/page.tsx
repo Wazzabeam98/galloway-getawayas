@@ -54,7 +54,7 @@ export default async function ProviderListingPage() {
     const isSlot = shapeOf(provider) === 'slot';
     const [{ data: areas }, { data: items }, { data: avail }] = await Promise.all([
         admin.from('service_areas').select('label').eq('provider_id', provider.id).order('created_at', { ascending: true }),
-        admin.from('service_provider_items').select('id, name, description, price, unit, image, duration_minutes, fulfilment, active, sort_order')
+        admin.from('service_provider_items').select('id, name, description, price, unit, image, duration_minutes, fulfilment, active, capacity, min_people, sort_order')
             .eq('provider_id', provider.id).order('sort_order', { ascending: true }).order('created_at', { ascending: true }),
         isSlot
             ? admin.from('slot_availability').select('day_of_week, open_time, close_time').eq('provider_id', provider.id).order('day_of_week', { ascending: true })
@@ -90,8 +90,13 @@ export default async function ProviderListingPage() {
                 slot_turnaround_minutes: provider.slot_turnaround_minutes ?? 0,
                 slot_capacity: provider.slot_capacity ?? null,
                 slot_min_people: provider.slot_min_people ?? 1,
+                // Max group size for a non-slot shape (a chef, a baker) rides in
+                // guest_details.max_guests — a slot's is the slot_capacity column
+                // above. The editor's Booking section reads whichever the shape uses.
+                max_guests: (gd.max_guests != null && gd.max_guests !== '') ? Number(gd.max_guests) : null,
                 lead_time_days: provider.lead_time_days ?? 0,
                 cancellation_window_hours: provider.cancellation_window_hours ?? 48,
+                booking_horizon_days: gd.booking_horizon_days ?? 90,
                 professional_title: gd.professional_title || '',
                 years_experience: gd.years_experience || '',
                 qualifications: gd.qualifications || '',
@@ -101,6 +106,10 @@ export default async function ProviderListingPage() {
                 min_age: gd.min_age ?? null,
                 activity_level: gd.activity_level || '',
                 what_to_bring: gd.what_to_bring || '',
+                accessibility: gd.accessibility || '',
+                parking: gd.parking || '',
+                amenities: Array.isArray(gd.amenities) ? gd.amenities : [],
+                no_refund: gd.no_refund === true,
                 dietary_options: Array.isArray(gd.dietary_options) ? gd.dietary_options : [],
                 areas: (areas || []).map((a: any) => a.label).filter(Boolean),
                 items: (items || []).map((it: any) => ({
@@ -110,6 +119,10 @@ export default async function ProviderListingPage() {
                     duration_minutes: it.duration_minutes ?? null,
                     fulfilment: it.fulfilment || null,
                     active: it.active !== false,
+                    // Per-item seats (item wins, else the provider default). null =
+                    // inherit the Booking-section default. Only meaningful per-person.
+                    capacity: it.capacity ?? null,
+                    min_people: it.min_people ?? null,
                 })),
                 availability: (avail || []).map((a: any) => ({
                     day_of_week: Number(a.day_of_week), open_time: String(a.open_time).slice(0, 5), close_time: String(a.close_time).slice(0, 5),

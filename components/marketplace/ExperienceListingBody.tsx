@@ -1,12 +1,13 @@
 import Link from 'next/link';
 import { shapeCue } from '@/lib/serviceSlots';
-import { dietaryOptionLabel } from '@/lib/serviceProviders';
+import { dietaryOptionLabel, accessibilityLabel, parkingLabel, experienceCancellationOption, experienceAmenityLabel } from '@/lib/serviceProviders';
 import {
-    itemPriceLabel, cancellationSentence, coverageLabel,
+    itemPriceLabel, cancellationSentence, whereLine, locationTag, travelCoverageLine,
     durationLabel, durationSummary, yearsLabel, groupSizeLabel,
 } from '@/components/marketplace/present';
-import { MapPin, Clock, Users, User, BadgeCheck, Award, Compass, Flag, Activity, Backpack, ShieldAlert } from 'lucide-react';
+import { MapPin, Clock, Users, User, BadgeCheck, Award, Compass, Flag, Activity, Backpack, ShieldAlert, Accessibility, Car, Check } from 'lucide-react';
 import PhotoGallery from '@/components/PhotoGallery';
+import PropertyMap from '@/components/PropertyMap';
 import type { MpProvider } from '@/lib/experiencesData';
 
 // Icon for an itinerary phase, by its title (the editor writes Arrival / During /
@@ -33,7 +34,13 @@ export default function ExperienceListingBody({
     panel: React.ReactNode;
 }) {
     const who = p.byline || p.business_name;
-    const town = p.based_line || coverageLabel(p);
+    // Pre-payment location, per shape: a comes-to-you provider happens at the
+    // guest's cottage; a fixed venue shows its town, never the old trades radius.
+    const comesToYou = p.shape === 'comes_to_you' || p.fulfilment === 'delivery';
+    const where = whereLine(p);
+    const tag = locationTag(p);
+    const travelCoverage = travelCoverageLine(p);
+    const cancelPolicy = experienceCancellationOption(p.cancellation_window_hours, p.noRefund);
 
     const duration = durationSummary(p);
     const groupSize = groupSizeLabel(p.maxGuests);
@@ -51,8 +58,18 @@ export default function ExperienceListingBody({
     const facts: { icon: React.ReactNode; value: string; label: string }[] = [];
     if (p.byline) facts.push({ icon: <User className="h-5 w-5 text-slate-700" aria-hidden />, value: p.byline, label: proTitle || 'Your host' });
     if (duration) facts.push({ icon: <Clock className="h-5 w-5 text-slate-700" aria-hidden />, value: duration, label: 'Duration' });
-    if (town) facts.push({ icon: <MapPin className="h-5 w-5 text-slate-700" aria-hidden />, value: town, label: 'Where it happens' });
+    if (where) facts.push({ icon: <MapPin className="h-5 w-5 text-slate-700" aria-hidden />, value: where, label: 'Where it happens' });
     if (groupSize) facts.push({ icon: <Users className="h-5 w-5 text-slate-700" aria-hidden />, value: groupSize, label: 'Group size' });
+    // Optional, provider-picked (a fixed option, not prose). Accessibility leads
+    // — a guest who needs it really needs it — then parking. They also help the
+    // grid fill out.
+    const accessLabel = accessibilityLabel(p.accessibility);
+    const parkLabel = parkingLabel(p.parking);
+    if (accessLabel) facts.push({ icon: <Accessibility className="h-5 w-5 text-slate-700" aria-hidden />, value: accessLabel, label: 'Accessibility' });
+    if (parkLabel) facts.push({ icon: <Car className="h-5 w-5 text-slate-700" aria-hidden />, value: parkLabel, label: 'Parking' });
+    // Three facts sit oddly in a two-column grid; give an exact three their own
+    // single balanced row, and let four or more flow in the usual two columns.
+    const factCols = facts.length === 3 ? 'sm:grid-cols-3' : 'sm:grid-cols-2';
 
     return (
         <div className="min-h-screen bg-white">
@@ -62,7 +79,7 @@ export default function ExperienceListingBody({
                 </Link>
 
                 {p.galleryKeys.length ? (
-                    <PhotoGallery images={p.galleryKeys} title={p.business_name} area={town || undefined} mobileStrip />
+                    <PhotoGallery images={p.galleryKeys} title={p.business_name} area={tag || undefined} mobileStrip />
                 ) : (
                     <div className="my-4 flex h-[300px] w-full items-center justify-center rounded-2xl bg-slate-100 text-5xl font-semibold text-slate-300 md:h-[460px]">
                         {who.slice(0, 1)}
@@ -82,7 +99,7 @@ export default function ExperienceListingBody({
                         ) : null}
 
                         {facts.length > 0 && (
-                            <dl className="mt-7 grid grid-cols-1 sm:grid-cols-2 gap-x-6 gap-y-5 border-t border-slate-200 pt-7">
+                            <dl className={`mt-7 grid grid-cols-1 ${factCols} gap-x-6 gap-y-5 border-t border-slate-200 pt-7`}>
                                 {facts.map((f, i) => (
                                     <div key={i} className="flex items-start gap-3">
                                         <span className="mt-0.5 flex-none">{f.icon}</span>
@@ -188,11 +205,29 @@ export default function ExperienceListingBody({
                             </section>
                         ) : null}
 
+                        {/* What's included — the provider's ticked amenities, as a
+                            scannable list (no prose). Shown for every shape when they
+                            ticked anything. */}
+                        {p.amenities.length > 0 && (
+                            <section className="mt-8 border-t border-slate-200 pt-8">
+                                <h2 className="text-xl md:text-2xl font-bold text-slate-900">What’s included</h2>
+                                <ul className="mt-4 grid grid-cols-1 gap-x-6 gap-y-3 sm:grid-cols-2">
+                                    {p.amenities.map((k) => {
+                                        const label = experienceAmenityLabel(k);
+                                        return label ? (
+                                            <li key={k} className="flex items-center gap-3">
+                                                <Check className="h-5 w-5 flex-none text-emerald-700" aria-hidden />
+                                                <span className="text-[15px] text-slate-700">{label}</span>
+                                            </li>
+                                        ) : null;
+                                    })}
+                                </ul>
+                            </section>
+                        )}
+
                         {p.shape !== 'slot' && (
                             <section className="mt-8 border-t border-slate-200 pt-8">
-                                <h2 className="text-xl md:text-2xl font-bold text-slate-900">
-                                    {p.items.length > 1 ? 'What’s included' : 'What you get'}
-                                </h2>
+                                <h2 className="text-xl md:text-2xl font-bold text-slate-900">What you get</h2>
                                 <ul className="mt-4 divide-y divide-slate-100">
                                     {p.items.map((it) => {
                                         const dur = durationLabel(it.duration_minutes);
@@ -250,16 +285,30 @@ export default function ExperienceListingBody({
                             </section>
                         )}
 
+                        {/* Roughly-here map for a fixed venue — the same component
+                            and privacy the cottage pages use (a jittered pin, never
+                            the door). A traveller has no one place, so no map. */}
+                        {(!comesToYou && p.mapLat != null && p.mapLng != null) ? (
+                            <PropertyMap latitude={p.mapLat} longitude={p.mapLng} area={tag || undefined} />
+                        ) : null}
+
                         <section className="mt-8 border-t border-slate-200 pt-8">
                             <h2 className="text-xl md:text-2xl font-bold text-slate-900">Cancellation</h2>
-                            <p className="mt-3 text-[15px] leading-relaxed text-slate-600">
-                                {cancellationSentence(p.shape, p.cancellation_window_hours, who)}
+                            <p className="mt-1 text-sm font-semibold text-slate-700">{cancelPolicy.label}</p>
+                            <p className="mt-2 text-[15px] leading-relaxed text-slate-600">
+                                {p.noRefund
+                                    ? 'This experience is non-refundable once booked — please be sure of your plans before you pay.'
+                                    : cancellationSentence(p.shape, p.cancellation_window_hours, who)}
                             </p>
-                            {town ? (
+                            {(comesToYou || tag) ? (
                                 <p className="mt-3 flex items-start gap-1.5 text-sm text-slate-500">
                                     <MapPin className="mt-0.5 h-4 w-4 flex-none" aria-hidden />
                                     <span>
-                                        {coverageLabel(p) ? 'Covers ' + coverageLabel(p) : 'Around ' + town}. The exact address is shared once your booking is paid.
+                                        {comesToYou
+                                            ? (travelCoverage
+                                                ? travelCoverage + ' — they come to your cottage, so there’s nothing for you to travel to.'
+                                                : 'They come to your cottage — nothing for you to travel to.')
+                                            : 'The exact address is shared once your booking is paid.'}
                                     </span>
                                 </p>
                             ) : null}

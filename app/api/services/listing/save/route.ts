@@ -3,7 +3,7 @@ import { adminClient } from '@/lib/supabaseAdmin';
 import { cookies } from 'next/headers';
 import { NextResponse } from 'next/server';
 import { collectionFieldsForWrite } from '@/lib/serviceProviders';
-import { audienceForTrade } from '@/lib/serviceProviders';
+import { audienceForTrade, knownExperienceAmenities } from '@/lib/serviceProviders';
 
 export const dynamic = 'force-dynamic';
 
@@ -109,12 +109,64 @@ export async function POST(request: Request) {
                 break;
 
             case 'things':
+                // Slimmed to the three practical facts a guest wants before
+                // booking. Cancellation is now its own section; accessibility and
+                // parking moved to Amenities.
                 gd = {
                     min_age: intOrNull(data.min_age),
                     activity_level: strOrNull(data.activity_level),
                     what_to_bring: strOrNull(data.what_to_bring),
                 };
                 break;
+
+            case 'amenities':
+                // Amenities: what the venue offers a guest. A ticked "what's
+                // included" set (sanitised to known keys) drives the guest listing's
+                // list; accessibility and parking are picked keys, or null when not
+                // said. An empty amenities array is removed by mergedGuestDetails.
+                gd = {
+                    amenities: knownExperienceAmenities(data.amenities),
+                    accessibility: strOrNull(data.accessibility),
+                    parking: strOrNull(data.parking),
+                };
+                break;
+
+            case 'cancellation':
+                // Its own section (every shape has it). The window is a column;
+                // the non-refundable flag is a guest_details value. The set is
+                // window-based (24h / 48h / 7 days / no refund), not the cottage's
+                // day tiers — a one-hour session doesn't fit "30 days before".
+                patch = {
+                    cancellation_window_hours: Math.max(0, Math.floor(Number(data.cancellation_window_hours) || 0)),
+                };
+                gd = {
+                    no_refund: data.no_refund === true ? true : null,
+                };
+                break;
+
+            case 'booking': {
+                // Booking rules every shape reaches (unlike the slot-only weekly
+                // template in Availability): how far ahead a guest must book, how
+                // far ahead they can, and the largest group.
+                patch = {
+                    lead_time_days: Math.max(0, Math.floor(Number(data.lead_time_days) || 0)),
+                };
+                // Max group size. A slot's is the slot_capacity column (it drives
+                // sellable seats); every other shape keeps it in guest_details so
+                // a chef or baker has a home for it too. Written to whichever the
+                // shape uses, from the one control.
+                const maxGroup = intOrNull(data.max_guests);
+                gd = {
+                    // How far ahead a guest can book — clamped to a sane 1..365.
+                    booking_horizon_days: Math.max(1, Math.min(365, Math.floor(Number(data.booking_horizon_days) || 90))),
+                };
+                if (p.shape === 'slot') {
+                    patch.slot_capacity = maxGroup;
+                } else {
+                    gd.max_guests = maxGroup;
+                }
+                break;
+            }
 
             case 'dietary':
                 patch = { dietary_note: strOrNull(data.dietary_note) };
@@ -160,13 +212,16 @@ export async function POST(request: Request) {
             }
 
             case 'availability': {
+                // The slot weekly template only — session shape and hours. Booking
+                // rules (lead time, horizon, max group) are the Booking section, so
+                // every shape reaches them; they are not written here.
                 patch = {
                     slot_length_minutes: intOrNull(data.slot_length_minutes),
                     slot_turnaround_minutes: Math.max(0, Math.floor(Number(data.slot_turnaround_minutes) || 0)),
-                    slot_capacity: intOrNull(data.slot_capacity),
-                    slot_min_people: Math.max(1, Math.floor(Number(data.slot_min_people) || 1)),
-                    lead_time_days: Math.max(0, Math.floor(Number(data.lead_time_days) || 0)),
-                    cancellation_window_hours: Math.max(0, Math.floor(Number(data.cancellation_window_hours) || 0)),
+                    // slot_min_people is NOT written here any more — the minimum-per-
+                    // booking moved onto each per-person item (the menu section). The
+                    // provider-level column stays as the fallback for an item that
+                    // sets none; the editor no longer exposes a knob for it.
                 };
                 // Weekly hours template: replace. Dated exceptions (days off, partial
                 // blocks) stay in the diary — not touched here.
@@ -212,6 +267,12 @@ export async function POST(request: Request) {
                         : null;
                     const unit = (perItemLocation && itemFulfilment === 'delivery')
                         ? 'flat' : String(it.unit || 'flat');
+                    // Per-item capacity — only a per-person item carries its own; a
+                    // whole-session (flat) item is one booking whatever the head
+                    // count. Blank/0 = null = inherit the provider default, the
+                    // item-wins-else-provider rule seatConfig resolves everywhere.
+                    const perPerson = unit === 'person';
+                    const itemCapacity = perPerson ? intOrNull(it.capacity) : null;
                     const row: any = {
                         name, description: strOrNull(it.description), price,
                         unit,
@@ -220,6 +281,11 @@ export async function POST(request: Request) {
                             ? null : Math.max(1, Math.floor(Number(it.duration_minutes))),
                         fulfilment: itemFulfilment,
                         active: it.active !== false,
+                        capacity: itemCapacity,
+                        // No per-item minimum: a shared session takes a single
+                        // person by design. Cleared to null so the column falls back
+                        // to its default of 1 (no floor); the control is gone.
+                        min_people: null,
                         sort_order: i, updated_at: nowIso,
                     };
                     if (it.id && existingIds.has(it.id)) {

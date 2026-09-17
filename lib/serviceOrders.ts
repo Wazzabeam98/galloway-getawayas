@@ -434,3 +434,45 @@ export function exclusivePerDate(
     // a row written before the shape column, or after, both resolve correctly.
     return provider.shape === 'comes_to_you' || !!provider.exclusive_per_date;
 }
+
+// A short, quotable booking reference for an order — the same GG-XXXX shape a
+// service enquiry uses (lib/serviceEnquiries.enquiryReference), so the language
+// is one across the platform. DETERMINISTIC from the order id, so it is stable
+// every time the same order is shown (an enquiry's is random-and-stored; an
+// order has no such column, so we derive it). No I/O/0/1 — it gets read aloud.
+const ORDER_REFERENCE_ALPHABET = '23456789ABCDEFGHJKLMNPQRSTUVWXYZ';
+
+export function orderReference(orderId: string | null | undefined): string {
+    const id = String(orderId || '');
+    if (!id) return 'GG-????';
+    // A small stable hash over the id's characters; the uuid's own entropy is
+    // plenty for a 4-char human reference (collisions don't matter — the id is
+    // still the key, this is only for a person to quote).
+    let hash = 0;
+    for (let i = 0; i < id.length; i++) {
+        hash = (hash * 31 + id.charCodeAt(i)) >>> 0;
+    }
+    let out = '';
+    for (let i = 0; i < 4; i++) {
+        out += ORDER_REFERENCE_ALPHABET.charAt(hash % ORDER_REFERENCE_ALPHABET.length);
+        hash = Math.floor(hash / ORDER_REFERENCE_ALPHABET.length) + 7;
+    }
+    return 'GG-' + out;
+}
+
+// The money split for ONE order: what the guest paid net of any refund, our 10%
+// fee on it, and the provider's take. The provider's money is the 90% that lands
+// directly in their own Stripe balance (destination charge). Shared so the
+// calendar panel, the earnings page and anywhere else read the SAME numbers.
+// NOTE commission_rate here is a FRACTION (0.10), not a percent.
+export function orderNet(
+    o: { price?: number | null; commission_rate?: number | null; amount_refunded?: number | null }
+): { rate: number; refunded: number; gross: number; fee: number; youGet: number } {
+    const r2 = (n: number) => Math.round(n * 100) / 100;
+    const rate = Number(o.commission_rate) || 0.10;
+    const refunded = Number(o.amount_refunded) || 0;
+    const gross = Number(o.price || 0);
+    const kept = r2(gross - refunded);        // what the guest actually paid, net of refund
+    const fee = r2(kept * rate);              // our cut on what was kept
+    return { rate, refunded, gross, fee, youGet: r2(kept - fee) };
+}

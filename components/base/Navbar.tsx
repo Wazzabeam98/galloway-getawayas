@@ -18,6 +18,7 @@ const Navbar = async () => {
     let isAdmin = false;
     let hasCompletedStay = false;
     let isProvider = false;
+    let providerAudience: string | null = null;
 
     if (data?.session?.user) {
         const { data: profile } = await supabase
@@ -63,14 +64,20 @@ const Navbar = async () => {
         // You run a service business if you own an approved provider. RLS lets
         // an owner read their own row whatever its state; we only light the
         // menu link once it is live, so it never leads to a page that would
-        // just bounce a draft back to the wizard.
-        const { count: providerCount } = await supabase
+        // just bounce a draft back to the wizard. We also read the AUDIENCE, so
+        // the menu can show a guest-experience provider their own sections
+        // (a Calendar and Earnings) rather than a tradesman's Enquiries.
+        const { data: providerRow } = await supabase
             .from('service_providers')
-            .select('id', { count: 'exact', head: true })
+            .select('audience')
             .eq('owner_id', data.session.user.id)
-            .eq('status', 'approved');
+            .eq('status', 'approved')
+            .order('updated_at', { ascending: false })
+            .limit(1)
+            .maybeSingle();
 
-        isProvider = (providerCount || 0) > 0;
+        isProvider = !!providerRow;
+        providerAudience = (providerRow && providerRow.audience) || null;
     }
 
     // Default a host to travel mode until they choose otherwise.
@@ -110,6 +117,7 @@ const Navbar = async () => {
                         mode={mode}
                         hasCompletedStay={hasCompletedStay}
                         isProvider={isProvider}
+                        providerAudience={providerAudience}
                         avatarUrl={avatarUrl}
                         initial={firstName ? firstName.charAt(0).toUpperCase() : ''}
                     />

@@ -28,6 +28,66 @@ export function coverageLabel(p: MpProvider): string | null {
     return a.slice(0, -1).join(', ') + ' & ' + a[a.length - 1];
 }
 
+// A "town and N miles" label — a radius carried over from the trades directory,
+// where a van reaches a circle. It describes a catchment, not a place, so it must
+// never surface on a guest experience: a sauna sits at one spot, and "within 25
+// miles of Kirkcudbright" could be any town in that circle. Named regions
+// ("The Stewartry") are fine and are not radii.
+function isRadiusLabel(label: string): boolean {
+    return /\s+and\s+\d+(?:\.\d+)?\s*miles?$/i.test(String(label || '').trim());
+}
+
+/** The regions a provider covers, with any radius label dropped. Null when
+ *  nothing named is left. */
+export function namedRegions(p: MpProvider): string | null {
+    const named = (p.areas || []).filter(Boolean).filter((a) => !isRadiusLabel(a));
+    if (!named.length) return null;
+    if (named.length === 1) return named[0];
+    if (named.length === 2) return named[0] + ' & ' + named[1];
+    return named.slice(0, -1).join(', ') + ' & ' + named[named.length - 1];
+}
+
+/** True for a provider that travels to the guest rather than sitting at one
+ *  place — a comes-to-you chef, or a slot/made-to-order that delivers. */
+function travels(p: MpProvider): boolean {
+    return p.shape === 'comes_to_you' || p.fulfilment === 'delivery';
+}
+
+/** The one place a fixed venue sits at — its public town (`based_line`, the
+ *  DB-derived collection town; the street stays private until payment). Null for
+ *  a traveller (no single place) and for a venue with no town stored. Never a
+ *  radius, never a street. */
+export function locationTag(p: MpProvider): string | null {
+    if (travels(p)) return null;
+    return (p.based_line || '').trim() || null;
+}
+
+/** A traveller's covered regions as a line — "Travels to The Stewartry & The
+ *  Machars", or "Travels across Dumfries & Galloway". Null for a fixed venue, or
+ *  a traveller who named no region (a bare radius is not a region). */
+export function travelCoverageLine(p: MpProvider): string | null {
+    if (!travels(p)) return null;
+    const regions = namedRegions(p);
+    if (!regions) return null;
+    if (/^all of dumfries/i.test(regions)) return 'Travels across Dumfries & Galloway';
+    return 'Travels to ' + regions;
+}
+
+/** The one location line on a provider card — a fixed venue's town, or a
+ *  traveller's covered regions; never a radius, never a street. */
+export function cardLocationLine(p: MpProvider): string | null {
+    return travels(p) ? travelCoverageLine(p) : locationTag(p);
+}
+
+/** The pre-payment "where it happens" line. A comes-to-you provider happens at
+ *  the guest's own cottage; a fixed venue happens in one town (its `based_line`)
+ *  — never the old trades radius. Null with no town stored, so the row is dropped
+ *  rather than showing a misleading circle. */
+export function whereLine(p: MpProvider): string | null {
+    if (travels(p)) return 'Comes to your cottage';
+    return locationTag(p);
+}
+
 /** The per-item price as the guest reads it on a listing: "£30 pp", "£45". */
 export function itemPriceLabel(price: number, unit: string): string {
     const money = '£' + (Number.isInteger(price) ? String(price) : price.toFixed(2));

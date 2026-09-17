@@ -24,6 +24,7 @@ const NavMenu = ({
     mode = 'travel',
     hasCompletedStay = false,
     isProvider = false,
+    providerAudience = null,
     avatarUrl = null,
     initial = '',
 }: {
@@ -33,10 +34,16 @@ const NavMenu = ({
     mode?: 'host' | 'travel';
     hasCompletedStay?: boolean;
     isProvider?: boolean;
+    providerAudience?: string | null;
     avatarUrl?: string | null;
     initial?: string;
 }) => {
     const hostView = isHost && mode === 'host';
+    // A guest-experience provider (a chef, a sauna, a class) is booked and paid
+    // through us, so their menu is a Calendar and Earnings. A trade provider (a
+    // plumber) is contacted by Enquiry and paid off-platform, so theirs is
+    // Enquiries and no Earnings.
+    const isGuestProvider = isProvider && providerAudience === 'guest';
 
     return (
         <Popover>
@@ -119,20 +126,37 @@ const NavMenu = ({
                                    (A provider who is also a host still gets the
                                    full host menu in host mode, above.) */
                                 <>
+                                    {/* A provider thinks in terms of their listing,
+                                        not "their business" or "their profile" — the
+                                        editor is the thing they come here to change.
+                                        /services/dashboard/edit is the one edit door:
+                                        it forks a guest to the sectioned listing editor
+                                        and a trade to the business editor. */}
                                     <li className={itemClass}>
-                                        <Link href='/services/dashboard' className='font-semibold text-emerald-800'>
-                                            Your business
+                                        <Link href='/services/dashboard/edit' className='font-semibold text-emerald-800'>
+                                            Your listing
                                         </Link>
                                     </li>
                                     <li className={itemClass}>
-                                        <Link href='/services/dashboard#requests'>Enquiries</Link>
+                                        <Link href='/services/dashboard'>Calendar</Link>
                                     </li>
-                                    <li className={itemClass}>
-                                        <Link href='/services/dashboard/edit'>Your profile</Link>
-                                    </li>
-                                    {/* A tradesman's messages are his job threads,
-                                        not booking chat — a home he can navigate to
-                                        so a thread is never a lost email. */}
+                                    {isGuestProvider ? (
+                                        /* Booked-and-paid through us: money and the
+                                           bookings diary, not an enquiry inbox they
+                                           don't have. Earnings sits after the Calendar
+                                           and before Messages, the same place it sits
+                                           in the host's menu. */
+                                        <li className={itemClass}>
+                                            <Link href='/services/dashboard/earnings'>Earnings</Link>
+                                        </li>
+                                    ) : (
+                                        <li className={itemClass}>
+                                            <Link href='/services/dashboard#requests'>Enquiries</Link>
+                                        </li>
+                                    )}
+                                    {/* A provider's messages are their job/booking
+                                        threads — a home they can navigate to so a
+                                        thread is never a lost email. */}
                                     <li className={itemClass}>
                                         <Link href='/services/messages'>Messages</Link>
                                     </li>
