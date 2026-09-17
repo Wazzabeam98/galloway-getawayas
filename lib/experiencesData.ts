@@ -300,7 +300,7 @@ async function shapeProviders(admin: any, fromKey: string, toKey: string): Promi
             .order('sort_order', { ascending: true }).order('created_at', { ascending: true }),
         admin.from('slot_availability').select('provider_id, day_of_week, open_time, close_time').in('provider_id', ids),
         admin.from('slot_blocks').select('provider_id, blocked_date').in('provider_id', ids),
-        admin.from('slot_sessions').select('provider_id, session_date, session_time, capacity, seats_taken, private, duration_minutes, turnaround_minutes, blocked').in('provider_id', ids),
+        admin.from('slot_sessions').select('provider_id, session_date, session_time, capacity, seats_taken, private, duration_minutes, turnaround_minutes, blocked, is_class').in('provider_id', ids),
         // Confirmed bookings taken, for the trust count. Only 'confirmed' counts:
         // a held request that was never answered, or one that was cancelled or
         // refunded, is not a booking someone completed with this provider.
@@ -357,11 +357,18 @@ async function shapeProviders(admin: any, fromKey: string, toKey: string): Promi
             }
             // Partial blocks: the provider's blocked rows become [start,end) ranges
             // the grid skips, so a closed-off part of a day never shows a start.
+            // A DECLARED CLASS (is_class) reserves its interval the same way for the
+            // OPEN-HOURS grid — a private hour can't be offered on top of an
+            // announced class (the database refuses it either way; this stops it
+            // ever being shown). The class itself becomes bookable through its own
+            // timetable lane, not here. Its interval includes the frozen reset gap,
+            // matching what the DB's block_minutes reserves.
             providerPartialBlocks = (sessBy[p.id] || [])
-                .filter((s: any) => s.blocked)
+                .filter((s: any) => s.blocked || s.is_class)
                 .map((s: any) => {
                     const startMin = minutesOfDay(String(s.session_time).slice(0, 5));
-                    return { date: s.session_date, startMin, endMin: startMin + (Number(s.duration_minutes) || 0) };
+                    const span = (Number(s.duration_minutes) || 0) + (s.is_class ? (Number(s.turnaround_minutes) || 0) : 0);
+                    return { date: s.session_date, startMin, endMin: startMin + span };
                 });
             const closedItems = items.map((it: MpItem) => ({ unit: it.unit, capacity: it.capacity, min_people: it.minPeople }));
             // The provider's own booking horizon caps how far ahead its sessions
