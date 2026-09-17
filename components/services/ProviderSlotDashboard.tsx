@@ -158,24 +158,28 @@ export default function ProviderSlotDashboard({ providerId, editHref }: { provid
     // own, so a clash on one refuses only that date — the summary tells the
     // provider which landed and which didn't, which is the moment this either reads
     // solid or confusing.
-    async function addSessions(dates: string[], time: string, duration: number, capacity: number, title: string) {
+    async function addSessions(dates: string[], sessions: Array<{ time: string; duration: number; capacity: number; title: string }>) {
         setBusy('declare'); setError(null); setNotice(null);
         try {
             const r = await fetch('/api/services/slots/sessions/declare', {
                 method: 'POST', headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({ providerId, dates, time, durationMinutes: duration, capacity, title }),
+                body: JSON.stringify({
+                    providerId, dates,
+                    sessions: sessions.map((s) => ({ time: s.time, durationMinutes: s.duration, capacity: s.capacity, title: s.title })),
+                }),
             });
             const d = await r.json();
             if (!d || !d.ok) { setError((d && d.error) || 'Could not add the sessions.'); setBusy(null); return; }
+            // Each skip names the day and time so a provider sees exactly what didn't
+            // land and why — the moment this reads solid rather than confusing.
             const skipped = (d.results || []).filter((x: any) => !x.ok);
-            const when = timeLabel(time + ':00');
+            const skipList = skipped.map((x: any) => `${dateLabel(x.date)} ${timeLabel(x.time + ':00')} — ${x.reason}`).join('; ');
             if (d.added > 0 && skipped.length === 0) {
-                setNotice(`Added a ${when} session to ${d.added} day${d.added === 1 ? '' : 's'}.`);
+                setNotice(`Added ${d.added} session${d.added === 1 ? '' : 's'}.`);
             } else if (d.added > 0) {
-                setNotice(`Added a ${when} session to ${d.added} day${d.added === 1 ? '' : 's'}. ${skipped.length} skipped — `
-                    + skipped.map((x: any) => `${dateLabel(x.date)} ${x.reason}`).join('; ') + '.');
+                setNotice(`Added ${d.added} session${d.added === 1 ? '' : 's'}. ${skipped.length} skipped — ${skipList}.`);
             } else {
-                setError('No sessions added. ' + skipped.map((x: any) => `${dateLabel(x.date)} ${x.reason}`).join('; ') + '.');
+                setError('No sessions added. ' + skipList + '.');
             }
             await Promise.all([loadSchedule(), loadSessions()]);
         } catch { setError('Could not add the sessions.'); }

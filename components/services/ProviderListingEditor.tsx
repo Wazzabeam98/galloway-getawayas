@@ -10,10 +10,11 @@ import { compressImage } from '@/lib/compressImage';
 import { GUEST_REGIONS, GUEST_COVERAGE_ALL_KEY } from '@/lib/strings';
 import { slotAsksWhereFork, ACCESSIBILITY_OPTIONS, PARKING_OPTIONS, EXPERIENCE_CANCELLATION_OPTIONS, experienceCancellationOption, EXPERIENCE_AMENITY_GROUPS } from '@/lib/serviceProviders';
 import { PhotoEditorGrid } from './PhotoEditorGrid';
+import { OptionPills, Stepper, SESSION_LENGTH_OPTIONS, minutesLabel } from './editorControls';
 import {
     FileText, User, Info, Salad, Image as ImageIcon,
     ShoppingBag, MapPin, CalendarRange, CalendarClock, Sparkles, RotateCcw,
-    Eye, EyeOff, ExternalLink, Check, Minus, Plus,
+    Eye, EyeOff, ExternalLink, Check,
 } from 'lucide-react';
 
 // The guest-experience listing editor. A card list of sections; each opens,
@@ -72,17 +73,9 @@ const LEAD_TIME_OPTIONS: { days: number; label: string }[] = [
     { days: 7, label: '1 week' },
 ];
 
-// Session length and the gap between sessions — common picks, in minutes.
-const SESSION_LENGTH_OPTIONS = [30, 45, 60, 90, 120];
+// The gap between sessions — common picks, in minutes. (Session length and the
+// pill/stepper controls are shared with the scheduler via ./editorControls.)
 const TURNAROUND_OPTIONS = [0, 15, 30, 45, 60];
-
-// "90" → "1 hr 30 min", "120" → "2 hrs", "45" → "45 min".
-function minutesLabel(m: number): string {
-    if (m < 60) return `${m} min`;
-    const hrs = Math.floor(m / 60);
-    const mins = m % 60;
-    return `${hrs} hr${hrs > 1 ? 's' : ''}${mins ? ` ${mins} min` : ''}`;
-}
 
 async function saveSection(providerId: string, section: string, data: any): Promise<boolean> {
     const res = await fetch('/api/services/listing/save', {
@@ -127,48 +120,6 @@ function Field({ label, hint, children }: { label: string; hint?: string; childr
 }
 
 const inputCls = 'w-full rounded-xl border border-slate-300 p-3 text-sm';
-
-// A row of pick-from-options pills — one clear choice, no typing. The chosen
-// value is highlighted; the same visual language as the wizard and the where /
-// cancellation cards elsewhere in this editor.
-function OptionPills({ options, value, onChange }: {
-    options: { value: string; label: string }[]; value: string; onChange: (v: string) => void;
-}) {
-    return (
-        <div className="flex flex-wrap gap-2">
-            {options.map((o) => {
-                const on = value === o.value;
-                return (
-                    <button key={o.value} type="button" onClick={() => onChange(o.value)}
-                        aria-pressed={on}
-                        className={`rounded-xl border px-4 py-2 text-sm transition ${on ? 'border-emerald-700 ring-2 ring-emerald-700 bg-emerald-50 text-slate-900' : 'border-slate-300 text-slate-700 hover:border-slate-400'}`}>
-                        {o.label}
-                    </button>
-                );
-            })}
-        </div>
-    );
-}
-
-// The cottage editor's +/- counter, for a plain count like group size. A
-// number a guest reads as "up to N", not a free-text box.
-function Stepper({ value, onChange, min = 1, max = 60 }: {
-    value: number; onChange: (v: number) => void; min?: number; max?: number;
-}) {
-    return (
-        <div className="flex items-center gap-4">
-            <button type="button" onClick={() => onChange(Math.max(min, value - 1))} disabled={value <= min}
-                className="flex h-9 w-9 items-center justify-center rounded-full border text-slate-600 hover:border-slate-900 disabled:opacity-30">
-                <Minus className="h-4 w-4" />
-            </button>
-            <span className="w-8 text-center text-lg font-semibold text-slate-900">{value}</span>
-            <button type="button" onClick={() => onChange(Math.min(max, value + 1))} disabled={value >= max}
-                className="flex h-9 w-9 items-center justify-center rounded-full border text-slate-600 hover:border-slate-900 disabled:opacity-30">
-                <Plus className="h-4 w-4" />
-            </button>
-        </div>
-    );
-}
 
 export default function ProviderListingEditor({ provider }: { provider: EditorProvider }) {
     const [p] = useState(provider);
@@ -278,14 +229,13 @@ export default function ProviderListingEditor({ provider }: { provider: EditorPr
     // The menu. Each row edits in place; prices are strings while typing. New rows
     // have no id (the save route inserts them); removed rows drop out (the route
     // deletes them). ids are preserved so an item keeps its photo and bookings.
-    type MenuRow = { id?: string; name: string; description: string; price: string; unit: string; image: string | null; duration: string; fulfilment: string | null; active: boolean; capacity: string; minPeople: string };
+    type MenuRow = { id?: string; name: string; description: string; price: string; unit: string; image: string | null; duration: string; fulfilment: string | null; active: boolean; capacity: string };
     const [menu, setMenu] = useState<MenuRow[]>(p.items.map((it) => ({
         id: it.id, name: it.name, description: it.description, price: String(it.price),
         unit: it.unit, image: it.image, duration: it.duration_minutes != null ? String(it.duration_minutes) : '',
         fulfilment: it.fulfilment, active: it.active,
         // Blank = inherit the provider default; a number here overrides it for this item.
         capacity: it.capacity != null ? String(it.capacity) : '',
-        minPeople: it.min_people != null ? String(it.min_people) : '',
     })));
     const setRow = (i: number, patch: Partial<MenuRow>) => setMenu(menu.map((r, j) => j === i ? { ...r, ...patch } : r));
 
@@ -650,7 +600,7 @@ export default function ProviderListingEditor({ provider }: { provider: EditorPr
                                     id: r.id, name: r.name, description: r.description, price: r.price,
                                     unit: r.unit, image: r.image, duration_minutes: r.duration,
                                     fulfilment: r.fulfilment, active: r.active,
-                                    capacity: r.capacity, min_people: r.minPeople,
+                                    capacity: r.capacity,
                                 })),
                             })}>
                             {/* Last-priced-item guard: a listing with no active priced
@@ -730,30 +680,22 @@ export default function ProviderListingEditor({ provider }: { provider: EditorPr
                                                         </label>
                                                     )}
                                                 </div>
-                                                {/* Per-item seats — only for a per-person item on a
+                                                {/* Per-item capacity — only for a per-person item on a
                                                     slot. Each priced-per-person item sets how many it
-                                                    holds and the smallest a single booking can be;
-                                                    capacity blank inherits the Booking default, so two
-                                                    items no longer share one number that means
-                                                    different things. "Minimum per booking" is a floor
-                                                    on ONE booking's group size (book for at least N),
-                                                    not a session-won't-run threshold — that's what the
-                                                    route enforces. Only per-person, so a whole-session
-                                                    item never shows it. */}
+                                                    holds; blank inherits the Booking default, so two
+                                                    items no longer share one number that means different
+                                                    things. No minimum-per-booking: a shared session's
+                                                    whole point is that individuals can attend, so there
+                                                    is no floor — a provider who won't take one person is
+                                                    describing the whole-session (private) item instead. */}
                                                 {p.isSlot && r.unit === 'person' && (
-                                                    <div className="flex flex-wrap gap-4 rounded-xl bg-slate-50 p-3">
-                                                        <label className="text-sm text-slate-600">
-                                                            <span className="block text-xs font-semibold uppercase tracking-wide text-slate-500">Capacity</span>
-                                                            <span className="mt-1 flex items-center gap-1">
-                                                                <input className="w-20 rounded-lg border border-slate-300 p-2 text-sm" type="number" min={1} placeholder={String(maxGuests)} value={r.capacity} onChange={(e) => setRow(i, { capacity: e.target.value })} />
-                                                                <span className="text-slate-500">people</span>
-                                                            </span>
-                                                        </label>
-                                                        <label className="text-sm text-slate-600">
-                                                            <span className="block text-xs font-semibold uppercase tracking-wide text-slate-500">Minimum per booking</span>
-                                                            <input className="mt-1 w-20 rounded-lg border border-slate-300 p-2 text-sm" type="number" min={1} placeholder="1" value={r.minPeople} onChange={(e) => setRow(i, { minPeople: e.target.value })} />
-                                                        </label>
-                                                        <p className="w-full text-xs text-slate-400">Capacity blank uses your default of {maxGuests}. A minimum of 2+ means a guest must book for at least that many; leave it blank for no minimum.</p>
+                                                    <div className="flex flex-wrap items-center gap-3 rounded-xl bg-slate-50 p-3">
+                                                        <span className="text-xs font-semibold uppercase tracking-wide text-slate-500">Capacity</span>
+                                                        <span className="flex items-center gap-1">
+                                                            <input className="w-20 rounded-lg border border-slate-300 p-2 text-sm" type="number" min={1} placeholder={String(maxGuests)} value={r.capacity} onChange={(e) => setRow(i, { capacity: e.target.value })} />
+                                                            <span className="text-slate-500 text-sm">people</span>
+                                                        </span>
+                                                        <span className="w-full text-xs text-slate-400">Blank uses your default of {maxGuests}.</span>
                                                     </div>
                                                 )}
                                                 <textarea className={inputCls} rows={2} placeholder="Description (optional)" value={r.description} onChange={(e) => setRow(i, { description: e.target.value })} />
@@ -769,7 +711,7 @@ export default function ProviderListingEditor({ provider }: { provider: EditorPr
                                     </div>
                                 ))}
                             </div>
-                            <button type="button" onClick={() => setMenu([...menu, { name: '', description: '', price: '', unit: 'flat', image: null, duration: p.isSlot ? '60' : '', fulfilment: (p.isSlot && fulfilment === 'both') ? 'collection' : null, active: true, capacity: '', minPeople: '' }])}
+                            <button type="button" onClick={() => setMenu([...menu, { name: '', description: '', price: '', unit: 'flat', image: null, duration: p.isSlot ? '60' : '', fulfilment: (p.isSlot && fulfilment === 'both') ? 'collection' : null, active: true, capacity: '' }])}
                                 className="text-sm font-semibold text-emerald-700 hover:text-emerald-800">+ Add an item</button>
                         </SectionCard>
                     )}

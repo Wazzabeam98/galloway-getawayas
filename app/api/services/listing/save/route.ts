@@ -267,15 +267,12 @@ export async function POST(request: Request) {
                         : null;
                     const unit = (perItemLocation && itemFulfilment === 'delivery')
                         ? 'flat' : String(it.unit || 'flat');
-                    // Per-item seats — only a per-person item carries its own; a
+                    // Per-item capacity — only a per-person item carries its own; a
                     // whole-session (flat) item is one booking whatever the head
-                    // count, so its capacity/minimum are null (the flat head-count
-                    // cap is the provider default). Blank/0 = null = inherit the
-                    // provider default, the item-wins-else-provider rule seatConfig
-                    // already resolves everywhere.
+                    // count. Blank/0 = null = inherit the provider default, the
+                    // item-wins-else-provider rule seatConfig resolves everywhere.
                     const perPerson = unit === 'person';
                     const itemCapacity = perPerson ? intOrNull(it.capacity) : null;
-                    const itemMinPeople = perPerson ? intOrNull(it.min_people) : null;
                     const row: any = {
                         name, description: strOrNull(it.description), price,
                         unit,
@@ -285,7 +282,10 @@ export async function POST(request: Request) {
                         fulfilment: itemFulfilment,
                         active: it.active !== false,
                         capacity: itemCapacity,
-                        min_people: itemMinPeople,
+                        // No per-item minimum: a shared session takes a single
+                        // person by design. Cleared to null so the column falls back
+                        // to its default of 1 (no floor); the control is gone.
+                        min_people: null,
                         sort_order: i, updated_at: nowIso,
                     };
                     if (it.id && existingIds.has(it.id)) {

@@ -15,10 +15,12 @@ export const dynamic = 'force-dynamic';
 // turnaround) even at zero seats (20260917…_dated_class + the rename).
 //
 // BULK, WITH PER-DATE PARTIAL SUCCESS. A provider picks several days at once
-// ("four Tuesdays") and adds one session to all of them. Each date is its own
-// INSERT so one date that clashes with a booking (or already has a session at
-// that time) is refused ON ITS OWN — the others still land. The response reports
-// each date's outcome so the UI can say "added to three, one clashed".
+// ("four Tuesdays") and adds one OR MORE sessions to all of them (a morning and
+// an afternoon class; a shared and a private) — a list they build, committed in
+// one go. Every (date × session) is its own INSERT so one that clashes with a
+// booking, a block, another session, or a same-time duplicate is refused ON ITS
+// OWN — the rest still land. The response reports each outcome so the UI can say
+// "added N, skipped these".
 //
 // Owner-checked, service-role write: a provider declares only on their own diary.
 
@@ -54,36 +56,43 @@ export async function POST(request: Request) {
         const p = await ownProvider(admin, providerId, user.id);
         if (!p) return NextResponse.json({ ok: false, error: 'Not your business' }, { status: 403 });
 
-        const time = String(body.time || '').slice(0, 5);
-        if (!isTime(time)) return NextResponse.json({ ok: false, error: 'Pick a time.' }, { status: 400 });
-
         const dates = Array.from(new Set((Array.isArray(body.dates) ? body.dates : [])
             .map((d: any) => String(d).slice(0, 10))
-            .filter(isDateKey)));
+            .filter(isDateKey))) as string[];
         if (!dates.length) return NextResponse.json({ ok: false, error: 'Pick at least one day.' }, { status: 400 });
 
-        const today = londonDayKey();
-        const duration = Math.max(1, Math.floor(Number(body.durationMinutes) || Number(p.slot_length_minutes) || 60));
-        const capacity = Math.max(1, Math.floor(Number(body.capacity) || Number(p.slot_capacity) || 1));
         const turnaround = Math.max(0, Math.floor(Number(p.slot_turnaround_minutes) || 0));
-        const title = String(body.title || '').trim().slice(0, 80) || null;
+        // The sessions to add to every selected day. Each carries its own time,
+        // length and capacity; a single-session add is just a one-element list.
+        const sessions = (Array.isArray(body.sessions) ? body.sessions : [])
+            .map((s: any) => ({
+                time: String(s?.time || '').slice(0, 5),
+                duration: Math.max(1, Math.floor(Number(s?.durationMinutes) || Number(p.slot_length_minutes) || 60)),
+                capacity: Math.max(1, Math.floor(Number(s?.capacity) || Number(p.slot_capacity) || 1)),
+                title: String(s?.title || '').trim().slice(0, 80) || null,
+            }))
+            .filter((s: any) => isTime(s.time));
+        if (!sessions.length) return NextResponse.json({ ok: false, error: 'Add at least one session (with a time).' }, { status: 400 });
 
-        // One INSERT per date so a clash on one date refuses only that date.
-        const results: { date: string; ok: boolean; reason?: string }[] = [];
-        for (const date of (dates as string[]).sort()) {
-            if (date < today) { results.push({ date, ok: false, reason: 'is in the past' }); continue; }
-            const { error } = await admin.from('slot_sessions').insert({
-                provider_id: providerId,
-                session_date: date,
-                session_time: time + ':00',
-                capacity,
-                seats_taken: 0,
-                duration_minutes: duration,
-                turnaround_minutes: turnaround,
-                declared: true,
-                title,
-            });
-            results.push(error ? { date, ok: false, reason: reasonFor(error) } : { date, ok: true });
+        const today = londonDayKey();
+        // One INSERT per (date × session): a clash refuses only that one.
+        const results: { date: string; time: string; ok: boolean; reason?: string }[] = [];
+        for (const date of [...dates].sort()) {
+            for (const s of sessions) {
+                if (date < today) { results.push({ date, time: s.time, ok: false, reason: 'is in the past' }); continue; }
+                const { error } = await admin.from('slot_sessions').insert({
+                    provider_id: providerId,
+                    session_date: date,
+                    session_time: s.time + ':00',
+                    capacity: s.capacity,
+                    seats_taken: 0,
+                    duration_minutes: s.duration,
+                    turnaround_minutes: turnaround,
+                    declared: true,
+                    title: s.title,
+                });
+                results.push(error ? { date, time: s.time, ok: false, reason: reasonFor(error) } : { date, time: s.time, ok: true });
+            }
         }
 
         const added = results.filter((r) => r.ok).length;
