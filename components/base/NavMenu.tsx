@@ -119,16 +119,22 @@ const NavMenu = ({
                                    (A provider who is also a host still gets the
                                    full host menu in host mode, above.) */
                                 <>
+                                    {/* A provider thinks in terms of their listing,
+                                        not "their business" or "their profile" — the
+                                        editor is the thing they come here to change.
+                                        /services/dashboard/edit is the one edit door:
+                                        it forks a guest to the sectioned listing editor
+                                        and a trade to the business editor. */}
                                     <li className={itemClass}>
-                                        <Link href='/services/dashboard' className='font-semibold text-emerald-800'>
-                                            Your business
+                                        <Link href='/services/dashboard/edit' className='font-semibold text-emerald-800'>
+                                            Your listing
                                         </Link>
                                     </li>
                                     <li className={itemClass}>
-                                        <Link href='/services/dashboard#requests'>Enquiries</Link>
+                                        <Link href='/services/dashboard'>Dashboard</Link>
                                     </li>
                                     <li className={itemClass}>
-                                        <Link href='/services/dashboard/edit'>Your profile</Link>
+                                        <Link href='/services/dashboard#requests'>Enquiries</Link>
                                     </li>
                                     {/* A tradesman's messages are his job threads,
                                         not booking chat — a home he can navigate to

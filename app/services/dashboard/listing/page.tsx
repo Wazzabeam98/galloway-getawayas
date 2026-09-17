@@ -90,6 +90,10 @@ export default async function ProviderListingPage() {
                 slot_turnaround_minutes: provider.slot_turnaround_minutes ?? 0,
                 slot_capacity: provider.slot_capacity ?? null,
                 slot_min_people: provider.slot_min_people ?? 1,
+                // Max group size for a non-slot shape (a chef, a baker) rides in
+                // guest_details.max_guests — a slot's is the slot_capacity column
+                // above. The editor's Booking section reads whichever the shape uses.
+                max_guests: (gd.max_guests != null && gd.max_guests !== '') ? Number(gd.max_guests) : null,
                 lead_time_days: provider.lead_time_days ?? 0,
                 cancellation_window_hours: provider.cancellation_window_hours ?? 48,
                 booking_horizon_days: gd.booking_horizon_days ?? 90,
