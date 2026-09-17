@@ -113,6 +113,8 @@ export async function POST(request: Request) {
                     min_age: intOrNull(data.min_age),
                     activity_level: strOrNull(data.activity_level),
                     what_to_bring: strOrNull(data.what_to_bring),
+                    accessibility: strOrNull(data.accessibility),
+                    parking: strOrNull(data.parking),
                 };
                 break;
 

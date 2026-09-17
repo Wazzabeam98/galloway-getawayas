@@ -108,6 +108,10 @@ export interface MpProvider {
     minAge: number | null;
     activityLevel: string | null;
     whatToBring: string | null;
+    // Optional practical facts a provider can add. Accessibility matters most —
+    // a guest who needs it really needs it — so it leads. Null when unset.
+    accessibility: string | null;
+    parking: string | null;
     description: string | null;
     shape: string;
     // The fulfilment direction: 'delivery' = the provider travels to the guest's
@@ -390,6 +394,8 @@ async function shapeProviders(admin: any, fromKey: string, toKey: string): Promi
             minAge: intOrNull(p.guest_details && p.guest_details.min_age),
             activityLevel: (p.guest_details && strOrNull(p.guest_details.activity_level)) || null,
             whatToBring: (p.guest_details && strOrNull(p.guest_details.what_to_bring)) || null,
+            accessibility: (p.guest_details && strOrNull(p.guest_details.accessibility)) || null,
+            parking: (p.guest_details && strOrNull(p.guest_details.parking)) || null,
             description: p.description,
             shape,
             fulfilment: p.fulfilment || null,

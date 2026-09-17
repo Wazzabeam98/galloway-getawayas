@@ -1,7 +1,7 @@
 import Link from 'next/link';
 import { shapeCue } from '@/lib/serviceSlots';
 import { BadgeCheck, MapPin } from 'lucide-react';
-import { fromPriceLabel, nextSessionLabel, coverageLabel } from '@/components/marketplace/present';
+import { fromPriceLabel, nextSessionLabel, cardLocationLine } from '@/components/marketplace/present';
 import type { MpProvider } from '@/lib/experiencesData';
 
 // One provider card, shared by the against-a-stay grid and the public browse
@@ -55,10 +55,10 @@ export default function ProviderCard({ p, href }: { p: MpProvider; href: string 
                     <p className="mt-2 text-sm leading-relaxed text-slate-600 line-clamp-2">{p.description}</p>
                 ) : null}
 
-                {coverageLabel(p) ? (
+                {cardLocationLine(p) ? (
                     <p className="mt-2 flex items-center gap-1 text-xs text-slate-500">
                         <MapPin className="h-3.5 w-3.5 flex-none" aria-hidden />
-                        <span className="min-w-0 truncate">{coverageLabel(p)}</span>
+                        <span className="min-w-0 truncate">{cardLocationLine(p)}</span>
                     </p>
                 ) : null}
 

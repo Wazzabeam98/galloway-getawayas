@@ -40,6 +40,7 @@ export interface EditorProvider {
     professional_title: string; years_experience: string; qualifications: string; recognition: string;
     what_to_expect: string; itinerary: Array<{ title?: string | null; detail?: string | null }>;
     min_age: number | null; activity_level: string; what_to_bring: string;
+    accessibility: string; parking: string;
     dietary_options: string[];
     areas: string[];
     items: Array<{ id: string; name: string; description: string; price: number; unit: string; image: string | null; duration_minutes: number | null; fulfilment: string | null; active: boolean }>;
@@ -118,6 +119,8 @@ export default function ProviderListingEditor({ provider }: { provider: EditorPr
     const [minAge, setMinAge] = useState(p.min_age != null ? String(p.min_age) : '');
     const [activity, setActivity] = useState(p.activity_level);
     const [whatToBring, setWhatToBring] = useState(p.what_to_bring);
+    const [accessibility, setAccessibility] = useState(p.accessibility);
+    const [parking, setParking] = useState(p.parking);
     const [dietaryNote, setDietaryNote] = useState(p.dietary_note);
 
     // Availability (slot providers): the weekly template. Seven rows, Sun..Sat,
@@ -437,8 +440,14 @@ export default function ProviderListingEditor({ provider }: { provider: EditorPr
 
                     {active === 'things' && (
                         <SectionCard title="Things to know" hint="Practical facts a guest wants before booking." saving={savingKey === 'things'}
-                            onSave={() => run('things', { min_age: minAge, activity_level: activity, what_to_bring: whatToBring })}>
+                            onSave={() => run('things', { min_age: minAge, activity_level: activity, what_to_bring: whatToBring, accessibility, parking })}>
                             <Field label="Minimum age"><input className={inputCls} type="number" min={0} value={minAge} onChange={(e) => setMinAge(e.target.value)} placeholder="No minimum" /></Field>
+                            <Field label="Accessibility (optional)" hint="What a guest who needs it should know — step-free access, the terrain, anything that helps them decide.">
+                                <textarea className={inputCls} rows={2} value={accessibility} onChange={(e) => setAccessibility(e.target.value)} placeholder="e.g. Step-free to the deck; one 20cm step into the barrel." />
+                            </Field>
+                            <Field label="Parking (optional)" hint="Where a guest parks and how far it is.">
+                                <input className={inputCls} value={parking} onChange={(e) => setParking(e.target.value)} placeholder="e.g. On the cobbles in front, or the harbour car park two minutes away." />
+                            </Field>
                             <Field label="Activity level">
                                 <div className="flex gap-2">
                                     {['gentle', 'moderate', 'challenging'].map((lvl) => (

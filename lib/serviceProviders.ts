@@ -2437,9 +2437,18 @@ const GUEST_MCC_LABEL: Record<string, string> = {
 // requires — so the card never reads a bland "Local experience" for want of a
 // hand-typed word. Only a provider with neither (which the gate should prevent)
 // gets the neutral label.
-export function guestCategory(provider: { trade?: string | null; custom_label?: string | null; stripe_mcc?: string | null }): string {
+export function guestCategory(provider: { trade?: string | null; custom_label?: string | null; stripe_mcc?: string | null; guest_details?: any }): string {
     const label = String(provider.custom_label || '').trim();
     if (label) return label;
+    // The owner's own word is gone, so fall back to the CANONICAL name for the
+    // sub-type they picked — read from the persisted key rather than guessed
+    // from the Stripe code. ('other' has no canonical label, so it drops through
+    // to the code lookup below.)
+    const key = provider.guest_details && typeof provider.guest_details === 'object'
+        ? String(provider.guest_details.category || '').trim()
+        : '';
+    const byKey = key ? guestCategoryByKey(key) : null;
+    if (byKey && byKey.label) return byKey.label;
     const byMcc = GUEST_MCC_LABEL[String(provider.stripe_mcc || '').trim()];
     return byMcc || 'Local experience';
 }
