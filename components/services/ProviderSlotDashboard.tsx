@@ -121,6 +121,10 @@ export default function ProviderSlotDashboard({ providerId, editHref }: { provid
         .map((it) => Number(seatConfig(it.capacity, it.min_people, { slot_capacity: slotDefaults.capacity, slot_min_people: slotMin }).slot_capacity) || 0)
         .filter((c) => c > 0);
     const freeCapacity = (itemCaps.length ? Math.max(...itemCaps) : slotDefaults.capacity) || null;
+    // Whether an open slot sells SEATS (a per-person item exists) or is a
+    // whole-session hire. "N free" reads as seats to sell — right for a shared
+    // slot, wrong for a private hire, which is "Open · up to N".
+    const freeShared = pricedItems.some((it) => String(it.unit) === 'person');
     const dayInputs: DayInputs = {
         availabilityRows: availability,
         slotLen: slotDefaults.duration,
@@ -321,7 +325,7 @@ export default function ProviderSlotDashboard({ providerId, editHref }: { provid
                             })}
                         </div>
 
-                        <SlotDayView date={dayDate} data={dayData} todayIso={todayIso} nowMin={nowMin} activeTime={activeRow ? activeRow.time : null} onOpenRow={openRow} onAddAt={addAt} onRemoveBand={(id) => removePartialBlock(id)} />
+                        <SlotDayView date={dayDate} data={dayData} freeShared={freeShared} todayIso={todayIso} nowMin={nowMin} activeTime={activeRow ? activeRow.time : null} onOpenRow={openRow} onAddAt={addAt} onRemoveBand={(id) => removePartialBlock(id)} />
 
                         {/* Part-day block by range */}
                         {!dayData.dayOff && (

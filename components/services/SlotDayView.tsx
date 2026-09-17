@@ -15,10 +15,11 @@ const hhmm = (min: number) => `${String(Math.floor(min / 60)).padStart(2, '0')}:
 const daysUntil = (a: string, b: string) => Math.round((new Date(a + 'T00:00:00Z').getTime() - new Date(b + 'T00:00:00Z').getTime()) / 86400000);
 
 export default function SlotDayView({
-    date, data, todayIso, nowMin, activeTime, onOpenRow, onAddAt, onRemoveBand,
+    date, data, freeShared, todayIso, nowMin, activeTime, onOpenRow, onAddAt, onRemoveBand,
 }: {
     date: string;
     data: DayData;
+    freeShared: boolean;
     todayIso: string;
     nowMin: number;
     activeTime: string | null;
@@ -98,14 +99,18 @@ export default function SlotDayView({
                         // a defined, ready row (bold time, its capacity, an empty
                         // fill track = 0 booked), not a faint "Free", so an open day
                         // never looks like nothing's set up.
+                        const openLabel = cap <= 0 ? 'Open' : freeShared ? `${cap} free` : `Open · up to ${cap}`;
                         return (
                             <button key={r.time} type="button" onClick={() => onAddAt(r.time)}
-                                className={`group absolute inset-x-1 overflow-hidden rounded-lg border px-2 py-1 text-left transition hover:border-slate-400 hover:shadow-sm ${isActive ? 'border-slate-900 bg-white' : 'border-slate-300 bg-white'}`}
+                                className={`group absolute inset-x-1 overflow-hidden rounded-lg border pl-3 pr-2 py-1 text-left transition hover:border-slate-400 hover:shadow-sm ${isActive ? 'border-slate-900 bg-white' : 'border-slate-300 bg-white'}`}
                                 style={{ top: top(r.startMin) + 1, height: h }}>
+                                {/* A faint left accent — a slot that's live and ready,
+                                    without the fill of a booking. */}
+                                <span className="absolute inset-y-0 left-0 w-1 bg-emerald-300" />
                                 <div className="flex items-center gap-1.5">
                                     <span className="text-xs font-bold text-slate-800">{timeLabel(r.time + ':00')}</span>
                                     <span className="truncate text-xs text-slate-400 opacity-0 transition group-hover:opacity-100">Add a class or block</span>
-                                    <span className="ml-auto flex-none rounded-full border border-slate-300 px-1.5 text-[11px] font-semibold text-slate-600">{cap > 0 ? `${cap} free` : 'Open'}</span>
+                                    <span className="ml-auto flex-none rounded-full border border-slate-300 px-1.5 text-[11px] font-semibold text-slate-600">{openLabel}</span>
                                 </div>
                                 <div className="mt-1 h-1.5 w-full rounded-full bg-slate-100" />
                             </button>
