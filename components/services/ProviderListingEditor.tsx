@@ -45,7 +45,7 @@ export interface EditorProvider {
     amenities: string[];
     dietary_options: string[];
     areas: string[];
-    items: Array<{ id: string; name: string; description: string; price: number; unit: string; image: string | null; duration_minutes: number | null; fulfilment: string | null; active: boolean }>;
+    items: Array<{ id: string; name: string; description: string; price: number; unit: string; image: string | null; duration_minutes: number | null; fulfilment: string | null; active: boolean; capacity: number | null; min_people: number | null }>;
     availability: Array<{ day_of_week: number; open_time: string; close_time: string }>;
 }
 
@@ -279,11 +279,14 @@ export default function ProviderListingEditor({ provider }: { provider: EditorPr
     // The menu. Each row edits in place; prices are strings while typing. New rows
     // have no id (the save route inserts them); removed rows drop out (the route
     // deletes them). ids are preserved so an item keeps its photo and bookings.
-    type MenuRow = { id?: string; name: string; description: string; price: string; unit: string; image: string | null; duration: string; fulfilment: string | null; active: boolean };
+    type MenuRow = { id?: string; name: string; description: string; price: string; unit: string; image: string | null; duration: string; fulfilment: string | null; active: boolean; capacity: string; minPeople: string };
     const [menu, setMenu] = useState<MenuRow[]>(p.items.map((it) => ({
         id: it.id, name: it.name, description: it.description, price: String(it.price),
         unit: it.unit, image: it.image, duration: it.duration_minutes != null ? String(it.duration_minutes) : '',
         fulfilment: it.fulfilment, active: it.active,
+        // Blank = inherit the provider default; a number here overrides it for this item.
+        capacity: it.capacity != null ? String(it.capacity) : '',
+        minPeople: it.min_people != null ? String(it.min_people) : '',
     })));
     const setRow = (i: number, patch: Partial<MenuRow>) => setMenu(menu.map((r, j) => j === i ? { ...r, ...patch } : r));
 
@@ -648,6 +651,7 @@ export default function ProviderListingEditor({ provider }: { provider: EditorPr
                                     id: r.id, name: r.name, description: r.description, price: r.price,
                                     unit: r.unit, image: r.image, duration_minutes: r.duration,
                                     fulfilment: r.fulfilment, active: r.active,
+                                    capacity: r.capacity, min_people: r.minPeople,
                                 })),
                             })}>
                             {/* Last-priced-item guard: a listing with no active priced
@@ -727,6 +731,28 @@ export default function ProviderListingEditor({ provider }: { provider: EditorPr
                                                         </label>
                                                     )}
                                                 </div>
+                                                {/* Per-item seats — only for a per-person item on a
+                                                    slot. Each priced-per-person item can hold a
+                                                    different number and set its own smallest group;
+                                                    blank inherits the Booking-section default, so two
+                                                    items no longer have to share one capacity that
+                                                    means different things. */}
+                                                {p.isSlot && r.unit === 'person' && (
+                                                    <div className="flex flex-wrap gap-4 rounded-xl bg-slate-50 p-3">
+                                                        <label className="text-sm text-slate-600">
+                                                            <span className="block text-xs font-semibold uppercase tracking-wide text-slate-500">Capacity</span>
+                                                            <span className="mt-1 flex items-center gap-1">
+                                                                <input className="w-20 rounded-lg border border-slate-300 p-2 text-sm" type="number" min={1} placeholder={String(maxGuests)} value={r.capacity} onChange={(e) => setRow(i, { capacity: e.target.value })} />
+                                                                <span className="text-slate-500">people</span>
+                                                            </span>
+                                                        </label>
+                                                        <label className="text-sm text-slate-600">
+                                                            <span className="block text-xs font-semibold uppercase tracking-wide text-slate-500">Smallest group</span>
+                                                            <input className="mt-1 w-20 rounded-lg border border-slate-300 p-2 text-sm" type="number" min={1} placeholder={String(minPeople)} value={r.minPeople} onChange={(e) => setRow(i, { minPeople: e.target.value })} />
+                                                        </label>
+                                                        <p className="w-full text-xs text-slate-400">Leave blank to use your defaults — {maxGuests} people, minimum {minPeople}.</p>
+                                                    </div>
+                                                )}
                                                 <textarea className={inputCls} rows={2} placeholder="Description (optional)" value={r.description} onChange={(e) => setRow(i, { description: e.target.value })} />
                                             </div>
                                         </div>
@@ -740,7 +766,7 @@ export default function ProviderListingEditor({ provider }: { provider: EditorPr
                                     </div>
                                 ))}
                             </div>
-                            <button type="button" onClick={() => setMenu([...menu, { name: '', description: '', price: '', unit: 'flat', image: null, duration: p.isSlot ? '60' : '', fulfilment: (p.isSlot && fulfilment === 'both') ? 'collection' : null, active: true }])}
+                            <button type="button" onClick={() => setMenu([...menu, { name: '', description: '', price: '', unit: 'flat', image: null, duration: p.isSlot ? '60' : '', fulfilment: (p.isSlot && fulfilment === 'both') ? 'collection' : null, active: true, capacity: '', minPeople: '' }])}
                                 className="text-sm font-semibold text-emerald-700 hover:text-emerald-800">+ Add an item</button>
                         </SectionCard>
                     )}
@@ -813,7 +839,7 @@ export default function ProviderListingEditor({ provider }: { provider: EditorPr
                     {active === 'booking' && (
                         <SectionCard title="Booking" hint="How guests book with you — the rules that apply however your listing is booked." saving={savingKey === 'booking'}
                             onSave={() => run('booking', { max_guests: maxGuests, lead_time_days: leadDays, booking_horizon_days: horizonDays })}>
-                            <Field label="Maximum capacity" hint={p.isSlot ? 'The most people one session can take.' : 'The most people you’ll take for one booking.'}>
+                            <Field label="Maximum capacity" hint={p.isSlot ? 'The most people a session can take, as a default — a per-person item can set its own in “What you offer”.' : 'The most people you’ll take for one booking.'}>
                                 <Stepper value={maxGuests} onChange={setMaxGuests} min={1} max={60} />
                             </Field>
                             <Field label="Notice needed" hint="How far ahead a guest has to book.">
@@ -881,7 +907,7 @@ export default function ProviderListingEditor({ provider }: { provider: EditorPr
                                 session will run for. A whole-session-only provider
                                 sells the session whole, so a minimum-to-run is noise. */}
                             {hasPerPersonItem && (
-                                <Field label="Smallest group you’ll run a session for" hint="A single booking must be at least this many people — leave it at 1 if a session runs for anyone.">
+                                <Field label="Smallest group you’ll run a session for" hint="A default minimum for a per-person booking — a per-person item can set its own. Leave it at 1 if a session runs for anyone.">
                                     <Stepper value={minPeople} onChange={setMinPeople} min={1} max={Math.max(1, maxGuests)} />
                                 </Field>
                             )}
