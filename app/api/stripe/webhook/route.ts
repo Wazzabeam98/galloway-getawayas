@@ -10,6 +10,7 @@ import { requestedWhen } from '@/lib/serviceEnquiries';
 import { tradeLabel } from '@/lib/serviceProviders';
 import { guestBookedEmail, hostNewBookingEmail, arrivalLineFrom } from '@/lib/bookingEmails';
 import { cancellationPosition } from '@/lib/cancellationView';
+import { resolveGuestForPaidOrder, supabaseGuestStore, guestMagicLink } from '@/lib/guestAccount';
 
 export const dynamic = 'force-dynamic';
 
@@ -294,9 +295,56 @@ export async function POST(request: Request) {
                 const orderId = cs.metadata && cs.metadata.order_id;
                 const slotPi = (cs.payment_intent as string) || null;
                 if (orderId) {
+                    // MINT THE GUEST, IF THIS HOLD HAS NO OWNER. An anonymous
+                    // standalone booker paid without an account; the account is
+                    // created (or a returning guest reused) now that the money has
+                    // confirmed, keyed on the Stripe-proven payer address, and the
+                    // order attached to it. A signed-in booker's hold already has a
+                    // guest_id, so this is skipped for them and on any redelivery.
+                    const { data: hold } = await admin
+                        .from('service_orders')
+                        .select('guest_id, guest_email, guest_name, guest_phone')
+                        .eq('id', orderId)
+                        .maybeSingle();
+
+                    const payerEmail = (cs.customer_details && cs.customer_details.email) || cs.customer_email || null;
+                    const wasAnonymous = !!(hold && !hold.guest_id);
+                    let mintedGuestId: string | null = null;
+                    let mintedEmail: string | null = null;
+
+                    if (wasAnonymous) {
+                        try {
+                            const resolved = await resolveGuestForPaidOrder(supabaseGuestStore(admin), {
+                                typedEmail: hold!.guest_email,
+                                payerEmail,
+                                name: hold!.guest_name,
+                                phone: hold!.guest_phone,
+                            });
+                            mintedGuestId = resolved.id;
+                            mintedEmail = resolved.email;
+                        } catch (mintErr) {
+                            // The money is captured, so the confirm must not be lost
+                            // — but 'confirmed' with a null guest_id would fail the
+                            // guest_present_once_paid CHECK. So leave the row
+                            // 'holding' and let the reconcile sweep (which also
+                            // mints) confirm it on its next pass. Reported, not
+                            // swallowed.
+                            await logError(
+                                '[webhook] a slot order was paid but the guest account could not be minted — '
+                                    + 'the reconcile sweep will confirm it',
+                                mintErr,
+                                { path: 'stripe/webhook' }
+                            );
+                            return NextResponse.json({ ok: true, mint_deferred: true });
+                        }
+                    }
+
+                    const confirmPatch: Record<string, any> = { status: 'confirmed', stripe_payment_intent_id: slotPi };
+                    if (mintedGuestId) confirmPatch.guest_id = mintedGuestId;
+
                     const { data: slotRows, error: slotConfErr } = await admin
                         .from('service_orders')
-                        .update({ status: 'confirmed', stripe_payment_intent_id: slotPi })
+                        .update(confirmPatch)
                         .eq('id', orderId)
                         .eq('status', 'holding')
                         .select('id, provider_id, service_date, service_time, item_name, quantity, price, note, allergy');
@@ -353,8 +401,18 @@ export async function POST(request: Request) {
                         // and hears nothing. Email is the one that reaches them off
                         // the site.
                         try {
-                            const guestEmail = (cs.customer_details && cs.customer_details.email) || cs.customer_email || null;
+                            const guestEmail = mintedEmail || payerEmail;
                             if (guestEmail) {
+                                // The link back to the booking. A brand-new guest
+                                // (minted just now, no session in their browser)
+                                // gets a single-use magic link that signs them in on
+                                // the order page; a signed-in booker gets the plain
+                                // link. If the magic link can't be minted, fall back
+                                // to the plain link, which asks them to sign in.
+                                const orderPath = '/experiences/order/' + slotOrder.id;
+                                const viewUrl = wasAnonymous
+                                    ? ((await guestMagicLink(guestEmail, orderPath)) || (SITE_URL + orderPath))
+                                    : (SITE_URL + orderPath);
                                 await sendEmail(
                                     guestEmail,
                                     'Your booking is confirmed',
@@ -368,7 +426,7 @@ export async function POST(request: Request) {
                                         + '.</p>'
                                         + (slotOrder.price != null
                                             ? '<p>You paid £' + Number(slotOrder.price).toFixed(2) + '.</p>' : '')
-                                        + button(SITE_URL + '/experiences/order/' + slotOrder.id, 'View your booking'),
+                                        + button(viewUrl, 'View your booking'),
                                         'You’re receiving this because you booked an experience on Galloway Getaways.'
                                     )
                                 );
@@ -457,6 +515,12 @@ export async function POST(request: Request) {
                     .from('service_orders')
                     .insert({
                         provider_id: md.provider_id,
+                        // Always present today: the request shape is login-gated
+                        // (order/route.ts sets guest_id from the signed-in user).
+                        // When a standalone request-shape path lands, resolve the
+                        // guest here the same way the slot path does —
+                        // resolveGuestForPaidOrder(supabaseGuestStore(admin), {
+                        // typedEmail: md.guest_email, payerEmail: cs.customer_details?.email, ... }).
                         guest_id: md.guest_id,
                         listing_id: md.listing_id || null,
                         booking_id: md.booking_id || null,

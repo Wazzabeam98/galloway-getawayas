@@ -17,6 +17,7 @@ import { itemFulfilment } from '@/lib/serviceProviders';
 import { dateFromKey, dateKey } from '@/lib/pricing';
 import { londonDayKey, shiftDayKey } from '@/lib/dayKey';
 import { displayName } from '@/lib/utils';
+import { withinLimits, callerAddress } from '@/lib/rateLimit';
 
 export const dynamic = 'force-dynamic';
 
@@ -39,8 +40,12 @@ const STANDALONE_HORIZON_DAYS = 90;
 export async function POST(request: Request) {
     try {
         const supabase = createRouteHandlerClient({ cookies });
+        // May be null: a brand-new guest booking a STANDALONE experience need not
+        // sign in first. They give their contact here and the account is minted
+        // only once Stripe confirms the payment (in the webhook). An against-a-stay
+        // booking still requires the signed-in booking owner — gated below, once we
+        // know which shape this is.
         const { data: { user } } = await supabase.auth.getUser();
-        if (!user) return NextResponse.json({ ok: false, error: 'Not signed in' }, { status: 401 });
 
         if (!guestExperiencesOpen()) {
             return NextResponse.json({ ok: false, error: 'Guest experiences aren’t open yet.' }, { status: 403 });
@@ -62,6 +67,12 @@ export async function POST(request: Request) {
         // The allergy field, separate from note — see the order route. A slot
         // auto-confirms, so this is the guest's one chance to state it up front.
         const allergy: string = (body && body.allergy ? String(body.allergy) : '').slice(0, 500);
+        // Typed contact for an anonymous standalone booker (no session). Ignored
+        // when signed in — the profile is the source of truth then. Validated only
+        // on the anonymous path below.
+        const typedName: string = (body && body.guestName ? String(body.guestName) : '').slice(0, 120).trim();
+        const typedEmail: string = (body && body.guestEmail ? String(body.guestEmail) : '').slice(0, 200).trim().toLowerCase();
+        const typedPhone: string = (body && body.guestPhone ? String(body.guestPhone) : '').slice(0, 40).trim();
 
         if (!providerId || !sessionDate || !sessionTime) {
             return NextResponse.json({ ok: false, error: 'Missing details' }, { status: 400 });
@@ -75,6 +86,38 @@ export async function POST(request: Request) {
         // IS supplied it is validated and owned exactly as before.
         const standalone = !bookingId;
 
+        // THE AUTH GATE, now that we know the shape.
+        //   against-a-stay  → must be the signed-in booking owner (checked below too)
+        //   standalone      → a signed-in guest OR a brand-new one giving contact
+        // A brand-new standalone guest is minted only after payment, so here we
+        // only need a real email to reach them and to key the account on.
+        const anonymous = standalone && !user;
+        if (!standalone && !user) {
+            return NextResponse.json({ ok: false, error: 'Not signed in' }, { status: 401 });
+        }
+        if (anonymous) {
+            const looksLikeEmail = /^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(typedEmail);
+            if (!typedName || !looksLikeEmail) {
+                return NextResponse.json(
+                    { ok: false, error: 'Add your name and a valid email so we can send your booking.' },
+                    { status: 400 }
+                );
+            }
+            // Slow down anyone spinning up holds (and Checkout sessions) against
+            // the anonymous door — by address and by caller. Fail-open like the
+            // apply flow; a blocked attempt is not recorded.
+            const verdict = await withinLimits([
+                { bucket: 'guest-slot-book:email', key: typedEmail, max: 8, windowMinutes: 60 },
+                { bucket: 'guest-slot-book:ip', key: callerAddress(request.headers), max: 20, windowMinutes: 60 },
+            ]);
+            if (!verdict.ok) {
+                return NextResponse.json(
+                    { ok: false, error: 'That’s a lot of attempts in a short time. Try again shortly.' },
+                    { status: 429 }
+                );
+            }
+        }
+
         const admin = adminClient();
 
         let booking: any = null;
@@ -85,7 +128,9 @@ export async function POST(request: Request) {
                 .eq('id', bookingId)
                 .maybeSingle();
             if (!data) return NextResponse.json({ ok: false, error: 'Booking not found' }, { status: 404 });
-            if (data.guest_id !== user.id) return NextResponse.json({ ok: false, error: 'Not your booking' }, { status: 403 });
+            // user is non-null here: the gate above returns 401 for a non-standalone
+            // request without a session, and this block is the non-standalone path.
+            if (data.guest_id !== user!.id) return NextResponse.json({ ok: false, error: 'Not your booking' }, { status: 403 });
             booking = data;
         }
 
@@ -413,13 +458,20 @@ export async function POST(request: Request) {
             }
         }
 
-        // The contact snapshot the provider needs, frozen at purchase from the
-        // buyer's own profile — honouring show_full_name, never a surname beyond it.
-        // Against a stay the webhook writes this; a standalone slot order is inserted
-        // here and paid instantly, so write it here too (same shape, no
-        // profile_private, no widening of the guest/host privacy view).
-        let guestName: string | null = null, guestPhone: string | null = null, guestEmail: string | null = user.email || null;
-        if (standalone) {
+        // The contact snapshot the provider needs, frozen at purchase. For a
+        // signed-in buyer it comes from their profile — honouring show_full_name,
+        // never a surname beyond it. For an anonymous standalone buyer there is no
+        // profile yet, so it is the contact they typed; the same snapshot then
+        // carries them to the account minted from it at payment. Against a stay the
+        // webhook writes this; a standalone slot order is inserted here and paid
+        // instantly, so write it here too (no profile_private, no widening of the
+        // guest/host privacy view).
+        let guestName: string | null = null, guestPhone: string | null = null, guestEmail: string | null = user ? (user.email || null) : null;
+        if (anonymous) {
+            guestName = typedName || null;
+            guestPhone = typedPhone || null;
+            guestEmail = typedEmail || null;
+        } else if (standalone && user) {
             const { data: prof } = await admin.from('profiles')
                 .select('full_name, preferred_name, show_full_name, phone, email').eq('id', user.id).maybeSingle();
             guestName = displayName(prof, '') || null;
@@ -432,7 +484,10 @@ export async function POST(request: Request) {
         const { data: order, error: orderErr } = await admin.from('service_orders')
             .insert({
                 provider_id: provider.id,
-                guest_id: user.id,
+                // Null for an anonymous standalone booker — the account is minted
+                // from the snapshot below once payment confirms (webhook), and the
+                // guest_present_once_paid CHECK permits null only while 'holding'.
+                guest_id: user ? user.id : null,
                 listing_id: standalone ? null : (booking.listing_id || null),
                 booking_id: standalone ? null : booking.id,
                 // The buyer's contact, for the provider — written here for a
@@ -487,7 +542,10 @@ export async function POST(request: Request) {
             const lineName = quantity > 1 ? itemName + ' × ' + quantity : itemName;
             const checkout = await stripeRequest('POST', '/checkout/sessions', {
                 mode: 'payment',
-                customer_email: user.email,
+                // Prefill the payer email with the one on file (signed in) or the
+                // one just typed (anonymous). The address Stripe actually verifies
+                // is what the webhook keys the account on, not this prefill.
+                customer_email: user ? user.email : (guestEmail || undefined),
                 payment_method_types: ['card'],
                 line_items: [{
                     quantity: 1,
@@ -516,7 +574,7 @@ export async function POST(request: Request) {
                 // Give up on the Checkout at the hold's edge, so an abandoned one
                 // stops being payable at the same moment the seat is released.
                 expires_at: Math.floor(Date.now() / 1000) + SLOT_HOLD_MINUTES * 60,
-                metadata: { kind: 'slot_order', order_id: order.id, provider_id: provider.id, booking_id: standalone ? '' : booking.id, guest_id: user.id },
+                metadata: { kind: 'slot_order', order_id: order.id, provider_id: provider.id, booking_id: standalone ? '' : booking.id, guest_id: user ? user.id : '' },
             });
 
             return NextResponse.json({ ok: true, url: checkout.url });
