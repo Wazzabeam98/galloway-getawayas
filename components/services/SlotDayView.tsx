@@ -38,7 +38,7 @@ export default function SlotDayView({
         return (
             <div className="rounded-2xl border border-slate-200 bg-slate-50 p-8 text-center">
                 <p className="text-sm font-semibold text-slate-700">This day is off</p>
-                <p className="mt-1 text-sm text-slate-500">Guests can’t book any time on it. Reopen it from the panel.</p>
+                <p className="mt-1 text-sm text-slate-500">Guests can’t book any time on it. Use “Reopen day” above to open it again.</p>
             </div>
         );
     }

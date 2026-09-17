@@ -1,13 +1,15 @@
 'use client';
 
 import { useCallback, useEffect, useRef, useState } from 'react';
-import { MapPin, Phone, Mail, CalendarPlus, Clock, Trash2, X, ChevronLeft, ChevronRight, CalendarDays, LayoutGrid } from 'lucide-react';
+import { Phone, MessageSquare, CalendarPlus, Clock, Trash2, X, ChevronLeft, ChevronRight, CalendarDays, LayoutGrid, ArrowLeft } from 'lucide-react';
 import { dateLabel, timeLabel } from '@/components/marketplace/present';
 import { londonDayKey, shiftDayKey } from '@/lib/dayKey';
 import SlotCalendar, { type DayShape } from '@/components/services/SlotCalendar';
 import SlotDayView from '@/components/services/SlotDayView';
 import { daySlots, dayTicks, type DayInputs, type DaySlotRow } from '@/lib/slotDay';
 import { seatConfig } from '@/lib/serviceSlots';
+import { orderReference } from '@/lib/serviceOrders';
+import OrderThread from '@/components/marketplace/OrderThread';
 import { OptionPills, Stepper, SESSION_LENGTH_OPTIONS, minutesLabel } from '@/components/services/editorControls';
 
 interface Order {
@@ -15,6 +17,42 @@ interface Order {
     price: number; quantity: number | null; attendees: number | null; item_name: string | null; item_unit: string | null;
     guest_name: string | null; guest_phone: string | null; guest_email: string | null;
     fulfilment?: string | null; service_address?: string | null;
+    commission_rate?: number | null; amount_refunded?: number | null; unit_price?: number | null;
+    note?: string | null; created_at?: string | null;
+}
+
+// Money + the label/value Row + the titled Card — the same atoms the cottage
+// booking detail (app/dashboard/bookings/[id]) is built from, so an experience
+// booking reads in the same language rather than a second invented one.
+const money = (value: number) => '£' + Number(value || 0).toFixed(2);
+const round2 = (value: number) => Math.round(Number(value) * 100) / 100;
+function Row({ label, value, muted }: { label: string; value: React.ReactNode; muted?: boolean }) {
+    return (
+        <div className="flex items-baseline justify-between gap-6 border-b border-slate-100 py-2 last:border-0">
+            <div className="text-sm text-slate-500">{label}</div>
+            <div className={'text-right text-sm ' + (muted ? 'text-slate-500' : 'font-medium text-slate-900')}>{value}</div>
+        </div>
+    );
+}
+function DetailCard({ title, children }: { title: string; children: React.ReactNode }) {
+    return (
+        <div className="rounded-2xl border border-slate-200 bg-white p-4">
+            <h3 className="mb-2 text-sm font-semibold text-slate-900">{title}</h3>
+            {children}
+        </div>
+    );
+}
+// Initials from a name — no profile photos; a name and its initials are enough.
+function initialsOf(name: string | null): string {
+    const parts = String(name || '').trim().split(/\s+/).filter(Boolean);
+    if (!parts.length) return '?';
+    return (parts[0][0] + (parts.length > 1 ? parts[parts.length - 1][0] : '')).toUpperCase();
+}
+// What a booking's party reads as: per-person books seats, a private hire books a party.
+function partyLabel(o: Order): string {
+    const n = Number(o.item_unit === 'person' ? o.quantity : (o.attendees || o.quantity)) || 1;
+    if (o.item_unit === 'person') return n + (n === 1 ? ' place' : ' places');
+    return 'Party of ' + n;
 }
 interface SlotSession { date: string; time: string; capacity: number; seats_taken: number; seats_left: number; private: boolean; closed: boolean; sold: { item_name: string; unit: string; seats: number }[] }
 interface DeclaredSession { id: string; date: string; time: string; capacity: number; seats_taken: number; title: string | null; duration_minutes?: number | null }
@@ -49,6 +87,10 @@ export default function ProviderSlotDashboard({ providerId, editHref }: { provid
     // builder (for a clicked free slot, or a shift-selected set of days).
     const [panel, setPanel] = useState<'none' | 'detail' | 'add' | 'bulk'>('none');
     const [activeKey, setActiveKey] = useState<string | null>(null);
+    // Within a session's detail: which guest's booking is open (null = the list),
+    // and whether that booking's message thread is showing.
+    const [activeOrderId, setActiveOrderId] = useState<string | null>(null);
+    const [threadOpen, setThreadOpen] = useState(false);
     const [selected, setSelected] = useState<Set<string>>(new Set());
     const [anchor, setAnchor] = useState<string | null>(null);
 
@@ -161,7 +203,7 @@ export default function ProviderSlotDashboard({ providerId, editHref }: { provid
         if (shift) { setSelected((prev) => { const next = new Set(prev); if (anchor) { for (const dd of daysBetween(anchor, date)) if (dd >= todayIso) next.add(dd); } else if (next.has(date)) next.delete(date); else next.add(date); return next; }); setAnchor(date); setPanel('bulk'); setDTime(''); setPending([]); }
         else openDay(date);
     };
-    const openRow = (row: DaySlotRow) => { setActiveKey(keyOf(dayDate, row.time)); setPanel('detail'); };
+    const openRow = (row: DaySlotRow) => { setActiveKey(keyOf(dayDate, row.time)); setPanel('detail'); setActiveOrderId(null); setThreadOpen(false); };
     const addAt = (time: string) => { setDTime(time); setDDur(slotDefaults.duration || 60); setDCap(slotDefaults.capacity || 1); setDTitle(''); setPending([]); setPanel('add'); };
 
     const fillLine = (r: DaySlotRow) => r.kind === 'private' ? 'Private hire — whole session' : `${r.seatsTaken || 0} of ${r.capacity || 0} booked${(r.seatsLeft || 0) > 0 ? ` · ${r.seatsLeft} left` : ' · full'}`;
@@ -218,7 +260,77 @@ export default function ProviderSlotDashboard({ providerId, editHref }: { provid
         </div>
     );
 
+    // A single guest's booking, in the cottage detail's language: reference, when,
+    // what they booked, party, a cost breakdown, when they booked and what they
+    // paid — plus Call, an in-app Message thread, and Cancel & refund.
+    const BookingDetail = (o: Order) => {
+        const rate = Number(o.commission_rate) || 0.10;
+        const refunded = Number(o.amount_refunded) || 0;
+        const kept = round2(Number(o.price || 0) - refunded);           // what the guest actually paid, net of any refund
+        const fee = round2(kept * rate);                                // our cut on what was kept
+        const yours = round2(kept - fee);                               // the provider's take
+        const perPerson = o.item_unit === 'person' && o.unit_price && (o.quantity || 0) > 1;
+        return (
+            <div className="rounded-2xl border border-slate-200 bg-white p-4">
+                <div className="flex items-start justify-between">
+                    <button type="button" onClick={() => { setActiveOrderId(null); setThreadOpen(false); }} className="inline-flex items-center gap-1 text-xs font-semibold text-slate-500 hover:text-slate-800"><ArrowLeft className="h-3.5 w-3.5" />All guests</button>
+                    <button type="button" onClick={() => { setPanel('none'); setActiveKey(null); setActiveOrderId(null); }} className="text-slate-400 hover:text-slate-700" aria-label="Close"><X className="h-4 w-4" /></button>
+                </div>
+
+                <div className="mt-2 flex items-center gap-3">
+                    <span className="flex h-10 w-10 flex-none items-center justify-center rounded-full bg-slate-100 text-sm font-semibold text-slate-600">{initialsOf(o.guest_name)}</span>
+                    <div className="min-w-0">
+                        <p className="truncate text-base font-bold text-slate-900">{o.guest_name || 'Guest'}</p>
+                        <p className="text-xs font-medium uppercase tracking-wide text-slate-400">{orderReference(o.id)}</p>
+                    </div>
+                </div>
+
+                <div className="mt-3 space-y-3">
+                    <DetailCard title="Booking">
+                        <Row label="When" value={`${dateLabel(o.service_date)} · ${timeLabel((o.service_time || '') + '')}`} />
+                        <Row label="What they booked" value={o.item_name || 'Session'} />
+                        <Row label="Party" value={partyLabel(o)} />
+                        {o.fulfilment === 'delivery' && o.service_address ? <Row label="Where" value={o.service_address} /> : null}
+                        {o.created_at ? <Row label="Booked on" value={dateLabel(String(o.created_at).slice(0, 10))} muted /> : null}
+                    </DetailCard>
+
+                    <DetailCard title="Money">
+                        <Row label="Guest paid in total" value={money(o.price || 0)} />
+                        {perPerson ? <Row label={`${o.quantity} × ${money(Number(o.unit_price))} per person`} value={money(o.price || 0)} muted /> : null}
+                        {refunded > 0 ? <Row label="Refunded to guest" value={'−' + money(refunded)} /> : null}
+                        <Row label={`Our fee (${Math.round(rate * 100)}%)`} value={'−' + money(fee)} muted />
+                        <Row label="You get" value={money(yours)} />
+                        <Row label="Payment" value="Paid in full at booking" muted />
+                    </DetailCard>
+
+                    {o.note ? (
+                        <div className="rounded-xl border border-amber-200 bg-amber-50 p-3">
+                            <p className="text-xs font-semibold uppercase tracking-wide text-amber-800">From the guest</p>
+                            <p className="mt-1 whitespace-pre-line text-sm text-amber-900">{o.note}</p>
+                        </div>
+                    ) : null}
+                </div>
+
+                <div className="mt-3 flex flex-wrap items-center gap-2">
+                    {o.guest_phone ? <a href={'tel:' + o.guest_phone} className="inline-flex items-center gap-1.5 rounded-lg border border-slate-300 px-3 py-1.5 text-sm font-medium text-slate-700 hover:border-slate-400"><Phone className="h-4 w-4" />Call</a> : null}
+                    <button type="button" onClick={() => setThreadOpen((v) => !v)} className={`inline-flex items-center gap-1.5 rounded-lg border px-3 py-1.5 text-sm font-medium ${threadOpen ? 'border-slate-900 bg-slate-900 text-white' : 'border-slate-300 text-slate-700 hover:border-slate-400'}`}><MessageSquare className="h-4 w-4" />{threadOpen ? 'Hide messages' : 'Message'}</button>
+                    <button type="button" disabled={busy === o.id} onClick={() => refund(o.id)} className="ml-auto inline-flex items-center gap-1.5 rounded-lg px-3 py-1.5 text-sm font-medium text-slate-500 hover:text-red-600 disabled:opacity-60"><Trash2 className="h-4 w-4" />{busy === o.id ? 'Refunding…' : 'Cancel & refund'}</button>
+                </div>
+
+                {threadOpen ? (
+                    <div className="mt-3 border-t border-slate-100 pt-3">
+                        <p className="mb-2 text-xs text-slate-400">Messages go through Galloway Getaways — {(o.guest_name || 'the guest').split(' ')[0]} gets an email with a link back and never sees your address.</p>
+                        <OrderThread orderId={o.id} />
+                    </div>
+                ) : null}
+            </div>
+        );
+    };
+
+    const activeOrder = activeOrderId ? activeOrders.find((o) => o.id === activeOrderId) || null : null;
+
     const Detail = activeRow && (
+        activeOrder ? BookingDetail(activeOrder) : (
         <div className="rounded-2xl border border-slate-200 bg-white p-4">
             <div className="flex items-start justify-between">
                 <div><p className="text-sm font-bold text-slate-900">{dateLabel(dayDate)}</p><p className="text-sm text-slate-500">{timeLabel(activeRow.time + ':00')}{activeRow.title ? ` · ${activeRow.title}` : ''}</p></div>
@@ -226,17 +338,18 @@ export default function ProviderSlotDashboard({ providerId, editHref }: { provid
             </div>
             <p className="mt-2 inline-block rounded-full bg-slate-100 px-2.5 py-0.5 text-xs font-semibold text-slate-600">{fillLine(activeRow)}</p>
             {activeOrders.length > 0 ? (
-                <ul className="mt-4 space-y-3">
+                <ul className="mt-4 space-y-2">
                     {activeOrders.map((o) => (
-                        <li key={o.id} className="rounded-xl border border-slate-200 p-3">
-                            <div className="flex items-center justify-between"><span className="text-sm font-semibold text-slate-900">{o.guest_name || 'Guest'}</span><span className="text-sm font-semibold text-slate-900">£{o.price.toFixed(2)}</span></div>
-                            <p className="mt-0.5 text-xs text-slate-500">{o.item_name}{o.quantity && o.quantity > 1 ? ` · ${o.quantity} people` : ''}{o.attendees && o.attendees > 1 ? ` · party of ${o.attendees}` : ''}</p>
-                            {o.fulfilment === 'delivery' && o.service_address ? <p className="mt-1 flex items-start gap-1 text-xs text-slate-600"><MapPin className="mt-0.5 h-3.5 w-3.5 flex-none text-slate-400" aria-hidden />Comes to {o.service_address}</p> : null}
-                            <div className="mt-2 flex flex-wrap items-center gap-2">
-                                {o.guest_phone ? <a href={'tel:' + o.guest_phone} className="inline-flex items-center gap-1 rounded-lg border border-slate-300 px-2.5 py-1 text-xs font-medium text-slate-700 hover:border-slate-400"><Phone className="h-3.5 w-3.5" />Call</a> : null}
-                                {o.guest_email ? <a href={'mailto:' + o.guest_email} className="inline-flex items-center gap-1 rounded-lg border border-slate-300 px-2.5 py-1 text-xs font-medium text-slate-700 hover:border-slate-400"><Mail className="h-3.5 w-3.5" />Email</a> : null}
-                                <button type="button" disabled={busy === o.id} onClick={() => refund(o.id)} className="ml-auto text-xs font-medium text-slate-500 underline hover:text-red-600 disabled:opacity-60">{busy === o.id ? 'Refunding…' : 'Cancel & refund'}</button>
-                            </div>
+                        <li key={o.id}>
+                            <button type="button" onClick={() => { setActiveOrderId(o.id); setThreadOpen(false); }} className="flex w-full items-center gap-3 rounded-xl border border-slate-200 p-3 text-left hover:border-slate-300 hover:bg-slate-50">
+                                <span className="flex h-9 w-9 flex-none items-center justify-center rounded-full bg-slate-100 text-xs font-semibold text-slate-600">{initialsOf(o.guest_name)}</span>
+                                <span className="min-w-0 flex-1">
+                                    <span className="block truncate text-sm font-semibold text-slate-900">{o.guest_name || 'Guest'}</span>
+                                    <span className="block truncate text-xs text-slate-500">{o.item_name}{' · '}{partyLabel(o)}</span>
+                                </span>
+                                <span className="flex-none text-sm font-semibold text-slate-900">{money(o.price || 0)}</span>
+                                <ChevronRight className="h-4 w-4 flex-none text-slate-400" aria-hidden />
+                            </button>
                         </li>
                     ))}
                 </ul>
@@ -247,6 +360,7 @@ export default function ProviderSlotDashboard({ providerId, editHref }: { provid
                 </div>
             )}
         </div>
+        )
     );
 
     const rail = panel === 'add' || panel === 'bulk' ? Builder : panel === 'detail' ? Detail : (
@@ -301,9 +415,23 @@ export default function ProviderSlotDashboard({ providerId, editHref }: { provid
                             </div>
                             <div className="flex items-center gap-2">
                                 <button type="button" onClick={() => addAt('')} className="rounded-lg bg-violet-700 px-3 py-1.5 text-sm font-semibold text-white hover:bg-violet-800" title="A dated class or one-off on top of your weekly hours">+ One-off / class</button>
-                                <button type="button" disabled={busy === 'block'} onClick={() => toggleDayOff(dayDate, !dayData.dayOff)} className={`rounded-lg px-3 py-1.5 text-sm font-semibold disabled:opacity-50 ${dayData.dayOff ? 'bg-emerald-700 text-white hover:bg-emerald-800' : 'border border-slate-300 text-slate-700 hover:border-slate-500'}`}>{dayData.dayOff ? 'Reopen day' : 'Day off'}</button>
+                                {/* Day off must never be a way to hide paid guests: a day that
+                                    already has bookings can't be closed until they're cancelled or
+                                    refunded. Taking the day off only stops NEW bookings; it does
+                                    not cancel anyone, so a bookable-day-with-guests is disabled and
+                                    says why. */}
+                                <button
+                                    type="button"
+                                    disabled={busy === 'block' || (!dayData.dayOff && dayData.booked > 0)}
+                                    onClick={() => toggleDayOff(dayDate, !dayData.dayOff)}
+                                    title={!dayData.dayOff && dayData.booked > 0 ? 'You have bookings on this day. Cancel or refund them first — taking the day off only stops new bookings, it doesn’t cancel anyone.' : (dayData.dayOff ? 'Let guests book this day again' : 'Stop new bookings on this day')}
+                                    className={`rounded-lg px-3 py-1.5 text-sm font-semibold disabled:cursor-not-allowed disabled:opacity-40 ${dayData.dayOff ? 'bg-emerald-700 text-white hover:bg-emerald-800' : 'border border-slate-300 text-slate-700 hover:border-slate-500'}`}
+                                >{dayData.dayOff ? 'Reopen day' : 'Day off'}</button>
                             </div>
                         </div>
+                        {!dayData.dayOff && dayData.booked > 0 && (
+                            <p className="mb-3 text-xs text-slate-500">This day has {dayData.booked} booking{dayData.booked === 1 ? '' : 's'}. To take the day off, cancel or refund {dayData.booked === 1 ? 'it' : 'them'} first — a day off only stops new bookings, it never cancels a guest.</p>
+                        )}
                         {/* The day's read at a glance — an open day says "N open",
                             never mistaken for an empty one. */}
                         <div className="mb-3 flex items-center gap-2 text-sm">
