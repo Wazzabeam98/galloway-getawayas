@@ -1,6 +1,7 @@
 import { NextResponse } from 'next/server';
 import { adminClient } from '@/lib/supabaseAdmin';
 import { stripeRequest } from '@/lib/stripe';
+import { resolveGuestForPaidOrder, supabaseGuestStore } from '@/lib/guestAccount';
 
 export const dynamic = 'force-dynamic';
 export const maxDuration = 60;
@@ -129,7 +130,7 @@ export async function GET(request: Request) {
     const graceIso = new Date(Date.now() - 5 * 60 * 1000).toISOString();
     const { data: staleHolds } = await admin
         .from('service_orders')
-        .select('id, slot_session_id, quantity, created_at')
+        .select('id, slot_session_id, quantity, created_at, guest_id, guest_email, guest_name, guest_phone')
         .eq('status', 'holding')
         .lt('expires_at', graceIso);
 
@@ -143,9 +144,33 @@ export async function GET(request: Request) {
             // the reference the webhook would have written.
             const paid = await findPaidPaymentIntent(hold.id, hold.created_at);
             if (paid) {
+                const confirmPatch: Record<string, any> = { status: 'confirmed', stripe_payment_intent_id: paid.id };
+
+                // An anonymous hold has no owner yet — the webhook usually mints
+                // it, but this is the path for when the webhook never landed, so
+                // mint here too. Without it, confirming a null-owner order would
+                // fail the guest_present_once_paid CHECK and leave paid money
+                // stuck. The payer address is the receipt email Stripe recorded.
+                if (!hold.guest_id) {
+                    try {
+                        const resolved = await resolveGuestForPaidOrder(supabaseGuestStore(admin), {
+                            typedEmail: hold.guest_email,
+                            payerEmail: (paid && paid.receipt_email) || hold.guest_email,
+                            name: hold.guest_name,
+                            phone: hold.guest_phone,
+                        });
+                        confirmPatch.guest_id = resolved.id;
+                    } catch (mintErr: any) {
+                        // Leave it 'holding' (money is safe, seat kept) and try
+                        // again next pass rather than confirming an ownerless order.
+                        failures.push('hold ' + hold.id + ' paid but the guest could not be minted: ' + (mintErr && mintErr.message));
+                        continue;
+                    }
+                }
+
                 const { data: confirmed } = await admin
                     .from('service_orders')
-                    .update({ status: 'confirmed', stripe_payment_intent_id: paid.id })
+                    .update(confirmPatch)
                     .eq('id', hold.id)
                     .eq('status', 'holding')   // a webhook that won the race keeps its own confirm
                     .select('id');

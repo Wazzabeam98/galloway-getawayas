@@ -33,6 +33,15 @@ export default function StandaloneBookingPanel({ provider, signedIn, signInNext 
     const [note, setNote] = useState<string>('');
     const [busy, setBusy] = useState(false);
     const [error, setError] = useState<string | null>(null);
+    // Contact for a logged-out (anonymous) booker. We keep accounts but create one
+    // silently from these details after payment, so we ask for them here rather
+    // than forcing a sign-up first. Ignored when signed in.
+    const [guestName, setGuestName] = useState<string>('');
+    const [guestEmail, setGuestEmail] = useState<string>('');
+    const [guestPhone, setGuestPhone] = useState<string>('');
+    // A returning guest can sign in instead — a convenience, not a requirement
+    // (booking with the same email lands them back on the same account anyway).
+    const [showSignIn, setShowSignIn] = useState(false);
 
     const item = provider.items.find((i) => i.id === itemId) || null;
     const perPerson = !!item && unitMultiplies(item.unit);
@@ -44,9 +53,14 @@ export default function StandaloneBookingPanel({ provider, signedIn, signInNext 
 
     const priceLabel = item ? itemPriceLabel(item.price, item.unit) : (provider.items.length ? 'from ' + itemPriceLabel(Math.min(...provider.items.map((i) => i.price)), provider.items[0].unit) : '');
 
+    const emailValid = /^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(guestEmail.trim());
+
     async function book() {
         if (!item || !date || !time) { setError('Pick a treatment, a day and a time.'); return; }
         if (travels && !address.trim()) { setError('Add the address the provider should come to.'); return; }
+        if (!signedIn && (!guestName.trim() || !emailValid)) {
+            setError('Add your name and a valid email so we can send your booking.'); return;
+        }
         setBusy(true); setError(null);
         try {
             const res = await fetch('/api/services/slots/book', {
@@ -55,6 +69,13 @@ export default function StandaloneBookingPanel({ provider, signedIn, signInNext 
                     providerId: provider.id, itemId: item.id, sessionDate: date, sessionTime: time,
                     quantity: perPerson ? qty : 1, attendees: perPerson ? undefined : attendees,
                     serviceAddress: travels ? address.trim() : undefined, note: note.trim() || undefined,
+                    // Only sent when logged out; the server mints/reuses the account
+                    // from these once payment confirms.
+                    ...(signedIn ? {} : {
+                        guestName: guestName.trim(),
+                        guestEmail: guestEmail.trim(),
+                        guestPhone: guestPhone.trim() || undefined,
+                    }),
                 }),
             });
             const j = await res.json();
@@ -72,14 +93,41 @@ export default function StandaloneBookingPanel({ provider, signedIn, signInNext 
                 Instant book — confirmed straight away
             </span>
 
-            {!signedIn ? (
-                <div className="mt-4">
-                    <p className="text-sm text-slate-600">Booking needs an account — it&apos;s how {provider.who} reaches you and how your booking is kept. Browsing is free.</p>
-                    <div className="mt-3"><LoginModel next={signInNext} /></div>
-                    <p className="mt-2 text-xs text-slate-400">Sign in or create an account to book.</p>
-                </div>
-            ) : (
-                <div className="mt-4">
+            <div className="mt-4">
+                {!signedIn && (
+                    <div className="mb-4 rounded-xl border border-slate-200 bg-slate-50/70 p-3">
+                        <p className="text-sm text-slate-600">
+                            No account needed — we&apos;ll set one up from your details so {provider.who} can reach you and you can see your booking.
+                        </p>
+                        {showSignIn ? (
+                            <div className="mt-3">
+                                <LoginModel next={signInNext} />
+                                <button type="button" onClick={() => setShowSignIn(false)} className="mt-2 text-xs font-medium text-emerald-700 hover:underline">
+                                    ← Book as a guest instead
+                                </button>
+                            </div>
+                        ) : (
+                            <>
+                                <div className="mt-3 grid gap-2">
+                                    <input type="text" value={guestName} onChange={(e) => setGuestName(e.target.value.slice(0, 120))}
+                                        placeholder="Your name" autoComplete="name"
+                                        className="block w-full rounded-lg border border-slate-300 px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-emerald-600" />
+                                    <input type="email" value={guestEmail} onChange={(e) => setGuestEmail(e.target.value.slice(0, 200))}
+                                        placeholder="Your email" autoComplete="email"
+                                        className="block w-full rounded-lg border border-slate-300 px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-emerald-600" />
+                                    <input type="tel" value={guestPhone} onChange={(e) => setGuestPhone(e.target.value.slice(0, 40))}
+                                        placeholder="Phone (optional)" autoComplete="tel"
+                                        className="block w-full rounded-lg border border-slate-300 px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-emerald-600" />
+                                </div>
+                                <button type="button" onClick={() => setShowSignIn(true)} className="mt-2 text-xs font-medium text-emerald-700 hover:underline">
+                                    Already have an account? Sign in
+                                </button>
+                            </>
+                        )}
+                    </div>
+                )}
+                {!(!signedIn && showSignIn) && (
+                <>
                     {provider.items.length > 1 && (
                         <fieldset className="mb-4">
                             <legend className="text-xs font-semibold uppercase tracking-wide text-slate-500">Choose</legend>
@@ -156,13 +204,14 @@ export default function StandaloneBookingPanel({ provider, signedIn, signInNext 
 
                     {error && <p className="mt-3 text-sm text-rose-700">{error}</p>}
 
-                    <button type="button" onClick={book} disabled={busy || !item || !date || !time}
+                    <button type="button" onClick={book} disabled={busy || !item || !date || !time || (!signedIn && (!guestName.trim() || !emailValid))}
                         className="mt-4 w-full rounded-xl bg-emerald-700 px-4 py-3 text-sm font-semibold text-white hover:bg-emerald-800 disabled:opacity-50">
                         {busy ? 'Starting…' : 'Book'}
                     </button>
                     <p className="mt-2 text-xs text-slate-400">Paid now, confirmed straight away. Galloway Getaways takes the payment on {provider.who}&apos;s behalf and is not the provider.</p>
-                </div>
-            )}
+                </>
+                )}
+            </div>
         </div>
     );
 }
