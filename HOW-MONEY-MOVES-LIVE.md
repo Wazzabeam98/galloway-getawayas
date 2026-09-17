@@ -269,19 +269,34 @@ is the thing to get right with the solicitor.
    a confirmed stay is charged 5% of the booking, taken off their next payout. It's real
    and it's live.
 
-5. **A fee I genuinely can't tell you the answer to from here: who pays Stripe's own
-   processing cut on an experience.** On a cottage it clearly comes out of our balance
-   (we're the merchant). On an experience — provider as merchant, our 10% as an
-   application fee — *who bears Stripe's ~1.5%+20p* depends on Connect settings I can't
-   read from the code alone. Worth confirming in the Stripe dashboard before you sign a
-   host term that promises the provider "keeps 90%," because they might keep 90% minus
-   Stripe's fee, or minus nothing, depending on that setting.
+5. **We bear Stripe's processing fee on every experience — the provider genuinely keeps
+   90%, and our real cut is under 10%.** Confirmed from the charge setup: an experience
+   is a *destination charge on the provider's behalf* — the payment is created on **our**
+   Stripe account, tagged `on_behalf_of` the provider (Express account), settling to
+   their account, with our 10% taken as an **application fee**. For that charge type
+   Stripe's rule is that **the platform pays the processing fee**, so the provider's
+   account receives a clean **90%** and Stripe's ~1.5% + 20p comes out of **our** 10%.
+   So it is safe to promise a provider "you keep 90%." What it costs us: our real take
+   is 10% *minus* Stripe's fee, and because that fee has a fixed 20p, there's a
+   **break-even around £2.35 — below it we lose money on the sale** (our 10% is smaller
+   than Stripe's fee), and up to roughly £15 our margin is thin. The provider's 90% is
+   unaffected at every price. (Not yet observable with real money — test mode, no
+   experiences sold — but the charge *type* in the code is what fixes this, and the
+   first real charge's Stripe balance line will show the fee debited to us. See "What
+   the 10% is actually worth" below.)
 
-6. **A live discrepancy already on the books.** One host on production shows owing us
-   **£0.05** with **no record behind it explaining why** — the fingerprint of a
-   book-keeping write that didn't land. It's five pence and almost certainly test
-   noise, but it's exactly the shape of "the books and Stripe disagree," sitting on
-   production right now.
+6. **A live discrepancy already on the books — identified, and safe to clear.** One
+   account on production shows owing us **£0.05** with **no ledger row behind it**.
+   Traced: it's **your own account** (liamworrall18@hotmail.com) — a test account whose
+   five bookings are all cancelled with £0 paid, no payout has ever run against it, and
+   nothing explains the 5p. It's leftover test noise (a balance nudge with no matching
+   record), it corresponds to no real money, and it is **safe to clear** — set that
+   account's owed balance back to zero (via `adjust_payout_balance(host, -0.05)` or a
+   one-line update). The reason to note it isn't the 5p: it's a live example of the
+   exact shape to worry about — an owed balance moving without a matching ledger row
+   (books and Stripe drifting). Harmless here on a test account; on a **real** host that
+   same pattern is a genuine discrepancy, and it's what the atomic-refund and payout
+   -record guards (one live, one still on a branch) exist to prevent.
 
 7. **Two ways the books and Stripe can still disagree, live today:** the balance-charge
    cancelled-stay case (flow 1) and the simultaneous-refunds case (flow 2). Both have
@@ -294,6 +309,33 @@ is the thing to get right with the solicitor.
    absence of any real providers and the host terms. It works today *only because
    nobody has turned it on.* When you do, that's a lot of untested money-movement going
    live at once — the argument for switching it on with one real provider first.
+
+---
+
+## What the 10% is actually worth — experience margin at real prices
+
+Because we absorb Stripe's fee (surprise 5), our real cut on an experience is **below
+10%**, and the fixed 20p bites hardest on cheap ones. At Stripe's standard UK card rate
+(1.5% + 20p):
+
+| Experience price | Provider keeps (a clean 90%) | Stripe's fee — **we** pay | **We** actually keep | Our effective take |
+|---|---|---|---|---|
+| **£5** add-on | £4.50 | ~£0.28 | **~£0.22** | ~4.5% |
+| **£15** class | £13.50 | ~£0.43 | **~£1.08** | ~7.2% |
+| **£40** session | £36.00 | ~£0.80 | **~£3.20** | ~8.0% |
+| **£150** photographer | £135.00 | ~£2.45 | **~£12.55** | ~8.4% |
+
+The provider keeps 90% at every price — the squeeze is all on us. **Below ~£2.35 we lose
+money on the sale.** A £5 add-on nets us ~22p, barely covering the support and risk of
+carrying it; from ~£15 up it's clearly worth taking, approaching a ceiling of ~8.5% on
+large ones. **International cards cost more** (Stripe ~2.5–3.25% + 20p), which thins
+every row and can push the cheapest into a loss.
+
+What this means for what you let providers list: the lever that keeps the "provider
+keeps 90%" promise intact is a **minimum listing price** (around £10–15), so every
+experience clears a sensible margin. Putting a floor on the *fee* instead (e.g. "10% or
+50p, whichever is greater") would protect us but break the 90% promise on small items —
+so if the 90% line matters, price the floor, not the fee.
 
 ---
 
