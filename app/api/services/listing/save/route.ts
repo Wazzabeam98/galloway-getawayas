@@ -218,7 +218,10 @@ export async function POST(request: Request) {
                 patch = {
                     slot_length_minutes: intOrNull(data.slot_length_minutes),
                     slot_turnaround_minutes: Math.max(0, Math.floor(Number(data.slot_turnaround_minutes) || 0)),
-                    slot_min_people: Math.max(1, Math.floor(Number(data.slot_min_people) || 1)),
+                    // slot_min_people is NOT written here any more — the minimum-per-
+                    // booking moved onto each per-person item (the menu section). The
+                    // provider-level column stays as the fallback for an item that
+                    // sets none; the editor no longer exposes a knob for it.
                 };
                 // Weekly hours template: replace. Dated exceptions (days off, partial
                 // blocks) stay in the diary — not touched here.

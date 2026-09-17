@@ -217,7 +217,6 @@ export default function ProviderListingEditor({ provider }: { provider: EditorPr
     }));
     const [slotLength, setSlotLength] = useState(p.slot_length_minutes != null ? Number(p.slot_length_minutes) : 60);
     const [turnaround, setTurnaround] = useState(Number(p.slot_turnaround_minutes || 0));
-    const [minPeople, setMinPeople] = useState(Math.max(1, Number(p.slot_min_people || 1)));
     const [leadDays, setLeadDays] = useState(Math.max(0, Number(p.lead_time_days || 0)));
     const [cancelHours, setCancelHours] = useState(Number(p.cancellation_window_hours ?? 48));
     const [horizonDays, setHorizonDays] = useState(Math.max(1, Number(p.booking_horizon_days || 90)));
@@ -732,11 +731,15 @@ export default function ProviderListingEditor({ provider }: { provider: EditorPr
                                                     )}
                                                 </div>
                                                 {/* Per-item seats — only for a per-person item on a
-                                                    slot. Each priced-per-person item can hold a
-                                                    different number and set its own smallest group;
-                                                    blank inherits the Booking-section default, so two
-                                                    items no longer have to share one capacity that
-                                                    means different things. */}
+                                                    slot. Each priced-per-person item sets how many it
+                                                    holds and the smallest a single booking can be;
+                                                    capacity blank inherits the Booking default, so two
+                                                    items no longer share one number that means
+                                                    different things. "Minimum per booking" is a floor
+                                                    on ONE booking's group size (book for at least N),
+                                                    not a session-won't-run threshold — that's what the
+                                                    route enforces. Only per-person, so a whole-session
+                                                    item never shows it. */}
                                                 {p.isSlot && r.unit === 'person' && (
                                                     <div className="flex flex-wrap gap-4 rounded-xl bg-slate-50 p-3">
                                                         <label className="text-sm text-slate-600">
@@ -747,10 +750,10 @@ export default function ProviderListingEditor({ provider }: { provider: EditorPr
                                                             </span>
                                                         </label>
                                                         <label className="text-sm text-slate-600">
-                                                            <span className="block text-xs font-semibold uppercase tracking-wide text-slate-500">Smallest group</span>
-                                                            <input className="mt-1 w-20 rounded-lg border border-slate-300 p-2 text-sm" type="number" min={1} placeholder={String(minPeople)} value={r.minPeople} onChange={(e) => setRow(i, { minPeople: e.target.value })} />
+                                                            <span className="block text-xs font-semibold uppercase tracking-wide text-slate-500">Minimum per booking</span>
+                                                            <input className="mt-1 w-20 rounded-lg border border-slate-300 p-2 text-sm" type="number" min={1} placeholder="1" value={r.minPeople} onChange={(e) => setRow(i, { minPeople: e.target.value })} />
                                                         </label>
-                                                        <p className="w-full text-xs text-slate-400">Leave blank to use your defaults — {maxGuests} people, minimum {minPeople}.</p>
+                                                        <p className="w-full text-xs text-slate-400">Capacity blank uses your default of {maxGuests}. A minimum of 2+ means a guest must book for at least that many; leave it blank for no minimum.</p>
                                                     </div>
                                                 )}
                                                 <textarea className={inputCls} rows={2} placeholder="Description (optional)" value={r.description} onChange={(e) => setRow(i, { description: e.target.value })} />
@@ -863,7 +866,6 @@ export default function ProviderListingEditor({ provider }: { provider: EditorPr
                         <SectionCard title="Availability" hint="Your weekly hours and session shape. A specific day off, or part of a day, is set in your diary." saving={savingKey === 'availability'}
                             onSave={() => run('availability', {
                                 slot_length_minutes: slotLength, slot_turnaround_minutes: turnaround,
-                                slot_min_people: minPeople,
                                 availability: hours
                                     .map((h, d) => ({ ...h, day_of_week: d }))
                                     .filter((h) => h.on && h.open && h.close && h.open < h.close)
@@ -903,14 +905,9 @@ export default function ProviderListingEditor({ provider }: { provider: EditorPr
                                     onChange={(v) => setTurnaround(Number(v))}
                                 />
                             </Field>
-                            {/* Only for a per-person item — the smallest group a
-                                session will run for. A whole-session-only provider
-                                sells the session whole, so a minimum-to-run is noise. */}
-                            {hasPerPersonItem && (
-                                <Field label="Smallest group you’ll run a session for" hint="A default minimum for a per-person booking — a per-person item can set its own. Leave it at 1 if a session runs for anyone.">
-                                    <Stepper value={minPeople} onChange={setMinPeople} min={1} max={Math.max(1, maxGuests)} />
-                                </Field>
-                            )}
+                            {/* The minimum-per-booking now lives on each per-person
+                                item in "What you offer" (a whole-session provider has
+                                no per-person minimum at all), so it's gone from here. */}
                             {/* Dated exceptions have one home — the diary, where a
                                 provider also sees their bookings. The editor owns the
                                 weekly template and points clearly to the diary rather
