@@ -41,6 +41,16 @@ export default function SlotDayView({
             </div>
         );
     }
+    // No open hours this weekday and nothing declared — a genuinely empty day,
+    // said plainly so it isn't mistaken for a bug.
+    if (rows.length === 0 && bands.length === 0) {
+        return (
+            <div className="rounded-2xl border border-dashed border-slate-300 bg-white p-8 text-center">
+                <p className="text-sm font-semibold text-slate-700">Nothing bookable on this day</p>
+                <p className="mt-1 text-sm text-slate-500">You’re not open this weekday. Add a one-off session, or set weekly hours in your listing.</p>
+            </div>
+        );
+    }
 
     return (
         <div className="relative flex" style={{ height }}>
@@ -84,16 +94,20 @@ export default function SlotDayView({
                     const low = violet && cap > 0 && taken > 0 && taken / cap < 0.5 && soon;
 
                     if (r.kind === 'free') {
+                        // An open slot is LIVE — a guest can book it now. It reads as
+                        // a defined, ready row (bold time, its capacity, an empty
+                        // fill track = 0 booked), not a faint "Free", so an open day
+                        // never looks like nothing's set up.
                         return (
                             <button key={r.time} type="button" onClick={() => onAddAt(r.time)}
-                                className={`group absolute inset-x-1 overflow-hidden rounded-lg border px-2 py-1 text-left transition hover:bg-slate-50 hover:shadow-sm ${isActive ? 'border-slate-900 bg-slate-50' : 'border-slate-200 bg-white hover:border-slate-400'}`}
+                                className={`group absolute inset-x-1 overflow-hidden rounded-lg border px-2 py-1 text-left transition hover:border-slate-400 hover:shadow-sm ${isActive ? 'border-slate-900 bg-white' : 'border-slate-300 bg-white'}`}
                                 style={{ top: top(r.startMin) + 1, height: h }}>
                                 <div className="flex items-center gap-1.5">
-                                    <span className="text-xs font-bold text-slate-500">{timeLabel(r.time + ':00')}</span>
-                                    <span className="truncate text-xs text-slate-400 opacity-0 transition group-hover:opacity-100">Add a session</span>
-                                    <span className="ml-auto text-[11px] font-semibold text-slate-400">{cap > 0 ? `${cap} of ${cap} free` : 'Free'}</span>
+                                    <span className="text-xs font-bold text-slate-800">{timeLabel(r.time + ':00')}</span>
+                                    <span className="truncate text-xs text-slate-400 opacity-0 transition group-hover:opacity-100">Add a class or block</span>
+                                    <span className="ml-auto flex-none rounded-full border border-slate-300 px-1.5 text-[11px] font-semibold text-slate-600">{cap > 0 ? `${cap} free` : 'Open'}</span>
                                 </div>
-                                {tall && <div className="mt-1 h-1.5 w-full rounded-full bg-slate-100" />}
+                                <div className="mt-1 h-1.5 w-full rounded-full bg-slate-100" />
                             </button>
                         );
                     }

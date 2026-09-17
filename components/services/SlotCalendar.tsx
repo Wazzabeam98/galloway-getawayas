@@ -69,10 +69,12 @@ export default function SlotCalendar({
                     const dayOff = shape?.dayOff;
 
                     const ticks = shape?.ticks || [];
+                    // An open-but-unbooked day says "N open" so it never reads as
+                    // empty; a booked day leads with the booked count.
                     const count = dayOff ? 'Day off'
                         : shape && (shape.booked || shape.added)
-                            ? [shape.booked ? `${shape.booked} booked` : '', shape.added ? `${shape.added} to fill` : '', (!shape.booked && !shape.added && shape.free) ? `${shape.free} free` : ''].filter(Boolean).join(' · ')
-                            : '';
+                            ? [shape.booked ? `${shape.booked} booked` : '', shape.added ? `${shape.added} to fill` : ''].filter(Boolean).join(' · ')
+                            : (shape && shape.free ? `${shape.free} open` : '');
 
                     let frame = 'bg-white ring-1 ring-slate-200 hover:ring-slate-300';
                     if (past) frame = 'bg-slate-50 ring-1 ring-transparent';

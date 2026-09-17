@@ -111,13 +111,16 @@ export default function ProviderSlotDashboard({ providerId, editHref }: { provid
 
     // ---- derived --------------------------------------------------------------
     // What a free slot could hold — resolved through seatConfig (item wins, else
-    // the provider default), so the calendar can't disagree with the guest panel
-    // or the book route. Private-only providers (a flat item, no per-person one)
-    // have no seat count — a free slot is a whole-session hire.
-    const personItems = items.filter((it) => it.active && it.price > 0 && String(it.unit) === 'person');
-    const freeCapacity = personItems.length
-        ? Math.max(...personItems.map((it) => Number(seatConfig(it.capacity, it.min_people, { slot_capacity: slotDefaults.capacity, slot_min_people: slotMin }).slot_capacity) || 0)) || null
-        : null;
+    // the provider default) across EVERY active priced item, so the calendar can't
+    // disagree with the guest panel or the book route. A whole-session provider
+    // still has a capacity (its slot_capacity — the party a private hire holds), so
+    // an open slot reads "N of N free" rather than a numberless "Free". Falls back
+    // to the provider default when no item resolves one.
+    const pricedItems = items.filter((it) => it.active && it.price > 0);
+    const itemCaps = pricedItems
+        .map((it) => Number(seatConfig(it.capacity, it.min_people, { slot_capacity: slotDefaults.capacity, slot_min_people: slotMin }).slot_capacity) || 0)
+        .filter((c) => c > 0);
+    const freeCapacity = (itemCaps.length ? Math.max(...itemCaps) : slotDefaults.capacity) || null;
     const dayInputs: DayInputs = {
         availabilityRows: availability,
         slotLen: slotDefaults.duration,
@@ -159,6 +162,19 @@ export default function ProviderSlotDashboard({ providerId, editHref }: { provid
 
     const fillLine = (r: DaySlotRow) => r.kind === 'private' ? 'Private hire — whole session' : `${r.seatsTaken || 0} of ${r.capacity || 0} booked${(r.seatsLeft || 0) > 0 ? ` · ${r.seatsLeft} left` : ' · full'}`;
 
+    // The one-line read on the day — so an open, unbooked day says "8 open" rather
+    // than looking like nothing's set up.
+    const openCount = dayData.rows.filter((r) => r.kind === 'free').length;
+    const daySummary = dayData.dayOff ? 'Day off — nothing bookable'
+        : (() => {
+            const parts: string[] = [];
+            if (dayData.booked) parts.push(`${dayData.booked} booked`);
+            if (dayData.added) parts.push(`${dayData.added} class${dayData.added === 1 ? '' : 'es'} to fill`);
+            if (openCount) parts.push(`${openCount} open`);
+            if (dayData.bands.length) parts.push(`${dayData.bands.length} blocked`);
+            return parts.length ? parts.join(' · ') : 'No hours set — nothing bookable';
+        })();
+
     // A shared builder block (used for a free-slot add and a multi-day bulk add).
     const Builder = (
         <div className="rounded-2xl border border-slate-200 bg-white p-4">
@@ -166,7 +182,7 @@ export default function ProviderSlotDashboard({ providerId, editHref }: { provid
                 <div className="flex items-center gap-2"><CalendarPlus className="h-4 w-4 text-violet-700" aria-hidden /><p className="text-sm font-bold text-slate-900">Add sessions</p></div>
                 <button type="button" onClick={() => { setPanel('none'); setSelected(new Set()); }} className="text-slate-400 hover:text-slate-700" aria-label="Close"><X className="h-4 w-4" /></button>
             </div>
-            <p className="mt-0.5 text-xs text-slate-500">{panel === 'bulk' ? `On ${builderDates.length} selected day${builderDates.length === 1 ? '' : 's'}.` : `On ${dateLabel(dayDate)}.`} A day that clashes is skipped.</p>
+            <p className="mt-0.5 text-xs text-slate-500">{panel === 'bulk' ? `On ${builderDates.length} selected day${builderDates.length === 1 ? '' : 's'}.` : `On ${dateLabel(dayDate)}.`} A dated class or one-off, on top of your weekly hours. A time that clashes is skipped.</p>
             <div className="mt-3 space-y-3">
                 <label className="block text-xs font-semibold uppercase tracking-wide text-slate-500">Time
                     <input type="time" value={dTime} onChange={(e) => setDTime(e.target.value)} className="mt-1 block rounded-xl border border-slate-300 px-3 py-2 text-sm font-normal normal-case tracking-normal text-slate-900" />
@@ -280,9 +296,15 @@ export default function ProviderSlotDashboard({ providerId, editHref }: { provid
                                 <button type="button" onClick={() => setDayDate((d) => shiftDayKey(d, 1))} className="flex h-8 w-8 items-center justify-center rounded-lg border border-slate-300 text-slate-600 hover:border-slate-400" aria-label="Next day"><ChevronRight className="h-4 w-4" /></button>
                             </div>
                             <div className="flex items-center gap-2">
-                                <button type="button" onClick={() => addAt(dayData.rows.find((r) => r.kind === 'free')?.time || '')} className="rounded-lg bg-violet-700 px-3 py-1.5 text-sm font-semibold text-white hover:bg-violet-800">+ Session</button>
+                                <button type="button" onClick={() => addAt('')} className="rounded-lg bg-violet-700 px-3 py-1.5 text-sm font-semibold text-white hover:bg-violet-800" title="A dated class or one-off on top of your weekly hours">+ One-off / class</button>
                                 <button type="button" disabled={busy === 'block'} onClick={() => toggleDayOff(dayDate, !dayData.dayOff)} className={`rounded-lg px-3 py-1.5 text-sm font-semibold disabled:opacity-50 ${dayData.dayOff ? 'bg-emerald-700 text-white hover:bg-emerald-800' : 'border border-slate-300 text-slate-700 hover:border-slate-500'}`}>{dayData.dayOff ? 'Reopen day' : 'Day off'}</button>
                             </div>
+                        </div>
+                        {/* The day's read at a glance — an open day says "N open",
+                            never mistaken for an empty one. */}
+                        <div className="mb-3 flex items-center gap-2 text-sm">
+                            <span className="font-semibold text-slate-700">{daySummary}</span>
+                            {openCount > 0 && <span className="text-slate-400">· your weekly hours are already bookable; the button adds a class or one-off on top</span>}
                         </div>
 
                         {/* Phone week strip */}
