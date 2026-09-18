@@ -61,6 +61,8 @@ type BookingWriteBack =
 function harness(opts: {
     bookingWriteBack: BookingWriteBack;
     dangling?: any;
+    refundThrows?: boolean;
+    refundStatus?: string;
 } = { bookingWriteBack: { data: [{ id: DUE.id }], error: null } }) {
     const inserted: any[] = [];
     const updated: any[] = [];
@@ -149,7 +151,8 @@ function harness(opts: {
             }
             if (path === '/refunds') {
                 refunds.push({ body, key });
-                return { id: 're_1', status: 'succeeded' };
+                if (opts.refundThrows) throw new Error('Stripe refund failed');
+                return { id: 're_1', status: opts.refundStatus || 'succeeded' };
             }
             return {};
         },
@@ -233,6 +236,50 @@ test('the round-trip is recorded — the charge succeeded and a refund against i
     assert.ok(refundRow, 'and the refund is on the ledger too, so Stripe and the books agree');
     assert.equal(refundRow.status, 'succeeded');
     assert.equal(refundRow.amount, 450);
+});
+
+// gap #2 (B, auditing fix #1): the reconcile refund had no guard. If it throws,
+// the money is charged against a cancelled stay and never returned, and the
+// cancelled booking drops out of the due query so nothing retries.
+test('a reconcile refund that fails is surfaced, and the charge is still recorded', async () => {
+    const { route, updated, inserted, logged } = harness({
+        bookingWriteBack: { data: [], error: null },
+        refundThrows: true,
+    });
+    const res: any = await route.GET(authorised());
+
+    // The charge really happened, so it is on the books either way — settled
+    // before the refund is attempted, so a failed refund cannot also lose the
+    // record that we took the money.
+    const settled = updated.filter((u) => u.table === 'payments' && u.patch.status === 'succeeded');
+    assert.equal(settled.length, 1, 'the charge is recorded even though the refund failed');
+
+    // No refund row, because no refund happened — the books must not claim one.
+    assert.equal(inserted.filter((r) => r.kind === 'refund').length, 0, 'no phantom refund row');
+
+    assert.equal(res.body.reconciled, 0, 'a failed refund is not a completed reconcile');
+    assert.equal(res.body.failed, 1, 'it is counted as a failure so the run reports it');
+
+    assert.ok(logged.some((m) => /URGENT/.test(m) && /refund FAILED/i.test(m)),
+        'the held, un-returned money is surfaced as loudly as the code can');
+    assert.ok(logged.some((m) => /balance-reconcile-/.test(m)),
+        'the replay key is named so a person can return it without a second refund');
+});
+
+test('a reconcile refund Stripe reports as failed is not read as one that happened', async () => {
+    // Not a throw — Stripe answered with a non-succeeded status. The result
+    // must be checked, not assumed, or the books record a refund that did not
+    // occur and the held money is never flagged.
+    const { route, inserted, logged } = harness({
+        bookingWriteBack: { data: [], error: null },
+        refundStatus: 'failed',
+    });
+    const res: any = await route.GET(authorised());
+
+    assert.equal(inserted.filter((r) => r.kind === 'refund').length, 0, 'no refund row for a refund that failed');
+    assert.equal(res.body.reconciled, 0);
+    assert.equal(res.body.failed, 1);
+    assert.ok(logged.some((m) => /URGENT/.test(m)), 'the held money is surfaced');
 });
 
 /* ---- 2. the booking write failed: leave the claim, replay the key -------- */

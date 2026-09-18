@@ -488,6 +488,14 @@ async function main() {
         check_in: dayOffset(-3), check_out: dayOffset(-1),
     });
 
+    // 31 — one fully-paid, confirmed stay that scenario 14c hits with several
+    // host goodwill refunds AT ONCE, to prove the refunded total is summed in
+    // the database and not lost when two refunds overlap.
+    const s31 = await createBooking(listingReady, guest, hostReady, {
+        label: 's31', total_price: 500, amount_paid: 500,
+        check_in: dayOffset(25), check_out: dayOffset(28),
+    });
+
     // 15 — guest cancels with the free window still open. Flexible is full
     // refund up to 1 day before.
     const s15 = await createBooking(listingFlexible, guest, hostReady, {
@@ -542,6 +550,33 @@ async function main() {
     // before settling leaves a dangling 'attempting' claim, and the next run
     // must replay the same idempotency key rather than charge a second time.
     const s29 = await depositBooking('s29', 'pm_card_visa', 80);
+
+    // 32-34 — deposit-paid, balance due today, saved card, on a Flexible
+    // listing far enough out that a cancel is a full refund. Crosscutting
+    // scenario 30 races a guest cancel against the balance charge on these, so
+    // there are several to give both orderings a chance to occur in one run.
+    const raceBookings = [];
+    const raceLabels = ['s32', 's33', 's34'];
+    for (let i = 0; i < raceLabels.length; i++) {
+        const label = raceLabels[i];
+        const card = await savedCard('pm_card_visa', label);
+        // Staggered dates so three confirmed stays on the one listing do not
+        // trip the no-overlap exclusion constraint.
+        const start = 45 + i * 5;
+        const b = await createBooking(listingFlexible, guest, hostReady, {
+            label,
+            total_price: 800, amount_paid: 200,
+            payment_status: 'deposit_paid', payment_plan: 'deposit',
+            // Not due yet, so the balance runs in the earlier scenarios leave
+            // them alone; scenario 30 makes them due the instant it races them.
+            deposit_amount: 200, balance_amount: 600, balance_due_date: dayOffset(10),
+            balance_attempts: 0,
+            check_in: dayOffset(start), check_out: dayOffset(start + 3),
+            stripe_customer_id: card.customerId,
+            stripe_payment_method_id: card.paymentMethodId,
+        });
+        raceBookings.push(b);
+    }
 
     /* ------------------------------------------------ checkout, 1, 2, 4, 5, 6 */
 
@@ -630,7 +665,8 @@ async function main() {
             s01: s01.id, s02: s02.id, s04: s04.id, s05: s05.id, s06: s06.id,
             s25: s25.id, s26: s26.id, s27a: s27a.id, s27b: s27b.id, s28: s28.id,
             s03: s03.id, s07: s07.id, s11: s11.id, s29: s29.id,
-            s12: s12.id, s13: s13.id, s14: s14.id, s15: s15.id, s16: s16.id,
+            s12: s12.id, s13: s13.id, s14: s14.id, s15: s15.id, s16: s16.id, s31: s31.id,
+            s32: raceBookings[0].id, s33: raceBookings[1].id, s34: raceBookings[2].id,
             s17: s17.id, s18: s18.id,
             s20: s20.id, s21: s21.id, s22: s22.id, s23: s23.id, s23b: s23b.id, s24: s24.id,
         },

@@ -380,6 +380,118 @@ async function main() {
             attemptsBefore + ' → ' + attemptsAfter);
     }
 
+    /* ---- 30: a guest cancel racing the balance charge, both orderings ---- */
+
+    // B's gap on the balance write-back: the cron and a guest cancel can commit
+    // in either order. If the cancel wins the CAS, the cron's charge lands on a
+    // cancelled row and reconciles (refunds) it. If the cron wins, the cancel
+    // refunded against the amount_paid it read BEFORE the balance was charged,
+    // and must surface that it did. Whichever way it falls, the books have to
+    // stay consistent and no refund at Stripe may be missing from the ledger.
+    // Fired for real against Stripe, on three bookings at once.
+
+    scenario('30', 'A guest cancel racing the balance charge stays consistent, whichever wins');
+
+    const raceIds = [bookings.s32, bookings.s33, bookings.s34];
+
+    async function post30(path, bodyObj) {
+        const res = await fetch(SITE + path, {
+            method: 'POST', headers: { 'content-type': 'application/json', cookie },
+            body: JSON.stringify(bodyObj),
+        });
+        return { status: res.status, body: await res.json().catch(() => ({})) };
+    }
+    async function cronRun30() {
+        const res = await fetch(SITE + '/api/cron/balance-charges', {
+            headers: { authorization: 'Bearer ' + env.CRON_SECRET },
+        });
+        return { status: res.status, body: await res.json().catch(() => ({})) };
+    }
+    async function stripeSum30(kind, intentIds) {
+        let pence = 0;
+        for (const id of intentIds) {
+            if (!id) continue;
+            if (kind === 'refunds') {
+                const list = await stripe.request('GET', '/refunds', { payment_intent: id, limit: 100 });
+                pence += (list.data || []).filter((r) => r.status === 'succeeded' || r.status === 'pending')
+                    .reduce((s, r) => s + r.amount, 0);
+            } else {
+                const pi = await stripe.request('GET', '/payment_intents/' + id).catch(() => null);
+                if (pi && pi.status === 'succeeded') pence += pi.amount;
+            }
+        }
+        return round2(pence / 100);
+    }
+    // The listing is Flexible and the stays are far out, so a cancel is a FULL
+    // refund: whatever the guest paid should come back. If it does not, they
+    // were left short and that must be surfaced.
+    async function flaggedShort(id) {
+        const rows = await db.select('error_log', '?select=id&message=ilike.*' + id + '*amount*paid*changed*');
+        return rows.length > 0;
+    }
+
+    // Make them due only now — the earlier balance runs (scenario 29) left
+    // them alone, so they are still deposit-paid and the race is genuine.
+    const today30 = new Date().toISOString().slice(0, 10);
+    for (const id of raceIds) {
+        await db.update('bookings', '?id=eq.' + id, { balance_due_date: today30 });
+    }
+
+    // The cron run and all three cancels, at the same instant.
+    const raceResults = await Promise.all([
+        cronRun30(),
+        ...raceIds.map((id) => post30('/api/bookings/cancel', { bookingId: id })),
+    ]);
+    console.log('   cron → ' + JSON.stringify(raceResults[0].body));
+    raceResults.slice(1).forEach((r, i) =>
+        console.log('   cancel ' + raceIds[i].slice(0, 8) + ' → ' + r.status + ' ' + JSON.stringify(r.body).slice(0, 80)));
+
+    let allClamped = true, allLedgerAgrees = true, allConsistent = true, allNoSilentLoss = true;
+    const orderings = [];
+    for (const id of raceIds) {
+        const b = await booking(id);
+        const intents = [b.stripe_payment_intent_id, b.balance_payment_intent_id];
+        const paid = round2(Number(b.amount_paid));
+        const refunded = round2(Number(b.amount_refunded));
+        const chargedAtStripe = await stripeSum30('charges', intents);
+        const refundedAtStripe = await stripeSum30('refunds', intents);
+        const ledgerRefunds = round2((await paymentsFor(id))
+            .filter((p) => p.kind === 'refund' && p.status === 'succeeded')
+            .reduce((s, p) => s + Number(p.amount) * 100, 0) / 100);
+
+        if (refunded > paid + 0.001) allClamped = false;
+        if (Math.abs(ledgerRefunds - refundedAtStripe) > 0.001) allLedgerAgrees = false;
+        // The booking's net (paid − refunded) must equal Stripe's net
+        // (charged − refunded). A reconcile round-trip nets to zero, so this
+        // holds whichever way the race fell.
+        if (Math.abs((paid - refunded) - (chargedAtStripe - refundedAtStripe)) > 0.001) allConsistent = false;
+
+        // The one that matters: a full-refund cancel must leave the guest
+        // out nothing — UNLESS the balance charged mid-cancel left the refund
+        // short, in which case that shortfall must have been surfaced, not
+        // silently kept. Either it netted to zero, or it was flagged.
+        const left = round2(paid - refunded);
+        const flagged = left > 0.01 ? await flaggedShort(id) : false;
+        if (left > 0.01 && !flagged) allNoSilentLoss = false;
+
+        let label;
+        if (paid <= 200.001) label = 'cancel won / reconciled (net 0)';
+        else if (left <= 0.01) label = 'cron won cleanly, full £' + refunded + ' returned';
+        else label = 'stale-read: £' + left + ' short, flagged=' + flagged;
+        orderings.push(label);
+        console.log('   ' + id.slice(0, 8) + ': paid £' + paid + ' refunded £' + refunded
+            + ' | stripe charged £' + chargedAtStripe + ' refunded £' + refundedAtStripe + '  [' + label + ']');
+    }
+
+    const raceBookings = await Promise.all(raceIds.map(booking));
+    check('every raced booking ends cancelled', raceBookings.every((b) => b.status === 'cancelled'),
+        raceBookings.map((b) => b.status).join(','));
+    check('never recorded more refunded than paid (the clamp holds)', allClamped);
+    check('every refund at Stripe is on the ledger — none swallowed', allLedgerAgrees);
+    check('the booking net equals the Stripe net, whichever ordering won', allConsistent);
+    check('no guest is left silently short — any shortfall is surfaced', allNoSilentLoss);
+    console.log('   observed: ' + orderings.join('  |  '));
+
     /* ------------------------------------------------------------ summary */
 
     console.log('\n' + '='.repeat(64));

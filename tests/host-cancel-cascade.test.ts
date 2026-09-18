@@ -58,6 +58,16 @@ test('a host cancel refunds the confirmed experience orders and tells the provid
         payments: { data: [], error: null },
     });
 
+    // amount_refunded now moves through record_booking_refund. The whole £700
+    // fits and amount_paid is unchanged under the lock, so nothing is clamped
+    // or flagged — this test is about the experience cascade, not the money.
+    (client as any).rpc = (_name: string, args: any) => ({
+        maybeSingle: async () => ({
+            data: { new_amount_refunded: args.p_amount, amount_paid: 700, applied: args.p_amount, payment_status: 'refunded' },
+            error: null,
+        }),
+    });
+
     const route = loadRoute(client, stripeCalls, emailTo);
     const res: any = await route.POST({ json: async () => ({ bookingId: 'b1', reason: 'cancelled' }) });
 
