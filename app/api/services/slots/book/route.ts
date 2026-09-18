@@ -608,6 +608,13 @@ export async function POST(request: Request) {
                         },
                     },
                 }],
+                // The agent-not-provider line, right above the Pay button so a guest
+                // genuinely reads it before paying — not only in the item description.
+                custom_text: {
+                    submit: {
+                        message: 'Galloway Getaways takes this payment on ' + business + '’s behalf. We are the booking agent, not the provider of the experience.',
+                    },
+                },
                 // Instant: captured on payment, not held. The slot IS the confirmation.
                 payment_intent_data: {
                     on_behalf_of: provider.stripe_account_id,
