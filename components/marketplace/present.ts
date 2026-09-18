@@ -5,10 +5,10 @@
 import type { MpProvider } from '@/lib/experiencesData';
 
 const UNIT_SUFFIX: Record<string, string> = {
-    person: ' pp', night: ' / night', hour: ' / hr', ticket: '', item: '', flat: '',
+    person: '/guest', night: ' / night', hour: ' / hr', ticket: '', item: '', flat: '',
 };
 
-/** "£45", "from £18", "from £20 pp" — the card's price line. */
+/** "£45", "from £18", "from £20/guest" — the card's price line. */
 export function fromPriceLabel(p: MpProvider): string {
     const min = p.priceFrom;
     const cheapest = [...p.items].sort((a, b) => a.price - b.price)[0];
@@ -88,7 +88,7 @@ export function whereLine(p: MpProvider): string | null {
     return locationTag(p);
 }
 
-/** The per-item price as the guest reads it on a listing: "£30 pp", "£45". */
+/** The per-item price as the guest reads it on a listing: "£30/guest", "£45". */
 export function itemPriceLabel(price: number, unit: string): string {
     const money = '£' + (Number.isInteger(price) ? String(price) : price.toFixed(2));
     return money + (UNIT_SUFFIX[unit] || '');
@@ -153,12 +153,33 @@ export function unitPhrase(unit: string): string {
 
 const DAYS = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
 const MONTHS = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
+const MONTHS_FULL = ['January', 'February', 'March', 'April', 'May', 'June', 'July', 'August', 'September', 'October', 'November', 'December'];
 
 /** yyyy-mm-dd → "Sat 14 Sep". */
 export function dateLabel(dateKey: string): string {
     const d = new Date(dateKey + 'T00:00:00Z');
     if (isNaN(d.getTime())) return dateKey;
     return DAYS[d.getUTCDay()] + ' ' + d.getUTCDate() + ' ' + MONTHS[d.getUTCMonth()];
+}
+
+/** yyyy-mm-dd → "September 2026", the month header Airbnb shows above its date list. */
+export function monthYearLabel(dateKey: string): string {
+    const d = new Date(String(dateKey).slice(0, 10) + 'T00:00:00Z');
+    if (isNaN(d.getTime())) return '';
+    return MONTHS_FULL[d.getUTCMonth()] + ' ' + d.getUTCFullYear();
+}
+
+/** The day heading over a day's times, Airbnb-style: "Today, 18 September",
+ *  "Tomorrow, 19 September", else "Fri, 19 September". `today` is a yyyy-mm-dd key
+ *  so the caller fixes the timezone (London). */
+export function dayHeadingLabel(dateKey: string, today: string, tomorrow: string): string {
+    const key = String(dateKey).slice(0, 10);
+    const d = new Date(key + 'T00:00:00Z');
+    if (isNaN(d.getTime())) return key;
+    const rest = d.getUTCDate() + ' ' + MONTHS_FULL[d.getUTCMonth()];
+    if (key === today) return 'Today, ' + rest;
+    if (key === tomorrow) return 'Tomorrow, ' + rest;
+    return DAYS[d.getUTCDay()] + ', ' + rest;
 }
 
 /** "HH:MM" → "2pm" / "2:30pm". */

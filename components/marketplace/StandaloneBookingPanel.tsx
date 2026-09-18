@@ -3,7 +3,7 @@
 import { useState } from 'react';
 import { itemPriceLabel } from '@/components/marketplace/present';
 import BookingDialog, { type BookArgs } from '@/components/marketplace/BookingDialog';
-import DatePreview, { type PreviewPick } from '@/components/marketplace/DatePreview';
+import DatePreview from '@/components/marketplace/DatePreview';
 
 interface PanelItem { id: string; name: string; price: number; unit: string; image: string | null; fulfilment?: string | null; capacity: number | null; minPeople: number | null; }
 interface PanelSession { date: string; time: string; row: { capacity: number; seats_taken: number; private: boolean } | null; }
@@ -26,6 +26,7 @@ export default function StandaloneBookingPanel({ provider }: {
     signInNext?: string;
 }) {
     const [open, setOpen] = useState(false);
+    const [initialDate, setInitialDate] = useState<string | null>(null);
     const [busy, setBusy] = useState(false);
     const [error, setError] = useState<string | null>(null);
 
@@ -54,8 +55,8 @@ export default function StandaloneBookingPanel({ provider }: {
         }
     }
 
-    // A one-tap book from a preview card — the cheapest option, its minimum party.
-    const pickAndBook = (p: PreviewPick) => book({ itemId: p.itemId, date: p.date, time: p.time, quantity: p.quantity });
+    // Tapping a day in the panel opens the dialog on that day's times.
+    const openOn = (d: string | null) => { setInitialDate(d); setOpen(true); };
 
     return (
         <div className="rounded-2xl bg-white p-5 shadow-sm ring-1 ring-slate-200/80">
@@ -79,12 +80,11 @@ export default function StandaloneBookingPanel({ provider }: {
                 providerMinPeople={provider.minPeople}
                 slotLength={provider.slotLength}
                 busy={busy}
-                onPick={pickAndBook}
-                onShowAll={() => setOpen(true)}
+                onPickDay={(d) => openOn(d)}
+                onShowAll={() => openOn(null)}
             />
 
             {error && <p className="mt-3 text-sm text-rose-700">{error}</p>}
-            <p className="mt-3 text-xs text-slate-400">You’ll enter your details at checkout. Galloway Getaways takes the payment on {provider.who}’s behalf and is not the provider.</p>
 
             {open && (
                 <BookingDialog
@@ -96,10 +96,11 @@ export default function StandaloneBookingPanel({ provider }: {
                     providerMinPeople={provider.minPeople}
                     providerFulfilment={provider.fulfilment}
                     isFood={provider.isFood}
+                    initialDate={initialDate}
                     busy={busy}
                     error={error}
                     onBook={book}
-                    onClose={() => { if (!busy) { setOpen(false); setError(null); } }}
+                    onClose={() => { if (!busy) { setOpen(false); setInitialDate(null); setError(null); } }}
                 />
             )}
         </div>
