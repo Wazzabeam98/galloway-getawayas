@@ -317,7 +317,7 @@ export default function ExperienceListingBody({
                         ) : null}
                     </div>
 
-                    <div className="lg:sticky lg:top-6 lg:self-start">{panel}</div>
+                    <div className="lg:sticky lg:top-24 lg:self-start">{panel}</div>
                 </div>
 
                 {/* Full-width below the two-column region: reviews first (capped

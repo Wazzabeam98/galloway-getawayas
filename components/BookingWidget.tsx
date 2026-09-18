@@ -442,7 +442,7 @@ export default function BookingWidget({
     }
 
     return (
-        <div className="bg-white border border-slate-200 rounded-2xl p-5 lg:sticky lg:top-6 shadow-[0_6px_16px_rgba(0,0,0,0.12)]">
+        <div className="bg-white border border-slate-200 rounded-2xl p-5 lg:sticky lg:top-24 shadow-[0_6px_16px_rgba(0,0,0,0.12)]">
             <div className="mb-4">
                 <span className="text-2xl font-bold text-slate-900">£{pricePerNight}</span>
                 <span className="text-slate-500"> / night</span>
