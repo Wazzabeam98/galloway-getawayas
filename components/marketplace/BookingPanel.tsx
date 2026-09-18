@@ -3,7 +3,7 @@
 import { useCallback, useMemo, useState } from 'react';
 import { unitMultiplies, orderTotal, MAX_ORDER_QUANTITY } from '@/lib/serviceOrders';
 import { seatConfig, generateSessions, resolvedDuration, type PartialBlock } from '@/lib/serviceSlots';
-import { itemPriceLabel, dateLabel } from '@/components/marketplace/present';
+import { itemPriceLabel, dateLabel, priceParts, cancellationBadge } from '@/components/marketplace/present';
 import { londonDayKey, shiftDayKey } from '@/lib/dayKey';
 import { CalendarDays } from 'lucide-react';
 import BookingDialog, { type BookArgs, type DialogOpenSession } from '@/components/marketplace/BookingDialog';
@@ -38,6 +38,8 @@ interface PanelProvider {
     slotBlocks?: string[];
     partialBlocks?: PartialBlock[];
     bookedBlocks?: PanelBookedBlock[];
+    cancellationHours?: number | null;
+    noRefund?: boolean | null;
 }
 
 const COMMON_ALLERGENS = ['Nuts', 'Peanuts', 'Gluten', 'Dairy', 'Eggs', 'Fish', 'Shellfish', 'Soya', 'Sesame'];
@@ -73,7 +75,9 @@ export default function BookingPanel({ bookingId, checkIn, checkOut, cottageGues
     const maxDate = lastNight(checkOut);
 
     const cheapest = provider.items.length ? provider.items.reduce((a, b) => (a.price <= b.price ? a : b)) : null;
-    const priceLabel = cheapest ? 'From ' + itemPriceLabel(cheapest.price, cheapest.unit) : '';
+    const priceParts_ = cheapest ? priceParts(cheapest.price, cheapest.unit) : null;
+    const showFrom = provider.items.length > 1;
+    const cancel = cancellationBadge(provider.cancellationHours, provider.noRefund);
 
     // Per-treatment (massage): the open-hours grid depends on the chosen item's
     // own length, so the dialog is handed a generator; a fixed-grid provider gets
@@ -153,7 +157,13 @@ export default function BookingPanel({ bookingId, checkIn, checkOut, cottageGues
         <div id="booking-panel" className="rounded-2xl bg-white p-5 shadow-sm ring-1 ring-slate-200/80">
             <div className="flex items-start justify-between gap-3">
                 <div>
-                    <div className="text-2xl font-semibold text-slate-900">{priceLabel}</div>
+                    {priceParts_ && (
+                        <div className="text-slate-900">
+                            <span className="text-xl font-semibold">{(showFrom ? 'From ' : '') + priceParts_.money}</span>
+                            {priceParts_.per && <span className="ml-1 text-sm font-normal text-slate-500">{priceParts_.per}</span>}
+                        </div>
+                    )}
+                    {isSlot && <p className={`mt-0.5 text-sm font-medium ${provider.noRefund ? 'text-slate-500' : 'text-emerald-700'}`}>{cancel}</p>}
                     <p className="mt-1 flex items-center gap-1.5 text-sm text-slate-500">
                         <CalendarDays className="h-4 w-4 flex-none text-slate-400" aria-hidden />
                         <span>For your stay · {dateLabel(checkIn.slice(0, 10))} – {dateLabel(maxDate)}</span>
@@ -169,7 +179,6 @@ export default function BookingPanel({ bookingId, checkIn, checkOut, cottageGues
 
             {isSlot ? (
                 <>
-                    <span className="mt-3 inline-flex items-center rounded-full bg-emerald-50 px-2.5 py-0.5 text-xs font-semibold text-emerald-800">Instant book — confirmed straight away</span>
                     <DatePreview
                         items={provider.items}
                         sessions={previewSessions}

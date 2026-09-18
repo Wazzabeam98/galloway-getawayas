@@ -189,8 +189,8 @@ export default function BookingDialog({
     const canBook = !!selected && !!item && (!travels || !!address.trim());
 
     return (
-        <div className="fixed inset-0 z-50 flex items-end justify-center bg-black/40 p-0 sm:items-center sm:p-4" role="dialog" aria-modal="true" aria-label="Show dates" onMouseDown={(e) => { if (e.target === e.currentTarget) onClose(); }}>
-            <div className="flex max-h-[92vh] w-full flex-col overflow-hidden rounded-t-2xl bg-white shadow-xl sm:max-w-lg sm:rounded-2xl">
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4" role="dialog" aria-modal="true" aria-label="Show dates" onMouseDown={(e) => { if (e.target === e.currentTarget) onClose(); }}>
+            <div className="flex max-h-[85vh] w-full max-w-lg flex-col overflow-hidden rounded-2xl bg-white shadow-xl">
                 {/* Header */}
                 <div className="flex items-center justify-between border-b border-slate-100 px-5 py-4">
                     <h2 className="text-lg font-bold text-slate-900">{calOpen ? 'Choose a date' : 'Choose a time'}</h2>
@@ -299,7 +299,6 @@ export default function BookingDialog({
                                             const ok = fits(o);
                                             const on = o.key === selKey;
                                             const declared = o.kind === 'declared';
-                                            const cap = o.row ? o.row.capacity : 0;
                                             const left = a.seatsLeft;
                                             const shared = !!item && perPerson;
                                             return (
@@ -314,8 +313,8 @@ export default function BookingDialog({
                                                         {!ok
                                                             ? <span className="text-slate-400">{a.reason === 'other-mode' ? 'Unavailable' : 'Full'}</span>
                                                             : shared
-                                                                ? <span className={left <= 2 ? 'text-amber-700' : declared ? 'text-violet-700' : 'text-emerald-700'}>{declared ? `${left} of ${cap} left` : left <= 3 ? `${left} left` : 'Available'}</span>
-                                                                : <span className="text-slate-400">{declared ? 'Available' : ''}</span>}
+                                                                ? <span className={left <= 2 ? 'text-amber-700' : declared ? 'text-violet-700' : 'text-emerald-700'}>{left} spot{left === 1 ? '' : 's'} available</span>
+                                                                : <span className="text-emerald-700">Available</span>}
                                                     </span>
                                                 </button>
                                             );

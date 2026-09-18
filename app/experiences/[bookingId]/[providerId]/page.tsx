@@ -60,6 +60,8 @@ export default async function ListingPage(
                         slotBlocks: p.slotBlocks,
                         partialBlocks: p.partialBlocks,
                         bookedBlocks: p.bookedBlocks,
+                        cancellationHours: p.cancellation_window_hours,
+                        noRefund: p.noRefund,
                     }}
                 />
             }
