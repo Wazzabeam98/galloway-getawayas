@@ -1,10 +1,11 @@
 {
-  "ranAt": "2026-09-10T10:59:59.612Z",
-  "target": "http://localhost:3190",
-  "account": "acct_1UB72uA4n4otlrBz",
-  "passed": 8,
+  "ranAt": "2026-09-18T21:49:11.274Z",
+  "target": "http://localhost:3000",
+  "account": "acct_1U6iMxAJfMhUsIVc",
+  "passed": 9,
   "failed": 0,
   "lostWebhookReconciled": true,
+  "lostWebhookRequestReconciled": true,
   "scenarios": [
     {
       "number": "1",
@@ -13,7 +14,7 @@
         {
           "description": "slot/book accepted and returned a Checkout url",
           "ok": true,
-          "detail": "HTTP 200 {\"ok\":true,\"url\":\"https://checkout.stripe.com/c/pay/cs_test_a1tmlIWAQgj6bOtGkepzn32IKVGw5gqsVEF0w7lVnuCAUpix562QccLMmo#fidnandhYHdWcXxpYCc%2FJ2FgY2RwaXEnKSdicGR"
+          "detail": "HTTP 200 {\"ok\":true,\"url\":\"https://checkout.stripe.com/c/pay/cs_test_a1r0fTQzGaxEqoJnnDZDBmAPte68rmte29JpacYRTkLH66ULb3EZwZ6mIu#fidnandhYHdWcXxpYCc%2FJ2FgY2RwaXEnKSdicyc"
         },
         {
           "description": "a holding order exists after booking",
@@ -43,7 +44,7 @@
         {
           "description": "the sweep ran",
           "ok": true,
-          "detail": "{\"ok\":true,\"released\":0,\"seatsReleased\":0,\"reconciled\":1,\"failures\":[]}"
+          "detail": "{\"ok\":true,\"released\":0,\"seatsReleased\":6,\"reconciled\":1,\"rebuilt\":0,\"failures\":[]}"
         },
         {
           "description": "the sweep reported a reconciliation",
@@ -58,7 +59,7 @@
         {
           "description": "STRIPE: the provider was paid — £6 fee to us, £54 transferred to them",
           "ok": true,
-          "detail": "fee=600 transfer=tr_3UE5hSPTBrEa7mS70gUgkxaa"
+          "detail": "fee=600 transfer=tr_3UH9cmPTBrEa7mS71HxYRvGn"
         },
         {
           "description": "STRIPE: the provider’s connected balance rose by ~£54 net",
@@ -73,7 +74,7 @@
         {
           "description": "APP: the order now carries the PaymentIntent id",
           "ok": true,
-          "detail": "pi_3UE5hSPTBrEa7mS70oN7UFtq"
+          "detail": "pi_3UH9cmPTBrEa7mS714SAQUco"
         },
         {
           "description": "APP: the seat was KEPT (seats_taken still 1 — not resold)",
@@ -92,7 +93,7 @@
         {
           "description": "services/order accepted and returned a Checkout url",
           "ok": true,
-          "detail": "HTTP 200 {\"ok\":true,\"url\":\"https://checkout.stripe.com/c/pay/cs_test_a1eGzmxzgywZ6RZINJd8WqgrYRF5107nf2x3e04QbUYkLVF0tjgOuedOGh#fidnandhYHdWcXxpYCc%2FJ2FgY2RwaXEnKSdicGR"
+          "detail": "HTTP 200 {\"ok\":true,\"url\":\"https://checkout.stripe.com/c/pay/cs_test_a1OEBwTxyPFm6EQmUpTVGiAZbyd9nrInzYZDpW3BKnEbqBXwh4suNefMxh#fidnandhYHdWcXxpYCc%2FJ2FgY2RwaXEnKSdicyc"
         },
         {
           "description": "the card is HELD not charged (requires_capture)",
@@ -117,7 +118,7 @@
         {
           "description": "the order carries the held PaymentIntent",
           "ok": true,
-          "detail": "pi_3UE5hYPTBrEa7mS71uXHCJXw"
+          "detail": "pi_3UH9dDPTBrEa7mS70aYNkmC2"
         },
         {
           "description": "orders/respond confirm succeeded",
@@ -170,7 +171,7 @@
         {
           "description": "STRIPE: fee £6, transfer to provider",
           "ok": true,
-          "detail": "fee=600 transfer=tr_3UE5hePTBrEa7mS70MvvNHvG"
+          "detail": "fee=600 transfer=tr_3UH9dJPTBrEa7mS71B87q5J2"
         },
         {
           "description": "the webhook was accepted (200)",
@@ -221,7 +222,7 @@
         {
           "description": "the sweep ran",
           "ok": true,
-          "detail": "{\"ok\":true,\"released\":1,\"seatsReleased\":0,\"reconciled\":0,\"failures\":[]}"
+          "detail": "{\"ok\":true,\"released\":1,\"seatsReleased\":0,\"reconciled\":0,\"rebuilt\":0,\"failures\":[]}"
         },
         {
           "description": "STRIPE: the hold was cancelled, nothing captured",
@@ -330,7 +331,7 @@
         {
           "description": "the sweep ran",
           "ok": true,
-          "detail": "{\"ok\":true,\"released\":0,\"seatsReleased\":1,\"reconciled\":0,\"failures\":[]}"
+          "detail": "{\"ok\":true,\"released\":0,\"seatsReleased\":1,\"reconciled\":0,\"rebuilt\":0,\"failures\":[]}"
         },
         {
           "description": "APP: the unpaid order is EXPIRED",
@@ -345,6 +346,75 @@
       ],
       "status": "passed",
       "note": "Reconciliation rescues only paid holds; a genuinely unpaid one still expires and frees its seat."
+    },
+    {
+      "number": "9",
+      "title": "Lost webhook on a request (chef): the sweep reconciles against Stripe — rebuilds the authorised order, hold kept",
+      "checks": [
+        {
+          "description": "the card is HELD not charged (requires_capture)",
+          "ok": true,
+          "detail": "requires_capture"
+        },
+        {
+          "description": "the mis-signed webhook was rejected (400)",
+          "ok": true,
+          "detail": "HTTP 400"
+        },
+        {
+          "description": "APP: no order row exists yet (the webhook never landed)",
+          "ok": true,
+          "detail": "0 row(s)"
+        },
+        {
+          "description": "the sweep ran",
+          "ok": true,
+          "detail": "{\"ok\":true,\"released\":0,\"seatsReleased\":0,\"reconciled\":0,\"rebuilt\":1,\"failures\":[]}"
+        },
+        {
+          "description": "the sweep reported a rebuild",
+          "ok": true,
+          "detail": "rebuilt=1"
+        },
+        {
+          "description": "APP: an order row now exists (rebuilt from Stripe)",
+          "ok": true,
+          "detail": "1 row(s)"
+        },
+        {
+          "description": "APP: it is authorised, awaiting the provider",
+          "ok": true,
+          "detail": "authorised"
+        },
+        {
+          "description": "APP: it carries the held PaymentIntent",
+          "ok": true,
+          "detail": "pi_3UH9eHPTBrEa7mS71vjJqjWx"
+        },
+        {
+          "description": "APP: it belongs to the right guest and provider",
+          "ok": true,
+          "detail": "65b92136-043e-4c36-ba26-becb99c338e2/dd6f2046-6501-4ccb-8f07-73878eca7f62"
+        },
+        {
+          "description": "STRIPE: the hold is still LIVE (requires_capture — nothing captured early, nothing lost)",
+          "ok": true,
+          "detail": "requires_capture"
+        },
+        {
+          "description": "the recovered order can be confirmed and captured",
+          "ok": true,
+          "detail": "HTTP 200 {\"ok\":true,\"status\":\"confirmed\"}"
+        },
+        {
+          "description": "STRIPE: the hold was captured on confirm (£180)",
+          "ok": true,
+          "detail": "true 18000"
+        }
+      ],
+      "status": "passed",
+      "note": "FIXED: a request order whose webhook was lost is rebuilt to authorised by the sweep — the provider is told and the held card is intact.",
+      "fixVerified": true
     }
   ]
 }

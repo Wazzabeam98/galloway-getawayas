@@ -1,11 +1,11 @@
 import { logError } from '@/lib/logError';
 import { guidanceFor } from '@/lib/disputes';
-import { sendEmail, sendEmailToAll, recipients, emailLayout, escapeHtml, formatDate, button, detailRows, SITE_URL } from '@/lib/email';
+import { sendEmail, sendEmailToAll, recipients, emailLayout, escapeHtml, formatDate, button, detailRows, noteCallout, allergyCallout, SITE_URL } from '@/lib/email';
 import { adminClient } from '@/lib/supabaseAdmin';
 import { NextResponse } from 'next/server';
 import { verifyStripeSignature, stripeRequest } from '@/lib/stripe';
-import { expiryFrom } from '@/lib/serviceOrders';
 import { displayName } from '@/lib/utils';
+import { createRequestOrderFromSession } from '@/lib/requestOrder';
 import { requestedWhen } from '@/lib/serviceEnquiries';
 import { tradeLabel } from '@/lib/serviceProviders';
 import { guestBookedEmail, hostNewBookingEmail, arrivalLineFrom } from '@/lib/bookingEmails';
@@ -254,34 +254,6 @@ export async function POST(request: Request) {
             const bookingId = (cs.metadata && cs.metadata.booking_id) || cs.client_reference_id;
             const kind = (cs.metadata && cs.metadata.kind) || 'full';
 
-            // A guest's note (allergies, access, a request), rendered as a
-            // bordered amber block so it can't be skimmed past in the email.
-            // Empty note → empty string, so it simply drops out of the body.
-            const noteCallout = (n: unknown): string => {
-                const text = n ? String(n).trim() : '';
-                if (!text) return '';
-                return '<div style="margin:16px 0;padding:12px 14px;border:1px solid #f59e0b;'
-                    + 'border-radius:10px;background:#fffbeb">'
-                    + '<div style="font-size:12px;font-weight:600;text-transform:uppercase;'
-                    + 'letter-spacing:0.04em;color:#92400e">From the guest</div>'
-                    + '<div style="margin-top:4px;color:#451a03;white-space:pre-line">'
-                    + escapeHtml(text) + '</div></div>';
-            };
-
-            // The allergy, louder than a note — red, and it leads the email. It is
-            // safety information a cook must not skim past, so it gets its own block
-            // rather than sitting inside the general note.
-            const allergyCallout = (a: unknown): string => {
-                const text = a ? String(a).trim() : '';
-                if (!text) return '';
-                return '<div style="margin:0 0 16px;padding:12px 14px;border:2px solid #e11d48;'
-                    + 'border-radius:10px;background:#fff1f2">'
-                    + '<div style="font-size:12px;font-weight:700;text-transform:uppercase;'
-                    + 'letter-spacing:0.04em;color:#9f1239">⚠ Allergy / dietary need</div>'
-                    + '<div style="margin-top:4px;color:#4c0519;white-space:pre-line">'
-                    + escapeHtml(text) + '</div></div>';
-            };
-
             // A SLOT BOOKING WAS PAID.
             //
             // The seat was already claimed when the guest started Checkout, and a
@@ -502,157 +474,13 @@ export async function POST(request: Request) {
             // the provider to confirm before a penny moves. Created here, once,
             // because the stripe_events unique insert above dedupes redelivery.
             if (kind === 'service_order') {
-                const md = cs.metadata || {};
-                const piId = (cs.payment_intent as string) || null;
-
-                const { data: prov } = await admin
-                    .from('service_providers')
-                    .select('id, business_name, trade, contact_email, exclusive_per_date')
-                    .eq('id', md.provider_id)
-                    .maybeSingle();
-
-                const { data: guest } = await admin
-                    .from('profiles')
-                    .select('id, full_name, preferred_name, show_full_name, phone, email')
-                    .eq('id', md.guest_id)
-                    .maybeSingle();
-
-                const guestsNum = md.guests ? parseInt(md.guests, 10) : null;
-                const nowIso = new Date().toISOString();
-
-                const { data: order, error: orderErr } = await admin
-                    .from('service_orders')
-                    .insert({
-                        provider_id: md.provider_id,
-                        // Always present today: the request shape is login-gated
-                        // (order/route.ts sets guest_id from the signed-in user).
-                        // When a standalone request-shape path lands, resolve the
-                        // guest here the same way the slot path does —
-                        // resolveGuestForPaidOrder(supabaseGuestStore(admin), {
-                        // typedEmail: md.guest_email, payerEmail: cs.customer_details?.email, ... }).
-                        guest_id: md.guest_id,
-                        listing_id: md.listing_id || null,
-                        booking_id: md.booking_id || null,
-                        trade: (prov && prov.trade) || null,
-                        // Snapshotted so the one-per-date unique index can see it
-                        // (an index predicate reads only its own table's columns).
-                        // A chef/masseur is exclusive; a baker is not.
-                        exclusive_per_date: !!(prov && prov.exclusive_per_date),
-                        service_date: md.service_date,
-                        guests: Number.isFinite(guestsNum as number) ? guestsNum : null,
-                        price: Number(cs.amount_total || 0) / 100,
-                        commission_rate: Number(md.commission_rate) || 0.10,
-                        status: 'authorised',
-                        // The provider is a third party — a chef, a photographer, a
-                        // guide — so this goes through displayName() like any other
-                        // place one person is named to another. It is stored rather
-                        // than looked up at read time, so an unhonoured value here
-                        // would outlive the setting that should have masked it.
-                        //
-                        // Empty fallback, stored as null: the provider's dashboard
-                        // omits the "For ..." line entirely when there is no name,
-                        // which reads better than "For Guest".
-                        guest_name: displayName(guest, '') || null,
-                        guest_phone: guest ? guest.phone : null,
-                        guest_email: (guest && guest.email) || cs.customer_details?.email || null,
-                        note: md.note || null,
-                        allergy: md.allergy || null,
-                        provider_business_name: prov ? prov.business_name : null,
-                        // The item the guest picked, snapshotted so editing or
-                        // removing it later never rewrites this order. item_id is
-                        // a soft link (null if that metadata is absent).
-                        item_id: md.item_id || null,
-                        item_name: md.item_name || null,
-                        item_description: md.item_description || null,
-                        // The unit, per-unit price and count, snapshotted with
-                        // the rest. price (above) is the total actually charged;
-                        // these say how it was arrived at — "6 × £30 per person".
-                        item_unit: md.item_unit || null,
-                        unit_price: md.unit_price ? Number(md.unit_price) : null,
-                        quantity: md.quantity ? parseInt(md.quantity, 10) : 1,
-                        stripe_payment_intent_id: piId,
-                        expires_at: expiryFrom(nowIso),
-                        created_at: nowIso,
-                    })
-                    .select('id')
-                    .single();
-
-                // LOST THE RACE (chefs only). Two guests can both pass the order
-                // route's pre-check for a chef in the same moment; the partial
-                // unique index (20260901160000, chef-only) then lets exactly one
-                // order exist and rejects the other. The rejected guest has a
-                // hold on their card for an evening that is no longer theirs —
-                // so release it here, at once, rather than leaving them held for
-                // 48 hours for nothing. A baker has no such index, so this never
-                // fires for them (they can take many orders per date).
-                //
-                // '23505' is a unique violation. Any other insert error is a
-                // real failure: the hold stands and the sweep will release it,
-                // and it is reported rather than swallowed.
-                if (orderErr) {
-                    const raced = (orderErr as any).code === '23505';
-                    if (raced && piId) {
-                        try {
-                            await stripeRequest(
-                                'POST',
-                                '/payment_intents/' + piId + '/cancel',
-                                undefined,
-                                'cancel-race-' + piId
-                            );
-                        } catch (cancelErr: any) {
-                            await logError('[webhook] could not release a raced service-order hold', cancelErr, { path: 'stripe/webhook' });
-                        }
-                    }
-                    await logError(
-                        raced
-                            ? '[webhook] a second guest lost the race for a slot; their hold was released'
-                            : '[webhook] a service order could not be recorded',
-                        orderErr,
-                        { path: 'stripe/webhook' }
-                    );
-                    // Handled: the event is dealt with, so Stripe should not retry.
-                    return NextResponse.json({ ok: true });
-                }
-
-                // Tell the provider there is something to answer. Best-effort:
-                // the hold is placed whether or not the mail sends, and the
-                // provider dashboard shows it regardless.
-                try {
-                    if (prov && prov.contact_email && order) {
-                        await sendEmail(
-                            prov.contact_email,
-                            md.allergy
-                                ? 'A guest would like to book you — allergy noted, please read'
-                                : (md.note ? 'A guest would like to book you — please read their note' : 'A guest would like to book you'),
-                            emailLayout(
-                                allergyCallout(md.allergy)
-                                + '<p>A guest staying nearby has asked to book '
-                                + escapeHtml(prov.business_name || 'your experience')
-                                + (md.item_name ? ' — ' + escapeHtml(String(md.item_name)) : '')
-                                + ' for ' + escapeHtml(String(md.service_date))
-                                + (Number.isFinite(guestsNum as number) && (guestsNum as number) > 0
-                                    ? ' · ' + guestsNum + ' guest' + (guestsNum === 1 ? '' : 's') : '')
-                                + '.</p>'
-                                + noteCallout(md.note)
-                                + '<p>Their card is held, not charged. Confirm within 48 hours to '
-                                + 'take the booking; if you can’t make it, decline and the hold is '
-                                + 'released.</p>'
-                                // Their dashboard, deep-linked to THIS request by
-                                // its id — the dashboard row carries a matching
-                                // anchor and highlights on arrival. The old link
-                                // carried ?section=orders, which nothing read, so
-                                // it dropped the chef on the trade picker; then a
-                                // bare /services/dashboard landed them on the whole
-                                // inbox. This lands on the request itself.
-                                + button(SITE_URL + '/services/dashboard#order-' + order.id, 'View the request'),
-                                'You’re receiving this because you offer experiences on Galloway Getaways.'
-                            )
-                        );
-                    }
-                } catch (mailErr) {
-                    console.error('[stripe/webhook] service order notify failed', mailErr);
-                }
-
+                // The order row is created here, from the completed session, the
+                // same one function the reconcile sweep calls when this webhook
+                // never lands — never two shapes drifting apart. It is idempotent
+                // on the held PaymentIntent, handles the chef one-per-date race
+                // (releasing the losing hold), and tells the provider. Every
+                // outcome is handled, so Stripe should not retry.
+                await createRequestOrderFromSession(admin, cs);
                 return NextResponse.json({ ok: true });
             }
 
