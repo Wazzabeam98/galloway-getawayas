@@ -342,6 +342,15 @@ export async function POST(request: Request) {
                     const confirmPatch: Record<string, any> = { status: 'confirmed', stripe_payment_intent_id: slotPi };
                     if (mintedGuestId) confirmPatch.guest_id = mintedGuestId;
 
+                    // With no contact form, the provider's view of who's coming comes
+                    // from what Stripe collected at Checkout — backfill the snapshot
+                    // for an anonymous order that carried none.
+                    if (wasAnonymous) {
+                        const payerName = (cs.customer_details && cs.customer_details.name) || null;
+                        if (!hold!.guest_email && (mintedEmail || payerEmail)) confirmPatch.guest_email = mintedEmail || payerEmail;
+                        if (!hold!.guest_name && payerName) confirmPatch.guest_name = payerName;
+                    }
+
                     const { data: slotRows, error: slotConfErr } = await admin
                         .from('service_orders')
                         .update(confirmPatch)

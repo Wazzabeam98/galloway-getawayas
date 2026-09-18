@@ -88,26 +88,20 @@ export async function POST(request: Request) {
 
         // THE AUTH GATE, now that we know the shape.
         //   against-a-stay  → must be the signed-in booking owner (checked below too)
-        //   standalone      → a signed-in guest OR a brand-new one giving contact
-        // A brand-new standalone guest is minted only after payment, so here we
-        // only need a real email to reach them and to key the account on.
+        //   standalone      → a signed-in guest OR a brand-new anonymous one
+        // A brand-new standalone guest gives NO contact here: Stripe Checkout
+        // collects the email, and the webhook mints (or reuses) the account from the
+        // Stripe-verified PAYER email. The accounts are passwordless, so the inbox is
+        // the only way in — there is no typed email to attach to a stranger's account.
         const anonymous = standalone && !user;
         if (!standalone && !user) {
             return NextResponse.json({ ok: false, error: 'Not signed in' }, { status: 401 });
         }
         if (anonymous) {
-            const looksLikeEmail = /^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(typedEmail);
-            if (!typedName || !looksLikeEmail) {
-                return NextResponse.json(
-                    { ok: false, error: 'Add your name and a valid email so we can send your booking.' },
-                    { status: 400 }
-                );
-            }
-            // Slow down anyone spinning up holds (and Checkout sessions) against
-            // the anonymous door — by address and by caller. Fail-open like the
-            // apply flow; a blocked attempt is not recorded.
+            // Still rate-limit the anonymous door by caller, so nobody spins up
+            // holds + Checkout sessions in bulk. Fail-open; a blocked attempt is not
+            // recorded.
             const verdict = await withinLimits([
-                { bucket: 'guest-slot-book:email', key: typedEmail, max: 8, windowMinutes: 60 },
                 { bucket: 'guest-slot-book:ip', key: callerAddress(request.headers), max: 20, windowMinutes: 60 },
             ]);
             if (!verdict.ok) {
