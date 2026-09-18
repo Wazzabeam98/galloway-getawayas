@@ -43,7 +43,9 @@ export async function GET(request: Request) {
         const { data: rows } = await admin
             .from('slot_sessions')
             .select('id, session_date, session_time, duration_minutes')
-            .eq('provider_id', providerId).eq('blocked', true)
+            // Only the provider's OWN blocks. Imported (feed-sourced) blocks are
+            // managed by removing the feed, not from this list.
+            .eq('provider_id', providerId).eq('blocked', true).is('source_feed_id', null)
             .order('session_date', { ascending: true }).order('session_time', { ascending: true });
 
         const blocks = (rows || []).map((r: any) => {
@@ -141,7 +143,10 @@ export async function DELETE(request: Request) {
 
         await admin.from('slot_sessions')
             .delete()
-            .eq('id', id).eq('provider_id', providerId).eq('blocked', true);
+            // Never a booking, and never an imported block — a feed-sourced block
+            // is removed by removing the feed, so a stray delete here can't punch a
+            // hole in what the provider's other calendar is holding back.
+            .eq('id', id).eq('provider_id', providerId).eq('blocked', true).is('source_feed_id', null);
         return NextResponse.json({ ok: true });
     } catch {
         return NextResponse.json({ ok: false, error: 'Could not remove that block' }, { status: 500 });

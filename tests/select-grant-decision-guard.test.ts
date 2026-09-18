@@ -50,6 +50,7 @@ const TABLES: TableDecision[] = [
             'status', 'submitted_at', 'subscription_status', 'trade', 'trial_ends_at', 'updated_at',
         ]),
         revoked: {
+            ical_token: 'calendar-export secret — subscribing to a provider\'s feed reads their bookings; read only via the service role in the experiences iCal export route, never browser-read (mirrors listings.ical_token)',
             owner_paused: 'owner\'s self-serve take-down flag; read and written only via the provider editor\'s service-role route (ownership-checked), never browser-read — isLiveToGuests consults it server-side',
             based_line: 'server-derived display line; the wizard dropped it from its select — unread by any browser',
             provider_name: 'retired with the "Your name" step; dropped from the wizard select — unread by any browser',

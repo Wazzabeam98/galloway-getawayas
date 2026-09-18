@@ -48,6 +48,7 @@ const PROVIDER_WRITABLE = new Set([
 // write. The value is the reason — the decision, in writing. Keep them true.
 const PLATFORM_ONLY: Record<string, string> = {
     id: 'primary key',
+    ical_token: 'system-generated calendar-export secret; never provider-written (default gen_random_uuid())',
     created_at: 'set once',
     kind: 'pricing shape — not the applicant’s to set; the column check refuses a bad row anyway',
     // Status / moderation lifecycle — a provider who could write status could approve
