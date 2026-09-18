@@ -68,13 +68,16 @@ export default function DatePreview({
 
     // One entry per day, in date order, keeping only days with a bookable time —
     // and only the first `limit` of them (a "Show all dates" link opens the rest).
+    // `spots` is how many places are still open across that day, so the card can
+    // say "8 spots available" rather than counting slots twice.
     const days = useMemo(() => {
-        const byDate = new Map<string, { date: string; times: typeof offerings; declaredTitle: string | null }>();
+        const byDate = new Map<string, { date: string; times: typeof offerings; declaredTitle: string | null; spots: number }>();
         for (const o of offerings) {
             const a = availOf(o);
             if (!a.possible || minQ > a.seatsLeft) continue;
-            const g = byDate.get(o.date) || { date: o.date, times: [] as typeof offerings, declaredTitle: null as string | null };
+            const g = byDate.get(o.date) || { date: o.date, times: [] as typeof offerings, declaredTitle: null as string | null, spots: 0 };
             g.times.push(o);
+            g.spots += a.seatsLeft;
             if (o.kind === 'declared' && o.title && !g.declaredTitle) g.declaredTitle = o.title;
             byDate.set(o.date, g);
         }
@@ -90,20 +93,22 @@ export default function DatePreview({
                 const declared = !!d.declaredTitle;
                 const first = d.times[0];
                 const n = d.times.length;
-                const summary = declared && d.declaredTitle
+                // A time hint under the date (never a count — the count read twice):
+                // a declared session's name, one plain time, or the earliest of many.
+                const hint = declared && d.declaredTitle
                     ? d.declaredTitle
                     : n === 1
                         ? timeRange(first.time, first.duration)
-                        : n + ' times · from ' + timeRange(first.time, first.duration).split('–')[0];
+                        : 'from ' + timeRange(first.time, first.duration).split('–')[0];
                 return (
                     <button key={d.date} type="button" disabled={busy} onClick={() => onPickDay(d.date)}
                         className={`flex w-full items-center justify-between gap-3 rounded-2xl border p-4 text-left transition disabled:opacity-60 ${declared ? 'border-violet-200 hover:border-violet-400' : 'border-slate-200 hover:border-slate-400'}`}>
                         <span className="min-w-0">
                             <span className="block whitespace-nowrap text-[15px] font-semibold text-slate-900">{dayHeadingLabel(d.date, today, tomorrow)}</span>
-                            <span className={`mt-0.5 block truncate text-sm ${declared ? 'text-violet-700' : 'text-slate-500'}`}>{summary}</span>
+                            <span className={`mt-0.5 block truncate text-sm ${declared ? 'text-violet-700' : 'text-slate-500'}`}>{hint}</span>
                         </span>
-                        <span className="flex-none whitespace-nowrap text-right text-xs font-semibold text-slate-500">
-                            {n === 1 ? '1 time' : n + ' times'}
+                        <span className={`flex-none whitespace-nowrap text-right text-xs font-semibold ${declared ? 'text-violet-700' : 'text-emerald-700'}`}>
+                            {d.spots} spot{d.spots === 1 ? '' : 's'} available
                         </span>
                     </button>
                 );

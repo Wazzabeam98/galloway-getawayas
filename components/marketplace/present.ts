@@ -5,16 +5,35 @@
 import type { MpProvider } from '@/lib/experiencesData';
 
 const UNIT_SUFFIX: Record<string, string> = {
-    person: '/guest', night: ' / night', hour: ' / hr', ticket: '', item: '', flat: '',
+    person: ' / guest', night: ' / night', hour: ' / hr', ticket: '', item: '', flat: '',
 };
 
-/** "£45", "from £18", "from £20/guest" — the card's price line. */
+/** "£45", "from £18", "from £20 / guest" — the card's price line. */
 export function fromPriceLabel(p: MpProvider): string {
     const min = p.priceFrom;
     const cheapest = [...p.items].sort((a, b) => a.price - b.price)[0];
     const suffix = cheapest ? (UNIT_SUFFIX[cheapest.unit] || '') : '';
     const money = '£' + (Number.isInteger(min) ? String(min) : min.toFixed(2));
     return (p.items.length > 1 ? 'from ' + money : money) + suffix;
+}
+
+/** The headline price split so the unit can be set smaller and grey, Airbnb-style:
+ *  money "£15" as the figure, per "/ guest" as quiet subtext (empty for a flat
+ *  price). The caller adds any "From " prefix. */
+export function priceParts(price: number, unit: string): { money: string; per: string } {
+    const money = '£' + (Number.isInteger(price) ? String(price) : price.toFixed(2));
+    return { money, per: (UNIT_SUFFIX[unit] || '').trim() };
+}
+
+/** The one-line cancellation policy for the booking panel, where Airbnb shows it:
+ *  "Free cancellation up to 1 day before", or "No refunds". */
+export function cancellationBadge(hours: number | null | undefined, noRefund: boolean | null | undefined): string {
+    if (noRefund) return 'No refunds';
+    const h = Math.max(0, Number(hours) || 0);
+    if (h <= 0) return 'Free cancellation';
+    const days = Math.round(h / 24);
+    const when = h % 24 === 0 ? days + ' day' + (days === 1 ? '' : 's') : h + ' hour' + (h === 1 ? '' : 's');
+    return 'Free cancellation up to ' + when + ' before';
 }
 
 /** The regions a provider covers, read as one line: "The Stewartry", "The
@@ -88,7 +107,7 @@ export function whereLine(p: MpProvider): string | null {
     return locationTag(p);
 }
 
-/** The per-item price as the guest reads it on a listing: "£30/guest", "£45". */
+/** The per-item price as the guest reads it on a listing: "£30 / guest", "£45". */
 export function itemPriceLabel(price: number, unit: string): string {
     const money = '£' + (Number.isInteger(price) ? String(price) : price.toFixed(2));
     return money + (UNIT_SUFFIX[unit] || '');
