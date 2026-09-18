@@ -1,108 +1,57 @@
 'use client';
 
-import { useMemo, useState } from 'react';
-import LoginModel from '@/components/auth/LoginModel';
+import { useState } from 'react';
 import { unitMultiplies } from '@/lib/serviceOrders';
-import { optionAvailability, bookingIsPrivate, seatConfig } from '@/lib/serviceSlots';
-import { itemPriceLabel, dateLabel, timeLabel } from '@/components/marketplace/present';
-import SessionTimetable, { type TimetableSession } from '@/components/marketplace/SessionTimetable';
+import { itemPriceLabel } from '@/components/marketplace/present';
+import BookingDialog, { type BookArgs } from '@/components/marketplace/BookingDialog';
 
 interface PanelItem { id: string; name: string; price: number; unit: string; image: string | null; fulfilment?: string | null; capacity: number | null; minPeople: number | null; }
 interface PanelSession { date: string; time: string; row: { capacity: number; seats_taken: number; private: boolean } | null; }
 interface PanelDeclared { id: string; date: string; time: string; duration: number; capacity: number; seats_taken: number; private: boolean; title: string | null; }
 
 // The standalone (bookingless) booking box for a SLOT experience — the public
-// listing's right column. Browsing is public; booking needs an account, so a
-// logged-out visitor gets a sign-in prompt here (LoginModel), never a checkout
-// that fails. The date is any day the provider is open within the horizon (the
-// sessions are already generated over it); a travelling session's address is
-// typed in (no cottage to pick). Rules unchanged: first name only, no address
-// before payment. The slots/book route re-validates everything server-side.
-export default function StandaloneBookingPanel({ provider, signedIn, signInNext }: {
+// listing's right column. Airbnb-shaped: a price and one "Show dates" button,
+// nothing before a choice is made. The button opens the availability dialog;
+// picking a slot goes straight to Stripe Checkout, which collects the email and
+// card. No contact form here — a brand-new guest's account is minted from the
+// Stripe payer email after payment (passwordless), so the inbox is the only way in.
+export default function StandaloneBookingPanel({ provider }: {
     provider: {
-        id: string; who: string; shape: string; fulfilment?: string | null;
+        id: string; who: string; shape: string; fulfilment?: string | null; isFood?: boolean;
         slotCapacity: number; minPeople: number; items: PanelItem[]; sessions: PanelSession[];
         declaredSessions?: PanelDeclared[];
     };
-    signedIn: boolean;
-    signInNext: string;
+    // Accepted for compatibility with the host page; booking no longer needs them.
+    signedIn?: boolean;
+    signInNext?: string;
 }) {
-    const declaredSessions = provider.declaredSessions || [];
-    const [itemId, setItemId] = useState<string>(provider.items.length === 1 ? provider.items[0].id : '');
-    const [date, setDate] = useState<string>('');
-    const [time, setTime] = useState<string>('');
-    const [qty, setQty] = useState<number>(1);
-    const [attendees, setAttendees] = useState<number>(1);
-    const [address, setAddress] = useState<string>('');
-    const [note, setNote] = useState<string>('');
+    const [open, setOpen] = useState(false);
     const [busy, setBusy] = useState(false);
     const [error, setError] = useState<string | null>(null);
-    // Contact for a logged-out (anonymous) booker. We keep accounts but create one
-    // silently from these details after payment, so we ask for them here rather
-    // than forcing a sign-up first. Ignored when signed in.
-    const [guestName, setGuestName] = useState<string>('');
-    const [guestEmail, setGuestEmail] = useState<string>('');
-    const [guestPhone, setGuestPhone] = useState<string>('');
-    // A returning guest can sign in instead — a convenience, not a requirement
-    // (booking with the same email lands them back on the same account anyway).
-    const [showSignIn, setShowSignIn] = useState(false);
 
-    const item = provider.items.find((i) => i.id === itemId) || null;
-    const perPerson = !!item && unitMultiplies(item.unit);
-    const travels = !!item && (String(item.fulfilment) === 'delivery' || (item.fulfilment == null && provider.fulfilment === 'delivery'));
+    const declaredSessions = provider.declaredSessions || [];
+    // "From £X per person" — the cheapest option, per-person where that's the unit.
+    const cheapest = provider.items.length ? provider.items.reduce((a, b) => (a.price <= b.price ? a : b)) : null;
+    const priceLabel = cheapest ? 'From ' + itemPriceLabel(cheapest.price, cheapest.unit) : '';
+    const hasAnything = provider.sessions.length > 0 || declaredSessions.length > 0;
 
-    const days = useMemo(() => Array.from(new Set(provider.sessions.map((s) => s.date))), [provider.sessions]);
-    const times = useMemo(() => provider.sessions.filter((s) => s.date === date), [provider.sessions, date]);
-    // Two lanes: the declared-session timetable (sessions-first) and the open-hours
-    // grid. A provider may have either or both.
-    const hasOpenHours = days.length > 0;
-    const hasDeclared = declaredSessions.length > 0;
-    const chosen = provider.sessions.find((s) => s.date === date && s.time === time) || null;
-
-    const priceLabel = item ? itemPriceLabel(item.price, item.unit) : (provider.items.length ? 'from ' + itemPriceLabel(Math.min(...provider.items.map((i) => i.price)), provider.items[0].unit) : '');
-
-    const emailValid = /^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(guestEmail.trim());
-
-    // One POST for both lanes — the open-hours grid and the declared-session
-    // timetable. Each lane supplies the concrete item/date/time/quantity; the
-    // contact + note + anonymous-account handling are the same.
-    async function submit(p: { itemId: string; date: string; time: string; quantity: number; attendees?: number; serviceAddress?: string }) {
-        if (!signedIn && (!guestName.trim() || !emailValid)) {
-            setError('Add your name and a valid email so we can send your booking.'); return;
-        }
+    async function book(args: BookArgs) {
         setBusy(true); setError(null);
         try {
             const res = await fetch('/api/services/slots/book', {
                 method: 'POST', headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify({
-                    providerId: provider.id, itemId: p.itemId, sessionDate: p.date, sessionTime: p.time,
-                    quantity: p.quantity, attendees: p.attendees,
-                    serviceAddress: p.serviceAddress, note: note.trim() || undefined,
-                    // Only sent when logged out; the server mints/reuses the account
-                    // from these once payment confirms.
-                    ...(signedIn ? {} : {
-                        guestName: guestName.trim(),
-                        guestEmail: guestEmail.trim(),
-                        guestPhone: guestPhone.trim() || undefined,
-                    }),
+                    providerId: provider.id, itemId: args.itemId, sessionDate: args.date, sessionTime: args.time,
+                    quantity: args.quantity, attendees: args.attendees,
+                    serviceAddress: args.serviceAddress, allergy: args.allergy,
                 }),
             });
             const j = await res.json();
             if (!res.ok || !j.ok || !j.url) { setError(j.error || 'Could not start that. Try again.'); setBusy(false); return; }
-            window.location.href = j.url;
+            window.location.href = j.url;   // → Stripe Checkout
         } catch {
             setError('Could not start that. Try again.'); setBusy(false);
         }
-    }
-
-    async function book() {
-        if (!item || !date || !time) { setError('Pick a treatment, a day and a time.'); return; }
-        if (travels && !address.trim()) { setError('Add the address the provider should come to.'); return; }
-        await submit({ itemId: item.id, date, time, quantity: perPerson ? qty : 1, attendees: perPerson ? undefined : attendees, serviceAddress: travels ? address.trim() : undefined });
-    }
-
-    function bookSession(a: { session: TimetableSession; itemId: string; quantity: number }) {
-        submit({ itemId: a.itemId, date: a.session.date, time: a.session.time, quantity: a.quantity });
     }
 
     return (
@@ -112,144 +61,28 @@ export default function StandaloneBookingPanel({ provider, signedIn, signInNext 
                 Instant book — confirmed straight away
             </span>
 
-            <div className="mt-4">
-                {!signedIn && (
-                    <div className="mb-4 rounded-xl border border-slate-200 bg-slate-50/70 p-3">
-                        <p className="text-sm text-slate-600">
-                            No account needed — we&apos;ll set one up from your details so {provider.who} can reach you and you can see your booking.
-                        </p>
-                        {showSignIn ? (
-                            <div className="mt-3">
-                                <LoginModel next={signInNext} />
-                                <button type="button" onClick={() => setShowSignIn(false)} className="mt-2 text-xs font-medium text-emerald-700 hover:underline">
-                                    ← Book as a guest instead
-                                </button>
-                            </div>
-                        ) : (
-                            <>
-                                <div className="mt-3 grid gap-2">
-                                    <input type="text" value={guestName} onChange={(e) => setGuestName(e.target.value.slice(0, 120))}
-                                        placeholder="Your name" autoComplete="name"
-                                        className="block w-full rounded-lg border border-slate-300 px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-emerald-600" />
-                                    <input type="email" value={guestEmail} onChange={(e) => setGuestEmail(e.target.value.slice(0, 200))}
-                                        placeholder="Your email" autoComplete="email"
-                                        className="block w-full rounded-lg border border-slate-300 px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-emerald-600" />
-                                    <input type="tel" value={guestPhone} onChange={(e) => setGuestPhone(e.target.value.slice(0, 40))}
-                                        placeholder="Phone (optional)" autoComplete="tel"
-                                        className="block w-full rounded-lg border border-slate-300 px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-emerald-600" />
-                                </div>
-                                <button type="button" onClick={() => setShowSignIn(true)} className="mt-2 text-xs font-medium text-emerald-700 hover:underline">
-                                    Already have an account? Sign in
-                                </button>
-                            </>
-                        )}
-                    </div>
-                )}
-                {!(!signedIn && showSignIn) && (
-                <>
-                    {/* Lane one: the declared-session timetable, sessions-first. */}
-                    {hasDeclared && (
-                        <div className="mb-4">
-                            <SessionTimetable sessions={declaredSessions} items={provider.items} providerMinPeople={provider.minPeople} busy={busy} onBook={bookSession} />
-                        </div>
-                    )}
-                    {hasDeclared && hasOpenHours && (
-                        <div className="mb-4 flex items-center gap-3 text-[11px] font-semibold uppercase tracking-wide text-slate-400">
-                            <span className="h-px flex-1 bg-slate-200" />Or book any open time<span className="h-px flex-1 bg-slate-200" />
-                        </div>
-                    )}
-                    {/* Lane two: the open-hours grid (only when the provider has weekly hours). */}
-                    {hasOpenHours && (
-                    <>
-                    {provider.items.length > 1 && (
-                        <fieldset className="mb-4">
-                            <legend className="text-xs font-semibold uppercase tracking-wide text-slate-500">Choose</legend>
-                            <div className="mt-2 space-y-1.5">
-                                {provider.items.map((it) => (
-                                    <label key={it.id} className={`flex cursor-pointer items-center gap-3 rounded-lg border p-2.5 ${itemId === it.id ? 'border-emerald-600 bg-emerald-50/60' : 'border-slate-200 hover:border-slate-300'}`}>
-                                        <input type="radio" name="item" checked={itemId === it.id} onChange={() => { setItemId(it.id); setTime(''); }} className="accent-emerald-600" />
-                                        <span className="min-w-0 flex-1 truncate text-sm font-medium text-slate-800">{it.name}</span>
-                                        <span className="whitespace-nowrap text-sm font-semibold text-slate-900">{itemPriceLabel(it.price, it.unit)}</span>
-                                    </label>
-                                ))}
-                            </div>
-                        </fieldset>
-                    )}
+            <button type="button" onClick={() => setOpen(true)} disabled={!hasAnything}
+                className="mt-4 w-full rounded-xl bg-slate-900 px-4 py-3 text-sm font-bold text-white hover:bg-black disabled:opacity-50">
+                {hasAnything ? 'Show dates' : 'No times available'}
+            </button>
+            <p className="mt-2 text-xs text-slate-400">You’ll enter your details at checkout. Galloway Getaways takes the payment on {provider.who}’s behalf and is not the provider.</p>
 
-                    {days.length === 0 ? (
-                        <p className="text-sm text-slate-500">No times available just now — check back soon.</p>
-                    ) : (
-                        <>
-                            <div className="text-xs font-semibold uppercase tracking-wide text-slate-500">Pick a day</div>
-                            <div className="mt-2 flex gap-1.5 overflow-x-auto pb-1">
-                                {days.map((d) => (
-                                    <button key={d} type="button" onClick={() => { setDate(d); setTime(''); }}
-                                        className={`whitespace-nowrap rounded-lg border px-3 py-2 text-sm font-medium ${date === d ? 'border-emerald-600 bg-emerald-50 text-emerald-800' : 'border-slate-200 text-slate-700 hover:border-slate-300'}`}>
-                                        {dateLabel(d)}
-                                    </button>
-                                ))}
-                            </div>
-
-                            {date && (
-                                <>
-                                    <div className="mt-3 text-xs font-semibold uppercase tracking-wide text-slate-500">Pick a time</div>
-                                    <div className="mt-1.5 flex flex-wrap gap-1.5">
-                                        {times.map((s) => {
-                                            const a = item ? optionAvailability(s.row, item.unit, seatConfig(item.capacity, item.minPeople, { slot_capacity: provider.slotCapacity, slot_min_people: provider.minPeople })) : null;
-                                            const left = a && s.row && bookingIsPrivate(item!.unit) === false && a.possible ? a.seatsLeft : null;
-                                            return (
-                                                <button key={s.time} type="button" onClick={() => setTime(s.time)}
-                                                    className={`rounded-lg border px-3 py-1.5 text-sm ${time === s.time ? 'border-emerald-600 bg-emerald-50 text-emerald-800' : 'border-slate-200 text-slate-700 hover:border-slate-300'}`}>
-                                                    {timeLabel(s.time)}{left != null && left <= 3 ? ` · ${left} left` : ''}
-                                                </button>
-                                            );
-                                        })}
-                                    </div>
-                                </>
-                            )}
-                        </>
-                    )}
-
-                    {item && perPerson && (
-                        <label className="mt-4 block">
-                            <span className="text-xs font-semibold uppercase tracking-wide text-slate-500">How many people</span>
-                            <input type="number" min={(item ? seatConfig(item.capacity, item.minPeople, { slot_capacity: provider.slotCapacity, slot_min_people: provider.minPeople }).slot_min_people : provider.minPeople) || 1} value={qty}
-                                onChange={(e) => setQty(Math.max(1, parseInt(e.target.value, 10) || 1))}
-                                className="mt-1 block w-24 rounded-lg border border-slate-300 px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-emerald-600" />
-                        </label>
-                    )}
-
-                    {item && travels && (
-                        <label className="mt-4 block">
-                            <span className="text-xs font-semibold uppercase tracking-wide text-slate-500">Where should they come?</span>
-                            <textarea value={address} onChange={(e) => setAddress(e.target.value.slice(0, 300))} rows={2}
-                                placeholder="The address the provider travels to"
-                                className="mt-1 block w-full resize-y rounded-lg border border-slate-300 px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-emerald-600" />
-                            <span className="mt-1 block text-xs text-slate-400">Shared with {provider.who} once your booking is paid.</span>
-                        </label>
-                    )}
-
-                    <label className="mt-4 block">
-                        <span className="text-xs font-semibold uppercase tracking-wide text-slate-500">Anything {provider.who} should know? <span className="font-normal normal-case tracking-normal text-slate-400">(optional)</span></span>
-                        <textarea value={note} onChange={(e) => setNote(e.target.value.slice(0, 500))} rows={2}
-                            placeholder="e.g. a special request" className="mt-1 block w-full resize-y rounded-lg border border-slate-300 px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-emerald-600" />
-                    </label>
-
-                    {error && <p className="mt-3 text-sm text-rose-700">{error}</p>}
-
-                    <button type="button" onClick={book} disabled={busy || !item || !date || !time || (!signedIn && (!guestName.trim() || !emailValid))}
-                        className="mt-4 w-full rounded-xl bg-emerald-700 px-4 py-3 text-sm font-semibold text-white hover:bg-emerald-800 disabled:opacity-50">
-                        {busy ? 'Starting…' : 'Book'}
-                    </button>
-                    <p className="mt-2 text-xs text-slate-400">Paid now, confirmed straight away. Galloway Getaways takes the payment on {provider.who}&apos;s behalf and is not the provider.</p>
-                    </>
-                    )}
-                    {/* An error from the timetable lane (declared-only) shows here,
-                        since the open-hours block above isn't rendered then. */}
-                    {error && !hasOpenHours && <p className="mt-3 text-sm text-rose-700">{error}</p>}
-                </>
-                )}
-            </div>
+            {open && (
+                <BookingDialog
+                    who={provider.who}
+                    items={provider.items}
+                    sessions={provider.sessions}
+                    declaredSessions={declaredSessions}
+                    providerCapacity={provider.slotCapacity}
+                    providerMinPeople={provider.minPeople}
+                    providerFulfilment={provider.fulfilment}
+                    isFood={provider.isFood}
+                    busy={busy}
+                    error={error}
+                    onBook={book}
+                    onClose={() => { if (!busy) { setOpen(false); setError(null); } }}
+                />
+            )}
         </div>
     );
 }
