@@ -132,3 +132,31 @@ test('no email at all throws rather than minting a nameless account', async () =
         /no email/
     );
 });
+
+// With the contact form gone, there is no typed email — resolution is PURELY on
+// the Stripe payer email. These lock the payer-only behaviour that replaces the
+// typed-vs-payer collision check.
+test('no typed email, payer already has an account → reuse it (returning guest)', async () => {
+    const { store, mints } = fakeStore({ 'payer@example.com': 'existing-5' });
+    const r = await resolveGuestForPaidOrder(store, { typedEmail: null, payerEmail: 'payer@example.com' });
+    assert.equal(r.id, 'existing-5');
+    assert.equal(r.created, false);
+    assert.equal(mints(), 0);
+});
+
+test('no typed email, payer has no account → create one on the payer email', async () => {
+    const { store, mints } = fakeStore();
+    const r = await resolveGuestForPaidOrder(store, { typedEmail: null, payerEmail: 'new@example.com' });
+    assert.equal(r.created, true);
+    assert.equal(r.email, 'new@example.com');
+    assert.equal(mints(), 1);
+});
+
+test('no typed email: two bookings on the same payer email land on ONE account', async () => {
+    const { store, mints } = fakeStore();
+    const first = await resolveGuestForPaidOrder(store, { typedEmail: null, payerEmail: 'repeat@example.com' });
+    const second = await resolveGuestForPaidOrder(store, { typedEmail: null, payerEmail: 'repeat@example.com' });
+    assert.equal(second.id, first.id);
+    assert.equal(second.created, false);
+    assert.equal(mints(), 1);
+});

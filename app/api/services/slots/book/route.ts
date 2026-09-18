@@ -88,26 +88,20 @@ export async function POST(request: Request) {
 
         // THE AUTH GATE, now that we know the shape.
         //   against-a-stay  → must be the signed-in booking owner (checked below too)
-        //   standalone      → a signed-in guest OR a brand-new one giving contact
-        // A brand-new standalone guest is minted only after payment, so here we
-        // only need a real email to reach them and to key the account on.
+        //   standalone      → a signed-in guest OR a brand-new anonymous one
+        // A brand-new standalone guest gives NO contact here: Stripe Checkout
+        // collects the email, and the webhook mints (or reuses) the account from the
+        // Stripe-verified PAYER email. The accounts are passwordless, so the inbox is
+        // the only way in — there is no typed email to attach to a stranger's account.
         const anonymous = standalone && !user;
         if (!standalone && !user) {
             return NextResponse.json({ ok: false, error: 'Not signed in' }, { status: 401 });
         }
         if (anonymous) {
-            const looksLikeEmail = /^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(typedEmail);
-            if (!typedName || !looksLikeEmail) {
-                return NextResponse.json(
-                    { ok: false, error: 'Add your name and a valid email so we can send your booking.' },
-                    { status: 400 }
-                );
-            }
-            // Slow down anyone spinning up holds (and Checkout sessions) against
-            // the anonymous door — by address and by caller. Fail-open like the
-            // apply flow; a blocked attempt is not recorded.
+            // Still rate-limit the anonymous door by caller, so nobody spins up
+            // holds + Checkout sessions in bulk. Fail-open; a blocked attempt is not
+            // recorded.
             const verdict = await withinLimits([
-                { bucket: 'guest-slot-book:email', key: typedEmail, max: 8, windowMinutes: 60 },
                 { bucket: 'guest-slot-book:ip', key: callerAddress(request.headers), max: 20, windowMinutes: 60 },
             ]);
             if (!verdict.ok) {
@@ -169,6 +163,25 @@ export async function POST(request: Request) {
         // enforcement here reads exactly what the panel greyed with.
         const seat = seatConfig(item.capacity, item.min_people, provider);
 
+        // A DECLARED session is a provider-created row that ALREADY EXISTS with its
+        // own capacity, length and mode (a "Sunday sauna social, 6pm, 8 places").
+        // When the guest books its (date, time) we ADOPT the row's values and book
+        // it through the same seat CAS as a join — never the establish branch, which
+        // would overwrite exactly the capacity and length the provider declared.
+        // It also makes the time legit without the weekly template.
+        const { data: declaredRow } = await admin.from('slot_sessions')
+            .select('id, capacity, duration_minutes, turnaround_minutes, private, seats_taken')
+            .eq('provider_id', provider.id).eq('session_date', sessionDate).eq('session_time', sessionTime)
+            .eq('declared', true).maybeSingle();
+        const isDeclared = !!declaredRow;
+        // The seat POOL for a declared session is the ROW's capacity (what the
+        // provider set on the declaration), NOT seatConfig's — so a declared session
+        // whose size differs from the provider default books to the row's size, not
+        // the default. The minimum stays the item/provider's.
+        const seatPool = isDeclared
+            ? { slot_capacity: Number(declaredRow.capacity), slot_min_people: seat.slot_min_people }
+            : seat;
+
         // The date must fall inside the stay, and the (date, time) must be a real
         // session the template offers and the provider has not blocked. Never
         // trust the pair from the browser.
@@ -194,8 +207,14 @@ export async function POST(request: Request) {
         // (sauna, a class). The reset gap is the provider's, folded into the block
         // the day reserves but never shown to the guest. Both come off the trusted
         // server rows, never the browser.
-        const durationMinutes = resolvedDuration(item, provider);
-        const turnaround = Math.max(0, Number(provider.slot_turnaround_minutes) || 0);
+        // For a declared session the length and reset gap are the ROW's own (frozen
+        // on the declaration), not recomputed from the item/provider.
+        const durationMinutes = isDeclared
+            ? Math.max(1, Number(declaredRow.duration_minutes) || 0)
+            : resolvedDuration(item, provider);
+        const turnaround = isDeclared
+            ? Math.max(0, Number(declaredRow.turnaround_minutes) || 0)
+            : Math.max(0, Number(provider.slot_turnaround_minutes) || 0);
 
         const [{ data: avail }, { data: blocks }, { data: partialRows }] = await Promise.all([
             admin.from('slot_availability').select('day_of_week, open_time, close_time').eq('provider_id', provider.id),
@@ -217,16 +236,22 @@ export async function POST(request: Request) {
         // provider (no per-item duration, turnaround 0) this is the identical grid as
         // before — step and fit both equal slot_length_minutes. Partial blocks drop
         // any covered start, the same rule the guest panel greyed with.
-        const legit = generateSessions(
-            (avail || []).map((a: any) => ({ day_of_week: a.day_of_week, open_time: a.open_time, close_time: a.close_time })),
-            (blocks || []).map((b: any) => b.blocked_date),
-            durationMinutes + turnaround,
-            sessionDate, sessionDate,
-            durationMinutes,
-            partialBlocks,
-        ).some((s) => s.time === sessionTime);
-        if (!legit) {
-            return NextResponse.json({ ok: false, error: 'That time isn’t available. Pick another.' }, { status: 400 });
+        // A declared session's own row is its authority — it holds a time the weekly
+        // template need not generate (a 6pm on a day with no weekly hours). So the
+        // template check is for open-hours bookings only; a declared booking is legit
+        // because the row exists (looked up above).
+        if (!isDeclared) {
+            const legit = generateSessions(
+                (avail || []).map((a: any) => ({ day_of_week: a.day_of_week, open_time: a.open_time, close_time: a.close_time })),
+                (blocks || []).map((b: any) => b.blocked_date),
+                durationMinutes + turnaround,
+                sessionDate, sessionDate,
+                durationMinutes,
+                partialBlocks,
+            ).some((s) => s.time === sessionTime);
+            if (!legit) {
+                return NextResponse.json({ ok: false, error: 'That time isn’t available. Pick another.' }, { status: 400 });
+            }
         }
 
         // The session must still be in the future.
@@ -242,18 +267,37 @@ export async function POST(request: Request) {
         // exactly as the minimum is: an unbookable listing must not be booked, not
         // quietly sold as something it isn't. (A flat item needs no capacity — a
         // private hire is always one booking — so this bites per-person only.)
-        if (unitMultiplies(unit) && !hasSlotCapacity(seat)) {
+        // A declared session's mode is the ROW's (shared class vs private one-off),
+        // and the item the guest picked must match it: a shared session takes a
+        // per-person item (seats from the pool), a private one takes the whole-
+        // session flat item. Refuse a mismatch up front rather than book the wrong
+        // mode.
+        if (isDeclared) {
+            const rowShared = !declaredRow.private;
+            if (rowShared !== unitMultiplies(unit)) {
+                return NextResponse.json(
+                    { ok: false, error: rowShared
+                        ? 'This session is booked per person — choose a per-person option.'
+                        : 'This session is a private hire — choose the whole-session option.' },
+                    { status: 400 }
+                );
+            }
+        }
+
+        if (unitMultiplies(unit) && !hasSlotCapacity(seatPool)) {
             return NextResponse.json(
                 { ok: false, error: 'This session isn’t bookable yet — the host hasn’t set how many people it’s for. Try again later or message them.' },
                 { status: 400 }
             );
         }
 
-        const capacity = sessionCapacity(seat, unit);
+        // A declared session's capacity is the ROW's own (adopted); an open-hours
+        // session pins it from the item/provider.
+        const capacity = isDeclared ? Number(declaredRow.capacity) : sessionCapacity(seat, unit);
         // A flat item is a private hire (takes the whole session); a per-person
-        // item is a seat at a shared table. The first booking pins the time to
-        // one mode; a later booking of the other kind is refused below.
-        const isPrivate = bookingIsPrivate(unit);
+        // item is a seat at a shared table. For a declared session the mode is the
+        // row's, validated to match the item just above.
+        const isPrivate = isDeclared ? !!declaredRow.private : bookingIsPrivate(unit);
         const quantity = orderQuantity(unit, unitMultiplies(unit) ? requestedQuantity : 1);
         if (quantity === null) {
             return NextResponse.json(
@@ -283,7 +327,8 @@ export async function POST(request: Request) {
         // who is staying there — so its head-count cap is the cottage alone.
         const bookedFulfilment = itemFulfilment(item, provider.fulfilment);
         const itemIsTravelling = bookedFulfilment === 'delivery';
-        const declaredCap = itemIsTravelling ? null : (Number(seat.slot_capacity) > 0 ? Number(seat.slot_capacity) : null);
+        // A declared private one-off caps its head count at the ROW's capacity.
+        const declaredCap = itemIsTravelling ? null : (Number(seatPool.slot_capacity) > 0 ? Number(seatPool.slot_capacity) : null);
         const attendeesCap = declaredCap != null ? Math.min(declaredCap, cottageGuests) : cottageGuests;
         const attendees = isPrivate
             ? Math.min(Math.max(1, Math.floor(Number(body.attendees) || 1)), attendeesCap)
@@ -295,7 +340,7 @@ export async function POST(request: Request) {
         // the unit multiplies (per person); a whole-group flat price is one
         // booking regardless of head count. Enforced HERE so a crafted request
         // that goes under the floor is rejected, exactly as the ceiling is.
-        const minPeople = unitMultiplies(unit) ? Math.max(1, Number(seat.slot_min_people) || 1) : 1;
+        const minPeople = unitMultiplies(unit) ? Math.max(1, Number(seatPool.slot_min_people) || 1) : 1;
         if (quantity < minPeople) {
             return NextResponse.json(
                 { ok: false, error: 'This session is for a minimum of ' + minPeople + ' people.' },
@@ -358,12 +403,16 @@ export async function POST(request: Request) {
             // below is what makes the take atomic, so a race that slips between
             // this read and the write loses the swap and retries. One source, not
             // a capacity rule re-implemented per surface.
-            const avail = optionAvailability(sess, unit, seat);
+            const avail = optionAvailability(sess, unit, seatPool);
             if (!avail.possible || quantity > avail.seatsLeft) {
                 return NextResponse.json({ ok: false, error: 'That time just filled up. Pick another.' }, { status: 409 });
             }
 
-            if (kind === 'establish') {
+            // A DECLARED row already carries its capacity, length and mode — never
+            // the establish branch (which would overwrite them). It takes the same
+            // seats-only CAS as a join, at zero seats or many, so joining the last
+            // place of a declared session is exactly as race-safe as any join.
+            if (!isDeclared && kind === 'establish') {
                 // Empty session: this booking sets the mode, the capacity AND the
                 // length it runs — duration_minutes and the frozen turnaround, from
                 // which the database computes the block interval this session holds.
@@ -559,6 +608,13 @@ export async function POST(request: Request) {
                         },
                     },
                 }],
+                // The agent-not-provider line, right above the Pay button so a guest
+                // genuinely reads it before paying — not only in the item description.
+                custom_text: {
+                    submit: {
+                        message: 'Galloway Getaways takes this payment on behalf of ' + business + '. We are the booking agent, not the provider of the experience.',
+                    },
+                },
                 // Instant: captured on payment, not held. The slot IS the confirmation.
                 payment_intent_data: {
                     on_behalf_of: provider.stripe_account_id,

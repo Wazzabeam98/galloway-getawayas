@@ -49,6 +49,7 @@ export default async function ListingPage(
                         isFood: p.isFood,
                         items: p.items,
                         sessions: p.sessions,
+                        declaredSessions: p.declaredSessions,
                         leadTimeDays: p.lead_time_days,
                         minPeople: p.minPeople,
                         slotCapacity: p.slotCapacity,
@@ -59,6 +60,8 @@ export default async function ListingPage(
                         slotBlocks: p.slotBlocks,
                         partialBlocks: p.partialBlocks,
                         bookedBlocks: p.bookedBlocks,
+                        cancellationHours: p.cancellation_window_hours,
+                        noRefund: p.noRefund,
                     }}
                 />
             }

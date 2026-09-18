@@ -45,6 +45,18 @@ export interface MpSession {
     // seat show their OWN availability rather than one shared "seats left".
     row: { capacity: number; seats_taken: number; private: boolean } | null;
 }
+// A DECLARED dated session — a provider-announced, capacity-bearing session with
+// an identity (title), shown to the guest as a timetable entry. Its capacity/mode
+// are the row's own; the panel reads seats-left off the same {capacity, seats_taken,
+// private} shape MpSession.row uses.
+export interface MpDeclaredSession {
+    id: string;
+    date: string; time: string;
+    duration: number;
+    capacity: number; seats_taken: number;
+    private: boolean;
+    title: string | null;
+}
 export interface MpProvider {
     id: string;
     // The listing's display name is the provider's Title (their Intro field).
@@ -130,6 +142,7 @@ export interface MpProvider {
     items: MpItem[];
     // Slots only: the next bookable sessions in the stay (future, seats left).
     sessions: MpSession[];
+    declaredSessions: MpDeclaredSession[];
     // Per-person slots only: the smallest group a single booking may be
     // (slot_min_people). 1 = no minimum. The panel floors the picker at it; the
     // booking route enforces it for real. Meaningless when the unit doesn't
@@ -300,7 +313,7 @@ async function shapeProviders(admin: any, fromKey: string, toKey: string): Promi
             .order('sort_order', { ascending: true }).order('created_at', { ascending: true }),
         admin.from('slot_availability').select('provider_id, day_of_week, open_time, close_time').in('provider_id', ids),
         admin.from('slot_blocks').select('provider_id, blocked_date').in('provider_id', ids),
-        admin.from('slot_sessions').select('provider_id, session_date, session_time, capacity, seats_taken, private, duration_minutes, turnaround_minutes, blocked, declared').in('provider_id', ids),
+        admin.from('slot_sessions').select('id, provider_id, session_date, session_time, capacity, seats_taken, private, duration_minutes, turnaround_minutes, blocked, declared, title').in('provider_id', ids),
         // Confirmed bookings taken, for the trust count. Only 'confirmed' counts:
         // a held request that was never answered, or one that was cancelled or
         // refunded, is not a booking someone completed with this provider.
@@ -339,6 +352,7 @@ async function shapeProviders(admin: any, fromKey: string, toKey: string): Promi
 
         const shape = shapeOf(p);
         let sessions: MpSession[] = [];
+        let declaredSessions: MpDeclaredSession[] = [];
         let providerPartialBlocks: PartialBlock[] = [];
         if (shape === 'slot') {
             // The pinned seat row for a (date,time), if anyone has booked it. A
@@ -394,8 +408,34 @@ async function shapeProviders(admin: any, fromKey: string, toKey: string): Promi
                 // minimum). A time still bookable by SOME option stays — the panel
                 // greys the options it isn't bookable by, per the shared helper.
                 .filter((s) => !sessionClosedToAll(s.row, closedItems, p));
-            // A slot with no bookable session in the stay is not shown.
-            if (!sessions.length) continue;
+
+            // The DECLARED dated sessions — the timetable lane. Same window
+            // (provToKey), future-time and closed-to-all filters as the open-hours
+            // grid, so a full declared session drops just like a full open slot. The
+            // panel reads seats-left per option from the same `row` shape the grid
+            // uses; its capacity/seats/mode are the row's own.
+            declaredSessions = (sessBy[p.id] || [])
+                .filter((s: any) => s.declared)
+                .filter((s: any) => s.session_date >= fromKey && s.session_date <= provToKey)
+                .filter((s: any) => new Date(s.session_date + 'T' + String(s.session_time).slice(0, 5) + ':00Z').getTime() > nowMs)
+                .filter((s: any) => !sessionClosedToAll(
+                    { capacity: Number(s.capacity), seats_taken: Number(s.seats_taken), private: Boolean(s.private) }, closedItems, p))
+                .map((s: any) => ({
+                    id: s.id,
+                    date: s.session_date,
+                    time: String(s.session_time).slice(0, 5),
+                    duration: Number(s.duration_minutes) || (Number(p.slot_length_minutes) || 60),
+                    capacity: Number(s.capacity),
+                    seats_taken: Number(s.seats_taken),
+                    private: Boolean(s.private),
+                    title: s.title || null,
+                }))
+                .sort((a: any, b: any) => (a.date + a.time < b.date + b.time ? -1 : 1));
+
+            // Shown when there's something to book — an open-hours session OR a
+            // declared one. A declared-only provider (empty weekly template) is
+            // dropped by the old open-hours-only check; keep it if it has a session.
+            if (!sessions.length && !declaredSessions.length) continue;
         }
 
         providers.push({
@@ -438,6 +478,7 @@ async function shapeProviders(admin: any, fromKey: string, toKey: string): Promi
             priceFrom: Math.min(...items.map((i: MpItem) => i.price)),
             items,
             sessions,
+            declaredSessions,
             // The per-person minimum for the whole slot (the helper applies it only
             // to a per-person option, so it is safe to pass for a 'both' provider
             // whose items[0] happens to be the flat one).

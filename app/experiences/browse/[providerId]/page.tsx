@@ -33,9 +33,10 @@ export default async function PublicListingPage({ params }: { params: { provider
             signedIn={!!user}
             signInNext={here}
             provider={{
-                id: p.id, who, shape: p.shape, fulfilment: p.fulfilment,
-                slotCapacity: p.slotCapacity, minPeople: p.minPeople,
-                items: p.items, sessions: p.sessions,
+                id: p.id, who, shape: p.shape, fulfilment: p.fulfilment, isFood: p.isFood,
+                slotCapacity: p.slotCapacity, minPeople: p.minPeople, slotLength: p.slotLength,
+                items: p.items, sessions: p.sessions, declaredSessions: p.declaredSessions,
+                cancellationHours: p.cancellation_window_hours, noRefund: p.noRefund,
             }}
         />
     ) : (

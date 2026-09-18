@@ -5,16 +5,31 @@
 import type { MpProvider } from '@/lib/experiencesData';
 
 const UNIT_SUFFIX: Record<string, string> = {
-    person: ' pp', night: ' / night', hour: ' / hr', ticket: '', item: '', flat: '',
+    person: ' / guest', night: ' / night', hour: ' / hr', ticket: '', item: '', flat: '',
 };
 
-/** "£45", "from £18", "from £20 pp" — the card's price line. */
+/** "£45", "from £18", "from £20 / guest" — the card's price line. */
 export function fromPriceLabel(p: MpProvider): string {
     const min = p.priceFrom;
     const cheapest = [...p.items].sort((a, b) => a.price - b.price)[0];
     const suffix = cheapest ? (UNIT_SUFFIX[cheapest.unit] || '') : '';
     const money = '£' + (Number.isInteger(min) ? String(min) : min.toFixed(2));
     return (p.items.length > 1 ? 'from ' + money : money) + suffix;
+}
+
+/** The headline price split so the unit can be set smaller and grey, Airbnb-style:
+ *  money "£15" as the figure, per "/ guest" as quiet subtext (empty for a flat
+ *  price). The caller adds any "From " prefix. */
+export function priceParts(price: number, unit: string): { money: string; per: string } {
+    const money = '£' + (Number.isInteger(price) ? String(price) : price.toFixed(2));
+    return { money, per: (UNIT_SUFFIX[unit] || '').trim() };
+}
+
+/** The one-line cancellation policy for the booking panel, where Airbnb shows it:
+ *  a plain "Free cancellation" (the window/detail lives in the Cancellation
+ *  section lower down), or "No refunds". */
+export function cancellationBadge(_hours: number | null | undefined, noRefund: boolean | null | undefined): string {
+    return noRefund ? 'No refunds' : 'Free cancellation';
 }
 
 /** The regions a provider covers, read as one line: "The Stewartry", "The
@@ -88,7 +103,7 @@ export function whereLine(p: MpProvider): string | null {
     return locationTag(p);
 }
 
-/** The per-item price as the guest reads it on a listing: "£30 pp", "£45". */
+/** The per-item price as the guest reads it on a listing: "£30 / guest", "£45". */
 export function itemPriceLabel(price: number, unit: string): string {
     const money = '£' + (Number.isInteger(price) ? String(price) : price.toFixed(2));
     return money + (UNIT_SUFFIX[unit] || '');
@@ -153,12 +168,33 @@ export function unitPhrase(unit: string): string {
 
 const DAYS = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
 const MONTHS = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
+const MONTHS_FULL = ['January', 'February', 'March', 'April', 'May', 'June', 'July', 'August', 'September', 'October', 'November', 'December'];
 
 /** yyyy-mm-dd → "Sat 14 Sep". */
 export function dateLabel(dateKey: string): string {
     const d = new Date(dateKey + 'T00:00:00Z');
     if (isNaN(d.getTime())) return dateKey;
     return DAYS[d.getUTCDay()] + ' ' + d.getUTCDate() + ' ' + MONTHS[d.getUTCMonth()];
+}
+
+/** yyyy-mm-dd → "September 2026", the month header Airbnb shows above its date list. */
+export function monthYearLabel(dateKey: string): string {
+    const d = new Date(String(dateKey).slice(0, 10) + 'T00:00:00Z');
+    if (isNaN(d.getTime())) return '';
+    return MONTHS_FULL[d.getUTCMonth()] + ' ' + d.getUTCFullYear();
+}
+
+/** The day heading over a day's times, Airbnb-style: "Today, 18 September",
+ *  "Tomorrow, 19 September", else "Fri, 19 September". `today` is a yyyy-mm-dd key
+ *  so the caller fixes the timezone (London). */
+export function dayHeadingLabel(dateKey: string, today: string, tomorrow: string): string {
+    const key = String(dateKey).slice(0, 10);
+    const d = new Date(key + 'T00:00:00Z');
+    if (isNaN(d.getTime())) return key;
+    const rest = d.getUTCDate() + ' ' + MONTHS_FULL[d.getUTCMonth()];
+    if (key === today) return 'Today, ' + rest;
+    if (key === tomorrow) return 'Tomorrow, ' + rest;
+    return DAYS[d.getUTCDay()] + ', ' + rest;
 }
 
 /** "HH:MM" → "2pm" / "2:30pm". */
@@ -171,13 +207,20 @@ export function timeLabel(t: string): string {
     return h + (m ? ':' + String(m).padStart(2, '0') : '') + ap;
 }
 
-/** The card hint for a slot: "Next: Sat 2pm" plus how many more. */
+/** The card hint for a slot: the next available time, and how many days have
+ *  availability — "Next: Sat 2pm · 12 dates". A count of every slot in the horizon
+ *  ("711 times") means nothing to a guest; distinct bookable days do. Merges the
+ *  open-hours sessions and the declared dated sessions. */
 export function nextSessionLabel(p: MpProvider): string {
-    if (!p.sessions || !p.sessions.length) return '';
-    const s = p.sessions[0];
-    const more = p.sessions.length - 1;
-    return 'Next: ' + DAYS[new Date(s.date + 'T00:00:00Z').getUTCDay()] + ' ' + timeLabel(s.time)
-        + (more > 0 ? '  ·  ' + (more + 1) + ' times' : '');
+    const rows = [
+        ...(p.sessions || []).map((s) => ({ date: s.date, time: s.time })),
+        ...(p.declaredSessions || []).map((d) => ({ date: d.date, time: d.time })),
+    ].sort((a, b) => (a.date + a.time < b.date + b.time ? -1 : 1));
+    if (!rows.length) return '';
+    const first = rows[0];
+    const days = new Set(rows.map((r) => r.date)).size;
+    const next = 'Next: ' + DAYS[new Date(first.date + 'T00:00:00Z').getUTCDay()] + ' ' + timeLabel(first.time);
+    return days > 1 ? next + '  ·  ' + days + ' dates' : next;
 }
 
 /**
