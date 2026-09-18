@@ -345,7 +345,7 @@ export default function BookingDialog({
                                                         {perPerson
                                                             ? <span className={left === 0 ? 'text-slate-400' : left <= 2 ? 'text-amber-700' : declared ? 'text-violet-700' : 'text-emerald-700'}>{left} spot{left === 1 ? '' : 's'} available</span>
                                                             : ok
-                                                                ? <span className="text-emerald-700">Available{providerCapacity > 0 ? ' · up to ' + providerCapacity : ''}</span>
+                                                                ? <span className="text-emerald-700">Available</span>
                                                                 : <span className="text-slate-400">Booked</span>}
                                                     </span>
                                                 </button>
