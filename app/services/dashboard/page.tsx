@@ -14,6 +14,7 @@ import ProviderDashboard, {
 } from '@/components/services/ProviderDashboard';
 import ProviderExperienceDashboard from '@/components/services/ProviderExperienceDashboard';
 import ProviderSlotDashboard from '@/components/services/ProviderSlotDashboard';
+import ExperienceIcalFeeds from '@/components/services/ExperienceIcalFeeds';
 import { shapeOf } from '@/lib/serviceSlots';
 
 export const metadata = {
@@ -118,6 +119,15 @@ export default async function ProviderDashboardPage() {
         // A slot provider's home is a CALENDAR — a three-column workspace that
         // wants room; everyone else keeps the narrow inbox column.
         const isSlotHome = shapeOf(provider) === 'slot';
+        // The export secret for the iCal panel — read here under the service role
+        // (it's revoked from the browser roles) and handed to the provider's own
+        // dashboard, the way the cottage editor shows a listing's export link.
+        let icalToken = '';
+        if (isSlotHome) {
+            const { data: tok } = await admin
+                .from('service_providers').select('ical_token').eq('id', provider.id).maybeSingle();
+            icalToken = (tok && tok.ical_token) || '';
+        }
         return (
             <div className={`${isSlotHome ? 'max-w-6xl' : 'max-w-2xl'} mx-auto px-4 sm:px-6 py-8 pb-24`}>
                 <div className="flex flex-wrap items-start justify-between gap-3">
@@ -141,7 +151,12 @@ export default async function ProviderDashboardPage() {
                     week, nothing to approve), everyone else the INBOX (requests
                     to confirm, then coming up). The payouts gate is in both. */}
                 {isSlotHome
-                    ? <ProviderSlotDashboard providerId={provider.id} editHref="/services/dashboard/listing" />
+                    ? (
+                        <div className="space-y-6">
+                            <ProviderSlotDashboard providerId={provider.id} editHref="/services/dashboard/listing" />
+                            <ExperienceIcalFeeds providerId={provider.id} icalToken={icalToken} />
+                        </div>
+                    )
                     : <ProviderExperienceDashboard providerId={provider.id} />}
             </div>
         );
