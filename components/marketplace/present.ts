@@ -192,13 +192,20 @@ export function timeLabel(t: string): string {
     return h + (m ? ':' + String(m).padStart(2, '0') : '') + ap;
 }
 
-/** The card hint for a slot: "Next: Sat 2pm" plus how many more. */
+/** The card hint for a slot: the next available time, and how many days have
+ *  availability — "Next: Sat 2pm · 12 dates". A count of every slot in the horizon
+ *  ("711 times") means nothing to a guest; distinct bookable days do. Merges the
+ *  open-hours sessions and the declared dated sessions. */
 export function nextSessionLabel(p: MpProvider): string {
-    if (!p.sessions || !p.sessions.length) return '';
-    const s = p.sessions[0];
-    const more = p.sessions.length - 1;
-    return 'Next: ' + DAYS[new Date(s.date + 'T00:00:00Z').getUTCDay()] + ' ' + timeLabel(s.time)
-        + (more > 0 ? '  ·  ' + (more + 1) + ' times' : '');
+    const rows = [
+        ...(p.sessions || []).map((s) => ({ date: s.date, time: s.time })),
+        ...(p.declaredSessions || []).map((d) => ({ date: d.date, time: d.time })),
+    ].sort((a, b) => (a.date + a.time < b.date + b.time ? -1 : 1));
+    if (!rows.length) return '';
+    const first = rows[0];
+    const days = new Set(rows.map((r) => r.date)).size;
+    const next = 'Next: ' + DAYS[new Date(first.date + 'T00:00:00Z').getUTCDay()] + ' ' + timeLabel(first.time);
+    return days > 1 ? next + '  ·  ' + days + ' dates' : next;
 }
 
 /**
