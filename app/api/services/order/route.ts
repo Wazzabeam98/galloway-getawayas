@@ -203,7 +203,7 @@ export async function POST(request: Request) {
             // genuinely reads it before authorising — not only in the item description.
             custom_text: {
                 submit: {
-                    message: 'Galloway Getaways takes this payment on ' + business + '’s behalf. We are the booking agent, not the provider of the experience.',
+                    message: 'Galloway Getaways takes this payment on behalf of ' + business + '. We are the booking agent, not the provider of the experience.',
                 },
             },
             payment_intent_data: {
