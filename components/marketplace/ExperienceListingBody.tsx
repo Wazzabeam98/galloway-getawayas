@@ -135,19 +135,19 @@ export default function ExperienceListingBody({
                         )}
 
                         {hasAbout && (
-                            <section className="mt-8 border-t border-slate-200 pt-8">
+                            <section className="mt-8 border-t border-slate-200 pt-6">
                                 <div className="flex items-center gap-3">
                                     {p.headshot ? (
                                         // eslint-disable-next-line @next/next/no-img-element
-                                        <img src={p.headshot} alt={who} className="h-14 w-14 flex-none rounded-full object-cover ring-1 ring-slate-200" />
+                                        <img src={p.headshot} alt={who} className="h-12 w-12 flex-none rounded-full object-cover ring-1 ring-slate-200" />
                                     ) : (
-                                        <span className="flex h-14 w-14 flex-none items-center justify-center rounded-full bg-slate-100 text-lg font-semibold text-slate-500">
+                                        <span className="flex h-12 w-12 flex-none items-center justify-center rounded-full bg-slate-100 text-base font-semibold text-slate-500">
                                             {who.slice(0, 1)}
                                         </span>
                                     )}
                                     <div className="min-w-0">
-                                        <h2 className="text-xl md:text-2xl font-bold text-slate-900">
-                                            {p.byline ? 'Meet ' + p.byline : 'Your host'}
+                                        <h2 className="text-lg md:text-xl font-bold text-slate-900">
+                                            {p.byline ? 'Hosted by ' + p.byline : 'Your host'}
                                         </h2>
                                         {years ? <p className="text-sm text-slate-500">{years}</p> : null}
                                     </div>
@@ -157,18 +157,18 @@ export default function ExperienceListingBody({
                                 </div>
 
                                 {p.qualifications ? (
-                                    <div className="mt-5">
+                                    <div className="mt-4">
                                         <h3 className="flex items-center gap-1.5 text-xs font-semibold uppercase tracking-wide text-slate-500">
                                             <Award className="h-3.5 w-3.5 text-slate-400" aria-hidden /> Training &amp; qualifications
                                         </h3>
-                                        <p className="mt-1.5 whitespace-pre-line text-[15px] leading-relaxed text-slate-700">{p.qualifications}</p>
+                                        <p className="mt-1 whitespace-pre-line text-[15px] leading-relaxed text-slate-700">{p.qualifications}</p>
                                     </div>
                                 ) : null}
 
                                 {p.recognition ? (
-                                    <div className="mt-5">
+                                    <div className="mt-4">
                                         <h3 className="text-xs font-semibold uppercase tracking-wide text-slate-500">Recognition</h3>
-                                        <p className="mt-1.5 whitespace-pre-line text-[15px] leading-relaxed text-slate-700">{p.recognition}</p>
+                                        <p className="mt-1 whitespace-pre-line text-[15px] leading-relaxed text-slate-700">{p.recognition}</p>
                                     </div>
                                 ) : null}
                             </section>
