@@ -158,6 +158,18 @@ export function groupSizeLabel(maxGuests: number | null | undefined): string | n
     return 'Up to ' + n + ' guests';
 }
 
+/** How many people a SLOT experience holds, from the capacity we already resolve
+ *  (not a hardcoded number). Reads the same for both shapes it might describe: a
+ *  per-person table where up to N seats can be booked, and a whole-session hire a
+ *  group of up to N takes together — "Up to 7 people". A one-seat provider (a
+ *  massage) reads "One person at a time". Null for 0/unknown. */
+export function capacityLabel(capacity: number | null | undefined): string | null {
+    const n = Math.floor(Number(capacity) || 0);
+    if (n <= 0) return null;
+    if (n === 1) return 'One person at a time';
+    return 'Up to ' + n + ' people';
+}
+
 /** The full "per person / per night" phrase for prose. Empty for flat. */
 export function unitPhrase(unit: string): string {
     const map: Record<string, string> = {

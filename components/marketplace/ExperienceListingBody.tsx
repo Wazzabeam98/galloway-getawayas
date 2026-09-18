@@ -3,8 +3,9 @@ import { shapeCue } from '@/lib/serviceSlots';
 import { dietaryOptionLabel, accessibilityLabel, parkingLabel, experienceCancellationOption, experienceAmenityLabel } from '@/lib/serviceProviders';
 import {
     itemPriceLabel, cancellationSentence, whereLine, locationTag, travelCoverageLine,
-    durationLabel, durationSummary, yearsLabel, groupSizeLabel,
+    durationLabel, durationSummary, yearsLabel, groupSizeLabel, capacityLabel,
 } from '@/components/marketplace/present';
+import { unitMultiplies } from '@/lib/serviceOrders';
 import { MapPin, Clock, Users, User, BadgeCheck, Award, Compass, Flag, Activity, Backpack, ShieldAlert, Accessibility, Car, Check } from 'lucide-react';
 import PhotoGallery from '@/components/PhotoGallery';
 import PropertyMap from '@/components/PropertyMap';
@@ -43,7 +44,20 @@ export default function ExperienceListingBody({
     const cancelPolicy = experienceCancellationOption(p.cancellation_window_hours, p.noRefund);
 
     const duration = durationSummary(p);
-    const groupSize = groupSizeLabel(p.maxGuests);
+    // How big a group the experience holds. A SLOT sizes it from the capacity we
+    // already resolve (item capacity, else the provider's slot_capacity) — the max
+    // across its per-person options, or the room itself for a whole-session-only
+    // provider — rather than maxGuests, which a slot leaves unset. Everyone else
+    // keeps the maxGuests-based "Up to N guests".
+    const isSlot = p.shape === 'slot';
+    const slotCapacity = (() => {
+        if (!isSlot) return 0;
+        const perPersonCaps = (p.items || [])
+            .filter((i) => unitMultiplies(i.unit))
+            .map((i) => Number(i.capacity) || Number(p.slotCapacity) || 0);
+        return perPersonCaps.length ? Math.max(...perPersonCaps) : (Number(p.slotCapacity) || 0);
+    })();
+    const groupSize = isSlot ? capacityLabel(slotCapacity) : groupSizeLabel(p.maxGuests);
     // The professional title reads as the host's "who they are" line, unless it
     // would only echo the heading (a provider whose business_name is still their
     // professional title, before a distinct listing name exists).
