@@ -35,7 +35,7 @@ export default async function PublicListingPage({ params }: { params: { provider
             provider={{
                 id: p.id, who, shape: p.shape, fulfilment: p.fulfilment,
                 slotCapacity: p.slotCapacity, minPeople: p.minPeople,
-                items: p.items, sessions: p.sessions,
+                items: p.items, sessions: p.sessions, declaredSessions: p.declaredSessions,
             }}
         />
     ) : (

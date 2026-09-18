@@ -5,9 +5,11 @@ import LoginModel from '@/components/auth/LoginModel';
 import { unitMultiplies } from '@/lib/serviceOrders';
 import { optionAvailability, bookingIsPrivate, seatConfig } from '@/lib/serviceSlots';
 import { itemPriceLabel, dateLabel, timeLabel } from '@/components/marketplace/present';
+import SessionTimetable, { type TimetableSession } from '@/components/marketplace/SessionTimetable';
 
 interface PanelItem { id: string; name: string; price: number; unit: string; image: string | null; fulfilment?: string | null; capacity: number | null; minPeople: number | null; }
 interface PanelSession { date: string; time: string; row: { capacity: number; seats_taken: number; private: boolean } | null; }
+interface PanelDeclared { id: string; date: string; time: string; duration: number; capacity: number; seats_taken: number; private: boolean; title: string | null; }
 
 // The standalone (bookingless) booking box for a SLOT experience — the public
 // listing's right column. Browsing is public; booking needs an account, so a
@@ -20,10 +22,12 @@ export default function StandaloneBookingPanel({ provider, signedIn, signInNext 
     provider: {
         id: string; who: string; shape: string; fulfilment?: string | null;
         slotCapacity: number; minPeople: number; items: PanelItem[]; sessions: PanelSession[];
+        declaredSessions?: PanelDeclared[];
     };
     signedIn: boolean;
     signInNext: string;
 }) {
+    const declaredSessions = provider.declaredSessions || [];
     const [itemId, setItemId] = useState<string>(provider.items.length === 1 ? provider.items[0].id : '');
     const [date, setDate] = useState<string>('');
     const [time, setTime] = useState<string>('');
@@ -49,15 +53,20 @@ export default function StandaloneBookingPanel({ provider, signedIn, signInNext 
 
     const days = useMemo(() => Array.from(new Set(provider.sessions.map((s) => s.date))), [provider.sessions]);
     const times = useMemo(() => provider.sessions.filter((s) => s.date === date), [provider.sessions, date]);
+    // Two lanes: the declared-session timetable (sessions-first) and the open-hours
+    // grid. A provider may have either or both.
+    const hasOpenHours = days.length > 0;
+    const hasDeclared = declaredSessions.length > 0;
     const chosen = provider.sessions.find((s) => s.date === date && s.time === time) || null;
 
     const priceLabel = item ? itemPriceLabel(item.price, item.unit) : (provider.items.length ? 'from ' + itemPriceLabel(Math.min(...provider.items.map((i) => i.price)), provider.items[0].unit) : '');
 
     const emailValid = /^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(guestEmail.trim());
 
-    async function book() {
-        if (!item || !date || !time) { setError('Pick a treatment, a day and a time.'); return; }
-        if (travels && !address.trim()) { setError('Add the address the provider should come to.'); return; }
+    // One POST for both lanes — the open-hours grid and the declared-session
+    // timetable. Each lane supplies the concrete item/date/time/quantity; the
+    // contact + note + anonymous-account handling are the same.
+    async function submit(p: { itemId: string; date: string; time: string; quantity: number; attendees?: number; serviceAddress?: string }) {
         if (!signedIn && (!guestName.trim() || !emailValid)) {
             setError('Add your name and a valid email so we can send your booking.'); return;
         }
@@ -66,9 +75,9 @@ export default function StandaloneBookingPanel({ provider, signedIn, signInNext 
             const res = await fetch('/api/services/slots/book', {
                 method: 'POST', headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify({
-                    providerId: provider.id, itemId: item.id, sessionDate: date, sessionTime: time,
-                    quantity: perPerson ? qty : 1, attendees: perPerson ? undefined : attendees,
-                    serviceAddress: travels ? address.trim() : undefined, note: note.trim() || undefined,
+                    providerId: provider.id, itemId: p.itemId, sessionDate: p.date, sessionTime: p.time,
+                    quantity: p.quantity, attendees: p.attendees,
+                    serviceAddress: p.serviceAddress, note: note.trim() || undefined,
                     // Only sent when logged out; the server mints/reuses the account
                     // from these once payment confirms.
                     ...(signedIn ? {} : {
@@ -84,6 +93,16 @@ export default function StandaloneBookingPanel({ provider, signedIn, signInNext 
         } catch {
             setError('Could not start that. Try again.'); setBusy(false);
         }
+    }
+
+    async function book() {
+        if (!item || !date || !time) { setError('Pick a treatment, a day and a time.'); return; }
+        if (travels && !address.trim()) { setError('Add the address the provider should come to.'); return; }
+        await submit({ itemId: item.id, date, time, quantity: perPerson ? qty : 1, attendees: perPerson ? undefined : attendees, serviceAddress: travels ? address.trim() : undefined });
+    }
+
+    function bookSession(a: { session: TimetableSession; itemId: string; quantity: number }) {
+        submit({ itemId: a.itemId, date: a.session.date, time: a.session.time, quantity: a.quantity });
     }
 
     return (
@@ -128,6 +147,20 @@ export default function StandaloneBookingPanel({ provider, signedIn, signInNext 
                 )}
                 {!(!signedIn && showSignIn) && (
                 <>
+                    {/* Lane one: the declared-session timetable, sessions-first. */}
+                    {hasDeclared && (
+                        <div className="mb-4">
+                            <SessionTimetable sessions={declaredSessions} items={provider.items} providerMinPeople={provider.minPeople} busy={busy} onBook={bookSession} />
+                        </div>
+                    )}
+                    {hasDeclared && hasOpenHours && (
+                        <div className="mb-4 flex items-center gap-3 text-[11px] font-semibold uppercase tracking-wide text-slate-400">
+                            <span className="h-px flex-1 bg-slate-200" />Or book any open time<span className="h-px flex-1 bg-slate-200" />
+                        </div>
+                    )}
+                    {/* Lane two: the open-hours grid (only when the provider has weekly hours). */}
+                    {hasOpenHours && (
+                    <>
                     {provider.items.length > 1 && (
                         <fieldset className="mb-4">
                             <legend className="text-xs font-semibold uppercase tracking-wide text-slate-500">Choose</legend>
@@ -209,6 +242,11 @@ export default function StandaloneBookingPanel({ provider, signedIn, signInNext 
                         {busy ? 'Starting…' : 'Book'}
                     </button>
                     <p className="mt-2 text-xs text-slate-400">Paid now, confirmed straight away. Galloway Getaways takes the payment on {provider.who}&apos;s behalf and is not the provider.</p>
+                    </>
+                    )}
+                    {/* An error from the timetable lane (declared-only) shows here,
+                        since the open-hours block above isn't rendered then. */}
+                    {error && !hasOpenHours && <p className="mt-3 text-sm text-rose-700">{error}</p>}
                 </>
                 )}
             </div>

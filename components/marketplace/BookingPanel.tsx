@@ -9,6 +9,7 @@ import {
 import { itemPriceLabel, unitPhrase, dateLabel, timeLabel } from '@/components/marketplace/present';
 import { londonDayKey, shiftDayKey } from '@/lib/dayKey';
 import { CalendarDays } from 'lucide-react';
+import SessionTimetable, { type TimetableSession } from '@/components/marketplace/SessionTimetable';
 
 interface PanelItem {
     id: string; name: string; description: string | null; price: number; unit: string; image: string | null;
@@ -32,12 +33,13 @@ interface PanelBookedBlock {
     date: string; time: string; duration_minutes: number | null; turnaround_minutes: number | null;
     capacity: number; seats_taken: number; private: boolean;
 }
+interface PanelDeclared { id: string; date: string; time: string; duration: number; capacity: number; seats_taken: number; private: boolean; title: string | null; }
 interface PanelProvider {
     id: string; business_name: string; who: string; shape: string; isFood: boolean;
     // 'delivery' = the provider travels to the guest (a travelling session, which
     // needs a destination — the guest's stay); 'collection'/null = come-to-me.
     fulfilment?: string | null;
-    items: PanelItem[]; sessions: PanelSession[]; leadTimeDays: number;
+    items: PanelItem[]; sessions: PanelSession[]; declaredSessions?: PanelDeclared[]; leadTimeDays: number;
     // Per-person slots only: the smallest group a single booking may be. 1 = no
     // minimum. Floors the quantity picker; the booking route is the real gate.
     minPeople: number;
@@ -249,6 +251,30 @@ export default function BookingPanel({ bookingId, checkIn, checkOut, cottageGues
         setBusy(false);
     }
 
+    // The declared-session lane's book — the session fixes the date/time; the note
+    // and (for a food provider) allergy ride along the same as the grid.
+    async function bookSession(a: { session: TimetableSession; itemId: string; quantity: number }) {
+        setError(null); setBusy(true);
+        try {
+            const trimmedNote = note.trim();
+            const trimmedAllergy = provider.isFood
+                ? [allergyTags.join(', '), allergy.trim()].filter(Boolean).join(allergyTags.length && allergy.trim() ? ' — ' : '')
+                : '';
+            const res = await fetch('/api/services/slots/book', {
+                method: 'POST', headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ providerId: provider.id, itemId: a.itemId, bookingId, sessionDate: a.session.date, sessionTime: a.session.time, quantity: a.quantity, note: trimmedNote, allergy: trimmedAllergy }),
+            });
+            const d = await res.json();
+            if (d && d.ok && d.url) { window.location.href = d.url; return; }
+            setError((d && d.error) || 'Could not start that.');
+        } catch { setError('Could not start that.'); }
+        setBusy(false);
+    }
+
+    const declaredSessions = provider.declaredSessions || [];
+    const hasDeclared = isSlot && declaredSessions.length > 0;
+    const hasOpenHours = isSlot && panelSessions.length > 0;
+
     return (
         <div id="booking-panel" className="rounded-2xl bg-white p-5 shadow-sm ring-1 ring-slate-200/80">
             <div className="flex items-baseline justify-between gap-3">
@@ -282,6 +308,18 @@ export default function BookingPanel({ bookingId, checkIn, checkOut, cottageGues
                     </span>
                 )}
             </div>
+
+            {/* Lane one: the declared-session timetable (sessions-first). */}
+            {hasDeclared && (
+                <div className="mt-4">
+                    <SessionTimetable sessions={declaredSessions} items={provider.items} providerMinPeople={provider.minPeople} busy={busy} onBook={bookSession} />
+                </div>
+            )}
+            {hasDeclared && hasOpenHours && (
+                <div className="mt-4 flex items-center gap-3 text-[11px] font-semibold uppercase tracking-wide text-slate-400">
+                    <span className="h-px flex-1 bg-slate-200" />Or book any open time<span className="h-px flex-1 bg-slate-200" />
+                </div>
+            )}
 
             {/* Menu pick — any provider offering more than one product, slots
                 included (a private hire vs a shared table are two items). */}
