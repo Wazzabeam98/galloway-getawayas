@@ -101,12 +101,12 @@ export default function DatePreview({
                         : 'from ' + timeRange(first.time, first.duration).split('–')[0];
                 return (
                     <button key={d.date} type="button" disabled={busy} onClick={() => onPickDay(d.date)}
-                        className={`flex w-full items-center justify-between gap-3 rounded-2xl border p-4 text-left transition disabled:opacity-60 ${declared ? 'border-violet-200 hover:border-violet-400' : 'border-slate-200 hover:border-slate-400'}`}>
+                        className={`flex w-full items-end justify-between gap-3 rounded-2xl border p-4 text-left transition disabled:opacity-60 ${declared ? 'border-violet-200 hover:border-violet-400' : 'border-slate-200 hover:border-slate-400'}`}>
                         <span className="min-w-0">
                             <span className="block whitespace-nowrap text-[15px] font-semibold text-slate-900">{dayHeadingLabel(d.date, today, tomorrow)}</span>
                             <span className={`mt-0.5 block truncate text-sm ${declared ? 'text-violet-700' : 'text-slate-500'}`}>{hint}</span>
                         </span>
-                        <span className={`flex-none whitespace-nowrap text-right text-xs font-semibold ${declared ? 'text-violet-700' : 'text-emerald-700'}`}>
+                        <span className={`flex-none whitespace-nowrap text-right text-sm ${declared ? 'text-violet-700' : 'text-slate-500'}`}>
                             {n} time{n === 1 ? '' : 's'}
                         </span>
                     </button>

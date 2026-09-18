@@ -26,14 +26,10 @@ export function priceParts(price: number, unit: string): { money: string; per: s
 }
 
 /** The one-line cancellation policy for the booking panel, where Airbnb shows it:
- *  "Free cancellation up to 1 day before", or "No refunds". */
-export function cancellationBadge(hours: number | null | undefined, noRefund: boolean | null | undefined): string {
-    if (noRefund) return 'No refunds';
-    const h = Math.max(0, Number(hours) || 0);
-    if (h <= 0) return 'Free cancellation';
-    const days = Math.round(h / 24);
-    const when = h % 24 === 0 ? days + ' day' + (days === 1 ? '' : 's') : h + ' hour' + (h === 1 ? '' : 's');
-    return 'Free cancellation up to ' + when + ' before';
+ *  a plain "Free cancellation" (the window/detail lives in the Cancellation
+ *  section lower down), or "No refunds". */
+export function cancellationBadge(_hours: number | null | undefined, noRefund: boolean | null | undefined): string {
+    return noRefund ? 'No refunds' : 'Free cancellation';
 }
 
 /** The regions a provider covers, read as one line: "The Stewartry", "The
