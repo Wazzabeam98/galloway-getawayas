@@ -10,6 +10,7 @@ import { MapPin, Clock, Users, User, BadgeCheck, Award, Compass, Flag, Activity,
 import PhotoGallery from '@/components/PhotoGallery';
 import PropertyMap from '@/components/PropertyMap';
 import ReviewStars from '@/components/ReviewStars';
+import ShowAllReviews from '@/components/ShowAllReviews';
 import { capitializeFirst } from '@/lib/utils';
 import { MIN_PUBLIC_REVIEWS } from '@/lib/reviews';
 import type { MpProvider } from '@/lib/experiencesData';
@@ -306,45 +307,24 @@ export default function ExperienceListingBody({
                             </section>
                         )}
 
+                        {/* Roughly-here map for a fixed venue — kept in the left
+                            column so the booking card sits beside it and finishes
+                            level with the bottom of the map: that is where the
+                            sticky card releases. A jittered pin, never the door;
+                            a traveller has no one place, so no map. */}
+                        {(!comesToYou && p.mapLat != null && p.mapLng != null) ? (
+                            <PropertyMap latitude={p.mapLat} longitude={p.mapLng} area={tag || undefined} />
+                        ) : null}
                     </div>
 
                     <div className="lg:sticky lg:top-6 lg:self-start">{panel}</div>
                 </div>
 
-                {/* Below the two-column region and full-width: by here the sticky
-                    booking card has released (around the halfway mark), the way
-                    Airbnb lets its card stop before the map, reviews and policies
-                    rather than ride the page all the way to the bottom. */}
+                {/* Full-width below the two-column region: reviews first (capped
+                    at four with a Show-all control, the same as the cottage), then
+                    the cancellation policy. The card above has already released
+                    level with the bottom of the map. */}
                 <div className="pb-12">
-                    {/* Roughly-here map for a fixed venue — the same component
-                        and privacy the cottage pages use (a jittered pin, never
-                        the door). A traveller has no one place, so no map. */}
-                    {(!comesToYou && p.mapLat != null && p.mapLng != null) ? (
-                        <PropertyMap latitude={p.mapLat} longitude={p.mapLng} area={tag || undefined} />
-                    ) : null}
-
-                    <section className="mt-8 border-t border-slate-200 pt-8">
-                        <h2 className="text-xl md:text-2xl font-bold text-slate-900">Cancellation</h2>
-                        <p className="mt-1 text-sm font-semibold text-slate-700">{cancelPolicy.label}</p>
-                        <p className="mt-2 text-[15px] leading-relaxed text-slate-600">
-                            {p.noRefund
-                                ? 'This experience is non-refundable once booked — please be sure of your plans before you pay.'
-                                : cancellationSentence(p.shape, p.cancellation_window_hours, who)}
-                        </p>
-                        {(comesToYou || tag) ? (
-                            <p className="mt-3 flex items-start gap-1.5 text-sm text-slate-500">
-                                <MapPin className="mt-0.5 h-4 w-4 flex-none" aria-hidden />
-                                <span>
-                                    {comesToYou
-                                        ? (travelCoverage
-                                            ? travelCoverage + ' — they come to your cottage, so there’s nothing for you to travel to.'
-                                            : 'They come to your cottage — nothing for you to travel to.')
-                                        : 'The exact address is shared once your booking is paid.'}
-                                </span>
-                            </p>
-                        ) : null}
-                    </section>
-
                     {/* Reviews — the cottage listing's section, in the same
                         craft and language so the two read as one product. Shown
                         always: an honest empty state reads as new, a missing
@@ -381,7 +361,7 @@ export default function ExperienceListingBody({
                                         An overall score appears once this experience has {MIN_PUBLIC_REVIEWS} reviews.
                                     </p>
                                 )}
-                                <div className="mt-5 space-y-5">
+                                <ShowAllReviews initial={4} className="mt-5 space-y-5">
                                     {reviews.items.map((r) => (
                                         <div key={r.id} className="border-b border-slate-100 pb-5 last:border-0 last:pb-0">
                                             <div className="flex items-center gap-2">
@@ -400,10 +380,32 @@ export default function ExperienceListingBody({
                                             ) : null}
                                         </div>
                                     ))}
-                                </div>
+                                </ShowAllReviews>
                             </section>
                         )
                     )}
+
+                    <section className="mt-8 border-t border-slate-200 pt-8">
+                        <h2 className="text-xl md:text-2xl font-bold text-slate-900">Cancellation</h2>
+                        <p className="mt-1 text-sm font-semibold text-slate-700">{cancelPolicy.label}</p>
+                        <p className="mt-2 text-[15px] leading-relaxed text-slate-600">
+                            {p.noRefund
+                                ? 'This experience is non-refundable once booked — please be sure of your plans before you pay.'
+                                : cancellationSentence(p.shape, p.cancellation_window_hours, who)}
+                        </p>
+                        {(comesToYou || tag) ? (
+                            <p className="mt-3 flex items-start gap-1.5 text-sm text-slate-500">
+                                <MapPin className="mt-0.5 h-4 w-4 flex-none" aria-hidden />
+                                <span>
+                                    {comesToYou
+                                        ? (travelCoverage
+                                            ? travelCoverage + ' — they come to your cottage, so there’s nothing for you to travel to.'
+                                            : 'They come to your cottage — nothing for you to travel to.')
+                                        : 'The exact address is shared once your booking is paid.'}
+                                </span>
+                            </p>
+                        ) : null}
+                    </section>
                 </div>
             </div>
         </div>

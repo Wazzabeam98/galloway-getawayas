@@ -12,6 +12,7 @@ import ReviewStars from '@/components/ReviewStars';
 import PhotoGallery from '@/components/PhotoGallery';
 import HostReplyBox from '@/components/HostReplyBox';
 import ReviewsSummary from '@/components/ReviewsSummary';
+import ShowAllReviews from '@/components/ShowAllReviews';
 import { hasPublicScore, MIN_PUBLIC_REVIEWS } from '@/lib/reviews';
 import { checkInMethodTitle, checkInBlurb } from '@/lib/checkInMethods';
 import { townKey } from '@/lib/places';
@@ -679,6 +680,16 @@ const FindHome = async ({ params }: { params: { id: string } }) => {
                             </div>
                         )}
 
+                        {/* The map, kept in the left column so the booking card
+                            sits beside it and finishes level with the bottom of
+                            the map — that is where the sticky card releases. */}
+                        {coords && (
+                            <PropertyMap
+                                latitude={coords.latitude}
+                                longitude={coords.longitude}
+                                area={placeSummary(home.location)}
+                            />
+                        )}
                     </div>
 
                     {/* Under the photos on a phone, second column from lg up
@@ -708,18 +719,10 @@ const FindHome = async ({ params }: { params: { id: string } }) => {
                 </div>
 
                 {/* Full-width, below the two-column region: the sticky booking
-                    card has released by here (around the halfway mark), the way
-                    Airbnb lets its card stop before the map, house rules and
-                    reviews rather than ride the page all the way to the bottom. */}
+                    card has released level with the bottom of the map in the
+                    column above, so the house rules and reviews run full-width
+                    beneath rather than the card riding the page to the bottom. */}
                 <div>
-                    {coords && (
-                        <PropertyMap
-                            latitude={coords.latitude}
-                            longitude={coords.longitude}
-                            area={placeSummary(home.location)}
-                        />
-                    )}
-
                     {/* House rules — same shared component and wording the
                         guest sees again on their trip card after booking. */}
                     <HouseRules listing={home} variant="page" />
@@ -775,9 +778,9 @@ const FindHome = async ({ params }: { params: { id: string } }) => {
                                     {MIN_PUBLIC_REVIEWS} reviews.
                                 </p>
                             )}
-                            <div className='space-y-5'>
+                            <ShowAllReviews initial={4} className='space-y-5'>
                                 {reviews.map((r) => (
-                                    <div key={r.id} className='border-b pb-5'>
+                                    <div key={r.id} className='border-b pb-5 last:border-0 last:pb-0'>
                                         <div className='flex items-center justify-between mb-1'>
                                             <span className='font-semibold text-slate-900'>{capitializeFirst(reviewerNames[r.reviewer_id] || 'Guest')}</span>
                                             <ReviewStars value={r.rating} size={14} />
@@ -793,7 +796,7 @@ const FindHome = async ({ params }: { params: { id: string } }) => {
                                         ) : null}
                                     </div>
                                 ))}
-                            </div>
+                            </ShowAllReviews>
                         </div>
                     )}
                 </div>
