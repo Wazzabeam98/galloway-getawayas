@@ -1,9 +1,9 @@
 'use client';
 
 import { useState } from 'react';
-import { unitMultiplies } from '@/lib/serviceOrders';
 import { itemPriceLabel } from '@/components/marketplace/present';
 import BookingDialog, { type BookArgs } from '@/components/marketplace/BookingDialog';
+import DatePreview, { type PreviewPick } from '@/components/marketplace/DatePreview';
 
 interface PanelItem { id: string; name: string; price: number; unit: string; image: string | null; fulfilment?: string | null; capacity: number | null; minPeople: number | null; }
 interface PanelSession { date: string; time: string; row: { capacity: number; seats_taken: number; private: boolean } | null; }
@@ -18,7 +18,7 @@ interface PanelDeclared { id: string; date: string; time: string; duration: numb
 export default function StandaloneBookingPanel({ provider }: {
     provider: {
         id: string; who: string; shape: string; fulfilment?: string | null; isFood?: boolean;
-        slotCapacity: number; minPeople: number; items: PanelItem[]; sessions: PanelSession[];
+        slotCapacity: number; minPeople: number; slotLength?: number; items: PanelItem[]; sessions: PanelSession[];
         declaredSessions?: PanelDeclared[];
     };
     // Accepted for compatibility with the host page; booking no longer needs them.
@@ -54,18 +54,37 @@ export default function StandaloneBookingPanel({ provider }: {
         }
     }
 
+    // A one-tap book from a preview card — the cheapest option, its minimum party.
+    const pickAndBook = (p: PreviewPick) => book({ itemId: p.itemId, date: p.date, time: p.time, quantity: p.quantity });
+
     return (
         <div className="rounded-2xl bg-white p-5 shadow-sm ring-1 ring-slate-200/80">
-            <div className="text-2xl font-semibold text-slate-900">{priceLabel}</div>
+            <div className="flex items-center justify-between gap-3">
+                <div className="text-2xl font-semibold text-slate-900">{priceLabel}</div>
+                <button type="button" onClick={() => setOpen(true)} disabled={!hasAnything}
+                    className="flex-none rounded-xl bg-slate-900 px-4 py-2.5 text-sm font-bold text-white hover:bg-black disabled:opacity-50">
+                    {hasAnything ? 'Show dates' : 'No times'}
+                </button>
+            </div>
             <span className="mt-2 inline-flex items-center rounded-full bg-emerald-50 px-2.5 py-0.5 text-xs font-semibold text-emerald-800">
                 Instant book — confirmed straight away
             </span>
 
-            <button type="button" onClick={() => setOpen(true)} disabled={!hasAnything}
-                className="mt-4 w-full rounded-xl bg-slate-900 px-4 py-3 text-sm font-bold text-white hover:bg-black disabled:opacity-50">
-                {hasAnything ? 'Show dates' : 'No times available'}
-            </button>
-            <p className="mt-2 text-xs text-slate-400">You’ll enter your details at checkout. Galloway Getaways takes the payment on {provider.who}’s behalf and is not the provider.</p>
+            {/* The next few available dates, right in the panel. */}
+            <DatePreview
+                items={provider.items}
+                sessions={provider.sessions}
+                declaredSessions={declaredSessions}
+                providerCapacity={provider.slotCapacity}
+                providerMinPeople={provider.minPeople}
+                slotLength={provider.slotLength}
+                busy={busy}
+                onPick={pickAndBook}
+                onShowAll={() => setOpen(true)}
+            />
+
+            {error && <p className="mt-3 text-sm text-rose-700">{error}</p>}
+            <p className="mt-3 text-xs text-slate-400">You’ll enter your details at checkout. Galloway Getaways takes the payment on {provider.who}’s behalf and is not the provider.</p>
 
             {open && (
                 <BookingDialog
