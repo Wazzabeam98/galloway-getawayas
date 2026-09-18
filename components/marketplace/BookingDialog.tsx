@@ -1,7 +1,7 @@
 'use client';
 
 import { useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
-import { X, Minus, Plus, Calendar } from 'lucide-react';
+import { X, Minus, Plus, Calendar, ChevronDown } from 'lucide-react';
 import { optionAvailability, seatConfig } from '@/lib/serviceSlots';
 import { unitMultiplies, MAX_ORDER_QUANTITY } from '@/lib/serviceOrders';
 import { itemPriceLabel, timeLabel, monthYearLabel, dayHeadingLabel } from '@/components/marketplace/present';
@@ -66,8 +66,15 @@ export default function BookingDialog({
     const [calOpen, setCalOpen] = useState(false);
     const [calSel, setCalSel] = useState<string | null>(null);
 
+    // The dialog opens on a LIST OF DAYS — which day first, then its times. One day
+    // expands at a time; opening another collapses the last. null = all collapsed.
+    const [expandedDate, setExpandedDate] = useState<string | null>(null);
+
     const listRef = useRef<HTMLDivElement | null>(null);
     const dayEls = useRef<Map<string, HTMLDivElement>>(new Map());
+    // A day to scroll to once it has expanded (its times change the layout, so the
+    // scroll has to wait for the render that follows the expand).
+    const pendingScroll = useRef<string | null>(null);
 
     const item = items.find((i) => i.id === itemId) || items[0] || null;
     const perPerson = !!item && unitMultiplies(item.unit);
@@ -149,26 +156,35 @@ export default function BookingDialog({
         if (current) setHeaderMonth(monthYearLabel(current));
     };
 
-    // Scroll the list to a given day (the day tapped in the panel, or picked in the
-    // grid). Runs once the list is on screen.
-    const scrollToDay = (date: string) => {
-        const el = listRef.current; const node = dayEls.current.get(date);
-        if (el && node) el.scrollTop = node.offsetTop - 4;
+    // Expand a day and line it up to scroll to (once its times have rendered).
+    const focusDay = (date: string) => {
+        setExpandedDate(date);
+        setHeaderMonth(monthYearLabel(date));
+        pendingScroll.current = date;
     };
+    // The pending scroll, run after every render so it lands after the expand.
+    useLayoutEffect(() => {
+        const target = pendingScroll.current;
+        if (!target || calOpen) return;
+        const el = listRef.current; const node = dayEls.current.get(target);
+        if (el && node) { el.scrollTop = node.offsetTop - 4; pendingScroll.current = null; }
+    });
+
+    // Opened from a day card in the panel: the guest already chose the day, so open
+    // with it expanded. Opened via "Show all dates": all collapsed, days first.
     useLayoutEffect(() => {
         if (calOpen || !initialDate) return;
         // The day may not have a section (fully booked / past) — nearest on/after it.
         const target = days.find((d) => d.date >= initialDate)?.date;
-        if (target) { scrollToDay(target); setHeaderMonth(monthYearLabel(target)); }
+        if (target) focusDay(target);
         // eslint-disable-next-line react-hooks/exhaustive-deps
-    }, [initialDate, calOpen, days.length]);
+    }, []);
 
     const applyCalPick = () => {
         if (!calSel) return;
         const target = days.find((d) => d.date >= calSel)?.date || calSel;
         setCalOpen(false);
-        // Wait for the list to render before scrolling to the day.
-        requestAnimationFrame(() => { scrollToDay(target); setHeaderMonth(monthYearLabel(target)); });
+        focusDay(target);
     };
 
     const lineTotal = item ? (perPerson ? item.price * people : item.price) : 0;
@@ -290,10 +306,22 @@ export default function BookingDialog({
                         <div ref={listRef} onScroll={onListScroll} className="relative min-h-0 flex-1 overflow-y-auto px-5 py-4">
                             {days.length === 0 ? (
                                 <p className="py-8 text-center text-sm text-slate-500">No times available just now — check back soon.</p>
-                            ) : days.map((d) => (
-                                <div key={d.date} ref={(el) => { if (el) dayEls.current.set(d.date, el); else dayEls.current.delete(d.date); }} className="mb-5 last:mb-0">
-                                    <div className="mb-2 text-sm font-semibold text-slate-900">{dayHeadingLabel(d.date, today, tomorrow)}</div>
-                                    <div className="space-y-2">
+                            ) : days.map((d) => {
+                                const isOpen = d.date === expandedDate;
+                                const fitCount = d.list.filter(fits).length;
+                                return (
+                                <div key={d.date} ref={(el) => { if (el) dayEls.current.set(d.date, el); else dayEls.current.delete(d.date); }} className="border-b border-slate-100 last:border-b-0">
+                                    {/* The day — tap to expand its times, collapsing the last. */}
+                                    <button type="button" onClick={() => setExpandedDate(isOpen ? null : d.date)}
+                                        className="flex w-full items-center justify-between gap-3 py-3.5 text-left">
+                                        <span className="text-[15px] font-semibold text-slate-900">{dayHeadingLabel(d.date, today, tomorrow)}</span>
+                                        <span className="flex flex-none items-center gap-2 text-sm text-slate-500">
+                                            <span>{fitCount > 0 ? fitCount + ' time' + (fitCount === 1 ? '' : 's') : 'Fully booked'}</span>
+                                            <ChevronDown className={`h-4 w-4 text-slate-400 transition-transform ${isOpen ? 'rotate-180' : ''}`} aria-hidden />
+                                        </span>
+                                    </button>
+                                    {isOpen && (
+                                    <div className="space-y-2 pb-4">
                                         {d.list.map((o) => {
                                             const a = availOf(o);
                                             const ok = fits(o);
@@ -320,8 +348,10 @@ export default function BookingDialog({
                                             );
                                         })}
                                     </div>
+                                    )}
                                 </div>
-                            ))}
+                                );
+                            })}
                         </div>
 
                         {/* Travelling address + food allergy, shown only when they apply */}
