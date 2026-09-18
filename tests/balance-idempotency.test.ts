@@ -59,10 +59,17 @@ function harness(opts: {
     }
 
     const handlers: Record<string, any> = {
-        bookings: (state: any) =>
-            opsOf(state).indexOf('update') !== -1
-                ? { data: null, error: null }
-                : { data: [DUE], error: null },
+        bookings: (state: any) => {
+            const ops = opsOf(state);
+            if (ops.indexOf('update') !== -1) {
+                // The paid write-back is a compare-and-swap that reads back the
+                // rows it moved (.select('id')). One row means the CAS held.
+                // Everything else updates by id and is awaited without a select.
+                if (ops.indexOf('select') !== -1) return { data: [{ id: DUE.id }], error: null };
+                return { data: null, error: null };
+            }
+            return { data: [DUE], error: null };
+        },
         listings: { data: { title: 'Bookshop Flat', cancellation_policy: 'Moderate' }, error: null },
         payments: (state: any) => {
             const ops = opsOf(state);

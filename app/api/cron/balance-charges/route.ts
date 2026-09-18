@@ -79,6 +79,10 @@ export async function GET(request: Request) {
     let failed = 0;
     let cancelled = 0;
     let skipped = 0;
+    // A balance taken at Stripe but handed straight back because the booking
+    // was cancelled between selection and the write-back. Money in and out,
+    // netting to nothing, but never counted as a normal charge.
+    let reconciled = 0;
 
     for (const booking of due || []) {
         try {
@@ -390,7 +394,17 @@ export async function GET(request: Request) {
             }
 
             if (succeeded) {
-                await admin
+                // Compare-and-swap on the pre-charge state, the same shape as
+                // the slot seat-claim: guard the write on the values we read
+                // when we decided to charge, and read back how many rows moved.
+                //
+                // We charged this card because the booking was `deposit_paid`
+                // and still live when the run picked it up. If the guest has
+                // cancelled in the meantime — their own cancel refunds what
+                // they had paid, which did NOT include this balance — this
+                // write must not land on the cancelled row and quietly mark it
+                // paid. Without the guard it updates on the id alone and does.
+                const { data: paidRows, error: bookingPaidError } = await admin
                     .from('bookings')
                     .update({
                         payment_status: 'paid',
@@ -401,11 +415,93 @@ export async function GET(request: Request) {
                         balance_attempts: attempts + 1,
                         balance_last_attempt_at: new Date().toISOString(),
                     })
-                    .eq('id', booking.id);
+                    .eq('id', booking.id)
+                    // The pre-charge state, mirroring the due query exactly:
+                    // still awaiting the balance and still a live stay. A guest
+                    // cancel moves status to 'cancelled' (and payment_status off
+                    // 'deposit_paid'), so it drops out here and the write lands
+                    // on nothing. A pending→confirmed transition stays in the
+                    // set, so a still-valid stay is never mistaken for a cancel.
+                    .eq('payment_status', 'deposit_paid')
+                    .in('status', ['confirmed', 'pending'])
+                    .select('id');
 
-                // Settles the row claimed above rather than writing a second
-                // one, so the attempt and its outcome stay a single record and
-                // anything counting attempts still counts the same number.
+                // The booking write failed at the database — an actual error,
+                // not "no such row". Leave the claimed `payments` row at
+                // 'attempting' and do NOT settle it. The booking still reads
+                // deposit_paid with a balance owing, so the next run finds this
+                // dangling claim, reuses its id, and carries the SAME
+                // idempotency key — Stripe replays this charge instead of
+                // taking the money again. Settling the row here would hide the
+                // claim and the next run would re-charge under a fresh key,
+                // which is the second charge the audit found.
+                if (bookingPaidError) {
+                    await logError(
+                        'balance-charges: charged £' + amount + ' for booking ' + booking.id
+                            + ' but could not mark it paid; left the attempt open so the next run replays the same charge',
+                        bookingPaidError,
+                        { path: '/api/cron/balance-charges' }
+                    );
+                    failed++;
+                    continue;
+                }
+
+                // Zero rows moved, no error: the row is no longer in the state
+                // we charged against — the guest cancelled mid-charge. The
+                // money is at Stripe against a stay that no longer exists, so
+                // give it straight back. Keyed on the attempt row so a re-run
+                // reconciles the same charge once and never a second time.
+                if (!paidRows || paidRows.length === 0) {
+                    if (succeededIntentId) {
+                        await stripeRequest('POST', '/refunds', {
+                            payment_intent: succeededIntentId,
+                            amount: Math.round(amount * 100),
+                            metadata: {
+                                booking_id: booking.id,
+                                reason: 'balance_charged_after_cancellation',
+                                initiated_by: 'system',
+                            },
+                        }, 'balance-reconcile-' + attemptRowId);
+
+                        // The charge really happened and was then given back.
+                        // Record both against the claimed row so the ledger is
+                        // not silently short a charge and a refund, and Stripe
+                        // and the books still agree. The booking's own
+                        // amount_refunded is left to the guest's cancel — this
+                        // round-trip nets to zero and is not part of what the
+                        // guest was refunded of their original payment.
+                        await admin
+                            .from('payments')
+                            .update({
+                                status: 'succeeded',
+                                stripe_payment_intent_id: succeededIntentId,
+                            })
+                            .eq('id', attemptRowId);
+
+                        await admin.from('payments').insert({
+                            booking_id: booking.id,
+                            kind: 'refund',
+                            amount: amount,
+                            status: 'succeeded',
+                            stripe_payment_intent_id: succeededIntentId,
+                        });
+                    }
+
+                    await logError(
+                        'balance-charges: charged the balance for booking ' + booking.id
+                            + ' but it was no longer live (cancelled mid-charge); refunded £'
+                            + amount + ' at Stripe',
+                        null,
+                        { path: '/api/cron/balance-charges' }
+                    );
+                    reconciled++;
+                    continue;
+                }
+
+                // The booking is paid. Now — and only now — settle the row
+                // claimed above rather than writing a second one, so the
+                // attempt and its outcome stay a single record and anything
+                // counting attempts still counts the same number.
                 await admin
                     .from('payments')
                     .update({
@@ -531,5 +627,6 @@ export async function GET(request: Request) {
         failed: failed,
         cancelled: cancelled,
         skipped: skipped,
+        reconciled: reconciled,
     });
 }
