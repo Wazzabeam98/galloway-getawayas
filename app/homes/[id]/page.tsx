@@ -12,6 +12,7 @@ import ReviewStars from '@/components/ReviewStars';
 import PhotoGallery from '@/components/PhotoGallery';
 import HostReplyBox from '@/components/HostReplyBox';
 import ReviewsSummary from '@/components/ReviewsSummary';
+import ShowAllReviews from '@/components/ShowAllReviews';
 import { hasPublicScore, MIN_PUBLIC_REVIEWS } from '@/lib/reviews';
 import { checkInMethodTitle, checkInBlurb } from '@/lib/checkInMethods';
 import { townKey } from '@/lib/places';
@@ -434,6 +435,7 @@ const FindHome = async ({ params }: { params: { id: string } }) => {
     };
 
     return (
+        <div className='min-h-screen bg-slate-50'>
         <div className='max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 mb-10 pb-24 lg:pb-0'>
             <script
                 type="application/ld+json"
@@ -678,89 +680,15 @@ const FindHome = async ({ params }: { params: { id: string } }) => {
                             </div>
                         )}
 
+                        {/* The map, kept in the left column so the booking card
+                            sits beside it and finishes level with the bottom of
+                            the map — that is where the sticky card releases. */}
                         {coords && (
                             <PropertyMap
                                 latitude={coords.latitude}
                                 longitude={coords.longitude}
                                 area={placeSummary(home.location)}
                             />
-                        )}
-
-                        {/* House rules — same shared component and wording the
-                            guest sees again on their trip card after booking. */}
-                        <HouseRules listing={home} variant="page" />
-
-                        {(!reviews || reviews.length === 0) && (
-                            <div className='mt-8 pt-8 border-t'>
-                                <h2 className='text-xl font-semibold mb-2'>Reviews</h2>
-                                <div className='border rounded-2xl p-6 bg-slate-50'>
-                                    <div className='font-semibold text-slate-900 mb-1'>
-                                        No reviews yet
-                                    </div>
-                                    <p className='text-sm text-slate-600'>
-                                        This place is newly listed, so nobody has stayed and reviewed it
-                                        through Galloway Getaways yet. Reviews appear here once guests
-                                        have checked out — and being one of the first to stay means
-                                        yours will be the one others read.
-                                    </p>
-                                </div>
-                            </div>
-                        )}
-
-                        {reviews && reviews.length > 0 && (
-                            <div className='mt-8'>
-                                {showScore && (
-                                    <ReviewsSummary
-                                        reviews={reviews}
-                                        ratingAvg={avgRating}
-                                        ratingCount={home.rating_count || reviewCount}
-                                        categoryAverages={{
-                                            cleanliness: home.rating_cleanliness,
-                                            accuracy: home.rating_accuracy,
-                                            checkin: home.rating_checkin,
-                                            communication: home.rating_communication,
-                                            location: home.rating_location,
-                                            value: home.rating_value,
-                                        }}
-                                    />
-                                )}
-
-                                <h2 className='text-xl font-semibold my-6 flex items-center gap-2'>
-                                    {showScore ? (
-                                        <>
-                                            <ReviewStars value={Math.round(avgRating)} size={18} />
-                                            {avgRating.toFixed(1)} · {reviewCount} review{reviewCount > 1 ? 's' : ''}
-                                        </>
-                                    ) : (
-                                        <>{reviewCount} review{reviewCount > 1 ? 's' : ''}</>
-                                    )}
-                                </h2>
-                                {!showScore && (
-                                    <p className='text-sm text-slate-600 -mt-3 mb-6'>
-                                        An overall score appears once this place has{' '}
-                                        {MIN_PUBLIC_REVIEWS} reviews.
-                                    </p>
-                                )}
-                                <div className='space-y-5'>
-                                    {reviews.map((r) => (
-                                        <div key={r.id} className='border-b pb-5'>
-                                            <div className='flex items-center justify-between mb-1'>
-                                                <span className='font-semibold text-slate-900'>{capitializeFirst(reviewerNames[r.reviewer_id] || 'Guest')}</span>
-                                                <ReviewStars value={r.rating} size={14} />
-                                            </div>
-                                            <p className='text-sm text-slate-700'>{r.comment}</p>
-                                            {isHostViewing ? (
-                                                <HostReplyBox reviewId={r.id} existingReply={r.host_reply} />
-                                            ) : r.host_reply ? (
-                                                <div className='mt-3 ml-4 pl-4 border-l-2 border-slate-200'>
-                                                    <p className='text-xs font-semibold text-slate-500 mb-1'>Response from the host</p>
-                                                    <p className='text-sm text-slate-700'>{r.host_reply}</p>
-                                                </div>
-                                            ) : null}
-                                        </div>
-                                    ))}
-                                </div>
-                            </div>
                         )}
                     </div>
 
@@ -789,12 +717,96 @@ const FindHome = async ({ params }: { params: { id: string } }) => {
                         />
                     </div>
                 </div>
+
+                {/* Full-width, below the two-column region: the sticky booking
+                    card has released level with the bottom of the map in the
+                    column above, so the house rules and reviews run full-width
+                    beneath rather than the card riding the page to the bottom. */}
+                <div>
+                    {/* House rules — same shared component and wording the
+                        guest sees again on their trip card after booking. */}
+                    <HouseRules listing={home} variant="page" />
+
+                    {(!reviews || reviews.length === 0) && (
+                        <div className='mt-8 pt-8 border-t'>
+                            <h2 className='text-xl font-semibold mb-2'>Reviews</h2>
+                            <div className='border rounded-2xl p-6 bg-slate-50'>
+                                <div className='font-semibold text-slate-900 mb-1'>
+                                    No reviews yet
+                                </div>
+                                <p className='text-sm text-slate-600'>
+                                    This place is newly listed, so nobody has stayed and reviewed it
+                                    through Galloway Getaways yet. Reviews appear here once guests
+                                    have checked out — and being one of the first to stay means
+                                    yours will be the one others read.
+                                </p>
+                            </div>
+                        </div>
+                    )}
+
+                    {reviews && reviews.length > 0 && (
+                        <div className='mt-8'>
+                            {showScore && (
+                                <ReviewsSummary
+                                    reviews={reviews}
+                                    ratingAvg={avgRating}
+                                    ratingCount={home.rating_count || reviewCount}
+                                    categoryAverages={{
+                                        cleanliness: home.rating_cleanliness,
+                                        accuracy: home.rating_accuracy,
+                                        checkin: home.rating_checkin,
+                                        communication: home.rating_communication,
+                                        location: home.rating_location,
+                                        value: home.rating_value,
+                                    }}
+                                />
+                            )}
+
+                            <h2 className='text-xl font-semibold my-6 flex items-center gap-2'>
+                                {showScore ? (
+                                    <>
+                                        <ReviewStars value={Math.round(avgRating)} size={18} />
+                                        {avgRating.toFixed(1)} · {reviewCount} review{reviewCount > 1 ? 's' : ''}
+                                    </>
+                                ) : (
+                                    <>{reviewCount} review{reviewCount > 1 ? 's' : ''}</>
+                                )}
+                            </h2>
+                            {!showScore && (
+                                <p className='text-sm text-slate-600 -mt-3 mb-6'>
+                                    An overall score appears once this place has{' '}
+                                    {MIN_PUBLIC_REVIEWS} reviews.
+                                </p>
+                            )}
+                            <ShowAllReviews initial={4} className='space-y-5'>
+                                {reviews.map((r) => (
+                                    <div key={r.id} className='border-b pb-5 last:border-0 last:pb-0'>
+                                        <div className='flex items-center justify-between mb-1'>
+                                            <span className='font-semibold text-slate-900'>{capitializeFirst(reviewerNames[r.reviewer_id] || 'Guest')}</span>
+                                            <ReviewStars value={r.rating} size={14} />
+                                        </div>
+                                        <p className='text-sm text-slate-700'>{r.comment}</p>
+                                        {isHostViewing ? (
+                                            <HostReplyBox reviewId={r.id} existingReply={r.host_reply} />
+                                        ) : r.host_reply ? (
+                                            <div className='mt-3 ml-4 pl-4 border-l-2 border-slate-200'>
+                                                <p className='text-xs font-semibold text-slate-500 mb-1'>Response from the host</p>
+                                                <p className='text-sm text-slate-700'>{r.host_reply}</p>
+                                            </div>
+                                        ) : null}
+                                    </div>
+                                ))}
+                            </ShowAllReviews>
+                        </div>
+                    )}
+                </div>
             </div>
             <MobileBookingBar
                 pricePerNight={home.price_per_night}
                 label={home.instant_book === true ? 'Reserve' : 'Request to book'}
                 targetId='book'
             />
+        </div>
         </div>
     )
 }

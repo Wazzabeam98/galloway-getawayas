@@ -165,7 +165,7 @@ export default function PhotoGallery({
                                 <span key={i} className="w-[3px] h-[3px] bg-slate-900 rounded-[1px]" />
                             ))}
                         </span>
-                        Show all photos
+                        Show all {images.length} photos
                     </button>
                 )}
             </div>

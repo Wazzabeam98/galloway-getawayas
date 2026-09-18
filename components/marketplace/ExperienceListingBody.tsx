@@ -3,12 +3,18 @@ import { shapeCue } from '@/lib/serviceSlots';
 import { dietaryOptionLabel, accessibilityLabel, parkingLabel, experienceCancellationOption, experienceAmenityLabel } from '@/lib/serviceProviders';
 import {
     itemPriceLabel, cancellationSentence, whereLine, locationTag, travelCoverageLine,
-    durationLabel, durationSummary, yearsLabel, groupSizeLabel,
+    durationLabel, durationSummary, yearsLabel, groupSizeLabel, capacityLabel,
 } from '@/components/marketplace/present';
+import { unitMultiplies } from '@/lib/serviceOrders';
 import { MapPin, Clock, Users, User, BadgeCheck, Award, Compass, Flag, Activity, Backpack, ShieldAlert, Accessibility, Car, Check } from 'lucide-react';
 import PhotoGallery from '@/components/PhotoGallery';
 import PropertyMap from '@/components/PropertyMap';
+import ReviewStars from '@/components/ReviewStars';
+import ShowAllReviews from '@/components/ShowAllReviews';
+import { capitializeFirst } from '@/lib/utils';
+import { MIN_PUBLIC_REVIEWS } from '@/lib/reviews';
 import type { MpProvider } from '@/lib/experiencesData';
+import type { ExperienceReviewsBlock } from '@/lib/experienceReviews';
 
 // Icon for an itinerary phase, by its title (the editor writes Arrival / During /
 // Finish; anything else falls to the neutral "during" glyph).
@@ -26,12 +32,15 @@ function phaseIcon(title: string) {
 // notice). A plain server component. Rules: first name only, no ratings/counts,
 // no address before payment.
 export default function ExperienceListingBody({
-    p, backHref, backLabel, panel,
+    p, backHref, backLabel, panel, reviews,
 }: {
     p: MpProvider;
     backHref: string;
     backLabel: string;
     panel: React.ReactNode;
+    // Always passed by the listing pages; the section renders even at zero, with
+    // an honest "No reviews yet" in place rather than dropping out.
+    reviews?: ExperienceReviewsBlock;
 }) {
     const who = p.byline || p.business_name;
     // Pre-payment location, per shape: a comes-to-you provider happens at the
@@ -43,7 +52,20 @@ export default function ExperienceListingBody({
     const cancelPolicy = experienceCancellationOption(p.cancellation_window_hours, p.noRefund);
 
     const duration = durationSummary(p);
-    const groupSize = groupSizeLabel(p.maxGuests);
+    // How big a group the experience holds. A SLOT sizes it from the capacity we
+    // already resolve (item capacity, else the provider's slot_capacity) — the max
+    // across its per-person options, or the room itself for a whole-session-only
+    // provider — rather than maxGuests, which a slot leaves unset. Everyone else
+    // keeps the maxGuests-based "Up to N guests".
+    const isSlot = p.shape === 'slot';
+    const slotCapacity = (() => {
+        if (!isSlot) return 0;
+        const perPersonCaps = (p.items || [])
+            .filter((i) => unitMultiplies(i.unit))
+            .map((i) => Number(i.capacity) || Number(p.slotCapacity) || 0);
+        return perPersonCaps.length ? Math.max(...perPersonCaps) : (Number(p.slotCapacity) || 0);
+    })();
+    const groupSize = isSlot ? capacityLabel(slotCapacity) : groupSizeLabel(p.maxGuests);
     // The professional title reads as the host's "who they are" line, unless it
     // would only echo the heading (a provider whose business_name is still their
     // professional title, before a distinct listing name exists).
@@ -72,7 +94,7 @@ export default function ExperienceListingBody({
     const factCols = facts.length === 3 ? 'sm:grid-cols-3' : 'sm:grid-cols-2';
 
     return (
-        <div className="min-h-screen bg-white">
+        <div className="min-h-screen bg-slate-50">
             <div className="mx-auto max-w-6xl px-4 sm:px-6 pt-5 sm:pt-6">
                 <Link href={backHref} className="text-sm font-medium text-slate-500 hover:text-slate-800">
                     ← {backLabel}
@@ -86,7 +108,7 @@ export default function ExperienceListingBody({
                     </div>
                 )}
 
-                <div className="grid grid-cols-1 gap-8 lg:grid-cols-3 lg:gap-10 mt-2 pb-12">
+                <div className="grid grid-cols-1 gap-8 lg:grid-cols-3 lg:gap-10 mt-2">
                     <div className="lg:col-span-2 min-w-0">
                         <p className="text-xs font-semibold uppercase tracking-[0.14em] text-emerald-700">{p.category}</p>
                         <h1 className="mt-1.5 text-2xl md:text-3xl font-bold text-slate-900">{p.business_name}</h1>
@@ -113,19 +135,19 @@ export default function ExperienceListingBody({
                         )}
 
                         {hasAbout && (
-                            <section className="mt-8 border-t border-slate-200 pt-8">
+                            <section className="mt-8 border-t border-slate-200 pt-6">
                                 <div className="flex items-center gap-3">
                                     {p.headshot ? (
                                         // eslint-disable-next-line @next/next/no-img-element
-                                        <img src={p.headshot} alt={who} className="h-14 w-14 flex-none rounded-full object-cover ring-1 ring-slate-200" />
+                                        <img src={p.headshot} alt={who} className="h-12 w-12 flex-none rounded-full object-cover ring-1 ring-slate-200" />
                                     ) : (
-                                        <span className="flex h-14 w-14 flex-none items-center justify-center rounded-full bg-slate-100 text-lg font-semibold text-slate-500">
+                                        <span className="flex h-12 w-12 flex-none items-center justify-center rounded-full bg-slate-100 text-base font-semibold text-slate-500">
                                             {who.slice(0, 1)}
                                         </span>
                                     )}
                                     <div className="min-w-0">
-                                        <h2 className="text-xl md:text-2xl font-bold text-slate-900">
-                                            {p.byline ? 'Meet ' + p.byline : 'Your host'}
+                                        <h2 className="text-lg md:text-xl font-bold text-slate-900">
+                                            {p.byline ? 'Hosted by ' + p.byline : 'Your host'}
                                         </h2>
                                         {years ? <p className="text-sm text-slate-500">{years}</p> : null}
                                     </div>
@@ -135,18 +157,18 @@ export default function ExperienceListingBody({
                                 </div>
 
                                 {p.qualifications ? (
-                                    <div className="mt-5">
+                                    <div className="mt-4">
                                         <h3 className="flex items-center gap-1.5 text-xs font-semibold uppercase tracking-wide text-slate-500">
                                             <Award className="h-3.5 w-3.5 text-slate-400" aria-hidden /> Training &amp; qualifications
                                         </h3>
-                                        <p className="mt-1.5 whitespace-pre-line text-[15px] leading-relaxed text-slate-700">{p.qualifications}</p>
+                                        <p className="mt-1 whitespace-pre-line text-[15px] leading-relaxed text-slate-700">{p.qualifications}</p>
                                     </div>
                                 ) : null}
 
                                 {p.recognition ? (
-                                    <div className="mt-5">
+                                    <div className="mt-4">
                                         <h3 className="text-xs font-semibold uppercase tracking-wide text-slate-500">Recognition</h3>
-                                        <p className="mt-1.5 whitespace-pre-line text-[15px] leading-relaxed text-slate-700">{p.recognition}</p>
+                                        <p className="mt-1 whitespace-pre-line text-[15px] leading-relaxed text-slate-700">{p.recognition}</p>
                                     </div>
                                 ) : null}
                             </section>
@@ -285,37 +307,105 @@ export default function ExperienceListingBody({
                             </section>
                         )}
 
-                        {/* Roughly-here map for a fixed venue — the same component
-                            and privacy the cottage pages use (a jittered pin, never
-                            the door). A traveller has no one place, so no map. */}
+                        {/* Roughly-here map for a fixed venue — kept in the left
+                            column so the booking card sits beside it and finishes
+                            level with the bottom of the map: that is where the
+                            sticky card releases. A jittered pin, never the door;
+                            a traveller has no one place, so no map. */}
                         {(!comesToYou && p.mapLat != null && p.mapLng != null) ? (
                             <PropertyMap latitude={p.mapLat} longitude={p.mapLng} area={tag || undefined} />
                         ) : null}
-
-                        <section className="mt-8 border-t border-slate-200 pt-8">
-                            <h2 className="text-xl md:text-2xl font-bold text-slate-900">Cancellation</h2>
-                            <p className="mt-1 text-sm font-semibold text-slate-700">{cancelPolicy.label}</p>
-                            <p className="mt-2 text-[15px] leading-relaxed text-slate-600">
-                                {p.noRefund
-                                    ? 'This experience is non-refundable once booked — please be sure of your plans before you pay.'
-                                    : cancellationSentence(p.shape, p.cancellation_window_hours, who)}
-                            </p>
-                            {(comesToYou || tag) ? (
-                                <p className="mt-3 flex items-start gap-1.5 text-sm text-slate-500">
-                                    <MapPin className="mt-0.5 h-4 w-4 flex-none" aria-hidden />
-                                    <span>
-                                        {comesToYou
-                                            ? (travelCoverage
-                                                ? travelCoverage + ' — they come to your cottage, so there’s nothing for you to travel to.'
-                                                : 'They come to your cottage — nothing for you to travel to.')
-                                            : 'The exact address is shared once your booking is paid.'}
-                                    </span>
-                                </p>
-                            ) : null}
-                        </section>
                     </div>
 
-                    <div className="lg:sticky lg:top-6 lg:self-start">{panel}</div>
+                    <div className="lg:sticky lg:top-24 lg:self-start">{panel}</div>
+                </div>
+
+                {/* Full-width below the two-column region: reviews first (capped
+                    at four with a Show-all control, the same as the cottage), then
+                    the cancellation policy. The card above has already released
+                    level with the bottom of the map. */}
+                <div className="pb-12">
+                    {/* Reviews — the cottage listing's section, in the same
+                        craft and language so the two read as one product. Shown
+                        always: an honest empty state reads as new, a missing
+                        section reads as unfinished. The score is withheld until
+                        there are enough to mean one (lib/reviews). */}
+                    {reviews && (
+                        reviews.count === 0 ? (
+                            <section className="mt-8 border-t border-slate-200 pt-8">
+                                <h2 className="text-xl md:text-2xl font-bold text-slate-900">Reviews</h2>
+                                <div className="mt-3 rounded-2xl border border-slate-200 bg-slate-50 p-6">
+                                    <div className="font-semibold text-slate-900">No reviews yet</div>
+                                    <p className="mt-1 text-sm text-slate-600">
+                                        This experience is newly listed, so nobody has been and reviewed it
+                                        through Galloway Getaways yet. Reviews appear here once guests have
+                                        been — and being one of the first to book means yours will be the
+                                        one others read.
+                                    </p>
+                                </div>
+                            </section>
+                        ) : (
+                            <section className="mt-8 border-t border-slate-200 pt-8">
+                                <h2 className="flex items-center gap-2 text-xl md:text-2xl font-bold text-slate-900">
+                                    {reviews.avg !== null ? (
+                                        <>
+                                            <ReviewStars value={Math.round(reviews.avg)} size={18} />
+                                            {reviews.avg.toFixed(1)} · {reviews.count} review{reviews.count > 1 ? 's' : ''}
+                                        </>
+                                    ) : (
+                                        <>{reviews.count} review{reviews.count > 1 ? 's' : ''}</>
+                                    )}
+                                </h2>
+                                {reviews.avg === null && (
+                                    <p className="-mt-1 mb-5 text-sm text-slate-600">
+                                        An overall score appears once this experience has {MIN_PUBLIC_REVIEWS} reviews.
+                                    </p>
+                                )}
+                                <ShowAllReviews initial={4} className="mt-5 space-y-5">
+                                    {reviews.items.map((r) => (
+                                        <div key={r.id} className="border-b border-slate-100 pb-5 last:border-0 last:pb-0">
+                                            <div className="flex items-center gap-2">
+                                                <span className="font-semibold text-slate-900">{capitializeFirst(r.firstName || 'Guest')}</span>
+                                                <ReviewStars value={r.rating} size={14} />
+                                                {r.itemName ? (
+                                                    <span className="rounded-full bg-slate-100 px-2 py-0.5 text-[11px] font-medium text-slate-600">{r.itemName}</span>
+                                                ) : null}
+                                            </div>
+                                            <p className="mt-1 whitespace-pre-line text-[15px] leading-relaxed text-slate-700">{r.comment}</p>
+                                            {r.reply ? (
+                                                <div className="mt-3 ml-4 border-l-2 border-slate-200 pl-4">
+                                                    <p className="mb-1 text-xs font-semibold text-slate-500">Response from {capitializeFirst(reviews.providerFirstName)}</p>
+                                                    <p className="text-sm text-slate-700">{r.reply}</p>
+                                                </div>
+                                            ) : null}
+                                        </div>
+                                    ))}
+                                </ShowAllReviews>
+                            </section>
+                        )
+                    )}
+
+                    <section className="mt-8 border-t border-slate-200 pt-8">
+                        <h2 className="text-xl md:text-2xl font-bold text-slate-900">Cancellation</h2>
+                        <p className="mt-1 text-sm font-semibold text-slate-700">{cancelPolicy.label}</p>
+                        <p className="mt-2 text-[15px] leading-relaxed text-slate-600">
+                            {p.noRefund
+                                ? 'This experience is non-refundable once booked — please be sure of your plans before you pay.'
+                                : cancellationSentence(p.shape, p.cancellation_window_hours, who)}
+                        </p>
+                        {(comesToYou || tag) ? (
+                            <p className="mt-3 flex items-start gap-1.5 text-sm text-slate-500">
+                                <MapPin className="mt-0.5 h-4 w-4 flex-none" aria-hidden />
+                                <span>
+                                    {comesToYou
+                                        ? (travelCoverage
+                                            ? travelCoverage + ' — they come to your cottage, so there’s nothing for you to travel to.'
+                                            : 'They come to your cottage — nothing for you to travel to.')
+                                        : 'The exact address is shared once your booking is paid.'}
+                                </span>
+                            </p>
+                        ) : null}
+                    </section>
                 </div>
             </div>
         </div>

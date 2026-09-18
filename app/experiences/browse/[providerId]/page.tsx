@@ -5,6 +5,7 @@ import { cookies } from 'next/headers';
 import { adminClient } from '@/lib/supabaseAdmin';
 import { guestExperiencesOpen } from '@/lib/serviceOrders';
 import { loadPublicMarketplace, pickProvider } from '@/lib/experiencesData';
+import { loadExperienceReviews } from '@/lib/experienceReviews';
 import ExperienceListingBody from '@/components/marketplace/ExperienceListingBody';
 import StandaloneBookingPanel from '@/components/marketplace/StandaloneBookingPanel';
 
@@ -27,6 +28,7 @@ export default async function PublicListingPage({ params }: { params: { provider
 
     const who = p.byline || p.business_name;
     const here = `/experiences/browse/${params.providerId}`;
+    const reviews = await loadExperienceReviews(admin, p.id, user?.id ?? null);
 
     const panel = p.shape === 'slot' ? (
         <StandaloneBookingPanel
@@ -40,7 +42,7 @@ export default async function PublicListingPage({ params }: { params: { provider
             }}
         />
     ) : (
-        <div className="rounded-2xl bg-white p-5 shadow-sm ring-1 ring-slate-200/80">
+        <div className="rounded-2xl bg-white p-5 border border-slate-200 shadow-[0_6px_16px_rgba(0,0,0,0.12)]">
             <div className="text-lg font-semibold text-slate-900">Book {who}</div>
             <p className="mt-2 text-sm leading-relaxed text-slate-600">
                 {who} takes bookings as part of a cottage stay. Standalone booking for this kind of
@@ -59,6 +61,7 @@ export default async function PublicListingPage({ params }: { params: { provider
             backHref="/experiences/browse"
             backLabel="All experiences"
             panel={panel}
+            reviews={reviews}
         />
     );
 }
