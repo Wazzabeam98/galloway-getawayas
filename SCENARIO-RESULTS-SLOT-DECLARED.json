@@ -1,0 +1,107 @@
+{
+  "ranAt": "2026-09-17T23:57:49.030Z",
+  "target": "http://localhost:3000",
+  "account": "acct_1U6iMxAJfMhUsIVc",
+  "passed": 4,
+  "failed": 0,
+  "scenarios": [
+    {
+      "number": "1",
+      "title": "A declared 6pm (no weekly hours) is bookable, and the row’s capacity/length are adopted — not seatConfig’s",
+      "checks": [
+        {
+          "desc": "the declared 6pm books (200) though no weekly template generates it",
+          "ok": true,
+          "detail": "HTTP 200 {\"ok\":true,\"url\":\"https://checkout.stripe.com/c/pay/cs_test_a1JmW69W0AAqiP72fokrWCMAzzjrxIJ7rgZOGOt9s7FTtaEFtZU6QrIttc#f"
+        },
+        {
+          "desc": "the booking is paid and confirmed",
+          "ok": true,
+          "detail": "confirmed"
+        },
+        {
+          "desc": "the session capacity is the DECLARED 2, not the provider default 4 (the row wins)",
+          "ok": true,
+          "detail": "capacity=2"
+        },
+        {
+          "desc": "the length is the declared 60, and it is still declared",
+          "ok": true,
+          "detail": "dur=60 declared=true"
+        },
+        {
+          "desc": "one seat is taken",
+          "ok": true,
+          "detail": "seats=1"
+        }
+      ],
+      "status": "passed"
+    },
+    {
+      "number": "2",
+      "title": "Two guests take the LAST place of the declared session at once — exactly one succeeds",
+      "checks": [
+        {
+          "desc": "exactly ONE of the two racers succeeds (200)",
+          "ok": true,
+          "detail": "B=200 C=409"
+        },
+        {
+          "desc": "the other is refused with 409 \"just filled up\"",
+          "ok": true,
+          "detail": "B={\"ok\":true,\"url\":\"https://checkout.stripe.com/c/pay/cs_test_a1iWoPyglyjMaq4Ycdde C={\"ok\":false,\"error\":\"That time just filled up. Pick another.\"}"
+        },
+        {
+          "desc": "the session is now FULL at the declared 2 — not overfilled to 3",
+          "ok": true,
+          "detail": "seats=2"
+        },
+        {
+          "desc": "exactly two orders exist at the session (A + one racer), never three",
+          "ok": true,
+          "detail": "2 orders"
+        }
+      ],
+      "status": "passed"
+    },
+    {
+      "number": "3",
+      "title": "A direct overlapping booked row is refused by the exclusion constraint",
+      "checks": [
+        {
+          "desc": "an overlapping booked row is REJECTED by the database",
+          "ok": true,
+          "detail": "insert unexpectedly succeeded"
+        },
+        {
+          "desc": "the rejection is the no-overlap exclusion (23P01)",
+          "ok": true,
+          "detail": "POST /slot_sessions: {\"code\":\"23P01\",\"details\":\"Key (provider_id, session_date, block_minutes)=(b0cff3bb-1362-402a-8010-"
+        }
+      ],
+      "status": "passed"
+    },
+    {
+      "number": "4",
+      "title": "Cancelling a booking gives the seat back and leaves the session declared",
+      "checks": [
+        {
+          "desc": "guest A can cancel their own booking (a full refund)",
+          "ok": true,
+          "detail": "HTTP 200 {\"ok\":true,\"status\":\"refunded\"}"
+        },
+        {
+          "desc": "a seat is given back (seats_taken decremented)",
+          "ok": true,
+          "detail": "before=2 after=1"
+        },
+        {
+          "desc": "the session STAYS declared and keeps reserving its time",
+          "ok": true,
+          "detail": "declared=true"
+        }
+      ],
+      "status": "passed"
+    }
+  ]
+}
