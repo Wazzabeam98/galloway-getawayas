@@ -93,7 +93,7 @@ export default function ExperienceListingBody({
     const factCols = facts.length === 3 ? 'sm:grid-cols-3' : 'sm:grid-cols-2';
 
     return (
-        <div className="min-h-screen bg-white">
+        <div className="min-h-screen bg-slate-50">
             <div className="mx-auto max-w-6xl px-4 sm:px-6 pt-5 sm:pt-6">
                 <Link href={backHref} className="text-sm font-medium text-slate-500 hover:text-slate-800">
                     ← {backLabel}

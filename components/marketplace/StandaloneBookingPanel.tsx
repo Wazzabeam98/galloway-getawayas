@@ -62,7 +62,7 @@ export default function StandaloneBookingPanel({ provider }: {
     const openOn = (d: string | null) => { setInitialDate(d); setOpen(true); };
 
     return (
-        <div className="rounded-2xl bg-white p-5 shadow-sm ring-1 ring-slate-200/80">
+        <div className="rounded-2xl bg-white p-5 border border-slate-200 shadow-[0_6px_16px_rgba(0,0,0,0.12)]">
             <div className="flex items-start justify-between gap-3">
                 <div>
                     {parts && (

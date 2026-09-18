@@ -42,7 +42,7 @@ export default async function PublicListingPage({ params }: { params: { provider
             }}
         />
     ) : (
-        <div className="rounded-2xl bg-white p-5 shadow-sm ring-1 ring-slate-200/80">
+        <div className="rounded-2xl bg-white p-5 border border-slate-200 shadow-[0_6px_16px_rgba(0,0,0,0.12)]">
             <div className="text-lg font-semibold text-slate-900">Book {who}</div>
             <p className="mt-2 text-sm leading-relaxed text-slate-600">
                 {who} takes bookings as part of a cottage stay. Standalone booking for this kind of

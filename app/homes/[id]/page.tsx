@@ -434,6 +434,7 @@ const FindHome = async ({ params }: { params: { id: string } }) => {
     };
 
     return (
+        <div className='min-h-screen bg-slate-50'>
         <div className='max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 mb-10 pb-24 lg:pb-0'>
             <script
                 type="application/ld+json"
@@ -795,6 +796,7 @@ const FindHome = async ({ params }: { params: { id: string } }) => {
                 label={home.instant_book === true ? 'Reserve' : 'Request to book'}
                 targetId='book'
             />
+        </div>
         </div>
     )
 }
