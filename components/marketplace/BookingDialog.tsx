@@ -55,7 +55,12 @@ export default function BookingDialog({
     onBook: (args: BookArgs) => void;
     onClose: () => void;
 }) {
-    const [itemId, setItemId] = useState<string>(items.length === 1 ? items[0].id : (items[0]?.id || ''));
+    // Cheapest option first — the one the listing's "From" price quotes — so the
+    // dialog opens on it instead of jumping to a pricier default (a whole-session
+    // "private" option, say). Derived from price, not hardcoded, so it's right for
+    // any provider; a stable sort keeps the provider's own order for equal prices.
+    const orderedItems = useMemo(() => [...items].sort((a, b) => a.price - b.price), [items]);
+    const [itemId, setItemId] = useState<string>(orderedItems[0]?.id || '');
     const [people, setPeople] = useState<number>(1);
     const [selKey, setSelKey] = useState<string | null>(null);
     const [address, setAddress] = useState('');
@@ -76,7 +81,7 @@ export default function BookingDialog({
     // scroll has to wait for the render that follows the expand).
     const pendingScroll = useRef<string | null>(null);
 
-    const item = items.find((i) => i.id === itemId) || items[0] || null;
+    const item = items.find((i) => i.id === itemId) || orderedItems[0] || null;
     const perPerson = !!item && unitMultiplies(item.unit);
     const travels = !!item && (String(item.fulfilment) === 'delivery' || (item.fulfilment == null && providerFulfilment === 'delivery'));
 
@@ -271,7 +276,7 @@ export default function BookingDialog({
                                 <div className="mb-3">
                                     <div className="mb-1.5 text-xs font-semibold uppercase tracking-wide text-slate-500">Option</div>
                                     <div className="flex flex-wrap gap-1.5">
-                                        {items.map((it) => (
+                                        {orderedItems.map((it) => (
                                             <button key={it.id} type="button" onClick={() => { setItemId(it.id); setSelKey(null); }}
                                                 className={`rounded-full border px-3 py-1.5 text-sm font-medium ${itemId === it.id ? 'border-slate-900 bg-slate-900 text-white' : 'border-slate-300 text-slate-700 hover:border-slate-400'}`}>
                                                 {it.name} · {itemPriceLabel(it.price, it.unit)}
