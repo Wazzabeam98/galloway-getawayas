@@ -68,16 +68,15 @@ export default function DatePreview({
 
     // One entry per day, in date order, keeping only days with a bookable time —
     // and only the first `limit` of them (a "Show all dates" link opens the rest).
-    // `spots` is how many places are still open across that day, so the card can
-    // say "8 spots available" rather than counting slots twice.
+    // The card shows how many TIMES a day holds (not a headcount): "56 spots" for a
+    // seven-seat sauna over eight hours reads as a 56-person room, which it isn't.
     const days = useMemo(() => {
-        const byDate = new Map<string, { date: string; times: typeof offerings; declaredTitle: string | null; spots: number }>();
+        const byDate = new Map<string, { date: string; times: typeof offerings; declaredTitle: string | null }>();
         for (const o of offerings) {
             const a = availOf(o);
             if (!a.possible || minQ > a.seatsLeft) continue;
-            const g = byDate.get(o.date) || { date: o.date, times: [] as typeof offerings, declaredTitle: null as string | null, spots: 0 };
+            const g = byDate.get(o.date) || { date: o.date, times: [] as typeof offerings, declaredTitle: null as string | null };
             g.times.push(o);
-            g.spots += a.seatsLeft;
             if (o.kind === 'declared' && o.title && !g.declaredTitle) g.declaredTitle = o.title;
             byDate.set(o.date, g);
         }
@@ -108,7 +107,7 @@ export default function DatePreview({
                             <span className={`mt-0.5 block truncate text-sm ${declared ? 'text-violet-700' : 'text-slate-500'}`}>{hint}</span>
                         </span>
                         <span className={`flex-none whitespace-nowrap text-right text-xs font-semibold ${declared ? 'text-violet-700' : 'text-emerald-700'}`}>
-                            {d.spots} spot{d.spots === 1 ? '' : 's'} available
+                            {n} time{n === 1 ? '' : 's'}
                         </span>
                     </button>
                 );
