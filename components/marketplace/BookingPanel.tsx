@@ -57,6 +57,7 @@ export default function BookingPanel({ bookingId, checkIn, checkOut, cottageGues
 }) {
     const isSlot = provider.shape === 'slot';
     const [open, setOpen] = useState(false);
+    const [initialDate, setInitialDate] = useState<string | null>(null);
     const [busy, setBusy] = useState(false);
     const [error, setError] = useState<string | null>(null);
 
@@ -145,7 +146,8 @@ export default function BookingPanel({ bookingId, checkIn, checkOut, cottageGues
     // is that option's own, so generate it.
     const previewDefault = provider.items.filter((i) => i.price > 0).sort((a, b) => a.price - b.price).find((i) => unitMultiplies(i.unit)) || provider.items[0] || null;
     const previewSessions = provider.perItemDurations && previewDefault ? sessionsForItem(previewDefault.id) : provider.sessions;
-    const pickAndBook = (p: { date: string; time: string; itemId: string; quantity: number }) => bookSlot({ itemId: p.itemId, date: p.date, time: p.time, quantity: p.quantity });
+    // Tapping a day in the panel opens the dialog on that day's times.
+    const openOn = (d: string | null) => { setInitialDate(d); setOpen(true); };
 
     return (
         <div id="booking-panel" className="rounded-2xl bg-white p-5 shadow-sm ring-1 ring-slate-200/80">
@@ -176,8 +178,8 @@ export default function BookingPanel({ bookingId, checkIn, checkOut, cottageGues
                         providerMinPeople={provider.minPeople}
                         slotLength={provider.slotLength}
                         busy={busy}
-                        onPick={pickAndBook}
-                        onShowAll={() => setOpen(true)}
+                        onPickDay={(d) => openOn(d)}
+                        onShowAll={() => openOn(null)}
                     />
                     {error && <p className="mt-3 text-sm text-rose-700">{error}</p>}
                     {open && (
@@ -191,10 +193,11 @@ export default function BookingPanel({ bookingId, checkIn, checkOut, cottageGues
                             providerMinPeople={provider.minPeople}
                             providerFulfilment={provider.fulfilment}
                             isFood={provider.isFood}
+                            initialDate={initialDate}
                             busy={busy}
                             error={error}
                             onBook={bookSlot}
-                            onClose={() => { if (!busy) { setOpen(false); setError(null); } }}
+                            onClose={() => { if (!busy) { setOpen(false); setInitialDate(null); setError(null); } }}
                         />
                     )}
                 </>

@@ -4,28 +4,18 @@ import { useMemo } from 'react';
 import { optionAvailability, seatConfig } from '@/lib/serviceSlots';
 import { unitMultiplies } from '@/lib/serviceOrders';
 import { londonDayKey, shiftDayKey } from '@/lib/dayKey';
+import { dayHeadingLabel } from '@/components/marketplace/present';
 
 export interface PreviewItem { id: string; name: string; price: number; unit: string; capacity?: number | null; minPeople?: number | null; }
 export interface PreviewOpen { date: string; time: string; row: { capacity: number; seats_taken: number; private: boolean } | null; }
 export interface PreviewDeclared { id: string; date: string; time: string; duration: number; capacity: number; seats_taken: number; private: boolean; title: string | null; }
-export interface PreviewPick { date: string; time: string; itemId: string; quantity: number; }
 
-// The next few available dates, shown IN the panel — Airbnb's shape: a stack of
-// rounded cards (date + time range on the left, spots on the right) under the
-// price and "Show dates" button, with a "Show all dates" link that opens the full
-// dialog. A guest sees there's availability without clicking; tapping a card books
-// that slot (the cheapest option, one place) straight to Stripe Checkout.
+// The next few available DATES, shown IN the panel — Airbnb's shape: a stack of
+// rounded cards, one per day (the day on the left, how many times that day on the
+// right) under the price and "Show dates" button. A guest sees there's
+// availability without clicking; tapping a day opens the full dialog on that day's
+// times (an hourly provider would otherwise flood the panel with a card per slot).
 
-function dayLabel(date: string): string {
-    const today = londonDayKey();
-    const d = new Date(date + 'T00:00:00Z');
-    // Compact so it never truncates in the narrow panel: "Today, 18 Sep",
-    // "Tomorrow, 19 Sep", else "Mon, 21 Sep".
-    const full = d.toLocaleDateString('en-GB', { day: 'numeric', month: 'short', timeZone: 'UTC' });
-    if (date === today) return 'Today, ' + full;
-    if (date === shiftDayKey(today, 1)) return 'Tomorrow, ' + full;
-    return d.toLocaleDateString('en-GB', { weekday: 'short', timeZone: 'UTC' }) + ', ' + full;
-}
 const toMin = (t: string) => { const [h, m] = t.split(':'); return (parseInt(h, 10) || 0) * 60 + (parseInt(m, 10) || 0); };
 const hhmm = (min: number) => { const m = ((min % 1440) + 1440) % 1440; const h12 = m % 720 === 0 ? 12 : Math.floor((m % 720) / 60) || 12; const ap = m < 720 ? 'am' : 'pm'; const mm = m % 60; return h12 + (mm ? ':' + String(mm).padStart(2, '0') : '') + ap; };
 const timeRange = (time: string, duration: number | null) => {
@@ -34,7 +24,7 @@ const timeRange = (time: string, duration: number | null) => {
 };
 
 export default function DatePreview({
-    items, sessions, declaredSessions, providerCapacity, providerMinPeople, slotLength, limit = 4, busy, onPick, onShowAll,
+    items, sessions, declaredSessions, providerCapacity, providerMinPeople, slotLength, limit = 4, busy, onPickDay, onShowAll,
 }: {
     items: PreviewItem[];
     sessions: PreviewOpen[];
@@ -44,23 +34,27 @@ export default function DatePreview({
     slotLength?: number;
     limit?: number;
     busy: boolean;
-    onPick: (p: PreviewPick) => void;
+    onPickDay: (date: string) => void;
     onShowAll: () => void;
 }) {
-    // The default option for a one-tap book: the cheapest per-person item, else the
-    // cheapest. The full dialog is where a guest picks a different option or party.
+    const today = londonDayKey();
+    const tomorrow = shiftDayKey(today, 1);
+
+    // The default option availability is read against: the cheapest per-person
+    // item, else the cheapest. The full dialog is where a guest picks a different
+    // option or party.
     const item = useMemo(() => {
         const priced = items.filter((i) => i.price > 0);
-        const pp = priced.filter((i) => unitMultiplies(i.unit));
-        const pool = pp.length ? pp : priced;
+        const perPersonItems = priced.filter((i) => unitMultiplies(i.unit));
+        const pool = perPersonItems.length ? perPersonItems : priced;
         return pool.length ? pool.reduce((a, b) => (a.price <= b.price ? a : b)) : null;
     }, [items]);
     const perPerson = !!item && unitMultiplies(item.unit);
     const minQ = item && perPerson ? Math.max(1, Number(item.minPeople ?? providerMinPeople) || 1) : 1;
 
     const offerings = useMemo(() => {
-        const open = sessions.map((s) => ({ key: 'o:' + s.date + ' ' + s.time, date: s.date, time: s.time, kind: 'open' as const, title: null as string | null, duration: slotLength || null, row: s.row }));
-        const dec = declaredSessions.map((d) => ({ key: 'd:' + d.id, date: d.date, time: d.time, kind: 'declared' as const, title: d.title, duration: d.duration, row: { capacity: d.capacity, seats_taken: d.seats_taken, private: d.private } }));
+        const open = sessions.map((s) => ({ date: s.date, time: s.time, kind: 'open' as const, title: null as string | null, duration: slotLength || null, row: s.row }));
+        const dec = declaredSessions.map((d) => ({ date: d.date, time: d.time, kind: 'declared' as const, title: d.title, duration: d.duration, row: { capacity: d.capacity, seats_taken: d.seats_taken, private: d.private } }));
         return [...open, ...dec].sort((a, b) => (a.date + a.time < b.date + b.time ? -1 : 1));
     }, [sessions, declaredSessions, slotLength]);
 
@@ -72,28 +66,44 @@ export default function DatePreview({
         return optionAvailability(o.row, item.unit, pool);
     };
 
-    const cards = useMemo(() => offerings.map((o) => ({ o, a: availOf(o) })).filter((x) => x.a.possible && minQ <= x.a.seatsLeft).slice(0, limit),
+    // One entry per day, in date order, keeping only days with a bookable time —
+    // and only the first `limit` of them (a "Show all dates" link opens the rest).
+    const days = useMemo(() => {
+        const byDate = new Map<string, { date: string; times: typeof offerings; declaredTitle: string | null }>();
+        for (const o of offerings) {
+            const a = availOf(o);
+            if (!a.possible || minQ > a.seatsLeft) continue;
+            const g = byDate.get(o.date) || { date: o.date, times: [] as typeof offerings, declaredTitle: null as string | null };
+            g.times.push(o);
+            if (o.kind === 'declared' && o.title && !g.declaredTitle) g.declaredTitle = o.title;
+            byDate.set(o.date, g);
+        }
+        return Array.from(byDate.values()).sort((a, b) => (a.date < b.date ? -1 : 1)).slice(0, limit);
         // eslint-disable-next-line react-hooks/exhaustive-deps
-        [offerings, item, minQ, limit]);
+    }, [offerings, item, minQ, limit]);
 
-    if (!item || !cards.length) return null;
+    if (!item || !days.length) return null;
 
     return (
         <div className="mt-4 space-y-2">
-            {cards.map(({ o, a }) => {
-                const declared = o.kind === 'declared';
+            {days.map((d) => {
+                const declared = !!d.declaredTitle;
+                const first = d.times[0];
+                const n = d.times.length;
+                const summary = declared && d.declaredTitle
+                    ? d.declaredTitle
+                    : n === 1
+                        ? timeRange(first.time, first.duration)
+                        : n + ' times · from ' + timeRange(first.time, first.duration).split('–')[0];
                 return (
-                    <button key={o.key} type="button" disabled={busy} onClick={() => onPick({ date: o.date, time: o.time, itemId: item.id, quantity: minQ })}
+                    <button key={d.date} type="button" disabled={busy} onClick={() => onPickDay(d.date)}
                         className={`flex w-full items-center justify-between gap-3 rounded-2xl border p-4 text-left transition disabled:opacity-60 ${declared ? 'border-violet-200 hover:border-violet-400' : 'border-slate-200 hover:border-slate-400'}`}>
                         <span className="min-w-0">
-                            <span className="block whitespace-nowrap text-[15px] font-semibold text-slate-900">{dayLabel(o.date)}</span>
-                            <span className="mt-0.5 block truncate text-sm text-slate-500">
-                                {declared && o.title ? <><span className="font-medium text-violet-700">{o.title}</span>{' · '}</> : null}
-                                {timeRange(o.time, o.duration)}
-                            </span>
+                            <span className="block whitespace-nowrap text-[15px] font-semibold text-slate-900">{dayHeadingLabel(d.date, today, tomorrow)}</span>
+                            <span className={`mt-0.5 block truncate text-sm ${declared ? 'text-violet-700' : 'text-slate-500'}`}>{summary}</span>
                         </span>
-                        <span className="flex-none whitespace-nowrap text-right text-xs font-semibold text-slate-700">
-                            {perPerson ? `${a.seatsLeft} spot${a.seatsLeft === 1 ? '' : 's'} available` : 'Available'}
+                        <span className="flex-none whitespace-nowrap text-right text-xs font-semibold text-slate-500">
+                            {n === 1 ? '1 time' : n + ' times'}
                         </span>
                     </button>
                 );
