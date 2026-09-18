@@ -9,7 +9,11 @@ import { unitMultiplies } from '@/lib/serviceOrders';
 import { MapPin, Clock, Users, User, BadgeCheck, Award, Compass, Flag, Activity, Backpack, ShieldAlert, Accessibility, Car, Check } from 'lucide-react';
 import PhotoGallery from '@/components/PhotoGallery';
 import PropertyMap from '@/components/PropertyMap';
+import ReviewStars from '@/components/ReviewStars';
+import { capitializeFirst } from '@/lib/utils';
+import { MIN_PUBLIC_REVIEWS } from '@/lib/reviews';
 import type { MpProvider } from '@/lib/experiencesData';
+import type { ExperienceReviewsBlock } from '@/lib/experienceReviews';
 
 // Icon for an itinerary phase, by its title (the editor writes Arrival / During /
 // Finish; anything else falls to the neutral "during" glyph).
@@ -27,12 +31,15 @@ function phaseIcon(title: string) {
 // notice). A plain server component. Rules: first name only, no ratings/counts,
 // no address before payment.
 export default function ExperienceListingBody({
-    p, backHref, backLabel, panel,
+    p, backHref, backLabel, panel, reviews,
 }: {
     p: MpProvider;
     backHref: string;
     backLabel: string;
     panel: React.ReactNode;
+    // Always passed by the listing pages; the section renders even at zero, with
+    // an honest "No reviews yet" in place rather than dropping out.
+    reviews?: ExperienceReviewsBlock;
 }) {
     const who = p.byline || p.business_name;
     // Pre-payment location, per shape: a comes-to-you provider happens at the
@@ -327,6 +334,66 @@ export default function ExperienceListingBody({
                                 </p>
                             ) : null}
                         </section>
+
+                        {/* Reviews — the cottage listing's section, in the same
+                            craft and language so the two read as one product. Shown
+                            always: an honest empty state reads as new, a missing
+                            section reads as unfinished. The score is withheld until
+                            there are enough to mean one (lib/reviews). */}
+                        {reviews && (
+                            reviews.count === 0 ? (
+                                <section className="mt-8 border-t border-slate-200 pt-8">
+                                    <h2 className="text-xl md:text-2xl font-bold text-slate-900">Reviews</h2>
+                                    <div className="mt-3 rounded-2xl border border-slate-200 bg-slate-50 p-6">
+                                        <div className="font-semibold text-slate-900">No reviews yet</div>
+                                        <p className="mt-1 text-sm text-slate-600">
+                                            This experience is newly listed, so nobody has been and reviewed it
+                                            through Galloway Getaways yet. Reviews appear here once guests have
+                                            been — and being one of the first to book means yours will be the
+                                            one others read.
+                                        </p>
+                                    </div>
+                                </section>
+                            ) : (
+                                <section className="mt-8 border-t border-slate-200 pt-8">
+                                    <h2 className="flex items-center gap-2 text-xl md:text-2xl font-bold text-slate-900">
+                                        {reviews.avg !== null ? (
+                                            <>
+                                                <ReviewStars value={Math.round(reviews.avg)} size={18} />
+                                                {reviews.avg.toFixed(1)} · {reviews.count} review{reviews.count > 1 ? 's' : ''}
+                                            </>
+                                        ) : (
+                                            <>{reviews.count} review{reviews.count > 1 ? 's' : ''}</>
+                                        )}
+                                    </h2>
+                                    {reviews.avg === null && (
+                                        <p className="-mt-1 mb-5 text-sm text-slate-600">
+                                            An overall score appears once this experience has {MIN_PUBLIC_REVIEWS} reviews.
+                                        </p>
+                                    )}
+                                    <div className="mt-5 space-y-5">
+                                        {reviews.items.map((r) => (
+                                            <div key={r.id} className="border-b border-slate-100 pb-5 last:border-0 last:pb-0">
+                                                <div className="flex items-center gap-2">
+                                                    <span className="font-semibold text-slate-900">{capitializeFirst(r.firstName || 'Guest')}</span>
+                                                    <ReviewStars value={r.rating} size={14} />
+                                                    {r.itemName ? (
+                                                        <span className="rounded-full bg-slate-100 px-2 py-0.5 text-[11px] font-medium text-slate-600">{r.itemName}</span>
+                                                    ) : null}
+                                                </div>
+                                                <p className="mt-1 whitespace-pre-line text-[15px] leading-relaxed text-slate-700">{r.comment}</p>
+                                                {r.reply ? (
+                                                    <div className="mt-3 ml-4 border-l-2 border-slate-200 pl-4">
+                                                        <p className="mb-1 text-xs font-semibold text-slate-500">Response from {capitializeFirst(reviews.providerFirstName)}</p>
+                                                        <p className="text-sm text-slate-700">{r.reply}</p>
+                                                    </div>
+                                                ) : null}
+                                            </div>
+                                        ))}
+                                    </div>
+                                </section>
+                            )
+                        )}
                     </div>
 
                     <div className="lg:sticky lg:top-6 lg:self-start">{panel}</div>
