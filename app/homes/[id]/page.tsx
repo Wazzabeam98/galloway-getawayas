@@ -679,90 +679,6 @@ const FindHome = async ({ params }: { params: { id: string } }) => {
                             </div>
                         )}
 
-                        {coords && (
-                            <PropertyMap
-                                latitude={coords.latitude}
-                                longitude={coords.longitude}
-                                area={placeSummary(home.location)}
-                            />
-                        )}
-
-                        {/* House rules — same shared component and wording the
-                            guest sees again on their trip card after booking. */}
-                        <HouseRules listing={home} variant="page" />
-
-                        {(!reviews || reviews.length === 0) && (
-                            <div className='mt-8 pt-8 border-t'>
-                                <h2 className='text-xl font-semibold mb-2'>Reviews</h2>
-                                <div className='border rounded-2xl p-6 bg-slate-50'>
-                                    <div className='font-semibold text-slate-900 mb-1'>
-                                        No reviews yet
-                                    </div>
-                                    <p className='text-sm text-slate-600'>
-                                        This place is newly listed, so nobody has stayed and reviewed it
-                                        through Galloway Getaways yet. Reviews appear here once guests
-                                        have checked out — and being one of the first to stay means
-                                        yours will be the one others read.
-                                    </p>
-                                </div>
-                            </div>
-                        )}
-
-                        {reviews && reviews.length > 0 && (
-                            <div className='mt-8'>
-                                {showScore && (
-                                    <ReviewsSummary
-                                        reviews={reviews}
-                                        ratingAvg={avgRating}
-                                        ratingCount={home.rating_count || reviewCount}
-                                        categoryAverages={{
-                                            cleanliness: home.rating_cleanliness,
-                                            accuracy: home.rating_accuracy,
-                                            checkin: home.rating_checkin,
-                                            communication: home.rating_communication,
-                                            location: home.rating_location,
-                                            value: home.rating_value,
-                                        }}
-                                    />
-                                )}
-
-                                <h2 className='text-xl font-semibold my-6 flex items-center gap-2'>
-                                    {showScore ? (
-                                        <>
-                                            <ReviewStars value={Math.round(avgRating)} size={18} />
-                                            {avgRating.toFixed(1)} · {reviewCount} review{reviewCount > 1 ? 's' : ''}
-                                        </>
-                                    ) : (
-                                        <>{reviewCount} review{reviewCount > 1 ? 's' : ''}</>
-                                    )}
-                                </h2>
-                                {!showScore && (
-                                    <p className='text-sm text-slate-600 -mt-3 mb-6'>
-                                        An overall score appears once this place has{' '}
-                                        {MIN_PUBLIC_REVIEWS} reviews.
-                                    </p>
-                                )}
-                                <div className='space-y-5'>
-                                    {reviews.map((r) => (
-                                        <div key={r.id} className='border-b pb-5'>
-                                            <div className='flex items-center justify-between mb-1'>
-                                                <span className='font-semibold text-slate-900'>{capitializeFirst(reviewerNames[r.reviewer_id] || 'Guest')}</span>
-                                                <ReviewStars value={r.rating} size={14} />
-                                            </div>
-                                            <p className='text-sm text-slate-700'>{r.comment}</p>
-                                            {isHostViewing ? (
-                                                <HostReplyBox reviewId={r.id} existingReply={r.host_reply} />
-                                            ) : r.host_reply ? (
-                                                <div className='mt-3 ml-4 pl-4 border-l-2 border-slate-200'>
-                                                    <p className='text-xs font-semibold text-slate-500 mb-1'>Response from the host</p>
-                                                    <p className='text-sm text-slate-700'>{r.host_reply}</p>
-                                                </div>
-                                            ) : null}
-                                        </div>
-                                    ))}
-                                </div>
-                            </div>
-                        )}
                     </div>
 
                     {/* Under the photos on a phone, second column from lg up
@@ -789,6 +705,97 @@ const FindHome = async ({ params }: { params: { id: string } }) => {
                             cancellationPolicy={home.cancellation_policy}
                         />
                     </div>
+                </div>
+
+                {/* Full-width, below the two-column region: the sticky booking
+                    card has released by here (around the halfway mark), the way
+                    Airbnb lets its card stop before the map, house rules and
+                    reviews rather than ride the page all the way to the bottom. */}
+                <div>
+                    {coords && (
+                        <PropertyMap
+                            latitude={coords.latitude}
+                            longitude={coords.longitude}
+                            area={placeSummary(home.location)}
+                        />
+                    )}
+
+                    {/* House rules — same shared component and wording the
+                        guest sees again on their trip card after booking. */}
+                    <HouseRules listing={home} variant="page" />
+
+                    {(!reviews || reviews.length === 0) && (
+                        <div className='mt-8 pt-8 border-t'>
+                            <h2 className='text-xl font-semibold mb-2'>Reviews</h2>
+                            <div className='border rounded-2xl p-6 bg-slate-50'>
+                                <div className='font-semibold text-slate-900 mb-1'>
+                                    No reviews yet
+                                </div>
+                                <p className='text-sm text-slate-600'>
+                                    This place is newly listed, so nobody has stayed and reviewed it
+                                    through Galloway Getaways yet. Reviews appear here once guests
+                                    have checked out — and being one of the first to stay means
+                                    yours will be the one others read.
+                                </p>
+                            </div>
+                        </div>
+                    )}
+
+                    {reviews && reviews.length > 0 && (
+                        <div className='mt-8'>
+                            {showScore && (
+                                <ReviewsSummary
+                                    reviews={reviews}
+                                    ratingAvg={avgRating}
+                                    ratingCount={home.rating_count || reviewCount}
+                                    categoryAverages={{
+                                        cleanliness: home.rating_cleanliness,
+                                        accuracy: home.rating_accuracy,
+                                        checkin: home.rating_checkin,
+                                        communication: home.rating_communication,
+                                        location: home.rating_location,
+                                        value: home.rating_value,
+                                    }}
+                                />
+                            )}
+
+                            <h2 className='text-xl font-semibold my-6 flex items-center gap-2'>
+                                {showScore ? (
+                                    <>
+                                        <ReviewStars value={Math.round(avgRating)} size={18} />
+                                        {avgRating.toFixed(1)} · {reviewCount} review{reviewCount > 1 ? 's' : ''}
+                                    </>
+                                ) : (
+                                    <>{reviewCount} review{reviewCount > 1 ? 's' : ''}</>
+                                )}
+                            </h2>
+                            {!showScore && (
+                                <p className='text-sm text-slate-600 -mt-3 mb-6'>
+                                    An overall score appears once this place has{' '}
+                                    {MIN_PUBLIC_REVIEWS} reviews.
+                                </p>
+                            )}
+                            <div className='space-y-5'>
+                                {reviews.map((r) => (
+                                    <div key={r.id} className='border-b pb-5'>
+                                        <div className='flex items-center justify-between mb-1'>
+                                            <span className='font-semibold text-slate-900'>{capitializeFirst(reviewerNames[r.reviewer_id] || 'Guest')}</span>
+                                            <ReviewStars value={r.rating} size={14} />
+                                        </div>
+                                        <p className='text-sm text-slate-700'>{r.comment}</p>
+                                        {isHostViewing ? (
+                                            <HostReplyBox reviewId={r.id} existingReply={r.host_reply} />
+                                        ) : r.host_reply ? (
+                                            <div className='mt-3 ml-4 pl-4 border-l-2 border-slate-200'>
+                                                <p className='text-xs font-semibold text-slate-500 mb-1'>Response from the host</p>
+                                                <p className='text-sm text-slate-700'>{r.host_reply}</p>
+                                            </div>
+                                        ) : null}
+                                    </div>
+                                ))}
+                            </div>
+                        </div>
+                    )}
                 </div>
             </div>
             <MobileBookingBar
