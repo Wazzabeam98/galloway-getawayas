@@ -327,8 +327,11 @@ export default function BookingDialog({
                                             const ok = fits(o);
                                             const on = o.key === selKey;
                                             const declared = o.kind === 'declared';
+                                            // The live remaining count, resolved by the same optionAvailability
+                                            // the book route claims through — never a raw column — so the
+                                            // number here is the one the route will honour. A whole-room
+                                            // (private) hire is one unit, so it counts 1 → 0, not 7.
                                             const left = a.seatsLeft;
-                                            const shared = !!item && perPerson;
                                             return (
                                                 <button key={o.key} type="button" disabled={!ok} onClick={() => setSelKey(o.key)}
                                                     className={`flex w-full items-center gap-3 rounded-xl border p-3.5 text-left transition ${on ? (declared ? 'border-violet-600 ring-1 ring-violet-600' : 'border-slate-900 ring-1 ring-slate-900') : declared ? 'border-violet-200 hover:border-violet-400' : 'border-slate-200 hover:border-slate-400'} ${!ok ? 'cursor-not-allowed opacity-45' : ''}`}>
@@ -338,11 +341,9 @@ export default function BookingDialog({
                                                         {item && <span className="mt-0.5 block text-xs text-slate-500">{priceEach}</span>}
                                                     </span>
                                                     <span className="flex-none text-right text-xs font-semibold">
-                                                        {!ok
-                                                            ? <span className="text-slate-400">{a.reason === 'other-mode' ? 'Unavailable' : 'Full'}</span>
-                                                            : shared
-                                                                ? <span className={left <= 2 ? 'text-amber-700' : declared ? 'text-violet-700' : 'text-emerald-700'}>{left} spot{left === 1 ? '' : 's'} available</span>
-                                                                : <span className="text-emerald-700">Available</span>}
+                                                        <span className={left === 0 ? 'text-slate-400' : left <= 2 ? 'text-amber-700' : declared ? 'text-violet-700' : 'text-emerald-700'}>
+                                                            {left} spot{left === 1 ? '' : 's'} available
+                                                        </span>
                                                     </span>
                                                 </button>
                                             );
