@@ -7,6 +7,7 @@ import { itemPriceLabel, dateLabel } from '@/components/marketplace/present';
 import { londonDayKey, shiftDayKey } from '@/lib/dayKey';
 import { CalendarDays } from 'lucide-react';
 import BookingDialog, { type BookArgs, type DialogOpenSession } from '@/components/marketplace/BookingDialog';
+import DatePreview from '@/components/marketplace/DatePreview';
 
 interface PanelItem {
     id: string; name: string; description: string | null; price: number; unit: string; image: string | null;
@@ -140,21 +141,45 @@ export default function BookingPanel({ bookingId, checkIn, checkOut, cottageGues
         return out;
     }, [minDate, maxDate]);
 
+    // Preview cards use the cheapest option; for the per-treatment shape the grid
+    // is that option's own, so generate it.
+    const previewDefault = provider.items.filter((i) => i.price > 0).sort((a, b) => a.price - b.price).find((i) => unitMultiplies(i.unit)) || provider.items[0] || null;
+    const previewSessions = provider.perItemDurations && previewDefault ? sessionsForItem(previewDefault.id) : provider.sessions;
+    const pickAndBook = (p: { date: string; time: string; itemId: string; quantity: number }) => bookSlot({ itemId: p.itemId, date: p.date, time: p.time, quantity: p.quantity });
+
     return (
         <div id="booking-panel" className="rounded-2xl bg-white p-5 shadow-sm ring-1 ring-slate-200/80">
-            <div className="text-2xl font-semibold text-slate-900">{priceLabel}</div>
-            <p className="mt-1 flex items-center gap-1.5 text-sm text-slate-500">
-                <CalendarDays className="h-4 w-4 flex-none text-slate-400" aria-hidden />
-                <span>For your stay · {dateLabel(checkIn.slice(0, 10))} – {dateLabel(maxDate)}</span>
-            </p>
+            <div className="flex items-start justify-between gap-3">
+                <div>
+                    <div className="text-2xl font-semibold text-slate-900">{priceLabel}</div>
+                    <p className="mt-1 flex items-center gap-1.5 text-sm text-slate-500">
+                        <CalendarDays className="h-4 w-4 flex-none text-slate-400" aria-hidden />
+                        <span>For your stay · {dateLabel(checkIn.slice(0, 10))} – {dateLabel(maxDate)}</span>
+                    </p>
+                </div>
+                {isSlot && (
+                    <button type="button" onClick={() => setOpen(true)} disabled={!hasSlotAvailability}
+                        className="flex-none rounded-xl bg-slate-900 px-4 py-2.5 text-sm font-bold text-white hover:bg-black disabled:opacity-50">
+                        {hasSlotAvailability ? 'Show dates' : 'No times'}
+                    </button>
+                )}
+            </div>
 
             {isSlot ? (
                 <>
                     <span className="mt-3 inline-flex items-center rounded-full bg-emerald-50 px-2.5 py-0.5 text-xs font-semibold text-emerald-800">Instant book — confirmed straight away</span>
-                    <button type="button" onClick={() => setOpen(true)} disabled={!hasSlotAvailability}
-                        className="mt-4 w-full rounded-xl bg-slate-900 px-4 py-3 text-sm font-bold text-white hover:bg-black disabled:opacity-50">
-                        {hasSlotAvailability ? 'Show dates' : 'No times in your stay'}
-                    </button>
+                    <DatePreview
+                        items={provider.items}
+                        sessions={previewSessions}
+                        declaredSessions={declaredSessions}
+                        providerCapacity={provider.slotCapacity}
+                        providerMinPeople={provider.minPeople}
+                        slotLength={provider.slotLength}
+                        busy={busy}
+                        onPick={pickAndBook}
+                        onShowAll={() => setOpen(true)}
+                    />
+                    {error && <p className="mt-3 text-sm text-rose-700">{error}</p>}
                     {open && (
                         <BookingDialog
                             who={provider.who}
