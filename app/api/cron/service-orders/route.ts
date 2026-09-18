@@ -2,6 +2,7 @@ import { NextResponse } from 'next/server';
 import { adminClient } from '@/lib/supabaseAdmin';
 import { stripeRequest } from '@/lib/stripe';
 import { resolveGuestForPaidOrder, supabaseGuestStore } from '@/lib/guestAccount';
+import { createRequestOrderFromSession } from '@/lib/requestOrder';
 
 export const dynamic = 'force-dynamic';
 export const maxDuration = 60;
@@ -200,5 +201,79 @@ export async function GET(request: Request) {
         }
     }
 
-    return NextResponse.json({ ok: true, released, seatsReleased, reconciled, failures });
+    // REQUEST ORDERS THE WEBHOOK NEVER CREATED — rebuild from Stripe.
+    //
+    // A request-shape experience (a chef/baker/masseur booked against a stay)
+    // holds the card at Checkout and writes NO row until checkout.session.completed
+    // arrives — that webhook is the only thing that creates the order. If it never
+    // lands (a stale signing secret, a dropped delivery, a transient throw) no row
+    // is ever written: the provider is never told, and the hold lapses on its own
+    // ~7 days later with the guest believing they booked and nothing anywhere for
+    // anyone to notice. The exact fault the slot sweep above guards, one shape
+    // along — and the slot path's answer, followed rather than reinvented: ASK
+    // STRIPE whether the money moved, then make the record right.
+    //
+    // ASK STRIPE the way the slot sweep does — LIST PaymentIntents, don't search
+    // (the List API is read-after-write consistent; Search lags its index by up
+    // to a minute, the exact "read too early and call a paid order unpaid" trap).
+    // The held request PI carries the whole order shape in its metadata (the
+    // order route puts it on the PaymentIntent as well as the session for exactly
+    // this), so a request PI that is held (or captured), is a service_order, and
+    // has NO row yet is a lost-webhook order — rebuilt the ONE way the webhook
+    // does, createRequestOrderFromSession, from a session-shaped view of the PI.
+    //
+    // Idempotent on the held PaymentIntent (the helper checks for an existing row
+    // and the unique index backstops a race), so a PI the webhook already handled
+    // is skipped — and no five-minute grace is needed the way the slot sweep uses
+    // one, because rebuilding an order the webhook is about to create is harmless:
+    // whichever writes it first, the other no-ops, and the record is the same
+    // either way. So catch them as soon as the hold exists. Bounded to the hold's
+    // own lifetime (7 days — a manual-capture authorisation lapses then).
+    // PaymentIntent STATUS is read directly (requires_capture = held, succeeded =
+    // captured) — the authoritative, never-late signal the slot reconcile reads.
+    const LOOKBACK_DAYS = 7;
+    const createdGte = Math.floor(Date.now() / 1000) - LOOKBACK_DAYS * 24 * 60 * 60;
+    let rebuilt = 0;
+    let startingAfter: string | null = null;
+    try {
+        for (let page = 0; page < 20; page++) {   // up to 2000 intents in the window — ample at this scale
+            const query: Record<string, any> = { created: { gte: createdGte }, limit: 100 };
+            if (startingAfter) query.starting_after = startingAfter;
+            const list = await stripeRequest('GET', '/payment_intents', query);
+            const data = (list && list.data) || [];
+            for (const pi of data) {
+                const md = (pi && pi.metadata) || {};
+                if (md.kind !== 'service_order') continue;           // only the request shape
+                // Held (or captured) — never a lapsed, cancelled or abandoned PI.
+                if (pi.status !== 'requires_capture' && pi.status !== 'succeeded') continue;
+
+                // Already recorded? Then the webhook (or an earlier pass) made it.
+                const { data: existing } = await admin
+                    .from('service_orders')
+                    .select('id')
+                    .eq('stripe_payment_intent_id', pi.id)
+                    .maybeSingle();
+                if (existing) continue;
+
+                // A session-shaped view of the PaymentIntent, so the one order-
+                // creation function serves the webhook (real session) and this
+                // sweep (PI) alike. guest_email resolves from the profile the
+                // metadata names, so receipt_email is only a fallback.
+                const synthetic = {
+                    metadata: md,
+                    payment_intent: pi.id,
+                    amount_total: pi.amount,
+                    customer_details: { email: pi.receipt_email || null },
+                };
+                const res = await createRequestOrderFromSession(admin, synthetic);
+                if (res.created) rebuilt++;
+            }
+            if (!list || !list.has_more || !data.length) break;
+            startingAfter = data[data.length - 1].id;
+        }
+    } catch (err: any) {
+        failures.push('request rebuild: ' + (err && err.message));
+    }
+
+    return NextResponse.json({ ok: true, released, seatsReleased, reconciled, rebuilt, failures });
 }

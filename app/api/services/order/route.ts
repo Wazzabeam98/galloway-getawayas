@@ -178,6 +178,32 @@ export async function POST(request: Request) {
             ? itemName + ' × ' + quantity + ' ' + unitNoun(unit) + (quantity === 1 ? '' : 's')
             : itemName;
 
+        // The order's whole shape, put on BOTH the session and the held
+        // PaymentIntent. The webhook builds the order from the session; the
+        // reconcile sweep — for when that webhook never lands — has only the
+        // PaymentIntent to go on, so it must carry the same detail. Same 50-key /
+        // 500-char Stripe metadata limits either way, so this adds no new risk
+        // over what the session already carried. One object, so the two can
+        // never drift.
+        const orderMetadata: Record<string, string> = {
+            kind: 'service_order',
+            provider_id: provider.id,
+            booking_id: booking.id,
+            guest_id: user.id,
+            listing_id: booking.listing_id || '',
+            service_date: dateKey(when),
+            guests: String(booking.guests ?? ''),
+            commission_rate: String(pricing.commissionRate),
+            note: note,
+            allergy: allergy,
+            item_id: item.id,
+            item_name: itemName,
+            item_description: item.description || '',
+            item_unit: unit,
+            unit_price: String(unitPrice),
+            quantity: String(quantity),
+        };
+
         const checkout = await stripeRequest('POST', '/checkout/sessions', {
             mode: 'payment',
             customer_email: user.email,
@@ -214,38 +240,16 @@ export async function POST(request: Request) {
                 application_fee_amount: pricing.applicationFeePence,
                 transfer_data: { destination: provider.stripe_account_id },
                 description: 'Galloway experience — ' + business + ' · ' + itemName,
-                metadata: {
-                    kind: 'service_order',
-                    provider_id: provider.id,
-                    booking_id: booking.id,
-                },
+                // The full order shape on the held PaymentIntent, so the sweep
+                // can rebuild the order from Stripe alone if the webhook is lost.
+                metadata: orderMetadata,
             },
             // A real "request sent" moment — held-not-charged, what happens next
             // — instead of a banner on /trips. The order row is written by the
             // webhook, so this page confirms the act and needs only the provider.
             success_url: SITE_URL + '/experiences/requested?p=' + provider.id,
             cancel_url: SITE_URL + '/trips?experience=cancelled',
-            metadata: {
-                kind: 'service_order',
-                provider_id: provider.id,
-                booking_id: booking.id,
-                guest_id: user.id,
-                listing_id: booking.listing_id || '',
-                service_date: dateKey(when),
-                guests: String(booking.guests ?? ''),
-                commission_rate: String(pricing.commissionRate),
-                note: note,
-                allergy: allergy,
-                // The chosen item, snapshotted onto the order via the webhook.
-                item_id: item.id,
-                item_name: itemName,
-                item_description: item.description || '',
-                // The unit, the per-unit price and the count — snapshotted too,
-                // so "6 × £30" and "per person" outlive any later menu edit.
-                item_unit: unit,
-                unit_price: String(unitPrice),
-                quantity: String(quantity),
-            },
+            metadata: orderMetadata,
         });
 
         return NextResponse.json({ ok: true, url: checkout.url });

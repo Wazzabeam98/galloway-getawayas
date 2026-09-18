@@ -239,8 +239,10 @@ test('greeting somebody by their own name does not consult the switch', () => {
 test('the name stored on an experience order is the masked one', () => {
     // This one is stored rather than looked up when it is read, so an
     // unhonoured value would outlive the setting that should have masked it —
-    // and the reader is a third-party business, not a host.
-    const src = read('app/api/stripe/webhook/route.ts');
+    // and the reader is a third-party business, not a host. The order row is now
+    // built in lib/requestOrder.ts (one function shared by the webhook and the
+    // lost-webhook reconcile sweep), so the masking guard follows it there.
+    const src = read('lib/requestOrder.ts');
     assert.ok(
         src.indexOf("guest_name: displayName(guest, '') || null") !== -1,
         'service_orders.guest_name is no longer written through displayName'

@@ -664,18 +664,93 @@ async function main() {
         note('Reconciliation rescues only paid holds; a genuinely unpaid one still expires and frees its seat.');
     }
 
+    /* ============================ 9. LOST WEBHOOK ON A REQUEST — RECONCILED (the fix) */
+    // The request shape's version of scenario 1. A request holds the card and
+    // writes NO row until checkout.session.completed lands; if that webhook is
+    // lost the order never exists, the provider is never told, and the hold
+    // lapses ~7 days later with the guest thinking they booked. The sweep must
+    // now RECONCILE against Stripe: find the held request PI that has no order and
+    // rebuild the authorised order from the metadata the PI carries — the same
+    // way the slot sweep rescues a paid hold, one shape along.
+    scenario('9', 'Lost webhook on a request (chef): the sweep reconciles against Stripe — rebuilds the authorised order, hold kept');
+    {
+        const serviceDate = dayOffset(9);   // a chef date no other scenario uses
+        // The guest's held card, born the way the Checkout page would — a manual-
+        // capture destination charge carrying the FULL order shape the route now
+        // puts on the PaymentIntent (not just kind/provider/booking), so the sweep
+        // can rebuild from the PI alone.
+        const pi = await destinationPI({
+            total: 180, account, capture: 'manual',
+            metadata: {
+                kind: 'service_order', provider_id: chef.id, booking_id: booking.id,
+                guest_id: guest.id, listing_id: booking.listing_id || '',
+                service_date: serviceDate, guests: String(booking.guests ?? ''),
+                commission_rate: '0.1', note: '', allergy: '',
+                item_id: chefItem.id, item_name: chefItem.name, item_description: chefItem.description || '',
+                item_unit: 'flat', unit_price: '180', quantity: '1',
+            },
+        });
+        check('the card is HELD not charged (requires_capture)', pi.status === 'requires_capture', pi.status);
+
+        // The confirming webhook is LOST — a mis-signed delivery, rejected, so
+        // nothing records the order. This is the fault the fix rescues.
+        const wh = await postWebhook(
+            sessionForServiceOrder({ pi: pi.id, total: 180, provider: chef, guest, booking, serviceDate, item: chefItem }),
+            { secret: 'whsec_wrong_' + Date.now() },
+        );
+        check('the mis-signed webhook was rejected (400)', wh.status === 400, 'HTTP ' + wh.status);
+        const before = await db.select('service_orders', '?select=id&stripe_payment_intent_id=eq.' + pi.id);
+        check('APP: no order row exists yet (the webhook never landed)', before.length === 0, before.length + ' row(s)');
+
+        // The sweep runs and reconciles: the held request PI with no order is
+        // rebuilt to an authorised order.
+        const swept = await runOrderSweep();
+        check('the sweep ran', swept.status === 200 && swept.body.ok, JSON.stringify(swept.body).slice(0, 160));
+        check('the sweep reported a rebuild', Number(swept.body.rebuilt) >= 1, 'rebuilt=' + swept.body.rebuilt);
+
+        const rows = await db.select('service_orders', '?select=*&stripe_payment_intent_id=eq.' + pi.id);
+        const order = rows[0];
+        check('APP: an order row now exists (rebuilt from Stripe)', !!order, rows.length + ' row(s)');
+        check('APP: it is authorised, awaiting the provider', order && order.status === 'authorised', order && order.status);
+        check('APP: it carries the held PaymentIntent', order && order.stripe_payment_intent_id === pi.id, order && order.stripe_payment_intent_id);
+        check('APP: it belongs to the right guest and provider',
+            order && order.guest_id === guest.id && order.provider_id === chef.id, order && (order.guest_id + '/' + order.provider_id));
+
+        const afterPI = await getPI(pi.id);
+        check('STRIPE: the hold is still LIVE (requires_capture — nothing captured early, nothing lost)',
+            afterPI.status === 'requires_capture', afterPI.status);
+
+        // And the recovered order is a real, completable booking — the provider
+        // confirms and the held card captures, exactly as it would have without
+        // the lost webhook.
+        const resp = await postRoute('/api/services/orders/respond', ownerCookie, { orderId: order.id, decision: 'confirm' });
+        check('the recovered order can be confirmed and captured',
+            resp.status === 200 && resp.body.status === 'confirmed',
+            'HTTP ' + resp.status + ' ' + JSON.stringify(resp.body).slice(0, 120));
+        const charge = await settledCharge(pi.id);
+        check('STRIPE: the hold was captured on confirm (£180)',
+            charge && charge.captured === true && charge.amount_captured === 18000,
+            charge && (charge.captured + ' ' + charge.amount_captured));
+
+        current.fixVerified = !!(order && order.status === 'authorised' && afterPI.status === 'requires_capture');
+        note('FIXED: a request order whose webhook was lost is rebuilt to authorised by the sweep — the provider is told and the held card is intact.');
+    }
+
     /* ----------------------------------------------------------------- write + sum */
     const passed = results.filter((r) => r.status === 'passed').length;
     const failed = results.filter((r) => r.status === 'failed').length;
+    const requestReconciled = results.find((r) => r.number === '9');
     fs.writeFileSync(RESULTS, JSON.stringify({
         ranAt: new Date().toISOString(), target: SITE, account, passed, failed,
         lostWebhookReconciled: !!(results[0] && results[0].fixVerified),
+        lostWebhookRequestReconciled: !!(requestReconciled && requestReconciled.fixVerified),
         scenarios: results,
     }, null, 2) + '\n');
 
     console.log('\n' + '='.repeat(70));
     console.log('  passed ' + passed + '   failed ' + failed);
     console.log('  lost-webhook slot fix: ' + (results[0] && results[0].fixVerified ? 'VERIFIED (paid order reconciled, seat kept)' : 'NOT verified'));
+    console.log('  lost-webhook request fix: ' + (requestReconciled && requestReconciled.fixVerified ? 'VERIFIED (authorised order rebuilt, hold kept)' : 'NOT verified'));
     console.log('  written to ' + path.relative(ROOT, RESULTS));
     console.log('='.repeat(70));
 

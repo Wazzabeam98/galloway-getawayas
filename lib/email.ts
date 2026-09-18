@@ -342,3 +342,31 @@ export async function sendEmailToAll(
 
     return { sent, failed };
 }
+
+// A guest's note (allergies, access, a request), rendered as a bordered amber
+// block so it can't be skimmed past in an email. Empty note → empty string, so
+// it simply drops out of the body. Shared by the Stripe webhook and the request
+// -order reconcile so both render a provider notice the same way.
+export function noteCallout(n: unknown): string {
+    const text = n ? String(n).trim() : '';
+    if (!text) return '';
+    return '<div style="margin:16px 0;padding:12px 14px;border:1px solid #f59e0b;'
+        + 'border-radius:10px;background:#fffbeb">'
+        + '<div style="font-size:12px;font-weight:600;text-transform:uppercase;'
+        + 'letter-spacing:0.04em;color:#92400e">From the guest</div>'
+        + '<div style="margin-top:4px;color:#451a03;white-space:pre-line">'
+        + escapeHtml(text) + '</div></div>';
+}
+
+// The allergy, louder than a note — red, and it leads the email. Safety
+// information a cook must not skim past, so it gets its own block.
+export function allergyCallout(a: unknown): string {
+    const text = a ? String(a).trim() : '';
+    if (!text) return '';
+    return '<div style="margin:0 0 16px;padding:12px 14px;border:2px solid #e11d48;'
+        + 'border-radius:10px;background:#fff1f2">'
+        + '<div style="font-size:12px;font-weight:700;text-transform:uppercase;'
+        + 'letter-spacing:0.04em;color:#9f1239">⚠ Allergy / dietary need</div>'
+        + '<div style="margin-top:4px;color:#4c0519;white-space:pre-line">'
+        + escapeHtml(text) + '</div></div>';
+}
