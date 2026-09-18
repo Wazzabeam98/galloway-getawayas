@@ -327,10 +327,11 @@ export default function BookingDialog({
                                             const ok = fits(o);
                                             const on = o.key === selKey;
                                             const declared = o.kind === 'declared';
-                                            // The live remaining count, resolved by the same optionAvailability
-                                            // the book route claims through — never a raw column — so the
-                                            // number here is the one the route will honour. A whole-room
-                                            // (private) hire is one unit, so it counts 1 → 0, not 7.
+                                            // Seats left for a PER-PERSON option, resolved by the same
+                                            // optionAvailability the book route claims through — never a raw
+                                            // column — so the number can't drift from what the route honours.
+                                            // A whole-session (private) hire is one unit, where a seat count is
+                                            // meaningless; it just reads free-or-gone below.
                                             const left = a.seatsLeft;
                                             return (
                                                 <button key={o.key} type="button" disabled={!ok} onClick={() => setSelKey(o.key)}
@@ -341,9 +342,11 @@ export default function BookingDialog({
                                                         {item && <span className="mt-0.5 block text-xs text-slate-500">{priceEach}</span>}
                                                     </span>
                                                     <span className="flex-none text-right text-xs font-semibold">
-                                                        <span className={left === 0 ? 'text-slate-400' : left <= 2 ? 'text-amber-700' : declared ? 'text-violet-700' : 'text-emerald-700'}>
-                                                            {left} spot{left === 1 ? '' : 's'} available
-                                                        </span>
+                                                        {perPerson
+                                                            ? <span className={left === 0 ? 'text-slate-400' : left <= 2 ? 'text-amber-700' : declared ? 'text-violet-700' : 'text-emerald-700'}>{left} spot{left === 1 ? '' : 's'} available</span>
+                                                            : ok
+                                                                ? <span className="text-emerald-700">Available{providerCapacity > 0 ? ' · up to ' + providerCapacity : ''}</span>
+                                                                : <span className="text-slate-400">Booked</span>}
                                                     </span>
                                                 </button>
                                             );
