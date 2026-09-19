@@ -1,5 +1,6 @@
 import NavMenu from '@/components/base/NavMenu';
 import { londonDayKey } from '@/lib/dayKey';
+import { guestExperiencesOpen } from '@/lib/serviceOrders';
 import { createServerComponentClient } from "@supabase/auth-helpers-nextjs";
 import { cookies } from "next/headers";
 import Link from 'next/link';
@@ -84,11 +85,24 @@ const Navbar = async () => {
     const modeCookie = cookieStore.get('gg_mode')?.value;
     const mode: 'host' | 'travel' = modeCookie === 'host' ? 'host' : 'travel';
 
+    // Experiences are a public destination once the feature is live — anyone can
+    // browse, signed in or not — so the link is shown to everyone, gated only on
+    // the launch flag. Dormant (nothing shown) while it is unset.
+    const experiencesOpen = guestExperiencesOpen();
+
     return (
         <nav className='w-full border-b bg-white sticky top-0 z-50'>
             <div className='max-w-7xl mx-auto px-6 md:px-10 h-20 flex items-center justify-between'>
-                <div className='flex items-center'>
+                <div className='flex items-center gap-6'>
                     <Logo />
+                    {experiencesOpen && (
+                        <Link
+                            href="/experiences/browse"
+                            className="hidden sm:block text-sm font-semibold text-slate-800 hover:text-emerald-800 transition"
+                        >
+                            Experiences
+                        </Link>
+                    )}
                 </div>
                 <div className='flex items-center space-x-6'>
                     {firstName && (
@@ -112,6 +126,7 @@ const Navbar = async () => {
 
                     <NavMenu
                         session={data?.session?.user}
+                        experiencesOpen={experiencesOpen}
                         isHost={isHost}
                         isAdmin={isAdmin}
                         mode={mode}
