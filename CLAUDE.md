@@ -192,10 +192,36 @@ this site’s pages keep failing by being thorough rather than spare. And **say
 where the pattern breaks** — a stranger cooking in someone’s cottage is not a
 hotel booking, so where the product genuinely differs, name the difference
 rather than forcing their pattern onto it. Then check what this codebase
-already does before inventing anything — the lifted card (the raised style the
-booking card and the review prompt share: soft shadow, hairline border) and
-the patterns already in use — so it does not grow a second variant of
-something it has.
+already does before inventing anything — the lifted card, below, and the
+patterns already in use — so it does not grow a second variant of something
+it has.
+
+## The lifted card, and why there is only one of it
+
+A lifted card is exactly this:
+
+```
+rounded-2xl border border-slate-200 bg-white
+shadow-[0_6px_16px_rgba(0,0,0,0.12)]
+```
+
+sitting on a slightly tinted page — `bg-slate-50` or `bg-stone-50` — so the
+card is the brightest thing on the screen. **The page tint is the half people
+miss**: a white card on a white page cannot lift, whatever shadow you hang on
+it, and the fix then gets looked for in the shadow.
+
+It means *this is a surface you act on*. It never marks content you merely
+scan. **Lifted:** the booking panel, trip cards, the upcoming trip and
+experience cards, the review prompt, the three start-hosting tiles, the
+provider reservation panel. **Deliberately flat:** browse grids, calendar day
+rows and month cells, host arrival cards, facts grids, listing bodies, editor
+forms.
+
+**Never introduce a second variant.** A surface either lifts, with these exact
+classes, or it stays flat. A second shadow, a second radius or a second border
+is how a codebase ends up with two cards that are nearly the same and nothing
+to say which one is right — and the near-miss is harder to spot than a
+difference, so it survives.
 
 ## What Claude Code does not do here
 

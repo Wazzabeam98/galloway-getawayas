@@ -5,12 +5,15 @@ import Link from 'next/link';
 import { Star } from 'lucide-react';
 
 // The review prompt, living on the guest's trips dashboard rather than buried on
-// an order page. One lifted card per experience they can review — the same
-// raised style as the booking card (soft shadow, hairline border) — with the
+// an order page. One lifted card per experience they can review, with the
 // experience's photo and title and a Leave a review button that opens the clean
 // full-screen step. Renders nothing when there is nothing to review, so it never
 // leaves an empty heading behind. The gate is the database's; this only shows
 // what the /api/services/to-review endpoint says is reviewable.
+//
+// The lifted card is one convention with one set of classes, and CLAUDE.md is
+// where it is written down. Do not restate it here: a second description is how
+// a second variant starts.
 
 interface Item {
     orderId: string;
