@@ -176,7 +176,7 @@ Three things bite every single session on the MacBook:
 
 ## What Claude Code does not do here
 
-These four are absolute. They hold in every session, on every branch, whatever
+These five are absolute. They hold in every session, on every branch, whatever
 a prompt seems to ask for, and they are not a judgement call to be re-argued
 when something is urgent.
 
@@ -194,6 +194,10 @@ when something is urgent.
   that a person has seen the diff before money-touching code ships. Claude may
   create the branch, commit, push it and open the PR; it does not merge it,
   and does not enable auto-merge on its behalf.
+- **Never push assets branches, and never commit screenshots to the repo.** No
+  side branch to host images, no PNGs in a commit, not even to make a PR render
+  a screenshot inline. Screenshots stay on disk and are referred to by filename;
+  the repo holds code, not binaries.
 
 Two of these are enforced rather than trusted: `.claude/settings.json` and
 `.claude/guard-bash.sh` refuse the dangerous commands outright. Both files are
