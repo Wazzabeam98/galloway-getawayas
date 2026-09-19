@@ -4,6 +4,7 @@ import { cookies } from 'next/headers';
 import { NextResponse } from 'next/server';
 import { guestExperiencesOpen } from '@/lib/serviceOrders';
 import { getImageUrl } from '@/lib/utils';
+import { directionsUrl, appleDirectionsUrl } from '@/lib/directions';
 
 export const dynamic = 'force-dynamic';
 
@@ -86,7 +87,7 @@ export async function GET() {
                 ? admin.from('service_provider_items').select('id, image').in('id', itemIds)
                 : Promise.resolve({ data: [] as any[] }),
             providerIds.length
-                ? admin.from('service_providers').select('id, photos, headshot').in('id', providerIds)
+                ? admin.from('service_providers').select('id, photos, headshot, collection_street, collection_postcode, collection_town').in('id', providerIds)
                 : Promise.resolve({ data: [] as any[] }),
         ]);
 
@@ -109,6 +110,30 @@ export async function GET() {
             serviceDate: o.service_date,
             photo: photoFor(o),
         });
+        // Directions to the experience's venue — Google + Apple, built the same
+        // way (and by the same lib) as the cottage trip card. There's no
+        // what3words for an experience (that's a cottage field), so the picker
+        // shows two options, not three.
+        //
+        // Only a FIXED VENUE has somewhere to navigate to: its address is the
+        // provider's collection_street/town/postcode. A comes-to-you provider
+        // travels to the guest, so it has no collection address, lib/directions
+        // returns null, and the card shows no button — rather than a broken one
+        // pointing at the guest's own cottage. The town alone is never enough
+        // either (lib/directions' "never the town centre" rule).
+        const directionsFor = (o: any): { google: string | null; apple: string | null } | null => {
+            const prov = o.provider_id ? providerById.get(o.provider_id) : null;
+            if (!prov) return null;
+            const parts = {
+                streetAddress: (prov as any).collection_street,
+                postcode: (prov as any).collection_postcode,
+                location: (prov as any).collection_town,
+            };
+            const google = directionsUrl(parts);
+            const apple = appleDirectionsUrl(parts);
+            return (google || apple) ? { google, apple } : null;
+        };
+
         const upcomingShape = (o: any) => ({
             orderId: o.id,
             title: o.item_name || o.provider_business_name || 'Your experience',
@@ -116,6 +141,7 @@ export async function GET() {
             serviceDate: o.service_date,
             serviceTime: o.service_time || null,
             photo: photoFor(o),
+            directions: directionsFor(o),
         });
 
         return NextResponse.json({
