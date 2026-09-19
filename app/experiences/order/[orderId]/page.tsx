@@ -5,6 +5,7 @@ import { createServerComponentClient } from '@supabase/auth-helpers-nextjs';
 import { cookies } from 'next/headers';
 import { adminClient } from '@/lib/supabaseAdmin';
 import { logError } from '@/lib/logError';
+import { firstName, getImageUrl } from '@/lib/utils';
 import { guestMayCancelFree } from '@/lib/serviceSlots';
 import { orderLocation } from '@/lib/orderLocation';
 import { cancellationSentence } from '@/components/marketplace/present';
@@ -86,7 +87,7 @@ export default async function OrderPage({ params, searchParams }: { params: { or
     if (!order || order.guest_id !== user.id) redirect('/trips');
 
     const [{ data: prov }, { data: listing, error: listingError }] = await Promise.all([
-        admin.from('service_providers').select('business_name, provider_name, based_line, headshot, description, cancellation_window_hours, slot_length_minutes, fulfilment, collection_street, collection_town, collection_postcode').eq('id', order.provider_id).maybeSingle(),
+        admin.from('service_providers').select('owner_id, business_name, provider_name, based_line, headshot, photos, description, cancellation_window_hours, slot_length_minutes, fulfilment, collection_street, collection_town, collection_postcode').eq('id', order.provider_id).maybeSingle(),
         order.listing_id
             // The cottage the experience is attached to. `address` is not a column
             // on listings — the address is street_address + postcode + location —
@@ -111,7 +112,29 @@ export default async function OrderPage({ params, searchParams }: { params: { or
         ? [listing.street_address, listing.postcode, listing.location].filter(Boolean).join(', ')
         : '');
 
+    // The trading name is the professional title — it belongs in the eyebrow and
+    // the h1, but it reads as nonsense dropped into a slot meant for a person
+    // ("Message A Galloway table, cooked in your cottage"). So we also carry a
+    // SHORT, personal name — the host's first name, the same one the public
+    // listing shows under "Hosted by" — for the sentences that address them as a
+    // person, and fall back to the neutral "the provider" when we don't have one.
     const who = order.provider_business_name || (prov && prov.business_name) || 'the provider';
+    const { data: hostProfile } = prov && prov.owner_id
+        ? await admin.from('profiles').select('full_name, preferred_name, show_full_name').eq('id', prov.owner_id).maybeSingle()
+        : { data: null };
+    const hostFirst = firstName(hostProfile, '');
+    const shortWho = hostFirst || 'the provider';
+
+    // The face and the photos. Airbnb's trip page leads with a photo and names
+    // the host; this page had neither, on a page about a stranger cooking in the
+    // guest's kitchen. Both columns hold STORAGE KEYS, resolved to public URLs
+    // the same way the listing and card do (getImageUrl). No key → no image; we
+    // fall back to the host's initial for the avatar and simply omit the hero,
+    // rather than showing an invented placeholder.
+    const headshotUrl = prov && prov.headshot ? getImageUrl(prov.headshot) : null;
+    const gallery = Array.isArray(prov?.photos) ? (prov!.photos as string[]).filter(Boolean).map((k) => getImageUrl(k)) : [];
+    const hero = gallery[0] || null;
+
     const windowHours = Number(prov && prov.cancellation_window_hours) || 48;
     const charged = order.status === 'confirmed';
     const free = charged
@@ -168,6 +191,30 @@ export default async function OrderPage({ params, searchParams }: { params: { or
                     </span>
                 </div>
 
+                {/* The face: a headshot and the host's first name, so the page
+                    isn't about an anonymous stranger. Same avatar treatment as the
+                    public listing's "Hosted by" block; the initial stands in when
+                    there's no photo. */}
+                <div className="mt-3 flex items-center gap-2.5">
+                    {headshotUrl ? (
+                        // eslint-disable-next-line @next/next/no-img-element
+                        <img src={headshotUrl} alt={hostFirst ? 'Hosted by ' + hostFirst : who} className="h-9 w-9 flex-none rounded-full object-cover ring-1 ring-slate-200" />
+                    ) : (
+                        <span className="flex h-9 w-9 flex-none items-center justify-center rounded-full bg-slate-100 text-sm font-semibold text-slate-500">
+                            {(hostFirst || who).slice(0, 1)}
+                        </span>
+                    )}
+                    <span className="text-sm text-slate-600">{hostFirst ? 'Hosted by ' + hostFirst : 'Your host'}</span>
+                </div>
+
+                {/* A photo of what's coming, led with the way Airbnb does. Content,
+                    so it stays flat — the lift is saved for the panels you act on.
+                    Omitted entirely when the provider has no photos. */}
+                {hero && (
+                    // eslint-disable-next-line @next/next/no-img-element
+                    <img src={hero} alt={order.item_name || 'Experience'} className="mt-4 h-56 w-full rounded-2xl object-cover sm:h-72" />
+                )}
+
                 {/* The post-booking moment. A slot is paid and confirmed the
                     instant they land here (or 'holding' for the second the webhook
                     takes), so it says so plainly, tells them what happens next, and
@@ -184,12 +231,12 @@ export default async function OrderPage({ params, searchParams }: { params: { or
                                 <p className="mt-1 text-sm leading-relaxed text-emerald-800">
                                     {order.status === 'confirmed'
                                         ? `You’ve paid £${Number(order.price).toFixed(2)} to ${who}. A receipt is on its way to your inbox.`
-                                        : `We’re just confirming your place with ${who} — this takes a moment and your receipt will follow by email.`}
+                                        : `We’re just confirming your place with ${shortWho} — this takes a moment and your receipt will follow by email.`}
                                 </p>
                                 <ol className="mt-3 space-y-1.5 text-sm text-emerald-800">
                                     <li className="flex gap-2"><span className="font-semibold">1.</span> Check your email for the receipt and the details.</li>
-                                    <li className="flex gap-2"><span className="font-semibold">2.</span> {comesToCottage ? `${who} will come to your cottage at the agreed time.` : isSlot ? (collectionAddress ? `Go to ${collectionAddress} at the time you booked.` : `Turn up at the time you booked — the address is below.`) : collectionAddress ? `Collect from ${collectionAddress}.` : `${who} will be in touch about collection or delivery.`}</li>
-                                    <li className="flex gap-2"><span className="font-semibold">3.</span> Anything to sort? Message {who} below.</li>
+                                    <li className="flex gap-2"><span className="font-semibold">2.</span> {comesToCottage ? `${shortWho} will come to your cottage at the agreed time.` : isSlot ? (collectionAddress ? `Go to ${collectionAddress} at the time you booked.` : `Turn up at the time you booked — the address is below.`) : collectionAddress ? `Collect from ${collectionAddress}.` : `${shortWho} will be in touch about collection or delivery.`}</li>
+                                    <li className="flex gap-2"><span className="font-semibold">3.</span> Anything to sort? Message {shortWho} below.</li>
                                 </ol>
                                 <div className="mt-4 flex flex-wrap gap-2">
                                     <a
@@ -207,7 +254,7 @@ export default async function OrderPage({ params, searchParams }: { params: { or
                                         <CalendarDays className="h-4 w-4" /> Add to calendar
                                     </a>
                                     <a href="#order-messages" className="inline-flex items-center gap-1.5 rounded-lg px-3.5 py-2 text-sm font-semibold text-emerald-800 hover:bg-white/60">
-                                        Message {who}
+                                        Message {shortWho}
                                     </a>
                                 </div>
                             </div>
@@ -218,7 +265,10 @@ export default async function OrderPage({ params, searchParams }: { params: { or
                 <div className="mt-5 grid grid-cols-1 gap-5 lg:grid-cols-3">
                     {/* Main column — the detail, the allergy the guest gave, and the thread */}
                     <div className="space-y-5 lg:col-span-2">
-                        <div className="rounded-2xl bg-white p-5 shadow-sm ring-1 ring-slate-200/80">
+                        {/* When / where / details — content you scan, so it stays
+                            flat. A plain white card on the tint, no lift: the shadow
+                            is reserved for the panels you act on (messages, payment). */}
+                        <div className="rounded-2xl border border-slate-200 bg-white p-5">
                             <dl className="space-y-4">
                                 <div className="flex gap-3">
                                     <CalendarDays className="mt-0.5 h-5 w-5 flex-none text-slate-400" />
@@ -263,7 +313,7 @@ export default async function OrderPage({ params, searchParams }: { params: { or
                                             ) : collectionAddress ? (
                                                 <>Collect from {who}<span className="block text-slate-500">{collectionAddress}</span></>
                                             ) : (
-                                                <>{who} will arrange collection or delivery with you — message them below.</>
+                                                <>{shortWho} will arrange collection or delivery with you — message them below.</>
                                             )}
                                         </dd>
                                     </div>
@@ -286,7 +336,7 @@ export default async function OrderPage({ params, searchParams }: { params: { or
                                         <AlertTriangle className="h-3.5 w-3.5" /> Your allergy note
                                     </div>
                                     <p className="mt-1 whitespace-pre-line text-sm text-rose-950">{order.allergy}</p>
-                                    <p className="mt-1 text-xs text-rose-700/80">{who} has this. If anything’s missing, add it in the messages below.</p>
+                                    <p className="mt-1 text-xs text-rose-700/80">{shortWho} has this. If anything’s missing, add it in the messages below.</p>
                                 </div>
                             )}
                             {order.note && (
@@ -297,25 +347,30 @@ export default async function OrderPage({ params, searchParams }: { params: { or
                             )}
                         </div>
 
-                        {/* Messages — the thread lives here, on the booking. */}
+                        {/* Messages — the thread lives here, on the booking. A
+                            surface you act on, so it gets the lifted card. The one
+                            line of guidance lives here; the thread's empty state no
+                            longer repeats it. */}
                         {live && (
-                            <div id="order-messages" className="scroll-mt-6">
-                                <h2 className="text-sm font-semibold text-slate-900">Messages with {who}</h2>
+                            <div id="order-messages" className="scroll-mt-6 rounded-2xl border border-slate-200 bg-white p-5 shadow-[0_6px_16px_rgba(0,0,0,0.12)]">
+                                <h2 className="text-sm font-semibold text-slate-900">Messages with {shortWho}</h2>
                                 <p className="mt-0.5 text-xs text-slate-500">Agree the details — allergies, timing, what to bring, how to get there.</p>
-                                <OrderThread orderId={order.id} />
+                                <OrderThread orderId={order.id} placeholderName={shortWho} bare />
                             </div>
                         )}
                     </div>
 
                     {/* Summary column — price, policy, cancel. Sticky on desktop. */}
                     <div className="lg:col-span-1">
-                        <div className="rounded-2xl bg-white p-5 shadow-sm ring-1 ring-slate-200/80 lg:sticky lg:top-6">
+                        {/* Payment and cancellation — a surface you act on, so it
+                            gets the lifted card. */}
+                        <div className="rounded-2xl border border-slate-200 bg-white p-5 shadow-[0_6px_16px_rgba(0,0,0,0.12)] lg:sticky lg:top-6">
                             <div className="flex items-center justify-between">
                                 <span className="text-sm text-slate-500">{charged ? 'Paid' : 'Held, not charged'}</span>
                                 <span className="text-xl font-semibold text-slate-900">£{Number(order.price).toFixed(2)}</span>
                             </div>
                             <p className="mt-3 border-t border-slate-200 pt-3 text-xs leading-relaxed text-slate-500">
-                                {cancellationSentence(order.shape, windowHours, who)}
+                                {cancellationSentence(order.shape, windowHours, shortWho)}
                             </p>
                             {live && (
                                 <div className="mt-3">
@@ -325,7 +380,7 @@ export default async function OrderPage({ params, searchParams }: { params: { or
                                         charged={charged}
                                         free={free}
                                         price={Number(order.price)}
-                                        providerName={who}
+                                        providerName={shortWho}
                                     />
                                 </div>
                             )}
