@@ -23,7 +23,19 @@ function timeLabel(iso: string) {
     return d.toLocaleString('en-GB', { day: 'numeric', month: 'short', hour: '2-digit', minute: '2-digit', timeZone: 'Europe/London' });
 }
 
-export default function OrderThread({ orderId, onUnread }: { orderId: string; onUnread?: (n: number) => void }) {
+export default function OrderThread({ orderId, onUnread, placeholderName, bare }: {
+    orderId: string;
+    onUnread?: (n: number) => void;
+    // A short, personal name for the composer placeholder. The thread's own data
+    // carries the other party's full trading name, which reads as nonsense in
+    // "Message A Galloway table, cooked in your cottage…"; the guest order page
+    // passes the host's first name instead. Falls back to the thread's name.
+    placeholderName?: string;
+    // Drop the thread's own frame so it can sit flush inside a parent card
+    // (the guest order page wraps it in the lifted messages card). The provider
+    // views keep the frame.
+    bare?: boolean;
+}) {
     const [data, setData] = useState<Data | null>(null);
     const [error, setError] = useState('');
     const [text, setText] = useState('');
@@ -68,10 +80,10 @@ export default function OrderThread({ orderId, onUnread }: { orderId: string; on
     }
 
     return (
-        <div className="mt-2 rounded-lg border border-slate-200 bg-white">
-            <div className="max-h-64 space-y-2 overflow-y-auto px-3 py-3">
+        <div className={bare ? 'mt-3' : 'mt-2 rounded-lg border border-slate-200 bg-white'}>
+            <div className={`max-h-64 space-y-2 overflow-y-auto py-3 ${bare ? '' : 'px-3'}`}>
                 {data.messages.length === 0 && (
-                    <p className="py-4 text-center text-xs text-slate-400">No messages yet. Agree the details here — allergies, timing, access.</p>
+                    <p className="py-4 text-center text-xs text-slate-400">No messages yet.</p>
                 )}
                 {data.messages.map((m) => {
                     const mine = m.sender_id === data.viewerId;
@@ -86,14 +98,14 @@ export default function OrderThread({ orderId, onUnread }: { orderId: string; on
                 })}
                 <div ref={endRef} />
             </div>
-            <div className="border-t border-slate-200 px-3 py-2">
+            <div className={`border-t border-slate-200 py-2 ${bare ? '' : 'px-3'}`}>
                 {error && <div className="mb-1.5 text-[12px] text-rose-700">{error}</div>}
                 <div className="flex items-end gap-2">
                     <textarea
                         value={text}
                         onChange={(e) => setText(e.target.value)}
                         onKeyDown={(e) => { if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); send(); } }}
-                        placeholder={`Message ${data.other.name}…`}
+                        placeholder={`Message ${placeholderName || data.other.name}…`}
                         rows={1}
                         className="min-h-[40px] max-h-32 flex-1 resize-none rounded-lg border border-slate-300 px-3 py-2 text-sm focus:border-emerald-600 focus:outline-none focus:ring-2 focus:ring-emerald-600/30"
                     />
