@@ -9,6 +9,7 @@ import { cookies } from 'next/headers';
 import { format, parseISO } from 'date-fns';
 import Link from 'next/link';
 import ListingCard from '@/components/ListingCard';
+import HomeExperiences from '@/components/HomeExperiences';
 import TownsCarousel from '@/components/TownsCarousel';
 import { AREAS, hasCopy } from '@/config/areas';
 import fs from 'fs';
@@ -293,6 +294,13 @@ export default async function HomePage({
                         </p>
                     </div>
                 )}
+
+                {/* Experiences, alongside the properties. Below the grid so the
+                    cottages lead, above the editorial so it reads as a second
+                    thing to book. Self-gating on the launch flag and on there
+                    being any to show; hidden while a property search is on, the
+                    same as the towns carousel below. */}
+                {!searching && <HomeExperiences />}
 
                 {!searching && <TownsCarousel towns={carouselTowns} />}
 
