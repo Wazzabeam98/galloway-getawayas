@@ -1,6 +1,6 @@
 import { redirect } from 'next/navigation';
 import Link from 'next/link';
-import { ArrowLeft, CalendarDays, MapPin, CheckCircle2, Clock3, XCircle, AlertTriangle, Users, MessageSquare, ChevronRight } from 'lucide-react';
+import { ArrowLeft, CalendarDays, MapPin, CheckCircle2, Clock3, XCircle, AlertTriangle, Users, MessageSquare, Phone } from 'lucide-react';
 import { createServerComponentClient } from '@supabase/auth-helpers-nextjs';
 import { cookies } from 'next/headers';
 import { adminClient } from '@/lib/supabaseAdmin';
@@ -86,7 +86,7 @@ export default async function OrderPage({ params, searchParams }: { params: { or
     if (!order || order.guest_id !== user.id) redirect('/trips');
 
     const [{ data: prov }, { data: listing, error: listingError }] = await Promise.all([
-        admin.from('service_providers').select('owner_id, business_name, provider_name, based_line, headshot, photos, description, cancellation_window_hours, slot_length_minutes, fulfilment, collection_street, collection_town, collection_postcode').eq('id', order.provider_id).maybeSingle(),
+        admin.from('service_providers').select('owner_id, business_name, provider_name, based_line, headshot, photos, description, contact_phone, cancellation_window_hours, slot_length_minutes, fulfilment, collection_street, collection_town, collection_postcode').eq('id', order.provider_id).maybeSingle(),
         order.listing_id
             // The cottage the experience is attached to. `address` is not a column
             // on listings — the address is street_address + postcode + location —
@@ -130,7 +130,7 @@ export default async function OrderPage({ params, searchParams }: { params: { or
     // the same way the listing and card do (getImageUrl). No key → no image; we
     // fall back to the host's initial for the avatar and simply omit the hero,
     // rather than showing an invented placeholder.
-    const headshotUrl = prov && prov.headshot ? getImageUrl(prov.headshot) : null;
+    const headshotUrl = prov && prov.headshot && String(prov.headshot).trim() ? getImageUrl(String(prov.headshot).trim()) : null;
     const gallery = Array.isArray(prov?.photos) ? (prov!.photos as string[]).filter(Boolean).map((k) => getImageUrl(k)) : [];
     const hero = gallery[0] || null;
 
@@ -159,6 +159,11 @@ export default async function OrderPage({ params, searchParams }: { params: { or
             .eq('order_id', order.id).eq('recipient_id', user.id).is('read_at', null)
         : { count: 0 };
     const unreadCount = Number(unreadFromProvider) || 0;
+    // The provider's business contact number, for the Call button. Only offered
+    // once the guest is committed (authorised/confirmed), the same gate as the
+    // message thread; the action row simply drops the button when there's none.
+    const phone = (prov?.contact_phone || '').trim() ? String(prov!.contact_phone).replace(/\s+/g, '') : null;
+    const showCall = canMessage && !!phone;
     // The fulfilment DIRECTION is read off the ORDER, not the provider's live
     // setup: 'collection' = the guest comes to the host's address, 'delivery' =
     // the host runs the session at the guest's cottage. It was frozen at booking
@@ -183,7 +188,10 @@ export default async function OrderPage({ params, searchParams }: { params: { or
         : null;
 
     return (
-        <div className="min-h-screen bg-slate-50">
+        // Hold the column to the viewport (less the sticky 80px nav + its border)
+        // so a short order doesn't leave a long empty stretch above the footer —
+        // the tint fills to the fold and the footer sits at the bottom.
+        <div className="min-h-[calc(100dvh-81px)] bg-slate-50">
             <div className="mx-auto max-w-[600px] px-4 sm:px-6 py-6">
                 <Link href="/trips" className="inline-flex items-center gap-1.5 text-sm font-medium text-slate-500 hover:text-slate-800">
                     <ArrowLeft className="h-4 w-4" /> Your trips
@@ -219,14 +227,6 @@ export default async function OrderPage({ params, searchParams }: { params: { or
                     )}
                     <span className="text-sm text-slate-600">{hostFirst ? 'Hosted by ' + hostFirst : 'Your host'}</span>
                 </div>
-
-                {/* A photo of what's coming — a wide band, not a panel, so the
-                    facts sit above the fold on a laptop. Content, so it stays flat.
-                    Omitted entirely when the provider has no photos. */}
-                {hero && (
-                    // eslint-disable-next-line @next/next/no-img-element
-                    <img src={hero} alt={order.item_name || 'Experience'} className="mt-4 h-24 w-full rounded-2xl object-cover sm:h-28" />
-                )}
 
                 {/* The post-booking moment. A slot is paid and confirmed the
                     instant they land here (or 'holding' for the second the webhook
@@ -275,115 +275,115 @@ export default async function OrderPage({ params, searchParams }: { params: { or
                     </div>
                 )}
 
-                <div className="mt-5 space-y-5">
-                    {/* When / where / party — content you scan, so it stays flat.
-                        The description the guest read before booking isn't reprinted
-                        here (Airbnb's reservation screen doesn't either); the lift is
-                        saved for the panels you act on. */}
-                    <div className="rounded-2xl border border-slate-200 bg-white p-5">
-                        <dl className="space-y-4">
-                            <div className="flex gap-3">
-                                <CalendarDays className="mt-0.5 h-5 w-5 flex-none text-slate-400" />
-                                <div>
-                                    {/* A date means different things by shape: an
-                                        appointment for a chef, a deadline for a
-                                        baker, a timed session for a slot. */}
-                                    <dt className="text-xs font-semibold uppercase tracking-wide text-slate-500">{order.shape === 'made_to_order' ? 'Ready for' : 'When'}</dt>
-                                    <dd className="text-sm text-slate-800">{longWhen(order.service_date, isSlot ? order.service_time : null)}</dd>
-                                </div>
-                            </div>
-                            {/* Head count on a private session — the whole session
-                                is theirs, so the provider knows how many to set up
-                                for. Only for a private booking that has one. */}
-                            {isSlot && Number(order.attendees) > 1 ? (
-                                <div className="flex gap-3">
-                                    <Users className="mt-0.5 h-5 w-5 flex-none text-slate-400" />
-                                    <div>
-                                        <dt className="text-xs font-semibold uppercase tracking-wide text-slate-500">Party</dt>
-                                        <dd className="text-sm text-slate-800">{order.attendees} people — the whole session is yours.</dd>
-                                    </div>
-                                </div>
-                            ) : null}
-                            <div className="flex gap-3">
-                                <MapPin className="mt-0.5 h-5 w-5 flex-none text-slate-400" />
-                                <div>
-                                    <dt className="text-xs font-semibold uppercase tracking-wide text-slate-500">Where</dt>
-                                    <dd className="text-sm text-slate-800">
-                                        {comesToCottage ? (
-                                            <>Comes to your cottage{listing && listing.title ? ' — ' + listing.title : ''}{cottageAddress ? <span className="block text-slate-500">{cottageAddress}</span> : null}</>
-                                        ) : isSlot ? (
-                                            // A come-to-me slot: the full address once paid (charged →
-                                            // collectionAddress), the public town before then, and a
-                                            // fallback only if the host set no address at all.
-                                            <>You go to {who}{collectionAddress ? (
-                                                <span className="block text-slate-500">{collectionAddress}</span>
-                                            ) : prov && prov.based_line ? (
-                                                <span className="block text-slate-500">{prov.based_line}{charged ? '' : ' — full address once your place is confirmed'}</span>
-                                            ) : (
-                                                <span className="block text-slate-500">Message them for the exact address and directions.</span>
-                                            )}</>
-                                        ) : collectionAddress ? (
-                                            <>Collect from {who}<span className="block text-slate-500">{collectionAddress}</span></>
-                                        ) : (
-                                            <>{shortWho} will arrange collection or delivery with you — message them to sort it out.</>
-                                        )}
-                                    </dd>
-                                </div>
-                            </div>
-                        </dl>
-
-                        {/* The allergy the guest gave, shown back so they can see it landed. */}
-                        {order.allergy && (
-                            <div className="mt-4 rounded-lg border-2 border-rose-300 bg-rose-50 px-3 py-2.5">
-                                <div className="flex items-center gap-1.5 text-xs font-bold uppercase tracking-wide text-rose-800">
-                                    <AlertTriangle className="h-3.5 w-3.5" /> Your allergy note
-                                </div>
-                                <p className="mt-1 whitespace-pre-line text-sm text-rose-950">{order.allergy}</p>
-                                <p className="mt-1 text-xs text-rose-700/80">{shortWho} has this. If anything’s missing, add it in your messages.</p>
-                            </div>
-                        )}
-                        {order.note && (
-                            <div className="mt-3 rounded-lg border border-amber-300 bg-amber-50 px-3 py-2.5">
-                                <div className="text-xs font-semibold uppercase tracking-wide text-amber-900">Your note</div>
-                                <p className="mt-1 whitespace-pre-line text-sm text-amber-950">{order.note}</p>
-                            </div>
-                        )}
-                    </div>
-
-                    {/* Message the host — a link to the ONE place the conversation
-                        lives (the inbox thread for this order), not a composer. A
-                        surface you act on, so it gets the lifted card. Any unread
-                        from the provider shows as a badge. */}
-                    {canMessage && (
-                        <Link href={'/messages?o=' + order.id} className="flex items-center justify-between gap-3 rounded-2xl border border-slate-200 bg-white p-5 shadow-[0_6px_16px_rgba(0,0,0,0.12)] hover:bg-slate-50">
-                            <span className="flex min-w-0 items-center gap-3">
-                                <MessageSquare className="h-5 w-5 flex-none text-emerald-700" />
-                                <span className="min-w-0">
-                                    <span className="block text-sm font-semibold text-slate-900">Message {shortWho}</span>
-                                    <span className="block text-xs text-slate-500">Agree the details — allergies, timing, what to bring, how to get there.</span>
-                                </span>
-                            </span>
-                            <span className="flex flex-none items-center gap-2">
-                                {unreadCount > 0 && (
-                                    <span className="inline-flex h-5 min-w-[20px] items-center justify-center rounded-full bg-emerald-600 px-1.5 text-[11px] font-semibold text-white">{unreadCount}</span>
-                                )}
-                                <ChevronRight className="h-5 w-5 text-slate-400" />
-                            </span>
-                        </Link>
+                {/* One lifted card, same family as the upcoming-trip and
+                    upcoming-experience cards: an inset photo, the facts, then an
+                    action row at the foot. The lifted token is reused, not varied. */}
+                <div className="mt-5 rounded-2xl border border-slate-200 bg-white p-4 shadow-[0_6px_16px_rgba(0,0,0,0.12)] sm:p-5">
+                    {/* Inset photo in its own rounded box (the experience-card
+                        treatment), kept as a short band. Omitted when the provider
+                        has no photos. */}
+                    {hero && (
+                        // eslint-disable-next-line @next/next/no-img-element
+                        <img src={hero} alt={order.item_name || 'Experience'} className="h-24 w-full rounded-xl object-cover sm:h-28" />
                     )}
 
-                    {/* Payment and cancellation — a surface you act on, so it gets
-                        the lifted card. */}
-                    <div className="rounded-2xl border border-slate-200 bg-white p-5 shadow-[0_6px_16px_rgba(0,0,0,0.12)]">
-                        <div className="flex items-center justify-between">
-                            <span className="text-sm text-slate-500">{charged ? 'Paid' : 'Held, not charged'}</span>
-                            <span className="text-xl font-semibold text-slate-900">£{Number(order.price).toFixed(2)}</span>
+                    {/* When / where / party — the facts you scan. The description
+                        the guest read before booking isn't reprinted (Airbnb's
+                        reservation screen doesn't either). */}
+                    <dl className={hero ? 'mt-4 space-y-4' : 'space-y-4'}>
+                        <div className="flex gap-3">
+                            <CalendarDays className="mt-0.5 h-4 w-4 flex-none text-slate-400" />
+                            <div>
+                                {/* A date means different things by shape: an
+                                    appointment for a chef, a deadline for a baker,
+                                    a timed session for a slot. */}
+                                <dt className="text-xs font-semibold uppercase tracking-wide text-slate-500">{order.shape === 'made_to_order' ? 'Ready for' : 'When'}</dt>
+                                <dd className="text-sm text-slate-800">{longWhen(order.service_date, isSlot ? order.service_time : null)}</dd>
+                            </div>
                         </div>
-                        <p className="mt-3 border-t border-slate-200 pt-3 text-xs leading-relaxed text-slate-500">
-                            {cancellationSentence(order.shape, windowHours, shortWho)}
-                        </p>
-                        {live && (
-                            <div className="mt-3">
+                        {/* Head count on a private session — the whole session is
+                            theirs, so the provider knows how many to set up for. */}
+                        {isSlot && Number(order.attendees) > 1 ? (
+                            <div className="flex gap-3">
+                                <Users className="mt-0.5 h-4 w-4 flex-none text-slate-400" />
+                                <div>
+                                    <dt className="text-xs font-semibold uppercase tracking-wide text-slate-500">Party</dt>
+                                    <dd className="text-sm text-slate-800">{order.attendees} people — the whole session is yours.</dd>
+                                </div>
+                            </div>
+                        ) : null}
+                        <div className="flex gap-3">
+                            <MapPin className="mt-0.5 h-4 w-4 flex-none text-slate-400" />
+                            <div>
+                                <dt className="text-xs font-semibold uppercase tracking-wide text-slate-500">Where</dt>
+                                <dd className="text-sm text-slate-800">
+                                    {comesToCottage ? (
+                                        <>Comes to your cottage{listing && listing.title ? ' — ' + listing.title : ''}{cottageAddress ? <span className="block text-slate-500">{cottageAddress}</span> : null}</>
+                                    ) : isSlot ? (
+                                        // A come-to-me slot: the full address once paid (charged →
+                                        // collectionAddress), the public town before then, and a
+                                        // fallback only if the host set no address at all.
+                                        <>You go to {who}{collectionAddress ? (
+                                            <span className="block text-slate-500">{collectionAddress}</span>
+                                        ) : prov && prov.based_line ? (
+                                            <span className="block text-slate-500">{prov.based_line}{charged ? '' : ' — full address once your place is confirmed'}</span>
+                                        ) : (
+                                            <span className="block text-slate-500">Message them for the exact address and directions.</span>
+                                        )}</>
+                                    ) : collectionAddress ? (
+                                        <>Collect from {who}<span className="block text-slate-500">{collectionAddress}</span></>
+                                    ) : (
+                                        <>{shortWho} will arrange collection or delivery with you — message them to sort it out.</>
+                                    )}
+                                </dd>
+                            </div>
+                        </div>
+                    </dl>
+
+                    {/* The allergy the guest gave, shown back so they can see it landed. */}
+                    {order.allergy && (
+                        <div className="mt-4 rounded-lg border-2 border-rose-300 bg-rose-50 px-3 py-2.5">
+                            <div className="flex items-center gap-1.5 text-xs font-bold uppercase tracking-wide text-rose-800">
+                                <AlertTriangle className="h-3.5 w-3.5" /> Your allergy note
+                            </div>
+                            <p className="mt-1 whitespace-pre-line text-sm text-rose-950">{order.allergy}</p>
+                            <p className="mt-1 text-xs text-rose-700/80">{shortWho} has this. If anything’s missing, add it in your messages.</p>
+                        </div>
+                    )}
+                    {order.note && (
+                        <div className="mt-3 rounded-lg border border-amber-300 bg-amber-50 px-3 py-2.5">
+                            <div className="text-xs font-semibold uppercase tracking-wide text-amber-900">Your note</div>
+                            <p className="mt-1 whitespace-pre-line text-sm text-amber-950">{order.note}</p>
+                        </div>
+                    )}
+
+                    {/* Payment — the amount and the policy in words. The cancel
+                        action itself lives in the action row below, not buried here. */}
+                    <div className="mt-4 flex items-center justify-between border-t border-slate-200 pt-4">
+                        <span className="text-sm text-slate-500">{charged ? 'Paid' : 'Held, not charged'}</span>
+                        <span className="text-lg font-semibold text-slate-900">£{Number(order.price).toFixed(2)}</span>
+                    </div>
+                    <p className="mt-2 text-xs leading-relaxed text-slate-500">{cancellationSentence(order.shape, windowHours, shortWho)}</p>
+
+                    {/* Action row — call, message, cancel as icon buttons, the way
+                        the trip card ends. Equal-width pills that wrap on a phone;
+                        the cancel confirmation opens full-width below (basis-full). */}
+                    {(showCall || canMessage || live) && (
+                        <div className="mt-4 flex flex-wrap gap-2 border-t border-slate-200 pt-4">
+                            {showCall && (
+                                <a href={'tel:' + phone} className="inline-flex grow basis-0 min-w-[7rem] items-center justify-center gap-2 rounded-xl border border-slate-300 px-3 py-2.5 text-sm font-semibold text-slate-800 transition hover:border-slate-900">
+                                    <Phone className="h-4 w-4" /> Call
+                                </a>
+                            )}
+                            {canMessage && (
+                                <Link href={'/messages?o=' + order.id} className="inline-flex grow basis-0 min-w-[7rem] items-center justify-center gap-2 rounded-xl bg-emerald-700 px-3 py-2.5 text-sm font-semibold text-white transition hover:bg-emerald-800">
+                                    <MessageSquare className="h-4 w-4" /> Message
+                                    {unreadCount > 0 && (
+                                        <span className="inline-flex h-5 min-w-[20px] items-center justify-center rounded-full bg-white px-1.5 text-[11px] font-bold text-emerald-800">{unreadCount}</span>
+                                    )}
+                                </Link>
+                            )}
+                            {live && (
                                 <OrderCancel
                                     orderId={order.id}
                                     status={order.status}
@@ -391,10 +391,12 @@ export default async function OrderPage({ params, searchParams }: { params: { or
                                     free={free}
                                     price={Number(order.price)}
                                     providerName={shortWho}
+                                    className="inline-flex grow basis-0 min-w-[7rem] items-center justify-center gap-2 rounded-xl border border-slate-300 px-3 py-2.5 text-sm font-semibold text-slate-600 transition hover:border-rose-300 hover:text-rose-700"
+                                    panelClassName="mt-1 basis-full"
                                 />
-                            </div>
-                        )}
-                    </div>
+                            )}
+                        </div>
+                    )}
                 </div>
             </div>
         </div>
