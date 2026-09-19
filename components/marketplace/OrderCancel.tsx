@@ -56,7 +56,13 @@ export default function OrderCancel({
     const trigger = (
         <button type="button" onClick={() => { setView(view === 'closed' ? 'open' : 'closed'); setError(''); }}
             className={className || 'text-sm font-medium text-slate-500 underline underline-offset-2 hover:text-slate-800'}>
-            {className ? <><Ban className="h-4 w-4" /> Cancel</> : 'Cancel this booking'}
+            {/* Wrapped so the icon and label stay together at the left of a
+                justify-between action row — unwrapped, the two became separate
+                flex children and the word "Cancel" was flung to the far right.
+                No trailing chevron on purpose: the neighbouring rows navigate,
+                this one opens a panel in place, and the chevron is what tells
+                those two apart. */}
+            {className ? <span className="flex items-center gap-3"><Ban className="h-4 w-4 flex-none text-slate-400" /> Cancel</span> : 'Cancel this booking'}
         </button>
     );
 
