@@ -349,6 +349,14 @@ export async function POST(request: Request) {
                 // booking row is created client-side, so a value arriving with
                 // it would be the guest's claim rather than ours.
                 cleaning_fee: quote.cleaningFeeTotal,
+                // The other two fee lines, frozen for the same reason as the
+                // cleaning fee: the listing's pet_fee / extra_guest_fee are
+                // host-mutable, so the breakdown has to remember what was
+                // actually charged, not what the host has set since. Stored so
+                // the trip card can show each as its own line instead of rolling
+                // them into the accommodation figure.
+                pet_fee: quote.petFeeTotal,
+                extra_guest_fee: quote.extraGuestTotal,
                 // The per-night split behind the accommodation subtotal, frozen
                 // on the same principle and at the same moment: the calendar
                 // this was computed against is host-mutable, so the only honest

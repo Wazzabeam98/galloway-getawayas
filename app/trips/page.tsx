@@ -59,6 +59,13 @@ interface Booking {
     // column existed — the breakdown then shows one estimated line rather than
     // inventing a series against a calendar that has since moved.
     nightly_breakdown?: { date: string; rate: number; kind: 'base' | 'weekend' | 'override' }[] | null;
+    // The fee lines, each frozen at checkout so the breakdown shows what was
+    // charged, not what the host has set since. Null on bookings older than the
+    // column (extra_guest_fee / pet_fee added later than cleaning_fee), which
+    // then fall into the residual "Other fees" line rather than their own.
+    cleaning_fee?: number | null;
+    pet_fee?: number | null;
+    extra_guest_fee?: number | null;
     // True when someone else booked it and added this person along.
     guests?: number | null;
     // The party split, written at checkout and carried through /api/trips. Used
@@ -114,6 +121,9 @@ export default function TripsPage() {
     const [confirmingId, setConfirmingId] = useState<string | null>(null);
     // Which bookings have their payment breakdown expanded (under the Total).
     const [openBreakdown, setOpenBreakdown] = useState<Record<string, boolean>>({});
+    // Past trips are hidden until asked for, revealed by the button at the foot
+    // of the upcoming list.
+    const [showPast, setShowPast] = useState(false);
     // OVERNIGHT PROPOSAL (not a shipped feature): ?exp=top or ?exp=arrival shows
     // the experiences entry higher up the card, so its two candidate placements
     // can be compared on one preview. No param = card unchanged.
@@ -330,10 +340,10 @@ export default function TripsPage() {
         // Payment figures — all off the booking row. Shown under the Total via a
         // "Show breakdown" toggle in the facts row (no separate section).
         const payNights = Math.max(1, Math.round((new Date(b.check_out).getTime() - new Date(b.check_in).getTime()) / 86400000));
-        const payCleaning = Number((b as any).cleaning_fee || 0);
-        const payPet = Number((b as any).pet_fee || 0);
+        const payCleaning = Number(b.cleaning_fee || 0);
+        const payPet = Number(b.pet_fee || 0);
+        const payExtraGuest = Number(b.extra_guest_fee || 0);
         const payTotal = Number(b.total_price || 0);
-        const payAccommodation = Math.max(0, payTotal - payCleaning - payPet);
         // The stamped per-night split, if this booking carries one. Rendered
         // exactly as stored — never recomputed — so what a guest sees is what
         // they were charged, even after the host edits the calendar. Older
@@ -341,6 +351,18 @@ export default function TripsPage() {
         const nightlySnapshot = Array.isArray(b.nightly_breakdown) && b.nightly_breakdown.length
             ? b.nightly_breakdown
             : null;
+        // Accommodation is the sum of the frozen per-night rates when we have
+        // them — so the nights shown actually add up to the figure beside them.
+        // Only where there is no snapshot do we fall back to backing it out of
+        // the total. Fees below are each their own line rather than rolled in.
+        const payAccommodation = nightlySnapshot
+            ? nightlySnapshot.reduce((s, n) => s + Number(n.rate || 0), 0)
+            : Math.max(0, payTotal - payCleaning - payPet - payExtraGuest);
+        // Whatever the itemised lines don't account for — a booking made before
+        // pet_fee / extra_guest_fee were frozen, so a fee it carried isn't on
+        // its own line. Shown as one honest "Other fees" line so the parts
+        // always sum to the total, never silently folded into accommodation.
+        const payOtherFees = Math.max(0, payTotal - payAccommodation - payCleaning - payPet - payExtraGuest);
         const payPaid = Number(b.amount_paid || 0);
         const payRefunded = Number(b.amount_refunded || 0);
         const payRemaining = Number(b.balance_amount || 0);
@@ -533,6 +555,11 @@ export default function TripsPage() {
                                         <span className="tabular-nums">£{payAccommodation.toFixed(2)}</span>
                                     </div>
                                 )}
+                                {payExtraGuest > 0 && (
+                                    <div className="flex items-baseline justify-between text-slate-600">
+                                        <span>Extra guest fee</span><span className="tabular-nums">£{payExtraGuest.toFixed(2)}</span>
+                                    </div>
+                                )}
                                 {payCleaning > 0 && (
                                     <div className="flex items-baseline justify-between text-slate-600">
                                         <span>Cleaning fee</span><span className="tabular-nums">£{payCleaning.toFixed(2)}</span>
@@ -541,6 +568,11 @@ export default function TripsPage() {
                                 {payPet > 0 && (
                                     <div className="flex items-baseline justify-between text-slate-600">
                                         <span>Pet fee</span><span className="tabular-nums">£{payPet.toFixed(2)}</span>
+                                    </div>
+                                )}
+                                {payOtherFees > 0 && (
+                                    <div className="flex items-baseline justify-between text-slate-600">
+                                        <span>Other fees</span><span className="tabular-nums">£{payOtherFees.toFixed(2)}</span>
                                     </div>
                                 )}
                                 <div className="flex items-baseline justify-between border-t border-slate-200 pt-2 font-semibold text-slate-900">
@@ -1000,10 +1032,25 @@ export default function TripsPage() {
 
                     {past.length > 0 && (
                         <div className="mt-12">
-                            <h2 className="text-lg font-semibold text-slate-900 mb-4">Past trips</h2>
-                            <div className="space-y-4">
-                                {past.map(renderTrip)}
+                            {/* A reveal for past trips, hidden by default. Matches
+                                the ShowAllReviews button (same classes) rather than
+                                being a third version of the control; centred at the
+                                foot of the upcoming list. */}
+                            <div className="flex justify-center">
+                                <button
+                                    type="button"
+                                    onClick={() => setShowPast((o) => !o)}
+                                    aria-expanded={showPast}
+                                    className="inline-flex items-center rounded-lg border border-slate-900/10 bg-white px-5 py-2.5 text-sm font-semibold text-slate-900 shadow-sm hover:bg-slate-50"
+                                >
+                                    {showPast ? 'Hide past trips' : 'Past trips'}
+                                </button>
                             </div>
+                            {showPast && (
+                                <div className="mt-6 space-y-4">
+                                    {past.map(renderTrip)}
+                                </div>
+                            )}
                         </div>
                     )}
 
