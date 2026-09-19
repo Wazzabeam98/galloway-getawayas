@@ -174,6 +174,63 @@ Three things bite every single session on the MacBook:
 - a co-host is not the `host_id` on a booking, so their queries need the
   service key or row-level security silently returns nothing
 
+## Before you design a screen, go and look at a real one
+
+Any guest-facing or host-facing screen — new or restyled — starts by looking
+at how the big platforms do that same screen. Airbnb first; Booking.com or
+Vrbo where Airbnb’s version sits behind a login. Open Chrome, walk the real
+flow, and screenshot what you find. Where the screen is behind a booking you
+cannot make, their help-centre articles document their own screens with
+annotated screenshots — use those, and say that is what you used. **Never
+approximate from memory, and never describe what you think a screen probably
+looks like.** Say in the pull request what you copied and what you
+deliberately did not.
+
+Two things matter as much as the copying. **What they leave out is the
+point**: report what those platforms do *not* show on that screen, because
+this site’s pages keep failing by being thorough rather than spare. And **say
+where the pattern breaks** — a stranger cooking in someone’s cottage is not a
+hotel booking, so where the product genuinely differs, name the difference
+rather than forcing their pattern onto it. Then check what this codebase
+already does before inventing anything — the lifted card, below, and the
+patterns already in use — so it does not grow a second variant of something
+it has.
+
+## The lifted card, and why there is only one of it
+
+A lifted card is exactly this:
+
+```
+rounded-2xl border border-slate-200 bg-white
+shadow-[0_6px_16px_rgba(0,0,0,0.12)]
+```
+
+sitting on a page tinted `bg-slate-50`, so the card is the brightest thing on
+the screen. **The page tint is the half people miss**: a white card on a white
+page cannot lift, whatever shadow you hang on it, and the fix then gets looked
+for in the shadow.
+
+**`bg-stone-50` is not the platform tint.** Three pages still use it, and they
+are wrong rather than a second option: the home page (`app/page.tsx`), the area
+pages (`app/holiday-cottages/[area]/page.tsx`) and the arrival page
+(`app/arrival/[bookingId]/page.tsx`). Moving them to `bg-slate-50` is a job of
+its own — do it deliberately, not in passing while touching one of them for
+something else. (`bg-stone-50` on a footer, a chip or a hover state is a
+different use and is not what this means.)
+
+It means *this is a surface you act on*. It never marks content you merely
+scan. **Lifted:** the booking panel, trip cards, the upcoming trip and
+experience cards, the review prompt, the three start-hosting tiles, the
+provider reservation panel. **Deliberately flat:** browse grids, calendar day
+rows and month cells, host arrival cards, facts grids, listing bodies, editor
+forms.
+
+**Never introduce a second variant.** A surface either lifts, with these exact
+classes, or it stays flat. A second shadow, a second radius or a second border
+is how a codebase ends up with two cards that are nearly the same and nothing
+to say which one is right — and the near-miss is harder to spot than a
+difference, so it survives.
+
 ## What Claude Code does not do here
 
 These four are absolute. They hold in every session, on every branch, whatever
