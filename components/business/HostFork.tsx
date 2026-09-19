@@ -68,8 +68,10 @@ export default function HostFork({ signupsOpen = true }: { signupsOpen?: boolean
                 </Link>
             </header>
 
-            {/* The one question. */}
-            <main className="flex flex-1 flex-col items-center justify-center overflow-y-auto px-4 py-10">
+            {/* The one question. Tinted, not white, so the white tiles have
+                something to lift off — a white card on a white page can't read
+                as raised. Header and footer stay white to frame it. */}
+            <main className="flex flex-1 flex-col items-center justify-center overflow-y-auto bg-slate-50 px-4 py-10">
                 <div className="w-full max-w-4xl">
                     <div className="mx-auto max-w-xl text-center">
                         <h1 className="text-3xl font-extrabold tracking-tight text-slate-900 sm:text-4xl">
@@ -93,7 +95,7 @@ export default function HostFork({ signupsOpen = true }: { signupsOpen?: boolean
                                     <div
                                         key={key}
                                         aria-disabled="true"
-                                        className="flex cursor-not-allowed flex-col items-center gap-6 rounded-3xl border-2 border-dashed border-slate-200 bg-slate-50 px-6 py-10 text-center opacity-60"
+                                        className="flex cursor-not-allowed flex-col items-center gap-6 rounded-2xl border-2 border-dashed border-slate-200 bg-white px-6 py-10 text-center opacity-60"
                                     >
                                         <span className="flex h-28 items-center justify-center sm:h-36">
                                             <Icon className="h-16 w-16 text-slate-400 sm:h-24 sm:w-24" strokeWidth={1.5} aria-hidden />
@@ -116,11 +118,15 @@ export default function HostFork({ signupsOpen = true }: { signupsOpen?: boolean
                                     aria-pressed={isOn}
                                     onClick={() => setSelected(key)}
                                     className={
-                                        'group flex flex-col items-center gap-6 rounded-3xl border-2 bg-white px-6 py-10 text-center transition '
+                                        // The same lift as the booking and trip cards — soft
+                                        // shadow, hairline border, radius (reused, no variant):
+                                        // three tiles you pick between is the act-on case. The
+                                        // chosen one adds an emerald ring, not a different lift.
+                                        'group flex flex-col items-center gap-6 rounded-2xl border border-slate-200 bg-white px-6 py-10 text-center shadow-[0_6px_16px_rgba(0,0,0,0.12)] transition '
                                         + 'focus:outline-none focus-visible:ring-2 focus-visible:ring-emerald-600 '
                                         + (isOn
-                                            ? 'border-emerald-600 shadow-md'
-                                            : 'border-slate-200 hover:border-slate-300 hover:shadow-md')
+                                            ? 'border-emerald-600 ring-2 ring-emerald-600'
+                                            : 'hover:border-slate-300')
                                     }
                                 >
                                     {/* The illustration zone — large and dominant, Airbnb-style.
