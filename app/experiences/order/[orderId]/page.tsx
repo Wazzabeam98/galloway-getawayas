@@ -1,6 +1,6 @@
 import { redirect } from 'next/navigation';
 import Link from 'next/link';
-import { ArrowLeft, CalendarDays, MapPin, Info, CheckCircle2, Clock3, XCircle, AlertTriangle, Users } from 'lucide-react';
+import { ArrowLeft, CalendarDays, MapPin, CheckCircle2, Clock3, XCircle, AlertTriangle, Users, MessageSquare, ChevronRight } from 'lucide-react';
 import { createServerComponentClient } from '@supabase/auth-helpers-nextjs';
 import { cookies } from 'next/headers';
 import { adminClient } from '@/lib/supabaseAdmin';
@@ -9,7 +9,6 @@ import { firstName, getImageUrl } from '@/lib/utils';
 import { guestMayCancelFree } from '@/lib/serviceSlots';
 import { orderLocation } from '@/lib/orderLocation';
 import { cancellationSentence } from '@/components/marketplace/present';
-import OrderThread from '@/components/marketplace/OrderThread';
 import OrderCancel from '@/components/marketplace/OrderCancel';
 
 export const dynamic = 'force-dynamic';
@@ -147,6 +146,19 @@ export default async function OrderPage({ params, searchParams }: { params: { or
 
     const meta = STATUS[order.status] || { label: order.status, tone: 'over' as const };
     const live = order.status === 'authorised' || order.status === 'confirmed' || order.status === 'holding';
+    // The conversation lives in one place only — the guest inbox thread for this
+    // order (/messages?o=…), the same route the provider and confirmation emails
+    // point at. So the page carries a "Message the host" link, not a composer.
+    // The inbox only holds a thread once the order is authorised or confirmed (a
+    // holding order is still mid-checkout), so the link shows on those two.
+    const canMessage = order.status === 'authorised' || order.status === 'confirmed';
+    // Unread from the provider on this order, shown as a badge on that link so
+    // the count is still visible here even though the thread itself has moved.
+    const { count: unreadFromProvider } = canMessage
+        ? await admin.from('messages').select('id', { count: 'exact', head: true })
+            .eq('order_id', order.id).eq('recipient_id', user.id).is('read_at', null)
+        : { count: 0 };
+    const unreadCount = Number(unreadFromProvider) || 0;
     // The fulfilment DIRECTION is read off the ORDER, not the provider's live
     // setup: 'collection' = the guest comes to the host's address, 'delivery' =
     // the host runs the session at the guest's cottage. It was frozen at booking
@@ -172,16 +184,17 @@ export default async function OrderPage({ params, searchParams }: { params: { or
 
     return (
         <div className="min-h-screen bg-slate-50">
-            <div className="mx-auto max-w-5xl px-4 sm:px-6 py-6">
+            <div className="mx-auto max-w-[600px] px-4 sm:px-6 py-6">
                 <Link href="/trips" className="inline-flex items-center gap-1.5 text-sm font-medium text-slate-500 hover:text-slate-800">
                     <ArrowLeft className="h-4 w-4" /> Your trips
                 </Link>
 
-                {/* Header, full width */}
+                {/* Header. The kicker line that used to name the business here is
+                    gone — the title and the "Hosted by" row already carry it, and
+                    Airbnb's reservation screen leads with the title alone. */}
                 <div className="mt-4 flex items-start justify-between gap-3">
                     <div className="min-w-0">
-                        <p className="text-xs font-semibold uppercase tracking-[0.14em] text-emerald-700">{who}</p>
-                        <h1 className="mt-1 text-2xl sm:text-3xl font-semibold tracking-tight text-slate-900">{order.item_name || 'Experience'}</h1>
+                        <h1 className="text-2xl sm:text-3xl font-semibold tracking-tight text-slate-900">{order.item_name || 'Experience'}</h1>
                     </div>
                     <span className={`inline-flex flex-none items-center gap-1 rounded-full px-2.5 py-1 text-[11px] font-semibold ${PILL[meta.tone]}`}>
                         {meta.tone === 'ok' && <CheckCircle2 className="h-3 w-3" />}
@@ -207,12 +220,12 @@ export default async function OrderPage({ params, searchParams }: { params: { or
                     <span className="text-sm text-slate-600">{hostFirst ? 'Hosted by ' + hostFirst : 'Your host'}</span>
                 </div>
 
-                {/* A photo of what's coming, led with the way Airbnb does. Content,
-                    so it stays flat — the lift is saved for the panels you act on.
+                {/* A photo of what's coming — a wide band, not a panel, so the
+                    facts sit above the fold on a laptop. Content, so it stays flat.
                     Omitted entirely when the provider has no photos. */}
                 {hero && (
                     // eslint-disable-next-line @next/next/no-img-element
-                    <img src={hero} alt={order.item_name || 'Experience'} className="mt-4 h-56 w-full rounded-2xl object-cover sm:h-72" />
+                    <img src={hero} alt={order.item_name || 'Experience'} className="mt-4 h-24 w-full rounded-2xl object-cover sm:h-28" />
                 )}
 
                 {/* The post-booking moment. A slot is paid and confirmed the
@@ -236,7 +249,7 @@ export default async function OrderPage({ params, searchParams }: { params: { or
                                 <ol className="mt-3 space-y-1.5 text-sm text-emerald-800">
                                     <li className="flex gap-2"><span className="font-semibold">1.</span> Check your email for the receipt and the details.</li>
                                     <li className="flex gap-2"><span className="font-semibold">2.</span> {comesToCottage ? `${shortWho} will come to your cottage at the agreed time.` : isSlot ? (collectionAddress ? `Go to ${collectionAddress} at the time you booked.` : `Turn up at the time you booked — the address is below.`) : collectionAddress ? `Collect from ${collectionAddress}.` : `${shortWho} will be in touch about collection or delivery.`}</li>
-                                    <li className="flex gap-2"><span className="font-semibold">3.</span> Anything to sort? Message {shortWho} below.</li>
+                                    <li className="flex gap-2"><span className="font-semibold">3.</span> Anything to sort? Message {shortWho}.</li>
                                 </ol>
                                 <div className="mt-4 flex flex-wrap gap-2">
                                     <a
@@ -253,138 +266,134 @@ export default async function OrderPage({ params, searchParams }: { params: { or
                                     >
                                         <CalendarDays className="h-4 w-4" /> Add to calendar
                                     </a>
-                                    <a href="#order-messages" className="inline-flex items-center gap-1.5 rounded-lg px-3.5 py-2 text-sm font-semibold text-emerald-800 hover:bg-white/60">
+                                    <Link href={'/messages?o=' + order.id} className="inline-flex items-center gap-1.5 rounded-lg px-3.5 py-2 text-sm font-semibold text-emerald-800 hover:bg-white/60">
                                         Message {shortWho}
-                                    </a>
+                                    </Link>
                                 </div>
                             </div>
                         </div>
                     </div>
                 )}
 
-                <div className="mt-5 grid grid-cols-1 gap-5 lg:grid-cols-3">
-                    {/* Main column — the detail, the allergy the guest gave, and the thread */}
-                    <div className="space-y-5 lg:col-span-2">
-                        {/* When / where / details — content you scan, so it stays
-                            flat. A plain white card on the tint, no lift: the shadow
-                            is reserved for the panels you act on (messages, payment). */}
-                        <div className="rounded-2xl border border-slate-200 bg-white p-5">
-                            <dl className="space-y-4">
+                <div className="mt-5 space-y-5">
+                    {/* When / where / party — content you scan, so it stays flat.
+                        The description the guest read before booking isn't reprinted
+                        here (Airbnb's reservation screen doesn't either); the lift is
+                        saved for the panels you act on. */}
+                    <div className="rounded-2xl border border-slate-200 bg-white p-5">
+                        <dl className="space-y-4">
+                            <div className="flex gap-3">
+                                <CalendarDays className="mt-0.5 h-5 w-5 flex-none text-slate-400" />
+                                <div>
+                                    {/* A date means different things by shape: an
+                                        appointment for a chef, a deadline for a
+                                        baker, a timed session for a slot. */}
+                                    <dt className="text-xs font-semibold uppercase tracking-wide text-slate-500">{order.shape === 'made_to_order' ? 'Ready for' : 'When'}</dt>
+                                    <dd className="text-sm text-slate-800">{longWhen(order.service_date, isSlot ? order.service_time : null)}</dd>
+                                </div>
+                            </div>
+                            {/* Head count on a private session — the whole session
+                                is theirs, so the provider knows how many to set up
+                                for. Only for a private booking that has one. */}
+                            {isSlot && Number(order.attendees) > 1 ? (
                                 <div className="flex gap-3">
-                                    <CalendarDays className="mt-0.5 h-5 w-5 flex-none text-slate-400" />
+                                    <Users className="mt-0.5 h-5 w-5 flex-none text-slate-400" />
                                     <div>
-                                        {/* A date means different things by shape: an
-                                            appointment for a chef, a deadline for a
-                                            baker, a timed session for a slot. */}
-                                        <dt className="text-xs font-semibold uppercase tracking-wide text-slate-500">{order.shape === 'made_to_order' ? 'Ready for' : 'When'}</dt>
-                                        <dd className="text-sm text-slate-800">{longWhen(order.service_date, isSlot ? order.service_time : null)}</dd>
+                                        <dt className="text-xs font-semibold uppercase tracking-wide text-slate-500">Party</dt>
+                                        <dd className="text-sm text-slate-800">{order.attendees} people — the whole session is yours.</dd>
                                     </div>
                                 </div>
-                                {/* Head count on a private session — the whole session
-                                    is theirs, so the provider knows how many to set up
-                                    for. Only for a private booking that has one. */}
-                                {isSlot && Number(order.attendees) > 1 ? (
-                                    <div className="flex gap-3">
-                                        <Users className="mt-0.5 h-5 w-5 flex-none text-slate-400" />
-                                        <div>
-                                            <dt className="text-xs font-semibold uppercase tracking-wide text-slate-500">Party</dt>
-                                            <dd className="text-sm text-slate-800">{order.attendees} people — the whole session is yours.</dd>
-                                        </div>
-                                    </div>
-                                ) : null}
-                                <div className="flex gap-3">
-                                    <MapPin className="mt-0.5 h-5 w-5 flex-none text-slate-400" />
-                                    <div>
-                                        <dt className="text-xs font-semibold uppercase tracking-wide text-slate-500">Where</dt>
-                                        <dd className="text-sm text-slate-800">
-                                            {comesToCottage ? (
-                                                <>Comes to your cottage{listing && listing.title ? ' — ' + listing.title : ''}{cottageAddress ? <span className="block text-slate-500">{cottageAddress}</span> : null}</>
-                                            ) : isSlot ? (
-                                                // A come-to-me slot: the full address once paid (charged →
-                                                // collectionAddress), the public town before then, and a
-                                                // fallback only if the host set no address at all.
-                                                <>You go to {who}{collectionAddress ? (
-                                                    <span className="block text-slate-500">{collectionAddress}</span>
-                                                ) : prov && prov.based_line ? (
-                                                    <span className="block text-slate-500">{prov.based_line}{charged ? '' : ' — full address once your place is confirmed'}</span>
-                                                ) : (
-                                                    <span className="block text-slate-500">Message them below for the exact address and directions.</span>
-                                                )}</>
-                                            ) : collectionAddress ? (
-                                                <>Collect from {who}<span className="block text-slate-500">{collectionAddress}</span></>
+                            ) : null}
+                            <div className="flex gap-3">
+                                <MapPin className="mt-0.5 h-5 w-5 flex-none text-slate-400" />
+                                <div>
+                                    <dt className="text-xs font-semibold uppercase tracking-wide text-slate-500">Where</dt>
+                                    <dd className="text-sm text-slate-800">
+                                        {comesToCottage ? (
+                                            <>Comes to your cottage{listing && listing.title ? ' — ' + listing.title : ''}{cottageAddress ? <span className="block text-slate-500">{cottageAddress}</span> : null}</>
+                                        ) : isSlot ? (
+                                            // A come-to-me slot: the full address once paid (charged →
+                                            // collectionAddress), the public town before then, and a
+                                            // fallback only if the host set no address at all.
+                                            <>You go to {who}{collectionAddress ? (
+                                                <span className="block text-slate-500">{collectionAddress}</span>
+                                            ) : prov && prov.based_line ? (
+                                                <span className="block text-slate-500">{prov.based_line}{charged ? '' : ' — full address once your place is confirmed'}</span>
                                             ) : (
-                                                <>{shortWho} will arrange collection or delivery with you — message them below.</>
-                                            )}
-                                        </dd>
-                                    </div>
+                                                <span className="block text-slate-500">Message them for the exact address and directions.</span>
+                                            )}</>
+                                        ) : collectionAddress ? (
+                                            <>Collect from {who}<span className="block text-slate-500">{collectionAddress}</span></>
+                                        ) : (
+                                            <>{shortWho} will arrange collection or delivery with you — message them to sort it out.</>
+                                        )}
+                                    </dd>
                                 </div>
-                                {(order.item_description || (prov && prov.description)) && (
-                                    <div className="flex gap-3">
-                                        <Info className="mt-0.5 h-5 w-5 flex-none text-slate-400" />
-                                        <div>
-                                            <dt className="text-xs font-semibold uppercase tracking-wide text-slate-500">Details</dt>
-                                            <dd className="whitespace-pre-line text-sm text-slate-700">{order.item_description || (prov && prov.description)}</dd>
-                                        </div>
-                                    </div>
-                                )}
-                            </dl>
+                            </div>
+                        </dl>
 
-                            {/* The allergy the guest gave, shown back so they can see it landed. */}
-                            {order.allergy && (
-                                <div className="mt-4 rounded-lg border-2 border-rose-300 bg-rose-50 px-3 py-2.5">
-                                    <div className="flex items-center gap-1.5 text-xs font-bold uppercase tracking-wide text-rose-800">
-                                        <AlertTriangle className="h-3.5 w-3.5" /> Your allergy note
-                                    </div>
-                                    <p className="mt-1 whitespace-pre-line text-sm text-rose-950">{order.allergy}</p>
-                                    <p className="mt-1 text-xs text-rose-700/80">{shortWho} has this. If anything’s missing, add it in the messages below.</p>
+                        {/* The allergy the guest gave, shown back so they can see it landed. */}
+                        {order.allergy && (
+                            <div className="mt-4 rounded-lg border-2 border-rose-300 bg-rose-50 px-3 py-2.5">
+                                <div className="flex items-center gap-1.5 text-xs font-bold uppercase tracking-wide text-rose-800">
+                                    <AlertTriangle className="h-3.5 w-3.5" /> Your allergy note
                                 </div>
-                            )}
-                            {order.note && (
-                                <div className="mt-3 rounded-lg border border-amber-300 bg-amber-50 px-3 py-2.5">
-                                    <div className="text-xs font-semibold uppercase tracking-wide text-amber-900">Your note</div>
-                                    <p className="mt-1 whitespace-pre-line text-sm text-amber-950">{order.note}</p>
-                                </div>
-                            )}
-                        </div>
-
-                        {/* Messages — the thread lives here, on the booking. A
-                            surface you act on, so it gets the lifted card. The one
-                            line of guidance lives here; the thread's empty state no
-                            longer repeats it. */}
-                        {live && (
-                            <div id="order-messages" className="scroll-mt-6 rounded-2xl border border-slate-200 bg-white p-5 shadow-[0_6px_16px_rgba(0,0,0,0.12)]">
-                                <h2 className="text-sm font-semibold text-slate-900">Messages with {shortWho}</h2>
-                                <p className="mt-0.5 text-xs text-slate-500">Agree the details — allergies, timing, what to bring, how to get there.</p>
-                                <OrderThread orderId={order.id} placeholderName={shortWho} bare />
+                                <p className="mt-1 whitespace-pre-line text-sm text-rose-950">{order.allergy}</p>
+                                <p className="mt-1 text-xs text-rose-700/80">{shortWho} has this. If anything’s missing, add it in your messages.</p>
+                            </div>
+                        )}
+                        {order.note && (
+                            <div className="mt-3 rounded-lg border border-amber-300 bg-amber-50 px-3 py-2.5">
+                                <div className="text-xs font-semibold uppercase tracking-wide text-amber-900">Your note</div>
+                                <p className="mt-1 whitespace-pre-line text-sm text-amber-950">{order.note}</p>
                             </div>
                         )}
                     </div>
 
-                    {/* Summary column — price, policy, cancel. Sticky on desktop. */}
-                    <div className="lg:col-span-1">
-                        {/* Payment and cancellation — a surface you act on, so it
-                            gets the lifted card. */}
-                        <div className="rounded-2xl border border-slate-200 bg-white p-5 shadow-[0_6px_16px_rgba(0,0,0,0.12)] lg:sticky lg:top-6">
-                            <div className="flex items-center justify-between">
-                                <span className="text-sm text-slate-500">{charged ? 'Paid' : 'Held, not charged'}</span>
-                                <span className="text-xl font-semibold text-slate-900">£{Number(order.price).toFixed(2)}</span>
-                            </div>
-                            <p className="mt-3 border-t border-slate-200 pt-3 text-xs leading-relaxed text-slate-500">
-                                {cancellationSentence(order.shape, windowHours, shortWho)}
-                            </p>
-                            {live && (
-                                <div className="mt-3">
-                                    <OrderCancel
-                                        orderId={order.id}
-                                        status={order.status}
-                                        charged={charged}
-                                        free={free}
-                                        price={Number(order.price)}
-                                        providerName={shortWho}
-                                    />
-                                </div>
-                            )}
+                    {/* Message the host — a link to the ONE place the conversation
+                        lives (the inbox thread for this order), not a composer. A
+                        surface you act on, so it gets the lifted card. Any unread
+                        from the provider shows as a badge. */}
+                    {canMessage && (
+                        <Link href={'/messages?o=' + order.id} className="flex items-center justify-between gap-3 rounded-2xl border border-slate-200 bg-white p-5 shadow-[0_6px_16px_rgba(0,0,0,0.12)] hover:bg-slate-50">
+                            <span className="flex min-w-0 items-center gap-3">
+                                <MessageSquare className="h-5 w-5 flex-none text-emerald-700" />
+                                <span className="min-w-0">
+                                    <span className="block text-sm font-semibold text-slate-900">Message {shortWho}</span>
+                                    <span className="block text-xs text-slate-500">Agree the details — allergies, timing, what to bring, how to get there.</span>
+                                </span>
+                            </span>
+                            <span className="flex flex-none items-center gap-2">
+                                {unreadCount > 0 && (
+                                    <span className="inline-flex h-5 min-w-[20px] items-center justify-center rounded-full bg-emerald-600 px-1.5 text-[11px] font-semibold text-white">{unreadCount}</span>
+                                )}
+                                <ChevronRight className="h-5 w-5 text-slate-400" />
+                            </span>
+                        </Link>
+                    )}
+
+                    {/* Payment and cancellation — a surface you act on, so it gets
+                        the lifted card. */}
+                    <div className="rounded-2xl border border-slate-200 bg-white p-5 shadow-[0_6px_16px_rgba(0,0,0,0.12)]">
+                        <div className="flex items-center justify-between">
+                            <span className="text-sm text-slate-500">{charged ? 'Paid' : 'Held, not charged'}</span>
+                            <span className="text-xl font-semibold text-slate-900">£{Number(order.price).toFixed(2)}</span>
                         </div>
+                        <p className="mt-3 border-t border-slate-200 pt-3 text-xs leading-relaxed text-slate-500">
+                            {cancellationSentence(order.shape, windowHours, shortWho)}
+                        </p>
+                        {live && (
+                            <div className="mt-3">
+                                <OrderCancel
+                                    orderId={order.id}
+                                    status={order.status}
+                                    charged={charged}
+                                    free={free}
+                                    price={Number(order.price)}
+                                    providerName={shortWho}
+                                />
+                            </div>
+                        )}
                     </div>
                 </div>
             </div>
