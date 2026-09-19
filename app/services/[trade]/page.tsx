@@ -121,7 +121,10 @@ export default function TradeShopPage({ params }: { params: { trade: string } })
         let cancelled = false;
         (async () => {
             const { data: { session } } = await supabase.auth.getSession();
-            let target = '/homes';
+            // '/' , not '/homes'. There is no /homes route — only /homes/[id] —
+            // so this sent every signed-out visitor who landed on /services/guest
+            // to a 404. The cottages are on the home page.
+            let target = '/';
             if (session?.user) {
                 const today = londonDayKey();
                 const { data: upcoming } = await supabase
