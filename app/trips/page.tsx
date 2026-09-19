@@ -418,7 +418,7 @@ export default function TripsPage() {
         return (
             // Named so the link from the home page card lands on this trip
             // rather than at the top of a list of them.
-            <div key={b.id} id={'trip-' + b.id} className="border border-slate-200 rounded-2xl p-6 scroll-mt-6">
+            <div key={b.id} id={'trip-' + b.id} className="bg-white border border-slate-200 rounded-2xl p-6 shadow-[0_6px_16px_rgba(0,0,0,0.12)] scroll-mt-6">
                 {/* Single column: the right column existed only for the
                     per-booking experiences panel, which is behind its flag and
                     now teased once at the page level, so the card is full width
