@@ -174,6 +174,29 @@ Three things bite every single session on the MacBook:
 - a co-host is not the `host_id` on a booking, so their queries need the
   service key or row-level security silently returns nothing
 
+## Before you design a screen, go and look at a real one
+
+Any guest-facing or host-facing screen — new or restyled — starts by looking
+at how the big platforms do that same screen. Airbnb first; Booking.com or
+Vrbo where Airbnb’s version sits behind a login. Open Chrome, walk the real
+flow, and screenshot what you find. Where the screen is behind a booking you
+cannot make, their help-centre articles document their own screens with
+annotated screenshots — use those, and say that is what you used. **Never
+approximate from memory, and never describe what you think a screen probably
+looks like.** Say in the pull request what you copied and what you
+deliberately did not.
+
+Two things matter as much as the copying. **What they leave out is the
+point**: report what those platforms do *not* show on that screen, because
+this site’s pages keep failing by being thorough rather than spare. And **say
+where the pattern breaks** — a stranger cooking in someone’s cottage is not a
+hotel booking, so where the product genuinely differs, name the difference
+rather than forcing their pattern onto it. Then check what this codebase
+already does before inventing anything — the lifted card (the raised style the
+booking card and the review prompt share: soft shadow, hairline border) and
+the patterns already in use — so it does not grow a second variant of
+something it has.
+
 ## What Claude Code does not do here
 
 These four are absolute. They hold in every session, on every branch, whatever
