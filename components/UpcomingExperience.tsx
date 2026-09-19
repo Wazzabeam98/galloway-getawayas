@@ -2,6 +2,7 @@
 
 import { useEffect, useState } from 'react';
 import Link from 'next/link';
+import { Home } from 'lucide-react';
 import DirectionsPicker from '@/components/arrival/DirectionsPicker';
 
 // The "Your upcoming experience" cards on the logged-in home page — peers of the
@@ -77,22 +78,29 @@ export default function UpcomingExperience() {
                     return (
                         // Same lift as the trip card. Photo is inset (its own
                         // rounded box) so the directions dropdown isn't clipped.
-                        <div key={it.orderId} className="rounded-2xl border border-slate-200 bg-white p-5 shadow-[0_6px_16px_rgba(0,0,0,0.12)]">
-                            <Link href={href} className="group block aspect-[4/3] w-full overflow-hidden rounded-xl bg-stone-200">
+                        <div key={it.orderId} className="rounded-2xl border border-slate-200 bg-white p-4 shadow-[0_6px_16px_rgba(0,0,0,0.12)]">
+                            <Link href={href} className="group block aspect-[16/9] w-full overflow-hidden rounded-xl bg-stone-200">
                                 {it.photo ? (
                                     // eslint-disable-next-line @next/next/no-img-element
                                     <img src={it.photo} alt={it.title} className="h-full w-full object-cover transition duration-300 group-hover:scale-105" />
                                 ) : null}
                             </Link>
-                            <div className="mt-4">
-                                <Link href={href} className="text-lg font-semibold text-stone-900 hover:underline">{it.title}</Link>
-                                {it.providerName && <div className="mt-0.5 text-sm text-stone-500">{it.providerName}</div>}
-                                <div className="mt-3 text-sm font-medium text-stone-700">{when}</div>
-                                {it.directions && (it.directions.google || it.directions.apple) && (
-                                    <div className="mt-4">
-                                        <DirectionsPicker google={it.directions.google} apple={it.directions.apple} />
-                                    </div>
-                                )}
+                            <div className="mt-3">
+                                <Link href={href} className="text-base font-semibold text-stone-900 hover:underline">{it.title}</Link>
+                                {it.providerName && <div className="mt-0.5 text-[13px] text-stone-500">{it.providerName}</div>}
+                                <div className="mt-1.5 text-[13px] font-medium text-stone-700">{when}</div>
+                                <div className="mt-3">
+                                    {it.directions && (it.directions.google || it.directions.apple) ? (
+                                        <DirectionsPicker compact google={it.directions.google} apple={it.directions.apple} />
+                                    ) : (
+                                        // Where the other card has a button — so the space reads as
+                                        // deliberate, not missing. A comes-to-you provider travels to
+                                        // the guest, so there's nowhere to send them.
+                                        <div className="inline-flex items-center gap-1.5 rounded-lg border border-stone-200 bg-stone-50 px-3 py-2 text-[13px] font-medium text-stone-500">
+                                            <Home className="h-4 w-4" /> They come to you
+                                        </div>
+                                    )}
+                                </div>
                             </div>
                         </div>
                     );
