@@ -257,7 +257,11 @@ export default async function UpcomingTrip() {
     // filled rather than left hanging under the image. The rail and the actions
     // run full width below both.
     const card = (
-        <div className="rounded-3xl border border-stone-200 bg-white p-6 md:p-8">
+        // Lifted to match the trips-page cards — the same soft shadow, hairline
+        // border and radius (reused, no variant). This is the featured trip you
+        // act on; the host-mode counterpart (HostReservations) stays flat because
+        // it's a grid of arrivals you scan, not one card.
+        <div className="rounded-2xl border border-slate-200 bg-white p-6 md:p-8 shadow-[0_6px_16px_rgba(0,0,0,0.12)]">
             <div className="md:flex md:items-start md:gap-8">
                 <div className="mb-6 md:mb-0 md:w-1/4 md:flex-none">
                     {photoEl}
