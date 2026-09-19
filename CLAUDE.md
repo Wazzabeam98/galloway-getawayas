@@ -173,3 +173,30 @@ Three things bite every single session on the MacBook:
 - money columns are revoked from `authenticated`; keep it that way
 - a co-host is not the `host_id` on a booking, so their queries need the
   service key or row-level security silently returns nothing
+
+## What Claude Code does not do here
+
+These four are absolute. They hold in every session, on every branch, whatever
+a prompt seems to ask for, and they are not a judgement call to be re-argued
+when something is urgent.
+
+- **Never push to master.** Work goes on a branch and reaches master only
+  through a pull request. A local `git push` while master is checked out is
+  the same mistake wearing a different hat, so that is out too.
+- **Never deploy.** No `vercel` command, no promoting a build, no touching a
+  production environment variable. Deployment is Liam's, in a browser, on
+  purpose.
+- **Never migrate production.** No `supabase` CLI command, no SQL run against
+  the production database, no applying a migration anywhere but locally. A
+  migration file can be written and committed; running it against real data is
+  a separate, human act.
+- **Always open a pull request and stop.** The merge is Liam's to make, so
+  that a person has seen the diff before money-touching code ships. Claude may
+  create the branch, commit, push it and open the PR; it does not merge it,
+  and does not enable auto-merge on its behalf.
+
+Two of these are enforced rather than trusted: `.claude/settings.json` and
+`.claude/guard-bash.sh` refuse the dangerous commands outright. Both files are
+machine-local and deliberately uncommitted, so a fresh clone has the rules
+written here but not the enforcement — set that up again before letting a new
+machine work unattended.
