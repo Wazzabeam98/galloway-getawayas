@@ -258,6 +258,13 @@ export default async function OrderPage({ params, searchParams }: { params: { or
     const where = comesToCottage
         ? (cottageAddress || 'Your cottage')
         : (collectionAddress || prov?.based_line || who);
+    // Get directions goes to Google Maps, which is exactly what the reference's
+    // row does — but theirs queries by COORDINATES and this one queries by the
+    // ADDRESS, deliberately. Their coordinates are the meeting point; the only
+    // coordinates we hold are the centre of a service AREA, so sending those to
+    // a directions app would route the guest to the middle of the Stewartry
+    // instead of the bakery. The written address is the exact one, so it is the
+    // better query for us even though it is the weaker kind of query in general.
     const directionsHref = 'https://www.google.com/maps/search/?api=1&query=' + encodeURIComponent(where);
     const badge = live ? untilBadge(String(order.service_date)) : null;
     // The session length as RECORDED — null when nothing records one. The
@@ -294,6 +301,14 @@ export default async function OrderPage({ params, searchParams }: { params: { or
                                 longitude={mapLng as number}
                                 area={areaRow?.label ? `${areaRow.label} — the area, not the exact door` : 'The area, not the exact door'}
                                 variant="card"
+                                // The pin is the thing booked, the way the
+                                // reference marks a booked experience: a small
+                                // photo in a white bubble, not clickable.
+                                pinImage={hero}
+                                // A band on a phone, where it sits above the
+                                // column, and a tall pane on desktop where it
+                                // stands beside one.
+                                frameClassName="h-[220px] lg:h-[620px]"
                             />
                         </aside>
                     )}

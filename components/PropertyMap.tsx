@@ -20,10 +20,23 @@ export default function PropertyMap({
     longitude,
     area,
     variant = 'full',
+    pinImage = null,
+    frameClassName = 'aspect-[16/9]',
 }: {
     latitude: number;
     longitude: number;
     area?: string;
+    // A photo to use as the marker instead of the house icon — a small rounded
+    // thumbnail in a white bubble. This is how Airbnb marks a booked experience
+    // on its reservation map (verified in a browser: a 48px image, and clicking
+    // it does nothing), and the booked order page uses it so the pin is the
+    // thing booked rather than a generic house.
+    pinImage?: string | null;
+    // The card's frame shape. Defaults to the 16/9 the trip card uses; the
+    // order page overrides it because that map stands beside a tall scrolling
+    // column and a letterbox strip beside 1500px of text looks like an
+    // afterthought. The reference's is nearly square for the same reason.
+    frameClassName?: string;
     // 'full' is the listing-page block (heading, big frame, a house marker on
     // the approximate spot). 'card' is a small, chromeless AREA map for the
     // trip card: no controls, a house pin at the real property and a town-scale
@@ -129,14 +142,32 @@ export default function PropertyMap({
             // default marker — built as a DOM element and handed to Mapbox's own
             // Marker, so it tracks the coordinate natively as the guest pans.
             const el = document.createElement('div');
-            el.style.cssText =
-                'width:44px;height:44px;border-radius:9999px;background:#0f172a;' +
-                'box-shadow:0 4px 12px rgba(0,0,0,0.3);display:flex;align-items:center;justify-content:center;';
-            el.innerHTML =
-                '<svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" ' +
-                'fill="none" stroke="#ffffff" stroke-width="2" stroke-linecap="round" ' +
-                'stroke-linejoin="round"><path d="m3 9 9-7 9 7v11a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z"/>' +
-                '<polyline points="9 22 9 12 15 12 15 22"/></svg>';
+            if (pinImage) {
+                // The photo pin. A white bubble with the picture inset, the
+                // shape Airbnb uses for a booked experience. Deliberately NOT
+                // clickable and with no popup: clicking theirs does nothing, and
+                // a pin that looks pressable but is not is worse than a plain
+                // one. The image is set via a background so a broken URL leaves
+                // a neutral bubble rather than a torn-image glyph.
+                el.style.cssText =
+                    'width:48px;height:48px;border-radius:12px;background-color:#ffffff;' +
+                    'box-shadow:0 4px 12px rgba(0,0,0,0.3);padding:3px;box-sizing:border-box;';
+                const inner = document.createElement('div');
+                inner.style.cssText =
+                    'width:100%;height:100%;border-radius:9px;background-color:#e2e8f0;' +
+                    'background-size:cover;background-position:center;';
+                inner.style.backgroundImage = `url("${String(pinImage).replace(/"/g, '\\"')}")`;
+                el.appendChild(inner);
+            } else {
+                el.style.cssText =
+                    'width:44px;height:44px;border-radius:9999px;background:#0f172a;' +
+                    'box-shadow:0 4px 12px rgba(0,0,0,0.3);display:flex;align-items:center;justify-content:center;';
+                el.innerHTML =
+                    '<svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" ' +
+                    'fill="none" stroke="#ffffff" stroke-width="2" stroke-linecap="round" ' +
+                    'stroke-linejoin="round"><path d="m3 9 9-7 9 7v11a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z"/>' +
+                    '<polyline points="9 22 9 12 15 12 15 22"/></svg>';
+            }
             new mapboxgl.Marker({ element: el, anchor: 'center' })
                 .setLngLat([centreLon, centreLat])
                 .addTo(map);
@@ -173,12 +204,12 @@ export default function PropertyMap({
                 mapRef.current = null;
             }
         };
-    }, [centreLat, centreLon, latitude, longitude, isCard]);
+    }, [centreLat, centreLon, latitude, longitude, isCard, pinImage]);
 
     if (isCard) {
         return (
             <div className="overflow-hidden rounded-xl border border-slate-200">
-                <div ref={containerRef} className="aspect-[16/9] w-full bg-slate-100 z-0" />
+                <div ref={containerRef} className={`${frameClassName} w-full bg-slate-100 z-0`} />
                 {area && (
                     <div className="bg-white px-3.5 py-2 text-xs text-slate-500">{area}</div>
                 )}
