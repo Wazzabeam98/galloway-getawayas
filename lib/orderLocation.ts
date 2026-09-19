@@ -37,16 +37,43 @@ export interface OrderLocationView {
 // `providerFulfilment` is the provider's LIVE direction, used only for the
 // non-slot shapes whose freeze hasn't landed yet. A slot ignores it entirely —
 // which is the freeze: for a slot, the result depends on the order alone.
+// THE ONE RULE, used by the marketplace listing AND the order page.
+//
+// You travel to them unless they come to you. That is the whole of it, and it
+// is deliberately a binary with no third "we don't know" state.
+//
+// WHY THIS IS NOW SHARED, AND WHY THE DEFAULT MOVED.
+//
+// The listing page derived this separately, in its own expression, and the two
+// disagreed about a NULL fulfilment. The listing read null as "fixed venue" and
+// told the guest "the exact address is shared once your booking is paid". The
+// order page read null as neither collection nor delivery and showed nothing.
+// So the listing made a promise to someone about to pay that the order page
+// then broke — the guest paid, and the address they were promised never
+// appeared. Every seeded guest provider had a null, which is how it went
+// unnoticed.
+//
+// The fix is one function with the listing's default, not the order page's:
+// anything that is not the provider coming to the cottage means the guest has
+// somewhere to go. Releasing the address on a null is safe — it only ever shows
+// after payment, and it is the provider's own business address.
+export function locationFromDirection(
+    shape: string | null | undefined,
+    direction: string | null | undefined,
+): OrderLocationView {
+    const slotTravels = shape === 'slot' && direction === 'delivery';
+    const comesToCottage = shape === 'comes_to_you' || direction === 'delivery';
+    return { slotTravels, comesToCottage, collects: !comesToCottage };
+}
+
 export function orderLocation(
     order: OrderLocationInput,
     providerFulfilment?: string | null,
 ): OrderLocationView {
+    // THE FREEZE, unchanged: a slot's direction comes off the ORDER, so a
+    // provider editing their setup can never rewrite what a guest booked. Every
+    // other shape still reads the provider's live value.
     const isSlot = order.shape === 'slot';
-    const slotTravels = isSlot && order.fulfilment === 'delivery';
-    const comesToCottage = order.shape === 'comes_to_you' || slotTravels;
-    // A slot's "collects" reads the frozen order direction; every other shape
-    // reads the provider's live value, unchanged from before.
-    const direction = isSlot ? order.fulfilment : (providerFulfilment ?? null);
-    const collects = direction === 'collection' || direction === 'both';
-    return { slotTravels, comesToCottage, collects };
+    const direction = isSlot ? (order.fulfilment ?? null) : (providerFulfilment ?? null);
+    return locationFromDirection(order.shape, direction);
 }
