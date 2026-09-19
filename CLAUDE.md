@@ -205,10 +205,18 @@ rounded-2xl border border-slate-200 bg-white
 shadow-[0_6px_16px_rgba(0,0,0,0.12)]
 ```
 
-sitting on a slightly tinted page — `bg-slate-50` or `bg-stone-50` — so the
-card is the brightest thing on the screen. **The page tint is the half people
-miss**: a white card on a white page cannot lift, whatever shadow you hang on
-it, and the fix then gets looked for in the shadow.
+sitting on a page tinted `bg-slate-50`, so the card is the brightest thing on
+the screen. **The page tint is the half people miss**: a white card on a white
+page cannot lift, whatever shadow you hang on it, and the fix then gets looked
+for in the shadow.
+
+**`bg-stone-50` is not the platform tint.** Three pages still use it, and they
+are wrong rather than a second option: the home page (`app/page.tsx`), the area
+pages (`app/holiday-cottages/[area]/page.tsx`) and the arrival page
+(`app/arrival/[bookingId]/page.tsx`). Moving them to `bg-slate-50` is a job of
+its own — do it deliberately, not in passing while touching one of them for
+something else. (`bg-stone-50` on a footer, a chip or a hover state is a
+different use and is not what this means.)
 
 It means *this is a surface you act on*. It never marks content you merely
 scan. **Lifted:** the booking panel, trip cards, the upcoming trip and
