@@ -123,12 +123,18 @@ export default function MessagesInboxPage() {
             // named one is always found.
             const params = new URLSearchParams(window.location.search);
             const wanted = params.get('b');
+            // ?o=<orderId>: the experience order detail page's "Message the host"
+            // link, so the one conversation for that order opens here rather than
+            // in a second thread on that page.
+            const wantedOrder = params.get('o');
             const draft = params.get('draft');
             if (draft) setText(draft);
 
             const asked = wanted
                 ? convos.find((c: any) => c.bookingId === wanted)
-                : null;
+                : wantedOrder
+                    ? convos.find((c: any) => c.kind === 'order' && c.id === wantedOrder)
+                    : null;
 
             // Something archived is out of the inbox, so the row for it would
             // not be in the list beside the thread. Show the archive instead
@@ -788,7 +794,12 @@ export default function MessagesInboxPage() {
     );
 
     // --- The booking behind the conversation ------------------------------
-    const details = thread ? (
+    // Order and enquiry threads carry no booking (no check_in, no listing), so
+    // the full booking panel renders only for booking threads; the others get a
+    // compact summary from their own context rather than throwing on booking.*.
+    const details = !thread ? (
+        <div className="p-5 text-sm text-slate-400">Pick a conversation</div>
+    ) : thread.booking ? (
         <div className="h-full overflow-y-auto p-5 space-y-5">
             {thread.listing && thread.listing.images && thread.listing.images[0] && (
                 <img
@@ -991,7 +1002,29 @@ export default function MessagesInboxPage() {
             </div>
         </div>
     ) : (
-        <div className="p-5 text-sm text-slate-400">Pick a conversation</div>
+        // Order / enquiry thread: no booking behind it, just a compact summary.
+        <div className="h-full overflow-y-auto p-5 space-y-4">
+            <div>
+                <div className="font-semibold text-slate-900">
+                    {(thread.context && thread.context.business) || (thread.other && thread.other.name) || 'Conversation'}
+                </div>
+                {thread.context && thread.context.item && (
+                    <div className="text-sm text-slate-500">{thread.context.item}</div>
+                )}
+            </div>
+            {thread.context && thread.context.serviceDate && (
+                <div className="flex justify-between gap-2 text-sm">
+                    <span className="text-slate-500 flex-shrink-0">Date</span>
+                    <span className="text-slate-900 font-medium text-right">{thread.context.serviceDate}</span>
+                </div>
+            )}
+            {thread.context && thread.context.status && (
+                <div className="flex justify-between gap-2 text-sm">
+                    <span className="text-slate-500 flex-shrink-0">Status</span>
+                    <span className="text-slate-900 font-medium text-right capitalize">{String(thread.context.status).replace(/_/g, ' ')}</span>
+                </div>
+            )}
+        </div>
     );
 
     return (
