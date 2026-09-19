@@ -11,6 +11,7 @@ import PhotoGallery from '@/components/PhotoGallery';
 import PropertyMap from '@/components/PropertyMap';
 import ReviewStars from '@/components/ReviewStars';
 import ShowAllReviews from '@/components/ShowAllReviews';
+import ProviderReplyBox from '@/components/marketplace/ProviderReplyBox';
 import { capitializeFirst } from '@/lib/utils';
 import { MIN_PUBLIC_REVIEWS } from '@/lib/reviews';
 import type { MpProvider } from '@/lib/experiencesData';
@@ -372,12 +373,12 @@ export default function ExperienceListingBody({
                                                 ) : null}
                                             </div>
                                             <p className="mt-1 whitespace-pre-line text-[15px] leading-relaxed text-slate-700">{r.comment}</p>
-                                            {r.reply ? (
-                                                <div className="mt-3 ml-4 border-l-2 border-slate-200 pl-4">
-                                                    <p className="mb-1 text-xs font-semibold text-slate-500">Response from {capitializeFirst(reviews.providerFirstName)}</p>
-                                                    <p className="text-sm text-slate-700">{r.reply}</p>
-                                                </div>
-                                            ) : null}
+                                            <ProviderReplyBox
+                                                reviewId={r.id}
+                                                existingReply={r.reply}
+                                                providerFirstName={capitializeFirst(reviews.providerFirstName)}
+                                                canReply={reviews.canReply}
+                                            />
                                         </div>
                                     ))}
                                 </ShowAllReviews>

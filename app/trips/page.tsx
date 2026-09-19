@@ -16,6 +16,7 @@ import CheckInOutTimes from '@/components/arrival/CheckInOutTimes';
 import CancelBookingConfirm from '@/components/CancelBookingConfirm';
 import ExperiencesTeaser from '@/components/ExperiencesTeaser';
 import GuestExperiences from '@/components/GuestExperiences';
+import ReviewPrompts from '@/components/ReviewPrompts';
 import { publicArea } from '@/lib/places';
 import { getImageUrl, capitializeFirst, displayName } from '@/lib/utils';
 import { checkInMethodTitle, checkInBlurb } from '@/lib/checkInMethods';
@@ -973,6 +974,11 @@ export default function TripsPage() {
                     </Link>
                 )}
             </div>
+
+            {/* The review prompt, sitting on the dashboard alongside everything
+                else rather than on an order page. Renders nothing when there is
+                nothing to review. */}
+            <ReviewPrompts />
 
             {bookings.length === 0 ? (
                 <div className="text-center py-20 bg-white rounded-2xl border border-slate-200">

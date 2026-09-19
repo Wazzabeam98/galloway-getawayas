@@ -118,6 +118,10 @@ export default async function OrderPage({ params, searchParams }: { params: { or
         ? guestMayCancelFree(order.shape, String(order.service_date), order.service_time || null, windowHours, new Date())
         : false;
 
+    // The review prompt used to live here; it now sits on the guest's trips
+    // dashboard (components/ReviewPrompts) alongside everything else, rather
+    // than being buried on this page.
+
     const meta = STATUS[order.status] || { label: order.status, tone: 'over' as const };
     const live = order.status === 'authorised' || order.status === 'confirmed' || order.status === 'holding';
     // The fulfilment DIRECTION is read off the ORDER, not the provider's live
