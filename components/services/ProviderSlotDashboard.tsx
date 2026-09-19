@@ -230,7 +230,7 @@ export default function ProviderSlotDashboard({ providerId, editHref }: { provid
 
     // A shared builder block (used for a free-slot add and a multi-day bulk add).
     const Builder = (
-        <div className="rounded-2xl border border-slate-200 bg-white p-4">
+        <div className="rounded-2xl border border-slate-200 bg-white p-4 shadow-[0_6px_16px_rgba(0,0,0,0.12)]">
             <div className="flex items-center justify-between">
                 <div className="flex items-center gap-2"><CalendarPlus className="h-4 w-4 text-violet-700" aria-hidden /><p className="text-sm font-bold text-slate-900">Add sessions</p></div>
                 <button type="button" onClick={() => { setPanel('none'); setSelected(new Set()); }} className="text-slate-400 hover:text-slate-700" aria-label="Close"><X className="h-4 w-4" /></button>
@@ -274,7 +274,7 @@ export default function ProviderSlotDashboard({ providerId, editHref }: { provid
         const { rate, refunded, fee, youGet: yours } = providerTake(o);
         const perPerson = o.item_unit === 'person' && o.unit_price && (o.quantity || 0) > 1;
         return (
-            <div className="rounded-2xl border border-slate-200 bg-white p-4">
+            <div className="rounded-2xl border border-slate-200 bg-white p-4 shadow-[0_6px_16px_rgba(0,0,0,0.12)]">
                 <div className="flex items-start justify-between">
                     <button type="button" onClick={() => setActiveOrderId(null)} className="inline-flex items-center gap-1 text-xs font-semibold text-slate-500 hover:text-slate-800"><ArrowLeft className="h-3.5 w-3.5" />All guests</button>
                     <button type="button" onClick={() => { setPanel('none'); setActiveKey(null); setActiveOrderId(null); }} className="text-slate-400 hover:text-slate-700" aria-label="Close"><X className="h-4 w-4" /></button>
@@ -331,7 +331,7 @@ export default function ProviderSlotDashboard({ providerId, editHref }: { provid
 
     const Detail = activeRow && (
         activeOrder ? BookingDetail(activeOrder) : (
-        <div className="rounded-2xl border border-slate-200 bg-white p-4">
+        <div className="rounded-2xl border border-slate-200 bg-white p-4 shadow-[0_6px_16px_rgba(0,0,0,0.12)]">
             <div className="flex items-start justify-between">
                 <div><p className="text-sm font-bold text-slate-900">{dateLabel(dayDate)}</p><p className="text-sm text-slate-500">{timeLabel(activeRow.time + ':00')}{activeRow.title ? ` · ${activeRow.title}` : ''}</p></div>
                 <button type="button" onClick={() => { setPanel('none'); setActiveKey(null); }} className="text-slate-400 hover:text-slate-700" aria-label="Close"><X className="h-4 w-4" /></button>
