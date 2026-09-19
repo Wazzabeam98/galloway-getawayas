@@ -573,7 +573,10 @@ export default async function OrderPage({ params, searchParams }: { params: { or
                         <section className="mt-8 border-t border-slate-200 pt-6 pb-2">
                             <h2 className="text-lg font-semibold text-slate-900">Need a hand?</h2>
                             <div className="mt-2 divide-y divide-slate-200 border-t border-slate-200">
-                                <Link href={'/experiences'} className={ROW}>
+                                {/* /experiences is not a route — there is no
+                                    app/experiences/page.tsx. The marketplace
+                                    index is /experiences/browse. */}
+                                <Link href={'/experiences/browse'} className={ROW}>
                                     <span className="flex items-center gap-3"><BookOpen className="h-4 w-4 flex-none text-slate-400" /> Browse other experiences</span>
                                     <ChevronRight className="h-4 w-4 flex-none text-slate-300" />
                                 </Link>
