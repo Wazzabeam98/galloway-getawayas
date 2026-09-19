@@ -4,6 +4,7 @@ import { icalBlockedListingIds } from '@/lib/availability';
 import Hero from '@/components/base/Hero';
 import ComingSoonBanner from '@/components/base/ComingSoonBanner';
 import UpcomingTrip from '@/components/UpcomingTrip';
+import UpcomingExperience from '@/components/UpcomingExperience';
 import { createServerComponentClient } from '@supabase/auth-helpers-nextjs';
 import { cookies } from 'next/headers';
 import { format, parseISO } from 'date-fns';
@@ -234,7 +235,15 @@ export default async function HomePage({
             {/* Someone with a stay coming up sees it before anything else. Returns
           nothing at all for a signed-out visitor or a guest with no booking.
           In hosting mode the same slot shows the next arrivals instead. */}
-            {mode === 'host' ? <HostReservations /> : <UpcomingTrip />}
+            {mode === 'host' ? <HostReservations /> : (
+                <>
+                    {/* The stay leads (it's the anchor of the holiday); a booked
+                        experience gets its own peer card below. Each self-gates and
+                        renders nothing when there's none — no empty shelf. */}
+                    <UpcomingTrip />
+                    <UpcomingExperience />
+                </>
+            )}
 
             <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-16">
                 {/* Section Heading */}
