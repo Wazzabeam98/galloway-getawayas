@@ -7,13 +7,19 @@ import { getImageUrl } from '@/lib/utils';
 
 export const dynamic = 'force-dynamic';
 
-// The experiences a guest can review, for the prompt cards on their trips
-// dashboard. The gate is unchanged and lives in the database (the "Guests can
-// review after a completed experience" RLS policy + the trigger); this endpoint
-// only mirrors it to decide which cards to SHOW: the guest's own orders that are
-// confirmed (paid) and whose day has passed, minus the ones already reviewed.
-// A guest has no read on service_orders, so this runs server-side through the
-// service role, the same as every other order read.
+// A guest's own experience orders, either side of today — read server-side
+// because a guest has no read on service_orders (the same service-role read as
+// every other order).
+//
+//   items    — confirmed orders whose day has PASSED and aren't yet reviewed,
+//              for the review-prompt cards on the trips dashboard (ReviewPrompts).
+//   upcoming — confirmed orders still to COME, nearest first, for the "Your
+//              upcoming experience" card on the home page (UpcomingExperience).
+//
+// Both are the same rows with the same photo/title/provider shape, so this one
+// endpoint serves both rather than a near-duplicate third. The gate is the
+// database's; this only mirrors it (confirmed = paid) to decide what to show,
+// and stays behind guestExperiencesOpen like the rest of the feature.
 export async function GET() {
     try {
         const supabase = createRouteHandlerClient({ cookies });
@@ -22,46 +28,58 @@ export async function GET() {
             return NextResponse.json({ ok: false, error: 'Not signed in' }, { status: 401 });
         }
 
-        // Behind the same flag as the rest of experiences, so the prompt never
-        // appears before launch even for a guest with a qualifying past order.
         if (!guestExperiencesOpen()) {
-            return NextResponse.json({ ok: true, items: [] });
+            return NextResponse.json({ ok: true, items: [], upcoming: [] });
         }
 
         const admin = adminClient();
         const today = new Date().toISOString().slice(0, 10);
 
-        const { data: orders } = await admin
-            .from('service_orders')
-            .select('id, item_id, item_name, provider_id, provider_business_name, service_date')
-            .eq('guest_id', user.id)
-            .eq('status', 'confirmed')
-            .lt('service_date', today)
-            .order('service_date', { ascending: false });
+        // Past (to review) and future (upcoming), in one round trip each.
+        const [{ data: pastOrders }, { data: futureOrders }] = await Promise.all([
+            admin
+                .from('service_orders')
+                .select('id, item_id, item_name, provider_id, provider_business_name, service_date, service_time')
+                .eq('guest_id', user.id)
+                .eq('status', 'confirmed')
+                .lt('service_date', today)
+                .order('service_date', { ascending: false }),
+            admin
+                .from('service_orders')
+                .select('id, item_id, item_name, provider_id, provider_business_name, service_date, service_time')
+                .eq('guest_id', user.id)
+                .eq('status', 'confirmed')
+                .gte('service_date', today)
+                .order('service_date', { ascending: true })
+                .order('service_time', { ascending: true, nullsFirst: true }),
+        ]);
 
-        if (!orders || orders.length === 0) {
-            return NextResponse.json({ ok: true, items: [] });
+        const past = pastOrders || [];
+        const future = futureOrders || [];
+
+        // Drop past orders already reviewed, so a review-prompt disappears the
+        // moment its review is posted. (Upcoming can't have been reviewed yet.)
+        let toReview = past;
+        if (past.length) {
+            const { data: reviewed } = await admin
+                .from('reviews')
+                .select('order_id')
+                .eq('reviewer_id', user.id)
+                .in('order_id', past.map((o) => o.id));
+            const done = new Set((reviewed || []).map((r) => r.order_id));
+            toReview = past.filter((o) => !done.has(o.id));
         }
 
-        // Drop the ones already reviewed, so a card disappears the moment its
-        // review is posted.
-        const orderIds = orders.map((o) => o.id);
-        const { data: reviewed } = await admin
-            .from('reviews')
-            .select('order_id')
-            .eq('reviewer_id', user.id)
-            .in('order_id', orderIds);
-        const done = new Set((reviewed || []).map((r) => r.order_id));
-        const pending = orders.filter((o) => !done.has(o.id));
-        if (pending.length === 0) {
-            return NextResponse.json({ ok: true, items: [] });
+        if (toReview.length === 0 && future.length === 0) {
+            return NextResponse.json({ ok: true, items: [], upcoming: [] });
         }
 
-        // The photo: the item's own image where the order was for a menu item,
-        // falling back to the provider's first photo, then their headshot — so a
-        // card always has an image to lift.
-        const itemIds = Array.from(new Set(pending.map((o) => o.item_id).filter(Boolean)));
-        const providerIds = Array.from(new Set(pending.map((o) => o.provider_id).filter(Boolean)));
+        // One photo lookup across both sets: the item's own image, else the
+        // provider's first photo, else their headshot — so a card always has an
+        // image to lift.
+        const all = [...toReview, ...future];
+        const itemIds = Array.from(new Set(all.map((o) => o.item_id).filter(Boolean)));
+        const providerIds = Array.from(new Set(all.map((o) => o.provider_id).filter(Boolean)));
 
         const [{ data: items }, { data: providers }] = await Promise.all([
             itemIds.length
@@ -75,24 +93,38 @@ export async function GET() {
         const itemImageById = new Map((items || []).map((it) => [it.id, it.image as string | null]));
         const providerById = new Map((providers || []).map((p) => [p.id, p]));
 
-        const result = pending.map((o) => {
+        const photoFor = (o: any): string | null => {
             const prov = o.provider_id ? providerById.get(o.provider_id) : null;
-            const rawPhoto = itemImageById.get(o.item_id)
+            const raw = itemImageById.get(o.item_id)
                 || (prov && Array.isArray(prov.photos) && prov.photos[0])
                 || (prov && prov.headshot)
                 || null;
-            return {
-                orderId: o.id,
-                title: o.item_name || o.provider_business_name || 'Your experience',
-                providerName: o.provider_business_name || null,
-                serviceDate: o.service_date,
-                photo: rawPhoto ? getImageUrl(rawPhoto) : null,
-            };
+            return raw ? getImageUrl(raw) : null;
+        };
+
+        const reviewShape = (o: any) => ({
+            orderId: o.id,
+            title: o.item_name || o.provider_business_name || 'Your experience',
+            providerName: o.provider_business_name || null,
+            serviceDate: o.service_date,
+            photo: photoFor(o),
+        });
+        const upcomingShape = (o: any) => ({
+            orderId: o.id,
+            title: o.item_name || o.provider_business_name || 'Your experience',
+            providerName: o.provider_business_name || null,
+            serviceDate: o.service_date,
+            serviceTime: o.service_time || null,
+            photo: photoFor(o),
         });
 
-        return NextResponse.json({ ok: true, items: result });
+        return NextResponse.json({
+            ok: true,
+            items: toReview.map(reviewShape),
+            upcoming: future.map(upcomingShape),
+        });
     } catch (err: any) {
         console.error('[services/to-review]', err && err.message);
-        return NextResponse.json({ ok: false, error: 'Could not load reviews to write' }, { status: 500 });
+        return NextResponse.json({ ok: false, error: 'Could not load experiences' }, { status: 500 });
     }
 }
