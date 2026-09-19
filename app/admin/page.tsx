@@ -39,6 +39,11 @@ const tools = [
         blurb: 'Applications to review, and the ones still waiting on the applicant.',
     },
     {
+        href: '/admin/reviews',
+        title: 'Reviews',
+        blurb: 'The latest reviews of stays and experiences. Take one down if it needs it, or put it back.',
+    },
+    {
         href: '/admin/errors',
         title: 'Errors',
         blurb: 'Anything that broke, whether or not anyone told us.',
