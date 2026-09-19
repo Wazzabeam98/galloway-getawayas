@@ -10,6 +10,7 @@ import ChromeGate from '@/components/base/ChromeGate';
 import { ToastContainer } from 'react-toastify';
 import { Suspense } from 'react';
 import Toast from '@/components/base/Toast';
+import { socialUrls } from '@/config/social';
 import type { Metadata } from 'next';
 
 const SITE_URL = 'https://gallowaygetaways.co.uk';
@@ -84,6 +85,10 @@ export default function RootLayout({
 }: {
   children: React.ReactNode;
 }) {
+  // The accounts this business also appears as. One place defines them
+  // (config/social.ts); the footer renders the same list.
+  const sameAs = socialUrls();
+
   // Tells Google this is a real local business in Dumfries & Galloway,
   // which is what regional searches are matched against.
   const organisationSchema = {
@@ -104,6 +109,11 @@ export default function RootLayout({
       '@type': 'AdministrativeArea',
       name: 'Dumfries & Galloway, Scotland',
     },
+    // Ties the Facebook and Instagram accounts to this business, so Google
+    // reads them as one entity rather than three things sharing a name.
+    // Left off entirely when there are none: an empty array is a claim
+    // ("this business has no other profiles"), not the absence of one.
+    ...(sameAs.length ? { sameAs } : {}),
     priceRange: '££',
   };
 

@@ -1,5 +1,7 @@
 import React from 'react';
 import Link from 'next/link';
+import { Instagram, Facebook } from 'lucide-react';
+import { SOCIAL } from '@/config/social';
 import { GooseMark } from '@/components/base/Logo';
 
 const Footer = () => {
@@ -63,12 +65,43 @@ const Footer = () => {
                     <p className="text-xs text-slate-500">
                         &copy; {year} Galloway Getaways Ltd. Registered in Scotland.
                     </p>
-                    <a
-                        href="mailto:hello@gallowaygetaways.co.uk"
-                        className="text-xs text-slate-500 hover:text-slate-900"
-                    >
-                        hello@gallowaygetaways.co.uk
-                    </a>
+                    <div className="flex items-center gap-4">
+                        {/* Icons only, no labels. The aria-label is not a
+                            visible label — it is the only thing a screen
+                            reader has to go on, and without it the link
+                            announces as nothing at all.
+
+                            A blank URL in config/social.ts renders NOTHING
+                            here, rather than an icon pointing nowhere. */}
+                        {SOCIAL.instagram ? (
+                            <a
+                                href={SOCIAL.instagram}
+                                target="_blank"
+                                rel="noopener noreferrer"
+                                aria-label="Galloway Getaways on Instagram"
+                                className="p-1 -m-1 text-slate-500 hover:text-slate-900 transition"
+                            >
+                                <Instagram className="w-5 h-5" />
+                            </a>
+                        ) : null}
+                        {SOCIAL.facebook ? (
+                            <a
+                                href={SOCIAL.facebook}
+                                target="_blank"
+                                rel="noopener noreferrer"
+                                aria-label="Galloway Getaways on Facebook"
+                                className="p-1 -m-1 text-slate-500 hover:text-slate-900 transition"
+                            >
+                                <Facebook className="w-5 h-5" />
+                            </a>
+                        ) : null}
+                        <a
+                            href="mailto:hello@gallowaygetaways.co.uk"
+                            className="text-xs text-slate-500 hover:text-slate-900"
+                        >
+                            hello@gallowaygetaways.co.uk
+                        </a>
+                    </div>
                 </div>
             </div>
         </footer>
