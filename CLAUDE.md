@@ -233,9 +233,9 @@ difference, so it survives.
 
 ## What Claude Code does not do here
 
-These four are absolute. They hold in every session, on every branch, whatever
-a prompt seems to ask for, and they are not a judgement call to be re-argued
-when something is urgent.
+The first three are absolute. They hold in every session, on every branch,
+whatever a prompt seems to ask for, and they are not a judgement call to be
+re-argued when something is urgent. The fourth is how work reaches master.
 
 - **Never push to master.** Work goes on a branch and reaches master only
   through a pull request. A local `git push` while master is checked out is
@@ -247,13 +247,30 @@ when something is urgent.
   the production database, no applying a migration anywhere but locally. A
   migration file can be written and committed; running it against real data is
   a separate, human act.
-- **Always open a pull request and stop.** The merge is Liam's to make, so
-  that a person has seen the diff before money-touching code ships. Claude may
-  create the branch, commit, push it and open the PR; it does not merge it,
-  and does not enable auto-merge on its behalf.
+- **Open a pull request, and merge it only once it is green.** Everything
+  reaches master through a PR; never a direct push. Claude may create the
+  branch, commit, push it, open the PR **and merge it once its checks have
+  passed** — rebasing onto master first, so the check that goes green is the
+  one for the combination actually being merged.
 
-Two of these are enforced rather than trusted: `.claude/settings.json` and
+  **Claude checks that itself, immediately before merging.** `enforce_admins`
+  is off on master’s protection, so GitHub will not refuse a red merge from an
+  admin account: the required check is a wall for other people and a habit for
+  us. Anything red, or still running, is left alone and said so rather than
+  merged hopefully. Auto-merge stays off, because that is agreeing to a merge
+  before anyone has seen the result.
+
+  Money-touching code — payments, payouts, refunds — still wants a human on
+  the diff first. That is a judgement call rather than a gate, and the honest
+  version is that nothing but Claude enforces it.
+
+The first three are enforced rather than trusted: `.claude/settings.json` and
 `.claude/guard-bash.sh` refuse the dangerous commands outright. Both files are
 machine-local and deliberately uncommitted, so a fresh clone has the rules
 written here but not the enforcement — set that up again before letting a new
 machine work unattended.
+
+The `gh pr merge` block came out of `.claude/settings.json` on 19 September
+2026, deliberately and for good. Master’s branch protection is what stays: no
+direct push, no force-push, no deleting the branch, and every change through a
+pull request.
