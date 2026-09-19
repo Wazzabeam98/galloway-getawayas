@@ -1,11 +1,10 @@
 import { redirect } from 'next/navigation';
 import Link from 'next/link';
-import { ArrowLeft, CalendarDays, MapPin, Info, CheckCircle2, Clock3, XCircle, AlertTriangle, Users, Star } from 'lucide-react';
+import { ArrowLeft, CalendarDays, MapPin, Info, CheckCircle2, Clock3, XCircle, AlertTriangle, Users } from 'lucide-react';
 import { createServerComponentClient } from '@supabase/auth-helpers-nextjs';
 import { cookies } from 'next/headers';
 import { adminClient } from '@/lib/supabaseAdmin';
 import { logError } from '@/lib/logError';
-import { guestExperiencesOpen } from '@/lib/serviceOrders';
 import { guestMayCancelFree } from '@/lib/serviceSlots';
 import { orderLocation } from '@/lib/orderLocation';
 import { cancellationSentence } from '@/components/marketplace/present';
@@ -119,20 +118,9 @@ export default async function OrderPage({ params, searchParams }: { params: { or
         ? guestMayCancelFree(order.shape, String(order.service_date), order.service_time || null, windowHours, new Date())
         : false;
 
-    // A review is earned by a completed experience: confirmed (paid) and the day
-    // has passed. Only then, and only if not already left, do we offer it — the
-    // same gate the database enforces. Behind the experiences flag like the rest.
-    const experienceOver = new Date(String(order.service_date) + 'T00:00:00') < new Date(new Date().toDateString());
-    let canReview = false;
-    if (guestExperiencesOpen() && order.status === 'confirmed' && experienceOver) {
-        const { data: existingReview } = await admin
-            .from('reviews')
-            .select('id')
-            .eq('order_id', order.id)
-            .eq('reviewer_id', user.id)
-            .maybeSingle();
-        canReview = !existingReview;
-    }
+    // The review prompt used to live here; it now sits on the guest's trips
+    // dashboard (components/ReviewPrompts) alongside everything else, rather
+    // than being buried on this page.
 
     const meta = STATUS[order.status] || { label: order.status, tone: 'over' as const };
     const live = order.status === 'authorised' || order.status === 'confirmed' || order.status === 'holding';
@@ -224,23 +212,6 @@ export default async function OrderPage({ params, searchParams }: { params: { or
                                 </div>
                             </div>
                         </div>
-                    </div>
-                )}
-
-                {canReview && (
-                    <div className="mt-5 flex flex-col gap-3 rounded-2xl border border-amber-200 bg-amber-50 p-5 sm:flex-row sm:items-center sm:justify-between">
-                        <div className="min-w-0">
-                            <h2 className="text-base font-semibold text-amber-900">How was it?</h2>
-                            <p className="mt-0.5 text-sm text-amber-800">
-                                Leave {who} a review — it helps the next guest, and it’s published under your first name.
-                            </p>
-                        </div>
-                        <Link
-                            href={`/experiences/review/${order.id}`}
-                            className="inline-flex flex-none items-center justify-center gap-1.5 rounded-xl bg-emerald-700 px-4 py-2.5 text-sm font-semibold text-white hover:bg-emerald-800"
-                        >
-                            <Star className="h-4 w-4" /> Leave a review
-                        </Link>
                     </div>
                 )}
 

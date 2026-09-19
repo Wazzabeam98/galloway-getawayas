@@ -72,7 +72,6 @@ export default async function ExperienceReviewPage({ params }: { params: { order
             orderId={order.id}
             reviewerId={user.id}
             who={order.provider_business_name || 'the provider'}
-            itemName={order.item_name ?? null}
         />
     );
 }
