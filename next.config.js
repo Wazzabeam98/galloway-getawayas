@@ -27,6 +27,27 @@ const nextConfig = {
             'hviwjxigqivjfhmhpjiy.supabase.co',
         ],
     },
+
+    // /homes has never been a route. Only /homes/[id] exists, so the bare
+    // path answered 404 — and /services/guest used to send signed-out
+    // visitors straight to it. That internal link is fixed at its source, so
+    // this is for the addresses already loose in the world: a pasted link, a
+    // bookmark, anything a crawler picked up while it was 404ing.
+    //
+    // Permanent (308), because the answer will not change: the cottages are
+    // on the home page and /homes is not coming back. A 308 keeps the method
+    // and tells Google to forget the old address rather than re-checking it.
+    //
+    // The source matches /homes EXACTLY. It does not touch /homes/<id>.
+    async redirects() {
+        return [
+            {
+                source: '/homes',
+                destination: '/',
+                permanent: true,
+            },
+        ];
+    },
 }
 
 module.exports = nextConfig
