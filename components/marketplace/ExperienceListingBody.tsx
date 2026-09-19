@@ -6,6 +6,7 @@ import {
     durationLabel, durationSummary, yearsLabel, groupSizeLabel, capacityLabel,
 } from '@/components/marketplace/present';
 import { unitMultiplies } from '@/lib/serviceOrders';
+import { locationFromDirection } from '@/lib/orderLocation';
 import { MapPin, Clock, Users, User, BadgeCheck, Award, Compass, Flag, Activity, Backpack, ShieldAlert, Accessibility, Car, Check } from 'lucide-react';
 import PhotoGallery from '@/components/PhotoGallery';
 import PropertyMap from '@/components/PropertyMap';
@@ -46,7 +47,11 @@ export default function ExperienceListingBody({
     const who = p.byline || p.business_name;
     // Pre-payment location, per shape: a comes-to-you provider happens at the
     // guest's cottage; a fixed venue shows its town, never the old trades radius.
-    const comesToYou = p.shape === 'comes_to_you' || p.fulfilment === 'delivery';
+    // One definition, shared with the order page (lib/orderLocation). This used
+    // to be its own expression here, and the two disagreed about a null
+    // fulfilment: this page promised "the exact address is shared once your
+    // booking is paid" and the order page then showed nothing.
+    const comesToYou = locationFromDirection(p.shape, p.fulfilment).comesToCottage;
     const where = whereLine(p);
     const tag = locationTag(p);
     const travelCoverage = travelCoverageLine(p);

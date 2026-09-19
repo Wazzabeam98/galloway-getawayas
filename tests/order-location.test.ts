@@ -10,7 +10,7 @@ import { installAliases } from './helpers/stub';
 
 installAliases();
 
-const { orderLocation } = require('@/lib/orderLocation');
+const { orderLocation, locationFromDirection } = require('@/lib/orderLocation');
 
 // --- the direction reads off the order for a slot ----------------------------
 
@@ -37,6 +37,50 @@ test('a null-fulfilment slot reads as come-to-me (null is not delivery)', () => 
     const v = orderLocation({ shape: 'slot', fulfilment: null });
     assert.equal(v.slotTravels, false);
     assert.equal(v.comesToCottage, false);
+    // THE HALF THIS TEST USED TO LEAVE OUT, AND THE BUG THAT HID THERE.
+    // "Reads as come-to-me" has to mean the guest is shown where to go. It did
+    // not: collects was false for a null, so the order page withheld the
+    // address while the listing had already promised it "once your booking is
+    // paid". Asserting only comesToCottage let that pass for months.
+    assert.equal(v.collects, true);
+});
+
+// --- THE LISTING AND THE ORDER PAGE MUST NOT DISAGREE ------------------------
+// The listing page used to derive this itself, in its own expression. Both now
+// call locationFromDirection, and this pins every combination so they cannot
+// drift apart again.
+
+test('listing and order page agree on every shape/direction combination', () => {
+    for (const shape of ['slot', 'comes_to_you', 'made_to_order']) {
+        for (const direction of [null, undefined, 'collection', 'delivery', 'both']) {
+            const listing = locationFromDirection(shape, direction as any);
+            // How the order page reaches the same rule: a slot from its own
+            // frozen value, every other shape from the provider's live one.
+            const order = shape === 'slot'
+                ? orderLocation({ shape, fulfilment: direction as any })
+                : orderLocation({ shape, fulfilment: null }, direction as any);
+            assert.equal(order.comesToCottage, listing.comesToCottage,
+                `comesToCottage differs for ${shape}/${direction}`);
+            assert.equal(order.collects, listing.collects,
+                `collects differs for ${shape}/${direction}`);
+            // The binary itself: you travel unless they come to you.
+            assert.equal(listing.collects, !listing.comesToCottage,
+                `not a clean binary for ${shape}/${direction}`);
+        }
+    }
+});
+
+test('a guest who has paid is never told nothing: some direction is always true', () => {
+    // The failure mode was a third, silent state — neither coming to you nor
+    // collecting — which rendered as "they will arrange it with you" on a paid
+    // booking that had a real address on file.
+    for (const shape of ['slot', 'comes_to_you', 'made_to_order']) {
+        for (const direction of [null, undefined, 'collection', 'delivery', 'both']) {
+            const v = locationFromDirection(shape, direction as any);
+            assert.ok(v.comesToCottage || v.collects,
+                `neither direction was true for ${shape}/${direction}`);
+        }
+    }
 });
 
 // --- made-to-order still reads the provider's LIVE value (freeze is a follow-up)
