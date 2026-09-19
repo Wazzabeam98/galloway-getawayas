@@ -17,7 +17,6 @@ import CopyField from '@/components/arrival/CopyField';
 import DirectionsPicker from '@/components/arrival/DirectionsPicker';
 import TripGroup from '@/components/TripGroup';
 import HomeCancelPanel from '@/components/HomeCancelPanel';
-import GuestExperiences from '@/components/GuestExperiences';
 import { MessageSquare, CalendarDays } from 'lucide-react';
 
 // Shown at the top of the home page to someone with a stay coming up. The
@@ -295,21 +294,10 @@ export default async function UpcomingTrip() {
 
             {card}
 
-            {/* The guest experiences, below the trip — what's booked for the stay
-                and a way into browsing more, the same panel the trips page carries,
-                so the home page no longer has to send a guest to /trips to find
-                any of it. It shows its own "coming soon" when the marketplace is
-                closed, and nothing when there's neither a booking nor a provider. */}
-            {booking.status !== 'cancelled' && booking.status !== 'declined' && (
-                <div className="mt-8">
-                    <GuestExperiences
-                        bookingId={booking.id}
-                        checkIn={booking.check_in}
-                        checkOut={booking.check_out}
-                        town={publicArea(listing.location)}
-                    />
-                </div>
-            )}
+            {/* The booked-experiences list that used to sit here is gone: the
+                "Your upcoming experience" card is the treatment now. The full
+                per-stay panel — the browse link and every booked experience in
+                each state — still lives on /trips, reached from "Your trip". */}
         </section>
     );
 }

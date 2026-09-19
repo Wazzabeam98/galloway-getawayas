@@ -48,17 +48,23 @@ function countdown(dateStr: string): string {
 }
 
 export default function UpcomingExperience() {
-    const [item, setItem] = useState<Upcoming | null>(null);
+    const [list, setList] = useState<Upcoming[]>([]);
     const [loaded, setLoaded] = useState(false);
 
     useEffect(() => {
         fetch('/api/services/to-review')
             .then((r) => r.json())
-            .then((d) => { setItem((d && d.upcoming && d.upcoming[0]) || null); setLoaded(true); })
+            .then((d) => { setList((d && d.upcoming) || []); setLoaded(true); })
             .catch(() => setLoaded(true));
     }, []);
 
-    if (!loaded || !item) return null;
+    if (!loaded || list.length === 0) return null;
+
+    // Feature the nearest; the rest of a guest's booked experiences (and the
+    // browse link) live on /trips, so a second one is routed there rather than
+    // dropped.
+    const item = list[0];
+    const moreCount = list.length - 1;
 
     const when = dayLabel(item.serviceDate) + (item.serviceTime ? ' · ' + timeLabel(item.serviceTime) : '');
     const href = `/experiences/order/${item.orderId}`;
@@ -90,10 +96,15 @@ export default function UpcomingExperience() {
                         <div className="mt-5 pt-5 border-t border-stone-100 text-stone-700">
                             <div className="font-medium">{when}</div>
                         </div>
-                        <div className="mt-8">
+                        <div className="mt-8 flex flex-wrap items-center gap-x-5 gap-y-2">
                             <Link href={href} className="inline-flex items-center gap-2 px-6 py-3 bg-emerald-700 hover:bg-emerald-800 text-white text-sm font-semibold rounded-xl transition">
                                 <CalendarDays className="w-4 h-4" /> View experience
                             </Link>
+                            {moreCount > 0 && (
+                                <Link href="/trips" className="text-sm font-semibold text-emerald-700 hover:text-emerald-800 underline underline-offset-4">
+                                    {moreCount === 1 ? '1 more on your trip' : moreCount + ' more on your trip'}
+                                </Link>
+                            )}
                         </div>
                     </div>
                 </div>
