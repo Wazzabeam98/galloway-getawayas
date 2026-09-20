@@ -11,7 +11,7 @@ import { logError } from '@/lib/logError';
 import { firstName, getImageUrl, displayName } from '@/lib/utils';
 import { guestMayCancelFree } from '@/lib/serviceSlots';
 import { orderLocation } from '@/lib/orderLocation';
-import { isFoodProvider } from '@/lib/serviceOrders';
+import { isFoodProvider, unitMultiplies } from '@/lib/serviceOrders';
 import { directionsUrl as buildDirectionsUrl, appleDirectionsUrl } from '@/lib/directions';
 import { loadExperienceOrder } from '@/lib/experienceOrder';
 import { cancellationSentence, yearsLabel } from '@/components/marketplace/present';
@@ -252,7 +252,10 @@ export default async function OrderPage({ params, searchParams }: { params: { or
     // in so the party count, the split and the invite-list size on THIS page all
     // reflect the seats actually paid for — not just the original booking. Only a
     // per-person parent (never a private one, never a child page) has any.
-    const isPerPersonParent = isSlot && order.item_unit === 'person' && !order.parent_order_id;
+    // Per-person = the ITEM's unit multiplies (person/ticket/hour/item — a shared
+    // table), NOT the literal string 'person', and NOT the session's frozen
+    // capacity (a private hire can seat a whole party). Matches the top-up route.
+    const isPerPersonParent = isSlot && unitMultiplies(order.item_unit) && !order.parent_order_id;
     const { data: topUpChildren } = isPerPersonParent
         ? await admin.from('service_orders')
             .select('quantity, attendees, adults, children, item_unit')

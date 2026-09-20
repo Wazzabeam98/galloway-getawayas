@@ -94,9 +94,12 @@ export function foldOrderFamily(parent: FamilyRow, confirmedChildren: FamilyRow[
 export function withFamilyFolded<T extends FamilyRow>(parent: T, confirmedChildren: FamilyRow[] = []): T {
     const folded = foldOrderFamily(parent, confirmedChildren);
     const out: any = { ...parent };
-    // A per-person order carries its count in quantity; leave a private order's
-    // attendees as the head count instead of moving it onto quantity.
-    if (parent.item_unit === 'person') out.quantity = folded.headcount;
+    // A per-person order (any multiplying unit — person/ticket/hour/item, i.e.
+    // anything that isn't a flat whole-session price) carries its count in
+    // quantity; leave a private order's attendees as the head count instead of
+    // moving it onto quantity.
+    const perPerson = parent.item_unit != null && parent.item_unit !== 'flat';
+    if (perPerson) out.quantity = folded.headcount;
     else if (parent.attendees != null) out.attendees = folded.headcount;
     out.adults = folded.adults;
     out.children = folded.children;
