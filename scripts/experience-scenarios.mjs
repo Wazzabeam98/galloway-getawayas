@@ -912,6 +912,149 @@ async function main() {
         note('Add-guests reuses the slot machine: child order per added place, its own PI and seats, confirmed by the same webhook, swept if unpaid; a full cancel settles the whole family.');
     }
 
+    /* ============================== 11. MOVE a slot booking (and its family) to another session */
+    // A confirmed per-person booking plus a confirmed top-up child = one family
+    // of three paid seats on a session. Moving it is ALL-OR-NOTHING: either the
+    // whole family lands on the new session, or nobody moves and the old session
+    // is untouched. Proven here with real test money on the shelf (the seats were
+    // paid for), moving between sessions on the yoga provider (capacity 6, 12h
+    // window). The provider-email content (naming BOTH times) is asserted by the
+    // unit test tests/experience-move.test.ts; here we prove the move path carries
+    // both the old and the new time to that notification.
+    scenario('11', 'Move a booking: the whole family (parent + top-up) moves together, or nobody does; a full target and a past-cutoff target are both refused');
+    {
+        const payAndConfirm = async (orderId, total) => {
+            const pi = await destinationPI({
+                total, account, capture: null,
+                metadata: { kind: 'slot_order', order_id: orderId, provider_id: yoga.id },
+            });
+            await postWebhook({
+                object: 'checkout_session', payment_status: 'no_payment_required',
+                payment_intent: pi.id, amount_total: Math.round(total * 100),
+                customer_email: guest.email, customer_details: { email: guest.email },
+                metadata: { kind: 'slot_order', order_id: orderId, provider_id: yoga.id },
+            });
+            return pi;
+        };
+        const latestChild = async (parentId) => (await db.select('service_orders',
+            '?select=*&parent_order_id=eq.' + parentId + '&order=created_at.desc&limit=1'))[0];
+        const sessAt = async (date, time) => (await db.select('slot_sessions',
+            '?select=*&provider_id=eq.' + yoga.id + '&session_date=eq.' + date + '&session_time=eq.' + time))[0];
+        // A declared target session created up front, the way a class exists before
+        // anyone books it — a real, capacity-bearing move target.
+        const declareSession = async (date, time, seatsTaken) => (await db.insert('slot_sessions', {
+            provider_id: yoga.id, session_date: date, session_time: time,
+            capacity: 6, seats_taken: seatsTaken, private: false, declared: true,
+            title: 'Declared ' + time, duration_minutes: 60, turnaround_minutes: 0,
+        }))[0];
+
+        // Build a paid family of THREE seats (parent 2 + top-up 1) on session A.
+        const buildFamily = async (date, time, parentTotal) => {
+            const book = await postRoute('/api/services/slots/book', guestCookie, {
+                providerId: yoga.id, bookingId: booking.id, sessionDate: date, sessionTime: time, quantity: 2,
+            });
+            if (!(book.status === 200 && book.body.ok)) return { book, ok: false };
+            const parent = (await db.select('service_orders',
+                '?select=*&provider_id=eq.' + yoga.id + '&service_date=eq.' + date + '&service_time=eq.' + time + ':00&parent_order_id=is.null&order=created_at.desc&limit=1'))[0];
+            await payAndConfirm(parent.id, parentTotal);
+            const top = await postRoute('/api/services/slots/top-up', guestCookie, { orderId: parent.id, quantity: 1 });
+            const child = await latestChild(parent.id);
+            await payAndConfirm(child.id, 20);
+            return { book, top, parent, child, ok: true };
+        };
+
+        // ---- A. THE WHOLE FAMILY MOVES TOGETHER --------------------------------
+        // Dates dayOffset(6)/(7) are used only by this scenario — scenario 10's
+        // yoga sessions sit on dayOffset(10)/(11), so these don't collide with a
+        // session it already filled.
+        if (true) {
+            const fromDate = dayOffset(6), fromTime = '09:00';
+            const toDate = dayOffset(6), toTime = '10:00';
+            const fam = await buildFamily(fromDate, fromTime, 40);
+            check('A: paid family of 3 built (parent 2 + top-up 1)',
+                fam.ok && (await orderRow(fam.parent.id)).status === 'confirmed' && (await orderRow(fam.child.id)).status === 'confirmed',
+                'book HTTP ' + (fam.book && fam.book.status));
+            if (!fam.ok) { note('A: could not build the family — skipping the move checks'); }
+            else {
+            const srcId = fam.parent.slot_session_id;
+            const src0 = await sessAt(fromDate, fromTime + ':00');
+            check('A: the source holds all 3 seats before the move', src0 && src0.seats_taken === 3, src0 && String(src0.seats_taken));
+
+            const dest = await declareSession(toDate, toTime + ':00', 0);
+
+            const mv = await postRoute('/api/services/slots/move', guestCookie, {
+                orderId: fam.parent.id, sessionDate: toDate, sessionTime: toTime,
+            });
+            check('A: move succeeded', mv.status === 200 && mv.body.ok, 'HTTP ' + mv.status + ' ' + JSON.stringify(mv.body).slice(0, 120));
+            check('A: the WHOLE family moved (2 rows, 3 seats)', mv.body.moved === 2 && mv.body.seats === 3,
+                'moved=' + mv.body.moved + ' seats=' + mv.body.seats);
+            // Both the old and the new time are carried to the provider notice.
+            check('A: the move names BOTH times (old → new)',
+                mv.body.from && mv.body.from.time === '09:00' && mv.body.serviceTime === '10:00',
+                'from=' + JSON.stringify(mv.body.from) + ' to=' + mv.body.serviceTime);
+
+            const p = await orderRow(fam.parent.id), c = await orderRow(fam.child.id);
+            check('A: parent repointed to the new session, re-dated, and stamped',
+                p.slot_session_id === dest.id && String(p.service_time).slice(0, 5) === '10:00'
+                && p.moved_from_session_id === srcId && p.move_count === 1,
+                'session=' + (p.slot_session_id === dest.id) + ' time=' + p.service_time + ' from=' + (p.moved_from_session_id === srcId) + ' count=' + p.move_count);
+            check('A: the top-up child rode along (same new session, stamped)',
+                c.slot_session_id === dest.id && c.moved_from_session_id === srcId && c.move_count === 1, null);
+            const srcAfter = await sessAt(fromDate, fromTime + ':00');
+            const destAfter = (await db.select('slot_sessions', '?select=*&id=eq.' + dest.id))[0];
+            check('A: the source released all 3 seats', srcAfter.seats_taken === 0, String(srcAfter.seats_taken));
+            check('A: the target claimed all 3 seats', destAfter.seats_taken === 3, String(destAfter.seats_taken));
+            }
+        }
+
+        // ---- B. A TARGET WITHOUT ROOM LEAVES EVERYONE UNTOUCHED -----------------
+        if (true) {
+            const fromDate = dayOffset(7), fromTime = '09:00';
+            const toDate = dayOffset(7), toTime = '10:00';
+            const fam = await buildFamily(fromDate, fromTime, 40);
+            check('B: paid family of 3 built on a second session',
+                fam.ok && (await orderRow(fam.parent.id)).status === 'confirmed' && (await orderRow(fam.child.id)).status === 'confirmed', null);
+            if (!fam.ok) { note('B: could not build the family — skipping the move checks'); }
+            else {
+            const srcId = fam.parent.slot_session_id;
+
+            // A declared target with only 2 of its 6 seats free — the family of 3
+            // cannot fit.
+            const dest = await declareSession(toDate, toTime + ':00', 4);
+
+            const mv = await postRoute('/api/services/slots/move', guestCookie, {
+                orderId: fam.parent.id, sessionDate: toDate, sessionTime: toTime,
+            });
+            check('B: the move was REFUSED (no room for the whole family)', mv.status === 409 && !mv.body.ok, 'HTTP ' + mv.status);
+            const p = await orderRow(fam.parent.id), c = await orderRow(fam.child.id);
+            check('B: the family did NOT move (still on the source, never stamped)',
+                p.slot_session_id === srcId && c.slot_session_id === srcId
+                && p.move_count === 0 && c.move_count === 0 && p.moved_from_session_id === null,
+                'p.session=' + (p.slot_session_id === srcId) + ' count=' + p.move_count);
+            const srcAfter = await sessAt(fromDate, fromTime + ':00');
+            const destAfter = (await db.select('slot_sessions', '?select=*&id=eq.' + dest.id))[0];
+            check('B: the source is untouched (still 3 seats)', srcAfter.seats_taken === 3, String(srcAfter.seats_taken));
+            check('B: the full target is untouched (still 4 seats)', destAfter.seats_taken === 4, String(destAfter.seats_taken));
+
+            // ---- C. A TARGET PAST ITS OWN CUTOFF IS REFUSED --------------------
+            // Reuse the same untouched family. A target session that has already
+            // started (yesterday) is inside its own free-cancel window, so moving
+            // INTO it is refused — and again nobody moves.
+            const pastDate = dayOffset(-1), pastTime = '10:00';
+            const pastDest = await declareSession(pastDate, pastTime + ':00', 0);
+            const mvPast = await postRoute('/api/services/slots/move', guestCookie, {
+                orderId: fam.parent.id, sessionDate: pastDate, sessionTime: pastTime,
+            });
+            check('C: a move into a slot past its own cutoff is REFUSED', mvPast.status === 409 && !mvPast.body.ok, 'HTTP ' + mvPast.status);
+            const p2 = await orderRow(fam.parent.id), c2 = await orderRow(fam.child.id);
+            check('C: the family still did NOT move', p2.slot_session_id === srcId && c2.slot_session_id === srcId && p2.move_count === 0, null);
+            const pastAfter = (await db.select('slot_sessions', '?select=*&id=eq.' + pastDest.id))[0];
+            check('C: the past-cutoff target claimed nobody', pastAfter.seats_taken === 0, String(pastAfter.seats_taken));
+            }
+        }
+        note('The move is one atomic RPC: it locks the family and both sessions, re-checks capacity and the cutoff under lock, then claims the target and releases the source — or raises and rolls the whole thing back, leaving the source exactly as it was.');
+    }
+
     /* ----------------------------------------------------------------- write + sum */
     const passed = results.filter((r) => r.status === 'passed').length;
     const failed = results.filter((r) => r.status === 'failed').length;
