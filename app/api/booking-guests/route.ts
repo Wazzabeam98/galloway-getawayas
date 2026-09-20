@@ -43,7 +43,7 @@ async function orderedBy(admin: any, orderId: string, userId: string) {
 async function loadOrderSeats(admin: any, orderId: string) {
     const { data: seatRows } = await admin
         .from('booking_guests')
-        .select('id, user_id, name, email, status, invite_token, seat_index')
+        .select('id, user_id, name, email, status, invite_token, seat_index, link_sent_at')
         .eq('order_id', orderId)
         .neq('status', 'removed')
         .order('seat_index');

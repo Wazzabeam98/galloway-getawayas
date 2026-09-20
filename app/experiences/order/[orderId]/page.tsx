@@ -20,7 +20,7 @@ import PropertyMap from '@/components/PropertyMap';
 import DirectionsPicker from '@/components/arrival/DirectionsPicker';
 import CopyField from '@/components/arrival/CopyField';
 import ExperienceGroup from '@/components/ExperienceGroup';
-import TopUpPlaces from '@/components/marketplace/TopUpPlaces';
+import ChangeGuestCount from '@/components/marketplace/ChangeGuestCount';
 import { foldOrderFamily } from '@/lib/orderFamily';
 import { PrintDetailsRow } from '@/components/marketplace/OrderUtilityRows';
 
@@ -401,7 +401,7 @@ export default async function OrderPage({ params, searchParams }: { params: { or
     // only read their own seat) still sees the whole party.
     const { data: seatRows } = showGroup
         ? await admin.from('booking_guests')
-            .select('id, user_id, name, email, status, invite_token, seat_index')
+            .select('id, user_id, name, email, status, invite_token, seat_index, link_sent_at')
             .eq('order_id', order.id).neq('status', 'removed').order('seat_index')
         : { data: null };
     const groupSeats = (seatRows as any[]) || [];
@@ -747,18 +747,6 @@ export default async function OrderPage({ params, searchParams }: { params: { or
                             )}
                         </section>
 
-                        {/* ---- Add guests ----
-                            Payer-only, per-person only. Buys more seats on the
-                            same session as a separate charge; the panel fetches
-                            its own quote (price + the cancellation cutoff) and
-                            warns, before the card, when a place bought now would
-                            be non-refundable because the deadline has passed. */}
-                        {canTopUp && (
-                            <section className="mt-8 border-t border-slate-200 pt-6">
-                                <TopUpPlaces orderId={order.id} />
-                            </section>
-                        )}
-
                         {/* ---- Who's going ----
                             The per-experience guest list, over the same invite
                             machine the cottage side uses. The booker manages it
@@ -775,9 +763,9 @@ export default async function OrderPage({ params, searchParams }: { params: { or
                                         bookerName={bookerName}
                                         bookerAvatar={bookerAvatar}
                                         attendees={effectiveHeadcount || 1}
-                                        prefill={prefill}
+                                        experienceName={order.provider_business_name || order.item_name || who}
                                         readOnly={!isBooker}
-                                        initialSeats={groupSeats}
+                                        initialSeats={groupSeats as any}
                                         initialProfiles={profileById}
                                     />
                                 </div>
@@ -834,6 +822,18 @@ export default async function OrderPage({ params, searchParams }: { params: { or
                                     <ChevronRight className="h-4 w-4 flex-none text-slate-300" />
                                 </a>
                                 <PrintDetailsRow className={ROW} />
+                                {/* The reservation-change actions, Airbnb-shaped: a
+                                    "Change guest count" row that opens the stepper in
+                                    place, then Cancel. (No "Change date or time" —
+                                    that isn't built, so there's no dead row.) Both
+                                    are the booker's alone. */}
+                                {canTopUp && (
+                                    <ChangeGuestCount
+                                        orderId={order.id}
+                                        className={ROW}
+                                        panelClassName="pb-3"
+                                    />
+                                )}
                                 {/* Only the booker can cancel — and OrderCancel is
                                     handed the price, so a companion never reaches
                                     it. */}

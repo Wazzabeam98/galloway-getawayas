@@ -130,6 +130,11 @@ export async function GET(request: Request) {
             currency: 'gbp',
             seatsLeft: facts.seatsLeft,
             headcount: facts.folded.headcount,
+            // The current party split, folded across the family. Null when no
+            // split was ever recorded — the panel then seeds the stepper as all
+            // adults, since that is what an unsplit order is treated as.
+            adults: facts.folded.adults,
+            children: facts.folded.children,
             maxAddable: Math.min(facts.seatsLeft, MAX_ORDER_QUANTITY),
             serviceDate: loaded.order.service_date,
             serviceTime: loaded.order.service_time ? String(loaded.order.service_time).slice(0, 5) : null,
