@@ -123,7 +123,6 @@ export default function ExperienceGroup({
                 >
                     <UserPlus className="h-4 w-4 text-slate-500" />
                     {active.length === 0 ? 'Invite guests' : 'Invite more'}
-                    <span className="text-slate-400">· {placesToFill} {placesToFill === 1 ? 'place' : 'places'} to fill</span>
                 </button>
             )}
 

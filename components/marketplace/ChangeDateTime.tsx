@@ -1,6 +1,6 @@
 'use client';
 
-import { useState } from 'react';
+import { useMemo, useState } from 'react';
 import { createPortal } from 'react-dom';
 import { Calendar } from 'react-date-range';
 import 'react-date-range/dist/styles.css';
@@ -81,11 +81,15 @@ export default function ChangeDateTime({ orderId, className }: { orderId: string
     const [loadErr, setLoadErr] = useState<string | null>(null);
     const [selectedKey, setSelectedKey] = useState<string | null>(null);
     const [picked, setPicked] = useState<{ date: string; time: string } | null>(null);
+    // The month the calendar is showing (null → the booking's own month), tracked
+    // so we can say "nothing open this month" in words instead of a wall of struck
+    // dates when the visible month holds no session this booking can move to.
+    const [shownDate, setShownDate] = useState<Date | null>(null);
     const [busy, setBusy] = useState(false);
     const [error, setError] = useState<string | null>(null);
 
     async function load() {
-        setLoadErr(null); setFeed(null); setSelectedKey(null); setPicked(null); setError(null);
+        setLoadErr(null); setFeed(null); setSelectedKey(null); setPicked(null); setShownDate(null); setError(null);
         try {
             const r = await fetch('/api/services/slots/move?orderId=' + encodeURIComponent(orderId));
             const d = await r.json();
@@ -119,10 +123,15 @@ export default function ChangeDateTime({ orderId, className }: { orderId: string
     const other = feed ? feed.sessions.filter((s) => s.reason !== 'current') : [];
     const openDayKeys = new Set(other.filter((s) => s.available).map((s) => s.date));
 
-    // The window the calendar spans: today → today + horizon.
-    const minDate = new Date(); minDate.setHours(0, 0, 0, 0);
-    const maxDate = feed ? new Date(Date.now() + (feed.horizonDays || 120) * 86400000) : new Date();
-    const currentDate = feed ? dateFromKey(feed.current.date) : new Date();
+    // The window the calendar spans: today → today + horizon. Memoised to STABLE
+    // Date objects — react-date-range resets its shown month whenever the shownDate
+    // (or bounds) prop identity changes, so a fresh `new Date()` each render would
+    // fight the user's month navigation and snap back to the booking's month.
+    const currentDateKey = feed ? feed.current.date : '';
+    const horizonDays = feed ? (feed.horizonDays || 120) : 120;
+    const minDate = useMemo(() => { const d = new Date(); d.setHours(0, 0, 0, 0); return d; }, []);
+    const maxDate = useMemo(() => new Date(Date.now() + horizonDays * 86400000), [horizonDays]);
+    const currentDate = useMemo(() => currentDateKey ? dateFromKey(currentDateKey) : new Date(), [currentDateKey]);
 
     // Every day in the window that ISN'T an open day is greyed/struck, the way the
     // cottage calendar greys a taken night. (Cheap: one pass over the horizon.)
@@ -153,6 +162,27 @@ export default function ChangeDateTime({ orderId, className }: { orderId: string
             ? 'Days with an open time are selectable.'
             : 'Days with room for all ' + feed.familySeats + ' of your party are selectable.')
         : '';
+
+    // Which MONTHS hold an open day, so we can tell the guest where to look when
+    // the month they're on has nothing. The calendar still opens on the booking's
+    // own month (per the agreed behaviour); an empty one just says so.
+    const monthKeyOf = (d: Date) => d.getFullYear() + '-' + String(d.getMonth() + 1).padStart(2, '0');
+    const monthNameOf = (mk: string) => {
+        try {
+            return new Intl.DateTimeFormat('en-GB', { month: 'long', year: 'numeric', timeZone: 'Europe/London' })
+                .format(new Date(mk + '-01T12:00:00Z'));
+        } catch { return mk; }
+    };
+    const openMonthKeys = new Set(Array.from(openDayKeys).map((k) => k.slice(0, 7)));
+    const shown = shownDate || currentDate;
+    const shownMonthEmpty = !!feed && openDayKeys.size > 0 && !openMonthKeys.has(monthKeyOf(shown));
+    const openMonthsList = Array.from(openMonthKeys).sort().map(monthNameOf);
+    const availabilityHint = openMonthsList.length === 0
+        ? ''
+        : openMonthsList.length === 1
+            ? 'There’s room in ' + openMonthsList[0] + ' — use the arrows above to go there.'
+            : 'There’s room in ' + openMonthsList.slice(0, -1).join(', ') + ' and ' + openMonthsList[openMonthsList.length - 1]
+              + ' — use the arrows above to find it.';
 
     return (
         <>
@@ -197,20 +227,32 @@ export default function ChangeDateTime({ orderId, className }: { orderId: string
                                         <p className="text-sm text-slate-600">There are no other sessions open to move this booking to right now.</p>
                                     ) : (
                                         <>
-                                            <div className="rdr-move overflow-hidden rounded-xl border border-slate-200">
+                                            <div className="rdr-move relative overflow-hidden rounded-xl border border-slate-200">
                                                 <Calendar
-                                                    date={selectedKey ? dateFromKey(selectedKey) : currentDate}
+                                                    date={selectedKey ? dateFromKey(selectedKey) : undefined}
                                                     shownDate={currentDate}
+                                                    onShownDateChange={(d: Date) => setShownDate(d)}
                                                     onChange={(d: Date) => { setSelectedKey(keyOf(d)); setPicked(null); setError(null); }}
                                                     minDate={minDate}
                                                     maxDate={maxDate}
                                                     disabledDates={disabledDates}
                                                     color="#047857"
+                                                    preventSnapRefocus
                                                     dayContentRenderer={renderDay}
                                                 />
+                                                {/* When the visible month has nothing to move to, cover
+                                                    the wall of struck dates with words — the month nav
+                                                    above stays clickable. */}
+                                                {shownMonthEmpty && (
+                                                    <div className="pointer-events-none absolute inset-x-0 bottom-0 flex flex-col items-center justify-center bg-white/95 px-6 text-center"
+                                                        style={{ top: 50 }}>
+                                                        <p className="text-sm font-semibold text-slate-700">Nothing open in {monthNameOf(monthKeyOf(shown))}</p>
+                                                        {availabilityHint && <p className="mt-1 text-[13px] text-slate-500">{availabilityHint}</p>}
+                                                    </div>
+                                                )}
                                             </div>
 
-                                            {selectedKey && (
+                                            {selectedKey && !shownMonthEmpty && (
                                                 <div>
                                                     <div className="text-[13px] font-semibold text-slate-700">{dayLabel(selectedKey)}</div>
                                                     {dayTimes.length === 0 ? (

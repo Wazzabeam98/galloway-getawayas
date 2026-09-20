@@ -124,6 +124,17 @@
   visibility: hidden !important;
 }
 
+/* 6b. The "Change date or time" modal calendar — fills the modal and uses larger,
+   comfortably-tappable day cells (the default cells are too small in a phone-width
+   sheet). Scoped to .rdr-move so the cottage booking calendar is untouched. */
+.rdr-move .rdrCalendarWrapper { width: 100%; font-size: 15px; }
+.rdr-move .rdrMonth { width: 100% !important; padding: 0 0.25em 0.5em 0.25em !important; }
+.rdr-move .rdrMonthAndYearWrapper { height: 44px; padding-top: 6px; }
+.rdr-move .rdrDay { height: 46px !important; line-height: 46px !important; }
+.rdr-move .rdrDayNumber { font-weight: 500; }
+.rdr-move .rdrDayNumber span { font-size: 15px; }
+.rdr-move .rdrWeekDay { font-size: 12px; color: #64748b; }
+
 
 /* 7. Toast styling
    react-toastify's "colored" theme paints the whole box solid green or red.

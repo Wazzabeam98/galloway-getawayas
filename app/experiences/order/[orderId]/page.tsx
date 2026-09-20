@@ -829,18 +829,18 @@ export default async function OrderPage({ params, searchParams }: { params: { or
                                 </a>
                                 <PrintDetailsRow className={ROW} />
                                 {/* The reservation actions, in one order on every
-                                    shape: Change date or time, Change guest count,
+                                    shape: Change guest count, Change date or time,
                                     Cancel reservation. The first two open a modal
                                     and are slot-only; Cancel shows on every shape.
                                     All are the booker's alone. */}
-                                {canMove && (
-                                    <ChangeDateTime
+                                {canTopUp && (
+                                    <ChangeGuestCount
                                         orderId={order.id}
                                         className={ROW}
                                     />
                                 )}
-                                {canTopUp && (
-                                    <ChangeGuestCount
+                                {canMove && (
+                                    <ChangeDateTime
                                         orderId={order.id}
                                         className={ROW}
                                     />
