@@ -2,7 +2,7 @@ import { redirect } from 'next/navigation';
 import Link from 'next/link';
 import {
     ArrowLeft, CalendarDays, MapPin, CheckCircle2, Clock3, XCircle, AlertTriangle,
-    MessageSquare, ChevronRight, Navigation, LifeBuoy, BookOpen,
+    MessageSquare, ChevronRight, LifeBuoy, BookOpen, Award,
 } from 'lucide-react';
 import { createServerComponentClient } from '@supabase/auth-helpers-nextjs';
 import { cookies } from 'next/headers';
@@ -11,10 +11,14 @@ import { logError } from '@/lib/logError';
 import { firstName, getImageUrl } from '@/lib/utils';
 import { guestMayCancelFree } from '@/lib/serviceSlots';
 import { orderLocation } from '@/lib/orderLocation';
-import { cancellationSentence } from '@/components/marketplace/present';
+import { isFoodProvider } from '@/lib/serviceOrders';
+import { directionsUrl as buildDirectionsUrl, appleDirectionsUrl } from '@/lib/directions';
+import { cancellationSentence, yearsLabel } from '@/components/marketplace/present';
 import OrderCancel from '@/components/marketplace/OrderCancel';
 import PropertyMap from '@/components/PropertyMap';
-import { CopyAddressRow, PrintDetailsRow } from '@/components/marketplace/OrderUtilityRows';
+import DirectionsPicker from '@/components/arrival/DirectionsPicker';
+import CopyField from '@/components/arrival/CopyField';
+import { PrintDetailsRow } from '@/components/marketplace/OrderUtilityRows';
 
 export const dynamic = 'force-dynamic';
 
@@ -147,7 +151,10 @@ export default async function OrderPage({ params, searchParams }: { params: { or
         // every experience provider by construction — the sign-up wizard only
         // shows the phone field to non-guest trades — so the Call button it fed
         // was dead on every order. Dropped rather than left to vanish silently.
-        admin.from('service_providers').select('owner_id, business_name, provider_name, based_line, headshot, photos, description, cancellation_window_hours, slot_length_minutes, fulfilment, collection_street, collection_town, collection_postcode').eq('id', order.provider_id).maybeSingle(),
+        // stripe_mcc + trade feed isFoodProvider (the allergy gate); guest_details
+        // carries the live experience content — itinerary, what-to-expect and the
+        // host's credentials — the same JSONB the public listing reads.
+        admin.from('service_providers').select('owner_id, business_name, provider_name, based_line, headshot, photos, description, cancellation_window_hours, slot_length_minutes, fulfilment, collection_street, collection_town, collection_postcode, stripe_mcc, trade, guest_details').eq('id', order.provider_id).maybeSingle(),
         order.listing_id
             // The cottage the experience is attached to. `address` is not a column
             // on listings — the address is street_address + postcode + location —
@@ -258,14 +265,23 @@ export default async function OrderPage({ params, searchParams }: { params: { or
     const where = comesToCottage
         ? (cottageAddress || 'Your cottage')
         : (collectionAddress || prov?.based_line || who);
-    // Get directions goes to Google Maps, which is exactly what the reference's
-    // row does — but theirs queries by COORDINATES and this one queries by the
-    // ADDRESS, deliberately. Their coordinates are the meeting point; the only
-    // coordinates we hold are the centre of a service AREA, so sending those to
-    // a directions app would route the guest to the middle of the Stewartry
-    // instead of the bakery. The written address is the exact one, so it is the
-    // better query for us even though it is the weaker kind of query in general.
-    const directionsHref = 'https://www.google.com/maps/search/?api=1&query=' + encodeURIComponent(where);
+    // Get directions uses the SHARED picker (components/arrival/DirectionsPicker),
+    // the same one the trips card carries — one behaviour across the site instead
+    // of a second, Google-only link. lib/directions builds the Apple and Google
+    // URLs from the collection STREET address, never the service-area centre we
+    // hold (that would route the guest to the middle of the Stewartry, not the
+    // door) and never the town alone (it returns null, so no option). The picker's
+    // third option, what3words, is a LISTING_ARRIVAL field a cottage has and an
+    // experience provider does not — there is no w3w column on service_providers —
+    // so it is passed null and the picker omits the row rather than show a dead
+    // one.
+    const dirParts = {
+        streetAddress: prov?.collection_street || null,
+        postcode: prov?.collection_postcode || null,
+        location: prov?.collection_town || null,
+    };
+    const googleDir = collects ? buildDirectionsUrl(dirParts) : null;
+    const appleDir = collects ? appleDirectionsUrl(dirParts) : null;
     const badge = live ? untilBadge(String(order.service_date)) : null;
     // The session length as RECORDED — null when nothing records one. The
     // 60-minute fallback below is fine for an .ics, which must have an end, but
@@ -275,6 +291,52 @@ export default async function OrderPage({ params, searchParams }: { params: { or
     const knownDuration = Number(order.duration_minutes) || Number(prov?.slot_length_minutes) || null;
     const durationMin = knownDuration || 60;
     const bio = (prov?.description || '').trim();
+
+    // The title and photo link through to the provider's listing, the way the
+    // trip card's title and photo open the property (/homes/<id>). An order
+    // attached to a stay opens the in-stay listing (booking context, the page it
+    // was booked from); a standalone order opens the public listing. Both render
+    // the same ExperienceListingBody.
+    const listingHref = order.booking_id
+        ? `/experiences/${order.booking_id}/${order.provider_id}`
+        : `/experiences/browse/${order.provider_id}`;
+
+    // The allergy PROMPT is food-trades-only, gated on the provider's Stripe MCC
+    // (isFoodProvider) — the same gate the booking panels use to decide whether to
+    // ask. The order page repeats the gate on the DISPLAY rather than trusting the
+    // stored value: the value is written by the booking routes, which do not
+    // re-check the gate, so a stray allergy on a non-food order must still never
+    // surface on a sauna. The general note below is different and shows on every
+    // shape.
+    const isFood = isFoodProvider(prov);
+
+    // The experience content, read LIVE from guest_details — the same source and
+    // the same freshness as the host bio (prov.description) already has. Nothing
+    // is frozen onto the order: a host improving their write-up improves every
+    // guest's page, which is the behaviour the bio already sets.
+    const gd = (prov?.guest_details || {}) as Record<string, unknown>;
+    const whatToExpect = typeof gd.what_to_expect === 'string' ? gd.what_to_expect.trim() : '';
+    const itinerary = Array.isArray(gd.itinerary)
+        ? (gd.itinerary as unknown[])
+            .map((s) => ({ title: String((s as any)?.title || '').trim(), detail: String((s as any)?.detail || '').trim() }))
+            .filter((s) => s.detail)
+        : [];
+    // The experience blurb prefers the provider's live "what to expect"; a
+    // provider who wrote none (a made-to-order baker, whose guest_details is bare)
+    // falls back to the item line frozen on the order — what this page showed
+    // before — so the section is never emptier than it was.
+    const experienceBlurb = whatToExpect || (order.item_description || '').trim();
+    const hasWhat = Boolean(experienceBlurb || itinerary.length);
+    // The fuller host bio: a professional title (unless it just echoes the
+    // business name), the free-text description, and the credentials the listing
+    // shows under "About your host".
+    const proTitle = typeof gd.professional_title === 'string' && gd.professional_title.trim()
+        && gd.professional_title.trim().toLowerCase() !== who.trim().toLowerCase()
+        ? gd.professional_title.trim() : null;
+    const qualifications = typeof gd.qualifications === 'string' ? gd.qualifications.trim() : '';
+    const recognition = typeof gd.recognition === 'string' ? gd.recognition.trim() : '';
+    const years = yearsLabel(gd.years_experience != null ? String(gd.years_experience) : null);
+    const hasAboutHost = Boolean(years || qualifications || recognition);
 
     return (
         // Hold the column to the viewport (less the sticky 80px nav + its border)
@@ -319,19 +381,21 @@ export default async function OrderPage({ params, searchParams }: { params: { or
                             reference leads. No photo → no frame, rather than a
                             placeholder. */}
                         {hero && (
-                            <div className="relative overflow-hidden rounded-2xl">
+                            <Link href={listingHref} className="group relative block overflow-hidden rounded-2xl">
                                 {/* eslint-disable-next-line @next/next/no-img-element */}
-                                <img src={hero} alt={order.item_name || 'Experience'} className="h-44 w-full object-cover sm:h-56" />
+                                <img src={hero} alt={order.item_name || 'Experience'} className="h-44 w-full object-cover transition group-hover:brightness-95 sm:h-56" />
                                 {badge && (
                                     <span className="absolute left-3 top-3 rounded-full bg-white/95 px-3 py-1 text-xs font-semibold text-slate-900 shadow-sm">
                                         {badge}
                                     </span>
                                 )}
-                            </div>
+                            </Link>
                         )}
 
                         <div className={`${hero ? 'mt-4' : ''} flex items-start justify-between gap-3`}>
-                            <h1 className="min-w-0 text-2xl font-semibold tracking-tight text-slate-900 sm:text-3xl">{order.item_name || 'Experience'}</h1>
+                            <h1 className="min-w-0 text-2xl font-semibold tracking-tight text-slate-900 sm:text-3xl">
+                                <Link href={listingHref} className="hover:underline">{order.item_name || 'Experience'}</Link>
+                            </h1>
                             <span className={`inline-flex flex-none items-center gap-1 rounded-full px-2.5 py-1 text-[11px] font-semibold ${PILL[meta.tone]}`}>
                                 {meta.tone === 'ok' && <CheckCircle2 className="h-3 w-3" />}
                                 {meta.tone === 'wait' && <Clock3 className="h-3 w-3" />}
@@ -395,8 +459,10 @@ export default async function OrderPage({ params, searchParams }: { params: { or
                         {/* The allergy the guest gave, shown back so they can see
                             it landed. It stays high on the page and stays loud —
                             the reference has no equivalent, because Airbnb is not
-                            putting a stranger in your kitchen. */}
-                        {order.allergy && (
+                            putting a stranger in your kitchen. Gated on isFood so a
+                            value stored against a non-food order (the booking routes
+                            do not re-check the gate) can never surface on a sauna. */}
+                        {isFood && order.allergy && (
                             <div className="mt-4 rounded-xl border-2 border-rose-300 bg-rose-50 px-3.5 py-3">
                                 <div className="flex items-center gap-1.5 text-xs font-bold uppercase tracking-wide text-rose-800">
                                     <AlertTriangle className="h-3.5 w-3.5" /> Your allergy note
@@ -414,7 +480,182 @@ export default async function OrderPage({ params, searchParams }: { params: { or
                             </div>
                         )}
 
-                        {/* ---- Booking details ---- */}
+                        {/* ---- Where ---- */}
+                        <section className="mt-8 border-t border-slate-200 pt-6">
+                            <h2 className="text-lg font-semibold text-slate-900">
+                                {/* Shape-aware, because "collect" only fits one of
+                                    them. A SLOT you attend — a sauna, a swim, a
+                                    tasting — you GO to; you collect nothing, so
+                                    "Where to go". It reads for a fixed venue and a
+                                    meeting point alike, where Airbnb's "Where to
+                                    meet" would overpromise a person waiting at a
+                                    spot our fixed-venue sessions don't have. A
+                                    MADE-TO-ORDER product — a cake — you do collect,
+                                    so it keeps "Where to collect". A COMES-TO-YOU
+                                    order is the provider travelling to the cottage,
+                                    so it never carries "collect" at all. A
+                                    made-to-order with no direction yet agreed keeps
+                                    the honest "Collection or delivery". */}
+                                {comesToCottage ? 'Where they’re coming'
+                                    : isSlot ? 'Where to go'
+                                        : collects ? 'Where to collect'
+                                            : 'Collection or delivery'}
+                            </h2>
+
+                            <div className="mt-3 flex gap-3">
+                                <MapPin className="mt-0.5 h-4 w-4 flex-none text-slate-400" />
+                                <div className="min-w-0 text-sm text-slate-800">
+                                    {comesToCottage ? (
+                                        <>
+                                            <div>{shortWho} comes to you{listing && listing.title ? ` at ${listing.title}` : ''}</div>
+                                            {cottageAddress && <div className="mt-0.5 text-slate-500">{cottageAddress}</div>}
+                                        </>
+                                    ) : collectionAddress ? (
+                                        <>
+                                            <div>{who}</div>
+                                            <div className="mt-0.5 text-slate-500">{collectionAddress}</div>
+                                        </>
+                                    ) : prov && prov.based_line ? (
+                                        <>
+                                            <div>{who}</div>
+                                            <div className="mt-0.5 text-slate-500">
+                                                {prov.based_line}{charged ? '' : ' — the full address once your place is confirmed'}
+                                            </div>
+                                        </>
+                                    ) : (
+                                        <div>{shortWho} will arrange it with you — message them to sort it out.</div>
+                                    )}
+                                </div>
+                            </div>
+
+                            {/* Get directions + Copy address, the same pair the
+                                trips card renders, side by side and stacking on a
+                                phone. Only where there is somewhere to travel to —
+                                a chef coming to the cottage does not need the guest
+                                directed to their own front door. The picker hides
+                                itself when lib/directions has no street to point at,
+                                leaving just Copy. */}
+                            {hasVenue && collectionAddress && (
+                                <div className="mt-4 grid grid-cols-1 gap-2 sm:grid-cols-2">
+                                    <DirectionsPicker apple={appleDir} google={googleDir} what3words={null} compact />
+                                    <CopyField value={collectionAddress} label="Copy address" block />
+                                </div>
+                            )}
+                        </section>
+
+                        {/* ---- What you'll do ----
+                            Airbnb's "What you'll do / How you'll spend your time".
+                            The blurb plus the step-by-step itinerary, both live from
+                            guest_details. Numbered steps rather than the listing's
+                            per-phase icons — the narrow column reads better as a
+                            plain sequence, and it is the same itinerary data, not a
+                            second copy. Falls back to the frozen item line when a
+                            provider wrote neither, so it is never emptier than the
+                            old "About this experience". */}
+                        {hasWhat && (
+                            <section className="mt-8 border-t border-slate-200 pt-6">
+                                {/* "What you'll do" for a session the guest attends;
+                                    a made-to-order product (a cake) is not something
+                                    they DO, so it keeps the neutral heading. */}
+                                <h2 className="text-lg font-semibold text-slate-900">{order.shape === 'made_to_order' ? 'About this experience' : 'What you’ll do'}</h2>
+                                {experienceBlurb && (
+                                    <p className="mt-2 whitespace-pre-line text-sm leading-relaxed text-slate-700">{experienceBlurb}</p>
+                                )}
+                                {itinerary.length > 0 && (
+                                    <ol className="mt-4 space-y-4">
+                                        {itinerary.map((step, i) => (
+                                            <li key={i} className="flex gap-3">
+                                                <span className="flex h-6 w-6 flex-none items-center justify-center rounded-full bg-emerald-50 text-xs font-semibold text-emerald-700 ring-1 ring-emerald-100">
+                                                    {i + 1}
+                                                </span>
+                                                <div className="min-w-0">
+                                                    {step.title && <div className="text-sm font-semibold text-slate-900">{step.title}</div>}
+                                                    <p className="mt-0.5 whitespace-pre-line text-sm leading-relaxed text-slate-700">{step.detail}</p>
+                                                </div>
+                                            </li>
+                                        ))}
+                                    </ol>
+                                )}
+                            </section>
+                        )}
+
+                        {/* ---- Hosted by ---- */}
+                        <section className="mt-8 border-t border-slate-200 pt-6">
+                            <div className="flex items-start justify-between gap-3">
+                                <div className="min-w-0">
+                                    <h2 className="text-lg font-semibold text-slate-900">Hosted by {hostFirst || who}</h2>
+                                    {/* The professional title, the eyebrow the
+                                        listing carries — skipped when it only
+                                        echoes the business name. */}
+                                    {proTitle && <div className="mt-0.5 text-[13px] text-slate-500">{proTitle}</div>}
+                                </div>
+                                {headshotUrl ? (
+                                    // eslint-disable-next-line @next/next/no-img-element
+                                    <img src={headshotUrl} alt={hostFirst ? 'Hosted by ' + hostFirst : who} className="h-12 w-12 flex-none rounded-full object-cover ring-1 ring-slate-200" />
+                                ) : (
+                                    <span className="flex h-12 w-12 flex-none items-center justify-center rounded-full bg-slate-100 text-base font-semibold text-slate-500">
+                                        {(hostFirst || who).slice(0, 1)}
+                                    </span>
+                                )}
+                            </div>
+
+                            {bio && (
+                                // The reference's "Show more" is a LINK to a host
+                                // profile page, not a disclosure toggle. We have no
+                                // provider profile page, so this expands in place
+                                // instead — <details> so it needs no JavaScript and
+                                // the whole bio is present for search and print.
+                                <details className="group mt-3">
+                                    <summary className="cursor-pointer list-none text-sm leading-relaxed text-slate-700 [&::-webkit-details-marker]:hidden">
+                                        <span className="line-clamp-3 group-open:line-clamp-none">{bio}</span>
+                                        <span className="mt-1 inline-block font-semibold text-slate-900 underline group-open:hidden">Show more</span>
+                                    </summary>
+                                    <span className="mt-1 inline-block cursor-pointer text-sm font-semibold text-slate-900 underline">Show less</span>
+                                </details>
+                            )}
+
+                            {/* The credentials the listing shows under "About your
+                                host" — years, training, recognition — each only when
+                                the host wrote it. A slot guide's safety training is
+                                exactly what a guest wants before a cold-water swim. */}
+                            {hasAboutHost && (
+                                <dl className="mt-4 space-y-3">
+                                    {years && (
+                                        <div>
+                                            <dt className="text-xs font-semibold uppercase tracking-wide text-slate-500">Experience</dt>
+                                            <dd className="mt-0.5 text-sm text-slate-700">{years}</dd>
+                                        </div>
+                                    )}
+                                    {qualifications && (
+                                        <div>
+                                            <dt className="flex items-center gap-1.5 text-xs font-semibold uppercase tracking-wide text-slate-500"><Award className="h-3.5 w-3.5 text-slate-400" /> Training &amp; qualifications</dt>
+                                            <dd className="mt-0.5 whitespace-pre-line text-sm leading-relaxed text-slate-700">{qualifications}</dd>
+                                        </div>
+                                    )}
+                                    {recognition && (
+                                        <div>
+                                            <dt className="text-xs font-semibold uppercase tracking-wide text-slate-500">Recognition</dt>
+                                            <dd className="mt-0.5 whitespace-pre-line text-sm leading-relaxed text-slate-700">{recognition}</dd>
+                                        </div>
+                                    )}
+                                </dl>
+                            )}
+
+                            {canMessage && (
+                                <Link
+                                    href={'/messages?o=' + order.id}
+                                    className="mt-4 inline-flex w-full items-center justify-center gap-2 rounded-xl bg-emerald-700 px-4 py-3 text-sm font-semibold text-white transition hover:bg-emerald-800"
+                                >
+                                    <MessageSquare className="h-4 w-4" /> Message {hostFirst || 'your host'}
+                                </Link>
+                            )}
+                        </section>
+
+                        {/* ---- Booking details (the admin block) ----
+                            Moved BELOW the experience: the cancellation policy and
+                            the calendar/print/cancel actions are the least-read part
+                            of the page, so where-to-go and what-happens lead and the
+                            admin follows, rather than the reverse. */}
                         <section className="mt-8 border-t border-slate-200 pt-6">
                             <h2 className="text-lg font-semibold text-slate-900">Booking details</h2>
 
@@ -460,106 +701,6 @@ export default async function OrderPage({ params, searchParams }: { params: { or
                                     />
                                 )}
                             </div>
-                        </section>
-
-                        {/* ---- Where ---- */}
-                        <section className="mt-8 border-t border-slate-200 pt-6">
-                            <h2 className="text-lg font-semibold text-slate-900">
-                                {/* A made-to-order cake with no fulfilment set
-                                    has no meeting place at all, so it must not
-                                    be headed "Where to meet" — the honest
-                                    heading is the thing still to be agreed. */}
-                                {comesToCottage ? 'Where they’re coming'
-                                    : collects ? 'Where to collect'
-                                        : isSlot ? 'Where to meet'
-                                            : 'Collection or delivery'}
-                            </h2>
-
-                            <div className="mt-3 flex gap-3">
-                                <MapPin className="mt-0.5 h-4 w-4 flex-none text-slate-400" />
-                                <div className="min-w-0 text-sm text-slate-800">
-                                    {comesToCottage ? (
-                                        <>
-                                            <div>{shortWho} comes to you{listing && listing.title ? ` at ${listing.title}` : ''}</div>
-                                            {cottageAddress && <div className="mt-0.5 text-slate-500">{cottageAddress}</div>}
-                                        </>
-                                    ) : collectionAddress ? (
-                                        <>
-                                            <div>{who}</div>
-                                            <div className="mt-0.5 text-slate-500">{collectionAddress}</div>
-                                        </>
-                                    ) : prov && prov.based_line ? (
-                                        <>
-                                            <div>{who}</div>
-                                            <div className="mt-0.5 text-slate-500">
-                                                {prov.based_line}{charged ? '' : ' — the full address once your place is confirmed'}
-                                            </div>
-                                        </>
-                                    ) : (
-                                        <div>{shortWho} will arrange it with you — message them to sort it out.</div>
-                                    )}
-                                </div>
-                            </div>
-
-                            {/* Directions rows only where there is somewhere to
-                                travel to. A chef coming to the cottage does not
-                                need the guest directed to their own front door. */}
-                            {hasVenue && collectionAddress && (
-                                <div className="mt-3 divide-y divide-slate-200 border-t border-slate-200">
-                                    <CopyAddressRow address={collectionAddress} className={ROW} />
-                                    <a href={directionsHref} target="_blank" rel="noopener noreferrer" className={ROW}>
-                                        <span className="flex items-center gap-3"><Navigation className="h-4 w-4 flex-none text-slate-400" /> Get directions</span>
-                                        <ChevronRight className="h-4 w-4 flex-none text-slate-300" />
-                                    </a>
-                                </div>
-                            )}
-                        </section>
-
-                        {/* ---- About ---- */}
-                        {(order.item_description || '').trim() && (
-                            <section className="mt-8 border-t border-slate-200 pt-6">
-                                <h2 className="text-lg font-semibold text-slate-900">About this experience</h2>
-                                <p className="mt-2 whitespace-pre-line text-sm leading-relaxed text-slate-700">{order.item_description}</p>
-                            </section>
-                        )}
-
-                        {/* ---- Hosted by ---- */}
-                        <section className="mt-8 border-t border-slate-200 pt-6">
-                            <div className="flex items-start justify-between gap-3">
-                                <h2 className="text-lg font-semibold text-slate-900">Hosted by {hostFirst || who}</h2>
-                                {headshotUrl ? (
-                                    // eslint-disable-next-line @next/next/no-img-element
-                                    <img src={headshotUrl} alt={hostFirst ? 'Hosted by ' + hostFirst : who} className="h-12 w-12 flex-none rounded-full object-cover ring-1 ring-slate-200" />
-                                ) : (
-                                    <span className="flex h-12 w-12 flex-none items-center justify-center rounded-full bg-slate-100 text-base font-semibold text-slate-500">
-                                        {(hostFirst || who).slice(0, 1)}
-                                    </span>
-                                )}
-                            </div>
-
-                            {bio && (
-                                // The reference's "Show more" is a LINK to a host
-                                // profile page, not a disclosure toggle. We have no
-                                // provider profile page, so this expands in place
-                                // instead — <details> so it needs no JavaScript and
-                                // the whole bio is present for search and print.
-                                <details className="group mt-3">
-                                    <summary className="cursor-pointer list-none text-sm leading-relaxed text-slate-700 [&::-webkit-details-marker]:hidden">
-                                        <span className="line-clamp-3 group-open:line-clamp-none">{bio}</span>
-                                        <span className="mt-1 inline-block font-semibold text-slate-900 underline group-open:hidden">Show more</span>
-                                    </summary>
-                                    <span className="mt-1 inline-block cursor-pointer text-sm font-semibold text-slate-900 underline">Show less</span>
-                                </details>
-                            )}
-
-                            {canMessage && (
-                                <Link
-                                    href={'/messages?o=' + order.id}
-                                    className="mt-4 inline-flex w-full items-center justify-center gap-2 rounded-xl bg-emerald-700 px-4 py-3 text-sm font-semibold text-white transition hover:bg-emerald-800"
-                                >
-                                    <MessageSquare className="h-4 w-4" /> Message {hostFirst || 'your host'}
-                                </Link>
-                            )}
                         </section>
 
                         {/* ---- Payment ----
