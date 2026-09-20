@@ -11,6 +11,7 @@ import { tradeLabel } from '@/lib/serviceProviders';
 import { guestBookedEmail, hostNewBookingEmail, arrivalLineFrom } from '@/lib/bookingEmails';
 import { cancellationPosition } from '@/lib/cancellationView';
 import { resolveGuestForPaidOrder, supabaseGuestStore, guestMagicLink } from '@/lib/guestAccount';
+import { notifyTopUpConfirmed } from '@/lib/slotNotify';
 
 export const dynamic = 'force-dynamic';
 
@@ -328,7 +329,7 @@ export async function POST(request: Request) {
                         .update(confirmPatch)
                         .eq('id', orderId)
                         .eq('status', 'holding')
-                        .select('id, provider_id, service_date, service_time, item_name, quantity, price, note, allergy');
+                        .select('id, parent_order_id, provider_id, provider_business_name, guest_email, service_date, service_time, item_name, quantity, price, note, allergy');
                     if (slotConfErr) {
                         console.error('[webhook] slot-order confirm', orderId, slotConfErr.message);
                     }
@@ -340,7 +341,13 @@ export async function POST(request: Request) {
                     // still 'holding', so a redelivered event updates nothing and
                     // sends nothing twice. A mail failure never touches the money.
                     const slotOrder = slotRows && slotRows[0];
-                    if (slotOrder) {
+                    // AN ADDED PLACE (a per-person top-up) is not a new booking:
+                    // it sends the count-went-up emails, not the "new booking"
+                    // ones. Only on the first confirm (slotOrder is returned only
+                    // while the row was still 'holding'), so a redelivery is silent.
+                    if (slotOrder && slotOrder.parent_order_id) {
+                        await notifyTopUpConfirmed(admin, slotOrder);
+                    } else if (slotOrder) {
                         const time = slotOrder.service_time ? String(slotOrder.service_time).slice(0, 5) : '';
                         const qty = Number(slotOrder.quantity) || 1;
                         const { data: prov } = await admin

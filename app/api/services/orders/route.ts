@@ -3,6 +3,7 @@ import { adminClient } from '@/lib/supabaseAdmin';
 import { cookies } from 'next/headers';
 import { NextResponse } from 'next/server';
 import { getImageUrl } from '@/lib/utils';
+import { withFamilyFolded } from '@/lib/orderFamily';
 
 export const dynamic = 'force-dynamic';
 
@@ -38,10 +39,25 @@ export async function GET(request: Request) {
 
         const { data: orders } = await admin
             .from('service_orders')
-            .select('id, status, service_date, service_time, shape, fulfilment, service_address, guests, adults, children, price, commission_rate, amount_refunded, item_name, item_unit, unit_price, quantity, attendees, guest_name, guest_phone, guest_email, note, allergy, listing_id, expires_at, created_at')
+            .select('id, parent_order_id, status, service_date, service_time, shape, fulfilment, service_address, guests, adults, children, price, commission_rate, amount_refunded, item_name, item_unit, unit_price, quantity, attendees, guest_name, guest_phone, guest_email, note, allergy, listing_id, expires_at, created_at')
             .eq('provider_id', providerId)
             .order('created_at', { ascending: false })
             .limit(50);
+
+        // A per-person TOP-UP is a child row. It is not its own booking on the
+        // diary — it is more places on the parent — so it is never emitted as a
+        // row; its confirmed seats, split and delta fold into the parent through
+        // the one family helper, and the provider reads the new party and new
+        // total on the original row.
+        const confirmedChildrenByParent: Record<string, any[]> = {};
+        for (const o of orders || []) {
+            if (o.parent_order_id && o.status === 'confirmed') {
+                (confirmedChildrenByParent[o.parent_order_id] ||= []).push(o);
+            }
+        }
+        const parentOrders = (orders || [])
+            .filter((o) => !o.parent_order_id)
+            .map((o) => withFamilyFolded(o, confirmedChildrenByParent[o.id] || []));
 
         // THE PROPERTY IS RELEASED ON CONFIRM, WITH THE CONTACT.
         //
@@ -52,7 +68,7 @@ export async function GET(request: Request) {
         // listing's `location` is the full street + postcode, the same address a
         // booked guest gets to arrive; the public listing only ever shows an
         // approximate area). Fetched once for the confirmed orders on this page.
-        const confirmed = (orders || []).filter((o) => o.status === 'confirmed');
+        const confirmed = parentOrders.filter((o) => o.status === 'confirmed');
         const listingIds = Array.from(new Set(confirmed.map((o) => o.listing_id).filter(Boolean)));
         const { data: listingRows } = listingIds.length
             ? await admin.from('listings').select('id, title, location, images').in('id', listingIds)
@@ -68,7 +84,7 @@ export async function GET(request: Request) {
         // they confirm and the card is captured, they are doing the job, so they
         // get what they need to do it: name, phone, email, and the cottage with
         // its address. An unanswered or declined order carries none of it.
-        const rows = (orders || []).map((o) => {
+        const rows = parentOrders.map((o) => {
             const released = o.status === 'confirmed';
             const l = released && o.listing_id ? listingById[o.listing_id] : null;
             return {

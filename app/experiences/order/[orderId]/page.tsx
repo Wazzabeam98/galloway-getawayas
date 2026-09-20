@@ -20,6 +20,8 @@ import PropertyMap from '@/components/PropertyMap';
 import DirectionsPicker from '@/components/arrival/DirectionsPicker';
 import CopyField from '@/components/arrival/CopyField';
 import ExperienceGroup from '@/components/ExperienceGroup';
+import TopUpPlaces from '@/components/marketplace/TopUpPlaces';
+import { foldOrderFamily } from '@/lib/orderFamily';
 import { PrintDetailsRow } from '@/components/marketplace/OrderUtilityRows';
 
 export const dynamic = 'force-dynamic';
@@ -244,6 +246,24 @@ export default async function OrderPage({ params, searchParams }: { params: { or
     // never rewrites what this guest booked. The ADDRESS below still comes live
     // from the provider — only the direction is the frozen deal.
     const isSlot = order.shape === 'slot';
+
+    // ADDED PLACES. A per-person slot booking can grow by buying more seats: each
+    // is a confirmed CHILD order on the same session (parent_order_id). Fold them
+    // in so the party count, the split and the invite-list size on THIS page all
+    // reflect the seats actually paid for — not just the original booking. Only a
+    // per-person parent (never a private one, never a child page) has any.
+    const isPerPersonParent = isSlot && order.item_unit === 'person' && !order.parent_order_id;
+    const { data: topUpChildren } = isPerPersonParent
+        ? await admin.from('service_orders')
+            .select('quantity, attendees, adults, children, item_unit')
+            .eq('parent_order_id', order.id).eq('status', 'confirmed')
+        : { data: null };
+    const family = foldOrderFamily(order, (topUpChildren as any[]) || []);
+    // The head count that drives "Who's going" and the Guests line: the folded
+    // family for a per-person order, else the private order's own attendees.
+    const effectiveHeadcount = isPerPersonParent ? family.headcount : (Number(order.attendees) || 0);
+    const canTopUp = isBooker && isPerPersonParent && order.status === 'confirmed';
+
     const { comesToCottage, collects } = orderLocation(order, prov?.fulfilment);
     // Assembled from the three private fields, same order the cottage address
     // uses: "The Old Bakery, 4 Shore Road, Kirkcudbright, DG6 4JT". Released only
@@ -364,7 +384,7 @@ export default async function OrderPage({ params, searchParams }: { params: { or
     // A single-place booking (or one with no headcount) has nobody to invite and
     // nothing to show, so the block is absent entirely — an empty "Who's going"
     // with an explanation is worse than no block. Needs at least two places.
-    const showGroup = (order.shape === 'slot' || order.shape === 'comes_to_you') && Number(order.attendees) >= 2;
+    const showGroup = (order.shape === 'slot' || order.shape === 'comes_to_you') && effectiveHeadcount >= 2;
     // The booker shown at the head of the list is the ORDER's booker (so a
     // companion sees whose experience it is), read live from their profile.
     const { data: bookerProfile } = showGroup
@@ -724,6 +744,18 @@ export default async function OrderPage({ params, searchParams }: { params: { or
                             )}
                         </section>
 
+                        {/* ---- Add guests ----
+                            Payer-only, per-person only. Buys more seats on the
+                            same session as a separate charge; the panel fetches
+                            its own quote (price + the cancellation cutoff) and
+                            warns, before the card, when a place bought now would
+                            be non-refundable because the deadline has passed. */}
+                        {canTopUp && (
+                            <section className="mt-8 border-t border-slate-200 pt-6">
+                                <TopUpPlaces orderId={order.id} />
+                            </section>
+                        )}
+
                         {/* ---- Who's going ----
                             The per-experience guest list, over the same invite
                             machine the cottage side uses. The booker manages it
@@ -739,7 +771,7 @@ export default async function OrderPage({ params, searchParams }: { params: { or
                                         orderId={order.id}
                                         bookerName={bookerName}
                                         bookerAvatar={bookerAvatar}
-                                        attendees={Number(order.attendees) || 1}
+                                        attendees={effectiveHeadcount || 1}
                                         prefill={prefill}
                                         readOnly={!isBooker}
                                         initialSeats={groupSeats}
@@ -761,10 +793,13 @@ export default async function OrderPage({ params, searchParams }: { params: { or
                                 // Guests, with the adults/children split beneath when
                                 // it's recorded — "2 adults, 1 child". A null split
                                 // (a pre-split order) falls back to the plain total.
-                                const pa = order.adults != null ? Number(order.adults) : null;
-                                const pc = order.children != null ? Number(order.children) : null;
+                                // Folded across the family: the split and total
+                                // include every confirmed added place, not just
+                                // the original booking.
+                                const pa = family.adults != null ? Number(family.adults) : null;
+                                const pc = family.children != null ? Number(family.children) : null;
                                 const split = partySplitLabel(pa, pc);
-                                const total = pa != null ? pa + (pc || 0) : (order.attendees != null ? Number(order.attendees) : 0);
+                                const total = effectiveHeadcount;
                                 if (total <= 1) return null;
                                 return (
                                     <div className="mt-4">

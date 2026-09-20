@@ -3,6 +3,7 @@ import { adminClient } from '@/lib/supabaseAdmin';
 import { stripeRequest } from '@/lib/stripe';
 import { resolveGuestForPaidOrder, supabaseGuestStore } from '@/lib/guestAccount';
 import { createRequestOrderFromSession } from '@/lib/requestOrder';
+import { notifyTopUpConfirmed } from '@/lib/slotNotify';
 
 export const dynamic = 'force-dynamic';
 export const maxDuration = 60;
@@ -131,7 +132,7 @@ export async function GET(request: Request) {
     const graceIso = new Date(Date.now() - 5 * 60 * 1000).toISOString();
     const { data: staleHolds } = await admin
         .from('service_orders')
-        .select('id, slot_session_id, quantity, created_at, guest_id, guest_email, guest_name, guest_phone')
+        .select('id, parent_order_id, provider_id, provider_business_name, item_name, service_date, service_time, price, slot_session_id, quantity, created_at, guest_id, guest_email, guest_name, guest_phone')
         .eq('status', 'holding')
         .lt('expires_at', graceIso);
 
@@ -175,7 +176,17 @@ export async function GET(request: Request) {
                     .eq('id', hold.id)
                     .eq('status', 'holding')   // a webhook that won the race keeps its own confirm
                     .select('id');
-                if (confirmed && confirmed.length) reconciled++;
+                if (confirmed && confirmed.length) {
+                    reconciled++;
+                    // The webhook confirms and notifies; when it never landed and
+                    // we confirm here instead, an ADDED place (a per-person top-up)
+                    // would otherwise be raised silently. Tell both sides, once —
+                    // guarded on the fresh confirm above, so no double-send.
+                    if (hold.parent_order_id) {
+                        try { await notifyTopUpConfirmed(admin, hold); }
+                        catch (notifyErr: any) { failures.push('hold ' + hold.id + ' confirmed but top-up notify failed: ' + (notifyErr && notifyErr.message)); }
+                    }
+                }
                 continue;   // the seat stays taken — it was paid for
             }
 
