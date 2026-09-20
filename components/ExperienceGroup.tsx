@@ -91,7 +91,7 @@ export default function ExperienceGroup({
         <div className="flex flex-wrap items-center gap-3">
             <div className="flex items-center gap-2">
                 <Face name={bookerName} photo={avatarSrc(bookerAvatar)} />
-                <span className="text-sm text-slate-700">{readOnly ? bookerName : 'You'}<span className="text-slate-400"> · booked it</span></span>
+                <span className="text-sm text-slate-700">{readOnly ? bookerName : 'You'}</span>
             </div>
             {active.map((s) => (
                 <div key={s.id} className="flex items-center gap-2">
