@@ -2,7 +2,7 @@ import { redirect } from 'next/navigation';
 import Link from 'next/link';
 import {
     ArrowLeft, CalendarDays, MapPin, CheckCircle2, Clock3, XCircle, AlertTriangle,
-    MessageSquare, ChevronRight, Navigation, LifeBuoy, BookOpen,
+    MessageSquare, ChevronRight, Navigation, LifeBuoy, BookOpen, Award,
 } from 'lucide-react';
 import { createServerComponentClient } from '@supabase/auth-helpers-nextjs';
 import { cookies } from 'next/headers';
@@ -11,7 +11,8 @@ import { logError } from '@/lib/logError';
 import { firstName, getImageUrl } from '@/lib/utils';
 import { guestMayCancelFree } from '@/lib/serviceSlots';
 import { orderLocation } from '@/lib/orderLocation';
-import { cancellationSentence } from '@/components/marketplace/present';
+import { isFoodProvider } from '@/lib/serviceOrders';
+import { cancellationSentence, yearsLabel } from '@/components/marketplace/present';
 import OrderCancel from '@/components/marketplace/OrderCancel';
 import PropertyMap from '@/components/PropertyMap';
 import { CopyAddressRow, PrintDetailsRow } from '@/components/marketplace/OrderUtilityRows';
@@ -147,7 +148,10 @@ export default async function OrderPage({ params, searchParams }: { params: { or
         // every experience provider by construction — the sign-up wizard only
         // shows the phone field to non-guest trades — so the Call button it fed
         // was dead on every order. Dropped rather than left to vanish silently.
-        admin.from('service_providers').select('owner_id, business_name, provider_name, based_line, headshot, photos, description, cancellation_window_hours, slot_length_minutes, fulfilment, collection_street, collection_town, collection_postcode').eq('id', order.provider_id).maybeSingle(),
+        // stripe_mcc + trade feed isFoodProvider (the allergy gate); guest_details
+        // carries the live experience content — itinerary, what-to-expect and the
+        // host's credentials — the same JSONB the public listing reads.
+        admin.from('service_providers').select('owner_id, business_name, provider_name, based_line, headshot, photos, description, cancellation_window_hours, slot_length_minutes, fulfilment, collection_street, collection_town, collection_postcode, stripe_mcc, trade, guest_details').eq('id', order.provider_id).maybeSingle(),
         order.listing_id
             // The cottage the experience is attached to. `address` is not a column
             // on listings — the address is street_address + postcode + location —
@@ -276,6 +280,43 @@ export default async function OrderPage({ params, searchParams }: { params: { or
     const durationMin = knownDuration || 60;
     const bio = (prov?.description || '').trim();
 
+    // The allergy PROMPT is food-trades-only, gated on the provider's Stripe MCC
+    // (isFoodProvider) — the same gate the booking panels use to decide whether to
+    // ask. The order page repeats the gate on the DISPLAY rather than trusting the
+    // stored value: the value is written by the booking routes, which do not
+    // re-check the gate, so a stray allergy on a non-food order must still never
+    // surface on a sauna. The general note below is different and shows on every
+    // shape.
+    const isFood = isFoodProvider(prov);
+
+    // The experience content, read LIVE from guest_details — the same source and
+    // the same freshness as the host bio (prov.description) already has. Nothing
+    // is frozen onto the order: a host improving their write-up improves every
+    // guest's page, which is the behaviour the bio already sets.
+    const gd = (prov?.guest_details || {}) as Record<string, unknown>;
+    const whatToExpect = typeof gd.what_to_expect === 'string' ? gd.what_to_expect.trim() : '';
+    const itinerary = Array.isArray(gd.itinerary)
+        ? (gd.itinerary as unknown[])
+            .map((s) => ({ title: String((s as any)?.title || '').trim(), detail: String((s as any)?.detail || '').trim() }))
+            .filter((s) => s.detail)
+        : [];
+    // The experience blurb prefers the provider's live "what to expect"; a
+    // provider who wrote none (a made-to-order baker, whose guest_details is bare)
+    // falls back to the item line frozen on the order — what this page showed
+    // before — so the section is never emptier than it was.
+    const experienceBlurb = whatToExpect || (order.item_description || '').trim();
+    const hasWhat = Boolean(experienceBlurb || itinerary.length);
+    // The fuller host bio: a professional title (unless it just echoes the
+    // business name), the free-text description, and the credentials the listing
+    // shows under "About your host".
+    const proTitle = typeof gd.professional_title === 'string' && gd.professional_title.trim()
+        && gd.professional_title.trim().toLowerCase() !== who.trim().toLowerCase()
+        ? gd.professional_title.trim() : null;
+    const qualifications = typeof gd.qualifications === 'string' ? gd.qualifications.trim() : '';
+    const recognition = typeof gd.recognition === 'string' ? gd.recognition.trim() : '';
+    const years = yearsLabel(gd.years_experience != null ? String(gd.years_experience) : null);
+    const hasAboutHost = Boolean(years || qualifications || recognition);
+
     return (
         // Hold the column to the viewport (less the sticky 80px nav + its border)
         // so a short order doesn't leave a long empty stretch above the footer —
@@ -395,8 +436,10 @@ export default async function OrderPage({ params, searchParams }: { params: { or
                         {/* The allergy the guest gave, shown back so they can see
                             it landed. It stays high on the page and stays loud —
                             the reference has no equivalent, because Airbnb is not
-                            putting a stranger in your kitchen. */}
-                        {order.allergy && (
+                            putting a stranger in your kitchen. Gated on isFood so a
+                            value stored against a non-food order (the booking routes
+                            do not re-check the gate) can never surface on a sauna. */}
+                        {isFood && order.allergy && (
                             <div className="mt-4 rounded-xl border-2 border-rose-300 bg-rose-50 px-3.5 py-3">
                                 <div className="flex items-center gap-1.5 text-xs font-bold uppercase tracking-wide text-rose-800">
                                     <AlertTriangle className="h-3.5 w-3.5" /> Your allergy note
@@ -413,54 +456,6 @@ export default async function OrderPage({ params, searchParams }: { params: { or
                                 <p className="mt-1 whitespace-pre-line text-sm text-amber-950">{order.note}</p>
                             </div>
                         )}
-
-                        {/* ---- Booking details ---- */}
-                        <section className="mt-8 border-t border-slate-200 pt-6">
-                            <h2 className="text-lg font-semibold text-slate-900">Booking details</h2>
-
-                            {isSlot && Number(order.attendees) > 1 && (
-                                <div className="mt-4">
-                                    <div className="text-xs font-semibold uppercase tracking-wide text-slate-500">Party</div>
-                                    <div className="mt-0.5 text-sm text-slate-800">{order.attendees} people — the whole session is yours</div>
-                                </div>
-                            )}
-
-                            <div className="mt-4">
-                                <div className="text-xs font-semibold uppercase tracking-wide text-slate-500">Cancellation policy</div>
-                                <p className="mt-0.5 text-sm leading-relaxed text-slate-700">{cancellationSentence(order.shape, windowHours, shortWho)}</p>
-                            </div>
-
-                            <div className="mt-3 divide-y divide-slate-200 border-t border-slate-200">
-                                <a
-                                    href={calendarHref({
-                                        title: (order.item_name || 'Experience') + ' — ' + who,
-                                        date: String(order.service_date).slice(0, 10),
-                                        time: isSlot ? (order.service_time || null) : null,
-                                        where,
-                                        details: (order.item_description || '') + (order.note ? '\n\nYour note: ' + order.note : ''),
-                                        durationMin,
-                                    })}
-                                    download={`${(order.item_name || 'experience').toLowerCase().replace(/[^a-z0-9]+/g, '-')}.ics`}
-                                    className={ROW}
-                                >
-                                    <span className="flex items-center gap-3"><CalendarDays className="h-4 w-4 flex-none text-slate-400" /> Add to calendar</span>
-                                    <ChevronRight className="h-4 w-4 flex-none text-slate-300" />
-                                </a>
-                                <PrintDetailsRow className={ROW} />
-                                {live && (
-                                    <OrderCancel
-                                        orderId={order.id}
-                                        status={order.status}
-                                        charged={charged}
-                                        free={free}
-                                        price={Number(order.price)}
-                                        providerName={shortWho}
-                                        className={`${ROW} text-slate-600 hover:text-rose-700`}
-                                        panelClassName="pb-3"
-                                    />
-                                )}
-                            </div>
-                        </section>
 
                         {/* ---- Where ---- */}
                         <section className="mt-8 border-t border-slate-200 pt-6">
@@ -515,18 +510,52 @@ export default async function OrderPage({ params, searchParams }: { params: { or
                             )}
                         </section>
 
-                        {/* ---- About ---- */}
-                        {(order.item_description || '').trim() && (
+                        {/* ---- What you'll do ----
+                            Airbnb's "What you'll do / How you'll spend your time".
+                            The blurb plus the step-by-step itinerary, both live from
+                            guest_details. Numbered steps rather than the listing's
+                            per-phase icons — the narrow column reads better as a
+                            plain sequence, and it is the same itinerary data, not a
+                            second copy. Falls back to the frozen item line when a
+                            provider wrote neither, so it is never emptier than the
+                            old "About this experience". */}
+                        {hasWhat && (
                             <section className="mt-8 border-t border-slate-200 pt-6">
-                                <h2 className="text-lg font-semibold text-slate-900">About this experience</h2>
-                                <p className="mt-2 whitespace-pre-line text-sm leading-relaxed text-slate-700">{order.item_description}</p>
+                                {/* "What you'll do" for a session the guest attends;
+                                    a made-to-order product (a cake) is not something
+                                    they DO, so it keeps the neutral heading. */}
+                                <h2 className="text-lg font-semibold text-slate-900">{order.shape === 'made_to_order' ? 'About this experience' : 'What you’ll do'}</h2>
+                                {experienceBlurb && (
+                                    <p className="mt-2 whitespace-pre-line text-sm leading-relaxed text-slate-700">{experienceBlurb}</p>
+                                )}
+                                {itinerary.length > 0 && (
+                                    <ol className="mt-4 space-y-4">
+                                        {itinerary.map((step, i) => (
+                                            <li key={i} className="flex gap-3">
+                                                <span className="flex h-6 w-6 flex-none items-center justify-center rounded-full bg-emerald-50 text-xs font-semibold text-emerald-700 ring-1 ring-emerald-100">
+                                                    {i + 1}
+                                                </span>
+                                                <div className="min-w-0">
+                                                    {step.title && <div className="text-sm font-semibold text-slate-900">{step.title}</div>}
+                                                    <p className="mt-0.5 whitespace-pre-line text-sm leading-relaxed text-slate-700">{step.detail}</p>
+                                                </div>
+                                            </li>
+                                        ))}
+                                    </ol>
+                                )}
                             </section>
                         )}
 
                         {/* ---- Hosted by ---- */}
                         <section className="mt-8 border-t border-slate-200 pt-6">
                             <div className="flex items-start justify-between gap-3">
-                                <h2 className="text-lg font-semibold text-slate-900">Hosted by {hostFirst || who}</h2>
+                                <div className="min-w-0">
+                                    <h2 className="text-lg font-semibold text-slate-900">Hosted by {hostFirst || who}</h2>
+                                    {/* The professional title, the eyebrow the
+                                        listing carries — skipped when it only
+                                        echoes the business name. */}
+                                    {proTitle && <div className="mt-0.5 text-[13px] text-slate-500">{proTitle}</div>}
+                                </div>
                                 {headshotUrl ? (
                                     // eslint-disable-next-line @next/next/no-img-element
                                     <img src={headshotUrl} alt={hostFirst ? 'Hosted by ' + hostFirst : who} className="h-12 w-12 flex-none rounded-full object-cover ring-1 ring-slate-200" />
@@ -552,6 +581,33 @@ export default async function OrderPage({ params, searchParams }: { params: { or
                                 </details>
                             )}
 
+                            {/* The credentials the listing shows under "About your
+                                host" — years, training, recognition — each only when
+                                the host wrote it. A slot guide's safety training is
+                                exactly what a guest wants before a cold-water swim. */}
+                            {hasAboutHost && (
+                                <dl className="mt-4 space-y-3">
+                                    {years && (
+                                        <div>
+                                            <dt className="text-xs font-semibold uppercase tracking-wide text-slate-500">Experience</dt>
+                                            <dd className="mt-0.5 text-sm text-slate-700">{years}</dd>
+                                        </div>
+                                    )}
+                                    {qualifications && (
+                                        <div>
+                                            <dt className="flex items-center gap-1.5 text-xs font-semibold uppercase tracking-wide text-slate-500"><Award className="h-3.5 w-3.5 text-slate-400" /> Training &amp; qualifications</dt>
+                                            <dd className="mt-0.5 whitespace-pre-line text-sm leading-relaxed text-slate-700">{qualifications}</dd>
+                                        </div>
+                                    )}
+                                    {recognition && (
+                                        <div>
+                                            <dt className="text-xs font-semibold uppercase tracking-wide text-slate-500">Recognition</dt>
+                                            <dd className="mt-0.5 whitespace-pre-line text-sm leading-relaxed text-slate-700">{recognition}</dd>
+                                        </div>
+                                    )}
+                                </dl>
+                            )}
+
                             {canMessage && (
                                 <Link
                                     href={'/messages?o=' + order.id}
@@ -560,6 +616,58 @@ export default async function OrderPage({ params, searchParams }: { params: { or
                                     <MessageSquare className="h-4 w-4" /> Message {hostFirst || 'your host'}
                                 </Link>
                             )}
+                        </section>
+
+                        {/* ---- Booking details (the admin block) ----
+                            Moved BELOW the experience: the cancellation policy and
+                            the calendar/print/cancel actions are the least-read part
+                            of the page, so where-to-go and what-happens lead and the
+                            admin follows, rather than the reverse. */}
+                        <section className="mt-8 border-t border-slate-200 pt-6">
+                            <h2 className="text-lg font-semibold text-slate-900">Booking details</h2>
+
+                            {isSlot && Number(order.attendees) > 1 && (
+                                <div className="mt-4">
+                                    <div className="text-xs font-semibold uppercase tracking-wide text-slate-500">Party</div>
+                                    <div className="mt-0.5 text-sm text-slate-800">{order.attendees} people — the whole session is yours</div>
+                                </div>
+                            )}
+
+                            <div className="mt-4">
+                                <div className="text-xs font-semibold uppercase tracking-wide text-slate-500">Cancellation policy</div>
+                                <p className="mt-0.5 text-sm leading-relaxed text-slate-700">{cancellationSentence(order.shape, windowHours, shortWho)}</p>
+                            </div>
+
+                            <div className="mt-3 divide-y divide-slate-200 border-t border-slate-200">
+                                <a
+                                    href={calendarHref({
+                                        title: (order.item_name || 'Experience') + ' — ' + who,
+                                        date: String(order.service_date).slice(0, 10),
+                                        time: isSlot ? (order.service_time || null) : null,
+                                        where,
+                                        details: (order.item_description || '') + (order.note ? '\n\nYour note: ' + order.note : ''),
+                                        durationMin,
+                                    })}
+                                    download={`${(order.item_name || 'experience').toLowerCase().replace(/[^a-z0-9]+/g, '-')}.ics`}
+                                    className={ROW}
+                                >
+                                    <span className="flex items-center gap-3"><CalendarDays className="h-4 w-4 flex-none text-slate-400" /> Add to calendar</span>
+                                    <ChevronRight className="h-4 w-4 flex-none text-slate-300" />
+                                </a>
+                                <PrintDetailsRow className={ROW} />
+                                {live && (
+                                    <OrderCancel
+                                        orderId={order.id}
+                                        status={order.status}
+                                        charged={charged}
+                                        free={free}
+                                        price={Number(order.price)}
+                                        providerName={shortWho}
+                                        className={`${ROW} text-slate-600 hover:text-rose-700`}
+                                        panelClassName="pb-3"
+                                    />
+                                )}
+                            </div>
                         </section>
 
                         {/* ---- Payment ----
