@@ -215,6 +215,7 @@ export default async function TripInvitePage({ params }: { params: { token: stri
                 token={params.token}
                 inviteEmail={invite.email || ''}
                 signedInAs={signedInAs}
+                isOrder={isOrder}
             />
         </div>
     );
