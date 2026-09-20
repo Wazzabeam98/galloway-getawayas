@@ -350,8 +350,30 @@ async function main() {
         });
     }
 
+    // A PER-PERSON slot provider (a yoga class — shared table, capacity 6). This
+    // is the only shape "add guests" exists for: each seat is a separately paid
+    // place, and a top-up buys more of them on the same session.
+    const [yoga] = await db.insert('service_providers', {
+        owner_id: owner.id, business_name: 'EXP Yoga', trade: 'yoga', audience: 'guest',
+        status: 'approved', plan: 'commission', commission_rate: 0.10,
+        shape: 'slot', exclusive_per_date: false, slot_length_minutes: 60,
+        slot_capacity: 6, slot_min_people: 1,
+        cancellation_window_hours: 12, contact_email: 'owner@' + EXP_DOMAIN,
+        stripe_account_id: account, stripe_payouts_enabled: true,
+        stripe_charges_enabled: true, stripe_details_submitted: true,
+    });
+    const [yogaItem] = await db.insert('service_provider_items', {
+        provider_id: yoga.id, name: 'Sunrise yoga class', description: 'Per person, up to 6',
+        price: 20, unit: 'person', active: true, sort_order: 0, capacity: 6, min_people: 1,
+    });
+    for (let d = 0; d < 7; d++) {
+        await db.insert('slot_availability', {
+            provider_id: yoga.id, day_of_week: d, open_time: '09:00', close_time: '17:00',
+        });
+    }
+
     console.log('  guest=' + guest.id.slice(0, 8) + ' chef=' + chef.id.slice(0, 8)
-        + ' sauna=' + sauna.id.slice(0, 8) + ' account=' + account);
+        + ' sauna=' + sauna.id.slice(0, 8) + ' yoga=' + yoga.id.slice(0, 8) + ' account=' + account);
 
     const guestCookie = await asUser('guest');
     const ownerCookie = await asUser('owner');
@@ -734,6 +756,160 @@ async function main() {
 
         current.fixVerified = !!(order && order.status === 'authorised' && afterPI.status === 'requires_capture');
         note('FIXED: a request order whose webhook was lost is rebuilt to authorised by the sweep — the provider is told and the held card is intact.');
+    }
+
+    /* ============================================= 10. ADD GUESTS (per-person top-up) */
+    // Buying more places on a per-person session already booked. Each added place
+    // is a CHILD order on the same session (parent_order_id), its own charge and
+    // its own seats, reusing the slot machine. Four things are proved with real
+    // money: the seat CAS (two racing top-ups, one wins), an abandoned top-up
+    // swept and released, a full cancel that refunds BOTH PaymentIntents and frees
+    // BOTH seat claims (read back from Stripe), and the invite cap rising on confirm.
+    scenario('10', 'Add guests: child-order top-up — race, abandon+sweep, cancel refunds both PIs + both seats, invite cap rises');
+    {
+        // Pay a slot order for real and confirm it through the webhook, the way a
+        // completed Checkout would. Works for a parent booking and for a top-up
+        // child alike — both carry kind:'slot_order' and their own order_id.
+        const payAndConfirm = async (orderId, total) => {
+            const pi = await destinationPI({
+                total, account, capture: null,
+                metadata: { kind: 'slot_order', order_id: orderId, provider_id: yoga.id },
+            });
+            await postWebhook({
+                object: 'checkout_session', payment_status: 'no_payment_required',
+                payment_intent: pi.id, amount_total: Math.round(total * 100),
+                customer_email: guest.email, customer_details: { email: guest.email },
+                metadata: { kind: 'slot_order', order_id: orderId, provider_id: yoga.id },
+            });
+            return pi;
+        };
+        const latestChild = async (parentId) => (await db.select('service_orders',
+            '?select=*&parent_order_id=eq.' + parentId + '&order=created_at.desc&limit=1'))[0];
+
+        // ---- A. RACE: two top-ups for the last seat, only one wins -------------
+        {
+            const sessionDate = dayOffset(10);
+            const book = await postRoute('/api/services/slots/book', guestCookie, {
+                providerId: yoga.id, bookingId: booking.id, sessionDate, sessionTime: '09:00', quantity: 5,
+            });
+            check('A: booked 5 of 6 places', book.status === 200 && book.body.ok, 'HTTP ' + book.status);
+            const parent = (await db.select('service_orders',
+                '?select=*&provider_id=eq.' + yoga.id + '&service_date=eq.' + sessionDate + '&service_time=eq.09:00:00&parent_order_id=is.null&order=created_at.desc&limit=1'))[0];
+            await payAndConfirm(parent.id, 100);
+            check('A: the parent is confirmed', (await orderRow(parent.id)).status === 'confirmed', null);
+
+            // Two tabs top up +1 at the same instant; the session has one seat left.
+            const [r1, r2] = await Promise.all([
+                postRoute('/api/services/slots/top-up', guestCookie, { orderId: parent.id, quantity: 1 }),
+                postRoute('/api/services/slots/top-up', guestCookie, { orderId: parent.id, quantity: 1 }),
+            ]);
+            const wins = [r1, r2].filter((r) => r.status === 200 && r.body.ok).length;
+            const losses = [r1, r2].filter((r) => r.status === 409).length;
+            check('A: exactly one top-up won the last seat', wins === 1 && losses === 1,
+                'r1=' + r1.status + ' r2=' + r2.status);
+            const sess = (await db.select('slot_sessions', '?select=*&provider_id=eq.' + yoga.id + '&session_date=eq.' + sessionDate + '&session_time=eq.09:00:00'))[0];
+            check('A: the session is full (seats_taken = 6), never oversold', sess && sess.seats_taken === 6, sess && String(sess.seats_taken));
+        }
+
+        // ---- B. ABANDONED top-up is swept and its seats released ----------------
+        {
+            const sessionDate = dayOffset(10);
+            const book = await postRoute('/api/services/slots/book', guestCookie, {
+                providerId: yoga.id, bookingId: booking.id, sessionDate, sessionTime: '11:00', quantity: 1,
+            });
+            check('B: booked 1 place', book.status === 200 && book.body.ok, 'HTTP ' + book.status);
+            const parent = (await db.select('service_orders',
+                '?select=*&provider_id=eq.' + yoga.id + '&service_date=eq.' + sessionDate + '&service_time=eq.11:00:00&parent_order_id=is.null&order=created_at.desc&limit=1'))[0];
+            await payAndConfirm(parent.id, 20);
+
+            const top = await postRoute('/api/services/slots/top-up', guestCookie, { orderId: parent.id, quantity: 1 });
+            check('B: top-up accepted (holding child + Checkout)', top.status === 200 && top.body.ok, 'HTTP ' + top.status);
+            const child = await latestChild(parent.id);
+            check('B: a holding child order exists', child && child.status === 'holding', child && child.status);
+            const sessBefore = (await db.select('slot_sessions', '?select=*&id=eq.' + child.slot_session_id))[0];
+            check('B: the added seat was claimed (seats_taken = 2)', sessBefore.seats_taken === 2, String(sessBefore.seats_taken));
+
+            // Never paid — age the hold and sweep. No PI carries this order_id.
+            await db.update('service_orders', '?id=eq.' + child.id, { expires_at: new Date(Date.now() - 10 * 60 * 1000).toISOString() });
+            const swept = await runOrderSweep();
+            check('B: the sweep ran', swept.status === 200 && swept.body.ok, JSON.stringify(swept.body).slice(0, 120));
+            check('B: the abandoned child is EXPIRED', (await orderRow(child.id)).status === 'expired', null);
+            const sessAfter = (await db.select('slot_sessions', '?select=*&id=eq.' + child.slot_session_id))[0];
+            check('B: the added seat was released (back to 1)', sessAfter.seats_taken === 1, String(sessAfter.seats_taken));
+        }
+
+        // ---- C. CANCEL refunds BOTH PaymentIntents and frees BOTH seat claims ---
+        //    plus D: the invite cap rises when the top-up confirms.
+        {
+            const sessionDate = dayOffset(11);   // >12h out → inside the FREE-cancel window
+            const book = await postRoute('/api/services/slots/book', guestCookie, {
+                providerId: yoga.id, bookingId: booking.id, sessionDate, sessionTime: '14:00', quantity: 2,
+            });
+            check('C: booked 2 places', book.status === 200 && book.body.ok, 'HTTP ' + book.status);
+            const parent = (await db.select('service_orders',
+                '?select=*&provider_id=eq.' + yoga.id + '&service_date=eq.' + sessionDate + '&service_time=eq.14:00:00&parent_order_id=is.null&order=created_at.desc&limit=1'))[0];
+            const piParent = await payAndConfirm(parent.id, 40);
+            check('C: the parent is confirmed', (await orderRow(parent.id)).status === 'confirmed', null);
+
+            // D (before): the invite cap on a confirmed 2-seat order is 1.
+            const capBefore = await postRoute('/api/booking-guests', guestCookie, { action: 'ensure-seats', orderId: parent.id });
+            check('D: invite cap is 1 before the top-up (2 seats − the booker)', capBefore.body && capBefore.body.capacity === 1,
+                'capacity=' + (capBefore.body && capBefore.body.capacity));
+            // The RPC itself minted one seat row (proves ensure_order_seats reads
+            // the per-person quantity, not attendees — which was NULL, capping at 0).
+            check('D: ensure_order_seats minted 1 seat row for the 2-seat order',
+                capBefore.body && Array.isArray(capBefore.body.seats) && capBefore.body.seats.length === 1,
+                'seats=' + (capBefore.body && capBefore.body.seats && capBefore.body.seats.length));
+
+            // Top up +1 and pay it — its own PI.
+            const top = await postRoute('/api/services/slots/top-up', guestCookie, { orderId: parent.id, quantity: 1 });
+            check('C: top-up accepted', top.status === 200 && top.body.ok, 'HTTP ' + top.status);
+            const child = await latestChild(parent.id);
+            const piChild = await payAndConfirm(child.id, 20);
+            check('C: the top-up child is confirmed', (await orderRow(child.id)).status === 'confirmed', null);
+            check('C: the parent total was NOT rewritten (still £40)', Number((await orderRow(parent.id)).price) === 40, String((await orderRow(parent.id)).price));
+
+            // D (after): a confirmed top-up raises the cap to 2 (3 seats − the booker).
+            const capAfter = await postRoute('/api/booking-guests', guestCookie, { action: 'ensure-seats', orderId: parent.id });
+            check('D: invite cap rose to 2 after the top-up confirmed', capAfter.body && capAfter.body.capacity === 2,
+                'capacity=' + (capAfter.body && capAfter.body.capacity));
+            check('D: ensure_order_seats minted a 2nd seat row once the top-up confirmed (family = 3 − booker)',
+                capAfter.body && Array.isArray(capAfter.body.seats) && capAfter.body.seats.length === 2,
+                'seats=' + (capAfter.body && capAfter.body.seats && capAfter.body.seats.length));
+
+            const sessFull = (await db.select('slot_sessions', '?select=*&provider_id=eq.' + yoga.id + '&session_date=eq.' + sessionDate + '&session_time=eq.14:00:00'))[0];
+            check('C: the session holds all 3 seats', sessFull.seats_taken === 3, String(sessFull.seats_taken));
+
+            // Cancel the whole booking, inside the free window → full refund of BOTH.
+            const cancel = await postRoute('/api/services/orders/cancel', guestCookie, { orderId: parent.id });
+            check('C: cancel refunded (free window)', cancel.status === 200 && cancel.body.status === 'refunded',
+                'HTTP ' + cancel.status + ' ' + JSON.stringify(cancel.body).slice(0, 120));
+
+            // READ BACK FROM STRIPE: both charges refunded in full, both transfers reversed.
+            const settle = async (piId, wantPence) => {
+                let charge = null, tr = null;
+                for (let i = 0; i < 12; i++) {
+                    charge = await chargeOf(piId);
+                    tr = charge && charge.transfer ? await stripe.request('GET', '/transfers/' + charge.transfer).catch(() => null) : null;
+                    if (charge && Number(charge.amount_refunded) === wantPence && tr && tr.amount_reversed === tr.amount) break;
+                    await sleep(2000);
+                }
+                return { charge, tr };
+            };
+            const pr = await settle(piParent.id, 4000);
+            const cr = await settle(piChild.id, 2000);
+            check('C: STRIPE — the original £40 was refunded and its transfer reversed',
+                pr.charge && Number(pr.charge.amount_refunded) === 4000 && pr.tr && pr.tr.amount_reversed === pr.tr.amount,
+                pr.charge && ('refunded=' + pr.charge.amount_refunded + ' reversed=' + (pr.tr && pr.tr.amount_reversed)));
+            check('C: STRIPE — the added £20 refunded SEPARATELY and its transfer reversed',
+                cr.charge && Number(cr.charge.amount_refunded) === 2000 && cr.tr && cr.tr.amount_reversed === cr.tr.amount,
+                cr.charge && ('refunded=' + cr.charge.amount_refunded + ' reversed=' + (cr.tr && cr.tr.amount_reversed)));
+
+            check('C: APP — both orders are refunded', (await orderRow(parent.id)).status === 'refunded' && (await orderRow(child.id)).status === 'refunded', null);
+            const sessFreed = (await db.select('slot_sessions', '?select=*&provider_id=eq.' + yoga.id + '&session_date=eq.' + sessionDate + '&session_time=eq.14:00:00'))[0];
+            check('C: BOTH seat claims were released (seats_taken back to 0)', sessFreed.seats_taken === 0, String(sessFreed.seats_taken));
+        }
+        note('Add-guests reuses the slot machine: child order per added place, its own PI and seats, confirmed by the same webhook, swept if unpaid; a full cancel settles the whole family.');
     }
 
     /* ----------------------------------------------------------------- write + sum */
