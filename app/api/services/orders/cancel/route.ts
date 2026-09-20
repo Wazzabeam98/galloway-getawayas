@@ -48,7 +48,7 @@ export async function POST(request: Request) {
 
         const { data: order } = await admin
             .from('service_orders')
-            .select('id, guest_id, provider_id, status, shape, service_date, service_time, quantity, price, slot_session_id, stripe_payment_intent_id, provider_business_name')
+            .select('id, guest_id, provider_id, status, shape, service_date, service_time, quantity, price, slot_session_id, stripe_payment_intent_id, provider_business_name, parent_order_id')
             .eq('id', orderId)
             .maybeSingle();
 
@@ -57,6 +57,12 @@ export async function POST(request: Request) {
 
         const now = new Date();
         const shape = shapeOf(order);
+        // A top-up amends its parent; cancel the parent, never a top-up in
+        // isolation (per-seat cancel is not built — the child rows stand alone,
+        // so it is additive later). Send the guest to the booking itself.
+        if (order.parent_order_id) {
+            return NextResponse.json({ ok: false, error: 'Cancel the booking itself — added places go with it.' }, { status: 400 });
+        }
 
         // Give a slot's seat back — decrement the session it was claimed against.
         const releaseSeat = async () => {
@@ -66,6 +72,59 @@ export async function POST(request: Request) {
                 await admin.from('slot_sessions')
                     .update({ seats_taken: Math.max(0, s.seats_taken - (order.quantity || 1)) })
                     .eq('id', order.slot_session_id);
+            }
+        };
+
+        // THE TOP-UPS RIDE WITH THE BOOKING. An added place is its own row with
+        // its own PaymentIntent and its own seats on the same session, linked by
+        // parent_order_id and carrying no booking_id. Cancelling only the parent
+        // row would refund the original but keep the top-up's money and leave its
+        // seats taken — so the whole family is settled here, each child the same
+        // way the parent just was. 'refund' reverses each child's PI; 'forfeit'
+        // keeps each child's money; both release each child's seats. A child
+        // still 'holding' (topped up, not yet paid) is simply released.
+        const settleChildren = async (kind: 'refund' | 'forfeit') => {
+            const { data: kids } = await admin
+                .from('service_orders')
+                .select('id, parent_order_id, status, quantity, slot_session_id, stripe_payment_intent_id, price')
+                .eq('parent_order_id', order.id)
+                .in('status', ['confirmed', 'holding', 'authorised']);
+            // Belt-and-braces: only a genuine child of THIS order.
+            for (const kid of (kids || []).filter((k: any) => k.parent_order_id === order.id)) {
+                try {
+                    const releaseKid = async () => {
+                        if (!kid.slot_session_id) return;
+                        const { data: s } = await admin.from('slot_sessions').select('seats_taken').eq('id', kid.slot_session_id).maybeSingle();
+                        if (s) await admin.from('slot_sessions').update({ seats_taken: Math.max(0, s.seats_taken - (kid.quantity || 1)) }).eq('id', kid.slot_session_id);
+                    };
+                    if (kid.status === 'confirmed' && kid.stripe_payment_intent_id) {
+                        if (kind === 'refund') {
+                            await stripeRequest('POST', '/refunds',
+                                { payment_intent: kid.stripe_payment_intent_id, refund_application_fee: 'true', reverse_transfer: 'true' },
+                                'refund-' + kid.id);
+                            const { data: moved } = await admin.from('service_orders')
+                                .update({ status: 'refunded', cancelled_at: now.toISOString() })
+                                .eq('id', kid.id).eq('status', 'confirmed').select('id');
+                            if (moved && moved.length) await releaseKid();
+                        } else {
+                            // forfeit — the payment stays with the provider; the seat reopens.
+                            const { data: moved } = await admin.from('service_orders')
+                                .update({ status: 'cancelled', cancelled_at: now.toISOString() })
+                                .eq('id', kid.id).eq('status', 'confirmed').select('id');
+                            if (moved && moved.length) await releaseKid();
+                        }
+                    } else if (kid.status === 'holding') {
+                        const { data: moved } = await admin.from('service_orders')
+                            .update({ status: 'cancelled', cancelled_at: now.toISOString() })
+                            .eq('id', kid.id).eq('status', 'holding').select('id');
+                        if (moved && moved.length) await releaseKid();
+                    } else if (kid.status === 'authorised' && kid.stripe_payment_intent_id) {
+                        await stripeRequest('POST', '/payment_intents/' + kid.stripe_payment_intent_id + '/cancel', undefined, 'cancel-' + kid.id);
+                        await admin.from('service_orders').update({ status: 'cancelled', cancelled_at: now.toISOString() }).eq('id', kid.id).eq('status', 'authorised');
+                    }
+                } catch (kidErr: any) {
+                    await logError('services-orders-cancel-child', { parent: order.id, child: kid.id, message: String(kidErr && kidErr.message) });
+                }
             }
         };
 
@@ -117,6 +176,7 @@ export async function POST(request: Request) {
                     .update({ status: 'refunded', cancelled_at: now.toISOString() })
                     .eq('id', order.id).eq('status', 'confirmed').select('id');
                 if (refunded && refunded.length) await releaseSeat();   // a slot's time reopens
+                await settleChildren('refund');                          // added places refund with it
                 return NextResponse.json({ ok: true, status: 'refunded' });
             }
 
@@ -171,6 +231,7 @@ export async function POST(request: Request) {
                     .update({ status: 'cancelled', cancelled_at: now.toISOString(), cancel_ack: ack })
                     .eq('id', order.id).eq('status', 'confirmed').select('id');
                 if (done && done.length) await releaseSeat();   // the date/seat reopens; provider keeps the money
+                await settleChildren('forfeit');                 // added places forfeit with it — money stays, seats reopen
                 try {
                     if (prov && prov.contact_email) {
                         await sendEmail(prov.contact_email, 'A guest cancelled — you keep the payment', emailLayout(
