@@ -216,13 +216,11 @@ export default function ExperienceGroup({
 
             {cap === 0 ? (
                 <p className="mt-3 text-sm text-slate-500">This is a single place, so it’s just you.</p>
-            ) : full ? (
-                <p className="mt-3 text-sm text-slate-500">Every place is taken — {active.length} of you going.</p>
-            ) : (
+            ) : full ? null : (
                 <div className="mt-4 rounded-xl border border-slate-200 p-4">
                     <div className="flex items-center gap-2 text-sm font-medium text-slate-800">
                         <UserPlus className="h-4 w-4 text-slate-400" />
-                        Invite someone — {cap - active.length} {cap - active.length === 1 ? 'place' : 'places'} left of the {attendees} you booked
+                        Invite someone
                     </div>
 
                     {offerable.length > 0 && (
