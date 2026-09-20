@@ -391,27 +391,6 @@ export function expiryFrom(createdISO: string): string {
     return new Date(t).toISOString();
 }
 
-// FREE CANCELLATION, AND WHERE THE LINE IS.
-//
-// A guest can always cancel a request that has not been answered — the hold is
-// released and nothing was ever taken. A CONFIRMED booking is different: money
-// has moved, so cancelling it is a refund, and a refund follows the provider's
-// own promise. The one every provider makes on their listing is "let me know 48
-// hours ahead and there's nothing to pay", so that is the line the guest-facing
-// cancel honours: 48 hours or more before the service date, a confirmed booking
-// refunds in full; inside that window it is the provider's call, and the guest
-// is pointed to them (the provider can still refund out of goodwill).
-//
-// Measured to the START of the service date, which is the earliest the work
-// could begin. Pure and takes `now`, so it tests without a clock.
-export const FREE_CANCEL_HOURS = 48;
-
-export function guestMayCancelFree(serviceDate: string, now: Date): boolean {
-    const start = new Date(String(serviceDate) + 'T00:00:00Z').getTime();
-    if (isNaN(start)) return false;
-    return start - now.getTime() >= FREE_CANCEL_HOURS * 60 * 60 * 1000;
-}
-
 // WHO CAN ONLY DO ONE THING ON A DATE — an owner-set flag, not a trade.
 //
 // A chef cooks one evening: a second live order for the same chef and date is a
