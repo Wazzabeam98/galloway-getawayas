@@ -52,8 +52,10 @@ const maxKey = (a: string, b: string) => (a > b ? a : b);
 // shared availability dialog (stay-bounded) and goes straight to Stripe Checkout.
 // A REQUEST provider (chef/baker) instead picks a date during the stay and sends
 // a request that's held, not charged, until they confirm.
-export default function BookingPanel({ bookingId, checkIn, checkOut, cottageGuests, stay, provider }: {
+export default function BookingPanel({ bookingId, checkIn, checkOut, cottageGuests, cottageAdults, cottageChildren, stay, provider }: {
     bookingId: string; checkIn: string; checkOut: string; cottageGuests: number;
+    // The cottage booking's own party split, to prefill the picker.
+    cottageAdults?: number | null; cottageChildren?: number | null;
     stay?: { title: string | null; town: string | null };
     provider: PanelProvider;
 }) {
@@ -108,7 +110,8 @@ export default function BookingPanel({ bookingId, checkIn, checkOut, cottageGues
                 method: 'POST', headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify({
                     providerId: provider.id, itemId: args.itemId, bookingId, sessionDate: args.date, sessionTime: args.time,
-                    quantity: args.quantity, attendees: args.attendees, allergy: args.allergy,
+                    quantity: args.quantity, attendees: args.attendees,
+                    adults: args.adults, children: args.children, allergy: args.allergy,
                 }),
             });
             const d = await res.json();
@@ -203,6 +206,8 @@ export default function BookingPanel({ bookingId, checkIn, checkOut, cottageGues
                             providerFulfilment={provider.fulfilment}
                             isFood={provider.isFood}
                             initialDate={initialDate}
+                            prefillAdults={cottageAdults}
+                            prefillChildren={cottageChildren}
                             busy={busy}
                             error={error}
                             onBook={bookSlot}

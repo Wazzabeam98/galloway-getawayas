@@ -11,7 +11,7 @@ export interface DialogItem { id: string; name: string; price: number; unit: str
 export interface DialogOpenSession { date: string; time: string; row: { capacity: number; seats_taken: number; private: boolean } | null; }
 export interface DialogDeclared { id: string; date: string; time: string; duration: number; capacity: number; seats_taken: number; private: boolean; title: string | null; }
 
-export interface BookArgs { itemId: string; date: string; time: string; quantity: number; attendees?: number; serviceAddress?: string; allergy?: string; }
+export interface BookArgs { itemId: string; date: string; time: string; quantity: number; attendees?: number; adults?: number; children?: number; serviceAddress?: string; allergy?: string; }
 
 // A merged, sortable offering — an open-hours slot or a declared session — so the
 // dialog reads one chronological timetable per day.
@@ -33,9 +33,15 @@ const dayKey = (y: number, m0: number, d: number) => `${y}-${String(m0 + 1).padS
 // Selecting a slot and pressing Book goes straight to Stripe Checkout — the panel's
 // onBook does the POST + redirect; no contact is collected here (Checkout does that).
 export default function BookingDialog({
-    who, items, sessions, sessionsForItem, declaredSessions, providerCapacity, providerMinPeople, providerFulfilment, isFood, initialDate, busy, error, onBook, onClose,
+    who, items, sessions, sessionsForItem, declaredSessions, providerCapacity, providerMinPeople, providerFulfilment, isFood, initialDate, prefillAdults, prefillChildren, busy, error, onBook, onClose,
 }: {
     who: string;
+    // The party to default the steppers to — from the guest's cottage booking
+    // when there is one. Null = no prefill, start at one adult. Clamped to what's
+    // bookable; if the party exceeds that, we prefill the maximum as ALL ADULTS
+    // and let the guest split it, rather than the product deciding who comes.
+    prefillAdults?: number | null;
+    prefillChildren?: number | null;
     items: DialogItem[];
     sessions: DialogOpenSession[];
     // A per-treatment provider (massage) generates its open-hours grid from the
@@ -61,7 +67,12 @@ export default function BookingDialog({
     // any provider; a stable sort keeps the provider's own order for equal prices.
     const orderedItems = useMemo(() => [...items].sort((a, b) => a.price - b.price), [items]);
     const [itemId, setItemId] = useState<string>(orderedItems[0]?.id || '');
-    const [people, setPeople] = useState<number>(1);
+    // The party as an adults/children SPLIT (Airbnb's Adults 13+ / Children 4-12).
+    // `people` — the total — is what everything downstream reads, so the capacity
+    // and pricing logic below is untouched; only how the total is entered changed.
+    const [adults, setAdults] = useState<number>(1);
+    const [children, setChildren] = useState<number>(0);
+    const people = adults + children;
     const [selKey, setSelKey] = useState<string | null>(null);
     const [address, setAddress] = useState('');
     const [allergy, setAllergy] = useState('');
@@ -148,7 +159,35 @@ export default function BookingDialog({
     useEffect(() => { if (selected && !fits(selected)) setSelKey(null); /* eslint-disable-next-line */ }, [people, itemId]);
 
     const minPeople = item && perPerson ? Math.max(1, Number(item.minPeople ?? providerMinPeople) || 1) : 1;
-    useEffect(() => { setPeople((p) => Math.max(minPeople, p)); }, [minPeople]);
+
+    // The most a session here can take — the largest bookable headcount across the
+    // available offerings (seats left for per-person; the session's capacity for a
+    // private booking). The steppers cap at this, so a guest can't pick more than a
+    // session can hold, and we say why instead of silently allowing an un-bookable
+    // number.
+    const bookableMax = offerings.reduce((m, o) => { const a = availOf(o); return a.possible ? Math.max(m, a.seatsLeft) : m; }, 0);
+    const cap = Math.min(MAX_ORDER_QUANTITY, bookableMax > 0 ? bookableMax : MAX_ORDER_QUANTITY);
+    const capLimited = bookableMax > 0 && bookableMax < MAX_ORDER_QUANTITY;
+
+    // Keep the total at or above the minimum by topping up ADULTS — never inventing
+    // children.
+    useEffect(() => { setAdults((a) => Math.max(a, minPeople - children)); /* eslint-disable-next-line */ }, [minPeople]);
+
+    // Prefill once from the cottage party, clamped to what's bookable. Within the
+    // cap we keep the cottage's own split; over the cap we prefill the maximum as
+    // ALL ADULTS and let the guest adjust down — the product doesn't decide which
+    // of their family comes.
+    const prefilled = useRef(false);
+    useEffect(() => {
+        if (prefilled.current) return;
+        if (prefillAdults == null && prefillChildren == null) return;
+        prefilled.current = true;
+        const pa = Math.max(0, Number(prefillAdults) || 0);
+        const pc = Math.max(0, Number(prefillChildren) || 0);
+        if (pa + pc > cap) { setAdults(Math.max(1, cap)); setChildren(0); }
+        else { setAdults(Math.max(1, pa)); setChildren(pc); }
+        // eslint-disable-next-line
+    }, [cap, prefillAdults, prefillChildren]);
 
     // The header month follows the list — the topmost day in view.
     const [headerMonth, setHeaderMonth] = useState<string>('');
@@ -202,6 +241,8 @@ export default function BookingDialog({
             itemId: item.id, date: selected.date, time: selected.time,
             quantity: perPerson ? people : 1,
             attendees: perPerson ? undefined : people,
+            // The split rides alongside the total — the total still drives money.
+            adults, children,
             serviceAddress: travels ? address.trim() : undefined,
             allergy: isFood ? (allergy.trim() || undefined) : undefined,
         });
@@ -285,16 +326,42 @@ export default function BookingDialog({
                                     </div>
                                 </div>
                             )}
-                            <div className="flex items-center justify-between">
-                                <div>
-                                    <div className="text-sm font-semibold text-slate-900">{perPerson ? 'How many places' : 'How many people'}</div>
-                                    {minPeople > 1 && <div className="text-xs text-slate-400">Minimum {minPeople}</div>}
+                            {/* Adults / children split — a headcount for the
+                                provider, not a pricing tier: every seat is the
+                                same price. The total drives everything below. */}
+                            <div>
+                                <div className="mb-1 flex items-center justify-between">
+                                    <div className="text-sm font-semibold text-slate-900">Guests</div>
+                                    <div className="text-sm text-slate-500">{people} {people === 1 ? 'person' : 'people'}{perPerson ? '' : ' — the whole session is yours'}</div>
                                 </div>
-                                <div className="flex items-center gap-3">
-                                    <button type="button" aria-label="Fewer" disabled={people <= minPeople} onClick={() => setPeople((p) => Math.max(minPeople, p - 1))} className="flex h-8 w-8 items-center justify-center rounded-full border border-slate-300 text-slate-700 disabled:opacity-40"><Minus className="h-4 w-4" /></button>
-                                    <span className="w-6 text-center text-sm font-semibold">{people}</span>
-                                    <button type="button" aria-label="More" disabled={people >= MAX_ORDER_QUANTITY} onClick={() => setPeople((p) => Math.min(MAX_ORDER_QUANTITY, p + 1))} className="flex h-8 w-8 items-center justify-center rounded-full border border-slate-300 text-slate-700 disabled:opacity-40"><Plus className="h-4 w-4" /></button>
-                                </div>
+                                {([
+                                    { key: 'adults', label: 'Adults', sub: 'Age 13+', value: adults, set: setAdults, floor: 1 },
+                                    { key: 'children', label: 'Children', sub: 'Ages 4–12', value: children, set: setChildren, floor: 0 },
+                                ] as const).map((row) => (
+                                    <div key={row.key} className="flex items-center justify-between py-1.5">
+                                        <div>
+                                            <div className="text-sm font-medium text-slate-800">{row.label}</div>
+                                            <div className="text-xs text-slate-400">{row.sub}</div>
+                                        </div>
+                                        <div className="flex items-center gap-3">
+                                            <button type="button" aria-label={'Fewer ' + row.label.toLowerCase()}
+                                                disabled={row.value <= row.floor || people <= minPeople}
+                                                onClick={() => row.set((v) => Math.max(row.floor, v - 1))}
+                                                className="flex h-8 w-8 items-center justify-center rounded-full border border-slate-300 text-slate-700 disabled:opacity-40"><Minus className="h-4 w-4" /></button>
+                                            <span className="w-6 text-center text-sm font-semibold">{row.value}</span>
+                                            <button type="button" aria-label={'More ' + row.label.toLowerCase()}
+                                                disabled={people >= cap}
+                                                onClick={() => row.set((v) => v + 1)}
+                                                className="flex h-8 w-8 items-center justify-center rounded-full border border-slate-300 text-slate-700 disabled:opacity-40"><Plus className="h-4 w-4" /></button>
+                                        </div>
+                                    </div>
+                                ))}
+                                {(minPeople > 1 || capLimited) && (
+                                    <div className="mt-1 text-xs text-slate-400">
+                                        {minPeople > 1 ? `Minimum ${minPeople}. ` : ''}
+                                        {capLimited ? `Only ${bookableMax} ${bookableMax === 1 ? 'seat' : 'seats'} left in the sessions here.` : ''}
+                                    </div>
+                                )}
                             </div>
                         </div>
 

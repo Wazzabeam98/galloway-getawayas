@@ -15,6 +15,7 @@ import { OptionPills, Stepper, SESSION_LENGTH_OPTIONS, minutesLabel } from '@/co
 interface Order {
     id: string; status: string; service_date: string; service_time: string | null; shape: string;
     price: number; quantity: number | null; attendees: number | null; item_name: string | null; item_unit: string | null;
+    adults?: number | null; children?: number | null;
     guest_name: string | null; guest_phone: string | null; guest_email: string | null;
     fulfilment?: string | null; service_address?: string | null;
     commission_rate?: number | null; amount_refunded?: number | null; unit_price?: number | null;
@@ -47,8 +48,17 @@ function initialsOf(name: string | null): string {
     if (!parts.length) return '?';
     return (parts[0][0] + (parts.length > 1 ? parts[parts.length - 1][0] : '')).toUpperCase();
 }
-// What a booking's party reads as: per-person books seats, a private hire books a party.
+// What a booking's party reads as. When the guest gave an adults/children split
+// — the head-count detail this whole panel exists for — show it ("3 adults, 1
+// child"); otherwise the plain place/party count.
 function partyLabel(o: Order): string {
+    if (o.adults != null || o.children != null) {
+        const a = Number(o.adults) || 0, c = Number(o.children) || 0;
+        const parts: string[] = [];
+        if (a > 0) parts.push(a + (a === 1 ? ' adult' : ' adults'));
+        if (c > 0) parts.push(c + (c === 1 ? ' child' : ' children'));
+        if (parts.length) return parts.join(', ');
+    }
     const n = Number(o.item_unit === 'person' ? o.quantity : (o.attendees || o.quantity)) || 1;
     if (o.item_unit === 'person') return n + (n === 1 ? ' place' : ' places');
     return 'Party of ' + n;
