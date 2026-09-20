@@ -1,8 +1,8 @@
 {
-  "ranAt": "2026-09-18T21:49:11.274Z",
+  "ranAt": "2026-09-20T16:04:29.876Z",
   "target": "http://localhost:3000",
   "account": "acct_1U6iMxAJfMhUsIVc",
-  "passed": 9,
+  "passed": 10,
   "failed": 0,
   "lostWebhookReconciled": true,
   "lostWebhookRequestReconciled": true,
@@ -14,7 +14,7 @@
         {
           "description": "slot/book accepted and returned a Checkout url",
           "ok": true,
-          "detail": "HTTP 200 {\"ok\":true,\"url\":\"https://checkout.stripe.com/c/pay/cs_test_a1r0fTQzGaxEqoJnnDZDBmAPte68rmte29JpacYRTkLH66ULb3EZwZ6mIu#fidnandhYHdWcXxpYCc%2FJ2FgY2RwaXEnKSdicyc"
+          "detail": "HTTP 200 {\"ok\":true,\"url\":\"https://checkout.stripe.com/c/pay/cs_test_a1RjbjpC0UiKe3XkEckqTerFOKt4VpGZGc4GVdj5RSzfZUEvhVIBLVWIyO#fidnandhYHdWcXxpYCc%2FJ2FgY2RwaXEnKSdicyc"
         },
         {
           "description": "a holding order exists after booking",
@@ -44,7 +44,7 @@
         {
           "description": "the sweep ran",
           "ok": true,
-          "detail": "{\"ok\":true,\"released\":0,\"seatsReleased\":6,\"reconciled\":1,\"rebuilt\":0,\"failures\":[]}"
+          "detail": "{\"ok\":true,\"released\":0,\"seatsReleased\":0,\"reconciled\":1,\"rebuilt\":0,\"failures\":[]}"
         },
         {
           "description": "the sweep reported a reconciliation",
@@ -59,7 +59,7 @@
         {
           "description": "STRIPE: the provider was paid — £6 fee to us, £54 transferred to them",
           "ok": true,
-          "detail": "fee=600 transfer=tr_3UH9cmPTBrEa7mS71HxYRvGn"
+          "detail": "fee=600 transfer=tr_3UHnAgPTBrEa7mS71zwbXlLx"
         },
         {
           "description": "STRIPE: the provider’s connected balance rose by ~£54 net",
@@ -74,7 +74,7 @@
         {
           "description": "APP: the order now carries the PaymentIntent id",
           "ok": true,
-          "detail": "pi_3UH9cmPTBrEa7mS714SAQUco"
+          "detail": "pi_3UHnAgPTBrEa7mS71thGKRvZ"
         },
         {
           "description": "APP: the seat was KEPT (seats_taken still 1 — not resold)",
@@ -93,7 +93,7 @@
         {
           "description": "services/order accepted and returned a Checkout url",
           "ok": true,
-          "detail": "HTTP 200 {\"ok\":true,\"url\":\"https://checkout.stripe.com/c/pay/cs_test_a1OEBwTxyPFm6EQmUpTVGiAZbyd9nrInzYZDpW3BKnEbqBXwh4suNefMxh#fidnandhYHdWcXxpYCc%2FJ2FgY2RwaXEnKSdicyc"
+          "detail": "HTTP 200 {\"ok\":true,\"url\":\"https://checkout.stripe.com/c/pay/cs_test_a1gzRgDDQRDUCrANwYg5gCvQhMnQsRiK0Qq70PCWo520hbOxEdIfNxHMxF#fidnandhYHdWcXxpYCc%2FJ2FgY2RwaXEnKSdicyc"
         },
         {
           "description": "the card is HELD not charged (requires_capture)",
@@ -118,7 +118,7 @@
         {
           "description": "the order carries the held PaymentIntent",
           "ok": true,
-          "detail": "pi_3UH9dDPTBrEa7mS70aYNkmC2"
+          "detail": "pi_3UHnBGPTBrEa7mS71H5SUZJD"
         },
         {
           "description": "orders/respond confirm succeeded",
@@ -171,7 +171,7 @@
         {
           "description": "STRIPE: fee £6, transfer to provider",
           "ok": true,
-          "detail": "fee=600 transfer=tr_3UH9dJPTBrEa7mS71B87q5J2"
+          "detail": "fee=600 transfer=tr_3UHnBMPTBrEa7mS718XCdzXT"
         },
         {
           "description": "the webhook was accepted (200)",
@@ -389,12 +389,12 @@
         {
           "description": "APP: it carries the held PaymentIntent",
           "ok": true,
-          "detail": "pi_3UH9eHPTBrEa7mS71vjJqjWx"
+          "detail": "pi_3UHnCkPTBrEa7mS71wPGVtUf"
         },
         {
           "description": "APP: it belongs to the right guest and provider",
           "ok": true,
-          "detail": "65b92136-043e-4c36-ba26-becb99c338e2/dd6f2046-6501-4ccb-8f07-73878eca7f62"
+          "detail": "13299b1d-ea28-4624-b7f8-670d04246e02/3a202678-012e-4bdb-b887-54c9972a7cd3"
         },
         {
           "description": "STRIPE: the hold is still LIVE (requires_capture — nothing captured early, nothing lost)",
@@ -415,6 +415,144 @@
       "status": "passed",
       "note": "FIXED: a request order whose webhook was lost is rebuilt to authorised by the sweep — the provider is told and the held card is intact.",
       "fixVerified": true
+    },
+    {
+      "number": "10",
+      "title": "Add guests: child-order top-up — race, abandon+sweep, cancel refunds both PIs + both seats, invite cap rises",
+      "checks": [
+        {
+          "description": "A: booked 5 of 6 places",
+          "ok": true,
+          "detail": "HTTP 200"
+        },
+        {
+          "description": "A: the parent is confirmed",
+          "ok": true,
+          "detail": null
+        },
+        {
+          "description": "A: exactly one top-up won the last seat",
+          "ok": true,
+          "detail": "r1=409 r2=200"
+        },
+        {
+          "description": "A: the session is full (seats_taken = 6), never oversold",
+          "ok": true,
+          "detail": "6"
+        },
+        {
+          "description": "B: booked 1 place",
+          "ok": true,
+          "detail": "HTTP 200"
+        },
+        {
+          "description": "B: top-up accepted (holding child + Checkout)",
+          "ok": true,
+          "detail": "HTTP 200"
+        },
+        {
+          "description": "B: a holding child order exists",
+          "ok": true,
+          "detail": "holding"
+        },
+        {
+          "description": "B: the added seat was claimed (seats_taken = 2)",
+          "ok": true,
+          "detail": "2"
+        },
+        {
+          "description": "B: the sweep ran",
+          "ok": true,
+          "detail": "{\"ok\":true,\"released\":0,\"seatsReleased\":1,\"reconciled\":0,\"rebuilt\":0,\"failures\":[]}"
+        },
+        {
+          "description": "B: the abandoned child is EXPIRED",
+          "ok": true,
+          "detail": null
+        },
+        {
+          "description": "B: the added seat was released (back to 1)",
+          "ok": true,
+          "detail": "1"
+        },
+        {
+          "description": "C: booked 2 places",
+          "ok": true,
+          "detail": "HTTP 200"
+        },
+        {
+          "description": "C: the parent is confirmed",
+          "ok": true,
+          "detail": null
+        },
+        {
+          "description": "D: invite cap is 1 before the top-up (2 seats − the booker)",
+          "ok": true,
+          "detail": "capacity=1"
+        },
+        {
+          "description": "D: ensure_order_seats minted 1 seat row for the 2-seat order",
+          "ok": true,
+          "detail": "seats=1"
+        },
+        {
+          "description": "C: top-up accepted",
+          "ok": true,
+          "detail": "HTTP 200"
+        },
+        {
+          "description": "C: the top-up child is confirmed",
+          "ok": true,
+          "detail": null
+        },
+        {
+          "description": "C: the parent total was NOT rewritten (still £40)",
+          "ok": true,
+          "detail": "40"
+        },
+        {
+          "description": "D: invite cap rose to 2 after the top-up confirmed",
+          "ok": true,
+          "detail": "capacity=2"
+        },
+        {
+          "description": "D: ensure_order_seats minted a 2nd seat row once the top-up confirmed (family = 3 − booker)",
+          "ok": true,
+          "detail": "seats=2"
+        },
+        {
+          "description": "C: the session holds all 3 seats",
+          "ok": true,
+          "detail": "3"
+        },
+        {
+          "description": "C: cancel refunded (free window)",
+          "ok": true,
+          "detail": "HTTP 200 {\"ok\":true,\"status\":\"refunded\"}"
+        },
+        {
+          "description": "C: STRIPE — the original £40 was refunded and its transfer reversed",
+          "ok": true,
+          "detail": "refunded=4000 reversed=4000"
+        },
+        {
+          "description": "C: STRIPE — the added £20 refunded SEPARATELY and its transfer reversed",
+          "ok": true,
+          "detail": "refunded=2000 reversed=2000"
+        },
+        {
+          "description": "C: APP — both orders are refunded",
+          "ok": true,
+          "detail": null
+        },
+        {
+          "description": "C: BOTH seat claims were released (seats_taken back to 0)",
+          "ok": true,
+          "detail": "0"
+        }
+      ],
+      "status": "passed",
+      "note": "Add-guests reuses the slot machine: child order per added place, its own PI and seats, confirmed by the same webhook, swept if unpaid; a full cancel settles the whole family."
     }
   ]
 }

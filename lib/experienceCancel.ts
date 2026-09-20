@@ -86,6 +86,37 @@ export async function cancelStayExperienceOrders(admin: any, bookingId: string):
             }
         };
 
+        // A per-person top-up is a CHILD order — its own PaymentIntent and its own
+        // seats on the same session, linked by parent_order_id and carrying NO
+        // booking_id, so the booking-scoped query above never sees it. Refund each
+        // added place with the stay and give its seats back, or this cascade would
+        // reverse the original dinner and quietly keep the money for the extra
+        // covers. A child still 'holding' (topped up, unpaid) is simply released.
+        const cancelTopUps = async (parentId: string) => {
+            const { data: kids } = await admin
+                .from('service_orders')
+                .select('id, parent_order_id, status, stripe_payment_intent_id, slot_session_id, quantity')
+                .eq('parent_order_id', parentId)
+                .in('status', ['confirmed', 'holding']);
+            // Belt-and-braces: only a genuine child of THIS parent (the query
+            // already scopes it; this holds even against a loose test double).
+            for (const kid of (kids || []).filter((k: any) => k.parent_order_id === parentId)) {
+                try {
+                    if (kid.status === 'confirmed') {
+                        if (!kid.stripe_payment_intent_id) continue;
+                        await stripeRequest('POST', '/refunds', { payment_intent: kid.stripe_payment_intent_id, refund_application_fee: 'true', reverse_transfer: 'true' }, 'refund-' + kid.id);
+                        const { data: moved } = await admin.from('service_orders').update({ status: 'refunded', cancelled_at: new Date().toISOString() }).eq('id', kid.id).eq('status', 'confirmed').select('id');
+                        if (moved && moved.length) await releaseSeat(kid);
+                    } else {
+                        const { data: moved } = await admin.from('service_orders').update({ status: 'cancelled', cancelled_at: new Date().toISOString() }).eq('id', kid.id).eq('status', 'holding').select('id');
+                        if (moved && moved.length) await releaseSeat(kid);
+                    }
+                } catch (kidErr: any) {
+                    await logError('[experienceCancel] could not settle a top-up on a cancelled stay', kidErr, { path: 'lib/experienceCancel' });
+                }
+            }
+        };
+
         for (const o of liveOrders || []) {
             try {
                 if (!o.stripe_payment_intent_id) continue;
@@ -99,6 +130,7 @@ export async function cancelStayExperienceOrders(admin: any, bookingId: string):
                     // direct cancel cannot double-decrement.
                     const { data: moved } = await admin.from('service_orders').update({ status: 'refunded', cancelled_at: new Date().toISOString() }).eq('id', o.id).eq('status', 'confirmed').select('id');
                     if (moved && moved.length) await releaseSeat(o);
+                    await cancelTopUps(o.id);   // added places refund and release with the original
                     await tellAboutStayCancel(admin, o);
                 }
             } catch (orderErr: any) {

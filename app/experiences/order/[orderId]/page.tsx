@@ -11,7 +11,7 @@ import { logError } from '@/lib/logError';
 import { firstName, getImageUrl, displayName } from '@/lib/utils';
 import { guestMayCancelFree } from '@/lib/serviceSlots';
 import { orderLocation } from '@/lib/orderLocation';
-import { isFoodProvider } from '@/lib/serviceOrders';
+import { isFoodProvider, unitMultiplies } from '@/lib/serviceOrders';
 import { directionsUrl as buildDirectionsUrl, appleDirectionsUrl } from '@/lib/directions';
 import { loadExperienceOrder } from '@/lib/experienceOrder';
 import { cancellationSentence, yearsLabel } from '@/components/marketplace/present';
@@ -20,6 +20,8 @@ import PropertyMap from '@/components/PropertyMap';
 import DirectionsPicker from '@/components/arrival/DirectionsPicker';
 import CopyField from '@/components/arrival/CopyField';
 import ExperienceGroup from '@/components/ExperienceGroup';
+import ChangeGuestCount from '@/components/marketplace/ChangeGuestCount';
+import { foldOrderFamily } from '@/lib/orderFamily';
 import { PrintDetailsRow } from '@/components/marketplace/OrderUtilityRows';
 
 export const dynamic = 'force-dynamic';
@@ -244,6 +246,27 @@ export default async function OrderPage({ params, searchParams }: { params: { or
     // never rewrites what this guest booked. The ADDRESS below still comes live
     // from the provider — only the direction is the frozen deal.
     const isSlot = order.shape === 'slot';
+
+    // ADDED PLACES. A per-person slot booking can grow by buying more seats: each
+    // is a confirmed CHILD order on the same session (parent_order_id). Fold them
+    // in so the party count, the split and the invite-list size on THIS page all
+    // reflect the seats actually paid for — not just the original booking. Only a
+    // per-person parent (never a private one, never a child page) has any.
+    // Per-person = the ITEM's unit multiplies (person/ticket/hour/item — a shared
+    // table), NOT the literal string 'person', and NOT the session's frozen
+    // capacity (a private hire can seat a whole party). Matches the top-up route.
+    const isPerPersonParent = isSlot && unitMultiplies(order.item_unit) && !order.parent_order_id;
+    const { data: topUpChildren } = isPerPersonParent
+        ? await admin.from('service_orders')
+            .select('quantity, attendees, adults, children, item_unit')
+            .eq('parent_order_id', order.id).eq('status', 'confirmed')
+        : { data: null };
+    const family = foldOrderFamily(order, (topUpChildren as any[]) || []);
+    // The head count that drives "Who's going" and the Guests line: the folded
+    // family for a per-person order, else the private order's own attendees.
+    const effectiveHeadcount = isPerPersonParent ? family.headcount : (Number(order.attendees) || 0);
+    const canTopUp = isBooker && isPerPersonParent && order.status === 'confirmed';
+
     const { comesToCottage, collects } = orderLocation(order, prov?.fulfilment);
     // Assembled from the three private fields, same order the cottage address
     // uses: "The Old Bakery, 4 Shore Road, Kirkcudbright, DG6 4JT". Released only
@@ -364,7 +387,7 @@ export default async function OrderPage({ params, searchParams }: { params: { or
     // A single-place booking (or one with no headcount) has nobody to invite and
     // nothing to show, so the block is absent entirely — an empty "Who's going"
     // with an explanation is worse than no block. Needs at least two places.
-    const showGroup = (order.shape === 'slot' || order.shape === 'comes_to_you') && Number(order.attendees) >= 2;
+    const showGroup = (order.shape === 'slot' || order.shape === 'comes_to_you') && effectiveHeadcount >= 2;
     // The booker shown at the head of the list is the ORDER's booker (so a
     // companion sees whose experience it is), read live from their profile.
     const { data: bookerProfile } = showGroup
@@ -378,7 +401,7 @@ export default async function OrderPage({ params, searchParams }: { params: { or
     // only read their own seat) still sees the whole party.
     const { data: seatRows } = showGroup
         ? await admin.from('booking_guests')
-            .select('id, user_id, name, email, status, invite_token, seat_index')
+            .select('id, user_id, name, email, status, invite_token, seat_index, link_sent_at')
             .eq('order_id', order.id).neq('status', 'removed').order('seat_index')
         : { data: null };
     const groupSeats = (seatRows as any[]) || [];
@@ -739,10 +762,10 @@ export default async function OrderPage({ params, searchParams }: { params: { or
                                         orderId={order.id}
                                         bookerName={bookerName}
                                         bookerAvatar={bookerAvatar}
-                                        attendees={Number(order.attendees) || 1}
-                                        prefill={prefill}
+                                        attendees={effectiveHeadcount || 1}
+                                        experienceName={order.provider_business_name || order.item_name || who}
                                         readOnly={!isBooker}
-                                        initialSeats={groupSeats}
+                                        initialSeats={groupSeats as any}
                                         initialProfiles={profileById}
                                     />
                                 </div>
@@ -761,10 +784,13 @@ export default async function OrderPage({ params, searchParams }: { params: { or
                                 // Guests, with the adults/children split beneath when
                                 // it's recorded — "2 adults, 1 child". A null split
                                 // (a pre-split order) falls back to the plain total.
-                                const pa = order.adults != null ? Number(order.adults) : null;
-                                const pc = order.children != null ? Number(order.children) : null;
+                                // Folded across the family: the split and total
+                                // include every confirmed added place, not just
+                                // the original booking.
+                                const pa = family.adults != null ? Number(family.adults) : null;
+                                const pc = family.children != null ? Number(family.children) : null;
                                 const split = partySplitLabel(pa, pc);
-                                const total = pa != null ? pa + (pc || 0) : (order.attendees != null ? Number(order.attendees) : 0);
+                                const total = effectiveHeadcount;
                                 if (total <= 1) return null;
                                 return (
                                     <div className="mt-4">
@@ -796,6 +822,17 @@ export default async function OrderPage({ params, searchParams }: { params: { or
                                     <ChevronRight className="h-4 w-4 flex-none text-slate-300" />
                                 </a>
                                 <PrintDetailsRow className={ROW} />
+                                {/* The reservation-change actions, Airbnb-shaped: a
+                                    "Change guest count" row that opens the stepper in
+                                    place, then Cancel. (No "Change date or time" —
+                                    that isn't built, so there's no dead row.) Both
+                                    are the booker's alone. */}
+                                {canTopUp && (
+                                    <ChangeGuestCount
+                                        orderId={order.id}
+                                        className={ROW}
+                                    />
+                                )}
                                 {/* Only the booker can cancel — and OrderCancel is
                                     handed the price, so a companion never reaches
                                     it. */}

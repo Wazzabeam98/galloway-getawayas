@@ -5,6 +5,7 @@ import { cookies } from 'next/headers';
 import { NextResponse } from 'next/server';
 import { sendEmail, emailLayout, escapeHtml, button, SITE_URL } from '@/lib/email';
 import { formatUk } from '@/lib/cancellation';
+import { foldOrderFamily } from '@/lib/orderFamily';
 
 export const dynamic = 'force-dynamic';
 
@@ -27,7 +28,7 @@ async function bookedBy(admin: any, bookingId: string, userId: string) {
 async function orderedBy(admin: any, orderId: string, userId: string) {
     const { data } = await admin
         .from('service_orders')
-        .select('id, guest_id, status, attendees, item_name, service_date, service_time, provider_business_name')
+        .select('id, guest_id, status, attendees, quantity, item_unit, item_name, service_date, service_time, provider_business_name')
         .eq('id', orderId)
         .maybeSingle();
 
@@ -42,7 +43,7 @@ async function orderedBy(admin: any, orderId: string, userId: string) {
 async function loadOrderSeats(admin: any, orderId: string) {
     const { data: seatRows } = await admin
         .from('booking_guests')
-        .select('id, user_id, name, email, status, invite_token, seat_index')
+        .select('id, user_id, name, email, status, invite_token, seat_index, link_sent_at')
         .eq('order_id', orderId)
         .neq('status', 'removed')
         .order('seat_index');
@@ -110,7 +111,16 @@ export async function POST(request: Request) {
                 if (order.status === 'cancelled' || order.status === 'refunded' || order.status === 'declined' || order.status === 'expired') {
                     return NextResponse.json({ ok: false, error: 'This experience is no longer live.' }, { status: 400 });
                 }
-                const capacity = Math.max(0, ((order.attendees as number) || 1) - 1);
+                // The invite list runs to the seats PAID FOR, minus the booker's
+                // own place — folding in any confirmed per-person top-ups, so this
+                // hint agrees with the ensure_order_seats RPC (which sums the same
+                // family). Using attendees alone reported 0 for a per-person order.
+                const { data: kids } = await admin
+                    .from('service_orders')
+                    .select('quantity, attendees, item_unit')
+                    .eq('parent_order_id', orderId)
+                    .eq('status', 'confirmed');
+                const capacity = Math.max(0, foldOrderFamily(order as any, (kids as any[]) || []).headcount - 1);
                 const { data: minted, error: seatErr } = await admin
                     .rpc('ensure_order_seats', { p_order: orderId, p_inviter: user.id });
                 if (seatErr) {
