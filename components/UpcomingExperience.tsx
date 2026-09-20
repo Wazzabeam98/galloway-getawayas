@@ -4,14 +4,15 @@ import { useEffect, useState } from 'react';
 import Link from 'next/link';
 import { Home } from 'lucide-react';
 import DirectionsPicker from '@/components/arrival/DirectionsPicker';
+import WhenBadge from '@/components/WhenBadge';
 
 // The "Your upcoming experience" cards on the logged-in home page — peers of the
 // trip card. An experience is its own booking (it can be bought with no stay at
 // all), so it stands on its own. Same lift as the trip card (reused classes, no
 // variant), but not the trip card's full-width hero shape: each is a contained
 // card so two booked experiences sit side by side on desktop and stack on a
-// phone. No big countdown — the hero treatment is for the stay, which is the
-// anchor; an experience just needs its title, date and time.
+// phone. The photo carries the same small "Today / In 3 days" WhenBadge the
+// order page uses (top-left); the big hero countdown stays reserved for the stay.
 //
 // Data comes from /api/services/to-review's `upcoming` (the guest's own confirmed
 // orders still to come). Renders NOTHING when there's none — no empty shelf.
@@ -47,6 +48,7 @@ function timeLabel(t: string | null): string {
 export default function UpcomingExperience() {
     const [list, setList] = useState<Upcoming[]>([]);
     const [loaded, setLoaded] = useState(false);
+    const [expanded, setExpanded] = useState(false);
 
     useEffect(() => {
         fetch('/api/services/to-review')
@@ -57,10 +59,11 @@ export default function UpcomingExperience() {
 
     if (!loaded || list.length === 0) return null;
 
-    // Two side by side; the rest of a guest's booked experiences (and the browse
-    // link) live on /trips, so any beyond that are routed there rather than dropped.
-    const shown = list.slice(0, MAX_ON_HOME);
-    const moreCount = list.length - shown.length;
+    // Two side by side by default; "N more" reveals the rest IN PLACE (they used
+    // to route to /trips, a holiday-let page the guest then had to scroll to the
+    // foot of). Every upcoming experience now shows on the dashboard itself.
+    const shown = expanded ? list : list.slice(0, MAX_ON_HOME);
+    const moreCount = list.length - Math.min(list.length, MAX_ON_HOME);
 
     return (
         <section className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 pt-14">
@@ -79,11 +82,12 @@ export default function UpcomingExperience() {
                         // Same lift as the trip card. Photo is inset (its own
                         // rounded box) so the directions dropdown isn't clipped.
                         <div key={it.orderId} className="rounded-2xl border border-slate-200 bg-white p-4 shadow-[0_6px_16px_rgba(0,0,0,0.12)]">
-                            <Link href={href} className="group block aspect-[16/9] w-full overflow-hidden rounded-xl bg-stone-200">
+                            <Link href={href} className="group relative block aspect-[16/9] w-full overflow-hidden rounded-xl bg-stone-200">
                                 {it.photo ? (
                                     // eslint-disable-next-line @next/next/no-img-element
                                     <img src={it.photo} alt={it.title} className="h-full w-full object-cover transition duration-300 group-hover:scale-105" />
                                 ) : null}
+                                <WhenBadge date={it.serviceDate} />
                             </Link>
                             <div className="mt-3">
                                 <Link href={href} className="text-base font-semibold text-stone-900 hover:underline">{it.title}</Link>
@@ -109,9 +113,13 @@ export default function UpcomingExperience() {
 
             {moreCount > 0 && (
                 <div className="mt-4">
-                    <Link href="/trips" className="text-sm font-semibold text-emerald-700 hover:text-emerald-800 underline underline-offset-4">
-                        {moreCount === 1 ? '1 more on your trip' : moreCount + ' more on your trip'}
-                    </Link>
+                    <button
+                        type="button"
+                        onClick={() => setExpanded((v) => !v)}
+                        className="text-sm font-semibold text-emerald-700 hover:text-emerald-800 underline underline-offset-4"
+                    >
+                        {expanded ? 'Show fewer' : (moreCount === 1 ? '1 more' : moreCount + ' more')}
+                    </button>
                 </div>
             )}
         </section>

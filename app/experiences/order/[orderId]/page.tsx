@@ -22,6 +22,7 @@ import CopyField from '@/components/arrival/CopyField';
 import ExperienceGroup from '@/components/ExperienceGroup';
 import ChangeGuestCount from '@/components/marketplace/ChangeGuestCount';
 import ChangeDateTime from '@/components/marketplace/ChangeDateTime';
+import WhenBadge from '@/components/WhenBadge';
 import { foldOrderFamily } from '@/lib/orderFamily';
 import { PrintDetailsRow } from '@/components/marketplace/OrderUtilityRows';
 
@@ -98,22 +99,6 @@ function partySplitLabel(adults: number | null | undefined, children: number | n
     if (a > 0) parts.push(a + (a === 1 ? ' adult' : ' adults'));
     if (c > 0) parts.push(c + (c === 1 ? ' child' : ' children'));
     return parts.length ? parts.join(', ') : null;
-}
-
-function untilBadge(dateStr: string): string | null {
-    const d = new Date(dateStr + 'T00:00:00');
-    if (isNaN(d.getTime())) return null;
-    const today = new Date();
-    today.setHours(0, 0, 0, 0);
-    const days = Math.round((d.getTime() - today.getTime()) / 86400000);
-    if (days < 0) return null;
-    if (days === 0) return 'Today';
-    if (days === 1) return 'Tomorrow';
-    if (days < 7) return `In ${days} days`;
-    const weeks = Math.floor(days / 7);
-    if (weeks === 1) return 'In 1 week';
-    if (weeks < 9) return `In ${weeks} weeks`;
-    return null;
 }
 
 // An .ics the guest can drop into their calendar. A slot has a real time, so it
@@ -328,7 +313,6 @@ export default async function OrderPage({ params, searchParams }: { params: { or
     };
     const googleDir = collects ? buildDirectionsUrl(dirParts) : null;
     const appleDir = collects ? appleDirectionsUrl(dirParts) : null;
-    const badge = live ? untilBadge(String(order.service_date)) : null;
     // The session length as RECORDED — null when nothing records one. The
     // 60-minute fallback below is fine for an .ics, which must have an end, but
     // not for printing "Ends 08:30" on the page: that would be inventing a fact
@@ -486,11 +470,7 @@ export default async function OrderPage({ params, searchParams }: { params: { or
                             <Link href={listingHref} className="group relative block overflow-hidden rounded-2xl">
                                 {/* eslint-disable-next-line @next/next/no-img-element */}
                                 <img src={hero} alt={order.item_name || 'Experience'} className="h-44 w-full object-cover transition group-hover:brightness-95 sm:h-56" />
-                                {badge && (
-                                    <span className="absolute left-3 top-3 rounded-full bg-white/95 px-3 py-1 text-xs font-semibold text-slate-900 shadow-sm">
-                                        {badge}
-                                    </span>
-                                )}
+                                {live && <WhenBadge date={String(order.service_date)} />}
                             </Link>
                         )}
 
@@ -812,27 +792,13 @@ export default async function OrderPage({ params, searchParams }: { params: { or
                             </div>
 
                             <div className="mt-3 divide-y divide-slate-200 border-t border-slate-200">
-                                <a
-                                    href={calendarHref({
-                                        title: (order.item_name || 'Experience') + ' — ' + who,
-                                        date: String(order.service_date).slice(0, 10),
-                                        time: isSlot ? (order.service_time || null) : null,
-                                        where,
-                                        details: (order.item_description || '') + (order.note ? '\n\nYour note: ' + order.note : ''),
-                                        durationMin,
-                                    })}
-                                    download={`${(order.item_name || 'experience').toLowerCase().replace(/[^a-z0-9]+/g, '-')}.ics`}
-                                    className={ROW}
-                                >
-                                    <span className="flex items-center gap-3"><CalendarDays className="h-4 w-4 flex-none text-slate-400" /> Add to calendar</span>
-                                    <ChevronRight className="h-4 w-4 flex-none text-slate-300" />
-                                </a>
-                                <PrintDetailsRow className={ROW} />
-                                {/* The reservation actions, in one order on every
-                                    shape: Change guest count, Change date or time,
-                                    Cancel reservation. The first two open a modal
-                                    and are slot-only; Cancel shows on every shape.
-                                    All are the booker's alone. */}
+                                {/* The reservation actions first, in one order on
+                                    every shape: Change guest count, Change date or
+                                    time, Cancel reservation. The first two open a
+                                    modal and are slot-only; Cancel shows on every
+                                    shape. All are the booker's alone. The utility
+                                    rows (Add to calendar, Print details) sit BELOW
+                                    them. */}
                                 {canTopUp && (
                                     <ChangeGuestCount
                                         orderId={order.id}
@@ -860,6 +826,22 @@ export default async function OrderPage({ params, searchParams }: { params: { or
                                         panelClassName="pb-3"
                                     />
                                 )}
+                                <a
+                                    href={calendarHref({
+                                        title: (order.item_name || 'Experience') + ' — ' + who,
+                                        date: String(order.service_date).slice(0, 10),
+                                        time: isSlot ? (order.service_time || null) : null,
+                                        where,
+                                        details: (order.item_description || '') + (order.note ? '\n\nYour note: ' + order.note : ''),
+                                        durationMin,
+                                    })}
+                                    download={`${(order.item_name || 'experience').toLowerCase().replace(/[^a-z0-9]+/g, '-')}.ics`}
+                                    className={ROW}
+                                >
+                                    <span className="flex items-center gap-3"><CalendarDays className="h-4 w-4 flex-none text-slate-400" /> Add to calendar</span>
+                                    <ChevronRight className="h-4 w-4 flex-none text-slate-300" />
+                                </a>
+                                <PrintDetailsRow className={ROW} />
                             </div>
                         </section>
 

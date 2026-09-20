@@ -113,18 +113,23 @@ export default function ExperienceGroup({
 
     return (
         <div>
-            {faces}
+            {/* Avatar(s) and the invite button share one row to keep the section
+                short: faces to the left, the button pushed to the far right
+                (towards the map) rather than tucked against the picture. */}
+            <div className="flex items-center justify-between gap-4">
+                {faces}
 
-            {placesToFill > 0 && (
-                <button
-                    type="button"
-                    onClick={openSheet}
-                    className="mt-4 inline-flex items-center gap-2 rounded-xl border border-slate-300 bg-white px-4 py-2.5 text-sm font-semibold text-slate-800 transition hover:border-slate-400 hover:bg-slate-50"
-                >
-                    <UserPlus className="h-4 w-4 text-slate-500" />
-                    {active.length === 0 ? 'Invite guests' : 'Invite more'}
-                </button>
-            )}
+                {placesToFill > 0 && (
+                    <button
+                        type="button"
+                        onClick={openSheet}
+                        className="inline-flex flex-none items-center gap-2 rounded-xl border border-slate-300 bg-white px-4 py-2.5 text-sm font-semibold text-slate-800 transition hover:border-slate-400 hover:bg-slate-50"
+                    >
+                        <UserPlus className="h-4 w-4 text-slate-500" />
+                        {active.length === 0 ? 'Invite guests' : 'Invite more'}
+                    </button>
+                )}
+            </div>
 
             <InviteSheet
                 open={open}
