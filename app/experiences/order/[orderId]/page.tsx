@@ -2,7 +2,7 @@ import { redirect } from 'next/navigation';
 import Link from 'next/link';
 import {
     ArrowLeft, CalendarDays, MapPin, CheckCircle2, Clock3, XCircle, AlertTriangle,
-    MessageSquare, ChevronRight, Navigation, LifeBuoy, BookOpen, Award,
+    MessageSquare, ChevronRight, LifeBuoy, BookOpen, Award,
 } from 'lucide-react';
 import { createServerComponentClient } from '@supabase/auth-helpers-nextjs';
 import { cookies } from 'next/headers';
@@ -12,10 +12,13 @@ import { firstName, getImageUrl } from '@/lib/utils';
 import { guestMayCancelFree } from '@/lib/serviceSlots';
 import { orderLocation } from '@/lib/orderLocation';
 import { isFoodProvider } from '@/lib/serviceOrders';
+import { directionsUrl as buildDirectionsUrl, appleDirectionsUrl } from '@/lib/directions';
 import { cancellationSentence, yearsLabel } from '@/components/marketplace/present';
 import OrderCancel from '@/components/marketplace/OrderCancel';
 import PropertyMap from '@/components/PropertyMap';
-import { CopyAddressRow, PrintDetailsRow } from '@/components/marketplace/OrderUtilityRows';
+import DirectionsPicker from '@/components/arrival/DirectionsPicker';
+import CopyField from '@/components/arrival/CopyField';
+import { PrintDetailsRow } from '@/components/marketplace/OrderUtilityRows';
 
 export const dynamic = 'force-dynamic';
 
@@ -262,14 +265,23 @@ export default async function OrderPage({ params, searchParams }: { params: { or
     const where = comesToCottage
         ? (cottageAddress || 'Your cottage')
         : (collectionAddress || prov?.based_line || who);
-    // Get directions goes to Google Maps, which is exactly what the reference's
-    // row does — but theirs queries by COORDINATES and this one queries by the
-    // ADDRESS, deliberately. Their coordinates are the meeting point; the only
-    // coordinates we hold are the centre of a service AREA, so sending those to
-    // a directions app would route the guest to the middle of the Stewartry
-    // instead of the bakery. The written address is the exact one, so it is the
-    // better query for us even though it is the weaker kind of query in general.
-    const directionsHref = 'https://www.google.com/maps/search/?api=1&query=' + encodeURIComponent(where);
+    // Get directions uses the SHARED picker (components/arrival/DirectionsPicker),
+    // the same one the trips card carries — one behaviour across the site instead
+    // of a second, Google-only link. lib/directions builds the Apple and Google
+    // URLs from the collection STREET address, never the service-area centre we
+    // hold (that would route the guest to the middle of the Stewartry, not the
+    // door) and never the town alone (it returns null, so no option). The picker's
+    // third option, what3words, is a LISTING_ARRIVAL field a cottage has and an
+    // experience provider does not — there is no w3w column on service_providers —
+    // so it is passed null and the picker omits the row rather than show a dead
+    // one.
+    const dirParts = {
+        streetAddress: prov?.collection_street || null,
+        postcode: prov?.collection_postcode || null,
+        location: prov?.collection_town || null,
+    };
+    const googleDir = collects ? buildDirectionsUrl(dirParts) : null;
+    const appleDir = collects ? appleDirectionsUrl(dirParts) : null;
     const badge = live ? untilBadge(String(order.service_date)) : null;
     // The session length as RECORDED — null when nothing records one. The
     // 60-minute fallback below is fine for an .ics, which must have an end, but
@@ -460,13 +472,22 @@ export default async function OrderPage({ params, searchParams }: { params: { or
                         {/* ---- Where ---- */}
                         <section className="mt-8 border-t border-slate-200 pt-6">
                             <h2 className="text-lg font-semibold text-slate-900">
-                                {/* A made-to-order cake with no fulfilment set
-                                    has no meeting place at all, so it must not
-                                    be headed "Where to meet" — the honest
-                                    heading is the thing still to be agreed. */}
+                                {/* Shape-aware, because "collect" only fits one of
+                                    them. A SLOT you attend — a sauna, a swim, a
+                                    tasting — you GO to; you collect nothing, so
+                                    "Where to go". It reads for a fixed venue and a
+                                    meeting point alike, where Airbnb's "Where to
+                                    meet" would overpromise a person waiting at a
+                                    spot our fixed-venue sessions don't have. A
+                                    MADE-TO-ORDER product — a cake — you do collect,
+                                    so it keeps "Where to collect". A COMES-TO-YOU
+                                    order is the provider travelling to the cottage,
+                                    so it never carries "collect" at all. A
+                                    made-to-order with no direction yet agreed keeps
+                                    the honest "Collection or delivery". */}
                                 {comesToCottage ? 'Where they’re coming'
-                                    : collects ? 'Where to collect'
-                                        : isSlot ? 'Where to meet'
+                                    : isSlot ? 'Where to go'
+                                        : collects ? 'Where to collect'
                                             : 'Collection or delivery'}
                             </h2>
 
@@ -496,16 +517,17 @@ export default async function OrderPage({ params, searchParams }: { params: { or
                                 </div>
                             </div>
 
-                            {/* Directions rows only where there is somewhere to
-                                travel to. A chef coming to the cottage does not
-                                need the guest directed to their own front door. */}
+                            {/* Get directions + Copy address, the same pair the
+                                trips card renders, side by side and stacking on a
+                                phone. Only where there is somewhere to travel to —
+                                a chef coming to the cottage does not need the guest
+                                directed to their own front door. The picker hides
+                                itself when lib/directions has no street to point at,
+                                leaving just Copy. */}
                             {hasVenue && collectionAddress && (
-                                <div className="mt-3 divide-y divide-slate-200 border-t border-slate-200">
-                                    <CopyAddressRow address={collectionAddress} className={ROW} />
-                                    <a href={directionsHref} target="_blank" rel="noopener noreferrer" className={ROW}>
-                                        <span className="flex items-center gap-3"><Navigation className="h-4 w-4 flex-none text-slate-400" /> Get directions</span>
-                                        <ChevronRight className="h-4 w-4 flex-none text-slate-300" />
-                                    </a>
+                                <div className="mt-4 grid grid-cols-1 gap-2 sm:grid-cols-2">
+                                    <DirectionsPicker apple={appleDir} google={googleDir} what3words={null} compact />
+                                    <CopyField value={collectionAddress} label="Copy address" block />
                                 </div>
                             )}
                         </section>
