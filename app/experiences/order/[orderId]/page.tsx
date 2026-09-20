@@ -8,16 +8,18 @@ import { createServerComponentClient } from '@supabase/auth-helpers-nextjs';
 import { cookies } from 'next/headers';
 import { adminClient } from '@/lib/supabaseAdmin';
 import { logError } from '@/lib/logError';
-import { firstName, getImageUrl } from '@/lib/utils';
+import { firstName, getImageUrl, displayName } from '@/lib/utils';
 import { guestMayCancelFree } from '@/lib/serviceSlots';
 import { orderLocation } from '@/lib/orderLocation';
 import { isFoodProvider } from '@/lib/serviceOrders';
 import { directionsUrl as buildDirectionsUrl, appleDirectionsUrl } from '@/lib/directions';
+import { loadExperienceOrder } from '@/lib/experienceOrder';
 import { cancellationSentence, yearsLabel } from '@/components/marketplace/present';
 import OrderCancel from '@/components/marketplace/OrderCancel';
 import PropertyMap from '@/components/PropertyMap';
 import DirectionsPicker from '@/components/arrival/DirectionsPicker';
 import CopyField from '@/components/arrival/CopyField';
+import ExperienceGroup from '@/components/ExperienceGroup';
 import { PrintDetailsRow } from '@/components/marketplace/OrderUtilityRows';
 
 export const dynamic = 'force-dynamic';
@@ -139,12 +141,15 @@ export default async function OrderPage({ params, searchParams }: { params: { or
     if (!user) redirect('/trips');
 
     const admin = adminClient();
-    const { data: order } = await admin
-        .from('service_orders')
-        .select('id, guest_id, provider_id, listing_id, booking_id, status, shape, service_date, service_time, price, item_name, item_description, provider_business_name, allergy, note, attendees, duration_minutes, fulfilment, service_address')
-        .eq('id', params.orderId)
-        .maybeSingle();
-    if (!order || order.guest_id !== user.id) redirect('/trips');
+    // The booker sees everything; an accepted companion sees the reservation but
+    // NEVER the price — the wall is in the loader (lib/experienceOrder): a
+    // companion's order is read without any money column, and the price is
+    // fetched in a second query that runs for the booker alone. Anyone else is
+    // redirected.
+    const { order, role, price } = await loadExperienceOrder(admin, params.orderId, user.id);
+    if (!order || !role) redirect('/trips');
+    const isBooker = role === 'booker';
+    const isCompanion = role === 'companion';
 
     const [{ data: prov }, { data: listing, error: listingError }] = await Promise.all([
         // contact_phone is deliberately NOT selected any more. It is null on
@@ -337,6 +342,62 @@ export default async function OrderPage({ params, searchParams }: { params: { or
     const recognition = typeof gd.recognition === 'string' ? gd.recognition.trim() : '';
     const years = yearsLabel(gd.years_experience != null ? String(gd.years_experience) : null);
     const hasAboutHost = Boolean(years || qualifications || recognition);
+
+    // ---- Who's going -------------------------------------------------------
+    // A session people attend (a slot, or a comes-to-you dinner) can carry a
+    // guest list; a made-to-order product cannot. The block is per-EXPERIENCE:
+    // its own seats, keyed on the order, capped at the attendee count. The stay
+    // is a convenience — when the order is attached to a booking, the booker's
+    // picker prefills the people already on that stay.
+    // A single-place booking (or one with no headcount) has nobody to invite and
+    // nothing to show, so the block is absent entirely — an empty "Who's going"
+    // with an explanation is worse than no block. Needs at least two places.
+    const showGroup = (order.shape === 'slot' || order.shape === 'comes_to_you') && Number(order.attendees) >= 2;
+    // The booker shown at the head of the list is the ORDER's booker (so a
+    // companion sees whose experience it is), read live from their profile.
+    const { data: bookerProfile } = showGroup
+        ? await admin.from('profiles').select('id, full_name, preferred_name, show_full_name, avatar_url').eq('id', order.guest_id).maybeSingle()
+        : { data: null };
+    const bookerName = (bookerProfile && displayName(bookerProfile, '')) || 'The booker';
+    const bookerAvatar = (bookerProfile && bookerProfile.avatar_url) || null;
+
+    // The current seats on this order, and the profiles behind any that are
+    // taken — handed to the block as initial data so a companion (who by RLS can
+    // only read their own seat) still sees the whole party.
+    const { data: seatRows } = showGroup
+        ? await admin.from('booking_guests')
+            .select('id, user_id, name, email, status, invite_token, seat_index')
+            .eq('order_id', order.id).neq('status', 'removed').order('seat_index')
+        : { data: null };
+    const groupSeats = (seatRows as any[]) || [];
+
+    // Prefill: the people already ACTIVE on the stay this order is attached to —
+    // the booker taps a name instead of typing an email. Only for the booker,
+    // only when there is a stay.
+    const { data: partyRows } = (isBooker && showGroup && order.booking_id)
+        ? await admin.from('booking_guests')
+            .select('user_id, name').eq('booking_id', order.booking_id).eq('status', 'active')
+        : { data: null };
+    const prefillIds = Array.from(new Set((partyRows || []).map((r: any) => r.user_id).filter(Boolean))) as string[];
+
+    // Profiles for every face the block needs — active seat holders + the stay
+    // party offered in the picker — resolved to avatar + name in one read.
+    const faceIds = Array.from(new Set([
+        ...groupSeats.filter((s) => s.user_id).map((s) => s.user_id as string),
+        ...prefillIds,
+    ]));
+    const { data: faceProfiles } = faceIds.length
+        ? await admin.from('profiles').select('id, avatar_url, full_name, preferred_name, show_full_name').in('id', faceIds)
+        : { data: [] };
+    const profileById: Record<string, any> = {};
+    (faceProfiles || []).forEach((p: any) => { profileById[p.id] = p; });
+    const prefill = prefillIds
+        .filter((id) => id !== order.guest_id)
+        .map((id) => ({
+            user_id: id,
+            name: (profileById[id] && displayName(profileById[id], '')) || 'Guest',
+            avatar_url: (profileById[id] && profileById[id].avatar_url) || null,
+        }));
 
     return (
         // Hold the column to the viewport (less the sticky 80px nav + its border)
@@ -651,6 +712,31 @@ export default async function OrderPage({ params, searchParams }: { params: { or
                             )}
                         </section>
 
+                        {/* ---- Who's going ----
+                            The per-experience guest list, over the same invite
+                            machine the cottage side uses. The booker manages it
+                            (invite up to the places booked, prefilled from the
+                            stay when there is one); a companion sees it read-only.
+                            A made-to-order product has no session to attend, so
+                            the block is absent there. */}
+                        {showGroup && (
+                            <section className="mt-8 border-t border-slate-200 pt-6">
+                                <h2 className="text-lg font-semibold text-slate-900">Who’s going</h2>
+                                <div className="mt-3">
+                                    <ExperienceGroup
+                                        orderId={order.id}
+                                        bookerName={bookerName}
+                                        bookerAvatar={bookerAvatar}
+                                        attendees={Number(order.attendees) || 1}
+                                        prefill={prefill}
+                                        readOnly={!isBooker}
+                                        initialSeats={groupSeats}
+                                        initialProfiles={profileById}
+                                    />
+                                </div>
+                            </section>
+                        )}
+
                         {/* ---- Booking details (the admin block) ----
                             Moved BELOW the experience: the cancellation policy and
                             the calendar/print/cancel actions are the least-read part
@@ -688,13 +774,16 @@ export default async function OrderPage({ params, searchParams }: { params: { or
                                     <ChevronRight className="h-4 w-4 flex-none text-slate-300" />
                                 </a>
                                 <PrintDetailsRow className={ROW} />
-                                {live && (
+                                {/* Only the booker can cancel — and OrderCancel is
+                                    handed the price, so a companion never reaches
+                                    it. */}
+                                {live && isBooker && (
                                     <OrderCancel
                                         orderId={order.id}
                                         status={order.status}
                                         charged={charged}
                                         free={free}
-                                        price={Number(order.price)}
+                                        price={Number(price)}
                                         providerName={shortWho}
                                         className={`${ROW} text-slate-600 hover:text-rose-700`}
                                         panelClassName="pb-3"
@@ -712,18 +801,26 @@ export default async function OrderPage({ params, searchParams }: { params: { or
                             and who they paid it to belongs on the page. Airbnb can
                             omit it because it is the merchant itself and its
                             receipts live in a trips-wide payments section this
-                            product has no equivalent of. */}
+                            product has no equivalent of.
+
+                            THE MONEY WALL: the whole Payment section is the
+                            booker's alone. A companion never renders it, and —
+                            the wall, not the curtain — never receives the price
+                            server-side either (lib/experienceOrder), so there is
+                            nothing here for them to reveal. */}
+                        {isBooker && (
                         <section className="mt-8 border-t border-slate-200 pt-6">
                             <h2 className="text-lg font-semibold text-slate-900">Payment</h2>
                             <div className="mt-3 flex items-baseline justify-between gap-3">
                                 <span className="text-sm text-slate-500">{charged ? 'Paid' : 'Held, not charged'}</span>
-                                <span className="text-xl font-semibold text-slate-900">£{Number(order.price).toFixed(2)}</span>
+                                <span className="text-xl font-semibold text-slate-900">£{Number(price).toFixed(2)}</span>
                             </div>
                             <p className="mt-1.5 text-sm text-slate-500">
                                 {charged ? `Paid to ${who}. ` : `Held for ${who}, and only taken once they confirm. `}
                                 Your receipt is emailed to you.
                             </p>
                         </section>
+                        )}
 
                         {/* ---- Support ---- */}
                         <section className="mt-8 border-t border-slate-200 pt-6 pb-2">
