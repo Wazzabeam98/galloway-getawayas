@@ -21,6 +21,7 @@ import DirectionsPicker from '@/components/arrival/DirectionsPicker';
 import CopyField from '@/components/arrival/CopyField';
 import ExperienceGroup from '@/components/ExperienceGroup';
 import ChangeGuestCount from '@/components/marketplace/ChangeGuestCount';
+import ChangeDateTime from '@/components/marketplace/ChangeDateTime';
 import { foldOrderFamily } from '@/lib/orderFamily';
 import { PrintDetailsRow } from '@/components/marketplace/OrderUtilityRows';
 
@@ -266,6 +267,11 @@ export default async function OrderPage({ params, searchParams }: { params: { or
     // family for a per-person order, else the private order's own attendees.
     const effectiveHeadcount = isPerPersonParent ? family.headcount : (Number(order.attendees) || 0);
     const canTopUp = isBooker && isPerPersonParent && order.status === 'confirmed';
+    // A move is offered to the booker of any confirmed slot PARENT (per-person or
+    // private hire — the engine handles both); a top-up child is moved with its
+    // parent, never on its own. The picker itself may still come back empty.
+    const canMove = isBooker && isSlot && !order.parent_order_id
+        && order.status === 'confirmed' && !!order.slot_session_id;
 
     const { comesToCottage, collects } = orderLocation(order, prov?.fulfilment);
     // Assembled from the three private fields, same order the cottage address
@@ -822,11 +828,16 @@ export default async function OrderPage({ params, searchParams }: { params: { or
                                     <ChevronRight className="h-4 w-4 flex-none text-slate-300" />
                                 </a>
                                 <PrintDetailsRow className={ROW} />
-                                {/* The reservation-change actions, Airbnb-shaped: a
-                                    "Change guest count" row that opens the stepper in
-                                    place, then Cancel. (No "Change date or time" —
-                                    that isn't built, so there's no dead row.) Both
-                                    are the booker's alone. */}
+                                {/* The reservation-change actions, Airbnb-shaped:
+                                    "Change date or time" and "Change guest count",
+                                    each opening a modal over the page, then Cancel.
+                                    All three are the booker's alone. */}
+                                {canMove && (
+                                    <ChangeDateTime
+                                        orderId={order.id}
+                                        className={ROW}
+                                    />
+                                )}
                                 {canTopUp && (
                                     <ChangeGuestCount
                                         orderId={order.id}

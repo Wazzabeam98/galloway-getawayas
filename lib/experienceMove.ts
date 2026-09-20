@@ -30,6 +30,51 @@ export interface MoveResult {
     notified?: boolean;
 }
 
+// Whether this order's family can move to a given session — the SAME rule the
+// RPC enforces under lock (move_order_family_to_session), so the picker never
+// offers a time the move would then refuse. Pure, so it is unit-tested and shared
+// by the GET picker feed. The reason codes match the RPC's, plus 'current' (the
+// session the family is already on, which the picker marks rather than offers).
+//
+// Order mirrors the RPC's precedence so the reason shown is the first thing that
+// would actually fail: current → blocked → cutoff → not-ready → mode → full.
+export type MoveReason = 'current' | 'blocked' | 'cutoff' | 'not-ready' | 'mode' | 'full';
+
+export function moveTargetEligibility(
+    family: { seats: number; private: boolean },
+    session: {
+        id: string; session_date: string; session_time: string;
+        capacity: number; seats_taken: number; private?: boolean | null;
+        declared?: boolean | null; blocked?: boolean | null; duration_minutes?: number | null;
+    },
+    windowHours: number,
+    now: Date,
+    currentSessionId: string
+): { available: boolean; reason?: MoveReason } {
+    if (session.id === currentSessionId) return { available: false, reason: 'current' };
+    if (session.blocked) return { available: false, reason: 'blocked' };
+
+    // Cutoff: the session start (read as UTC, matching the stored date/time and
+    // lib/serviceSlots.freeCancelDeadline) less the provider's window.
+    const t = String(session.session_time).length === 5 ? session.session_time + ':00' : session.session_time;
+    const start = new Date(String(session.session_date) + 'T' + t + 'Z').getTime();
+    const deadline = start - Math.max(0, Number(windowHours) || 0) * 3600 * 1000;
+    if (isNaN(start) || now.getTime() >= deadline) return { available: false, reason: 'cutoff' };
+
+    // Establishing an empty, non-declared session needs a length to reserve.
+    const establish = session.seats_taken === 0 && !session.declared;
+    if (establish && (session.duration_minutes == null)) return { available: false, reason: 'not-ready' };
+
+    // Mode: a seated (or declared) session must match the family's private/shared
+    // mode; an empty non-declared one takes it.
+    if (!establish && !!session.private !== !!family.private) return { available: false, reason: 'mode' };
+
+    // Room for the WHOLE family.
+    if (session.seats_taken + family.seats > session.capacity) return { available: false, reason: 'full' };
+
+    return { available: true };
+}
+
 // A human "date at time" for an email. The RPC hands back the date as YYYY-MM-DD
 // and the time as HH:MM already, so this is presentation only.
 export function whenLabel(date: string | null | undefined, time: string | null | undefined): string {

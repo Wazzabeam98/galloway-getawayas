@@ -7,7 +7,63 @@ import { installAliases } from './helpers/stub';
 installAliases();
 
 // eslint-disable-next-line @typescript-eslint/no-var-requires
-const { whenLabel, moveProviderEmail } = require('@/lib/experienceMove');
+const { whenLabel, moveProviderEmail, moveTargetEligibility } = require('@/lib/experienceMove');
+
+// A far-future session start so cutoff never bites unless a test wants it to.
+const FUTURE = '2099-01-01';
+const baseSession = (over: any = {}) => ({
+    id: 's-target', session_date: FUTURE, session_time: '10:00',
+    capacity: 6, seats_taken: 2, private: false, declared: true, blocked: false,
+    duration_minutes: 60, ...over,
+});
+const NOW = new Date('2026-09-20T00:00:00Z');
+
+test('a session with room, right mode and past no cutoff is offered', () => {
+    const e = moveTargetEligibility({ seats: 3, private: false }, baseSession(), 12, NOW, 's-current');
+    assert.deepEqual(e, { available: true });
+});
+
+test('the family’s current session is marked, never offered', () => {
+    const e = moveTargetEligibility({ seats: 3, private: false }, baseSession({ id: 's-current' }), 12, NOW, 's-current');
+    assert.deepEqual(e, { available: false, reason: 'current' });
+});
+
+test('a session without room for the WHOLE family is full', () => {
+    // 4 taken + a family of 3 > capacity 6.
+    const e = moveTargetEligibility({ seats: 3, private: false }, baseSession({ seats_taken: 4 }), 12, NOW, 's-current');
+    assert.deepEqual(e, { available: false, reason: 'full' });
+});
+
+test('a session inside its own cutoff is refused', () => {
+    // Starts 6h from NOW, window 12h → already past the deadline.
+    const soon = new Date(NOW.getTime() + 6 * 3600 * 1000);
+    const date = soon.toISOString().slice(0, 10);
+    const time = soon.toISOString().slice(11, 16);
+    const e = moveTargetEligibility({ seats: 1, private: false }, baseSession({ session_date: date, session_time: time }), 12, NOW, 's-current');
+    assert.deepEqual(e, { available: false, reason: 'cutoff' });
+});
+
+test('a mode mismatch (shared family, private session) is refused', () => {
+    const e = moveTargetEligibility({ seats: 1, private: false }, baseSession({ private: true }), 12, NOW, 's-current');
+    assert.deepEqual(e, { available: false, reason: 'mode' });
+});
+
+test('an empty non-declared session with no length is not a valid target', () => {
+    const e = moveTargetEligibility({ seats: 1, private: false }, baseSession({ seats_taken: 0, declared: false, duration_minutes: null }), 12, NOW, 's-current');
+    assert.deepEqual(e, { available: false, reason: 'not-ready' });
+});
+
+test('an empty non-declared session takes the family’s mode (no mode-clash)', () => {
+    // Empty + not declared + has a length → establishable; family is private, so
+    // the session's own private=false is not a clash.
+    const e = moveTargetEligibility({ seats: 1, private: true }, baseSession({ seats_taken: 0, declared: false, private: false }), 12, NOW, 's-current');
+    assert.deepEqual(e, { available: true });
+});
+
+test('a blocked session is never offered', () => {
+    const e = moveTargetEligibility({ seats: 1, private: false }, baseSession({ blocked: true }), 12, NOW, 's-current');
+    assert.deepEqual(e, { available: false, reason: 'blocked' });
+});
 
 // whenLabel is presentation only — the RPC already hands back a YYYY-MM-DD date
 // and an HH:MM time.
