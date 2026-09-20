@@ -831,7 +831,6 @@ export default async function OrderPage({ params, searchParams }: { params: { or
                                     <ChangeGuestCount
                                         orderId={order.id}
                                         className={ROW}
-                                        panelClassName="pb-3"
                                     />
                                 )}
                                 {/* Only the booker can cancel — and OrderCancel is

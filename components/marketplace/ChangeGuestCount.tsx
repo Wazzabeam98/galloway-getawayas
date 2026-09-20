@@ -1,23 +1,21 @@
 'use client';
 
 import { useState } from 'react';
-import { Users, Minus, Plus, AlertTriangle, Loader2 } from 'lucide-react';
+import { createPortal } from 'react-dom';
+import { Users, Minus, Plus, AlertTriangle, Loader2, ChevronRight, X } from 'lucide-react';
 
-// "Change guest count" — a reservation ACTION row (like Cancel) that opens a
-// screen in place, the way Airbnb's reservation actions do, rather than a card
-// sitting inline on the page. Per-person slot bookings only; the page decides
-// whether to render the row at all.
+// "Change guest count" — a reservation ACTION row that opens a MODAL over the
+// page, the way Airbnb's reservation actions do (not an inline expander). The
+// modal holds the guest-count stepper (adults + children) seeded at the current
+// party, and as the count changes shows a Confirm-and-pay-shaped summary: the new
+// count with the old struck through, a price-adjustment line and a total — the
+// delta for the added places, charged as a separate payment. Past the
+// session-anchored cancellation deadline it says the added place is
+// non-refundable, before the card, and requires an acknowledgement.
 //
-// The screen is a guest-count stepper (adults + children) seeded at the CURRENT
-// party, and as the count changes it shows a summary the shape of Airbnb's
-// Confirm-and-pay: the new count with the old struck through, a price-adjustment
-// line, and a total — the delta for the added places, charged as a separate
-// payment. When the session-anchored cancellation deadline has already passed it
-// says the added place is non-refundable, before the card, and requires an
-// acknowledgement.
-//
-// Payer-only and price-bearing, so the page renders it for the booker alone; the
-// route is the real wall (a companion is refused and never handed the quote).
+// Per-person slot bookings only; the page decides whether to render the row.
+// Payer-only and price-bearing — the page renders it for the booker alone, and
+// the route is the real wall (a companion is refused and never handed the quote).
 
 interface Quote {
     unitPrice: number;
@@ -70,7 +68,7 @@ function Stepper({ label, value, set, min, max, disabled }: { label: string; val
     );
 }
 
-export default function ChangeGuestCount({ orderId, className, panelClassName }: { orderId: string; className?: string; panelClassName?: string }) {
+export default function ChangeGuestCount({ orderId, className }: { orderId: string; className?: string }) {
     const [open, setOpen] = useState(false);
     const [quote, setQuote] = useState<Quote | null>(null);
     const [loadErr, setLoadErr] = useState<string | null>(null);
@@ -81,8 +79,6 @@ export default function ChangeGuestCount({ orderId, className, panelClassName }:
     const [busy, setBusy] = useState(false);
     const [error, setError] = useState<string | null>(null);
 
-    const cx = (...c: (string | undefined | false)[]) => c.filter(Boolean).join(' ');
-
     async function loadQuote() {
         setLoadErr(null);
         try {
@@ -91,23 +87,17 @@ export default function ChangeGuestCount({ orderId, className, panelClassName }:
             if (!r.ok || !d.ok) { setLoadErr(d && d.error ? d.error : 'Could not load this.'); return; }
             const q = d as Quote;
             setQuote(q);
-            // Seed at the current party. No split recorded ⇒ treat as all adults.
             setAdults(q.adults != null ? q.adults : Math.max(1, q.headcount));
             setChildren(q.children != null ? q.children : 0);
             setAck(false); setError(null);
         } catch { setLoadErr('Could not load this.'); }
     }
 
-    function toggle() {
-        const next = !open;
-        setOpen(next);
-        if (next && !quote) loadQuote();
+    function openModal() {
+        setOpen(true);
+        loadQuote();
     }
-
-    if (loadErr && !open) {
-        // A row that can't be quoted (not the payer, or nothing to add) shows nothing.
-        return null;
-    }
+    function closeModal() { setOpen(false); }
 
     const oldAdults = quote ? (quote.adults != null ? quote.adults : Math.max(1, quote.headcount)) : 1;
     const oldChildren = quote ? (quote.children != null ? quote.children : 0) : 0;
@@ -118,7 +108,6 @@ export default function ChangeGuestCount({ orderId, className, panelClassName }:
     const needsAck = quote ? quote.insideWindow : false;
     const canPay = !!quote && added >= 1 && !busy && (!needsAck || ack);
 
-    // The steppers can only grow, and only up to the seats left across the two.
     const adultsMax = oldAdults + Math.max(0, seatsLeft - (children - oldChildren));
     const childrenMax = oldChildren + Math.max(0, seatsLeft - (adults - oldAdults));
 
@@ -137,12 +126,6 @@ export default function ChangeGuestCount({ orderId, className, panelClassName }:
         setBusy(false);
     }
 
-    const trigger = (
-        <button type="button" onClick={toggle} className={className || 'text-sm font-medium text-slate-500 underline underline-offset-2 hover:text-slate-800'}>
-            {className ? <span className="flex items-center gap-3"><Users className="h-4 w-4 flex-none text-slate-400" /> Change guest count</span> : 'Change guest count'}
-        </button>
-    );
-
     // A struck-through old value beside the new one, only when it changed.
     const Diff = ({ oldN, newN, kind }: { oldN: number; newN: number; kind: 'adult' | 'child' }) => (
         <span className="text-sm text-slate-700">
@@ -151,70 +134,97 @@ export default function ChangeGuestCount({ orderId, className, panelClassName }:
         </span>
     );
 
+    // The row that opens the modal. A chevron marks it as opening a screen, like
+    // the other navigating rows (and unlike Cancel, which expands in place).
+    const trigger = (
+        <button type="button" onClick={openModal}
+            className={className || 'text-sm font-medium text-slate-500 underline underline-offset-2 hover:text-slate-800'}>
+            {className ? (
+                <>
+                    <span className="flex items-center gap-3"><Users className="h-4 w-4 flex-none text-slate-400" /> Change guest count</span>
+                    <ChevronRight className="h-4 w-4 flex-none text-slate-300" />
+                </>
+            ) : 'Change guest count'}
+        </button>
+    );
+
     return (
         <>
             {trigger}
-            {open && (
-                <div className={cx(panelClassName, 'rounded-xl border border-slate-200 bg-white p-4')}>
-                    {!quote ? (
-                        <p className="text-sm text-slate-400">Loading…</p>
-                    ) : quote.seatsLeft < 1 ? (
-                        <p className="text-sm text-slate-600">This session is full — there are no more places to add.</p>
-                    ) : (
-                        <div className="space-y-3">
-                            <Stepper label="Adults" value={adults} set={setAdults} min={oldAdults} max={adultsMax} />
-                            <Stepper label="Children (4–12)" value={children} set={setChildren} min={oldChildren} max={childrenMax} />
 
-                            {/* The Confirm-and-pay-shaped summary. */}
-                            <div className="rounded-lg bg-slate-50 p-3">
-                                <div className="text-[11px] font-semibold uppercase tracking-wide text-slate-500">{quote.itemName || 'Your booking'}</div>
-                                <div className="mt-1 flex flex-wrap items-center gap-x-3 gap-y-1">
-                                    <Diff oldN={oldAdults} newN={adults} kind="adult" />
-                                    {(children > 0 || oldChildren > 0) && <Diff oldN={oldChildren} newN={children} kind="child" />}
-                                </div>
-                                <div className="mt-2 space-y-1 border-t border-slate-200 pt-2 text-sm">
-                                    <div className="flex items-center justify-between text-slate-600">
-                                        <span>Price adjustment{added > 0 ? ' · ' + added + (added === 1 ? ' place' : ' places') : ''}</span>
-                                        <span>{money(delta)}</span>
-                                    </div>
-                                    <div className="flex items-center justify-between font-semibold text-slate-900">
-                                        <span>Total</span>
-                                        <span>{money(delta)}</span>
-                                    </div>
-                                </div>
-                            </div>
+            {open && typeof document !== 'undefined' && createPortal(
+                <div className="fixed inset-0 z-50 flex items-end justify-center bg-black/50 px-0 sm:items-center sm:px-4" onClick={closeModal}>
+                    <div className="flex max-h-[92vh] w-full max-w-md flex-col rounded-t-2xl bg-white shadow-xl sm:rounded-2xl" onClick={(e) => e.stopPropagation()}>
+                        <div className="flex items-center justify-between px-5 pt-5">
+                            <h2 className="text-lg font-bold text-slate-900">Change guest count</h2>
+                            <button type="button" onClick={closeModal} className="text-slate-400 hover:text-slate-700"><X className="h-5 w-5" /></button>
+                        </div>
 
-                            {needsAck ? (
-                                <div className="rounded-xl border border-amber-300 bg-amber-50 p-3">
-                                    <div className="flex items-start gap-2">
-                                        <AlertTriangle className="mt-0.5 h-4 w-4 flex-none text-amber-700" aria-hidden />
-                                        <div className="text-[13px] text-amber-900">
-                                            <p className="font-semibold">This place can’t be refunded.</p>
-                                            <p className="mt-0.5">The free-cancellation deadline ({cutoffLabel(quote.deadlineISO)}) has passed, so a place added now is non-refundable from the moment you pay — the same as the rest of this booking.</p>
-                                            <label className="mt-2 flex items-start gap-2">
-                                                <input type="checkbox" checked={ack} onChange={(e) => setAck(e.target.checked)} className="mt-0.5" />
-                                                <span>I understand this added place isn’t refundable.</span>
-                                            </label>
+                        <div className="min-h-0 flex-1 overflow-y-auto px-5 pb-5 pt-3">
+                            {loadErr ? (
+                                <p className="text-sm text-rose-600">{loadErr}</p>
+                            ) : !quote ? (
+                                <p className="text-sm text-slate-400">Loading…</p>
+                            ) : quote.seatsLeft < 1 ? (
+                                <p className="text-sm text-slate-600">This session is full — there are no more places to add.</p>
+                            ) : (
+                                <div className="space-y-3">
+                                    <Stepper label="Adults" value={adults} set={setAdults} min={oldAdults} max={adultsMax} />
+                                    <Stepper label="Children (4–12)" value={children} set={setChildren} min={oldChildren} max={childrenMax} />
+
+                                    <div className="rounded-lg bg-slate-50 p-3">
+                                        <div className="text-[11px] font-semibold uppercase tracking-wide text-slate-500">{quote.itemName || 'Your booking'}</div>
+                                        <div className="mt-1 flex flex-wrap items-center gap-x-3 gap-y-1">
+                                            <Diff oldN={oldAdults} newN={adults} kind="adult" />
+                                            {(children > 0 || oldChildren > 0) && <Diff oldN={oldChildren} newN={children} kind="child" />}
+                                        </div>
+                                        <div className="mt-2 space-y-1 border-t border-slate-200 pt-2 text-sm">
+                                            <div className="flex items-center justify-between text-slate-600">
+                                                <span>Price adjustment{added > 0 ? ' · ' + added + (added === 1 ? ' place' : ' places') : ''}</span>
+                                                <span>{money(delta)}</span>
+                                            </div>
+                                            <div className="flex items-center justify-between font-semibold text-slate-900">
+                                                <span>Total</span>
+                                                <span>{money(delta)}</span>
+                                            </div>
                                         </div>
                                     </div>
+
+                                    {needsAck ? (
+                                        <div className="rounded-xl border border-amber-300 bg-amber-50 p-3">
+                                            <div className="flex items-start gap-2">
+                                                <AlertTriangle className="mt-0.5 h-4 w-4 flex-none text-amber-700" aria-hidden />
+                                                <div className="text-[13px] text-amber-900">
+                                                    <p className="font-semibold">This place can’t be refunded.</p>
+                                                    <p className="mt-0.5">The free-cancellation deadline ({cutoffLabel(quote.deadlineISO)}) has passed, so a place added now is non-refundable from the moment you pay — the same as the rest of this booking.</p>
+                                                    <label className="mt-2 flex items-start gap-2">
+                                                        <input type="checkbox" checked={ack} onChange={(e) => setAck(e.target.checked)} className="mt-0.5" />
+                                                        <span>I understand this added place isn’t refundable.</span>
+                                                    </label>
+                                                </div>
+                                            </div>
+                                        </div>
+                                    ) : (
+                                        <p className="text-[13px] text-slate-500">Free to cancel until {cutoffLabel(quote.deadlineISO)}; after that an added place isn’t refundable.</p>
+                                    )}
+
+                                    {error && <p className="text-[13px] text-rose-600">{error}</p>}
                                 </div>
-                            ) : (
-                                <p className="text-[13px] text-slate-500">Free to cancel until {cutoffLabel(quote.deadlineISO)}; after that an added place isn’t refundable.</p>
                             )}
+                        </div>
 
-                            {error && <p className="text-[13px] text-rose-600">{error}</p>}
-
-                            <div className="flex items-center gap-2">
+                        {quote && quote.seatsLeft >= 1 && !loadErr && (
+                            <div className="border-t border-slate-100 p-4">
                                 <button type="button" disabled={!canPay} onClick={proceed}
-                                    className="inline-flex items-center gap-1.5 rounded-lg bg-emerald-700 px-3.5 py-2 text-sm font-semibold text-white transition hover:bg-emerald-800 disabled:opacity-50">
+                                    className="inline-flex w-full items-center justify-center gap-1.5 rounded-xl bg-emerald-700 px-4 py-3 text-sm font-semibold text-white transition hover:bg-emerald-800 disabled:opacity-50">
                                     {busy ? <Loader2 className="h-4 w-4 animate-spin" /> : null}
                                     {added >= 1 ? 'Continue to payment · ' + money(delta) : 'Continue to payment'}
                                 </button>
-                                <button type="button" onClick={() => setOpen(false)} className="px-3 py-2 text-sm font-semibold text-slate-600 hover:text-slate-900">Close</button>
                             </div>
-                        </div>
-                    )}
-                </div>
+                        )}
+                    </div>
+                </div>,
+                document.body
             )}
         </>
     );
