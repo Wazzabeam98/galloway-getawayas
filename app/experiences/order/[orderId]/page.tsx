@@ -292,6 +292,15 @@ export default async function OrderPage({ params, searchParams }: { params: { or
     const durationMin = knownDuration || 60;
     const bio = (prov?.description || '').trim();
 
+    // The title and photo link through to the provider's listing, the way the
+    // trip card's title and photo open the property (/homes/<id>). An order
+    // attached to a stay opens the in-stay listing (booking context, the page it
+    // was booked from); a standalone order opens the public listing. Both render
+    // the same ExperienceListingBody.
+    const listingHref = order.booking_id
+        ? `/experiences/${order.booking_id}/${order.provider_id}`
+        : `/experiences/browse/${order.provider_id}`;
+
     // The allergy PROMPT is food-trades-only, gated on the provider's Stripe MCC
     // (isFoodProvider) — the same gate the booking panels use to decide whether to
     // ask. The order page repeats the gate on the DISPLAY rather than trusting the
@@ -372,19 +381,21 @@ export default async function OrderPage({ params, searchParams }: { params: { or
                             reference leads. No photo → no frame, rather than a
                             placeholder. */}
                         {hero && (
-                            <div className="relative overflow-hidden rounded-2xl">
+                            <Link href={listingHref} className="group relative block overflow-hidden rounded-2xl">
                                 {/* eslint-disable-next-line @next/next/no-img-element */}
-                                <img src={hero} alt={order.item_name || 'Experience'} className="h-44 w-full object-cover sm:h-56" />
+                                <img src={hero} alt={order.item_name || 'Experience'} className="h-44 w-full object-cover transition group-hover:brightness-95 sm:h-56" />
                                 {badge && (
                                     <span className="absolute left-3 top-3 rounded-full bg-white/95 px-3 py-1 text-xs font-semibold text-slate-900 shadow-sm">
                                         {badge}
                                     </span>
                                 )}
-                            </div>
+                            </Link>
                         )}
 
                         <div className={`${hero ? 'mt-4' : ''} flex items-start justify-between gap-3`}>
-                            <h1 className="min-w-0 text-2xl font-semibold tracking-tight text-slate-900 sm:text-3xl">{order.item_name || 'Experience'}</h1>
+                            <h1 className="min-w-0 text-2xl font-semibold tracking-tight text-slate-900 sm:text-3xl">
+                                <Link href={listingHref} className="hover:underline">{order.item_name || 'Experience'}</Link>
+                            </h1>
                             <span className={`inline-flex flex-none items-center gap-1 rounded-full px-2.5 py-1 text-[11px] font-semibold ${PILL[meta.tone]}`}>
                                 {meta.tone === 'ok' && <CheckCircle2 className="h-3 w-3" />}
                                 {meta.tone === 'wait' && <Clock3 className="h-3 w-3" />}
