@@ -214,9 +214,10 @@ export default function ExperienceGroup({
         <div>
             {faces}
 
-            {cap === 0 ? (
-                <p className="mt-3 text-sm text-slate-500">This is a single place, so it’s just you.</p>
-            ) : full ? null : (
+            {/* The block only renders for a two-or-more-place booking (the page
+                gates it), so there is always someone to invite until the list is
+                full — at which point it's the faces alone, no line. */}
+            {full ? null : (
                 <div className="mt-4 rounded-xl border border-slate-200 p-4">
                     <div className="flex items-center gap-2 text-sm font-medium text-slate-800">
                         <UserPlus className="h-4 w-4 text-slate-400" />

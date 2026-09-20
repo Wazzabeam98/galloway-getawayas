@@ -349,7 +349,10 @@ export default async function OrderPage({ params, searchParams }: { params: { or
     // its own seats, keyed on the order, capped at the attendee count. The stay
     // is a convenience — when the order is attached to a booking, the booker's
     // picker prefills the people already on that stay.
-    const showGroup = (order.shape === 'slot' || order.shape === 'comes_to_you') && Number(order.attendees) >= 1;
+    // A single-place booking (or one with no headcount) has nobody to invite and
+    // nothing to show, so the block is absent entirely — an empty "Who's going"
+    // with an explanation is worse than no block. Needs at least two places.
+    const showGroup = (order.shape === 'slot' || order.shape === 'comes_to_you') && Number(order.attendees) >= 2;
     // The booker shown at the head of the list is the ORDER's booker (so a
     // companion sees whose experience it is), read live from their profile.
     const { data: bookerProfile } = showGroup
