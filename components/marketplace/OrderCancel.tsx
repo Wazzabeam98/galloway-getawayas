@@ -62,7 +62,7 @@ export default function OrderCancel({
                 No trailing chevron on purpose: the neighbouring rows navigate,
                 this one opens a panel in place, and the chevron is what tells
                 those two apart. */}
-            {className ? <span className="flex items-center gap-3"><Ban className="h-4 w-4 flex-none text-slate-400" /> Cancel</span> : 'Cancel this booking'}
+            {className ? <span className="flex items-center gap-3"><Ban className="h-4 w-4 flex-none text-slate-400" /> Cancel reservation</span> : 'Cancel this booking'}
         </button>
     );
 

@@ -828,10 +828,11 @@ export default async function OrderPage({ params, searchParams }: { params: { or
                                     <ChevronRight className="h-4 w-4 flex-none text-slate-300" />
                                 </a>
                                 <PrintDetailsRow className={ROW} />
-                                {/* The reservation-change actions, Airbnb-shaped:
-                                    "Change date or time" and "Change guest count",
-                                    each opening a modal over the page, then Cancel.
-                                    All three are the booker's alone. */}
+                                {/* The reservation actions, in one order on every
+                                    shape: Change date or time, Change guest count,
+                                    Cancel reservation. The first two open a modal
+                                    and are slot-only; Cancel shows on every shape.
+                                    All are the booker's alone. */}
                                 {canMove && (
                                     <ChangeDateTime
                                         orderId={order.id}

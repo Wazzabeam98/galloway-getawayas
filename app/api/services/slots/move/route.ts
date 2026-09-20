@@ -106,18 +106,23 @@ export async function GET(request: Request) {
 
         const { order, provider, current, windowHours, familySeats, familyPrivate } = loaded;
 
-        // Every future session of this provider, from today. The picker shows the
-        // provider's real sessions (declared classes, and sessions already booked
-        // on) — the set v1 can move to.
+        // The provider's real sessions (declared classes, and sessions already
+        // booked on) within a sensible horizon — the set v1 can move to. Bounded
+        // both ends: from today (you can't move into the past) to today + horizon,
+        // so this is never an unbounded firehose of every future session. Earlier
+        // dates than the booking's own are included — allowed, and the calendar
+        // opens on the current date so later dates are the obvious path.
         const today = londonDayKey(new Date());
+        const horizon = londonDayKey(new Date(Date.now() + HORIZON_DAYS * 86400000));
         const { data: rows } = await admin
             .from('slot_sessions')
             .select('id, session_date, session_time, capacity, seats_taken, private, declared, blocked, duration_minutes')
             .eq('provider_id', provider.id)
             .gte('session_date', today)
+            .lte('session_date', horizon)
             .order('session_date', { ascending: true })
             .order('session_time', { ascending: true })
-            .limit(300);
+            .limit(400);
 
         const now = new Date();
         const sessions = (rows || [])
