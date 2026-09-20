@@ -334,6 +334,24 @@ export async function POST(request: Request) {
             ? Math.min(Math.max(1, Math.floor(Number(body.attendees) || 1)), attendeesCap)
             : null;
 
+        // The authoritative head count for this order — what money and capacity
+        // already use. A private session carries it in attendees; a per-person one
+        // in quantity.
+        const headcount = attendees != null ? attendees : quantity;
+
+        // The party SPLIT (adults 13+, children 4-12) — a head-count detail for the
+        // provider, NEVER a price. Recorded only when the picker sent one; forced
+        // to sum to the authoritative head count above, keeping the guest's CHILDREN
+        // choice and giving the rest to adults (always at least one adult). Left
+        // NULL when no split was sent, so "not recorded" stays distinct from a real
+        // all-adult party.
+        const providedSplit = !!(body && (body.adults != null || body.children != null));
+        const reqChildren = Math.max(0, Math.floor(Number(body && body.children) || 0));
+        const children = providedSplit && headcount != null && headcount >= 1
+            ? Math.min(reqChildren, headcount - 1)
+            : null;
+        const adults = children != null ? (headcount as number) - children : null;
+
         // THE PER-PERSON MINIMUM — the real invariant, not the picker floor.
         // A tasting or class priced per person may set a smallest group it will
         // run for (slot_min_people, default 1 = no minimum). It bites only when
@@ -562,9 +580,16 @@ export async function POST(request: Request) {
                 fulfilment: bookedFulfilment,
                 // The frozen destination for a travelling session (see above).
                 service_address: serviceAddress,
-                guests: standalone ? (attendees ?? quantity ?? null) : (booking.guests ?? null),
+                // The party the PROVIDER sees. Now the SESSION head count for every
+                // shape — a stay-attached order used to carry the cottage party
+                // size, so booking a sauna for two from a cottage of four showed the
+                // provider "4 guests"; that's the number they'd set out towels for
+                // and it was wrong.
+                guests: headcount ?? null,
                 attendees,
                 quantity,
+                adults,
+                children,
                 unit_price: unitPrice,
                 item_unit: unit,
                 price: total,

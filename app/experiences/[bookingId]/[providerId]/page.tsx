@@ -42,6 +42,8 @@ export default async function ListingPage(
                     checkIn={mp.stay.check_in}
                     checkOut={mp.stay.check_out}
                     cottageGuests={mp.stay.guests}
+                    cottageAdults={mp.stay.adults}
+                    cottageChildren={mp.stay.children}
                     stay={{ title: mp.listing?.title || null, town: mp.listing?.location || null }}
                     provider={{
                         id: p.id,

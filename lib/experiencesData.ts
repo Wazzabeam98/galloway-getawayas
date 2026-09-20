@@ -194,12 +194,21 @@ export interface MpProvider {
 
 export interface Marketplace {
     open: boolean;
-    stay: { check_in: string; check_out: string; guests: number } | null;
+    stay: { check_in: string; check_out: string; guests: number; adults: number | null; children: number | null } | null;
     listing: { id: string; title: string | null; location: string | null } | null;
     providers: MpProvider[];
 }
 
-function staySpan(b: any) { return { check_in: b.check_in, check_out: b.check_out, guests: Math.max(1, Number(b.guests) || 1) }; }
+// The cottage party — its total, and the adults/children split when the booking
+// recorded one, so the experience picker can prefill from it.
+function staySpan(b: any) {
+    return {
+        check_in: b.check_in, check_out: b.check_out,
+        guests: Math.max(1, Number(b.guests) || 1),
+        adults: b.adults != null ? Number(b.adults) : null,
+        children: b.children != null ? Number(b.children) : null,
+    };
+}
 
 // A guest_details value that a provider typed in a free-text field — trimmed, or
 // null when they left it blank (an empty string reads as "present" to the page
@@ -236,7 +245,7 @@ export async function loadMarketplace(
 
     const { data: booking } = await admin
         .from('bookings')
-        .select('id, guest_id, listing_id, check_in, check_out, guests')
+        .select('id, guest_id, listing_id, check_in, check_out, guests, adults, children')
         .eq('id', bookingId)
         .maybeSingle();
     if (!booking || booking.guest_id !== userId) return { open: true, stay: null, listing: null, providers: [] };

@@ -85,6 +85,18 @@ function endClock(timeStr: string, durationMin: number): string {
 
 // "In 1 week" — the badge Airbnb puts on the photo. Null once the date is past,
 // so a finished booking doesn't claim to be upcoming.
+// "2 adults, 1 child" from the recorded split. Null when no split is recorded
+// (a NULL split) so the caller falls back to the plain total. Children/adults of
+// zero are omitted.
+function partySplitLabel(adults: number | null | undefined, children: number | null | undefined): string | null {
+    if (adults == null && children == null) return null;
+    const a = Number(adults) || 0, c = Number(children) || 0;
+    const parts: string[] = [];
+    if (a > 0) parts.push(a + (a === 1 ? ' adult' : ' adults'));
+    if (c > 0) parts.push(c + (c === 1 ? ' child' : ' children'));
+    return parts.length ? parts.join(', ') : null;
+}
+
 function untilBadge(dateStr: string): string | null {
     const d = new Date(dateStr + 'T00:00:00');
     if (isNaN(d.getTime())) return null;
@@ -745,12 +757,22 @@ export default async function OrderPage({ params, searchParams }: { params: { or
                         <section className="mt-8 border-t border-slate-200 pt-6">
                             <h2 className="text-lg font-semibold text-slate-900">Booking details</h2>
 
-                            {isSlot && Number(order.attendees) > 1 && (
-                                <div className="mt-4">
-                                    <div className="text-xs font-semibold uppercase tracking-wide text-slate-500">Party</div>
-                                    <div className="mt-0.5 text-sm text-slate-800">{order.attendees} people — the whole session is yours</div>
-                                </div>
-                            )}
+                            {isSlot && (() => {
+                                // Guests, with the adults/children split beneath when
+                                // it's recorded — "2 adults, 1 child". A null split
+                                // (a pre-split order) falls back to the plain total.
+                                const pa = order.adults != null ? Number(order.adults) : null;
+                                const pc = order.children != null ? Number(order.children) : null;
+                                const split = partySplitLabel(pa, pc);
+                                const total = pa != null ? pa + (pc || 0) : (order.attendees != null ? Number(order.attendees) : 0);
+                                if (total <= 1) return null;
+                                return (
+                                    <div className="mt-4">
+                                        <div className="text-sm font-semibold text-slate-900">Guests</div>
+                                        <div className="mt-0.5 text-sm text-slate-600">{split || `${total} people`}</div>
+                                    </div>
+                                );
+                            })()}
 
                             <div className="mt-4">
                                 <div className="text-xs font-semibold uppercase tracking-wide text-slate-500">Cancellation policy</div>

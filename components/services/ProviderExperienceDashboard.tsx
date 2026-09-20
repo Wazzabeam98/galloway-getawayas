@@ -24,6 +24,11 @@ interface Order {
     service_date: string;
     service_time: string | null;
     guests: number | null;
+    // The party split, when the guest gave one — so the provider reads "2 adults,
+    // 1 child", not just a head count. NULL for orders taken before the split
+    // existed, which fall back to the plain guest count.
+    adults: number | null;
+    children: number | null;
     price: number;
     item_name: string | null;
     // How it was priced and how many — so a chef reads "6 people", not just a
@@ -55,6 +60,22 @@ function countLine(o: Order): string | null {
     const plural = o.quantity === 1 ? noun : (noun === 'person' ? 'people' : noun + 's');
     const each = o.unit_price != null ? ' · £' + o.unit_price.toFixed(2) + ' ' + unitLabel(o.item_unit) : '';
     return o.quantity + ' ' + plural + each;
+}
+
+// The party line the provider reads beside a booking — the adults/children split
+// when the guest gave one ("2 adults, 1 child"), else the plain head count. Empty
+// for a shape where the party doesn't matter.
+function partyText(o: Order): string {
+    if (!partyMatters(o.shape)) return '';
+    const a = o.adults, c = o.children;
+    if (a != null || c != null) {
+        const na = Number(a) || 0, nc = Number(c) || 0;
+        const parts: string[] = [];
+        if (na > 0) parts.push(na + (na === 1 ? ' adult' : ' adults'));
+        if (nc > 0) parts.push(nc + (nc === 1 ? ' child' : ' children'));
+        if (parts.length) return ' · ' + parts.join(', ');
+    }
+    return o.guests ? ' · ' + o.guests + ' guest' + (o.guests === 1 ? '' : 's') : '';
 }
 
 const STATUS_WORD: Record<string, string> = {
@@ -180,7 +201,7 @@ export default function ProviderExperienceDashboard(props: { providerId: string 
                                 {o.item_name ? <div className="text-sm font-semibold text-gray-900">{o.item_name}</div> : null}
                                 <div className="text-sm text-gray-600">
                                     {whenLabel(o.shape, o.service_date, o.service_time)}
-                                    {partyMatters(o.shape) && o.guests ? ' · ' + o.guests + ' guest' + (o.guests === 1 ? '' : 's') : ''}
+                                    {partyText(o)}
                                     {' · £' + o.price.toFixed(2)}
                                 </div>
                                 {countLine(o) ? <div className="text-sm font-medium text-gray-700">{countLine(o)}</div> : null}
@@ -235,7 +256,7 @@ export default function ProviderExperienceDashboard(props: { providerId: string 
                                 {o.item_name ? <div className="text-sm font-semibold text-gray-900">{o.item_name}</div> : null}
                                 <div className="text-sm text-gray-600">
                                     {whenLabel(o.shape, o.service_date, o.service_time)}
-                                    {partyMatters(o.shape) && o.guests ? ' · ' + o.guests + ' guest' + (o.guests === 1 ? '' : 's') : ''}
+                                    {partyText(o)}
                                     {' · £' + o.price.toFixed(2)}
                                 </div>
                                 {countLine(o) ? <div className="text-sm font-medium text-gray-700">{countLine(o)}</div> : null}

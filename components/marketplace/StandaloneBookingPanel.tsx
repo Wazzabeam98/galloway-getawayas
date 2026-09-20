@@ -47,6 +47,7 @@ export default function StandaloneBookingPanel({ provider }: {
                 body: JSON.stringify({
                     providerId: provider.id, itemId: args.itemId, sessionDate: args.date, sessionTime: args.time,
                     quantity: args.quantity, attendees: args.attendees,
+                    adults: args.adults, children: args.children,
                     serviceAddress: args.serviceAddress, allergy: args.allergy,
                 }),
             });
