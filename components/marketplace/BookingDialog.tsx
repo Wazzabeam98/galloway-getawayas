@@ -73,6 +73,11 @@ export default function BookingDialog({
     const [adults, setAdults] = useState<number>(1);
     const [children, setChildren] = useState<number>(0);
     const people = adults + children;
+    // Most bookings are adults only, so the Children stepper hides behind an
+    // "Add children" link until it's wanted (Airbnb does the same). Once revealed
+    // it stays open until the picker closes — dropping back to zero mid-edit must
+    // not yank the stepper away. A prefill that carries children opens it up front.
+    const [childrenShown, setChildrenShown] = useState<boolean>(false);
     const [selKey, setSelKey] = useState<string | null>(null);
     const [address, setAddress] = useState('');
     const [allergy, setAllergy] = useState('');
@@ -185,7 +190,7 @@ export default function BookingDialog({
         const pa = Math.max(0, Number(prefillAdults) || 0);
         const pc = Math.max(0, Number(prefillChildren) || 0);
         if (pa + pc > cap) { setAdults(Math.max(1, cap)); setChildren(0); }
-        else { setAdults(Math.max(1, pa)); setChildren(pc); }
+        else { setAdults(Math.max(1, pa)); setChildren(pc); if (pc > 0) setChildrenShown(true); }
         // eslint-disable-next-line
     }, [cap, prefillAdults, prefillChildren]);
 
@@ -334,10 +339,13 @@ export default function BookingDialog({
                                     <div className="text-sm font-semibold text-slate-900">Guests</div>
                                     <div className="text-sm text-slate-500">{people} {people === 1 ? 'person' : 'people'}{perPerson ? '' : ' — the whole session is yours'}</div>
                                 </div>
-                                {([
+                                {[
                                     { key: 'adults', label: 'Adults', sub: 'Age 13+', value: adults, set: setAdults, floor: 1 },
-                                    { key: 'children', label: 'Children', sub: 'Ages 4–12', value: children, set: setChildren, floor: 0 },
-                                ] as const).map((row) => (
+                                    // Children is here only once revealed — and once
+                                    // revealed it stays, even at zero, so an edit back
+                                    // to nought doesn't snatch the stepper away.
+                                    ...(childrenShown ? [{ key: 'children', label: 'Children', sub: 'Ages 4–12', value: children, set: setChildren, floor: 0 }] : []),
+                                ].map((row) => (
                                     <div key={row.key} className="flex items-center justify-between py-1.5">
                                         <div>
                                             <div className="text-sm font-medium text-slate-800">{row.label}</div>
@@ -356,6 +364,13 @@ export default function BookingDialog({
                                         </div>
                                     </div>
                                 ))}
+                                {/* Adults-only by default; reveal the Children stepper on demand. */}
+                                {!childrenShown && (
+                                    <button type="button" onClick={() => setChildrenShown(true)}
+                                        className="mt-1.5 text-sm font-medium text-slate-700 underline underline-offset-2 hover:text-slate-900">
+                                        Add children
+                                    </button>
+                                )}
                                 {(minPeople > 1 || capLimited) && (
                                     <div className="mt-1 text-xs text-slate-400">
                                         {minPeople > 1 ? `Minimum ${minPeople}. ` : ''}
