@@ -15,11 +15,21 @@
 -- the direct order cancel (single-row) — each have to reach for the family
 -- rather than settling one row and leaving the top-up's money and seats behind.
 
--- 1. The link. Nullable (only a top-up has one); cascades so a deleted parent
---    takes its top-ups with it, mirroring booking_guests.order_id.
+-- 1. The link. Nullable (only a top-up has one). ON DELETE RESTRICT — NOT
+--    cascade: a top-up child can hold a captured PaymentIntent, so a cascade
+--    would let a parent delete carry real money out of the ledger with it.
+--    Restrict refuses to delete a parent while any child row still references
+--    it; the child must be settled and removed first. (Orders are never hard-
+--    deleted in normal operation anyway — this is the safety floor.)
+--    Written as drop-then-add so re-applying flips an earlier cascade to
+--    restrict; the constraint name is Postgres's default for the column.
 alter table public.service_orders
-    add column if not exists parent_order_id uuid
-        references public.service_orders(id) on delete cascade;
+    add column if not exists parent_order_id uuid;
+alter table public.service_orders
+    drop constraint if exists service_orders_parent_order_id_fkey;
+alter table public.service_orders
+    add constraint service_orders_parent_order_id_fkey
+        foreign key (parent_order_id) references public.service_orders(id) on delete restrict;
 
 create index if not exists service_orders_parent_order_id
     on public.service_orders (parent_order_id)
