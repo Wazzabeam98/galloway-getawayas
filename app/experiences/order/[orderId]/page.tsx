@@ -147,7 +147,7 @@ export default async function OrderPage({ params, searchParams }: { params: { or
     // companion's order is read without any money column, and the price is
     // fetched in a second query that runs for the booker alone. Anyone else is
     // redirected.
-    const { order, role, price } = await loadExperienceOrder(admin, params.orderId, user.id);
+    const { order, role, price, amountRefunded } = await loadExperienceOrder(admin, params.orderId, user.id);
     if (!order || !role) redirect('/trips');
     const isBooker = role === 'booker';
     const isCompanion = role === 'companion';
@@ -866,7 +866,13 @@ export default async function OrderPage({ params, searchParams }: { params: { or
                                 aren't charged yet, so the label reflects that. */}
                             <div className="mt-3">
                                 <div className="text-sm font-semibold text-slate-900">{charged ? 'Amount paid' : 'Amount held'}</div>
-                                <div className="mt-1 text-base text-slate-900">£{Number(price).toFixed(2)}</div>
+                                {/* `price` is the original charge; a reduction is a
+                                    refund recorded in amountRefunded, so the net paid
+                                    is price − refunded, with the refund shown below. */}
+                                <div className="mt-1 text-base text-slate-900">£{(Number(price) - amountRefunded).toFixed(2)}</div>
+                                {amountRefunded > 0 && (
+                                    <div className="mt-0.5 text-[13px] text-slate-500">£{amountRefunded.toFixed(2)} refunded of the £{Number(price).toFixed(2)} you paid</div>
+                                )}
                             </div>
                         </section>
                         )}

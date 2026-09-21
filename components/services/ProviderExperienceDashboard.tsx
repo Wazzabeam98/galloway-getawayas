@@ -30,6 +30,7 @@ interface Order {
     adults: number | null;
     children: number | null;
     price: number;
+    amount_refunded?: number | null;
     item_name: string | null;
     // How it was priced and how many — so a chef reads "6 people", not just a
     // total. Snapshotted on the order, released like everything else.
@@ -207,7 +208,7 @@ export default function ProviderExperienceDashboard(props: { providerId: string 
                                 <div className="text-sm text-gray-600">
                                     {whenLabel(o.shape, o.service_date, o.service_time)}
                                     {partyText(o)}
-                                    {' · £' + o.price.toFixed(2)}
+                                    {' · £' + (Number(o.price) - (Number(o.amount_refunded) || 0)).toFixed(2)}
                                 </div>
                                 {countLine(o) ? <div className="text-sm font-medium text-gray-700">{countLine(o)}</div> : null}
                                 {o.guest_name ? <div className="text-sm text-gray-500">For {o.guest_name}</div> : null}
@@ -262,7 +263,7 @@ export default function ProviderExperienceDashboard(props: { providerId: string 
                                 <div className="text-sm text-gray-600">
                                     {whenLabel(o.shape, o.service_date, o.service_time)}
                                     {partyText(o)}
-                                    {' · £' + o.price.toFixed(2)}
+                                    {' · £' + (Number(o.price) - (Number(o.amount_refunded) || 0)).toFixed(2)}
                                 </div>
                                 {countLine(o) ? <div className="text-sm font-medium text-gray-700">{countLine(o)}</div> : null}
                                 {o.guest_name ? <div className="mt-0.5 text-sm text-gray-700">For {o.guest_name}</div> : null}
@@ -357,7 +358,7 @@ export default function ProviderExperienceDashboard(props: { providerId: string 
                     <ul className="mt-2 space-y-1 text-sm text-gray-500">
                         {other.map((o) => (
                             <li key={o.id}>
-                                {whenLabel(o.shape, o.service_date, o.service_time)} · £{o.price.toFixed(2)} · {STATUS_WORD[o.status] || o.status}
+                                {whenLabel(o.shape, o.service_date, o.service_time)} · £{(Number(o.price) - (Number(o.amount_refunded) || 0)).toFixed(2)} · {STATUS_WORD[o.status] || o.status}
                             </li>
                         ))}
                     </ul>

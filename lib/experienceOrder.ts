@@ -49,8 +49,11 @@ export interface LoadedExperienceOrder {
     order: Record<string, any> | null;
     role: ViewerRole | null;
     // The price, in the order's currency units, for the BOOKER only. Always null
-    // for a companion — the wall.
+    // for a companion — the wall. `price` is the IMMUTABLE original charge; a
+    // reduction is recorded in `amountRefunded`, so what the guest actually kept
+    // is price − amountRefunded.
     price: number | null;
+    amountRefunded: number;
 }
 
 // A minimal shape for the admin (service-role) client, enough to test against a
@@ -74,7 +77,7 @@ export async function loadExperienceOrder(
         .select(ORDER_SAFE_COLUMNS)
         .eq('id', orderId)
         .maybeSingle();
-    if (!raw) return { order: null, role: null, price: null };
+    if (!raw) return { order: null, role: null, price: null, amountRefunded: 0 };
 
     let role: ViewerRole | null = raw.guest_id === userId ? 'booker' : null;
     if (!role) {
@@ -90,21 +93,23 @@ export async function loadExperienceOrder(
             .maybeSingle();
         if (seat) role = 'companion';
     }
-    if (!role) return { order: null, role: null, price: null };
+    if (!role) return { order: null, role: null, price: null, amountRefunded: 0 };
 
     // Always hand back a money-stripped order (belt-and-braces layer 2).
     const order = stripMoney(raw as Record<string, unknown>);
 
-    // Step 2 — the price, in its own query, for the booker alone.
+    // Step 2 — the price (and any refund), in its own query, for the booker alone.
     let price: number | null = null;
+    let amountRefunded = 0;
     if (role === 'booker') {
         const { data: money } = await admin
             .from('service_orders')
-            .select('price')
+            .select('price, amount_refunded')
             .eq('id', orderId)
             .maybeSingle();
         price = money && money.price != null ? Number(money.price) : null;
+        amountRefunded = money && money.amount_refunded != null ? Number(money.amount_refunded) : 0;
     }
 
-    return { order, role, price };
+    return { order, role, price, amountRefunded };
 }

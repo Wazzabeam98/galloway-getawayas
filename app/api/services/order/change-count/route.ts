@@ -295,9 +295,14 @@ export async function POST(request: Request) {
                 'reduce-' + order.id + '-' + parentQty + '-' + newParentQty);
             const newAdults = Math.max(1, (Number(order.adults) || newParentQty) - Math.min(removeK, Math.max(0, (Number(order.children) || 0))));
             const newChildren = Math.max(0, newParentQty - newAdults);
+            // `price` is the IMMUTABLE original charge — the same field the cancel
+            // route and orderNet treat as "what was paid". A refund is recorded ONLY
+            // in amount_refunded, so orderNet = price − amount_refunded stays right
+            // (lowering price here as well would subtract the refund twice and
+            // under-pay the provider). Only the head count falls.
             const { data: done } = await admin.from('service_orders')
                 .update({
-                    quantity: newParentQty, price: orderTotal(unitPrice, newParentQty),
+                    quantity: newParentQty,
                     adults: newAdults, children: newChildren,
                     amount_refunded: (Number(order.amount_refunded) || 0) + refundAmt,
                 })
