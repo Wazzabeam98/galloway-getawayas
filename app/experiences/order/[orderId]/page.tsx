@@ -59,14 +59,10 @@ const PILL: Record<string, string> = {
 
 // One definition of a chevron row, shared by the server-rendered link rows here
 // and the two browser-action rows in OrderUtilityRows, so the quiet-row pattern
-// cannot grow a second variant. ROW_BASE is the layout without a text colour, so
-// the one row that needs a different colour (Cancel, which turns red when a
-// cancel forfeits money) can set its own single text-colour utility instead of
-// appending one that fights ROW's — in this build `text-slate-800` always wins
-// over an appended `text-rose-700`, whatever the class order, so the red never
-// showed until the colour became the row's only text-colour class.
-const ROW_BASE = 'flex w-full items-center justify-between gap-3 py-3 text-left text-sm font-medium';
-const ROW = `${ROW_BASE} text-slate-800 hover:text-slate-950`;
+// cannot grow a second variant. Every action row is neutral — including Cancel:
+// the destructive red lives only on the confirm button inside the cancel box,
+// and only when the cancel forfeits money.
+const ROW = 'flex w-full items-center justify-between gap-3 py-3 text-left text-sm font-medium text-slate-800 hover:text-slate-950';
 
 function longWhen(dateStr: string, timeStr: string | null): string {
     const d = new Date(dateStr + 'T00:00:00');
@@ -217,18 +213,6 @@ export default async function OrderPage({ params, searchParams }: { params: { or
     const free = charged
         ? guestMayCancelFree(order.shape, String(order.service_date), order.service_time || null, windowHours, new Date())
         : false;
-    // The cancel button's colour is the same refund decision the dialog shows,
-    // not a second rule: neutral while a full refund is on the table — or while
-    // nothing has been charged, so there is nothing to lose — and red once
-    // cancelling forfeits money (charged and past the free-cancel window, the
-    // exact case the dialog opens its red "you won't be refunded" panel for).
-    const cancelForfeits = charged && !free;
-    // The row's ONLY text-colour class (composed onto ROW_BASE, never appended to
-    // ROW), so nothing overrides it. Neutral while a full refund stands; red once
-    // cancelling forfeits money.
-    const cancelTone = cancelForfeits
-        ? 'text-rose-700 hover:text-rose-800'
-        : 'text-slate-600 hover:text-rose-700';
 
     const meta = STATUS[order.status] || { label: order.status, tone: 'over' as const };
     const live = order.status === 'authorised' || order.status === 'confirmed' || order.status === 'holding';
@@ -832,7 +816,7 @@ export default async function OrderPage({ params, searchParams }: { params: { or
                                         free={free}
                                         price={Number(price)}
                                         providerName={shortWho}
-                                        className={`${ROW_BASE} ${cancelTone}`}
+                                        className={ROW}
                                         panelClassName="pb-3"
                                     />
                                 )}
