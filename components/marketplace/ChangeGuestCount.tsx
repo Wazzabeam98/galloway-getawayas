@@ -2,7 +2,7 @@
 
 import { useState } from 'react';
 import { createPortal } from 'react-dom';
-import { Users, Minus, Plus, AlertTriangle, Loader2, ChevronRight, X } from 'lucide-react';
+import { Users, Minus, Plus, Loader2, ChevronRight, X } from 'lucide-react';
 import { childrenAllowed } from '@/lib/guestAges';
 
 // "Change guest count" — a reservation ACTION row that opens a MODAL over the
@@ -11,8 +11,8 @@ import { childrenAllowed } from '@/lib/guestAges';
 // party, and as the count changes shows a Confirm-and-pay-shaped summary: the new
 // count with the old struck through, a price-adjustment line and a total — the
 // delta for the added places, charged as a separate payment. Past the
-// session-anchored cancellation deadline it says the added place is
-// non-refundable, before the card, and requires an acknowledgement.
+// session-anchored cancellation deadline a single quiet "Non-refundable" line
+// sits by the price — no amber panel, no tickbox.
 //
 // Per-person slot bookings only; the page decides whether to render the row.
 // Payer-only and price-bearing — the page renders it for the booker alone, and
@@ -79,7 +79,6 @@ export default function ChangeGuestCount({ orderId, className }: { orderId: stri
     // The CURRENT party (seeded from the quote); the stepper only moves up.
     const [adults, setAdults] = useState(1);
     const [children, setChildren] = useState(0);
-    const [ack, setAck] = useState(false);
     const [busy, setBusy] = useState(false);
     const [error, setError] = useState<string | null>(null);
 
@@ -93,7 +92,7 @@ export default function ChangeGuestCount({ orderId, className }: { orderId: stri
             setQuote(q);
             setAdults(q.adults != null ? q.adults : Math.max(1, q.headcount));
             setChildren(q.children != null ? q.children : 0);
-            setAck(false); setError(null);
+            setError(null);
         } catch { setLoadErr('Could not load this.'); }
     }
 
@@ -109,8 +108,10 @@ export default function ChangeGuestCount({ orderId, className }: { orderId: stri
     const added = (adults - oldAdults) + (children - oldChildren);
     const addedChildren = children - oldChildren;
     const delta = quote ? quote.unitPrice * added : 0;
-    const needsAck = quote ? quote.insideWindow : false;
-    const canPay = !!quote && added >= 1 && !busy && (!needsAck || ack);
+    // Past the free-cancellation deadline an added place is non-refundable; we
+    // state it plainly by the price rather than gating on a tickbox.
+    const pastCutoff = quote ? quote.insideWindow : false;
+    const canPay = !!quote && added >= 1 && !busy;
 
     const adultsMax = oldAdults + Math.max(0, seatsLeft - (children - oldChildren));
     const childrenMax = oldChildren + Math.max(0, seatsLeft - (adults - oldAdults));
@@ -206,20 +207,8 @@ export default function ChangeGuestCount({ orderId, className }: { orderId: stri
                                         </div>
                                     </div>
 
-                                    {needsAck ? (
-                                        <div className="rounded-xl border border-amber-300 bg-amber-50 p-3">
-                                            <div className="flex items-start gap-2">
-                                                <AlertTriangle className="mt-0.5 h-4 w-4 flex-none text-amber-700" aria-hidden />
-                                                <div className="text-[13px] text-amber-900">
-                                                    <p className="font-semibold">This place can’t be refunded.</p>
-                                                    <p className="mt-0.5">The free-cancellation deadline ({cutoffLabel(quote.deadlineISO)}) has passed, so a place added now is non-refundable from the moment you pay — the same as the rest of this booking.</p>
-                                                    <label className="mt-2 flex items-start gap-2">
-                                                        <input type="checkbox" checked={ack} onChange={(e) => setAck(e.target.checked)} className="mt-0.5" />
-                                                        <span>I understand this added place isn’t refundable.</span>
-                                                    </label>
-                                                </div>
-                                            </div>
-                                        </div>
+                                    {pastCutoff ? (
+                                        <p className="text-[13px] font-medium text-slate-600">Non-refundable</p>
                                     ) : (
                                         <p className="text-[13px] text-slate-500">Free to cancel until {cutoffLabel(quote.deadlineISO)}; after that an added place isn’t refundable.</p>
                                     )}
