@@ -154,8 +154,6 @@ export default function InviteSheet({
         if (d && d.ok) refetch(); else toast.error('Could not do that.', { theme: 'colored' });
     };
 
-    const going = people.filter((p) => seatState(p) === 'accepted').length;
-    const toFill = people.length - going;
     const unsharedN = people.filter((p) => seatState(p) === 'unshared').length;
     const nextUnshared = people.find((p) => seatState(p) === 'unshared') || null;
 
@@ -249,8 +247,7 @@ export default function InviteSheet({
                         </div>
                     )}
                     {shareOpen && !nextUnshared && (<p className="mb-3 text-xs text-slate-500">You've shared a link for every open seat.</p>)}
-                    <div className="flex items-center justify-between">
-                        <span className="text-xs text-slate-400">{toFill ? (toFill === 1 ? '1 seat to fill' : toFill + ' seats to fill') : 'Everyone\'s in'}</span>
+                    <div className="flex items-center justify-end">
                         <button type="button" onClick={() => setShareOpen((v) => !v)} disabled={!nextUnshared && !shareOpen}
                             className="inline-flex items-center gap-2 rounded-xl bg-emerald-700 px-4 py-2.5 text-sm font-semibold text-white transition hover:bg-emerald-800 disabled:opacity-50">
                             <UserPlus className="h-4 w-4" /> {shareOpen ? 'Done' : 'Invite guests'}
