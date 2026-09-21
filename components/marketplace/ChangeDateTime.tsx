@@ -286,7 +286,7 @@ export default function ChangeDateTime({ orderId, shape, className }: { orderId:
                                     className="inline-flex w-full items-center justify-center gap-1.5 rounded-xl bg-emerald-700 px-4 py-3 text-sm font-semibold text-white transition hover:bg-emerald-800 disabled:opacity-50">
                                     {busy ? <Loader2 className="h-4 w-4 animate-spin" /> : null}
                                     {isRequest
-                                        ? (pickedDate ? 'Move to ' + dayLabel(pickedDate) : 'Pick a new date')
+                                        ? (pickedDate ? 'Request ' + dayLabel(pickedDate) : 'Pick a new date')
                                         : (pickedTime ? 'Move to ' + whenLabel(pickedTime.date, pickedTime.time) : 'Pick a new time')}
                                 </button>
                             </div>

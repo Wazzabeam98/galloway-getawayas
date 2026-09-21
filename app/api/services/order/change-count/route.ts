@@ -222,24 +222,30 @@ export async function POST(request: Request) {
             if (childErr || !child) return NextResponse.json({ ok: false, error: 'Could not start that. Try again.' }, { status: 500 });
 
             try {
+                // A REQUEST, not an instant charge. The card is only AUTHORISED at
+                // Checkout (capture_method: manual); the provider accepts to
+                // capture (respond → capture-<child.id>) or declines / lets it
+                // lapse in 48h to release it. The webhook turns the paid hold into
+                // 'authorised' under kind 'change_request'.
                 const lineName = added > 1 ? itemName + ' × ' + added + ' more' : itemName + ' · one more';
                 const checkout = await stripeRequest('POST', '/checkout/sessions', {
                     mode: 'payment', customer_email: order.guest_email || user.email || undefined, payment_method_types: ['card'],
                     line_items: [{ quantity: 1, price_data: { currency: 'gbp', unit_amount: pricing.amountPence,
                         product_data: { name: lineName + ' · ' + String(order.service_date).slice(0, 10),
-                            description: 'Added to your booking with ' + business + '. Galloway Getaways takes the payment on their behalf and is not the provider.' } } }],
+                            description: 'Extra places requested from ' + business + '. Your card is only held until they accept; Galloway Getaways takes the payment on their behalf and is not the provider.' } } }],
                     payment_intent_data: {
+                        capture_method: 'manual',
                         on_behalf_of: provider.stripe_account_id, application_fee_amount: pricing.applicationFeePence,
                         transfer_data: { destination: provider.stripe_account_id },
-                        description: 'Galloway experience — added · ' + business + ' · ' + itemName,
-                        metadata: { kind: 'slot_order', order_id: child.id, parent_order_id: order.id, provider_id: provider.id },
+                        description: 'Galloway experience — extra places (request) · ' + business + ' · ' + itemName,
+                        metadata: { kind: 'change_request', order_id: child.id, parent_order_id: order.id, provider_id: provider.id },
                     },
-                    success_url: SITE_URL + '/experiences/order/' + order.id + '?added=1',
-                    cancel_url: SITE_URL + '/experiences/order/' + order.id + '?added=cancelled',
+                    success_url: SITE_URL + '/experiences/order/' + order.id + '?requested=1',
+                    cancel_url: SITE_URL + '/experiences/order/' + order.id + '?requested=cancelled',
                     expires_at: Math.floor(Date.now() / 1000) + SLOT_HOLD_MINUTES * 60,
-                    metadata: { kind: 'slot_order', order_id: child.id, parent_order_id: order.id, provider_id: provider.id, guest_id: user.id },
+                    metadata: { kind: 'change_request', order_id: child.id, parent_order_id: order.id, provider_id: provider.id, guest_id: user.id },
                 });
-                return NextResponse.json({ ok: true, url: checkout.url });
+                return NextResponse.json({ ok: true, url: checkout.url, requested: true });
             } catch (err: any) {
                 await admin.from('service_orders').update({ status: 'expired' }).eq('id', child.id);
                 await logError('services-order-change-count-topup', { message: String(err && err.message) });

@@ -101,6 +101,25 @@ export async function GET(request: Request) {
         }
     }
 
+    // PENDING DATE-CHANGE REQUESTS PAST 48 HOURS — cleared, no money involved.
+    // A date change parks the requested date on the still-confirmed order; an
+    // unanswered one is dropped so the booking stays on its original date.
+    let dateRequestsCleared = 0;
+    const { data: staleDate } = await admin
+        .from('service_orders')
+        .select('id')
+        .not('pending_service_date', 'is', null)
+        .lt('pending_change_expires_at', nowIso);
+    for (const o of staleDate || []) {
+        const { data: cleared } = await admin
+            .from('service_orders')
+            .update({ pending_service_date: null, pending_change_expires_at: null })
+            .eq('id', o.id)
+            .lt('pending_change_expires_at', nowIso)   // a provider who answered in the same minute wins
+            .select('id');
+        if (cleared && cleared.length) dateRequestsCleared++;
+    }
+
     // SLOT HOLDS PAST THEIR WINDOW — reconcile against Stripe before releasing.
     //
     // A slot claims its seat when the guest starts Checkout and writes a
@@ -286,5 +305,5 @@ export async function GET(request: Request) {
         failures.push('request rebuild: ' + (err && err.message));
     }
 
-    return NextResponse.json({ ok: true, released, seatsReleased, reconciled, rebuilt, failures });
+    return NextResponse.json({ ok: true, released, seatsReleased, reconciled, rebuilt, dateRequestsCleared, failures });
 }

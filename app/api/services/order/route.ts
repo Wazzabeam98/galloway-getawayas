@@ -9,6 +9,8 @@ import {
     normaliseUnit, unitMultiplies, unitNoun, orderQuantity, orderTotal, MAX_ORDER_QUANTITY,
 } from '@/lib/serviceOrders';
 import { dateFromKey, dateKey } from '@/lib/pricing';
+import { hasExtraGuests, partyPrice, partyCeiling } from '@/lib/extraGuests';
+import { childrenAllowed } from '@/lib/guestAges';
 
 export const dynamic = 'force-dynamic';
 
@@ -89,7 +91,7 @@ export async function POST(request: Request) {
         // for sale — the same gate the menu applies, enforced here too.
         const { data: item } = await admin
             .from('service_provider_items')
-            .select('id, provider_id, name, description, price, active, unit')
+            .select('id, provider_id, name, description, price, active, unit, included_guests, extra_adult_fee, extra_child_fee, max_party')
             .eq('id', itemId)
             .maybeSingle();
 
@@ -115,13 +117,39 @@ export async function POST(request: Request) {
             );
         }
         const unitPrice = Number(item.price);
-        const total = orderTotal(unitPrice, quantity);
 
         const { data: provider } = await admin
             .from('service_providers')
-            .select('id, business_name, trade, status, stripe_account_id, stripe_payouts_enabled, plan, commission_rate, exclusive_per_date')
+            .select('id, business_name, trade, status, stripe_account_id, stripe_payouts_enabled, plan, commission_rate, exclusive_per_date, guest_details')
             .eq('id', item.provider_id)
             .maybeSingle();
+
+        // EXTRA-GUESTS PRICING + PARTY CAP. A flat item with extra-guests pricing
+        // charges the party (base for the included number, per-head fees beyond
+        // it); a plain item is unit price × quantity. Either way the party can
+        // never exceed the item's max, nor the STAY's own guest count — an
+        // experience can't seat more than are staying.
+        const minAge = provider && provider.guest_details && (provider.guest_details as any).min_age != null
+            ? Number((provider.guest_details as any).min_age) : null;
+        const reqAdults = Math.max(0, Math.floor(Number(body && body.adults) || 0));
+        const reqChildrenRaw = Math.max(0, Math.floor(Number(body && body.children) || 0));
+        let total: number;
+        if (hasExtraGuests(item)) {
+            const adults = Math.max(1, reqAdults || 1);
+            const children = childrenAllowed(minAge) ? reqChildrenRaw : 0;
+            const party = adults + children;
+            const cap = Math.min(partyCeiling(item), Number(booking.guests) || Infinity);
+            if (party > cap) {
+                return NextResponse.json({ ok: false, error: 'That’s more guests than this experience takes (up to ' + cap + ').' }, { status: 400 });
+            }
+            total = partyPrice(item as any, adults, children, minAge);
+        } else {
+            const cap = Number(booking.guests) || Infinity;
+            if (unitMultiplies(unit) && quantity > cap) {
+                return NextResponse.json({ ok: false, error: 'That’s more than the ' + cap + ' staying — book for your party size.' }, { status: 400 });
+            }
+            total = orderTotal(unitPrice, quantity);
+        }
 
         // A provider a guest may not buy from must never be reachable here, not
         // only hidden from the surface — the gate is enforced, not decorative.
@@ -192,7 +220,12 @@ export async function POST(request: Request) {
             guest_id: user.id,
             listing_id: booking.listing_id || '',
             service_date: dateKey(when),
-            guests: String(booking.guests ?? ''),
+            // For an extra-guests item the party IS the priced head count; record
+            // it (and its split) so the webhook writes the real party, not the
+            // whole-stay number.
+            guests: String(hasExtraGuests(item) ? (Math.max(1, reqAdults || 1) + (childrenAllowed(minAge) ? reqChildrenRaw : 0)) : (booking.guests ?? '')),
+            adults: hasExtraGuests(item) ? String(Math.max(1, reqAdults || 1)) : '',
+            children: hasExtraGuests(item) ? String(childrenAllowed(minAge) ? reqChildrenRaw : 0) : '',
             commission_rate: String(pricing.commissionRate),
             note: note,
             allergy: allergy,

@@ -255,6 +255,38 @@ export async function POST(request: Request) {
             const bookingId = (cs.metadata && cs.metadata.booking_id) || cs.client_reference_id;
             const kind = (cs.metadata && cs.metadata.kind) || 'full';
 
+            // A CHANGE REQUEST (extra places on a made_to_order / comes_to_you
+            // booking) was AUTHORISED at Checkout — a manual-capture hold. Turn the
+            // 'holding' child into an 'authorised' request the provider answers
+            // within 48 hours: respond captures (accept) or cancels (decline), and
+            // the service-orders cron releases an unanswered hold. No money has
+            // moved yet. Guarded on 'holding' so a redelivery/late sweep is a no-op.
+            if (kind === 'change_request') {
+                const orderId = cs.metadata && cs.metadata.order_id;
+                const pi = typeof cs.payment_intent === 'string' ? cs.payment_intent : (cs.payment_intent && cs.payment_intent.id) || null;
+                if (orderId && pi) {
+                    const { data: rows } = await admin.from('service_orders')
+                        .update({ status: 'authorised', stripe_payment_intent_id: pi, expires_at: new Date(Date.now() + 48 * 3600 * 1000).toISOString() })
+                        .eq('id', orderId).eq('status', 'holding')
+                        .select('id, parent_order_id, provider_id, quantity, item_name, service_date, price');
+                    const child = rows && rows[0];
+                    if (child) {
+                        const { data: prov } = await admin.from('service_providers').select('business_name, contact_email').eq('id', child.provider_id).maybeSingle();
+                        try {
+                            if (prov && prov.contact_email) {
+                                await sendEmail(prov.contact_email, 'A guest wants to add to a booking', emailLayout(
+                                    '<p>A guest has asked to add ' + (child.quantity || 1) + ' more to their ' + escapeHtml(child.item_name || 'booking')
+                                    + ' on ' + escapeHtml(String(child.service_date).slice(0, 10)) + '. Their card is held for £' + Number(child.price || 0).toFixed(2)
+                                    + ', not charged — accept within 48 hours to take it, or decline to release it.</p>'
+                                    + button(SITE_URL + '/services/dashboard', 'Answer the request'),
+                                    'You’re receiving this because you offer experiences on Galloway Getaways.'));
+                            }
+                        } catch (e) { console.error('[webhook] change_request notify', e); }
+                    }
+                }
+                return NextResponse.json({ ok: true });
+            }
+
             // A SLOT BOOKING WAS PAID.
             //
             // The seat was already claimed when the guest started Checkout, and a

@@ -87,6 +87,12 @@ export async function createRequestOrderFromSession(admin: any, cs: any): Promis
             exclusive_per_date: !!(prov && prov.exclusive_per_date),
             service_date: md.service_date,
             guests: Number.isFinite(guestsNum as number) ? guestsNum : null,
+            // Party split for an extra-guests item (blank on a plain item). The
+            // head count that priced it is `attendees`, so the family fold and the
+            // provider's "who's coming" read the real party.
+            attendees: md.adults ? (parseInt(md.adults, 10) + (parseInt(md.children, 10) || 0)) : null,
+            adults: md.adults ? parseInt(md.adults, 10) : null,
+            children: md.children ? (parseInt(md.children, 10) || 0) : null,
             price: Number(cs.amount_total || 0) / 100,
             commission_rate: Number(md.commission_rate) || 0.10,
             status: 'authorised',

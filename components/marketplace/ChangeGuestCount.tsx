@@ -189,7 +189,9 @@ export default function ChangeGuestCount({ orderId, shape, className }: { orderI
     // The confirm button's label + whether it's enabled, by what the change does.
     const confirmLabel = mode === 'group'
         ? 'Save group size'
-        : delta > 0 ? 'Continue to payment · ' + money(money0)
+        // A rise on a request shape is a REQUEST the provider accepts — the card is
+        // only held. A slot rise is instant. A fall always refunds instantly.
+        : delta > 0 ? (isRequest ? 'Request & hold ' + money(money0) : 'Continue to payment · ' + money(money0))
         : delta < 0 ? 'Reduce & refund ' + money(money0)
         : 'Change guest count';
     const canConfirm = !!quote && !busy && !slotFull && delta !== 0;

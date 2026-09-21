@@ -6,6 +6,7 @@ import { guestExperiencesOpen, exclusivePerDate } from '@/lib/serviceOrders';
 import { shapeOf } from '@/lib/serviceSlots';
 import { changeWindowState, dayKey, dayKeyFromNow, providerTakesChanges } from '@/lib/orderChange';
 import { logError } from '@/lib/logError';
+import { sendEmail, emailLayout, escapeHtml, button, SITE_URL } from '@/lib/email';
 
 export const dynamic = 'force-dynamic';
 
@@ -30,7 +31,7 @@ async function loadForDate(admin: any, orderId: string, userId: string): Promise
     if (!orderId) return { error: { status: 400, message: 'Missing order' } };
     const { data: order } = await admin
         .from('service_orders')
-        .select('id, guest_id, provider_id, booking_id, parent_order_id, status, shape, service_date, service_time')
+        .select('id, guest_id, provider_id, booking_id, parent_order_id, status, shape, service_date, service_time, item_name')
         .eq('id', orderId).maybeSingle();
     if (!order) return { error: { status: 404, message: 'No such booking' } };
     if (order.guest_id !== userId) return { error: { status: 403, message: 'Not your booking' } };
@@ -172,23 +173,33 @@ export async function POST(request: Request) {
             }
         }
 
-        // No money moves — just the date. Guarded on the row still being confirmed
-        // and on the current date, so a racing change can't be clobbered.
-        const { data: moved, error: moveErr } = await admin
+        // A REQUEST, not an instant move. A date change moves no money, so it can't
+        // ride a hold — instead the requested date is parked on the still-confirmed
+        // order and the provider accepts (service_date := pending) or declines it
+        // within 48 hours (the service-orders cron clears an unanswered one). Only
+        // one pending request at a time.
+        const expiresAt = new Date(Date.now() + 48 * 3600 * 1000).toISOString();
+        const { data: saved, error: saveErr } = await admin
             .from('service_orders')
-            .update({ service_date: newDate })
-            .eq('id', loaded.order.id).eq('status', 'confirmed').eq('service_date', loaded.order.service_date)
+            .update({ pending_service_date: newDate, pending_change_expires_at: expiresAt })
+            .eq('id', loaded.order.id).eq('status', 'confirmed')
             .select('id');
-        if (moveErr) {
-            // A 23505 from the exclusive partial unique index — someone took the date first.
-            if (String(moveErr.code) === '23505') {
-                return NextResponse.json({ ok: false, error: 'Someone’s already booked them for that date — try another.' }, { status: 409 });
-            }
-            return NextResponse.json({ ok: false, error: 'Could not change the date. Try again.' }, { status: 500 });
-        }
-        if (!moved || !moved.length) return NextResponse.json({ ok: false, error: 'That booking changed — reload and try again.' }, { status: 409 });
+        if (saveErr) return NextResponse.json({ ok: false, error: 'Could not request the change. Try again.' }, { status: 500 });
+        if (!saved || !saved.length) return NextResponse.json({ ok: false, error: 'That booking changed — reload and try again.' }, { status: 409 });
 
-        return NextResponse.json({ ok: true, date: newDate });
+        // Tell the provider there's a date change to answer.
+        try {
+            const { data: prov } = await admin.from('service_providers').select('business_name, contact_email').eq('id', loaded.provider.id).maybeSingle();
+            if (prov && prov.contact_email) {
+                await sendEmail(prov.contact_email, 'A guest wants to change a booking date', emailLayout(
+                    '<p>A guest has asked to move their ' + escapeHtml(loaded.order.item_name || 'booking') + ' to <strong>' + escapeHtml(newDate)
+                    + '</strong>. Nothing is charged either way — accept the new date within 48 hours, or decline to keep the original.</p>'
+                    + button(SITE_URL + '/services/dashboard', 'Answer the request'),
+                    'You’re receiving this because you offer experiences on Galloway Getaways.'));
+            }
+        } catch (e) { console.error('[change-date] notify', e); }
+
+        return NextResponse.json({ ok: true, requested: true, date: newDate });
     } catch (err: any) {
         await logError('services-order-change-date-POST', { message: String(err && err.message) });
         return NextResponse.json({ ok: false, error: 'Could not change the date.' }, { status: 500 });
