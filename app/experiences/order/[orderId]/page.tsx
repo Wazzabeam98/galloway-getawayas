@@ -166,7 +166,7 @@ export default async function OrderPage({ params, searchParams }: { params: { or
             // and selecting it returned a PostgREST error, nulling the whole row,
             // so the "Comes to your cottage" line silently lost both name and
             // address. Select the real columns and compose the address below.
-            ? admin.from('listings').select('id, title, street_address, postcode, location').eq('id', order.listing_id).maybeSingle()
+            ? admin.from('listings').select('id, title, street_address, postcode, location, latitude, longitude').eq('id', order.listing_id).maybeSingle()
             : Promise.resolve({ data: null, error: null }),
     ]);
     if (listingError) {
@@ -275,23 +275,31 @@ export default async function OrderPage({ params, searchParams }: { params: { or
     // copy-address / get-directions rows.
     const hasVenue = !comesToCottage && !!collectionAddress;
 
-    // The coordinates for the map. The provider has no latitude/longitude of
-    // their own — the only point we hold is the centre of a service AREA they
-    // work in (service_areas), which is what the public experience listing maps
-    // too. So this is a sense-of-place map, not a pin on the door, and it is
-    // labelled as such. Geocoding the collection address would be needed to do
-    // what Airbnb does, and that is not built.
+    // WHERE THE MAP POINTS — the real place the experience happens, or nothing.
+    //
+    // A FIXED VENUE (the guest travels to the provider): the point is that venue,
+    // held as the centre of the provider's service AREA (service_areas.centre_lat/
+    // lng — the same point the public listing maps). A COME-TO-YOU / delivery
+    // shape happens at the guest's COTTAGE, so its point is the stay's own
+    // coordinate — never the provider's address. If neither is a real
+    // coordinate, there is NO map: we never drop a town-centre pin pretending to
+    // be a place.
     const { data: areaRow } = hasVenue
         ? await admin.from('service_areas').select('label, centre_lat, centre_lng').eq('provider_id', order.provider_id).not('centre_lat', 'is', null).limit(1).maybeSingle()
         : { data: null };
-    const mapLat = areaRow && areaRow.centre_lat != null ? Number(areaRow.centre_lat) : null;
-    const mapLng = areaRow && areaRow.centre_lng != null ? Number(areaRow.centre_lng) : null;
+    const venueLat = areaRow && areaRow.centre_lat != null ? Number(areaRow.centre_lat) : null;
+    const venueLng = areaRow && areaRow.centre_lng != null ? Number(areaRow.centre_lng) : null;
+    const cottageLat = comesToCottage && listing && (listing as any).latitude != null ? Number((listing as any).latitude) : null;
+    const cottageLng = comesToCottage && listing && (listing as any).longitude != null ? Number((listing as any).longitude) : null;
+    const atCottage = !hasVenue && cottageLat != null && cottageLng != null;
+    const mapLat = hasVenue ? venueLat : (atCottage ? cottageLat : null);
+    const mapLng = hasVenue ? venueLng : (atCottage ? cottageLng : null);
     // NEXT_PUBLIC_MAPBOX_TOKEN is unrestricted and the Mapbox account has no
     // payment card, so the map must not reach production traffic. PropertyMap
     // already degrades to an empty frame with no token; this gate goes further
     // and drops the pane entirely, so a tokenless environment renders the plain
     // full-width column rather than a grey box pretending to be a map.
-    const showMap = hasVenue && mapLat != null && mapLng != null && !!process.env.NEXT_PUBLIC_MAPBOX_TOKEN;
+    const showMap = mapLat != null && mapLng != null && !!process.env.NEXT_PUBLIC_MAPBOX_TOKEN;
 
     const where = comesToCottage
         ? (cottageAddress || 'Your cottage')
@@ -447,7 +455,9 @@ export default async function OrderPage({ params, searchParams }: { params: { or
                             <PropertyMap
                                 latitude={mapLat as number}
                                 longitude={mapLng as number}
-                                area={areaRow?.label ? `${areaRow.label} — the area, not the exact door` : 'The area, not the exact door'}
+                                area={hasVenue
+                                    ? (areaRow?.label ? `${areaRow.label} — the area, not the exact door` : 'The area, not the exact door')
+                                    : 'Where they come to you'}
                                 variant="card"
                                 // The pin is the thing booked, the way the
                                 // reference marks a booked experience: a small

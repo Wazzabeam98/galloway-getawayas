@@ -145,6 +145,17 @@ async function makeProvider(spec) {
             });
         }
     }
+    // A FIXED-VENUE provider carries a real coordinate (its postcode's point), so
+    // the listing and order maps render the actual place — not a town centre. It
+    // rides on a service_areas row, which is where both maps read the point from.
+    // A come-to-you provider gets none: its experience happens at the guest's
+    // cottage, mapped on the order from the stay's own coordinate.
+    if (spec.mapLat != null && spec.mapLng != null) {
+        await db.insert('service_areas', {
+            provider_id: p.id, label: spec.town || 'Dumfries & Galloway',
+            centre_lat: spec.mapLat, centre_lng: spec.mapLng,
+        });
+    }
     return p;
 }
 
@@ -160,7 +171,7 @@ async function makeSession(providerId, date, t, { seats, capacity, priv = false,
 async function makeOrder(o) {
     const [row] = await db.insert('service_orders', {
         provider_id: o.provider.id, guest_id: o.guestId,
-        listing_id: null, booking_id: null,
+        listing_id: o.listingId ?? null, booking_id: o.bookingId ?? null,
         guest_name: o.guestName, guest_email: o.guestEmail, guest_phone: null,
         trade: o.provider.trade, shape: o.provider.shape,
         slot_session_id: o.sessionId ?? null,
@@ -204,7 +215,7 @@ async function main() {
     const sauna = await makeProvider({
         owner: saunaOwner, business_name: 'Loch Sauna', provider_name: 'Isla', trade: 'sauna', category: 'sauna', mcc: '7299', shape: 'slot',
         slotLength: 60, turnaround: 30, slotCapacity: 6, slotMin: 1, cancelHours: 24, horizonDays: 90,
-        fulfilment: 'collection', street: '2 Shore Road', town: 'Kirkcudbright', postcode: 'DG6 4JZ',
+        fulfilment: 'collection', street: '2 Shore Road', town: 'Kirkcudbright', postcode: 'DG6 4JZ', mapLat: 54.8402, mapLng: -4.0466,
         headshot: IMG('seed-assets/sauna-face.jpg'), photos: [1,2,3,4,5,6].map(n => IMG('seed-assets/sauna-' + n + '.jpg')),
         professional_title: 'Wood-fired sauna by the harbour', years: 4,
         qualifications: 'Trained sauna host; outdoor first aid.', recognition: 'Featured in the Galloway food & folk trail.',
@@ -227,7 +238,7 @@ async function main() {
     const yoga = await makeProvider({
         owner: yogaOwner, business_name: 'Harbour Yoga', provider_name: 'Mara', trade: 'yoga', category: 'yoga', mcc: '7911', shape: 'slot',
         slotLength: 60, turnaround: 15, slotCapacity: 10, slotMin: 1, cancelHours: 12, horizonDays: 60,
-        fulfilment: 'collection', street: 'The Old Sail Loft', town: 'Kirkcudbright', postcode: 'DG6 4JA',
+        fulfilment: 'collection', street: 'The Old Sail Loft', town: 'Kirkcudbright', postcode: 'DG6 4JA', mapLat: 54.8358, mapLng: -4.0512,
         headshot: IMG('seed-assets/class-face.png'), photos: [IMG('seed-assets/class-1.jpg'), IMG('seed-assets/class-2.jpg')],
         professional_title: 'Sunrise yoga above the harbour', years: 7,
         qualifications: '500-hour registered yoga teacher (Yoga Alliance).', recognition: null,
@@ -275,7 +286,7 @@ async function main() {
     const baker = await makeProvider({
         owner: bakerOwner, business_name: 'Galloway Bakehouse', provider_name: 'Nora', trade: 'baker', category: 'food_order', mcc: '5462', shape: 'made_to_order',
         leadTimeDays: 2, cancelHours: 48, horizonDays: 120, maxGuests: 1,
-        fulfilment: 'delivery', town: 'Castle Douglas',
+        fulfilment: 'collection', street: '12 King Street', town: 'Castle Douglas', postcode: 'DG7 1AA', mapLat: 54.9372, mapLng: -3.9210,
         headshot: IMG('seed-assets/baker-face.png'), photos: [IMG('seed-assets/baker-1.jpg')],
         professional_title: 'Cakes & bakes to order', years: 6,
         qualifications: 'Level 3 Patisserie; registered home bakery.', recognition: null,
@@ -299,6 +310,10 @@ async function main() {
     /* --------------------------------------------- orders on Liam, each state */
     const gEmail = liam.email;
     const orderBase = { guestId: liam.id, guestName, guestEmail: gEmail };
+    // A come-to-you order happens at the guest's cottage; find a real stay with a
+    // coordinate so the order map has somewhere to point.
+    const stayRow = (await db.select('bookings', '?select=id,listing_id,listings!inner(latitude)&guest_id=eq.' + liam.id + '&listings.latitude=not.is.null&order=check_out.desc&limit=1'))[0];
+    const cottage = stayRow ? { bookingId: stayRow.id, listingId: stayRow.listing_id } : {};
 
     // SAUNA: confirmed-upcoming (shared, per-person), confirmed-past (private), holding (shared).
     const sauShared = saunaItemRows.find(i => i.unit === 'person');
@@ -317,13 +332,13 @@ async function main() {
 
     // CHEF: authorised (awaiting the chef), and a confirmed upcoming.
     const cItem = chefItemRows.find(i => i.unit === 'person');
-    await makeOrder({ ...orderBase, provider: chef, date: dayOffset(12), quantity: 4, attendees: 4, unit: 'person', unitPrice: 55, price: 220, itemId: cItem.id, itemName: cItem.name, status: 'authorised', fulfilment: 'delivery' });
-    await makeOrder({ ...orderBase, provider: chef, date: dayOffset(20), quantity: 2, attendees: 2, unit: 'person', unitPrice: 55, price: 110, itemId: cItem.id, itemName: cItem.name, status: 'confirmed', fulfilment: 'delivery' });
+    await makeOrder({ ...orderBase, ...cottage, provider: chef, date: dayOffset(12), quantity: 4, attendees: 4, unit: 'person', unitPrice: 55, price: 220, itemId: cItem.id, itemName: cItem.name, status: 'authorised', fulfilment: 'delivery' });
+    await makeOrder({ ...orderBase, ...cottage, provider: chef, date: dayOffset(20), quantity: 2, attendees: 2, unit: 'person', unitPrice: 55, price: 110, itemId: cItem.id, itemName: cItem.name, status: 'confirmed', fulfilment: 'delivery' });
 
     // BAKER: a confirmed order and a refunded one.
     const bItem = bakerItemRows[0];
-    await makeOrder({ ...orderBase, provider: baker, date: dayOffset(5), quantity: 1, unit: 'flat', unitPrice: 42, price: 42, itemId: bItem.id, itemName: bItem.name, status: 'confirmed', fulfilment: 'delivery' });
-    await makeOrder({ ...orderBase, provider: baker, date: dayOffset(-3), quantity: 1, unit: 'flat', unitPrice: 42, price: 42, itemId: bItem.id, itemName: bItem.name, status: 'refunded', fulfilment: 'delivery' });
+    await makeOrder({ ...orderBase, provider: baker, date: dayOffset(5), quantity: 1, unit: 'flat', unitPrice: 42, price: 42, itemId: bItem.id, itemName: bItem.name, status: 'confirmed', fulfilment: 'collection' });
+    await makeOrder({ ...orderBase, provider: baker, date: dayOffset(-3), quantity: 1, unit: 'flat', unitPrice: 42, price: 42, itemId: bItem.id, itemName: bItem.name, status: 'refunded', fulfilment: 'collection' });
 
     /* ----------------------------------------------------------------- report */
     console.log('\n' + '='.repeat(72));
