@@ -218,7 +218,10 @@ async function main() {
         fulfilment: 'collection', street: '2 Shore Road', town: 'Kirkcudbright', postcode: 'DG6 4JZ', mapLat: 54.8402, mapLng: -4.0466,
         headshot: IMG('seed-assets/sauna-face.jpg'), photos: [1,2,3,4,5,6].map(n => IMG('seed-assets/sauna-' + n + '.jpg')),
         professional_title: 'Wood-fired sauna by the harbour', years: 4,
-        qualifications: 'Trained sauna host; outdoor first aid.', recognition: 'Featured in the Galloway food & folk trail.',
+        // Sauna skips the expertise screen (guestAsksExpertise('sauna') === false)
+        // and qualifications are never prompted for it, so leave them unset — the
+        // seed should look like a real sauna owner's, which carries neither.
+        qualifications: null, recognition: null,
         what_to_expect: 'Three rounds of heat with cold-water dips between, ninety minutes by the water.',
         itinerary: [
             { title: 'Arrival', detail: 'Meet at the harbour wall; the barrel is warm and ready.' },

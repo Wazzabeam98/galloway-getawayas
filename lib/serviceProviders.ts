@@ -357,26 +357,21 @@ export function itemTravels(
 
 // HOW HARD WE ASK ABOUT THE PERSON BEHIND THE EXPERIENCE.
 //
-// Not every category should be asked its years and qualifications, and forcing
-// them everywhere turns away the wrong people. The line, decided category by
-// category (Sep 2026):
+// Qualifications are always OPTIONAL — they never gate the flow. We only PROMPT
+// for them where a formal qualification genuinely matters: the categories where
+// the host holds someone's physical safety — a guide, on the water, a massage, a
+// yoga / movement class. Everywhere else the qualifications row is not shown at
+// all: a potter's work speaks for itself, a private chef's food-hygiene
+// registration is a separate check, and even asking for a certificate would turn
+// away exactly the people we want. An unfilled qualification is never displayed
+// (see HostCredentials), so there is never an empty row.
 //
-//   - A MADE-TO-ORDER product (a cake, a hamper) skips both screens entirely.
-//     You are buying the thing, not the maker; the photos and the price sell it,
-//     and food registration (a separate check) does the safety work.
-//   - The four where someone's PHYSICAL SAFETY is in their hands — a guide, on
-//     the water, a massage, a yoga class — require both years and
-//     qualifications. This is the whole reason to ask.
-//   - A private chef requires YEARS (a real track record) but not a formal
-//     qualification: a brilliant self-taught cook doing supper clubs may have no
-//     certificate, and food hygiene registration is already a check. Requiring a
-//     qualification would turn away exactly the people we want.
-//   - Everything else asks both, but they are optional — a potter's work speaks
-//     for itself, a whisky host's licence is the real gate.
+// Years is a separate, sterner ask (below) — a real track record still gates the
+// safety four and the food experiences where the person is the draw.
 //
-// Keyed off the category (and its inferred shape for the made-to-order skip), so
-// the wizard, its Next gate and any later review all read the same rule.
-const GUEST_QUALS_REQUIRED = ['outdoors', 'water', 'massage', 'yoga'];
+// Keyed off the category, so the wizard, its Next gate and any later review all
+// read the same rule.
+const GUEST_QUALS_PROMPTED = ['outdoors', 'water', 'massage', 'yoga'];
 // Years required, qualifications optional, for the food experiences where the
 // person is the draw: the private chef in your kitchen, the tasting host whose
 // knowledge is the product, and the cooking class where you're paying to be
@@ -403,10 +398,11 @@ export function guestAsksExpertise(category: string | null | undefined): boolean
     return GUEST_EXPERTISE_SKIP.indexOf(c.key) === -1;
 }
 
-// Whether qualifications must be filled in before Next. The four safety
-// categories only.
-export function guestQualificationsRequired(category: string | null | undefined): boolean {
-    return GUEST_QUALS_REQUIRED.indexOf(String(category || '')) !== -1;
+// Whether the qualifications row is PROMPTED in the sign-up. Only the categories
+// where a formal qualification matters (physical safety); it is optional even
+// there, so it never gates Next — it is simply not asked at all elsewhere.
+export function guestAsksQualifications(category: string | null | undefined): boolean {
+    return GUEST_QUALS_PROMPTED.indexOf(String(category || '')) !== -1;
 }
 
 // Whether this category needs the booking-shape question asked in the flow. Every

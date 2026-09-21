@@ -74,7 +74,7 @@ import {
     guestCategoryByKey,
     guestCategoryIsFood,
     guestAsksExpertise,
-    guestQualificationsRequired,
+    guestAsksQualifications,
     slotAsksWhereFork,
     slotIsMeetingPoint,
     slotDurationPerItem,
@@ -2036,29 +2036,30 @@ function ApplicationForm() {
     // greyed Next is never a silent dead end and a skippable screen never
     // looks like one she has to fill. Pickers (trade, g_subtype) and the
     // finish step carry their own affordances and are left out here.
-    // Whether this guest's category requires years and/or qualifications before
-    // Qualifications gate: required only for the four safety categories.
-    const catQualsRequired = isGuest && guestQualificationsRequired(guestCategory);
+    // Whether the qualifications row is prompted at all for this category — the
+    // physical-safety categories only. It is always optional (never gates Next);
+    // on every other category the row is not shown.
+    const catAsksQuals = isGuest && guestAsksQualifications(guestCategory);
 
     // g_menu and g_expect are always skippable. g_you is NEVER skippable: the
     // years screen shows a starting number (5), so a host could otherwise walk
     // past it thinking that number is their answer when nothing was stored — it
-    // must be touched. g_creds is skippable unless this category requires
-    // qualifications. (The old g_checks is gone — its one confirmation moved to
-    // the finish screen and is required there, not skippable.)
+    // must be touched. g_creds gates on the professional title only —
+    // qualifications are optional everywhere now. (The old g_checks is gone — its
+    // one confirmation moved to the finish screen and is required there.)
     // g_menu is required now: a listing needs at least one priced item to be
     // bookable, so its Next gates on the 'menu' problem (GUEST_STEP_FIELDS).
     // g_expect stays optional.
     const OPTIONAL_GUEST_STEPS: StepKey[] = ['g_expect'];
     const stepIsPicker = step === 'trade' || step === 'g_subtype';
     // g_creds is no longer skippable for anyone: the professional title is now
-    // required for every category (qualifications on top for the safety four).
+    // required for every category. Qualifications are optional everywhere.
     const stepIsOptional = isGuest && !stepIsPicker && (
         OPTIONAL_GUEST_STEPS.indexOf(step) !== -1
     );
 
     // Three guest steps can be required without a submitProblems field of their
-    // own — years and qualifications (only for the categories that need them)
+    // own — years (only for the categories that need it), the professional title,
     // and at least one photo (always). They gate Next on the spot, the same way
     // the pickers do, with a plain line saying what to add.
     // The counts on the where-and-when step only display a suggestion until the
@@ -2078,8 +2079,6 @@ function ApplicationForm() {
     const guestExtraMissing: string | null = isGuest
         ? (step === 'g_creds' && !professionalTitle.trim()
             ? GUEST_SCREEN_COPY.titleGate
-            : step === 'g_creds' && catQualsRequired && !qualifications.trim()
-            ? GUEST_SCREEN_COPY.qualsGate
             // The listing must be named before Next — it is the h1 a guest reads.
             : step === 'g_title' && !listingTitle.trim()
             ? GUEST_SCREEN_COPY.experienceTitleGate
@@ -4606,14 +4605,20 @@ function ApplicationForm() {
                                 summary={titleSummary}
                                 onOpen={() => setExpertiseModal('title')}
                             />
-                            <HubRow
-                                filled={qualsFilled}
-                                label={GUEST_SCREEN_COPY.qualsRowLabel}
-                                suffix={catQualsRequired ? undefined : GUEST_SCREEN_COPY.optionalSuffix}
-                                prompt={GUEST_SCREEN_COPY.qualsRowPrompt}
-                                summary={qualifications.trim()}
-                                onOpen={() => setExpertiseModal('quals')}
-                            />
+                            {/* Qualifications are only PROMPTED where a formal
+                                qualification genuinely matters — the physical-safety
+                                categories. Optional even there; not shown at all
+                                elsewhere. */}
+                            {catAsksQuals && (
+                                <HubRow
+                                    filled={qualsFilled}
+                                    label={GUEST_SCREEN_COPY.qualsRowLabel}
+                                    suffix={GUEST_SCREEN_COPY.optionalSuffix}
+                                    prompt={GUEST_SCREEN_COPY.qualsRowPrompt}
+                                    summary={qualifications.trim()}
+                                    onOpen={() => setExpertiseModal('quals')}
+                                />
+                            )}
                             <HubRow
                                 filled={recognitionFilled}
                                 label={GUEST_SCREEN_COPY.recognitionRowLabel}
@@ -4655,7 +4660,7 @@ function ApplicationForm() {
                             onClose={() => setExpertiseModal(null)}
                             saveLabel={GUEST_SCREEN_COPY.save}
                             saveDisabled={!qualifications.trim()}
-                            note={catQualsRequired ? GUEST_SCREEN_COPY.qualsRequiredNote : GUEST_SCREEN_COPY.qualsOptionalNote}
+                            note={GUEST_SCREEN_COPY.qualsOptionalNote}
                         >
                             <div className={fieldWrap}>
                                 <textarea
@@ -7663,7 +7668,7 @@ function ApplicationForm() {
                             : step === 'g_subtype' ? !guestCategory
                             // g_you has no gate: Next is enabled from load. The
                             // shown number is the accepted answer, stored on Next.
-                            : step === 'g_creds' ? (!professionalTitle.trim() || (catQualsRequired && !qualifications.trim()))
+                            : step === 'g_creds' ? !professionalTitle.trim()
                             // The listing needs a name — it is the h1 and the card.
                             : step === 'g_title' ? !listingTitle.trim()
                             : step === 'g_photos' ? photos.length === 0
