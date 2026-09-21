@@ -354,6 +354,21 @@ async function main() {
     const oTomorrow = await makeOrder({ ...orderBase, provider: yoga, sessionId: upYoga.id, date: dayOffset(1), time: time(8), quantity: 2, adults: 2, children: 0, unit: 'person', unitPrice: 14, price: 28, itemId: yItem.id, itemName: yItem.name, status: 'confirmed', fulfilment: 'collection' });
     const oThisWeek = await makeOrder({ ...orderBase, ...cottage, provider: chef, date: dayOffset(3), quantity: 4, attendees: 4, unit: 'person', unitPrice: 55, price: 220, itemId: cItem.id, itemName: cItem.name, status: 'confirmed', fulfilment: 'delivery' });
     const oNextWeek = await makeOrder({ ...orderBase, provider: baker, date: dayOffset(8), quantity: 1, unit: 'flat', unitPrice: 42, price: 42, itemId: bItem.id, itemName: bItem.name, status: 'confirmed', fulfilment: 'collection' });
+
+    /* --------------- orders on Isla (seed-sauna), so the cancel-button COLOURS
+       and the amend-guests "Add children" link can be walked while signed in as
+       that account. Both are per-person yoga slots (so the amend sheet is
+       offered and children are allowed at minAge 12). One sits comfortably
+       before its cancel window — a full refund, so the button is NEUTRAL — and
+       one is past the window — a forfeit, so the button is RED. The past one is
+       a this-morning session so its deadline is always behind us, whatever time
+       the seed runs. */
+    const islaBase = { guestId: saunaOwner.id, guestName: 'Isla', guestEmail: saunaOwner.email };
+    const islaFreeSession = await makeSession(yoga.id, dayOffset(20), time(8), { seats: 1, capacity: 10, declared: true, title: 'Sunrise class' });
+    const oIslaFree = await makeOrder({ ...islaBase, provider: yoga, sessionId: islaFreeSession.id, date: dayOffset(20), time: time(8), quantity: 1, adults: 1, children: 0, unit: 'person', unitPrice: 14, price: 14, itemId: yItem.id, itemName: yItem.name, status: 'confirmed', fulfilment: 'collection' });
+    const islaPastSession = await makeSession(yoga.id, dayOffset(0), time(7), { seats: 1, capacity: 10, declared: true, title: 'Sunrise class' });
+    const oIslaPast = await makeOrder({ ...islaBase, provider: yoga, sessionId: islaPastSession.id, date: dayOffset(0), time: time(7), quantity: 1, adults: 1, children: 0, unit: 'person', unitPrice: 14, price: 14, itemId: yItem.id, itemName: yItem.name, status: 'confirmed', fulfilment: 'collection' });
+
     const walkable = [
         ['Today',           'Loch Sauna (sauna)',      oToday],
         ['Tomorrow',        'Harbour Yoga (class)',    oTomorrow],
@@ -379,6 +394,9 @@ async function main() {
     for (const [when, biz, o] of walkable) {
         console.log('    ' + when.padEnd(16) + biz.padEnd(28) + '/experiences/order/' + o.id);
     }
+    console.log('\n  Orders on seed-sauna@' + SEED_DOMAIN + ' (to walk the cancel-button colours + Add children):');
+    console.log('    NEUTRAL (full refund)  yoga, 20 days out   /experiences/order/' + oIslaFree.id);
+    console.log('    RED (past window)      yoga, this morning   /experiences/order/' + oIslaPast.id);
     console.log('\n  done.');
     process.exit(0);
 }
