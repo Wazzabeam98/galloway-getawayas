@@ -481,10 +481,12 @@ export default async function StayReservationPage({ params }: { params: { bookin
                                     </div>
                                 ) : (
                                     <div className="mt-4">
-                                        <div className="flex items-baseline justify-between gap-3">
-                                            <span className="text-sm text-slate-500">Total</span>
-                                            <span className="text-xl font-semibold text-slate-900">£{payTotal.toFixed(2)}</span>
-                                        </div>
+                                        {/* Airbnb's structure: a bold label with the
+                                            amount on its own line beneath, left-aligned.
+                                            The full price and what's left sit in the
+                                            breakdown / the balance box below. */}
+                                        <div className="text-sm font-semibold text-slate-900">Amount paid</div>
+                                        <div className="mt-1 text-base text-slate-900">£{payPaid.toFixed(2)}</div>
                                         {/* The breakdown opens in place — a <details>
                                             so it needs no client JavaScript, the same
                                             trick the experience page uses for the bio. */}

@@ -855,14 +855,13 @@ export default async function OrderPage({ params, searchParams }: { params: { or
                         {isBooker && (
                         <section className="mt-8 border-t border-slate-200 pt-6">
                             <h2 className="text-lg font-semibold text-slate-900">Payment</h2>
-                            <div className="mt-3 flex items-baseline justify-between gap-3">
-                                <span className="text-sm text-slate-500">{charged ? 'Paid' : 'Held, not charged'}</span>
-                                <span className="text-xl font-semibold text-slate-900">£{Number(price).toFixed(2)}</span>
+                            {/* Airbnb's structure: a bold label with the amount on its
+                                own line beneath, left-aligned. Held (authorised) orders
+                                aren't charged yet, so the label reflects that. */}
+                            <div className="mt-3">
+                                <div className="text-sm font-semibold text-slate-900">{charged ? 'Amount paid' : 'Amount held'}</div>
+                                <div className="mt-1 text-base text-slate-900">£{Number(price).toFixed(2)}</div>
                             </div>
-                            <p className="mt-1.5 text-sm text-slate-500">
-                                {charged ? `Paid to ${who}. ` : `Held for ${who}, and only taken once they confirm. `}
-                                Your receipt is emailed to you.
-                            </p>
                         </section>
                         )}
 
