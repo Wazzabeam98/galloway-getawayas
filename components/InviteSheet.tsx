@@ -8,7 +8,8 @@ import { getImageUrl, displayName } from '@/lib/utils';
 
 // The invite sheet, shared by the holiday-let side (TripGroup) and the experience
 // side (ExperienceGroup) so the flow is identical everywhere: the whole party the
-// moment it opens, an unclaimed seat as a grey "Guest" with Remove, and one
+// moment it opens, an unclaimed place as a grey "Open seat" (no Remove — there is
+// no one there to take off; only someone who has joined can be removed), and one
 // "Invite guests" entry at the foot that shares a single-use link through Copy,
 // Email, Messages, WhatsApp or Messenger.
 //
@@ -109,7 +110,8 @@ export default function InviteSheet({
             const prof = p.user_id ? profiles[p.user_id] : undefined;
             return (prof && displayName(prof, '')) || p.name || p.email || 'Guest';
         }
-        return 'Guest';
+        // No one has joined this seat yet — it's an open place, not a person.
+        return 'Open seat';
     };
     const linkFor = (p: Seat) => (typeof window !== 'undefined' ? window.location.origin : '') + '/trip-invite/' + (p.invite_token || '');
     const shareText = (p: Seat) => {
@@ -154,7 +156,6 @@ export default function InviteSheet({
         if (d && d.ok) refetch(); else toast.error('Could not do that.', { theme: 'colored' });
     };
 
-    const unsharedN = people.filter((p) => seatState(p) === 'unshared').length;
     const nextUnshared = people.find((p) => seatState(p) === 'unshared') || null;
 
     const Avatar = ({ p }: { p: Seat }) => {
@@ -222,7 +223,11 @@ export default function InviteSheet({
                                     <Avatar p={p} />
                                     <div className="min-w-0 flex-1"><div className="truncate text-sm font-medium text-slate-900">{nameOf(p)}</div></div>
                                     {shared && (<button type="button" onClick={() => setShareId(sharing ? null : p.id)} className="flex-none text-xs font-medium text-slate-400 hover:text-slate-700">{sharing ? 'Close' : 'Re-share'}</button>)}
-                                    <button type="button" onClick={() => remove(p)} className="flex-none text-xs font-medium text-slate-400 hover:text-red-600">Remove</button>
+                                    {/* Only someone who has actually joined can be
+                                        removed — an open seat has no one to take off. */}
+                                    {seatState(p) === 'accepted' && (
+                                        <button type="button" onClick={() => remove(p)} className="flex-none text-xs font-medium text-slate-400 hover:text-red-600">Remove</button>
+                                    )}
                                 </div>
                                 {shared && sharing && (
                                     <div className="mt-3 border-t border-slate-100 pt-3">
@@ -242,7 +247,6 @@ export default function InviteSheet({
                 <div className="border-t border-slate-100 p-4">
                     {shareOpen && nextUnshared && (
                         <div className="mb-3">
-                            <div className="mb-2 text-xs font-medium text-slate-500">Sharing a link for an open seat{unsharedN > 1 ? ' · ' + unsharedN + ' open' : ''}</div>
                             <ShareTiles p={nextUnshared} />
                         </div>
                     )}
@@ -250,7 +254,9 @@ export default function InviteSheet({
                     <div className="flex items-center justify-end">
                         <button type="button" onClick={() => setShareOpen((v) => !v)} disabled={!nextUnshared && !shareOpen}
                             className="inline-flex items-center gap-2 rounded-xl bg-emerald-700 px-4 py-2.5 text-sm font-semibold text-white transition hover:bg-emerald-800 disabled:opacity-50">
-                            <UserPlus className="h-4 w-4" /> {shareOpen ? 'Done' : 'Invite guests'}
+                            {/* No icon on Done — it closes the share panel, it doesn't
+                                add anyone. */}
+                            {!shareOpen && <UserPlus className="h-4 w-4" />}{shareOpen ? 'Done' : 'Invite guests'}
                         </button>
                     </div>
                 </div>
