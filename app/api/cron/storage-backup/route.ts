@@ -131,12 +131,20 @@ export async function GET(request: Request) {
             manifest.push(...(await listBucket(admin, bucket)));
         }
 
+        // Copy in bounded parallel. Each file is a download from Supabase then
+        // an upload to R2 — two network round-trips — so done one at a time the
+        // run walks past the function's time limit before it finishes. A small
+        // concurrency window turns dozens of serial round-trips into a handful
+        // of waves and keeps it comfortably inside maxDuration, without opening
+        // so many sockets at once that Supabase or R2 starts refusing them.
+        const CONCURRENCY = 8;
         let copied = 0;
         let bytes = 0;
-        for (const entry of manifest) {
-            await copyObject(admin, store, day, entry);
-            copied += 1;
-            bytes += entry.size;
+        for (let i = 0; i < manifest.length; i += CONCURRENCY) {
+            const chunk = manifest.slice(i, i + CONCURRENCY);
+            await Promise.all(chunk.map((entry) => copyObject(admin, store, day, entry)));
+            copied += chunk.length;
+            bytes += chunk.reduce((sum, e) => sum + e.size, 0);
         }
 
         // The manifest is written LAST, so its presence is itself the signal
