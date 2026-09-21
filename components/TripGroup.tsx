@@ -97,7 +97,7 @@ export default function TripGroup({
     const overflow = goingPeople.length - stackShown.length;
 
     return (
-        <div className="mt-3 flex items-center justify-between gap-4">
+        <div className="mt-3 flex items-center gap-3">
             <div className="flex items-center">
                 <div className="flex h-9 w-9 flex-none items-center justify-center rounded-full bg-slate-900 text-[11px] font-semibold text-white ring-2 ring-white">You</div>
                 <div className="flex -space-x-2 pl-1">

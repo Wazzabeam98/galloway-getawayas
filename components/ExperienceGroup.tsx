@@ -110,10 +110,9 @@ export default function ExperienceGroup({
 
     return (
         <div>
-            {/* Avatar(s) and the invite button share one row to keep the section
-                short: faces to the left, the button pushed to the far right
-                (towards the map) rather than tucked against the picture. */}
-            <div className="flex items-center justify-between gap-4">
+            {/* Avatar(s) and the invite button share one row, the button sitting
+                directly beside the faces rather than pushed out to the far right. */}
+            <div className="flex items-center gap-3">
                 {faces}
 
                 {placesToFill > 0 && (
