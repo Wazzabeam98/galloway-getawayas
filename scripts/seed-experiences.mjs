@@ -305,6 +305,9 @@ async function main() {
         items: [
             { name: 'Celebration cake (8–10)', description: 'A two-layer cake, your flavour and message.', price: 42, unit: 'flat', sort: 0, image: IMG('seed-assets/baker-1.jpg') },
             { name: 'Box of Galloway bakes', description: 'A dozen assorted traybakes and scones.', price: 24, unit: 'flat', sort: 1 },
+            // A per-item line, so a made-to-order order can carry a real quantity
+            // (three boxes) — the "guests means quantity" case for change-count.
+            { name: 'Traybake box', description: 'Six traybakes, boxed. Order as many as you like.', price: 8, unit: 'item', sort: 2 },
         ],
     });
     const bakerItemRows = await db.select('service_provider_items', '?select=id,unit,name&provider_id=eq.' + baker.id + '&order=sort_order');
@@ -352,6 +355,22 @@ async function main() {
     const oTomorrow = await makeOrder({ ...orderBase, provider: yoga, sessionId: upYoga.id, date: dayOffset(1), time: time(8), quantity: 2, adults: 2, children: 0, unit: 'person', unitPrice: 14, price: 28, itemId: yItem.id, itemName: yItem.name, status: 'confirmed', fulfilment: 'collection' });
     const oThisWeek = await makeOrder({ ...orderBase, ...cottage, provider: chef, date: dayOffset(3), quantity: 4, attendees: 4, unit: 'person', unitPrice: 55, price: 220, itemId: cItem.id, itemName: cItem.name, status: 'confirmed', fulfilment: 'delivery' });
     const oNextWeek = await makeOrder({ ...orderBase, provider: baker, date: dayOffset(8), quantity: 1, unit: 'flat', unitPrice: 42, price: 42, itemId: bItem.id, itemName: bItem.name, status: 'confirmed', fulfilment: 'collection' });
+
+    /* --------------- orders on seed-sauna (Isla): ONE in each category, confirmed
+       and comfortably inside the cancellation window, so BOTH change-count and
+       change-date can be walked as that account. The slot has two more open
+       classes to move to; the two request orders are standalone (no stay) with a
+       real quantity, so change-count is a genuine money change (proven in the
+       scenarios — the seed's placeholder PIs only carry the display). */
+    const islaBase = { guestId: saunaOwner.id, guestName: 'Isla', guestEmail: saunaOwner.email };
+    const bBox = bakerItemRows.find((i) => i.unit === 'item') || bItem;
+    const islaYogaS = await makeSession(yoga.id, dayOffset(15), time(8), { seats: 1, capacity: 10, declared: true, title: 'Sunrise class' });
+    await makeSession(yoga.id, dayOffset(16), time(8), { seats: 0, capacity: 10, declared: true, title: 'Sunrise class' });
+    await makeSession(yoga.id, dayOffset(17), time(9), { seats: 0, capacity: 10, declared: true, title: 'Sunrise class' });
+    const oIslaSlot = await makeOrder({ ...islaBase, provider: yoga, sessionId: islaYogaS.id, date: dayOffset(15), time: time(8), quantity: 1, adults: 1, children: 0, unit: 'person', unitPrice: 14, price: 14, itemId: yItem.id, itemName: yItem.name, status: 'confirmed', fulfilment: 'collection' });
+    const oIslaMto = await makeOrder({ ...islaBase, provider: baker, date: dayOffset(12), quantity: 3, unit: 'item', unitPrice: 8, price: 24, itemId: bBox.id, itemName: bBox.name, status: 'confirmed', fulfilment: 'collection' });
+    const oIslaCty = await makeOrder({ ...islaBase, provider: chef, date: dayOffset(12), quantity: 2, attendees: 2, unit: 'person', unitPrice: 55, price: 110, itemId: cItem.id, itemName: cItem.name, status: 'confirmed', fulfilment: 'delivery' });
+
     const walkable = [
         ['Today',           'Loch Sauna (sauna)',      oToday],
         ['Tomorrow',        'Harbour Yoga (class)',    oTomorrow],
@@ -377,6 +396,10 @@ async function main() {
     for (const [when, biz, o] of walkable) {
         console.log('    ' + when.padEnd(16) + biz.padEnd(28) + '/experiences/order/' + o.id);
     }
+    console.log('\n  Orders on seed-sauna@' + SEED_DOMAIN + ' — one per category, to walk change-count + change-date:');
+    console.log('    slot (yoga)          /experiences/order/' + oIslaSlot.id);
+    console.log('    made_to_order (baker) /experiences/order/' + oIslaMto.id);
+    console.log('    comes_to_you (chef)   /experiences/order/' + oIslaCty.id);
     console.log('\n  done.');
     process.exit(0);
 }
