@@ -70,8 +70,12 @@ export default function SlotCalendar({
 
                     const ticks = shape?.ticks || [];
                     // An open-but-unbooked day says "N open" so it never reads as
-                    // empty; a booked day leads with the booked count.
-                    const count = dayOff ? 'Day off'
+                    // empty; a booked day leads with the booked count. A DAY OFF
+                    // still names any booking it holds — a paid booking on a blocked
+                    // day is a conflict the host must see, not a slot the "Day off"
+                    // word can hide.
+                    const count = dayOff
+                        ? (shape && shape.booked ? `Day off · ${shape.booked} booked` : 'Day off')
                         : shape && (shape.booked || shape.added)
                             ? [shape.booked ? `${shape.booked} booked` : '', shape.added ? `${shape.added} to fill` : ''].filter(Boolean).join(' · ')
                             : (shape && shape.free ? `${shape.free} open` : '');

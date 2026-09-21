@@ -176,6 +176,11 @@ export default function ChangeDateTime({ orderId, className }: { orderId: string
     const openMonthKeys = new Set(Array.from(openDayKeys).map((k) => k.slice(0, 7)));
     const shown = shownDate || currentDate;
     const shownMonthEmpty = !!feed && openDayKeys.size > 0 && !openMonthKeys.has(monthKeyOf(shown));
+    // Is the booking's OWN session the reason this month looks bare? Then it isn't
+    // empty — it holds your booking, just nothing else to move to. Say that,
+    // rather than "nothing open", so it doesn't read as a disagreement with the
+    // host's calendar (which shows the booking on that day).
+    const currentInShownMonth = !!feed && monthKeyOf(currentDate) === monthKeyOf(shown);
     const openMonthsList = Array.from(openMonthKeys).sort().map(monthNameOf);
     const availabilityHint = openMonthsList.length === 0
         ? ''
@@ -246,8 +251,14 @@ export default function ChangeDateTime({ orderId, className }: { orderId: string
                                                 {shownMonthEmpty && (
                                                     <div className="pointer-events-none absolute inset-x-0 bottom-0 flex flex-col items-center justify-center bg-white/95 px-6 text-center"
                                                         style={{ top: 50 }}>
-                                                        <p className="text-sm font-semibold text-slate-700">Nothing open in {monthNameOf(monthKeyOf(shown))}</p>
-                                                        {availabilityHint && <p className="mt-1 text-[13px] text-slate-500">{availabilityHint}</p>}
+                                                        <p className="text-sm font-semibold text-slate-700">
+                                                            {currentInShownMonth
+                                                                ? 'Your booking (' + whenLabel(feed.current.date, feed.current.time) + ') is the only session in ' + monthNameOf(monthKeyOf(shown))
+                                                                : 'Nothing open in ' + monthNameOf(monthKeyOf(shown))}
+                                                        </p>
+                                                        <p className="mt-1 text-[13px] text-slate-500">
+                                                            {currentInShownMonth ? 'There’s nothing else here to move to. ' : ''}{availabilityHint}
+                                                        </p>
                                                     </div>
                                                 )}
                                             </div>

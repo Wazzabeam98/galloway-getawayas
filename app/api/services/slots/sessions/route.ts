@@ -5,6 +5,7 @@ import { NextResponse } from 'next/server';
 import { londonDayKey } from '@/lib/dayKey';
 import { seatsLeft, sessionClosedToAll } from '@/lib/serviceSlots';
 import { normaliseUnit } from '@/lib/serviceOrders';
+import { fetchSlotSessionRows, orphanBookedTimes } from '@/lib/providerSessions';
 
 export const dynamic = 'force-dynamic';
 
@@ -40,11 +41,10 @@ export async function GET(request: Request) {
 
         // The seat rows for upcoming times, the provider's item units (to read
         // "closed to everything"), and the confirmed orders that name the option.
-        const [{ data: sessRows }, { data: itemRows }, { data: orderRows }] = await Promise.all([
-            admin.from('slot_sessions')
-                .select('session_date, session_time, capacity, seats_taken, private')
-                .eq('provider_id', providerId)
-                .gte('session_date', today),
+        const [sessRows, { data: itemRows }, { data: orderRows }] = await Promise.all([
+            // The SAME slot_sessions read the guest move picker uses, so the two
+            // views cannot disagree about which sessions exist.
+            fetchSlotSessionRows(admin, providerId, today),
             admin.from('service_provider_items')
                 .select('unit, capacity, min_people').eq('provider_id', providerId).eq('active', true),
             admin.from('service_orders')
@@ -89,12 +89,37 @@ export async function GET(request: Request) {
                     private: row.private,
                     closed: sessionClosedToAll(row, closedItems, provider),
                     sold: soldByKey[s.session_date + ' ' + hhmm(s.session_time)] || [],
+                    orphan: false,
                 };
             })
             // Only times that actually carry a booking are "how it sold"; an empty
             // generated time hasn't landed anywhere yet.
-            .filter((s) => s.seats_taken > 0)
-            .sort((a: any, b: any) => (a.date === b.date ? String(a.time).localeCompare(String(b.time)) : a.date.localeCompare(b.date)));
+            .filter((s) => s.seats_taken > 0);
+
+        // RECONCILE THE ORDERS. A confirmed, paid booking whose session was deleted
+        // (slot_session_id nulled by the FK) or never materialised has no seat row,
+        // so the map above misses it — the calendar would paint the slot free while
+        // the guest has paid. Surface each such time as a booked, closed session so
+        // a paid booking is never invisible. (This is the money truth the seat cache
+        // lost.)
+        const orphans = orphanBookedTimes(
+            sessRows || [],
+            (orderRows || []).map((o: any) => ({
+                service_date: o.service_date, service_time: o.service_time,
+                item_unit: o.item_unit, quantity: o.quantity,
+            }))
+        );
+        for (const ob of orphans) {
+            sessions.push({
+                date: ob.date, time: ob.time,
+                capacity: ob.seats, seats_taken: ob.seats, seats_left: 0,
+                private: ob.private, closed: true,
+                sold: soldByKey[ob.date + ' ' + ob.time] || [],
+                orphan: true,
+            });
+        }
+
+        sessions.sort((a: any, b: any) => (a.date === b.date ? String(a.time).localeCompare(String(b.time)) : a.date.localeCompare(b.date)));
 
         return NextResponse.json({ ok: true, sessions });
     } catch (err: any) {

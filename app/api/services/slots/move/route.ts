@@ -5,6 +5,7 @@ import { NextResponse } from 'next/server';
 import { guestExperiencesOpen, normaliseUnit, unitMultiplies, isLiveToGuests } from '@/lib/serviceOrders';
 import { isSlot, shapeOf } from '@/lib/serviceSlots';
 import { moveOrderFamily, moveTargetEligibility } from '@/lib/experienceMove';
+import { fetchSlotSessionRows } from '@/lib/providerSessions';
 import { londonDayKey } from '@/lib/dayKey';
 
 export const dynamic = 'force-dynamic';
@@ -114,15 +115,9 @@ export async function GET(request: Request) {
         // opens on the current date so later dates are the obvious path.
         const today = londonDayKey(new Date());
         const horizon = londonDayKey(new Date(Date.now() + HORIZON_DAYS * 86400000));
-        const { data: rows } = await admin
-            .from('slot_sessions')
-            .select('id, session_date, session_time, capacity, seats_taken, private, declared, blocked, duration_minutes')
-            .eq('provider_id', provider.id)
-            .gte('session_date', today)
-            .lte('session_date', horizon)
-            .order('session_date', { ascending: true })
-            .order('session_time', { ascending: true })
-            .limit(400);
+        // The SAME slot_sessions read the host diary uses (lib/providerSessions),
+        // so the two views cannot disagree about which sessions exist.
+        const rows = await fetchSlotSessionRows(admin, provider.id, today, horizon);
 
         const now = new Date();
         const sessions = (rows || [])
