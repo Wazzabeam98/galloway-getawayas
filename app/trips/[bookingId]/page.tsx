@@ -2,7 +2,7 @@ import { redirect } from 'next/navigation';
 import Link from 'next/link';
 import {
     ArrowLeft, MapPin, CheckCircle2, Clock3, XCircle, MessageSquare, Phone,
-    CalendarDays, ChevronRight, KeyRound, ArrowRight, LifeBuoy, Star, CloudOff, Car,
+    CalendarDays, ChevronRight, KeyRound, ArrowRight, LifeBuoy, Star, CloudOff,
 } from 'lucide-react';
 import { createServerComponentClient } from '@supabase/auth-helpers-nextjs';
 import { cookies } from 'next/headers';
@@ -13,6 +13,7 @@ import { partyLabel, confirmationNumber, cancellationWords } from '@/lib/booking
 import { bookingReleasesPrivateData } from '@/lib/bookingEntitlement';
 import { liveForGuestCard, stayCountdown, upcomingUntilCheckout } from '@/lib/bookingWindows';
 import { directionsUrl as buildDirectionsUrl, appleDirectionsUrl } from '@/lib/directions';
+import { loadBookingSeats } from '@/lib/groupSeats';
 import { checkInMethodTitle, checkInBlurb } from '@/lib/checkInMethods';
 import { londonDayKey } from '@/lib/dayKey';
 import PropertyMap from '@/components/PropertyMap';
@@ -77,6 +78,20 @@ function timeLabel(t: string | null | undefined): string | null {
     const ampm = h < 12 ? 'am' : 'pm';
     const h12 = ((h + 11) % 12) + 1;
     return h12 + ':' + String(m || 0).padStart(2, '0') + ampm;
+}
+
+// A stamped night's date as "Fri 18 Sep", built at midday so the day never slips
+// under a timezone offset.
+function nightDateLabel(iso: string): string {
+    const d = new Date(String(iso).split('T')[0] + 'T12:00:00');
+    return isNaN(d.getTime()) ? String(iso) : d.toLocaleDateString('en-GB', { weekday: 'short', day: 'numeric', month: 'short' });
+}
+// The word beside a night dearer than the base rate — a weekend or a seasonal
+// override. Base nights say nothing; only the reason for a difference earns a word.
+function nightKindLabel(kind: string): string {
+    if (kind === 'weekend') return 'weekend';
+    if (kind === 'override') return 'seasonal rate';
+    return '';
 }
 
 // An all-day .ics for the whole stay. DTEND on an all-day VEVENT is exclusive,
@@ -147,7 +162,7 @@ export default async function StayReservationPage({ params }: { params: { bookin
     let addressString: string | null = null;
     let lat: number | null = null, lng: number | null = null;
     let googleDir: string | null = null, appleDir: string | null = null;
-    let what3words: string | null = null, arrivalDirections: string | null = null, parking: string | null = null;
+    let what3words: string | null = null, arrivalDirections: string | null = null;
     let hasCode = false, hasWifi = false;
     let hostPhone: string | null = null;
     if (entitled && listing) {
@@ -164,7 +179,6 @@ export default async function StayReservationPage({ params }: { params: { bookin
         appleDir = appleDirectionsUrl(parts);
         what3words = (arr as any)?.what3words || null;
         arrivalDirections = (arr as any)?.arrival_directions || null;
-        parking = (arr as any)?.parking_info || null;
         hasWifi = !!(arr as any)?.wifi_name;
         hasCode = !!codes;
         hostPhone = (hostProfile && hostProfile.phone) || null;
@@ -202,6 +216,13 @@ export default async function StayReservationPage({ params }: { params: { bookin
         ? await admin.from('service_orders').select('item_name, service_date').eq('booking_id', booking.id).eq('guest_id', user.id).eq('status', 'confirmed')
         : { data: null };
     const cancelOrders = (myOrders || []).map((o: any) => ({ item_name: o.item_name, service_date: o.service_date }));
+
+    // The party's seats, read server-side (the browser can't select booking_guests
+    // — see lib/groupSeats) and handed to the invite block as its initial data.
+    // Booker only, the only role that manages the group.
+    const { seats: initialSeats, profiles: initialSeatProfiles } = isBooker
+        ? await loadBookingSeats(admin, booking.id)
+        : { seats: [], profiles: {} };
 
     // Review: a completed stay of your OWN, not yet reviewed, inside the window.
     const isCompleted = isBooker && booking.status === 'confirmed' && over;
@@ -276,7 +297,8 @@ export default async function StayReservationPage({ params }: { params: { bookin
                         </div>
 
                         <p className="mt-1.5 flex flex-wrap items-center gap-x-2 gap-y-1 text-sm text-slate-500">
-                            <span>{[cottageArea, `${nights} ${nights === 1 ? 'night' : 'nights'}`, partyLabel(booking)].filter(Boolean).join(' · ')}</span>
+                            {/* No guest count here — it lives once, in Booking details. */}
+                            <span>{[cottageArea, `${nights} ${nights === 1 ? 'night' : 'nights'}`].filter(Boolean).join(' · ')}</span>
                             {phaseChip && (
                                 <span className="inline-flex items-center rounded-full bg-emerald-50 px-2.5 py-0.5 text-xs font-medium text-emerald-800">{phaseChip}</span>
                             )}
@@ -343,12 +365,6 @@ export default async function StayReservationPage({ params }: { params: { bookin
                                     <p className="mt-1.5 whitespace-pre-line text-sm leading-relaxed text-amber-950">{arrivalDirections}</p>
                                 </div>
                             )}
-                            {parking && (
-                                <div className="mt-4 flex gap-3">
-                                    <Car className="mt-0.5 h-4 w-4 flex-none text-slate-400" />
-                                    <div className="min-w-0 text-sm text-slate-700"><span className="font-medium text-slate-900">Parking</span><p className="mt-0.5 whitespace-pre-line">{parking}</p></div>
-                                </div>
-                            )}
                         </section>
 
                         {/* ---- Getting in ---- The ONE route to the door code and
@@ -380,6 +396,43 @@ export default async function StayReservationPage({ params }: { params: { bookin
                             </section>
                         )}
 
+                        {/* ---- Hosted by ---- with Call and Message. Sits between
+                            where-you'll-be and who's-coming, matching the experience
+                            page's section order. */}
+                        <section className="mt-8 border-t border-slate-200 pt-6">
+                            <div className="flex items-start justify-between gap-3">
+                                <div className="min-w-0">
+                                    <h2 className="text-lg font-semibold text-slate-900">Hosted by {hostFirstName || hostName}</h2>
+                                    {cottageArea && <div className="mt-0.5 text-[13px] text-slate-500">{cottageArea}</div>}
+                                </div>
+                                {hostAvatar ? (
+                                    // eslint-disable-next-line @next/next/no-img-element
+                                    <img src={hostAvatar} alt={hostName} className="h-12 w-12 flex-none rounded-full object-cover ring-1 ring-slate-200" />
+                                ) : (
+                                    <span className="flex h-12 w-12 flex-none items-center justify-center rounded-full bg-slate-100 text-base font-semibold text-slate-500">{(hostFirstName || hostName).slice(0, 1)}</span>
+                                )}
+                            </div>
+                            {hostBio && (
+                                <details className="group mt-3">
+                                    <summary className="cursor-pointer list-none text-sm leading-relaxed text-slate-700 [&::-webkit-details-marker]:hidden">
+                                        <span className="line-clamp-3 group-open:line-clamp-none">{hostBio}</span>
+                                        <span className="mt-1 inline-block font-semibold text-slate-900 underline group-open:hidden">Show more</span>
+                                    </summary>
+                                    <span className="mt-1 inline-block cursor-pointer text-sm font-semibold text-slate-900 underline">Show less</span>
+                                </details>
+                            )}
+                            <div className="mt-4 grid grid-cols-1 gap-2 sm:grid-cols-2">
+                                {entitled && hostPhone && (
+                                    <a href={'tel:' + hostPhone} className="inline-flex items-center justify-center gap-2 rounded-xl border border-slate-300 bg-white px-4 py-3 text-sm font-semibold text-slate-700 transition hover:border-slate-400">
+                                        <Phone className="h-4 w-4" /> Call
+                                    </a>
+                                )}
+                                <Link href={'/messages/' + booking.id} className="inline-flex items-center justify-center gap-2 rounded-xl bg-emerald-700 px-4 py-3 text-sm font-semibold text-white transition hover:bg-emerald-800">
+                                    <MessageSquare className="h-4 w-4" /> Message {hostFirstName || 'your host'}
+                                </Link>
+                            </div>
+                        </section>
+
                         {/* ---- Who's coming ---- The invite, over the same machine
                             the cottage card uses. Booker-only (a companion can't
                             invite), matching the trips card. */}
@@ -392,6 +445,8 @@ export default async function StayReservationPage({ params }: { params: { bookin
                                         guests={booking.guests}
                                         cottage={listing?.title}
                                         when={`${weekday(booking.check_in)} ${dateLong(booking.check_in)} – ${weekday(booking.check_out)} ${dateLong(booking.check_out)}`}
+                                        initialSeats={initialSeats as any}
+                                        initialProfiles={initialSeatProfiles as any}
                                     />
                                 </div>
                             </section>
@@ -440,16 +495,29 @@ export default async function StayReservationPage({ params }: { params: { bookin
                                             </summary>
                                             <div className="mt-3 rounded-xl border border-slate-200 bg-slate-50/60 p-4">
                                                 <div className="space-y-2 text-sm">
+                                                    {/* Each night is its own line, at the rate FROZEN on the
+                                                        booking at checkout — the per-night series lib/pricing.ts
+                                                        computed and the checkout snapshotted (booking.nightly_breakdown).
+                                                        A weekend or seasonal night is labelled, so a dearer night
+                                                        reads as itself rather than being averaged away. Nothing is
+                                                        re-priced here. A booking older than the snapshot falls back
+                                                        to one estimated line. */}
                                                     {nightlySnapshot ? (
-                                                        <div>
-                                                            <div className="flex items-baseline justify-between font-medium text-slate-700">
-                                                                <span>Accommodation · {nights} {nights === 1 ? 'night' : 'nights'}</span>
-                                                                <span className="tabular-nums">£{payAccommodation.toFixed(2)}</span>
+                                                        nightlySnapshot.map((n: any) => (
+                                                            <div key={n.date} className="flex items-baseline justify-between text-slate-600">
+                                                                <span>
+                                                                    {nightDateLabel(n.date)}
+                                                                    {nightKindLabel(n.kind) && <span className="ml-1.5 text-slate-400">· {nightKindLabel(n.kind)}</span>}
+                                                                </span>
+                                                                <span className="tabular-nums">£{Number(n.rate).toFixed(2)}</span>
                                                             </div>
-                                                        </div>
+                                                        ))
                                                     ) : (
                                                         <div className="flex items-baseline justify-between text-slate-600">
-                                                            <span>Accommodation · {nights} {nights === 1 ? 'night' : 'nights'}</span>
+                                                            <span>
+                                                                Accommodation · {nights} {nights === 1 ? 'night' : 'nights'}
+                                                                <span className="block text-xs text-slate-400">Estimated — this booking predates the per-night record</span>
+                                                            </span>
                                                             <span className="tabular-nums">£{payAccommodation.toFixed(2)}</span>
                                                         </div>
                                                     )}
@@ -532,41 +600,6 @@ export default async function StayReservationPage({ params }: { params: { bookin
                                 </section>
                             );
                         })()}
-
-                        {/* ---- Hosted by ---- with Call and Message. */}
-                        <section className="mt-8 border-t border-slate-200 pt-6">
-                            <div className="flex items-start justify-between gap-3">
-                                <div className="min-w-0">
-                                    <h2 className="text-lg font-semibold text-slate-900">Hosted by {hostFirstName || hostName}</h2>
-                                    {cottageArea && <div className="mt-0.5 text-[13px] text-slate-500">{cottageArea}</div>}
-                                </div>
-                                {hostAvatar ? (
-                                    // eslint-disable-next-line @next/next/no-img-element
-                                    <img src={hostAvatar} alt={hostName} className="h-12 w-12 flex-none rounded-full object-cover ring-1 ring-slate-200" />
-                                ) : (
-                                    <span className="flex h-12 w-12 flex-none items-center justify-center rounded-full bg-slate-100 text-base font-semibold text-slate-500">{(hostFirstName || hostName).slice(0, 1)}</span>
-                                )}
-                            </div>
-                            {hostBio && (
-                                <details className="group mt-3">
-                                    <summary className="cursor-pointer list-none text-sm leading-relaxed text-slate-700 [&::-webkit-details-marker]:hidden">
-                                        <span className="line-clamp-3 group-open:line-clamp-none">{hostBio}</span>
-                                        <span className="mt-1 inline-block font-semibold text-slate-900 underline group-open:hidden">Show more</span>
-                                    </summary>
-                                    <span className="mt-1 inline-block cursor-pointer text-sm font-semibold text-slate-900 underline">Show less</span>
-                                </details>
-                            )}
-                            <div className="mt-4 grid grid-cols-1 gap-2 sm:grid-cols-2">
-                                {entitled && hostPhone && (
-                                    <a href={'tel:' + hostPhone} className="inline-flex items-center justify-center gap-2 rounded-xl border border-slate-300 bg-white px-4 py-3 text-sm font-semibold text-slate-700 transition hover:border-slate-400">
-                                        <Phone className="h-4 w-4" /> Call
-                                    </a>
-                                )}
-                                <Link href={'/messages/' + booking.id} className="inline-flex items-center justify-center gap-2 rounded-xl bg-emerald-700 px-4 py-3 text-sm font-semibold text-white transition hover:bg-emerald-800">
-                                    <MessageSquare className="h-4 w-4" /> Message {hostFirstName || 'your host'}
-                                </Link>
-                            </div>
-                        </section>
 
                         {/* ---- House rules ---- same source and wording as the
                             listing page, for a confirmed, paid, upcoming stay. */}
