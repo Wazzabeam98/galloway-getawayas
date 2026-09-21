@@ -45,6 +45,11 @@ test('every arrival/PII reader still routes through the single entitlement', () 
         'app/arrival/[bookingId]/page.tsx',
         'app/api/trips/route.ts',
         'lib/stayWindow.ts',
+        // The stay reservation page hands out the exact address, the map pin, the
+        // host's phone and the arrival-screen link, so it must gate every one of
+        // them on the same entitlement — a planted pending_payment booking gets
+        // none of it.
+        'app/trips/[bookingId]/page.tsx',
     ];
     const missing = readers.filter((rel) => !read(rel).includes('bookingReleasesPrivateData'));
     assert.deepEqual(
