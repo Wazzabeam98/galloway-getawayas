@@ -16,7 +16,9 @@
 // TEST ONLY. Refuses to run unless the Supabase URL is the test project.
 //
 // Images come from listings/seed-assets/* (copied there so they survive a wipe
-// and never live in the repo). The sauna uses the real sauna photos.
+// and never live in the repo). The sauna uses the real sauna photos, and the
+// yoga class uses a real, free-licence yoga photo (Unsplash) at seed-assets/
+// yoga-1.jpg — uploaded to the test bucket only, never committed to the repo.
 
 import { loadEnv, assertTestEnvironment, supabaseClient, dayOffset } from './seed-lib.mjs';
 
@@ -242,7 +244,7 @@ async function main() {
         owner: yogaOwner, business_name: 'Harbour Yoga', provider_name: 'Mara', trade: 'yoga', category: 'yoga', mcc: '7911', shape: 'slot',
         slotLength: 60, turnaround: 15, slotCapacity: 10, slotMin: 1, cancelHours: 12, horizonDays: 60,
         fulfilment: 'collection', street: 'The Old Sail Loft', town: 'Kirkcudbright', postcode: 'DG6 4JA', mapLat: 54.8358, mapLng: -4.0512,
-        headshot: IMG('seed-assets/class-face.png'), photos: [IMG('seed-assets/class-1.jpg'), IMG('seed-assets/class-2.jpg')],
+        headshot: IMG('seed-assets/class-face.png'), photos: [IMG('seed-assets/yoga-1.jpg'), IMG('seed-assets/class-2.jpg')],
         professional_title: 'Sunrise yoga above the harbour', years: 7,
         qualifications: '500-hour registered yoga teacher (Yoga Alliance).', recognition: null,
         what_to_expect: 'A gentle hour of movement and breath as the light comes up over the water.',
@@ -254,7 +256,7 @@ async function main() {
         minAge: 12, activityLevel: 'gentle', whatToBring: 'Comfortable layers; everything else is here.',
         amenities: ['mats_provided', 'toilets', 'step_free'], accessibility: 'step_free', parking: 'street',
         availability: { days: [1,2,3,4,5,6,0], open: '07:00', close: '11:00' },
-        items: [{ name: 'Sunrise yoga class', description: 'Per person, all levels, up to 10.', price: 14, unit: 'person', capacity: 10, min: 1, sort: 0, image: IMG('seed-assets/class-1.jpg') }],
+        items: [{ name: 'Sunrise yoga class', description: 'Per person, all levels, up to 10.', price: 14, unit: 'person', capacity: 10, min: 1, sort: 0, image: IMG('seed-assets/yoga-1.jpg') }],
     });
     const yogaItemRows = await db.select('service_provider_items', '?select=id,unit,name&provider_id=eq.' + yoga.id);
     created.push({ label: 'Harbour Yoga (yoga · slot, per-person class)', ...yogaOwner, providerId: yoga.id });
