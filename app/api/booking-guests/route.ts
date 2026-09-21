@@ -6,6 +6,7 @@ import { NextResponse } from 'next/server';
 import { sendEmail, emailLayout, escapeHtml, button, SITE_URL } from '@/lib/email';
 import { formatUk } from '@/lib/cancellation';
 import { foldOrderFamily } from '@/lib/orderFamily';
+import { loadBookingSeats } from '@/lib/groupSeats';
 
 export const dynamic = 'force-dynamic';
 
@@ -144,7 +145,9 @@ export async function POST(request: Request) {
                 return NextResponse.json({ ok: false, error: 'This booking has been cancelled.' }, { status: 400 });
             }
 
-            // The booker is one of the party; the rest are companion seats.
+            // The booker is one of the party; the rest are companion seats. This
+            // is the SAME count the party-total column (guests) carries — adults
+            // plus children — so the sheet and the card agree.
             const capacity = Math.max(0, ((booking.guests as number) || 1) - 1);
 
             // Atomic top-up in one statement, guarded by a partial unique index on
@@ -160,7 +163,11 @@ export async function POST(request: Request) {
                 return NextResponse.json({ ok: false, error: 'Could not set up the seats.' }, { status: 500 });
             }
 
-            return NextResponse.json({ ok: true, capacity, minted: minted ?? 0 });
+            // Return the seats server-authoritatively — the booker can't read
+            // booking_guests from the browser (the order-guests RLS policy touches
+            // service_orders, which authenticated can't read, so the select
+            // errors), so the sheet reads them here, exactly as the order side does.
+            return NextResponse.json({ ok: true, capacity, minted: minted ?? 0, ...(await loadBookingSeats(admin, bookingId)) });
         }
 
         // ---- Label or bind a seat (optional, on the seat's own row) --------

@@ -1,17 +1,22 @@
 'use client';
 
-import { useEffect, useState } from 'react';
-import { createClientComponentClient } from '@supabase/auth-helpers-nextjs';
+import { useState } from 'react';
 import { UserPlus, User } from 'lucide-react';
 import { getImageUrl, displayName } from '@/lib/utils';
 import InviteSheet, { Seat, Profile } from './InviteSheet';
 
 // The group coming on a trip, the way Airbnb shows it — a summary row with the
 // party stacked as avatars, opening the shared InviteSheet. The sheet, the share
-// channels and every per-seat action now live in one component used here and on
-// the experience side, so the invite flow is identical everywhere; this file is
-// only the trips-card trigger and the booking's own way of reading its seats
-// (client-side under RLS — a booking is authenticated-readable, an order is not).
+// channels and every per-seat action live in one component used here and on the
+// experience side, so the invite flow is identical everywhere.
+//
+// SERVER-AUTHORITATIVE, like ExperienceGroup. The seats are NOT read from the
+// browser: booking_guests can't be selected client-side (the "order guests
+// readable" RLS policy references service_orders, which the authenticated role
+// can't read, so any authenticated select on booking_guests throws and the sheet
+// saw an empty party while the card, counting off `guests`, showed empty seats).
+// So the faces come from server-rendered `initialSeats`, and opening the sheet
+// mints the seats through /api/booking-guests and takes the fresh list back.
 
 const PALETTE = ['bg-emerald-600', 'bg-sky-600', 'bg-amber-600', 'bg-rose-600', 'bg-violet-600', 'bg-teal-600'];
 
@@ -39,46 +44,38 @@ function EmptySeat({ size = 'md' }: { size?: 'sm' | 'md' }) {
 }
 
 export default function TripGroup({
-    bookingId, guests, cottage, when,
+    bookingId, guests, cottage, when, initialSeats = [], initialProfiles = {},
 }: {
     bookingId: string; guests?: number | null; cottage?: string; when?: string;
+    initialSeats?: Seat[]; initialProfiles?: Record<string, Profile>;
 }) {
-    const supabase = createClientComponentClient();
-    const [people, setPeople] = useState<Seat[]>([]);
-    const [profiles, setProfiles] = useState<Record<string, Profile>>({});
-    const [loading, setLoading] = useState(true);
+    const [people, setPeople] = useState<Seat[]>(initialSeats);
+    const [profiles, setProfiles] = useState<Record<string, Profile>>(initialProfiles);
+    const [loading, setLoading] = useState(false);
     const [open, setOpen] = useState(false);
 
-    const load = async () => {
-        const { data } = await supabase
-            .from('booking_guests')
-            .select('id, email, name, status, user_id, invite_token, link_sent_at')
-            .eq('booking_id', bookingId)
-            .neq('status', 'removed')
-            .order('invited_at');
-        const rows = (data as Seat[]) || [];
-        setPeople(rows);
-        const ids = rows.filter((p) => p.user_id).map((p) => p.user_id as string);
-        if (ids.length) {
-            const { data: profRows } = await supabase.from('profiles').select('id, avatar_url, full_name, preferred_name, show_full_name').in('id', ids);
-            const map: Record<string, Profile> = {};
-            (profRows as Profile[] | null)?.forEach((p) => { map[p.id] = p; });
-            setProfiles(map);
-        } else setProfiles({});
-        setLoading(false);
+    // Mint this booking's seats (idempotent, capped at guests − 1) and take the
+    // fresh list back from the response — the browser can't read the seats
+    // directly. Done on OPEN, not on mount, so browsing never creates links.
+    const refetch = async () => {
+        const res = await fetch('/api/booking-guests', {
+            method: 'POST', headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ action: 'ensure-seats', bookingId }),
+        }).catch(() => null);
+        if (res) {
+            try {
+                const d = await res.json();
+                if (d && Array.isArray(d.seats)) setPeople(d.seats as Seat[]);
+                if (d && d.profiles) setProfiles(d.profiles as Record<string, Profile>);
+            } catch { /* ignore */ }
+        }
     };
-
-    // The card reads without minting — only OPENING the sheet fills the seats, so
-    // browsing the trips list never creates links.
-    useEffect(() => { load(); }, [bookingId]);
 
     const openSheet = async () => {
-        setOpen(true);
-        await fetch('/api/booking-guests', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ action: 'ensure-seats', bookingId }) }).catch(() => {});
-        await load();
+        setOpen(true); setLoading(true);
+        await refetch();
+        setLoading(false);
     };
-
-    if (loading && !open) return null;
 
     const accepted = (p: Seat) => p.status === 'active';
     const nameOf = (p: Seat) => {
@@ -88,6 +85,9 @@ export default function TripGroup({
     const going = people.filter(accepted).length;
     const toFill = people.length - going;
     const party = guests && guests > 0 ? guests : null;
+    // Empty seats to hint on the card: the party total (minus the booker) not yet
+    // represented by a seat row. Once the seats are minted this is 0 and the
+    // to-fill count comes from the rows themselves.
     const emptySeats = party ? Math.max(0, party - 1 - people.length) : 0;
     const nothingYet = people.length === 0 && emptySeats === 0;
     const openLabelN = emptySeats || toFill;
@@ -130,7 +130,7 @@ export default function TripGroup({
                 people={people}
                 profiles={profiles}
                 loading={loading}
-                refetch={load}
+                refetch={refetch}
             />
         </div>
     );
