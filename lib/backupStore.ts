@@ -16,7 +16,6 @@
 import {
     S3Client,
     PutObjectCommand,
-    HeadBucketCommand,
 } from '@aws-sdk/client-s3';
 
 export type BackupStore = {
@@ -57,11 +56,26 @@ export function backupStore(): BackupStore | null {
     return { client, bucket };
 }
 
-// Proves the credentials work and the bucket is reachable before a run starts,
+// Proves the credentials work and the bucket is writable before a run starts,
 // so a misconfiguration fails loudly at the top of the job rather than halfway
 // through an upload.
+//
+// The probe is a tiny PutObject, deliberately NOT a HeadBucket. A least-
+// privilege R2 token ("Object Read & Write") — the right token to hand a backup
+// job — can write objects but is refused bucket-level calls like HeadBucket with
+// a 403, so a HeadBucket preflight would fail a token that is in fact perfectly
+// able to do the job. A PutObject exercises exactly the permission the copy
+// needs, and unlike HeadBucket it returns a decodable error body, so genuinely
+// wrong credentials surface as AccessDenied / SignatureDoesNotMatch rather than
+// an opaque 403. The probe object is left in place (overwritten each run) as a
+// cheap record of the last successful reach.
 export async function assertReachable(store: BackupStore): Promise<void> {
-    await store.client.send(new HeadBucketCommand({ Bucket: store.bucket }));
+    await putObject(
+        store,
+        'storage/.reachable-probe',
+        new Date().toISOString(),
+        'text/plain',
+    );
 }
 
 // Turns an AWS-SDK error into something a log can act on. The SDK's own message
