@@ -7,12 +7,13 @@ import {
 } from '@/components/marketplace/present';
 import { unitMultiplies } from '@/lib/serviceOrders';
 import { locationFromDirection } from '@/lib/orderLocation';
-import { MapPin, Clock, Users, User, BadgeCheck, Award, Star, Compass, Flag, Activity, Backpack, ShieldAlert, Accessibility, Car, Check } from 'lucide-react';
+import { MapPin, Clock, Users, User, BadgeCheck, Compass, Flag, Activity, Backpack, ShieldAlert, Accessibility, Car, Check } from 'lucide-react';
 import PhotoGallery from '@/components/PhotoGallery';
 import PropertyMap from '@/components/PropertyMap';
 import ReviewStars from '@/components/ReviewStars';
 import ShowAllReviews from '@/components/ShowAllReviews';
 import ProviderReplyBox from '@/components/marketplace/ProviderReplyBox';
+import HostCredentials from '@/components/marketplace/HostCredentials';
 import { capitializeFirst } from '@/lib/utils';
 import { MIN_PUBLIC_REVIEWS } from '@/lib/reviews';
 import type { MpProvider } from '@/lib/experiencesData';
@@ -162,33 +163,12 @@ export default function ExperienceListingBody({
                                     </span>
                                 </div>
 
-                                {/* Credentials in the SAME shape as the facts grid
-                                    above — an icon, the line in bold, a grey label
-                                    beneath — sitting under the name/years inside the
-                                    host card. No uppercase headings, no tooltips (most
-                                    guests are on a phone); an unfilled one is omitted. */}
-                                {(p.qualifications || p.recognition) ? (
-                                    <div className="mt-5 space-y-4">
-                                        {p.qualifications ? (
-                                            <div className="flex items-start gap-3">
-                                                <span className="mt-0.5 flex-none"><Award className="h-5 w-5 text-slate-700" aria-hidden /></span>
-                                                <div className="min-w-0">
-                                                    <p className="font-semibold text-slate-900 leading-tight whitespace-pre-line">{p.qualifications}</p>
-                                                    <p className="text-sm text-slate-500">Qualifications</p>
-                                                </div>
-                                            </div>
-                                        ) : null}
-                                        {p.recognition ? (
-                                            <div className="flex items-start gap-3">
-                                                <span className="mt-0.5 flex-none"><Star className="h-5 w-5 text-slate-700" aria-hidden /></span>
-                                                <div className="min-w-0">
-                                                    <p className="font-semibold text-slate-900 leading-tight whitespace-pre-line">{p.recognition}</p>
-                                                    <p className="text-sm text-slate-500">Recognition</p>
-                                                </div>
-                                            </div>
-                                        ) : null}
-                                    </div>
-                                ) : null}
+                                {/* Credentials as quiet details under the name/years
+                                    — a small muted icon, the line in normal weight and
+                                    slightly smaller, no grey label beneath. Read as
+                                    facts about the host, not headings. Shared with the
+                                    order page's host card; an unfilled one is omitted. */}
+                                <HostCredentials qualifications={p.qualifications} recognition={p.recognition} className="mt-5" />
                             </section>
                         )}
 

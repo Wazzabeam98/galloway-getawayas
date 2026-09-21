@@ -2,7 +2,7 @@ import { redirect } from 'next/navigation';
 import Link from 'next/link';
 import {
     ArrowLeft, CalendarDays, MapPin, CheckCircle2, Clock3, XCircle, AlertTriangle,
-    MessageSquare, ChevronRight, LifeBuoy, BookOpen, Award,
+    MessageSquare, ChevronRight, LifeBuoy, BookOpen,
 } from 'lucide-react';
 import { createServerComponentClient } from '@supabase/auth-helpers-nextjs';
 import { cookies } from 'next/headers';
@@ -16,6 +16,7 @@ import { directionsUrl as buildDirectionsUrl, appleDirectionsUrl } from '@/lib/d
 import { loadExperienceOrder } from '@/lib/experienceOrder';
 import { cancellationSentence, yearsLabel } from '@/components/marketplace/present';
 import OrderCancel from '@/components/marketplace/OrderCancel';
+import HostCredentials from '@/components/marketplace/HostCredentials';
 import PropertyMap from '@/components/PropertyMap';
 import DirectionsPicker from '@/components/arrival/DirectionsPicker';
 import CopyField from '@/components/arrival/CopyField';
@@ -374,7 +375,6 @@ export default async function OrderPage({ params, searchParams }: { params: { or
     const qualifications = typeof gd.qualifications === 'string' ? gd.qualifications.trim() : '';
     const recognition = typeof gd.recognition === 'string' ? gd.recognition.trim() : '';
     const years = yearsLabel(gd.years_experience != null ? String(gd.years_experience) : null);
-    const hasAboutHost = Boolean(years || qualifications || recognition);
 
     // ---- Who's going -------------------------------------------------------
     // A session people attend (a slot, or a comes-to-you dinner) can carry a
@@ -680,6 +680,7 @@ export default async function OrderPage({ params, searchParams }: { params: { or
                                         listing carries — skipped when it only
                                         echoes the business name. */}
                                     {proTitle && <div className="mt-0.5 text-[13px] text-slate-500">{proTitle}</div>}
+                                    {years && <div className="mt-0.5 text-[13px] text-slate-500">{years}</div>}
                                 </div>
                                 {headshotUrl ? (
                                     // eslint-disable-next-line @next/next/no-img-element
@@ -707,31 +708,11 @@ export default async function OrderPage({ params, searchParams }: { params: { or
                             )}
 
                             {/* The credentials the listing shows under "About your
-                                host" — years, training, recognition — each only when
-                                the host wrote it. A slot guide's safety training is
-                                exactly what a guest wants before a cold-water swim. */}
-                            {hasAboutHost && (
-                                <dl className="mt-4 space-y-3">
-                                    {years && (
-                                        <div>
-                                            <dt className="text-xs font-semibold uppercase tracking-wide text-slate-500">Experience</dt>
-                                            <dd className="mt-0.5 text-sm text-slate-700">{years}</dd>
-                                        </div>
-                                    )}
-                                    {qualifications && (
-                                        <div>
-                                            <dt className="flex items-center gap-1.5 text-xs font-semibold uppercase tracking-wide text-slate-500"><Award className="h-3.5 w-3.5 text-slate-400" /> Training &amp; qualifications</dt>
-                                            <dd className="mt-0.5 whitespace-pre-line text-sm leading-relaxed text-slate-700">{qualifications}</dd>
-                                        </div>
-                                    )}
-                                    {recognition && (
-                                        <div>
-                                            <dt className="text-xs font-semibold uppercase tracking-wide text-slate-500">Recognition</dt>
-                                            <dd className="mt-0.5 whitespace-pre-line text-sm leading-relaxed text-slate-700">{recognition}</dd>
-                                        </div>
-                                    )}
-                                </dl>
-                            )}
+                                host" — qualifications and any recognition — as quiet
+                                details, via the SAME component the listing uses so the
+                                two can't drift. Years sits with the name above; an
+                                unfilled credential is omitted. */}
+                            <HostCredentials qualifications={qualifications} recognition={recognition} className="mt-4" />
 
                             {canMessage && (
                                 <Link
