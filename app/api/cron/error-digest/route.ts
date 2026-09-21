@@ -101,11 +101,73 @@ export async function GET(request: Request) {
 
     const reviewQueue = reviewRows || [];
 
-    // The send condition is errors OR people, not errors alone. A quiet day
-    // for the site is not a quiet day for a joiner who applied a fortnight ago
-    // and has heard nothing, or a chef sitting unreviewed — and the old early
-    // return would have swallowed them.
-    if (errors.length === 0 && waiting.length === 0 && reviewQueue.length === 0) {
+    // ------------------------------------------------------------------
+    // THE RESTORE DRILL WATCHDOG.
+    //
+    // The quarterly restore drill (a GitHub Action) writes a row to
+    // restore_drill_runs every time it runs — see docs/BACKUP-AND-RESTORE.md.
+    // The drill emails its own result the day it runs; this is the other half,
+    // the one that catches SILENCE. Two things must reach the owner:
+    //   * the last drill FAILED — the backup did not restore cleanly; and
+    //   * no drill has run when one was due — a scheduled test quietly stopped,
+    //     which is the exact failure mode a tested backup is meant to rule out.
+    // A drill that never runs sends no email of its own, so without this nobody
+    // would ever know it had gone quiet.
+    //
+    // Read defensively: before the migration is applied on production the table
+    // does not exist, and a missing watchdog must not take the whole digest down
+    // with it — the digest is the one email that has to arrive.
+    // ------------------------------------------------------------------
+    // A scheduled run is due each quarter; past a quarter and a grace window
+    // with no run at all, the schedule has been missed.
+    const DRILL_OVERDUE_DAYS = 100;
+    let drillAlert: { kind: 'failed' | 'overdue'; when: string | null; detail: string } | null = null;
+    try {
+        const { data: drillRows } = await admin
+            .from('restore_drill_runs')
+            .select('run_at, status, detail')
+            .order('run_at', { ascending: false })
+            .limit(1);
+        const latest = (drillRows || [])[0];
+        if (latest) {
+            const ageDays = (Date.now() - new Date(latest.run_at).getTime()) / (24 * 3600 * 1000);
+            if (latest.status === 'fail') {
+                drillAlert = { kind: 'failed', when: latest.run_at, detail: String(latest.detail || '') };
+            } else if (ageDays > DRILL_OVERDUE_DAYS) {
+                drillAlert = { kind: 'overdue', when: latest.run_at, detail: '' };
+            }
+        }
+        // No rows at all is left silent on purpose: it means the drill has not
+        // been set up yet, not that a scheduled test was missed.
+    } catch (e) {
+        await logError('error-digest: could not read the restore drill log', e, {
+            path: '/api/cron/error-digest',
+        });
+    }
+
+    const drillHtml = !drillAlert ? '' : (
+        '<div style="border:1px solid #fecaca;background:#fef2f2;border-radius:8px;padding:12px 14px;margin:0 0 16px;">'
+        + '<p style="margin:0 0 6px;font-size:16px;font-weight:700;color:#b91c1c;">'
+        + (drillAlert.kind === 'failed'
+            ? 'The database restore drill FAILED.'
+            : 'The database restore drill has not run when it was due.')
+        + '</p>'
+        + '<p style="margin:0;font-size:14px;color:#7f1d1d;">'
+        + (drillAlert.kind === 'failed'
+            ? escapeHtml(drillAlert.detail || 'The last restore did not verify cleanly.')
+                + ' The last drill ran on ' + escapeHtml(String(drillAlert.when)) + '.'
+            : 'The last recorded drill was ' + escapeHtml(String(drillAlert.when))
+                + ' — over a quarter ago. A scheduled restore test has been missed.')
+        + ' This is the backup you would rely on in a disaster; treat it as urgent. See docs/BACKUP-AND-RESTORE.md.'
+        + '</p></div>'
+    );
+
+    // The send condition is errors OR people OR a backup that can't be trusted,
+    // not errors alone. A quiet day for the site is not a quiet day for a joiner
+    // who applied a fortnight ago and has heard nothing, a chef sitting
+    // unreviewed, or a restore drill that failed — and the old early return
+    // would have swallowed them.
+    if (errors.length === 0 && waiting.length === 0 && reviewQueue.length === 0 && !drillAlert) {
         return NextResponse.json({ ok: true, sent: 0, reason: 'nothing to report' });
     }
 
@@ -265,7 +327,14 @@ export async function GET(request: Request) {
     {
         const result = await sendEmailToAll(
             to,
-            errors.length === 0
+            // A failed or missed restore drill leads the subject: it is a
+            // backup-integrity signal, and nothing else in this email outranks
+            // "the thing you would recover from is not known to work".
+            drillAlert
+                ? (drillAlert.kind === 'failed'
+                    ? 'A database restore drill failed'
+                    : 'The database restore drill is overdue')
+                : errors.length === 0
                 ? (reviewQueue.length > 0
                     ? (reviewQueue.length === 1
                         ? '1 business is waiting on you to review'
@@ -277,7 +346,8 @@ export async function GET(request: Request) {
                     ? 'Something went wrong on the site yesterday'
                     : issues.length + ' things went wrong on the site yesterday',
             emailLayout(
-                (errors.length === 0
+                drillHtml
+                + (errors.length === 0
                     ? ''
                     : '<p style="margin:0 0 16px;font-size:16px;">In the last 24 hours there '
                         + (errors.length === 1 ? 'was <strong>1 error</strong>' : 'were <strong>' + errors.length + ' errors</strong>')
@@ -410,5 +480,6 @@ export async function GET(request: Request) {
         rateLimitRowsPruned: pruned,
         waitingOnApplicant: waiting.length,
         applicationsSwept: applicationsSwept,
+        restoreDrill: drillAlert ? drillAlert.kind : 'ok',
     });
 }

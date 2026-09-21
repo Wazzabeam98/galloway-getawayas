@@ -103,28 +103,111 @@ matches the live bucket.
 
 A backup you have never restored is a hope, not a backup. Supabase takes its own
 daily database backups, but until you have actually restored one and checked the
-data, you do not know that you can. This drill restores a **real production
-backup into a clean, throwaway database** and verifies the data arrives intact.
-Run it on a schedule (quarterly is reasonable) and whenever the schema changes
-materially.
+data, you do not know that you can. This drill restores a copy of production into
+a clean, throwaway database and verifies the data arrives intact.
 
-### The approach
+**What it covers.** The drill restores and verifies the **full production
+application data** — every table in the `public` and `storage` schemas: listings,
+bookings, orders, messages, reviews, everything the platform is. It does **not**
+include Supabase's own login records (the `auth` schema — user credentials and
+sessions); those are covered by **Supabase's own managed backups**, not this
+drill. So the two together cover the whole database: this drill for the business
+data, Supabase's managed backups for the login layer.
 
-A **logical dump and restore** (`pg_dump` → `pg_restore`), because it is
-provider-independent — it proves the data is recoverable into *any* Postgres,
-not only back into Supabase's own tooling — and it never writes to production.
+### Automated — the quarterly GitHub Action
 
-- **Source:** production, **read-only**, via `SUPABASE_PROD_DB_URL`.
-- **Throwaway target:** an ephemeral Postgres you can destroy afterwards. Either
-  a local `postgres:15` Docker container (free, isolated, used for the recorded
-  drill below) **or** a fresh Supabase project if the insurer wants a
-  Supabase-hosted restore — the steps are identical, only the target URL changes.
+This runs by machine, not from a diary note: **`.github/workflows/restore-drill.yml`**.
+
+- **Schedule:** quarterly — 06:00 UTC on the **1st of January, April, July and
+  October** (`cron: '0 6 1 1,4,7,10 *'`). Also runnable on demand from the
+  Actions tab (**Run workflow**).
+- **What it does, each run:** spins up a throwaway `postgres:17` service
+  container; takes a **read-only** `pg_dump` of the production application data
+  (`public` + `storage`) through a dedicated role; restores it into the
+  container; runs `scripts/restore-drill-verify.mjs` to compare **every table's
+  row count** and the **`listings` content hash** against source; **records** the
+  result to `restore_drill_runs` on production; and **emails** the owner the
+  outcome either way. The container is destroyed when the job ends, so the copy
+  of production it briefly holds never outlives the run.
+- **A logical dump and restore** on purpose — provider-independent, proving the
+  data restores into *any* Postgres, and it never writes to production.
+- **The watchdog:** the 8am digest (`/api/cron/error-digest`) reads
+  `restore_drill_runs` and flags the owner if the **last drill failed** or if
+  **no drill has run in over a quarter** — so a drill that silently stops running
+  sends up a flare rather than going unnoticed.
+
+### Setup — the read-only role (run once, on production)
+
+The drill connects to production as a **dedicated role that can only read the
+data and append its own result row** — never the main database user. `BYPASSRLS`
+is needed so the dump sees every row (row-level security would otherwise hide
+rows and make the row-count check meaningless); it grants **no write access to
+any application table**. Run this on production yourself (it needs a password you
+choose), after the `restore_drill_runs` migration is applied:
+
+```sql
+-- Pick a strong password and keep it only in the GitHub secret below.
+create role restore_drill_ro with login password 'REPLACE_WITH_A_STRONG_PASSWORD'
+  nosuperuser nocreatedb nocreaterole bypassrls;
+
+-- Read the application data.
+grant usage on schema public, storage to restore_drill_ro;
+grant select on all tables in schema public  to restore_drill_ro;
+grant select on all tables in schema storage to restore_drill_ro;
+-- And read tables added later, so a new table never silently drops out of the
+-- "every table" check.
+alter default privileges in schema public  grant select on tables to restore_drill_ro;
+alter default privileges in schema storage grant select on tables to restore_drill_ro;
+
+-- The one thing it may WRITE: its own drill result. Nothing else.
+grant insert on public.restore_drill_runs to restore_drill_ro;
+```
+
+> If the managed platform refuses `bypassrls` when you run this, tell the
+> maintainer — the fallback is to grant the role membership in a role that
+> already bypasses RLS. Without it the dump would only see rows RLS lets an
+> anonymous caller see (i.e. almost none), and the drill would wrongly "pass" on
+> empty tables.
+
+The connection string to store is (URL-encode the password if it has symbols):
+
+```
+postgresql://restore_drill_ro:PASSWORD@<PROD-DB-HOST>:5432/postgres
+```
+
+Use the **same host, port and database** as `SUPABASE_PROD_DB_URL`, only with
+this role's name and password.
+
+### Setup — the GitHub secrets (click by click)
+
+In the GitHub repo, go to **Settings → Secrets and variables → Actions**, then
+the **Secrets** tab, and add three **repository secrets** (New repository secret):
+
+1. **`RESTORE_DRILL_DB_URL`** — the `restore_drill_ro` connection string above.
+2. **`RESTORE_DRILL_RESEND_KEY`** — a Resend API key (the same account the site
+   sends from; a dedicated key is tidier so it can be rotated on its own). This
+   lets the Action email you directly, independent of the app.
+3. **`RESTORE_DRILL_ALERT_EMAIL`** — the address(es) to email, comma-separated.
+
+Then prove it: **Actions → restore-drill → Run workflow**. A green run emails a
+pass and files a row in `restore_drill_runs`; a red run emails a failure with the
+mismatching tables.
+
+### Throwaway target for a manual/local run
+
+- **Source:** production, **read-only**.
+- **Target:** an ephemeral `postgres:17` Docker container (free, isolated) — the
+  same image the Action uses. A fresh Supabase project also works if a
+  Supabase-hosted restore is ever wanted; only the target URL changes.
 
 > **Safety:** the restore target URL must be the throwaway. Never point
 > `pg_restore`/`psql --command` writes at `SUPABASE_PROD_DB_URL`. Match the
 > Postgres major version between dump and restore.
 
-### Steps (repeatable)
+### Steps for a manual / local run
+
+The Action above does all of this on a schedule; these are the same steps by
+hand, for reproducing a failure or running an ad-hoc drill.
 
 Production runs **Postgres 17**, so the target and the `pg_dump`/`pg_restore`
 client must be **17 or newer** (a v15 `pg_dump` refuses a v17 server). No local
@@ -198,16 +281,20 @@ psql "$SUPABASE_PROD_DB_URL" -tAc "select count(*) from listings;"
 psql "$TARGET"               -tAc "select count(*) from listings;"
 ```
 
-### Last drill — result
+### Schedule and last result
 
 | Field | Value |
 |---|---|
-| Date run | **2026-09-21** |
-| Source | production (`hviwjxigqivjfhmhpjiy`), read-only `pg_dump` |
-| Postgres version | source **17.6**, target **17.11** (`postgres:17` container) |
-| Dump | 412 KB, custom format, `public` + `storage` schemas, ~6 s |
-| Restore | `pg_restore` exit 1, **94 ignored errors** — all RLS policies (`auth` schema absent), role grants (`authenticated`/`anon` absent) and 2 `btree_gist` exclusion constraints. **No `TABLE DATA`/`COPY` errors.** |
+| **Cadence** | **Quarterly**, automated — `.github/workflows/restore-drill.yml`, 06:00 UTC on the 1st of Jan/Apr/Jul/Oct |
+| **Next due** | **1 October 2026** (then 1 Jan 2027, 1 Apr 2027, …) |
+| **Watchdog** | The 8am digest flags a failed or overdue drill (no run in >100 days) |
+| **Last run** | **2026-09-21** — the founding manual drill (the automation was proven the same day against a `postgres:17` container) |
+| Source / versions | production, read-only `pg_dump`; source **17.6**, target **17.11** |
 | Tables checked | **all 55** tables in `public` + `storage` |
-| Row counts source vs target | **identical, row-for-row** — 640 rows total, every table matched |
-| Content spot-check | `listings` content hash (id+title+location, all rows) **matched exactly**; `storage.objects` for the photo buckets = **54 on both**, matching the 54 files live in the `listings` bucket |
-| Outcome | **PASS** — a production backup restored into a clean, independent database with all row data intact. The only objects that did not restore are Supabase-managed policies/roles, recreatable on any real Supabase target. |
+| Row counts source vs target | **identical, row-for-row** — every table matched |
+| Content spot-check | `listings` content hash **matched exactly**; `storage.objects` = **54 on both**, matching the live bucket |
+| Restore errors | `pg_restore` exit 1, **94 ignored** — all Supabase-managed RLS policies, role grants, and 2 `btree_gist` indexes. **No `TABLE DATA`/`COPY` errors.** |
+| **Outcome** | **PASS** — full production application data restored into a clean, independent database, every table intact. The only objects that did not restore are Supabase-managed policies/roles (the `auth` login layer, covered by Supabase's own backups). |
+
+Each automated run appends a row to `restore_drill_runs` and emails the outcome;
+this table is the human-readable summary of the latest.
