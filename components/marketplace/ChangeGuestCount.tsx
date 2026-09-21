@@ -79,6 +79,11 @@ export default function ChangeGuestCount({ orderId, className }: { orderId: stri
     // The CURRENT party (seeded from the quote); the stepper only moves up.
     const [adults, setAdults] = useState(1);
     const [children, setChildren] = useState(0);
+    // Children start collapsed behind an "Add children" link, exactly as the
+    // booking dialog does it, so an adults-only amend never shows a 0 stepper.
+    // Once the booking already has children (oldChildren > 0) the stepper is
+    // always shown — there is nothing to reveal.
+    const [childrenShown, setChildrenShown] = useState(false);
     const [busy, setBusy] = useState(false);
     const [error, setError] = useState<string | null>(null);
 
@@ -98,6 +103,7 @@ export default function ChangeGuestCount({ orderId, className }: { orderId: stri
 
     function openModal() {
         setOpen(true);
+        setChildrenShown(false);
         loadQuote();
     }
     function closeModal() { setOpen(false); }
@@ -185,8 +191,18 @@ export default function ChangeGuestCount({ orderId, className }: { orderId: stri
                             ) : (
                                 <div className="space-y-3">
                                     <Stepper label="Adults" value={adults} set={setAdults} min={oldAdults} max={adultsMax} />
-                                    {kidsOk && (
+                                    {kidsOk && (childrenShown || oldChildren > 0) && (
                                         <Stepper label="Children (4–12)" value={children} set={setChildren} min={oldChildren} max={childrenMax} />
+                                    )}
+                                    {/* Adults-only until asked, and only where the
+                                        provider's minimum age admits children at all
+                                        (16+/18+/21+ show nothing) — the same rule and
+                                        link as the booking dialog. */}
+                                    {kidsOk && !childrenShown && oldChildren === 0 && (
+                                        <button type="button" onClick={() => setChildrenShown(true)}
+                                            className="text-sm font-medium text-slate-700 underline underline-offset-2 hover:text-slate-900">
+                                            Add children
+                                        </button>
                                     )}
 
                                     <div className="rounded-lg bg-slate-50 p-3">
