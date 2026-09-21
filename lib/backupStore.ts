@@ -92,6 +92,33 @@ export function describeS3Error(e: any): string {
     return parts.join(' — ') || String(e);
 }
 
+// A safe-to-log summary of the configuration, for diagnosing a store that
+// won't authenticate. It reveals the shape of the config — the endpoint host,
+// whether the endpoint wrongly carries a bucket path, the bucket name, and the
+// LENGTHS of the credentials — but never the credential values themselves. A
+// correct R2 access key id is 32 characters and a correct secret 64, so a
+// length that is off is itself the finding.
+export function backupConfigSummary() {
+    const endpoint = process.env.BACKUP_S3_ENDPOINT || '';
+    let endpointHost = '';
+    let endpointHasBucketPath: boolean | null = null;
+    try {
+        const u = new URL(endpoint);
+        endpointHost = u.host;
+        endpointHasBucketPath = u.pathname.replace(/\/+$/, '') !== '';
+    } catch {
+        endpointHost = endpoint ? '(unparseable)' : '(unset)';
+    }
+    return {
+        endpointHost,
+        endpointHasBucketPath,
+        bucket: process.env.BACKUP_S3_BUCKET || null,
+        region: process.env.BACKUP_S3_REGION || 'auto',
+        accessKeyIdLen: (process.env.BACKUP_S3_ACCESS_KEY_ID || '').length,
+        secretLen: (process.env.BACKUP_S3_SECRET_ACCESS_KEY || '').length,
+    };
+}
+
 export async function putObject(
     store: BackupStore,
     key: string,
