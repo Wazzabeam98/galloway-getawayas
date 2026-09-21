@@ -340,6 +340,22 @@ async function main() {
     await makeOrder({ ...orderBase, provider: baker, date: dayOffset(5), quantity: 1, unit: 'flat', unitPrice: 42, price: 42, itemId: bItem.id, itemName: bItem.name, status: 'confirmed', fulfilment: 'collection' });
     await makeOrder({ ...orderBase, provider: baker, date: dayOffset(-3), quantity: 1, unit: 'flat', unitPrice: 42, price: 42, itemId: bItem.id, itemName: bItem.name, status: 'refunded', fulfilment: 'collection' });
 
+    /* --------------------------- walkable upcoming set: one per provider, spread
+       across today / tomorrow / this week / next week — for the dashboard cards,
+       the countdown badges and each order page. */
+    const upSauna = await makeSession(sauna.id, dayOffset(0), time(19), { seats: 2, capacity: 6 });
+    const oToday = await makeOrder({ ...orderBase, provider: sauna, sessionId: upSauna.id, date: dayOffset(0), time: time(19), quantity: 2, adults: 2, children: 0, unit: 'person', unitPrice: 18, price: 36, itemId: sauShared.id, itemName: sauShared.name, status: 'confirmed', fulfilment: 'collection' });
+    const upYoga = await makeSession(yoga.id, dayOffset(1), time(8), { seats: 2, capacity: 10, declared: true, title: 'Sunrise class' });
+    const oTomorrow = await makeOrder({ ...orderBase, provider: yoga, sessionId: upYoga.id, date: dayOffset(1), time: time(8), quantity: 2, adults: 2, children: 0, unit: 'person', unitPrice: 14, price: 28, itemId: yItem.id, itemName: yItem.name, status: 'confirmed', fulfilment: 'collection' });
+    const oThisWeek = await makeOrder({ ...orderBase, ...cottage, provider: chef, date: dayOffset(3), quantity: 4, attendees: 4, unit: 'person', unitPrice: 55, price: 220, itemId: cItem.id, itemName: cItem.name, status: 'confirmed', fulfilment: 'delivery' });
+    const oNextWeek = await makeOrder({ ...orderBase, provider: baker, date: dayOffset(8), quantity: 1, unit: 'flat', unitPrice: 42, price: 42, itemId: bItem.id, itemName: bItem.name, status: 'confirmed', fulfilment: 'collection' });
+    const walkable = [
+        ['Today',           'Loch Sauna (sauna)',      oToday],
+        ['Tomorrow',        'Harbour Yoga (class)',    oTomorrow],
+        ['Later this week', 'Solway Table (chef)',     oThisWeek],
+        ['Next week',       'Galloway Bakehouse (baker)', oNextWeek],
+    ];
+
     /* ----------------------------------------------------------------- report */
     console.log('\n' + '='.repeat(72));
     console.log('  SEEDED ' + created.length + ' experience providers (password for every owner: ' + PASSWORD + ')');
@@ -354,6 +370,10 @@ async function main() {
     console.log('    yoga  — confirmed on a DECLARED class session');
     console.log('    chef  — authorised (awaiting the chef), confirmed (upcoming)');
     console.log('    baker — confirmed, refunded');
+    console.log('\n  Walkable upcoming orders (dashboard cards + countdown badges + order pages):');
+    for (const [when, biz, o] of walkable) {
+        console.log('    ' + when.padEnd(16) + biz.padEnd(28) + '/experiences/order/' + o.id);
+    }
     console.log('\n  done.');
     process.exit(0);
 }

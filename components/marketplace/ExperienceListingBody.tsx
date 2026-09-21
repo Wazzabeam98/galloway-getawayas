@@ -7,7 +7,7 @@ import {
 } from '@/components/marketplace/present';
 import { unitMultiplies } from '@/lib/serviceOrders';
 import { locationFromDirection } from '@/lib/orderLocation';
-import { MapPin, Clock, Users, User, BadgeCheck, Award, Compass, Flag, Activity, Backpack, ShieldAlert, Accessibility, Car, Check } from 'lucide-react';
+import { MapPin, Clock, Users, User, BadgeCheck, Award, Star, Compass, Flag, Activity, Backpack, ShieldAlert, Accessibility, Car, Check } from 'lucide-react';
 import PhotoGallery from '@/components/PhotoGallery';
 import PropertyMap from '@/components/PropertyMap';
 import ReviewStars from '@/components/ReviewStars';
@@ -162,19 +162,31 @@ export default function ExperienceListingBody({
                                     </span>
                                 </div>
 
-                                {p.qualifications ? (
-                                    <div className="mt-4">
-                                        <h3 className="flex items-center gap-1.5 text-xs font-semibold uppercase tracking-wide text-slate-500">
-                                            <Award className="h-3.5 w-3.5 text-slate-400" aria-hidden /> Training &amp; qualifications
-                                        </h3>
-                                        <p className="mt-1 whitespace-pre-line text-[15px] leading-relaxed text-slate-700">{p.qualifications}</p>
-                                    </div>
-                                ) : null}
-
-                                {p.recognition ? (
-                                    <div className="mt-4">
-                                        <h3 className="text-xs font-semibold uppercase tracking-wide text-slate-500">Recognition</h3>
-                                        <p className="mt-1 whitespace-pre-line text-[15px] leading-relaxed text-slate-700">{p.recognition}</p>
+                                {/* Credentials in the SAME shape as the facts grid
+                                    above — an icon, the line in bold, a grey label
+                                    beneath — sitting under the name/years inside the
+                                    host card. No uppercase headings, no tooltips (most
+                                    guests are on a phone); an unfilled one is omitted. */}
+                                {(p.qualifications || p.recognition) ? (
+                                    <div className="mt-5 space-y-4">
+                                        {p.qualifications ? (
+                                            <div className="flex items-start gap-3">
+                                                <span className="mt-0.5 flex-none"><Award className="h-5 w-5 text-slate-700" aria-hidden /></span>
+                                                <div className="min-w-0">
+                                                    <p className="font-semibold text-slate-900 leading-tight whitespace-pre-line">{p.qualifications}</p>
+                                                    <p className="text-sm text-slate-500">Qualifications</p>
+                                                </div>
+                                            </div>
+                                        ) : null}
+                                        {p.recognition ? (
+                                            <div className="flex items-start gap-3">
+                                                <span className="mt-0.5 flex-none"><Star className="h-5 w-5 text-slate-700" aria-hidden /></span>
+                                                <div className="min-w-0">
+                                                    <p className="font-semibold text-slate-900 leading-tight whitespace-pre-line">{p.recognition}</p>
+                                                    <p className="text-sm text-slate-500">Recognition</p>
+                                                </div>
+                                            </div>
+                                        ) : null}
                                     </div>
                                 ) : null}
                             </section>
