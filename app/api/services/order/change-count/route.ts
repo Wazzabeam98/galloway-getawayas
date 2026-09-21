@@ -96,6 +96,15 @@ export async function GET(request: Request) {
         const win = changeWindowState(order, loaded.windowHours, now);
         const perGroup = perGroupPricing(unit);
 
+        // CLOSED WINDOW — once the free-cancellation window passes, no change is
+        // allowed; the sheet says so and offers to message the provider.
+        if (!win.free) {
+            return NextResponse.json({
+                ok: true, closed: true, shape: loaded.shape, itemName: order.item_name,
+                deadlineISO: win.deadlineISO, providerName: provider.business_name || null,
+            });
+        }
+
         if (perGroup) {
             // Party size only — no money, so the window is irrelevant. Respect the
             // provider's capacity and minimum.
@@ -152,6 +161,10 @@ export async function POST(request: Request) {
         const win = changeWindowState(order, loaded.windowHours, now);
         const perGroup = perGroupPricing(unit);
 
+        // CLOSED WINDOW — no change of any kind once the window has passed.
+        if (!win.free) {
+            return NextResponse.json({ ok: false, error: 'Changes are closed now — the free-cancellation window has passed. Message the provider if you need to change anything.' }, { status: 409 });
+        }
         if (!Number.isFinite(wantCount) || wantCount < 1) {
             return NextResponse.json({ ok: false, error: 'Choose a number.' }, { status: 400 });
         }

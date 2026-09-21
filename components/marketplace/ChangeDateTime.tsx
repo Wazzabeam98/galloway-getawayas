@@ -145,6 +145,23 @@ export default function ChangeDateTime({ orderId, shape, className }: { orderId:
         ? other.filter((s) => s.date === selectedKey).sort((a, b) => a.time.localeCompare(b.time))
         : [];
 
+    // Slot-only month hints: which MONTHS hold an open day, so an empty visible
+    // month can say where to look instead of a wall of struck dates.
+    const monthKeyOf = (d: Date) => d.getFullYear() + '-' + String(d.getMonth() + 1).padStart(2, '0');
+    const monthNameOf = (mk: string) => {
+        try { return new Intl.DateTimeFormat('en-GB', { month: 'long', year: 'numeric', timeZone: 'Europe/London' }).format(new Date(mk + '-01T12:00:00Z')); }
+        catch { return mk; }
+    };
+    const openMonthKeys = new Set(Array.from(openDayKeys).map((k) => k.slice(0, 7)));
+    const shown = shownDate || currentDate;
+    const shownMonthEmpty = !isRequest && !!slot && openDayKeys.size > 0 && !openMonthKeys.has(monthKeyOf(shown));
+    const currentInShownMonth = !isRequest && !!slot && monthKeyOf(currentDate) === monthKeyOf(shown);
+    const openMonthsList = Array.from(openMonthKeys).sort().map(monthNameOf);
+    const availabilityHint = openMonthsList.length === 0 ? ''
+        : openMonthsList.length === 1
+            ? 'There’s room in ' + openMonthsList[0] + ' — use the arrows above to go there.'
+            : 'There’s room in ' + openMonthsList.slice(0, -1).join(', ') + ' and ' + openMonthsList[openMonthsList.length - 1] + ' — use the arrows above to find it.';
+
     const anyOpen = isRequest
         ? (!!dateFeed && !locked && (function () { for (let t = minDate.getTime(); t <= maxDate.getTime(); t += 86400000) if (requestOpen(keyOf(new Date(t)))) return true; return false; })())
         : (!!slot && !locked && openDayKeys.size > 0);
@@ -181,7 +198,10 @@ export default function ChangeDateTime({ orderId, shape, className }: { orderId:
                                     </div>
 
                                     {locked ? (
-                                        <p className="text-sm font-medium text-slate-600">The free-cancellation window has passed, so the date can’t be changed now.</p>
+                                        <div className="space-y-3">
+                                            <p className="text-sm text-slate-600">Changes are closed now — the free-cancellation window has passed. Message the provider if you need to change anything.</p>
+                                            <a href={'/messages?o=' + orderId} className="inline-flex items-center gap-1.5 rounded-xl bg-emerald-700 px-4 py-2.5 text-sm font-semibold text-white hover:bg-emerald-800">Message the provider</a>
+                                        </div>
                                     ) : !anyOpen ? (
                                         <p className="text-sm text-slate-600">There are no other {isRequest ? 'dates' : 'sessions'} open to move this booking to right now.</p>
                                     ) : (
@@ -203,10 +223,25 @@ export default function ChangeDateTime({ orderId, shape, className }: { orderId:
                                                     preventSnapRefocus
                                                     dayContentRenderer={renderDay}
                                                 />
+                                                {/* Slot: when the visible month has nothing to move to,
+                                                    cover the struck dates with words — the month nav stays
+                                                    clickable. */}
+                                                {shownMonthEmpty && (
+                                                    <div className="pointer-events-none absolute inset-x-0 bottom-0 flex flex-col items-center justify-center bg-white/95 px-6 text-center" style={{ top: 50 }}>
+                                                        <p className="text-sm font-semibold text-slate-700">
+                                                            {currentInShownMonth
+                                                                ? 'Your booking is the only session in ' + monthNameOf(monthKeyOf(shown))
+                                                                : 'Nothing open in ' + monthNameOf(monthKeyOf(shown))}
+                                                        </p>
+                                                        <p className="mt-1 text-[13px] text-slate-500">
+                                                            {currentInShownMonth ? 'There’s nothing else here to move to. ' : ''}{availabilityHint}
+                                                        </p>
+                                                    </div>
+                                                )}
                                             </div>
 
                                             {/* Slot: the chosen day's times. Request: the chosen date is the pick. */}
-                                            {!isRequest && selectedKey && (
+                                            {!isRequest && selectedKey && !shownMonthEmpty && (
                                                 <div>
                                                     <div className="text-[13px] font-semibold text-slate-700">{dayLabel(selectedKey)}</div>
                                                     {dayTimes.length === 0 ? (

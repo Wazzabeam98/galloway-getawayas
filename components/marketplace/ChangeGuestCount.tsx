@@ -41,6 +41,8 @@ interface Quote {
     min?: number;
     max?: number;
     free?: boolean;
+    closed?: boolean;          // past the window — no changes
+    providerName?: string | null;
 }
 
 function money(n: number): string {
@@ -221,6 +223,13 @@ export default function ChangeGuestCount({ orderId, shape, className }: { orderI
                                 <p className="text-sm text-rose-600">{loadErr}</p>
                             ) : !quote ? (
                                 <p className="text-sm text-slate-400">Loading…</p>
+                            ) : (quote.closed || !free) ? (
+                                <div className="space-y-3">
+                                    <p className="text-sm text-slate-600">Changes are closed now — the free-cancellation window has passed. Message {quote.providerName || 'the provider'} if you need to change anything.</p>
+                                    <a href={'/messages?o=' + orderId} className="inline-flex items-center gap-1.5 rounded-xl bg-emerald-700 px-4 py-2.5 text-sm font-semibold text-white hover:bg-emerald-800">
+                                        Message {quote.providerName || 'the provider'}
+                                    </a>
+                                </div>
                             ) : slotFull ? (
                                 <p className="text-sm text-slate-600">This session is full — there are no more places to add.</p>
                             ) : (
@@ -288,7 +297,7 @@ export default function ChangeGuestCount({ orderId, shape, className }: { orderI
                             )}
                         </div>
 
-                        {quote && !slotFull && !loadErr && (
+                        {quote && !quote.closed && free && !slotFull && !loadErr && (
                             <div className="border-t border-slate-100 p-4">
                                 <button type="button" disabled={!canConfirm} onClick={proceed}
                                     className={
