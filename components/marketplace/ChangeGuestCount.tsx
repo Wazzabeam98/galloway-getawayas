@@ -3,6 +3,7 @@
 import { useState } from 'react';
 import { createPortal } from 'react-dom';
 import { Users, Minus, Plus, AlertTriangle, Loader2, ChevronRight, X } from 'lucide-react';
+import { childrenAllowed } from '@/lib/guestAges';
 
 // "Change guest count" — a reservation ACTION row that opens a MODAL over the
 // page, the way Airbnb's reservation actions do (not an inline expander). The
@@ -29,6 +30,9 @@ interface Quote {
     deadlineISO: string;
     insideWindow: boolean;
     itemName: string | null;
+    // The provider's minimum age (null / 12 / 16 / 18 / 21). 16+ rules out the
+    // whole 4–12 children band, so no children stepper is shown at all.
+    minAge: number | null;
 }
 
 function money(n: number): string {
@@ -110,6 +114,8 @@ export default function ChangeGuestCount({ orderId, className }: { orderId: stri
 
     const adultsMax = oldAdults + Math.max(0, seatsLeft - (children - oldChildren));
     const childrenMax = oldChildren + Math.max(0, seatsLeft - (adults - oldAdults));
+    // 16+/18+/21+ experiences take no children — no stepper, not a disabled one.
+    const kidsOk = childrenAllowed(quote ? quote.minAge : null);
 
     async function proceed() {
         if (!quote) return;
@@ -126,13 +132,21 @@ export default function ChangeGuestCount({ orderId, className }: { orderId: stri
         setBusy(false);
     }
 
-    // A struck-through old value beside the new one, only when it changed.
-    const Diff = ({ oldN, newN, kind }: { oldN: number; newN: number; kind: 'adult' | 'child' }) => (
-        <span className="text-sm text-slate-700">
-            {newN !== oldN && <span className="text-slate-400 line-through">{people(oldN, kind)}</span>}{' '}
-            <span className={newN !== oldN ? 'font-semibold text-slate-900' : ''}>{people(newN, kind)}</span>
-        </span>
-    );
+    // Strike through only a value that was ACTUALLY there before. 0 → N shows just
+    // the new value (nothing to strike); N → 0 strikes the old value with nothing
+    // after it; N → M (both non-zero) shows the struck old beside the new.
+    const Diff = ({ oldN, newN, kind }: { oldN: number; newN: number; kind: 'adult' | 'child' }) => {
+        const changed = newN !== oldN;
+        const showOld = changed && oldN > 0;
+        const showNew = newN > 0;
+        return (
+            <span className="text-sm text-slate-700">
+                {showOld && <span className="text-slate-400 line-through">{people(oldN, kind)}</span>}
+                {showOld && showNew ? ' ' : null}
+                {showNew && <span className={changed ? 'font-semibold text-slate-900' : ''}>{people(newN, kind)}</span>}
+            </span>
+        );
+    };
 
     // The row that opens the modal. A chevron marks it as opening a screen, like
     // the other navigating rows (and unlike Cancel, which expands in place).
@@ -170,7 +184,9 @@ export default function ChangeGuestCount({ orderId, className }: { orderId: stri
                             ) : (
                                 <div className="space-y-3">
                                     <Stepper label="Adults" value={adults} set={setAdults} min={oldAdults} max={adultsMax} />
-                                    <Stepper label="Children (4–12)" value={children} set={setChildren} min={oldChildren} max={childrenMax} />
+                                    {kidsOk && (
+                                        <Stepper label="Children (4–12)" value={children} set={setChildren} min={oldChildren} max={childrenMax} />
+                                    )}
 
                                     <div className="rounded-lg bg-slate-50 p-3">
                                         <div className="text-[11px] font-semibold uppercase tracking-wide text-slate-500">{quote.itemName || 'Your booking'}</div>

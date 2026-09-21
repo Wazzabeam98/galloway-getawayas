@@ -4,6 +4,7 @@ import { useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
 import { X, Minus, Plus, Calendar, ChevronDown } from 'lucide-react';
 import { optionAvailability, seatConfig } from '@/lib/serviceSlots';
 import { unitMultiplies, MAX_ORDER_QUANTITY } from '@/lib/serviceOrders';
+import { childrenAllowed } from '@/lib/guestAges';
 import { itemPriceLabel, timeLabel, monthYearLabel, dayHeadingLabel } from '@/components/marketplace/present';
 import { londonDayKey, shiftDayKey } from '@/lib/dayKey';
 
@@ -33,9 +34,12 @@ const dayKey = (y: number, m0: number, d: number) => `${y}-${String(m0 + 1).padS
 // Selecting a slot and pressing Book goes straight to Stripe Checkout — the panel's
 // onBook does the POST + redirect; no contact is collected here (Checkout does that).
 export default function BookingDialog({
-    who, items, sessions, sessionsForItem, declaredSessions, providerCapacity, providerMinPeople, providerFulfilment, isFood, initialDate, prefillAdults, prefillChildren, busy, error, onBook, onClose,
+    who, items, sessions, sessionsForItem, declaredSessions, providerCapacity, providerMinPeople, providerFulfilment, isFood, minAge, initialDate, prefillAdults, prefillChildren, busy, error, onBook, onClose,
 }: {
     who: string;
+    // The provider's minimum age (null / 12 / 16 / 18 / 21). 16+ takes no children
+    // (the 4–12 band is all below it), so no Children stepper and no "Add children".
+    minAge?: number | null;
     // The party to default the steppers to — from the guest's cottage booking
     // when there is one. Null = no prefill, start at one adult. Clamped to what's
     // bookable; if the party exceeds that, we prefill the maximum as ALL ADULTS
@@ -78,6 +82,10 @@ export default function BookingDialog({
     // it stays open until the picker closes — dropping back to zero mid-edit must
     // not yank the stepper away. A prefill that carries children opens it up front.
     const [childrenShown, setChildrenShown] = useState<boolean>(false);
+    // 16+/18+/21+ experiences take adults only — no Children stepper, no "Add
+    // children" link (not a disabled one), and any prefilled children are dropped.
+    const kidsOk = childrenAllowed(minAge);
+    useEffect(() => { if (!kidsOk) { setChildren(0); setChildrenShown(false); } }, [kidsOk]);
     const [selKey, setSelKey] = useState<string | null>(null);
     const [address, setAddress] = useState('');
     const [allergy, setAllergy] = useState('');
@@ -188,7 +196,7 @@ export default function BookingDialog({
         if (prefillAdults == null && prefillChildren == null) return;
         prefilled.current = true;
         const pa = Math.max(0, Number(prefillAdults) || 0);
-        const pc = Math.max(0, Number(prefillChildren) || 0);
+        const pc = kidsOk ? Math.max(0, Number(prefillChildren) || 0) : 0;
         if (pa + pc > cap) { setAdults(Math.max(1, cap)); setChildren(0); }
         else { setAdults(Math.max(1, pa)); setChildren(pc); if (pc > 0) setChildrenShown(true); }
         // eslint-disable-next-line
@@ -344,7 +352,7 @@ export default function BookingDialog({
                                     // Children is here only once revealed — and once
                                     // revealed it stays, even at zero, so an edit back
                                     // to nought doesn't snatch the stepper away.
-                                    ...(childrenShown ? [{ key: 'children', label: 'Children', sub: 'Ages 4–12', value: children, set: setChildren, floor: 0 }] : []),
+                                    ...(childrenShown && kidsOk ? [{ key: 'children', label: 'Children', sub: 'Ages 4–12', value: children, set: setChildren, floor: 0 }] : []),
                                 ].map((row) => (
                                     <div key={row.key} className="flex items-center justify-between py-1.5">
                                         <div>
@@ -364,8 +372,10 @@ export default function BookingDialog({
                                         </div>
                                     </div>
                                 ))}
-                                {/* Adults-only by default; reveal the Children stepper on demand. */}
-                                {!childrenShown && (
+                                {/* Adults-only by default; reveal the Children stepper on
+                                    demand — but only where the provider's minimum age
+                                    admits children at all (16+/18+/21+ show nothing). */}
+                                {!childrenShown && kidsOk && (
                                     <button type="button" onClick={() => setChildrenShown(true)}
                                         className="mt-1.5 text-sm font-medium text-slate-700 underline underline-offset-2 hover:text-slate-900">
                                         Add children
