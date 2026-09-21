@@ -13,6 +13,14 @@ import {
     freeCancelDeadline, guestMayCancelFree, shapeOf,
 } from '@/lib/serviceSlots';
 import { foldOrderFamily } from '@/lib/orderFamily';
+import { childrenAllowed } from '@/lib/guestAges';
+
+// The provider's minimum age (null / 12 / 16 / 18 / 21), read from the guest_details
+// jsonb where the listing stores it.
+function providerMinAge(provider: any): number | null {
+    const raw = provider && provider.guest_details && (provider.guest_details as any).min_age;
+    return raw == null || raw === '' ? null : Number(raw);
+}
 
 export const dynamic = 'force-dynamic';
 
@@ -72,7 +80,7 @@ async function loadForTopUp(admin: any, orderId: string, userId: string): Promis
 
     const { data: provider } = await admin
         .from('service_providers')
-        .select('id, business_name, trade, shape, status, plan, stripe_account_id, stripe_payouts_enabled, commission_rate, slot_capacity, slot_min_people, cancellation_window_hours')
+        .select('id, business_name, trade, shape, status, plan, stripe_account_id, stripe_payouts_enabled, commission_rate, slot_capacity, slot_min_people, cancellation_window_hours, guest_details')
         .eq('id', order.provider_id).maybeSingle();
     if (!provider || !isSlot(provider) || !isLiveToGuests(provider) || !provider.stripe_account_id) {
         return { error: { status: 400, message: 'That experience isn’t taking bookings right now.' } };
@@ -141,6 +149,7 @@ export async function GET(request: Request) {
             deadlineISO: facts.deadlineISO,
             insideWindow: facts.insideWindow,
             itemName: loaded.order.item_name,
+            minAge: providerMinAge(loaded.provider),
         });
     } catch (err: any) {
         console.error('[services/slots/top-up GET]', err && err.message);
@@ -177,7 +186,10 @@ export async function POST(request: Request) {
             return NextResponse.json({ ok: false, error: 'Choose how many to add, up to ' + MAX_ORDER_QUANTITY + '.' }, { status: 400 });
         }
         const reqChildren = Math.max(0, Math.floor(Number(body && body.children) || 0));
-        const addChildren = Math.min(reqChildren, added - 1);
+        // The wall behind the hidden stepper: an adults-only experience (16/18/21+)
+        // takes no children, whatever a crafted request asks for.
+        const kidsOk = childrenAllowed(providerMinAge(provider));
+        const addChildren = kidsOk ? Math.min(reqChildren, added - 1) : 0;
         const addAdults = added - addChildren;
 
         // ---- claim the added seats, atomically (a JOIN on the pinned session) --

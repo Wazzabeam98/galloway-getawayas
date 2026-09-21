@@ -7,12 +7,13 @@ import {
 } from '@/components/marketplace/present';
 import { unitMultiplies } from '@/lib/serviceOrders';
 import { locationFromDirection } from '@/lib/orderLocation';
-import { MapPin, Clock, Users, User, BadgeCheck, Award, Compass, Flag, Activity, Backpack, ShieldAlert, Accessibility, Car, Check } from 'lucide-react';
+import { MapPin, Clock, Users, User, BadgeCheck, Compass, Flag, Activity, Backpack, ShieldAlert, Accessibility, Car, Check } from 'lucide-react';
 import PhotoGallery from '@/components/PhotoGallery';
 import PropertyMap from '@/components/PropertyMap';
 import ReviewStars from '@/components/ReviewStars';
 import ShowAllReviews from '@/components/ShowAllReviews';
 import ProviderReplyBox from '@/components/marketplace/ProviderReplyBox';
+import HostCredentials from '@/components/marketplace/HostCredentials';
 import { capitializeFirst } from '@/lib/utils';
 import { MIN_PUBLIC_REVIEWS } from '@/lib/reviews';
 import type { MpProvider } from '@/lib/experiencesData';
@@ -162,21 +163,12 @@ export default function ExperienceListingBody({
                                     </span>
                                 </div>
 
-                                {p.qualifications ? (
-                                    <div className="mt-4">
-                                        <h3 className="flex items-center gap-1.5 text-xs font-semibold uppercase tracking-wide text-slate-500">
-                                            <Award className="h-3.5 w-3.5 text-slate-400" aria-hidden /> Training &amp; qualifications
-                                        </h3>
-                                        <p className="mt-1 whitespace-pre-line text-[15px] leading-relaxed text-slate-700">{p.qualifications}</p>
-                                    </div>
-                                ) : null}
-
-                                {p.recognition ? (
-                                    <div className="mt-4">
-                                        <h3 className="text-xs font-semibold uppercase tracking-wide text-slate-500">Recognition</h3>
-                                        <p className="mt-1 whitespace-pre-line text-[15px] leading-relaxed text-slate-700">{p.recognition}</p>
-                                    </div>
-                                ) : null}
+                                {/* Credentials as quiet details under the name/years
+                                    — a small muted icon, the line in normal weight and
+                                    slightly smaller, no grey label beneath. Read as
+                                    facts about the host, not headings. Shared with the
+                                    order page's host card; an unfilled one is omitted. */}
+                                <HostCredentials qualifications={p.qualifications} recognition={p.recognition} className="mt-5" />
                             </section>
                         )}
 

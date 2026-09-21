@@ -116,17 +116,13 @@ export const GUEST_SCREEN_COPY = {
     titleModalTitle: 'Your title',
     titlePlaceholder: 'What you do — e.g. “Cold-water swimming guide”',
 
-    // Row: qualifications. Required for the four safety categories (no
-    // suffix, gates Next), optional everywhere else (the suffix shows).
+    // Row: qualifications. Optional everywhere (the suffix always shows), and
+    // only prompted at all on the physical-safety categories.
     qualsRowLabel: 'Qualifications',
     qualsRowPrompt: 'Add your training and qualifications',
     qualsModalTitle: 'Training and qualifications',
     qualsPlaceholder: 'What qualifies you — where you trained, how long you’ve done it, any certificates or licences. A guest chooses you on this.',
-    qualsRequiredNote: 'A guest is putting their safety in your hands, so for this kind of experience we do need it.',
     qualsOptionalNote: 'Anything you’ve trained in or worked at — it all helps.',
-    // The gate under a greyed Next on the hub when a required qualification is
-    // still missing.
-    qualsGate: 'Add your training or qualifications — for this kind of experience it’s required.',
 
     // Row three: endorsements — always optional, never gates Next.
     recognitionRowLabel: 'Endorsements',

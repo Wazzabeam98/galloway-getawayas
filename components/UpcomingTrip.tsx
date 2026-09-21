@@ -7,6 +7,7 @@ import { londonDayKey, daysBetweenKeys } from '@/lib/dayKey';
 import { liveForGuestCard, stayCountdown } from '@/lib/bookingWindows';
 import { bookingReleasesPrivateData } from '@/lib/bookingEntitlement';
 import { adminClient } from '@/lib/supabaseAdmin';
+import { loadBookingSeats } from '@/lib/groupSeats';
 import { directionsUrl as buildDirectionsUrl, appleDirectionsUrl } from '@/lib/directions';
 import { compareTripsByStart } from '@/lib/bookingOrder';
 import { publicArea } from '@/lib/places';
@@ -186,13 +187,23 @@ export default async function UpcomingTrip() {
         </>
     );
 
-    const groupEl = (booking.status !== 'cancelled' && booking.status !== 'declined') ? (
+    // The party's seats, read server-side (the browser can't select
+    // booking_guests — see lib/groupSeats) and handed to TripGroup as its initial
+    // data. This card is the guest's own upcoming stay, so they are the booker.
+    const showGroup = booking.status !== 'cancelled' && booking.status !== 'declined';
+    const { seats: seatRows, profiles: seatProfiles } = showGroup
+        ? await loadBookingSeats(adminClient(), booking.id)
+        : { seats: [], profiles: {} };
+
+    const groupEl = showGroup ? (
         <div className="mt-4">
             <TripGroup
                 bookingId={booking.id}
                 guests={booking.guests}
                 cottage={listing.title}
                 when={formatUk(new Date(booking.check_in)) + ' → ' + formatUk(new Date(booking.check_out))}
+                initialSeats={seatRows as any}
+                initialProfiles={seatProfiles as any}
             />
         </div>
     ) : null;
@@ -240,7 +251,7 @@ export default async function UpcomingTrip() {
 
     const actionsEl = (
         <div className="flex flex-wrap gap-3 mt-8">
-            <Link href="/trips"
+            <Link href={'/trips/' + booking.id}
                 className="inline-flex items-center gap-2 px-6 py-3 bg-emerald-700 hover:bg-emerald-800 text-white text-sm font-semibold rounded-xl transition">
                 <CalendarDays className="w-4 h-4" /> Your trip
             </Link>

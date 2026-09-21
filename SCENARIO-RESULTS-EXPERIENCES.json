@@ -1,8 +1,8 @@
 {
-  "ranAt": "2026-09-20T16:04:29.876Z",
-  "target": "http://localhost:3000",
+  "ranAt": "2026-09-20T22:04:08.914Z",
+  "target": "http://localhost:3190",
   "account": "acct_1U6iMxAJfMhUsIVc",
-  "passed": 10,
+  "passed": 11,
   "failed": 0,
   "lostWebhookReconciled": true,
   "lostWebhookRequestReconciled": true,
@@ -14,7 +14,7 @@
         {
           "description": "slot/book accepted and returned a Checkout url",
           "ok": true,
-          "detail": "HTTP 200 {\"ok\":true,\"url\":\"https://checkout.stripe.com/c/pay/cs_test_a1RjbjpC0UiKe3XkEckqTerFOKt4VpGZGc4GVdj5RSzfZUEvhVIBLVWIyO#fidnandhYHdWcXxpYCc%2FJ2FgY2RwaXEnKSdicyc"
+          "detail": "HTTP 200 {\"ok\":true,\"url\":\"https://checkout.stripe.com/c/pay/cs_test_a1ezMdRc19XNvK9aYmBOXpjsINxFKcAjgp43nTbM8xEVFOGbbHKB4nwNvX#fidnandhYHdWcXxpYCc%2FJ2FgY2RwaXEnKSdicyc"
         },
         {
           "description": "a holding order exists after booking",
@@ -59,7 +59,7 @@
         {
           "description": "STRIPE: the provider was paid — £6 fee to us, £54 transferred to them",
           "ok": true,
-          "detail": "fee=600 transfer=tr_3UHnAgPTBrEa7mS71zwbXlLx"
+          "detail": "fee=600 transfer=tr_3UHsmLPTBrEa7mS71CqdfuY2"
         },
         {
           "description": "STRIPE: the provider’s connected balance rose by ~£54 net",
@@ -74,7 +74,7 @@
         {
           "description": "APP: the order now carries the PaymentIntent id",
           "ok": true,
-          "detail": "pi_3UHnAgPTBrEa7mS71thGKRvZ"
+          "detail": "pi_3UHsmLPTBrEa7mS71rbAnX5p"
         },
         {
           "description": "APP: the seat was KEPT (seats_taken still 1 — not resold)",
@@ -93,7 +93,7 @@
         {
           "description": "services/order accepted and returned a Checkout url",
           "ok": true,
-          "detail": "HTTP 200 {\"ok\":true,\"url\":\"https://checkout.stripe.com/c/pay/cs_test_a1gzRgDDQRDUCrANwYg5gCvQhMnQsRiK0Qq70PCWo520hbOxEdIfNxHMxF#fidnandhYHdWcXxpYCc%2FJ2FgY2RwaXEnKSdicyc"
+          "detail": "HTTP 200 {\"ok\":true,\"url\":\"https://checkout.stripe.com/c/pay/cs_test_a1TyXFjNMpdmVF6tD7GvXp64MxkkYwlsg0J1NNsirEZ3qvbN47KzNzzcwS#fidnandhYHdWcXxpYCc%2FJ2FgY2RwaXEnKSdicyc"
         },
         {
           "description": "the card is HELD not charged (requires_capture)",
@@ -118,7 +118,7 @@
         {
           "description": "the order carries the held PaymentIntent",
           "ok": true,
-          "detail": "pi_3UHnBGPTBrEa7mS71H5SUZJD"
+          "detail": "pi_3UHsmxPTBrEa7mS71P7xAuv0"
         },
         {
           "description": "orders/respond confirm succeeded",
@@ -171,7 +171,7 @@
         {
           "description": "STRIPE: fee £6, transfer to provider",
           "ok": true,
-          "detail": "fee=600 transfer=tr_3UHnBMPTBrEa7mS718XCdzXT"
+          "detail": "fee=600 transfer=tr_3UHsn3PTBrEa7mS711e3hq8d"
         },
         {
           "description": "the webhook was accepted (200)",
@@ -389,12 +389,12 @@
         {
           "description": "APP: it carries the held PaymentIntent",
           "ok": true,
-          "detail": "pi_3UHnCkPTBrEa7mS71wPGVtUf"
+          "detail": "pi_3UHsoWPTBrEa7mS70wdVBRqt"
         },
         {
           "description": "APP: it belongs to the right guest and provider",
           "ok": true,
-          "detail": "13299b1d-ea28-4624-b7f8-670d04246e02/3a202678-012e-4bdb-b887-54c9972a7cd3"
+          "detail": "c30c1aed-9bf8-402e-962d-9fe522655e86/bb17fc9c-faee-4969-89d9-a86d75560c48"
         },
         {
           "description": "STRIPE: the hold is still LIVE (requires_capture — nothing captured early, nothing lost)",
@@ -553,6 +553,99 @@
       ],
       "status": "passed",
       "note": "Add-guests reuses the slot machine: child order per added place, its own PI and seats, confirmed by the same webhook, swept if unpaid; a full cancel settles the whole family."
+    },
+    {
+      "number": "11",
+      "title": "Move a booking: the whole family (parent + top-up) moves together, or nobody does; a full target and a past-cutoff target are both refused",
+      "checks": [
+        {
+          "description": "A: paid family of 3 built (parent 2 + top-up 1)",
+          "ok": true,
+          "detail": "book HTTP 200"
+        },
+        {
+          "description": "A: the source holds all 3 seats before the move",
+          "ok": true,
+          "detail": "3"
+        },
+        {
+          "description": "A: move succeeded",
+          "ok": true,
+          "detail": "HTTP 200 {\"ok\":true,\"moved\":2,\"seats\":3,\"serviceDate\":\"2026-09-26\",\"serviceTime\":\"10:00\",\"from\":{\"date\":\"2026-09-26\",\"time\":\"09:0"
+        },
+        {
+          "description": "A: the WHOLE family moved (2 rows, 3 seats)",
+          "ok": true,
+          "detail": "moved=2 seats=3"
+        },
+        {
+          "description": "A: the move names BOTH times (old → new)",
+          "ok": true,
+          "detail": "from={\"date\":\"2026-09-26\",\"time\":\"09:00\"} to=10:00"
+        },
+        {
+          "description": "A: parent repointed to the new session, re-dated, and stamped",
+          "ok": true,
+          "detail": "session=true time=10:00:00 from=true count=1"
+        },
+        {
+          "description": "A: the top-up child rode along (same new session, stamped)",
+          "ok": true,
+          "detail": null
+        },
+        {
+          "description": "A: the source released all 3 seats",
+          "ok": true,
+          "detail": "0"
+        },
+        {
+          "description": "A: the target claimed all 3 seats",
+          "ok": true,
+          "detail": "3"
+        },
+        {
+          "description": "B: paid family of 3 built on a second session",
+          "ok": true,
+          "detail": null
+        },
+        {
+          "description": "B: the move was REFUSED (no room for the whole family)",
+          "ok": true,
+          "detail": "HTTP 409"
+        },
+        {
+          "description": "B: the family did NOT move (still on the source, never stamped)",
+          "ok": true,
+          "detail": "p.session=true count=0"
+        },
+        {
+          "description": "B: the source is untouched (still 3 seats)",
+          "ok": true,
+          "detail": "3"
+        },
+        {
+          "description": "B: the full target is untouched (still 4 seats)",
+          "ok": true,
+          "detail": "4"
+        },
+        {
+          "description": "C: a move into a slot past its own cutoff is REFUSED",
+          "ok": true,
+          "detail": "HTTP 409"
+        },
+        {
+          "description": "C: the family still did NOT move",
+          "ok": true,
+          "detail": null
+        },
+        {
+          "description": "C: the past-cutoff target claimed nobody",
+          "ok": true,
+          "detail": "0"
+        }
+      ],
+      "status": "passed",
+      "note": "The move is one atomic RPC: it locks the family and both sessions, re-checks capacity and the cutoff under lock, then claims the target and releases the source — or raises and rolls the whole thing back, leaving the source exactly as it was."
     }
   ]
 }

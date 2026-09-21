@@ -40,6 +40,7 @@ interface PanelProvider {
     bookedBlocks?: PanelBookedBlock[];
     cancellationHours?: number | null;
     noRefund?: boolean | null;
+    minAge?: number | null;
 }
 
 const COMMON_ALLERGENS = ['Nuts', 'Peanuts', 'Gluten', 'Dairy', 'Eggs', 'Fish', 'Shellfish', 'Soya', 'Sesame'];
@@ -205,6 +206,7 @@ export default function BookingPanel({ bookingId, checkIn, checkOut, cottageGues
                             providerMinPeople={provider.minPeople}
                             providerFulfilment={provider.fulfilment}
                             isFood={provider.isFood}
+                            minAge={provider.minAge}
                             initialDate={initialDate}
                             prefillAdults={cottageAdults}
                             prefillChildren={cottageChildren}

@@ -2,7 +2,8 @@
 
 import { useState } from 'react';
 import { createPortal } from 'react-dom';
-import { Users, Minus, Plus, AlertTriangle, Loader2, ChevronRight, X } from 'lucide-react';
+import { Users, Minus, Plus, Loader2, ChevronRight, X } from 'lucide-react';
+import { childrenAllowed } from '@/lib/guestAges';
 
 // "Change guest count" — a reservation ACTION row that opens a MODAL over the
 // page, the way Airbnb's reservation actions do (not an inline expander). The
@@ -10,8 +11,8 @@ import { Users, Minus, Plus, AlertTriangle, Loader2, ChevronRight, X } from 'luc
 // party, and as the count changes shows a Confirm-and-pay-shaped summary: the new
 // count with the old struck through, a price-adjustment line and a total — the
 // delta for the added places, charged as a separate payment. Past the
-// session-anchored cancellation deadline it says the added place is
-// non-refundable, before the card, and requires an acknowledgement.
+// session-anchored cancellation deadline a single quiet "Non-refundable" line
+// sits by the price — no amber panel, no tickbox.
 //
 // Per-person slot bookings only; the page decides whether to render the row.
 // Payer-only and price-bearing — the page renders it for the booker alone, and
@@ -29,6 +30,9 @@ interface Quote {
     deadlineISO: string;
     insideWindow: boolean;
     itemName: string | null;
+    // The provider's minimum age (null / 12 / 16 / 18 / 21). 16+ rules out the
+    // whole 4–12 children band, so no children stepper is shown at all.
+    minAge: number | null;
 }
 
 function money(n: number): string {
@@ -75,7 +79,6 @@ export default function ChangeGuestCount({ orderId, className }: { orderId: stri
     // The CURRENT party (seeded from the quote); the stepper only moves up.
     const [adults, setAdults] = useState(1);
     const [children, setChildren] = useState(0);
-    const [ack, setAck] = useState(false);
     const [busy, setBusy] = useState(false);
     const [error, setError] = useState<string | null>(null);
 
@@ -89,7 +92,7 @@ export default function ChangeGuestCount({ orderId, className }: { orderId: stri
             setQuote(q);
             setAdults(q.adults != null ? q.adults : Math.max(1, q.headcount));
             setChildren(q.children != null ? q.children : 0);
-            setAck(false); setError(null);
+            setError(null);
         } catch { setLoadErr('Could not load this.'); }
     }
 
@@ -105,11 +108,15 @@ export default function ChangeGuestCount({ orderId, className }: { orderId: stri
     const added = (adults - oldAdults) + (children - oldChildren);
     const addedChildren = children - oldChildren;
     const delta = quote ? quote.unitPrice * added : 0;
-    const needsAck = quote ? quote.insideWindow : false;
-    const canPay = !!quote && added >= 1 && !busy && (!needsAck || ack);
+    // Past the free-cancellation deadline an added place is non-refundable; we
+    // state it plainly by the price rather than gating on a tickbox.
+    const pastCutoff = quote ? quote.insideWindow : false;
+    const canPay = !!quote && added >= 1 && !busy;
 
     const adultsMax = oldAdults + Math.max(0, seatsLeft - (children - oldChildren));
     const childrenMax = oldChildren + Math.max(0, seatsLeft - (adults - oldAdults));
+    // 16+/18+/21+ experiences take no children — no stepper, not a disabled one.
+    const kidsOk = childrenAllowed(quote ? quote.minAge : null);
 
     async function proceed() {
         if (!quote) return;
@@ -126,13 +133,21 @@ export default function ChangeGuestCount({ orderId, className }: { orderId: stri
         setBusy(false);
     }
 
-    // A struck-through old value beside the new one, only when it changed.
-    const Diff = ({ oldN, newN, kind }: { oldN: number; newN: number; kind: 'adult' | 'child' }) => (
-        <span className="text-sm text-slate-700">
-            {newN !== oldN && <span className="text-slate-400 line-through">{people(oldN, kind)}</span>}{' '}
-            <span className={newN !== oldN ? 'font-semibold text-slate-900' : ''}>{people(newN, kind)}</span>
-        </span>
-    );
+    // Strike through only a value that was ACTUALLY there before. 0 → N shows just
+    // the new value (nothing to strike); N → 0 strikes the old value with nothing
+    // after it; N → M (both non-zero) shows the struck old beside the new.
+    const Diff = ({ oldN, newN, kind }: { oldN: number; newN: number; kind: 'adult' | 'child' }) => {
+        const changed = newN !== oldN;
+        const showOld = changed && oldN > 0;
+        const showNew = newN > 0;
+        return (
+            <span className="text-sm text-slate-700">
+                {showOld && <span className="text-slate-400 line-through">{people(oldN, kind)}</span>}
+                {showOld && showNew ? ' ' : null}
+                {showNew && <span className={changed ? 'font-semibold text-slate-900' : ''}>{people(newN, kind)}</span>}
+            </span>
+        );
+    };
 
     // The row that opens the modal. A chevron marks it as opening a screen, like
     // the other navigating rows (and unlike Cancel, which expands in place).
@@ -170,7 +185,9 @@ export default function ChangeGuestCount({ orderId, className }: { orderId: stri
                             ) : (
                                 <div className="space-y-3">
                                     <Stepper label="Adults" value={adults} set={setAdults} min={oldAdults} max={adultsMax} />
-                                    <Stepper label="Children (4–12)" value={children} set={setChildren} min={oldChildren} max={childrenMax} />
+                                    {kidsOk && (
+                                        <Stepper label="Children (4–12)" value={children} set={setChildren} min={oldChildren} max={childrenMax} />
+                                    )}
 
                                     <div className="rounded-lg bg-slate-50 p-3">
                                         <div className="text-[11px] font-semibold uppercase tracking-wide text-slate-500">{quote.itemName || 'Your booking'}</div>
@@ -190,20 +207,8 @@ export default function ChangeGuestCount({ orderId, className }: { orderId: stri
                                         </div>
                                     </div>
 
-                                    {needsAck ? (
-                                        <div className="rounded-xl border border-amber-300 bg-amber-50 p-3">
-                                            <div className="flex items-start gap-2">
-                                                <AlertTriangle className="mt-0.5 h-4 w-4 flex-none text-amber-700" aria-hidden />
-                                                <div className="text-[13px] text-amber-900">
-                                                    <p className="font-semibold">This place can’t be refunded.</p>
-                                                    <p className="mt-0.5">The free-cancellation deadline ({cutoffLabel(quote.deadlineISO)}) has passed, so a place added now is non-refundable from the moment you pay — the same as the rest of this booking.</p>
-                                                    <label className="mt-2 flex items-start gap-2">
-                                                        <input type="checkbox" checked={ack} onChange={(e) => setAck(e.target.checked)} className="mt-0.5" />
-                                                        <span>I understand this added place isn’t refundable.</span>
-                                                    </label>
-                                                </div>
-                                            </div>
-                                        </div>
+                                    {pastCutoff ? (
+                                        <p className="text-[13px] font-medium text-slate-600">Non-refundable</p>
                                     ) : (
                                         <p className="text-[13px] text-slate-500">Free to cancel until {cutoffLabel(quote.deadlineISO)}; after that an added place isn’t refundable.</p>
                                     )}

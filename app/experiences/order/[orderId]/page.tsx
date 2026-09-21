@@ -2,7 +2,7 @@ import { redirect } from 'next/navigation';
 import Link from 'next/link';
 import {
     ArrowLeft, CalendarDays, MapPin, CheckCircle2, Clock3, XCircle, AlertTriangle,
-    MessageSquare, ChevronRight, LifeBuoy, BookOpen, Award,
+    MessageSquare, ChevronRight, LifeBuoy, BookOpen,
 } from 'lucide-react';
 import { createServerComponentClient } from '@supabase/auth-helpers-nextjs';
 import { cookies } from 'next/headers';
@@ -16,11 +16,14 @@ import { directionsUrl as buildDirectionsUrl, appleDirectionsUrl } from '@/lib/d
 import { loadExperienceOrder } from '@/lib/experienceOrder';
 import { cancellationSentence, yearsLabel } from '@/components/marketplace/present';
 import OrderCancel from '@/components/marketplace/OrderCancel';
+import HostCredentials from '@/components/marketplace/HostCredentials';
 import PropertyMap from '@/components/PropertyMap';
 import DirectionsPicker from '@/components/arrival/DirectionsPicker';
 import CopyField from '@/components/arrival/CopyField';
 import ExperienceGroup from '@/components/ExperienceGroup';
 import ChangeGuestCount from '@/components/marketplace/ChangeGuestCount';
+import ChangeDateTime from '@/components/marketplace/ChangeDateTime';
+import WhenBadge from '@/components/WhenBadge';
 import { foldOrderFamily } from '@/lib/orderFamily';
 import { PrintDetailsRow } from '@/components/marketplace/OrderUtilityRows';
 
@@ -99,22 +102,6 @@ function partySplitLabel(adults: number | null | undefined, children: number | n
     return parts.length ? parts.join(', ') : null;
 }
 
-function untilBadge(dateStr: string): string | null {
-    const d = new Date(dateStr + 'T00:00:00');
-    if (isNaN(d.getTime())) return null;
-    const today = new Date();
-    today.setHours(0, 0, 0, 0);
-    const days = Math.round((d.getTime() - today.getTime()) / 86400000);
-    if (days < 0) return null;
-    if (days === 0) return 'Today';
-    if (days === 1) return 'Tomorrow';
-    if (days < 7) return `In ${days} days`;
-    const weeks = Math.floor(days / 7);
-    if (weeks === 1) return 'In 1 week';
-    if (weeks < 9) return `In ${weeks} weeks`;
-    return null;
-}
-
 // An .ics the guest can drop into their calendar. A slot has a real time, so it
 // is a timed event; a made-to-order/comes-to-you booking is a date, so it is an
 // all-day event. Floating local time (no Z) is what a guest expects — 2pm is 2pm
@@ -180,7 +167,7 @@ export default async function OrderPage({ params, searchParams }: { params: { or
             // and selecting it returned a PostgREST error, nulling the whole row,
             // so the "Comes to your cottage" line silently lost both name and
             // address. Select the real columns and compose the address below.
-            ? admin.from('listings').select('id, title, street_address, postcode, location').eq('id', order.listing_id).maybeSingle()
+            ? admin.from('listings').select('id, title, street_address, postcode, location, latitude, longitude').eq('id', order.listing_id).maybeSingle()
             : Promise.resolve({ data: null, error: null }),
     ]);
     if (listingError) {
@@ -266,6 +253,11 @@ export default async function OrderPage({ params, searchParams }: { params: { or
     // family for a per-person order, else the private order's own attendees.
     const effectiveHeadcount = isPerPersonParent ? family.headcount : (Number(order.attendees) || 0);
     const canTopUp = isBooker && isPerPersonParent && order.status === 'confirmed';
+    // A move is offered to the booker of any confirmed slot PARENT (per-person or
+    // private hire — the engine handles both); a top-up child is moved with its
+    // parent, never on its own. The picker itself may still come back empty.
+    const canMove = isBooker && isSlot && !order.parent_order_id
+        && order.status === 'confirmed' && !!order.slot_session_id;
 
     const { comesToCottage, collects } = orderLocation(order, prov?.fulfilment);
     // Assembled from the three private fields, same order the cottage address
@@ -284,23 +276,31 @@ export default async function OrderPage({ params, searchParams }: { params: { or
     // copy-address / get-directions rows.
     const hasVenue = !comesToCottage && !!collectionAddress;
 
-    // The coordinates for the map. The provider has no latitude/longitude of
-    // their own — the only point we hold is the centre of a service AREA they
-    // work in (service_areas), which is what the public experience listing maps
-    // too. So this is a sense-of-place map, not a pin on the door, and it is
-    // labelled as such. Geocoding the collection address would be needed to do
-    // what Airbnb does, and that is not built.
+    // WHERE THE MAP POINTS — the real place the experience happens, or nothing.
+    //
+    // A FIXED VENUE (the guest travels to the provider): the point is that venue,
+    // held as the centre of the provider's service AREA (service_areas.centre_lat/
+    // lng — the same point the public listing maps). A COME-TO-YOU / delivery
+    // shape happens at the guest's COTTAGE, so its point is the stay's own
+    // coordinate — never the provider's address. If neither is a real
+    // coordinate, there is NO map: we never drop a town-centre pin pretending to
+    // be a place.
     const { data: areaRow } = hasVenue
         ? await admin.from('service_areas').select('label, centre_lat, centre_lng').eq('provider_id', order.provider_id).not('centre_lat', 'is', null).limit(1).maybeSingle()
         : { data: null };
-    const mapLat = areaRow && areaRow.centre_lat != null ? Number(areaRow.centre_lat) : null;
-    const mapLng = areaRow && areaRow.centre_lng != null ? Number(areaRow.centre_lng) : null;
+    const venueLat = areaRow && areaRow.centre_lat != null ? Number(areaRow.centre_lat) : null;
+    const venueLng = areaRow && areaRow.centre_lng != null ? Number(areaRow.centre_lng) : null;
+    const cottageLat = comesToCottage && listing && (listing as any).latitude != null ? Number((listing as any).latitude) : null;
+    const cottageLng = comesToCottage && listing && (listing as any).longitude != null ? Number((listing as any).longitude) : null;
+    const atCottage = !hasVenue && cottageLat != null && cottageLng != null;
+    const mapLat = hasVenue ? venueLat : (atCottage ? cottageLat : null);
+    const mapLng = hasVenue ? venueLng : (atCottage ? cottageLng : null);
     // NEXT_PUBLIC_MAPBOX_TOKEN is unrestricted and the Mapbox account has no
     // payment card, so the map must not reach production traffic. PropertyMap
     // already degrades to an empty frame with no token; this gate goes further
     // and drops the pane entirely, so a tokenless environment renders the plain
     // full-width column rather than a grey box pretending to be a map.
-    const showMap = hasVenue && mapLat != null && mapLng != null && !!process.env.NEXT_PUBLIC_MAPBOX_TOKEN;
+    const showMap = mapLat != null && mapLng != null && !!process.env.NEXT_PUBLIC_MAPBOX_TOKEN;
 
     const where = comesToCottage
         ? (cottageAddress || 'Your cottage')
@@ -322,7 +322,6 @@ export default async function OrderPage({ params, searchParams }: { params: { or
     };
     const googleDir = collects ? buildDirectionsUrl(dirParts) : null;
     const appleDir = collects ? appleDirectionsUrl(dirParts) : null;
-    const badge = live ? untilBadge(String(order.service_date)) : null;
     // The session length as RECORDED — null when nothing records one. The
     // 60-minute fallback below is fine for an .ics, which must have an end, but
     // not for printing "Ends 08:30" on the page: that would be inventing a fact
@@ -376,7 +375,6 @@ export default async function OrderPage({ params, searchParams }: { params: { or
     const qualifications = typeof gd.qualifications === 'string' ? gd.qualifications.trim() : '';
     const recognition = typeof gd.recognition === 'string' ? gd.recognition.trim() : '';
     const years = yearsLabel(gd.years_experience != null ? String(gd.years_experience) : null);
-    const hasAboutHost = Boolean(years || qualifications || recognition);
 
     // ---- Who's going -------------------------------------------------------
     // A session people attend (a slot, or a comes-to-you dinner) can carry a
@@ -457,7 +455,9 @@ export default async function OrderPage({ params, searchParams }: { params: { or
                             <PropertyMap
                                 latitude={mapLat as number}
                                 longitude={mapLng as number}
-                                area={areaRow?.label ? `${areaRow.label} — the area, not the exact door` : 'The area, not the exact door'}
+                                area={hasVenue
+                                    ? (areaRow?.label ? `${areaRow.label} — the area, not the exact door` : 'The area, not the exact door')
+                                    : 'Where they come to you'}
                                 variant="card"
                                 // The pin is the thing booked, the way the
                                 // reference marks a booked experience: a small
@@ -480,11 +480,7 @@ export default async function OrderPage({ params, searchParams }: { params: { or
                             <Link href={listingHref} className="group relative block overflow-hidden rounded-2xl">
                                 {/* eslint-disable-next-line @next/next/no-img-element */}
                                 <img src={hero} alt={order.item_name || 'Experience'} className="h-44 w-full object-cover transition group-hover:brightness-95 sm:h-56" />
-                                {badge && (
-                                    <span className="absolute left-3 top-3 rounded-full bg-white/95 px-3 py-1 text-xs font-semibold text-slate-900 shadow-sm">
-                                        {badge}
-                                    </span>
-                                )}
+                                {live && <WhenBadge date={String(order.service_date)} />}
                             </Link>
                         )}
 
@@ -684,6 +680,7 @@ export default async function OrderPage({ params, searchParams }: { params: { or
                                         listing carries — skipped when it only
                                         echoes the business name. */}
                                     {proTitle && <div className="mt-0.5 text-[13px] text-slate-500">{proTitle}</div>}
+                                    {years && <div className="mt-0.5 text-[13px] text-slate-500">{years}</div>}
                                 </div>
                                 {headshotUrl ? (
                                     // eslint-disable-next-line @next/next/no-img-element
@@ -711,31 +708,11 @@ export default async function OrderPage({ params, searchParams }: { params: { or
                             )}
 
                             {/* The credentials the listing shows under "About your
-                                host" — years, training, recognition — each only when
-                                the host wrote it. A slot guide's safety training is
-                                exactly what a guest wants before a cold-water swim. */}
-                            {hasAboutHost && (
-                                <dl className="mt-4 space-y-3">
-                                    {years && (
-                                        <div>
-                                            <dt className="text-xs font-semibold uppercase tracking-wide text-slate-500">Experience</dt>
-                                            <dd className="mt-0.5 text-sm text-slate-700">{years}</dd>
-                                        </div>
-                                    )}
-                                    {qualifications && (
-                                        <div>
-                                            <dt className="flex items-center gap-1.5 text-xs font-semibold uppercase tracking-wide text-slate-500"><Award className="h-3.5 w-3.5 text-slate-400" /> Training &amp; qualifications</dt>
-                                            <dd className="mt-0.5 whitespace-pre-line text-sm leading-relaxed text-slate-700">{qualifications}</dd>
-                                        </div>
-                                    )}
-                                    {recognition && (
-                                        <div>
-                                            <dt className="text-xs font-semibold uppercase tracking-wide text-slate-500">Recognition</dt>
-                                            <dd className="mt-0.5 whitespace-pre-line text-sm leading-relaxed text-slate-700">{recognition}</dd>
-                                        </div>
-                                    )}
-                                </dl>
-                            )}
+                                host" — qualifications and any recognition — as quiet
+                                details, via the SAME component the listing uses so the
+                                two can't drift. Years sits with the name above; an
+                                unfilled credential is omitted. */}
+                            <HostCredentials qualifications={qualifications} recognition={recognition} className="mt-4" />
 
                             {canMessage && (
                                 <Link
@@ -806,29 +783,21 @@ export default async function OrderPage({ params, searchParams }: { params: { or
                             </div>
 
                             <div className="mt-3 divide-y divide-slate-200 border-t border-slate-200">
-                                <a
-                                    href={calendarHref({
-                                        title: (order.item_name || 'Experience') + ' — ' + who,
-                                        date: String(order.service_date).slice(0, 10),
-                                        time: isSlot ? (order.service_time || null) : null,
-                                        where,
-                                        details: (order.item_description || '') + (order.note ? '\n\nYour note: ' + order.note : ''),
-                                        durationMin,
-                                    })}
-                                    download={`${(order.item_name || 'experience').toLowerCase().replace(/[^a-z0-9]+/g, '-')}.ics`}
-                                    className={ROW}
-                                >
-                                    <span className="flex items-center gap-3"><CalendarDays className="h-4 w-4 flex-none text-slate-400" /> Add to calendar</span>
-                                    <ChevronRight className="h-4 w-4 flex-none text-slate-300" />
-                                </a>
-                                <PrintDetailsRow className={ROW} />
-                                {/* The reservation-change actions, Airbnb-shaped: a
-                                    "Change guest count" row that opens the stepper in
-                                    place, then Cancel. (No "Change date or time" —
-                                    that isn't built, so there's no dead row.) Both
-                                    are the booker's alone. */}
+                                {/* The reservation actions first, in one order on
+                                    every shape: Change guest count, Change date or
+                                    time, Cancel reservation. The first two open a
+                                    modal and are slot-only; Cancel shows on every
+                                    shape. All are the booker's alone. The utility
+                                    rows (Add to calendar, Print details) sit BELOW
+                                    them. */}
                                 {canTopUp && (
                                     <ChangeGuestCount
+                                        orderId={order.id}
+                                        className={ROW}
+                                    />
+                                )}
+                                {canMove && (
+                                    <ChangeDateTime
                                         orderId={order.id}
                                         className={ROW}
                                     />
@@ -848,6 +817,22 @@ export default async function OrderPage({ params, searchParams }: { params: { or
                                         panelClassName="pb-3"
                                     />
                                 )}
+                                <a
+                                    href={calendarHref({
+                                        title: (order.item_name || 'Experience') + ' — ' + who,
+                                        date: String(order.service_date).slice(0, 10),
+                                        time: isSlot ? (order.service_time || null) : null,
+                                        where,
+                                        details: (order.item_description || '') + (order.note ? '\n\nYour note: ' + order.note : ''),
+                                        durationMin,
+                                    })}
+                                    download={`${(order.item_name || 'experience').toLowerCase().replace(/[^a-z0-9]+/g, '-')}.ics`}
+                                    className={ROW}
+                                >
+                                    <span className="flex items-center gap-3"><CalendarDays className="h-4 w-4 flex-none text-slate-400" /> Add to calendar</span>
+                                    <ChevronRight className="h-4 w-4 flex-none text-slate-300" />
+                                </a>
+                                <PrintDetailsRow className={ROW} />
                             </div>
                         </section>
 
@@ -870,14 +855,13 @@ export default async function OrderPage({ params, searchParams }: { params: { or
                         {isBooker && (
                         <section className="mt-8 border-t border-slate-200 pt-6">
                             <h2 className="text-lg font-semibold text-slate-900">Payment</h2>
-                            <div className="mt-3 flex items-baseline justify-between gap-3">
-                                <span className="text-sm text-slate-500">{charged ? 'Paid' : 'Held, not charged'}</span>
-                                <span className="text-xl font-semibold text-slate-900">£{Number(price).toFixed(2)}</span>
+                            {/* Airbnb's structure: a bold label with the amount on its
+                                own line beneath, left-aligned. Held (authorised) orders
+                                aren't charged yet, so the label reflects that. */}
+                            <div className="mt-3">
+                                <div className="text-sm font-semibold text-slate-900">{charged ? 'Amount paid' : 'Amount held'}</div>
+                                <div className="mt-1 text-base text-slate-900">£{Number(price).toFixed(2)}</div>
                             </div>
-                            <p className="mt-1.5 text-sm text-slate-500">
-                                {charged ? `Paid to ${who}. ` : `Held for ${who}, and only taken once they confirm. `}
-                                Your receipt is emailed to you.
-                            </p>
                         </section>
                         )}
 

@@ -87,17 +87,14 @@ export default function ExperienceGroup({
         setLoading(false);
     };
 
+    // Just the avatars — the booker plus anyone who has accepted — as an
+    // overlapping stack. No names and no count text beside them; the group reads
+    // as faces and (for the booker) an Invite button, nothing else.
     const faces = (
-        <div className="flex flex-wrap items-center gap-3">
-            <div className="flex items-center gap-2">
-                <Face name={bookerName} photo={avatarSrc(bookerAvatar)} />
-                <span className="text-sm text-slate-700">{readOnly ? bookerName : 'You'}</span>
-            </div>
+        <div className="flex items-center -space-x-2">
+            <Face name={bookerName} photo={avatarSrc(bookerAvatar)} />
             {active.map((s) => (
-                <div key={s.id} className="flex items-center gap-2">
-                    <Face name={nameOf(s)} photo={avatarSrc(s.user_id ? profiles[s.user_id]?.avatar_url : null)} />
-                    <span className="text-sm text-slate-700">{nameOf(s)}</span>
-                </div>
+                <Face key={s.id} name={nameOf(s)} photo={avatarSrc(s.user_id ? profiles[s.user_id]?.avatar_url : null)} />
             ))}
         </div>
     );
@@ -113,19 +110,22 @@ export default function ExperienceGroup({
 
     return (
         <div>
-            {faces}
+            {/* Avatar(s) and the invite button share one row, the button sitting
+                directly beside the faces rather than pushed out to the far right. */}
+            <div className="flex items-center gap-3">
+                {faces}
 
-            {placesToFill > 0 && (
-                <button
-                    type="button"
-                    onClick={openSheet}
-                    className="mt-4 inline-flex items-center gap-2 rounded-xl border border-slate-300 bg-white px-4 py-2.5 text-sm font-semibold text-slate-800 transition hover:border-slate-400 hover:bg-slate-50"
-                >
-                    <UserPlus className="h-4 w-4 text-slate-500" />
-                    {active.length === 0 ? 'Invite guests' : 'Invite more'}
-                    <span className="text-slate-400">· {placesToFill} {placesToFill === 1 ? 'place' : 'places'} to fill</span>
-                </button>
-            )}
+                {placesToFill > 0 && (
+                    <button
+                        type="button"
+                        onClick={openSheet}
+                        className="inline-flex flex-none items-center gap-2 rounded-xl border border-slate-300 bg-white px-4 py-2.5 text-sm font-semibold text-slate-800 transition hover:border-slate-400 hover:bg-slate-50"
+                    >
+                        <UserPlus className="h-4 w-4 text-slate-500" />
+                        {active.length === 0 ? 'Invite guests' : 'Invite more'}
+                    </button>
+                )}
+            </div>
 
             <InviteSheet
                 open={open}

@@ -14,6 +14,7 @@ import {
     resolvedDuration, overlapsBooked, minutesOfDay,
 } from '@/lib/serviceSlots';
 import { itemFulfilment } from '@/lib/serviceProviders';
+import { childrenAllowed } from '@/lib/guestAges';
 import { dateFromKey, dateKey } from '@/lib/pricing';
 import { londonDayKey, shiftDayKey } from '@/lib/dayKey';
 import { displayName } from '@/lib/utils';
@@ -130,7 +131,7 @@ export async function POST(request: Request) {
 
         const { data: provider } = await admin
             .from('service_providers')
-            .select('id, business_name, trade, shape, status, stripe_account_id, stripe_payouts_enabled, plan, commission_rate, slot_length_minutes, slot_turnaround_minutes, slot_capacity, slot_min_people, cancellation_window_hours, fulfilment')
+            .select('id, business_name, trade, shape, status, stripe_account_id, stripe_payouts_enabled, plan, commission_rate, slot_length_minutes, slot_turnaround_minutes, slot_capacity, slot_min_people, cancellation_window_hours, fulfilment, guest_details')
             .eq('id', providerId)
             .maybeSingle();
 
@@ -346,7 +347,11 @@ export async function POST(request: Request) {
         // NULL when no split was sent, so "not recorded" stays distinct from a real
         // all-adult party.
         const providedSplit = !!(body && (body.adults != null || body.children != null));
-        const reqChildren = Math.max(0, Math.floor(Number(body && body.children) || 0));
+        // An adults-only experience (min age 16/18/21) takes no children, whatever
+        // a crafted request sends — the wall behind the hidden stepper.
+        const minAgeRaw = (provider as any).guest_details && (provider as any).guest_details.min_age;
+        const kidsOk = childrenAllowed(minAgeRaw == null || minAgeRaw === '' ? null : Number(minAgeRaw));
+        const reqChildren = kidsOk ? Math.max(0, Math.floor(Number(body && body.children) || 0)) : 0;
         const children = providedSplit && headcount != null && headcount >= 1
             ? Math.min(reqChildren, headcount - 1)
             : null;

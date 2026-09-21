@@ -67,6 +67,7 @@ export default async function ListingPage(
                         bookedBlocks: p.bookedBlocks,
                         cancellationHours: p.cancellation_window_hours,
                         noRefund: p.noRefund,
+                        minAge: p.minAge,
                     }}
                 />
             }

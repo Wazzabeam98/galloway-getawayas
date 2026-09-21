@@ -21,6 +21,7 @@ export default function StandaloneBookingPanel({ provider }: {
         slotCapacity: number; minPeople: number; slotLength?: number; items: PanelItem[]; sessions: PanelSession[];
         declaredSessions?: PanelDeclared[];
         cancellationHours?: number | null; noRefund?: boolean | null;
+        minAge?: number | null;
     };
     // Accepted for compatibility with the host page; booking no longer needs them.
     signedIn?: boolean;
@@ -105,6 +106,7 @@ export default function StandaloneBookingPanel({ provider }: {
                     providerMinPeople={provider.minPeople}
                     providerFulfilment={provider.fulfilment}
                     isFood={provider.isFood}
+                    minAge={provider.minAge}
                     initialDate={initialDate}
                     busy={busy}
                     error={error}

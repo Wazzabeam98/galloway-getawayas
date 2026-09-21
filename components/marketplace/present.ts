@@ -264,15 +264,15 @@ export function partyMatters(shape: string): boolean {
     return shape === 'comes_to_you';
 }
 
-/** The cancellation policy in plain words, shown before the guest commits. */
+/** The cancellation policy in plain words, shown before the guest commits. Just
+ *  the free-cancel line — no "after that" tail. */
 export function cancellationSentence(shape: string, hours: number, who: string): string {
     const h = Math.max(0, Number(hours) || 0);
-    const tail = ' After that it’s ' + who + '’s decision — they can still refund you, but it isn’t automatic.';
     if (shape === 'slot') {
-        return 'Free to cancel up to ' + h + ' hour' + (h === 1 ? '' : 's') + ' before your time, and the slot reopens for someone else.' + tail;
+        return 'Free to cancel up to ' + h + ' hour' + (h === 1 ? '' : 's') + ' before your time.';
     }
     const days = Math.round(h / 24);
-    return 'Free to cancel up to ' + days + ' day' + (days === 1 ? '' : 's') + ' before, for a full refund.' + tail;
+    return 'Free to cancel up to ' + days + ' day' + (days === 1 ? '' : 's') + ' before, for a full refund.';
 }
 
 /**

@@ -37,7 +37,7 @@ const {
     TRADES, submitProblems, planForTrade,
     capabilityFor, pricedOfferingsFor, showsRates, extrasFor, bandsFor,
     asksAboutFuel, asksAboutSkills, offerableSchemes,
-    guestAsksExpertise, guestQualificationsRequired, guestYearsRequired,
+    guestAsksExpertise, guestAsksQualifications, guestYearsRequired,
 } = require('@/lib/serviceProviders');
 
 const keys = (trade: string) => stepsFor(trade).map((s: any) => s.key);
@@ -763,33 +763,31 @@ test('expertise and years are asked of every category except the sauna', () => {
 // acceptance lives in the component, not the pure step model, so it has no test
 // here; the gating and the recorded stamp are covered live and by typecheck.
 
-test('years and qualifications are required only where physical safety is at stake', () => {
-    // The line, category by category (Sep 2026). The four where a guide holds
-    // someone's safety require both; a private chef requires a track record but
-    // not a certificate (food hygiene is a separate check); a made-to-order
-    // product asks neither; everyone else asks, optionally.
-    const REQUIRE_BOTH = ['outdoors', 'water', 'massage', 'yoga'];
-    for (const c of REQUIRE_BOTH) {
+test('qualifications are prompted only where a formal qualification matters, and never required', () => {
+    // Qualifications are always OPTIONAL now — no category forces one. We only
+    // PROMPT for them (show the row) on the physical-safety categories, where a
+    // guide holds someone's safety; everywhere else the row is not shown at all.
+    const SAFETY = ['outdoors', 'water', 'massage', 'yoga'];
+    for (const c of SAFETY) {
         assert.equal(guestYearsRequired(c), true, c + ' requires years');
-        assert.equal(guestQualificationsRequired(c), true, c + ' requires qualifications');
+        assert.equal(guestAsksQualifications(c), true, c + ' is prompted for qualifications');
         assert.equal(guestAsksExpertise(c), true, c + ' is asked');
     }
 
-    // The food experiences where the person is the draw: years required,
-    // qualifications optional. The private chef in your kitchen, the tasting host
-    // whose knowledge is the product, and the cooking class you're paying to be
-    // taught — none forced to hold a certificate (food hygiene is a check).
+    // The food experiences where the person is the draw: years required, and
+    // qualifications not prompted (food hygiene is a separate check). The private
+    // chef in your kitchen, the tasting host, the cooking class.
     for (const c of ['chef', 'tastings', 'cooking']) {
         assert.equal(guestYearsRequired(c), true, c + ' needs a track record');
-        assert.equal(guestQualificationsRequired(c), false, c + ' is not forced to hold a qualification');
+        assert.equal(guestAsksQualifications(c), false, c + ' is not prompted for qualifications');
         assert.equal(guestAsksExpertise(c), true, c + ' is asked');
     }
 
-    // The optional middle — asked, qualifications never forced. The crafts and
-    // made-to-order food are back in this group, and 'other' is the catch-all.
+    // Everything else asks the expertise screen (title, years, endorsements) but
+    // the qualifications row is not prompted — a potter's work speaks for itself.
     for (const c of ['other', 'food_order', 'pottery', 'painting', 'workshops']) {
-        assert.equal(guestQualificationsRequired(c), false, c + ' does not force qualifications');
-        assert.equal(guestAsksExpertise(c), true, c + ' is asked, qualifications optional');
+        assert.equal(guestAsksQualifications(c), false, c + ' is not prompted for qualifications');
+        assert.equal(guestAsksExpertise(c), true, c + ' is asked');
     }
 
     // Skipped entirely: only the sauna. The years and expertise screens never
