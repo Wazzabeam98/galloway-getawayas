@@ -1,7 +1,7 @@
 'use client';
 
 import { useState } from 'react';
-import { UserPlus, User } from 'lucide-react';
+import { UserPlus } from 'lucide-react';
 import { getImageUrl, displayName } from '@/lib/utils';
 import InviteSheet, { Seat, Profile } from './InviteSheet';
 
@@ -38,11 +38,6 @@ function avatarSrc(url: string | null | undefined): string | null {
     if (!url) return null;
     return /^https?:\/\//.test(url) ? url : getImageUrl(url);
 }
-function EmptySeat({ size = 'md' }: { size?: 'sm' | 'md' }) {
-    const dim = size === 'sm' ? 'h-9 w-9' : 'h-10 w-10';
-    return (<div className={'flex flex-none items-center justify-center rounded-full bg-slate-200 text-slate-400 ring-2 ring-white ' + dim}><User className="h-4 w-4" /></div>);
-}
-
 export default function TripGroup({
     bookingId, guests, cottage, when, initialSeats = [], initialProfiles = {},
 }: {
@@ -82,46 +77,44 @@ export default function TripGroup({
         const prof = p.user_id ? profiles[p.user_id] : undefined;
         return (prof && displayName(prof, '')) || p.name || p.email || 'Guest';
     };
-    const going = people.filter(accepted).length;
-    const toFill = people.length - going;
+    // Just the people, as avatars — the booker plus anyone who has accepted. No
+    // count text and no empty-seat placeholders: the group reads as faces and an
+    // Invite button, nothing else (the "to fill" wording lives only inside the
+    // sheet now). Room to invite is whether the party (minus the booker) still has
+    // an unfilled place; when unknown, the button shows.
+    const goingPeople = people.filter(accepted);
     const party = guests && guests > 0 ? guests : null;
-    // Empty seats to hint on the card: the party total (minus the booker) not yet
-    // represented by a seat row. Once the seats are minted this is 0 and the
-    // to-fill count comes from the rows themselves.
-    const emptySeats = party ? Math.max(0, party - 1 - people.length) : 0;
-    const nothingYet = people.length === 0 && emptySeats === 0;
-    const openLabelN = emptySeats || toFill;
+    const roomLeft = party ? goingPeople.length < party - 1 : true;
 
     const Avatar = ({ p }: { p: Seat }) => {
-        if (!accepted(p)) return <EmptySeat size="sm" />;
         const prof = p.user_id ? profiles[p.user_id] : undefined;
         const photo = avatarSrc(prof && prof.avatar_url);
         if (photo) return <img src={photo} alt="" className="h-9 w-9 flex-none rounded-full object-cover text-xs ring-2 ring-white" />;
         return <div className={'flex h-9 w-9 flex-none items-center justify-center rounded-full text-xs font-semibold text-white ring-2 ring-white ' + colorFor(p.email || nameOf(p))}>{initials(nameOf(p))}</div>;
     };
 
-    const stackShown = people.slice(0, 5);
-    const overflow = people.length - stackShown.length;
+    const stackShown = goingPeople.slice(0, 5);
+    const overflow = goingPeople.length - stackShown.length;
 
     return (
-        <div className="mt-3">
-            <button type="button" onClick={openSheet} className="group flex w-full items-center gap-3 rounded-xl border border-transparent px-1 py-1 text-left transition hover:border-slate-200 hover:bg-slate-50">
-                <div className="flex items-center">
-                    <div className="flex h-9 w-9 flex-none items-center justify-center rounded-full bg-slate-900 text-[11px] font-semibold text-white ring-2 ring-white">You</div>
-                    <div className="flex -space-x-2 pl-1">
-                        {stackShown.map((p) => <Avatar key={p.id} p={p} />)}
-                        {Array.from({ length: Math.min(emptySeats, overflow > 0 ? 0 : 6 - stackShown.length) }).map((_, i) => (<EmptySeat key={'e' + i} size="sm" />))}
-                        {overflow > 0 && (<div className="flex h-9 w-9 flex-none items-center justify-center rounded-full bg-slate-100 text-xs font-semibold text-slate-600 ring-2 ring-white">+{overflow}</div>)}
-                    </div>
+        <div className="mt-3 flex items-center justify-between gap-4">
+            <div className="flex items-center">
+                <div className="flex h-9 w-9 flex-none items-center justify-center rounded-full bg-slate-900 text-[11px] font-semibold text-white ring-2 ring-white">You</div>
+                <div className="flex -space-x-2 pl-1">
+                    {stackShown.map((p) => <Avatar key={p.id} p={p} />)}
+                    {overflow > 0 && (<div className="flex h-9 w-9 flex-none items-center justify-center rounded-full bg-slate-100 text-xs font-semibold text-slate-600 ring-2 ring-white">+{overflow}</div>)}
                 </div>
-                <div className="min-w-0 flex-1">
-                    <div className="text-sm font-medium text-slate-900">
-                        {nothingYet ? 'Add the people coming with you' : going === 0 ? 'Invite guests' : 'You and ' + going + ' going' + (openLabelN ? ' · ' + openLabelN + ' to fill' : '')}
-                    </div>
-                    <div className="text-xs text-slate-500 group-hover:text-slate-700">{nothingYet ? 'Share a link — no email needed.' : 'Manage the group'}</div>
-                </div>
-                <UserPlus className="h-4 w-4 flex-none text-slate-400 group-hover:text-slate-700" />
-            </button>
+            </div>
+
+            {roomLeft && (
+                <button
+                    type="button"
+                    onClick={openSheet}
+                    className="inline-flex flex-none items-center gap-2 rounded-xl border border-slate-300 bg-white px-4 py-2.5 text-sm font-semibold text-slate-800 transition hover:border-slate-400 hover:bg-slate-50"
+                >
+                    <UserPlus className="h-4 w-4 text-slate-500" /> Invite guests
+                </button>
+            )}
 
             <InviteSheet
                 open={open}

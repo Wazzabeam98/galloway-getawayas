@@ -87,17 +87,14 @@ export default function ExperienceGroup({
         setLoading(false);
     };
 
+    // Just the avatars — the booker plus anyone who has accepted — as an
+    // overlapping stack. No names and no count text beside them; the group reads
+    // as faces and (for the booker) an Invite button, nothing else.
     const faces = (
-        <div className="flex flex-wrap items-center gap-3">
-            <div className="flex items-center gap-2">
-                <Face name={bookerName} photo={avatarSrc(bookerAvatar)} />
-                <span className="text-sm text-slate-700">{readOnly ? bookerName : 'You'}</span>
-            </div>
+        <div className="flex items-center -space-x-2">
+            <Face name={bookerName} photo={avatarSrc(bookerAvatar)} />
             {active.map((s) => (
-                <div key={s.id} className="flex items-center gap-2">
-                    <Face name={nameOf(s)} photo={avatarSrc(s.user_id ? profiles[s.user_id]?.avatar_url : null)} />
-                    <span className="text-sm text-slate-700">{nameOf(s)}</span>
-                </div>
+                <Face key={s.id} name={nameOf(s)} photo={avatarSrc(s.user_id ? profiles[s.user_id]?.avatar_url : null)} />
             ))}
         </div>
     );
