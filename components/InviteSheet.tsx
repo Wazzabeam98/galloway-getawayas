@@ -239,10 +239,6 @@ export default function InviteSheet({
                         );
                     })}
 
-                    <div className="rounded-xl bg-slate-50 p-3.5">
-                        <div className="mb-1 text-xs font-semibold uppercase tracking-wide text-slate-500">What a guest sees</div>
-                        <p className="text-sm text-slate-600">They'll see all the booking details except the price and payment.</p>
-                    </div>
                 </div>
 
                 <div className="border-t border-slate-100 p-4">
