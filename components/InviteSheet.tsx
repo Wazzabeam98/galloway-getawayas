@@ -8,7 +8,7 @@ import { getImageUrl, displayName } from '@/lib/utils';
 
 // The invite sheet, shared by the holiday-let side (TripGroup) and the experience
 // side (ExperienceGroup) so the flow is identical everywhere: the whole party the
-// moment it opens, an unclaimed place as a grey "Open seat" (no Remove — there is
+// moment it opens, an unclaimed place as a grey "Guest" (no Remove — there is
 // no one there to take off; only someone who has joined can be removed), and one
 // "Invite guests" entry at the foot that shares a single-use link through Copy,
 // Email, Messages, WhatsApp or Messenger.
@@ -110,8 +110,8 @@ export default function InviteSheet({
             const prof = p.user_id ? profiles[p.user_id] : undefined;
             return (prof && displayName(prof, '')) || p.name || p.email || 'Guest';
         }
-        // No one has joined this seat yet — it's an open place, not a person.
-        return 'Open seat';
+        // No one has joined this seat yet — an unclaimed place, shown as "Guest".
+        return 'Guest';
     };
     const linkFor = (p: Seat) => (typeof window !== 'undefined' ? window.location.origin : '') + '/trip-invite/' + (p.invite_token || '');
     const shareText = (p: Seat) => {
