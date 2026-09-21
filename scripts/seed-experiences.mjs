@@ -81,7 +81,11 @@ async function makeProvider(spec) {
         owner_id: spec.owner.id,
         business_name: spec.business_name,
         provider_name: spec.provider_name,
-        trade: spec.trade,
+        // Every guest-experience provider is the one trade 'guest'; what they
+        // offer is the CATEGORY (guest_details.category), not a trade. A category
+        // name here (sauna/chef…) would misroute the /edit fork to the tradesman
+        // editor, since audienceForTrade doesn't know it as a guest trade.
+        trade: 'guest',
         audience: 'guest',
         status: 'approved',
         plan: 'commission',

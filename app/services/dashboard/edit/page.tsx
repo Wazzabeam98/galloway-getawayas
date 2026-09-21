@@ -26,7 +26,7 @@ export default async function EditBusinessPage() {
 
     const { data: providers } = await admin
         .from('service_providers')
-        .select('id, business_name, trade, description, hourly_rate, callout_fee, photos, status')
+        .select('id, business_name, trade, audience, description, hourly_rate, callout_fee, photos, status')
         .eq('owner_id', user.id)
         .order('updated_at', { ascending: false });
 
@@ -39,7 +39,14 @@ export default async function EditBusinessPage() {
     // guest-experience provider now has its OWN sectioned listing editor, which
     // owns edit (the wizard is first-time create only). Send them there rather
     // than back into the sign-up flow.
-    if (audienceForTrade(provider.trade) === 'guest') {
+    //
+    // Fork on the AUTHORITATIVE audience column, not audienceForTrade(trade): a
+    // guest provider's category (sauna, yoga, chef…) is NOT a registered trade,
+    // so audienceForTrade returns '' for it and a guest would fall through to the
+    // tradesman editor. audience === 'guest' is the truth and can't be fooled;
+    // the trade fallback stays only as belt-and-braces. Mirrors the guard on
+    // /services/dashboard/listing so the two routes agree.
+    if (provider.audience === 'guest' || audienceForTrade(provider.trade) === 'guest') {
         redirect('/services/dashboard/listing');
     }
 
