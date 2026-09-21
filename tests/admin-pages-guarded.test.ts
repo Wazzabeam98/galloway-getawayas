@@ -87,3 +87,18 @@ test('the shared check fails closed and says nothing', () => {
     assert.ok(!/redirect\(|status:\s*403/.test(fn),
         'a 403 or a redirect confirms /admin exists and is worth attacking; a 404 says nothing');
 });
+
+test('no loading.tsx wraps /admin in a Suspense boundary', () => {
+    // requireAdmin() returning a 404 is worth nothing if the response has already
+    // gone out as a 200. A loading.tsx at or above /admin makes Next stream the
+    // HTML shell — and the status line — before the page decides it does not
+    // exist, so notFound() renders under a 200 and every /admin URL is a soft
+    // 404. Proven with a real status check on 21 Sep 2026: with
+    // app/admin/loading.tsx present `curl -I /admin` was 200; deleting it made it
+    // a genuine 404. The root app/loading.tsx was removed earlier for the same
+    // reason (see SITE-AUDIT.md). Keep both gone.
+    for (const rel of ['app/admin/loading.tsx', 'app/loading.tsx']) {
+        assert.ok(!fs.existsSync(path.join(ROOT, rel)),
+            rel + ' reintroduces a Suspense boundary above notFound(), turning /admin 404s into soft 200s');
+    }
+});
