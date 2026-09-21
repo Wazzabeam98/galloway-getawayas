@@ -245,20 +245,21 @@ export default function InviteSheet({
                 </div>
 
                 <div className="border-t border-slate-100 p-4">
-                    {shareOpen && nextUnshared && (
-                        <div className="mb-3">
-                            <ShareTiles p={nextUnshared} />
+                    {/* No Done button — once the share tiles are open, the X in the
+                        header closes the sheet. The foot carries only the button that
+                        reveals the tiles, and it's gone while they're showing. */}
+                    {shareOpen ? (
+                        nextUnshared
+                            ? <ShareTiles p={nextUnshared} />
+                            : <p className="text-xs text-slate-500">You've shared a link for every open seat.</p>
+                    ) : (
+                        <div className="flex items-center justify-end">
+                            <button type="button" onClick={() => setShareOpen(true)} disabled={!nextUnshared}
+                                className="inline-flex items-center gap-2 rounded-xl bg-emerald-700 px-4 py-2.5 text-sm font-semibold text-white transition hover:bg-emerald-800 disabled:opacity-50">
+                                <UserPlus className="h-4 w-4" /> Invite guests
+                            </button>
                         </div>
                     )}
-                    {shareOpen && !nextUnshared && (<p className="mb-3 text-xs text-slate-500">You've shared a link for every open seat.</p>)}
-                    <div className="flex items-center justify-end">
-                        <button type="button" onClick={() => setShareOpen((v) => !v)} disabled={!nextUnshared && !shareOpen}
-                            className="inline-flex items-center gap-2 rounded-xl bg-emerald-700 px-4 py-2.5 text-sm font-semibold text-white transition hover:bg-emerald-800 disabled:opacity-50">
-                            {/* No icon on Done — it closes the share panel, it doesn't
-                                add anyone. */}
-                            {!shareOpen && <UserPlus className="h-4 w-4" />}{shareOpen ? 'Done' : 'Invite guests'}
-                        </button>
-                    </div>
                 </div>
             </div>
         </div>,
