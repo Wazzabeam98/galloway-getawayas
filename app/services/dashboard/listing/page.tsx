@@ -54,7 +54,7 @@ export default async function ProviderListingPage() {
     const isSlot = shapeOf(provider) === 'slot';
     const [{ data: areas }, { data: items }, { data: avail }] = await Promise.all([
         admin.from('service_areas').select('label').eq('provider_id', provider.id).order('created_at', { ascending: true }),
-        admin.from('service_provider_items').select('id, name, description, price, unit, image, duration_minutes, fulfilment, active, capacity, min_people, sort_order')
+        admin.from('service_provider_items').select('id, name, description, price, unit, image, duration_minutes, fulfilment, active, capacity, min_people, sort_order, included_guests, extra_adult_fee, extra_child_fee, max_party')
             .eq('provider_id', provider.id).order('sort_order', { ascending: true }).order('created_at', { ascending: true }),
         isSlot
             ? admin.from('slot_availability').select('day_of_week, open_time, close_time').eq('provider_id', provider.id).order('day_of_week', { ascending: true })

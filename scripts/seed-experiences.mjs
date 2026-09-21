@@ -136,6 +136,8 @@ async function makeProvider(spec) {
             provider_id: p.id, name: it.name, description: it.description, price: it.price,
             unit: it.unit, active: true, sort_order: it.sort ?? 0,
             capacity: it.capacity ?? null, min_people: it.min ?? null, image: it.image ?? null,
+            included_guests: it.includedGuests ?? null, extra_adult_fee: it.extraAdultFee ?? null,
+            extra_child_fee: it.extraChildFee ?? null, max_party: it.maxParty ?? null,
         });
     }
     if (spec.availability) {
@@ -278,7 +280,10 @@ async function main() {
         dietaryNote: 'Vegetarian and gluten-free by arrangement; not a nut-free kitchen.', dietaryOptions: ['vegetarian', 'gluten_free'],
         items: [
             { name: 'Three-course Galloway dinner', description: 'A seasonal three courses, cooked in your cottage.', price: 55, unit: 'person', sort: 0, image: IMG('seed-assets/chef-1.jpg') },
-            { name: 'Whole private dinner (up to 8)', description: 'The evening booked outright for your group.', price: 380, unit: 'flat', sort: 1 },
+            // A flat group price with extra-guests pricing: £220 for up to 4, then
+            // +£40 per extra adult and +£15 per extra child, up to a party of 8.
+            { name: 'Whole private dinner', description: 'The evening booked outright for your group.', price: 220, unit: 'flat', sort: 1,
+                includedGuests: 4, extraAdultFee: 40, extraChildFee: 15, maxParty: 8 },
         ],
     });
     const chefItemRows = await db.select('service_provider_items', '?select=id,unit,name&provider_id=eq.' + chef.id + '&order=sort_order');

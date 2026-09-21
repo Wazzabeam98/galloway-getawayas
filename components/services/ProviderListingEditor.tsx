@@ -8,6 +8,7 @@ import Env from '@/config/Env';
 import { getImageUrl, generateRandomNumber } from '@/lib/utils';
 import { compressImage } from '@/lib/compressImage';
 import { GUEST_REGIONS, GUEST_COVERAGE_ALL_KEY } from '@/lib/strings';
+import { childrenAllowed } from '@/lib/guestAges';
 import { slotAsksWhereFork, ACCESSIBILITY_OPTIONS, PARKING_OPTIONS, EXPERIENCE_CANCELLATION_OPTIONS, experienceCancellationOption, EXPERIENCE_AMENITY_GROUPS } from '@/lib/serviceProviders';
 import { PhotoEditorGrid } from './PhotoEditorGrid';
 import { OptionPills, Stepper, SESSION_LENGTH_OPTIONS, minutesLabel } from './editorControls';
@@ -229,13 +230,18 @@ export default function ProviderListingEditor({ provider }: { provider: EditorPr
     // The menu. Each row edits in place; prices are strings while typing. New rows
     // have no id (the save route inserts them); removed rows drop out (the route
     // deletes them). ids are preserved so an item keeps its photo and bookings.
-    type MenuRow = { id?: string; name: string; description: string; price: string; unit: string; image: string | null; duration: string; fulfilment: string | null; active: boolean; capacity: string };
+    type MenuRow = { id?: string; name: string; description: string; price: string; unit: string; image: string | null; duration: string; fulfilment: string | null; active: boolean; capacity: string; includedGuests: string; extraAdultFee: string; extraChildFee: string; maxParty: string };
     const [menu, setMenu] = useState<MenuRow[]>(p.items.map((it) => ({
         id: it.id, name: it.name, description: it.description, price: String(it.price),
         unit: it.unit, image: it.image, duration: it.duration_minutes != null ? String(it.duration_minutes) : '',
         fulfilment: it.fulfilment, active: it.active,
         // Blank = inherit the provider default; a number here overrides it for this item.
         capacity: it.capacity != null ? String(it.capacity) : '',
+        // Extra-guests pricing (flat items). Blank = a plain flat price.
+        includedGuests: (it as any).included_guests != null ? String((it as any).included_guests) : '',
+        extraAdultFee: (it as any).extra_adult_fee != null ? String((it as any).extra_adult_fee) : '',
+        extraChildFee: (it as any).extra_child_fee != null ? String((it as any).extra_child_fee) : '',
+        maxParty: (it as any).max_party != null ? String((it as any).max_party) : '',
     })));
     const setRow = (i: number, patch: Partial<MenuRow>) => setMenu(menu.map((r, j) => j === i ? { ...r, ...patch } : r));
 
@@ -601,6 +607,8 @@ export default function ProviderListingEditor({ provider }: { provider: EditorPr
                                     unit: r.unit, image: r.image, duration_minutes: r.duration,
                                     fulfilment: r.fulfilment, active: r.active,
                                     capacity: r.capacity,
+                                    included_guests: r.includedGuests, extra_adult_fee: r.extraAdultFee,
+                                    extra_child_fee: r.extraChildFee, max_party: r.maxParty,
                                 })),
                             })}>
                             {/* Last-priced-item guard: a listing with no active priced
@@ -698,6 +706,29 @@ export default function ProviderListingEditor({ provider }: { provider: EditorPr
                                                         <span className="w-full text-xs text-slate-400">Blank uses your default of {maxGuests}.</span>
                                                     </div>
                                                 )}
+                                                {/* Extra guests — a group price that grows with the
+                                                    party. Only for a flat (whole-session) item; blank
+                                                    leaves a plain flat price. The child fee only shows
+                                                    where the minimum age admits children, and the price
+                                                    never drops below the base. */}
+                                                {r.unit === 'flat' && (
+                                                    <div className="space-y-2 rounded-xl bg-slate-50 p-3">
+                                                        <span className="text-xs font-semibold uppercase tracking-wide text-slate-500">Extra guests (optional)</span>
+                                                        <div className="flex flex-wrap items-center gap-x-3 gap-y-2 text-sm text-slate-600">
+                                                            <label className="flex items-center gap-1">Includes
+                                                                <input className="w-16 rounded-lg border border-slate-300 p-2 text-sm" type="number" min={1} placeholder="—" value={r.includedGuests} onChange={(e) => setRow(i, { includedGuests: e.target.value })} /> guests</label>
+                                                            <label className="flex items-center gap-1">+£
+                                                                <input className="w-16 rounded-lg border border-slate-300 p-2 text-sm" type="text" inputMode="decimal" placeholder="0" value={r.extraAdultFee} onChange={(e) => setRow(i, { extraAdultFee: e.target.value.replace(/[^0-9.]/g, '') })} /> per extra adult</label>
+                                                            {childrenAllowed(Number(minAge) || null) && (
+                                                                <label className="flex items-center gap-1">+£
+                                                                    <input className="w-16 rounded-lg border border-slate-300 p-2 text-sm" type="text" inputMode="decimal" placeholder="0" value={r.extraChildFee} onChange={(e) => setRow(i, { extraChildFee: e.target.value.replace(/[^0-9.]/g, '') })} /> per extra child</label>
+                                                            )}
+                                                            <label className="flex items-center gap-1">Max party
+                                                                <input className="w-16 rounded-lg border border-slate-300 p-2 text-sm" type="number" min={1} placeholder="—" value={r.maxParty} onChange={(e) => setRow(i, { maxParty: e.target.value })} /></label>
+                                                        </div>
+                                                        <span className="block text-xs text-slate-400">Leave blank for one flat price. The price never drops below the base.</span>
+                                                    </div>
+                                                )}
                                                 <textarea className={inputCls} rows={2} placeholder="Description (optional)" value={r.description} onChange={(e) => setRow(i, { description: e.target.value })} />
                                             </div>
                                         </div>
@@ -711,7 +742,7 @@ export default function ProviderListingEditor({ provider }: { provider: EditorPr
                                     </div>
                                 ))}
                             </div>
-                            <button type="button" onClick={() => setMenu([...menu, { name: '', description: '', price: '', unit: 'flat', image: null, duration: p.isSlot ? '60' : '', fulfilment: (p.isSlot && fulfilment === 'both') ? 'collection' : null, active: true, capacity: '' }])}
+                            <button type="button" onClick={() => setMenu([...menu, { name: '', description: '', price: '', unit: 'flat', image: null, duration: p.isSlot ? '60' : '', fulfilment: (p.isSlot && fulfilment === 'both') ? 'collection' : null, active: true, capacity: '', includedGuests: '', extraAdultFee: '', extraChildFee: '', maxParty: '' }])}
                                 className="text-sm font-semibold text-emerald-700 hover:text-emerald-800">+ Add an item</button>
                         </SectionCard>
                     )}

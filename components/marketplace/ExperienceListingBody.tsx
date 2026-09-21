@@ -2,7 +2,7 @@ import Link from 'next/link';
 import { shapeCue } from '@/lib/serviceSlots';
 import { dietaryOptionLabel, accessibilityLabel, parkingLabel, experienceCancellationOption, experienceAmenityLabel } from '@/lib/serviceProviders';
 import {
-    itemPriceLabel, cancellationSentence, whereLine, locationTag, travelCoverageLine,
+    itemPriceLabel, itemExtrasSubline, cancellationSentence, whereLine, locationTag, travelCoverageLine,
     durationLabel, durationSummary, yearsLabel, groupSizeLabel, capacityLabel,
 } from '@/components/marketplace/present';
 import { unitMultiplies } from '@/lib/serviceOrders';
@@ -262,6 +262,9 @@ export default function ExperienceListingBody({
                                                         <span className="font-semibold text-slate-900">{it.name}</span>
                                                         <span className="whitespace-nowrap font-semibold text-slate-900">{itemPriceLabel(it.price, it.unit)}</span>
                                                     </div>
+                                                    {itemExtrasSubline(it, p.minAge) ? (
+                                                        <p className="mt-0.5 text-xs font-medium text-slate-500">{itemExtrasSubline(it, p.minAge)}</p>
+                                                    ) : null}
                                                     {dur ? (
                                                         <p className="mt-0.5 flex items-center gap-1 text-xs text-slate-500">
                                                             <Clock className="h-3.5 w-3.5 flex-none" aria-hidden />{dur}

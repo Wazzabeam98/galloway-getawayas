@@ -2,7 +2,8 @@
 // the listing page and the booking widgets so a price or a time reads the same
 // everywhere. No JSX, no 'use client'.
 
-import type { MpProvider } from '@/lib/experiencesData';
+import type { MpProvider, MpItem } from '@/lib/experiencesData';
+import { extraGuestsLine } from '@/lib/extraGuests';
 
 const UNIT_SUFFIX: Record<string, string> = {
     person: ' / guest', night: ' / night', hour: ' / hr', ticket: '', item: '', flat: '',
@@ -107,6 +108,32 @@ export function whereLine(p: MpProvider): string | null {
 export function itemPriceLabel(price: number, unit: string): string {
     const money = '£' + (Number.isInteger(price) ? String(price) : price.toFixed(2));
     return money + (UNIT_SUFFIX[unit] || '');
+}
+
+/** The per-item price line, with extra-guests pricing when a flat item has it:
+ *  "£220 for up to 4, +£40 per extra adult". Falls back to the plain price. The
+ *  child fee only shows where the provider's minimum age admits children. */
+export function itemPriceLineFor(item: MpItem, minAge: number | null | undefined): string {
+    const line = extraGuestsLine({
+        unit: item.unit, price: item.price,
+        included_guests: item.includedGuests, extra_adult_fee: item.extraAdultFee,
+        extra_child_fee: item.extraChildFee, max_party: item.maxParty,
+    }, minAge);
+    return line || itemPriceLabel(item.price, item.unit);
+}
+
+/** The extra-guests detail as a subline beneath an item name (the base price
+ *  shows separately): "for up to 4, +£40 per extra adult". Null when the item has
+ *  no extra-guests pricing. Child fee only shows where children are allowed. */
+export function itemExtrasSubline(item: MpItem, minAge: number | null | undefined): string | null {
+    const line = extraGuestsLine({
+        unit: item.unit, price: item.price,
+        included_guests: item.includedGuests, extra_adult_fee: item.extraAdultFee,
+        extra_child_fee: item.extraChildFee, max_party: item.maxParty,
+    }, minAge);
+    if (!line) return null;
+    // Drop the leading "£base " — the base price is shown on the right.
+    return line.replace(/^£[0-9.]+\s/, '');
 }
 
 /** A length in minutes as a guest reads it: "45 min", "1 hr", "1 hr 30 min",

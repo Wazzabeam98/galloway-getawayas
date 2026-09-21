@@ -4,6 +4,7 @@ import { cookies } from 'next/headers';
 import { NextResponse } from 'next/server';
 import { collectionFieldsForWrite } from '@/lib/serviceProviders';
 import { audienceForTrade, knownExperienceAmenities } from '@/lib/serviceProviders';
+import { childrenAllowed } from '@/lib/guestAges';
 
 export const dynamic = 'force-dynamic';
 
@@ -43,6 +44,11 @@ function strOrNull(v: any): string | null {
 }
 function intOrNull(v: any): number | null {
     const n = Math.floor(Number(v));
+    return Number.isFinite(n) && n > 0 ? n : null;
+}
+// A non-negative money value (extra-guest fee), to 2dp, or null when blank/zero.
+function feeOrNull(v: any): number | null {
+    const n = Math.round(Number(v) * 100) / 100;
     return Number.isFinite(n) && n > 0 ? n : null;
 }
 
@@ -273,6 +279,13 @@ export async function POST(request: Request) {
                     // item-wins-else-provider rule seatConfig resolves everywhere.
                     const perPerson = unit === 'person';
                     const itemCapacity = perPerson ? intOrNull(it.capacity) : null;
+                    // Extra-guests pricing — a flat item only. Kept solely when a
+                    // base allowance (included_guests) is set; the child fee is
+                    // dropped unless the provider's minimum age admits children (the
+                    // same rule the editor hides it by, enforced server-side). Fees
+                    // are non-negative money; the price never drops below the base.
+                    const includedGuests = unit === 'flat' ? intOrNull(it.included_guests) : null;
+                    const kidsOk = childrenAllowed(p.guest_details && (p.guest_details as any).min_age != null ? Number((p.guest_details as any).min_age) : null);
                     const row: any = {
                         name, description: strOrNull(it.description), price,
                         unit,
@@ -282,6 +295,10 @@ export async function POST(request: Request) {
                         fulfilment: itemFulfilment,
                         active: it.active !== false,
                         capacity: itemCapacity,
+                        included_guests: includedGuests,
+                        extra_adult_fee: includedGuests ? feeOrNull(it.extra_adult_fee) : null,
+                        extra_child_fee: includedGuests && kidsOk ? feeOrNull(it.extra_child_fee) : null,
+                        max_party: includedGuests ? intOrNull(it.max_party) : null,
                         // No per-item minimum: a shared session takes a single
                         // person by design. Cleared to null so the column falls back
                         // to its default of 1 (no floor); the control is gone.
