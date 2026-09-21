@@ -1,13 +1,15 @@
 'use client';
 
 import { useState } from 'react';
+import Link from 'next/link';
 import { useRouter } from 'next/navigation';
 import { Loader2, MessageCircle, Ban } from 'lucide-react';
 
 // The cancel action for a booked experience, on the booking's own page. States
-// the exact outcome before anything happens. Inside the no-refund window it gives
-// the guest a real choice — ask the provider to refund, or walk away and forfeit —
-// rather than blocking them; and the walk-away double-confirms and is recorded.
+// the exact outcome before anything happens. Inside the no-refund window it says
+// so plainly and lets the guest cancel anyway (double-confirmed and recorded),
+// with a quiet "Message the provider" link beneath in case they want to ask
+// first — rather than leading with a structured refund request.
 //
 // `className` turns the trigger into an action-row icon button (Ban + "Cancel")
 // instead of the plain underlined link; `panelClassName` is put on the outcome
@@ -122,21 +124,18 @@ export default function OrderCancel({
                 </>
             ) : (
                 <>
-                    <div className="text-sm font-semibold text-slate-900">Cancelling now won’t get your money back</div>
-                    <p className="mt-1 text-sm text-slate-600">
-                        You’re inside {providerName}’s cancellation window, so the <span className="font-semibold">£{price.toFixed(2)}</span> you paid isn’t refunded automatically. You can ask {providerName} to refund you — or cancel anyway and forfeit it.
-                    </p>
+                    <div className="text-sm font-medium text-slate-900">You won’t be refunded if you cancel now.</div>
                     <div className="mt-3 flex flex-wrap items-center gap-2">
-                        <button type="button" disabled={busy} onClick={() => act('ask')}
-                            className="inline-flex items-center gap-1.5 rounded-lg bg-emerald-700 px-3.5 py-2 text-sm font-semibold text-white hover:bg-emerald-800 disabled:opacity-50">
-                            {busy ? <Loader2 className="h-4 w-4 animate-spin" /> : <MessageCircle className="h-4 w-4" />} Ask {providerName} to refund
-                        </button>
                         <button type="button" onClick={() => setView('forfeit')}
-                            className="rounded-lg px-3 py-2 text-sm font-medium text-red-700 hover:text-red-900">
-                            Cancel anyway — no refund
+                            className="inline-flex items-center gap-1.5 rounded-lg bg-red-700 px-3.5 py-2 text-sm font-semibold text-white hover:bg-red-800">
+                            Cancel anyway
                         </button>
                         <button type="button" onClick={() => setView('closed')} className="px-3 py-2 text-sm font-semibold text-slate-600 hover:text-slate-900">Keep booking</button>
                     </div>
+                    <Link href={'/messages?o=' + orderId}
+                        className="mt-3 inline-flex items-center gap-1.5 text-[13px] font-medium text-slate-500 hover:text-slate-800">
+                        <MessageCircle className="h-3.5 w-3.5" /> Message {providerName}
+                    </Link>
                 </>
                     )}
                     {error ? <p className="mt-2 text-xs text-red-600">{error}</p> : null}
