@@ -6,6 +6,7 @@ import {
     assertReachable,
     putObject,
     describeS3Error,
+    backupConfigSummary,
     type BackupStore,
 } from '@/lib/backupStore';
 
@@ -157,10 +158,16 @@ export async function GET(request: Request) {
             'application/json',
         );
 
-        return NextResponse.json({ ok: true, day, copied, bytes });
+        return NextResponse.json({ ok: true, day, copied, bytes, config: backupConfigSummary() });
     } catch (e: any) {
         const detail = e?.message ? `${e.message} :: ${describeS3Error(e)}` : describeS3Error(e);
         await logError('storage-backup failed', detail, { path: '/api/cron/storage-backup' });
-        return NextResponse.json({ ok: false, day, error: detail }, { status: 500 });
+        // The config summary carries no secret values — only the shape of the
+        // config and the credential lengths — so it is safe in the response and
+        // is exactly what a stuck auth failure needs to be diagnosed.
+        return NextResponse.json(
+            { ok: false, day, error: detail, config: backupConfigSummary() },
+            { status: 500 },
+        );
     }
 }
