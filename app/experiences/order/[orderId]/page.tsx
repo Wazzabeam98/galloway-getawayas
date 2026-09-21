@@ -242,7 +242,7 @@ export default async function OrderPage({ params, searchParams }: { params: { or
     // Per-person = the ITEM's unit multiplies (person/ticket/hour/item — a shared
     // table), NOT the literal string 'person', and NOT the session's frozen
     // capacity (a private hire can seat a whole party). Matches the top-up route.
-    const isPerPersonParent = isSlot && unitMultiplies(order.item_unit) && !order.parent_order_id;
+    const isPerPersonParent = unitMultiplies(order.item_unit) && !order.parent_order_id;
     const { data: topUpChildren } = isPerPersonParent
         ? await admin.from('service_orders')
             .select('quantity, attendees, adults, children, item_unit')
@@ -252,12 +252,17 @@ export default async function OrderPage({ params, searchParams }: { params: { or
     // The head count that drives "Who's going" and the Guests line: the folded
     // family for a per-person order, else the private order's own attendees.
     const effectiveHeadcount = isPerPersonParent ? family.headcount : (Number(order.attendees) || 0);
-    const canTopUp = isBooker && isPerPersonParent && order.status === 'confirmed';
-    // A move is offered to the booker of any confirmed slot PARENT (per-person or
-    // private hire — the engine handles both); a top-up child is moved with its
-    // parent, never on its own. The picker itself may still come back empty.
-    const canMove = isBooker && isSlot && !order.parent_order_id
-        && order.status === 'confirmed' && !!order.slot_session_id;
+    // CHANGE GUEST COUNT and CHANGE DATE are offered on every shape now, not just
+    // slots. For a slot they keep their existing engines (per-person top-up; the
+    // session-picker move). For a request shape (made_to_order / comes_to_you)
+    // they use the new /api/services/order/change-{count,date} routes: a count is
+    // a quantity that moves money (or, on a per-group flat price, just a party
+    // size), and a date is the delivery/collection/service day. A top-up child is
+    // never changed on its own — always the original booking.
+    const canChangeCount = isBooker && order.status === 'confirmed' && !order.parent_order_id
+        && (isSlot ? isPerPersonParent : true);
+    const canChangeDate = isBooker && order.status === 'confirmed' && !order.parent_order_id
+        && (isSlot ? !!order.slot_session_id : true);
 
     const { comesToCottage, collects } = orderLocation(order, prov?.fulfilment);
     // Assembled from the three private fields, same order the cottage address
@@ -785,20 +790,21 @@ export default async function OrderPage({ params, searchParams }: { params: { or
                             <div className="mt-3 divide-y divide-slate-200 border-t border-slate-200">
                                 {/* The reservation actions first, in one order on
                                     every shape: Change guest count, Change date or
-                                    time, Cancel reservation. The first two open a
-                                    modal and are slot-only; Cancel shows on every
-                                    shape. All are the booker's alone. The utility
-                                    rows (Add to calendar, Print details) sit BELOW
-                                    them. */}
-                                {canTopUp && (
+                                    time, Cancel reservation. All three now show on
+                                    every shape (a modal each for the first two);
+                                    all are the booker's alone. The utility rows
+                                    (Add to calendar, Print details) sit BELOW them. */}
+                                {canChangeCount && (
                                     <ChangeGuestCount
                                         orderId={order.id}
+                                        shape={order.shape}
                                         className={ROW}
                                     />
                                 )}
-                                {canMove && (
+                                {canChangeDate && (
                                     <ChangeDateTime
                                         orderId={order.id}
+                                        shape={order.shape}
                                         className={ROW}
                                     />
                                 )}
