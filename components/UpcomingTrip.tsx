@@ -240,7 +240,7 @@ export default async function UpcomingTrip() {
 
     const actionsEl = (
         <div className="flex flex-wrap gap-3 mt-8">
-            <Link href="/trips"
+            <Link href={'/trips/' + booking.id}
                 className="inline-flex items-center gap-2 px-6 py-3 bg-emerald-700 hover:bg-emerald-800 text-white text-sm font-semibold rounded-xl transition">
                 <CalendarDays className="w-4 h-4" /> Your trip
             </Link>
