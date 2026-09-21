@@ -44,6 +44,14 @@ export function backupStore(): BackupStore | null {
         // keeps the one code path working against all three.
         forcePathStyle: true,
         credentials: { accessKeyId, secretAccessKey },
+        // Since early 2025 the SDK adds a CRC32 request checksum (and a
+        // x-amz-sdk-checksum-algorithm header) by default. Cloudflare R2 rejects
+        // those and answers with an error the SDK can only surface as an opaque
+        // "UnknownError". Both flags off means "only checksum when the operation
+        // actually requires it", which R2 accepts — and AWS S3 and B2 are happy
+        // with it too, so the one code path still works everywhere.
+        requestChecksumCalculation: 'WHEN_REQUIRED',
+        responseChecksumValidation: 'WHEN_REQUIRED',
     });
 
     return { client, bucket };
@@ -54,6 +62,20 @@ export function backupStore(): BackupStore | null {
 // through an upload.
 export async function assertReachable(store: BackupStore): Promise<void> {
     await store.client.send(new HeadBucketCommand({ Bucket: store.bucket }));
+}
+
+// Turns an AWS-SDK error into something a log can act on. The SDK's own message
+// is often just "UnknownError"; the HTTP status and the error name/code carried
+// alongside it are what actually say whether it was auth (403), a wrong bucket
+// or endpoint (404), or a rejected request (400).
+export function describeS3Error(e: any): string {
+    const status = e?.$metadata?.httpStatusCode;
+    const name = e?.name || e?.Code;
+    const parts = [];
+    if (name) parts.push(String(name));
+    if (status) parts.push(`HTTP ${status}`);
+    if (e?.message && e.message !== name) parts.push(e.message);
+    return parts.join(' — ') || String(e);
 }
 
 export async function putObject(

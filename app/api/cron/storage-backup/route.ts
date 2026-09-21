@@ -5,6 +5,7 @@ import {
     backupStore,
     assertReachable,
     putObject,
+    describeS3Error,
     type BackupStore,
 } from '@/lib/backupStore';
 
@@ -114,7 +115,14 @@ export async function GET(request: Request) {
     const day = new Date().toISOString().slice(0, 10); // YYYY-MM-DD (UTC)
 
     try {
-        await assertReachable(store);
+        try {
+            await assertReachable(store);
+        } catch (e: any) {
+            // Reachability failing on its own is almost always the destination
+            // config — wrong endpoint, bucket or credentials — so name it as
+            // that rather than letting it read like a mid-copy failure.
+            throw new Error(`backup store unreachable: ${describeS3Error(e)}`);
+        }
 
         const admin = adminClient();
         const manifest: ManifestEntry[] = [];
@@ -151,10 +159,8 @@ export async function GET(request: Request) {
 
         return NextResponse.json({ ok: true, day, copied, bytes });
     } catch (e: any) {
-        await logError('storage-backup failed', e, { path: '/api/cron/storage-backup' });
-        return NextResponse.json(
-            { ok: false, day, error: e?.message || String(e) },
-            { status: 500 },
-        );
+        const detail = e?.message ? `${e.message} :: ${describeS3Error(e)}` : describeS3Error(e);
+        await logError('storage-backup failed', detail, { path: '/api/cron/storage-backup' });
+        return NextResponse.json({ ok: false, day, error: detail }, { status: 500 });
     }
 }
