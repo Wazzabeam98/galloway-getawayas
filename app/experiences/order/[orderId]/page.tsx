@@ -128,11 +128,12 @@ function partySplitLabel(adults: number | null | undefined, children: number | n
     return parts.length ? parts.join(', ') : null;
 }
 
-// An .ics the guest can drop into their calendar. A slot has a real time, so it
-// is a timed event; a made-to-order/comes-to-you booking is a date, so it is an
-// all-day event. Floating local time (no Z) is what a guest expects — 2pm is 2pm
-// wherever their phone is. Returned as a data: URL so a plain <a download> saves
-// it with no round trip.
+// An .ics the guest can drop into their calendar. Any booking with a real time —
+// a slot, or a comes-to-you dinner — is a TIMED event; a booking with only a
+// date (a made-to-order collection) is an all-day event. The caller decides by
+// passing the time or null. Floating local time (no Z) is what a guest expects —
+// 2pm is 2pm wherever their phone is. Returned as a data: URL so a plain
+// <a download> saves it with no round trip.
 //
 // Airbnb has no add-to-calendar anywhere on this screen. Kept deliberately: a
 // 90-minute appointment in someone else's diary is worth more to a guest than
@@ -934,7 +935,11 @@ export default async function OrderPage({ params, searchParams }: { params: { or
                                     href={calendarHref({
                                         title: (order.item_name || 'Experience') + ' — ' + who,
                                         date: String(order.service_date).slice(0, 10),
-                                        time: isSlot ? (order.service_time || null) : null,
+                                        // Any shape with a real time is a timed event — a
+                                        // comes-to-you dinner at 7pm went in the diary as an
+                                        // all-day block. Only a shape with no time (a
+                                        // made-to-order collection date) stays all-day.
+                                        time: order.service_time || null,
                                         where,
                                         details: (order.item_description || '') + (order.note ? '\n\nYour note: ' + order.note : ''),
                                         durationMin,
