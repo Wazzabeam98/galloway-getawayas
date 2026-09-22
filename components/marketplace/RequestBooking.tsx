@@ -1,13 +1,13 @@
 'use client';
 
-import { useEffect, useMemo, useRef, useState } from 'react';
-import { X, Minus, Plus } from 'lucide-react';
+import { useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
+import { X, Minus, Plus, Calendar, ChevronDown, ChevronRight } from 'lucide-react';
 import { unitMultiplies, orderTotal, MAX_ORDER_QUANTITY } from '@/lib/serviceOrders';
 import { hasExtraGuests, partyPrice, partyCeiling, extraGuestsLine } from '@/lib/extraGuests';
 import { childrenAllowed } from '@/lib/guestAges';
 import { prettyTime } from '@/lib/offeredTimes';
-import { itemPriceLabel, dateLabel } from '@/components/marketplace/present';
-import { londonDayKey } from '@/lib/dayKey';
+import { itemPriceLabel, dateLabel, dayHeadingLabel, monthYearLabel } from '@/components/marketplace/present';
+import { londonDayKey, shiftDayKey } from '@/lib/dayKey';
 import MonthCalendar from '@/components/marketplace/MonthCalendar';
 
 export interface RequestItem {
@@ -40,6 +40,12 @@ export function requestPrice(it: RequestItem | null, adults: number, children: n
     if (eg && hasExtraGuests(eg)) return partyPrice(eg as any, adults, childrenAllowed(minAge) ? children : 0, minAge ?? null);
     if (unitMultiplies(it.unit)) return orderTotal(it.price, Math.max(1, adults + (childrenAllowed(minAge) ? children : 0)));
     return it.price;
+}
+
+// The smallest party this item takes — the provider's per-item minimum (min_people),
+// floored at one. Used to hold the stepper and to show "Minimum N guests".
+export function itemMinPeople(it: RequestItem | null): number {
+    return it && unitMultiplies(it.unit) ? Math.max(1, Number(it.minPeople ?? 1) || 1) : 1;
 }
 
 // A guest stepper row, at module scope so it keeps its identity across the
@@ -77,9 +83,9 @@ export interface RequestBookArgs {
 
 // The FULL picker for a comes-to-you request, in a dialog — the compact box only
 // shows a price, a cancellation line, a "Show dates" button and a few suggested
-// days. Inside: the option, the guest count, the calendar, the time (from the
-// provider's opening hours) and, standalone, the address; a running total; and one
-// Book button. Modelled on the slot dialog so the two read as one product.
+// days. Built to the SAME shape as the slot dialog: the option and guest count on
+// top, then a scrolling LIST of the next available days (a calendar icon by the
+// month heading opens the full month grid), each day expanding to its times.
 export function RequestBookingDialog({
     who, items, minAge, isFood, needsAddress, calDays, timesByDate, cottageGuests, providerMax, prefillAdults, prefillChildren,
     initialDate, busy, error, onBook, onClose,
@@ -106,10 +112,17 @@ export function RequestBookingDialog({
     const [adults, setAdults] = useState<number>(Math.max(1, Number(prefillAdults) || 1));
     const [children, setChildren] = useState<number>(Math.max(0, Number(prefillChildren) || 0));
     const [childrenShown, setChildrenShown] = useState<boolean>(!!(prefillChildren && prefillChildren > 0));
-    const [date, setDate] = useState<string>(initialDate && calDays.has(initialDate) ? initialDate : '');
+    const [date, setDate] = useState<string>('');
     const [time, setTime] = useState<string>('');
     const [address, setAddress] = useState('');
     const [allergy, setAllergy] = useState('');
+
+    // The month-jump calendar behind the calendar icon, and the one day expanded
+    // in the list at a time — exactly as the slot dialog does it.
+    const [calOpen, setCalOpen] = useState(false);
+    const [calSel, setCalSel] = useState<string | null>(null);
+    const [expandedDate, setExpandedDate] = useState<string | null>(null);
+    const [headerMonth, setHeaderMonth] = useState('');
 
     const kidsOk = childrenAllowed(minAge);
     useEffect(() => { if (!kidsOk) { setChildren(0); setChildrenShown(false); } }, [kidsOk]);
@@ -119,7 +132,7 @@ export function RequestBookingDialog({
     const isExtra = !!eg && hasExtraGuests(eg);
     const perPerson = !!item && unitMultiplies(item.unit);
     const showGuests = isExtra || perPerson;
-    const minPeople = perPerson && item ? Math.max(1, Number(item.minPeople ?? 1) || 1) : 1;
+    const minPeople = itemMinPeople(item);
     const people = adults + (kidsOk ? children : 0);
 
     // Keep the party at or above the per-person minimum by topping up adults — the
@@ -132,22 +145,74 @@ export function RequestBookingDialog({
         : perPerson
             ? Math.min(stayCap, providerMax && providerMax > 0 ? providerMax : MAX_ORDER_QUANTITY)
             : Infinity;
+    const incDisabled = Number.isFinite(partyCap) && people >= (partyCap as number);
 
     const total = requestPrice(item, adults, kidsOk ? children : 0, minAge ?? null);
     const egText = eg ? extraGuestsLine(eg as any, minAge ?? null) : null;
+    const priceEach = item ? itemPriceLabel(item.price, item.unit) : '';
 
-    const timesForDate = date ? (timesByDate[date] || []) : [];
-    // Keep a selected time valid as the date changes.
-    useEffect(() => { if (time && !timesForDate.includes(time)) setTime(''); /* eslint-disable-next-line */ }, [date]);
+    const today = londonDayKey();
+    const tomorrow = shiftDayKey(today, 1);
+    // The available days, each with its start times, oldest first.
+    const days = useMemo(() => Array.from(calDays)
+        .filter((d) => (timesByDate[d] || []).length > 0)
+        .sort()
+        .map((d) => ({ date: d, times: timesByDate[d] })), [calDays, timesByDate]);
+    // Only the next few are listed; the calendar icon (or "More dates") opens the
+    // full month for anything further out — exactly the slot dialog's shape. If a
+    // date further out is picked from the calendar, the list grows to reach it so
+    // the picked day (and its times) is shown.
+    const listDays = useMemo(() => {
+        const idx = date ? days.findIndex((d) => d.date === date) : -1;
+        return days.slice(0, Math.max(10, idx + 1));
+    }, [days, date]);
+
+    // Keep a selected time valid as the item (and so its cap) changes; a day with
+    // no times can't stay selected.
+    const timesForSelected = date ? (timesByDate[date] || []) : [];
+    useEffect(() => { if (time && !timesForSelected.includes(time)) setTime(''); /* eslint-disable-next-line */ }, [date]);
+
+    // ---- the day-list scroll machinery, mirrored from the slot dialog ----------
+    const listRef = useRef<HTMLDivElement | null>(null);
+    const dayEls = useRef<Map<string, HTMLDivElement>>(new Map());
+    const pendingScroll = useRef<string | null>(null);
+
+    useEffect(() => { if (days.length) setHeaderMonth(monthYearLabel(days[0].date)); }, [days]);
+    const onListScroll = () => {
+        const el = listRef.current; if (!el) return;
+        const top = el.scrollTop + 4;
+        let current = listDays[0]?.date;
+        for (const d of listDays) { const node = dayEls.current.get(d.date); if (node && node.offsetTop <= top) current = d.date; else break; }
+        if (current) setHeaderMonth(monthYearLabel(current));
+    };
+    const focusDay = (d: string) => { setExpandedDate(d); setDate(d); setHeaderMonth(monthYearLabel(d)); pendingScroll.current = d; };
+    useLayoutEffect(() => {
+        const target = pendingScroll.current;
+        if (!target || calOpen) return;
+        const el = listRef.current; const node = dayEls.current.get(target);
+        if (el && node) { el.scrollTop = node.offsetTop - 4; pendingScroll.current = null; }
+    });
+    // Opened from a suggested day in the panel: open with it expanded.
+    useLayoutEffect(() => {
+        if (calOpen || !initialDate) return;
+        const target = days.find((d) => d.date >= initialDate)?.date;
+        if (target) focusDay(target);
+        // eslint-disable-next-line react-hooks/exhaustive-deps
+    }, []);
+    const applyCalPick = () => {
+        if (!calSel) return;
+        const target = days.find((d) => d.date >= calSel)?.date || calSel;
+        setCalOpen(false);
+        focusDay(target);
+    };
 
     // Esc + background scroll lock.
-    const bodyRef = useRef<HTMLDivElement | null>(null);
     useEffect(() => {
-        const onKey = (e: KeyboardEvent) => { if (e.key === 'Escape') onClose(); };
+        const onKey = (e: KeyboardEvent) => { if (e.key === 'Escape') { if (calOpen) setCalOpen(false); else onClose(); } };
         document.addEventListener('keydown', onKey);
         const prev = document.body.style.overflow; document.body.style.overflow = 'hidden';
         return () => { document.removeEventListener('keydown', onKey); document.body.style.overflow = prev; };
-    }, [onClose]);
+    }, [onClose, calOpen]);
 
     const canBook = !!item && !!date && !!time && (!needsAddress || !!address.trim());
     const submit = () => {
@@ -155,102 +220,253 @@ export function RequestBookingDialog({
         onBook({ itemId: item.id, date, time, adults, children: kidsOk ? children : 0, address: address.trim(), allergy: allergy.trim() });
     };
 
-    const incDisabled = Number.isFinite(partyCap) && people >= (partyCap as number);
-
     return (
-        <div className="fixed inset-0 z-[60] flex items-start justify-center bg-black/40 px-4 pb-8 pt-20 sm:pt-28" role="dialog" aria-modal="true" aria-label="Choose a date"
+        <div className="fixed inset-0 z-[60] flex items-start justify-center bg-black/40 px-4 pb-8 pt-20 sm:pt-28" role="dialog" aria-modal="true" aria-label="Choose a time"
             onMouseDown={(e) => { if (e.target === e.currentTarget && !busy) onClose(); }}>
             <div className="my-auto flex max-h-[calc(100dvh-7rem)] w-full max-w-lg flex-col overflow-hidden rounded-2xl bg-white shadow-xl">
                 <div className="flex flex-none items-center justify-between border-b border-slate-100 px-5 py-4">
-                    <h2 className="text-lg font-bold text-slate-900">Choose a date</h2>
-                    <button type="button" onClick={() => !busy && onClose()} aria-label="Close" className="rounded-full p-1 text-slate-500 hover:bg-slate-100"><X className="h-5 w-5" /></button>
+                    <h2 className="text-lg font-bold text-slate-900">{calOpen ? 'Choose a date' : 'Choose a time'}</h2>
+                    <button type="button" onClick={() => (calOpen ? setCalOpen(false) : (!busy && onClose()))} aria-label="Close" className="rounded-full p-1 text-slate-500 hover:bg-slate-100"><X className="h-5 w-5" /></button>
                 </div>
 
-                <div ref={bodyRef} className="min-h-0 flex-1 overflow-y-auto px-5 py-4">
-                    {ordered.length > 1 && (
-                        <fieldset className="min-w-0">
-                            <legend className="text-xs font-semibold uppercase tracking-wide text-slate-500">Choose</legend>
-                            <div className="mt-2 space-y-1.5">
-                                {ordered.map((it) => (
-                                    <label key={it.id} className={`flex cursor-pointer items-center gap-3 rounded-lg border p-2.5 ${itemId === it.id ? 'border-emerald-600 bg-emerald-50/60' : 'border-slate-200 hover:border-slate-300'}`}>
-                                        <input type="radio" name="req-item" checked={itemId === it.id} onChange={() => setItemId(it.id)} className="accent-emerald-600" />
-                                        <span className="min-w-0 flex-1 truncate text-sm font-medium text-slate-800">{it.name}</span>
-                                        <span className="whitespace-nowrap text-sm font-semibold text-slate-900">{itemPriceLabel(it.price, it.unit)}</span>
-                                    </label>
-                                ))}
-                            </div>
-                        </fieldset>
-                    )}
-
-                    {showGuests && (
-                        <div className={ordered.length > 1 ? 'mt-4' : ''}>
-                            <div className="text-xs font-semibold uppercase tracking-wide text-slate-500">Guests</div>
-                            <div className="mt-1">
-                                <GuestRow label="Adults" sub="Age 13+" value={adults} floor={Math.max(1, minPeople - (kidsOk ? children : 0))} incDisabled={incDisabled} onChange={setAdults} />
-                                {childrenShown && kidsOk && (
-                                    <GuestRow label="Children" sub="Ages 4–12" value={children} floor={0} incDisabled={incDisabled} onChange={setChildren} />
-                                )}
-                                {!childrenShown && kidsOk && (
-                                    <button type="button" onClick={() => setChildrenShown(true)}
-                                        className="mt-1.5 text-sm font-medium text-slate-700 underline underline-offset-2 hover:text-slate-900">Add children</button>
-                                )}
-                                {egText && <p className="mt-1 text-xs text-slate-400">{egText}</p>}
-                            </div>
+                {calOpen ? (
+                    <>
+                        <div className="min-h-0 flex-1 overflow-y-auto px-5 pb-4">
+                            <MonthCalendar availableDays={calDays} selected={calSel} onSelect={setCalSel} today={today} />
                         </div>
-                    )}
+                        <div className="border-t border-slate-100 px-5 py-4">
+                            <button type="button" onClick={applyCalPick} disabled={!calSel}
+                                className="w-full rounded-xl bg-slate-900 px-6 py-3 text-sm font-bold text-white hover:bg-black disabled:opacity-40">
+                                Next
+                            </button>
+                        </div>
+                    </>
+                ) : (
+                    <>
+                        {/* One scrolling body — option, guests, the day list (with a
+                            sticky month header + calendar-jump icon) and, when they
+                            apply, the address and allergy — so the list has room and
+                            the month heading stays in view as it scrolls. */}
+                        <div ref={listRef} onScroll={onListScroll} className="min-h-0 flex-1 overflow-y-auto">
+                            <div className="border-b border-slate-100 px-5 py-4">
+                                {ordered.length > 1 && (
+                                    <div className="mb-3">
+                                        <div className="mb-1.5 text-xs font-semibold uppercase tracking-wide text-slate-500">Option</div>
+                                        <div className="flex flex-wrap gap-1.5">
+                                            {ordered.map((it) => (
+                                                <button key={it.id} type="button" onClick={() => setItemId(it.id)}
+                                                    className={`rounded-full border px-3 py-1.5 text-sm font-medium ${itemId === it.id ? 'border-slate-900 bg-slate-900 text-white' : 'border-slate-300 text-slate-700 hover:border-slate-400'}`}>
+                                                    {it.name} · {itemPriceLabel(it.price, it.unit)}
+                                                </button>
+                                            ))}
+                                        </div>
+                                    </div>
+                                )}
+                                {showGuests && (
+                                    <div>
+                                        <div className="mb-1 flex items-center justify-between">
+                                            <div className="text-sm font-semibold text-slate-900">Guests</div>
+                                            <div className="text-sm text-slate-500">{people} {people === 1 ? 'person' : 'people'}{perPerson ? '' : ' — the whole session is yours'}</div>
+                                        </div>
+                                        <GuestRow label="Adults" sub="Age 13+" value={adults} floor={Math.max(1, minPeople - (kidsOk ? children : 0))} incDisabled={incDisabled} onChange={setAdults} />
+                                        {childrenShown && kidsOk && (
+                                            <GuestRow label="Children" sub="Ages 4–12" value={children} floor={0} incDisabled={incDisabled} onChange={setChildren} />
+                                        )}
+                                        {!childrenShown && kidsOk && (
+                                            <button type="button" onClick={() => setChildrenShown(true)}
+                                                className="mt-1.5 text-sm font-medium text-slate-700 underline underline-offset-2 hover:text-slate-900">Add children</button>
+                                        )}
+                                        {minPeople > 1 && (
+                                            <div className="mt-1 text-xs text-slate-400">Minimum {minPeople} guests.</div>
+                                        )}
+                                        {egText && <p className="mt-1 text-xs text-slate-400">{egText}</p>}
+                                    </div>
+                                )}
+                            </div>
 
-                    <div className="mt-4 text-xs font-semibold uppercase tracking-wide text-slate-500">Pick a date</div>
-                    <div className="mt-1">
-                        <MonthCalendar availableDays={calDays} selected={date || null} onSelect={(d) => setDate(d)} today={londonDayKey()} />
-                    </div>
-
-                    {date && (
-                        timesForDate.length > 0 ? (
-                            <>
-                                <div className="mt-4 text-xs font-semibold uppercase tracking-wide text-slate-500">Pick a time</div>
-                                <div className="mt-2 flex flex-wrap gap-1.5">
-                                    {timesForDate.map((t) => (
-                                        <button key={t} type="button" onClick={() => setTime(t)}
-                                            className={`rounded-lg border px-3 py-2 text-sm font-medium ${time === t ? 'border-emerald-600 bg-emerald-50 text-emerald-800' : 'border-slate-200 text-slate-700 hover:border-slate-300'}`}>
-                                            {prettyTime(t)}
-                                        </button>
-                                    ))}
+                            {/* Sticky month header + calendar-jump icon */}
+                            {days.length > 0 && (
+                                <div className="sticky top-0 z-10 flex items-center justify-between border-b border-slate-100 bg-white px-5 py-3">
+                                    <div className="text-base font-semibold text-slate-900">{headerMonth}</div>
+                                    <button type="button" onClick={() => { setCalSel(null); setCalOpen(true); }} aria-label="Jump to a date"
+                                        className="rounded-full p-1.5 text-slate-700 hover:bg-slate-100"><Calendar className="h-5 w-5" /></button>
                                 </div>
-                            </>
-                        ) : (
-                            <p className="mt-2 text-sm text-slate-500">No times on {dateLabel(date)} — try another date.</p>
-                        )
-                    )}
+                            )}
 
-                    {needsAddress && (
-                        <label className="mt-4 block">
-                            <span className="text-xs font-semibold uppercase tracking-wide text-slate-500">Where should {who} come?</span>
-                            <textarea value={address} onChange={(e) => setAddress(e.target.value.slice(0, 300))} rows={2} placeholder="The address for your booking"
-                                className="mt-1 block w-full resize-y rounded-lg border border-slate-300 px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-emerald-600" />
-                        </label>
-                    )}
+                            {/* The day-grouped list */}
+                            <div className="px-5 pb-2">
+                                {listDays.length === 0 ? (
+                                    <p className="py-8 text-center text-sm text-slate-500">No dates available just now — check back soon.</p>
+                                ) : listDays.map((d) => {
+                                    const isOpen = d.date === expandedDate;
+                                    const n = d.times.length;
+                                    return (
+                                        <div key={d.date} ref={(el) => { if (el) dayEls.current.set(d.date, el); else dayEls.current.delete(d.date); }} className="border-b border-slate-100 last:border-b-0">
+                                            <button type="button" onClick={() => { setExpandedDate(isOpen ? null : d.date); if (!isOpen) setDate(d.date); }}
+                                                className="flex w-full items-center justify-between gap-3 py-3.5 text-left">
+                                                <span className="text-[15px] font-semibold text-slate-900">{dayHeadingLabel(d.date, today, tomorrow)}</span>
+                                                <span className="flex flex-none items-center gap-2 text-sm text-slate-500">
+                                                    <span>{n} time{n === 1 ? '' : 's'}</span>
+                                                    <ChevronDown className={`h-4 w-4 text-slate-400 transition-transform ${isOpen ? 'rotate-180' : ''}`} aria-hidden />
+                                                </span>
+                                            </button>
+                                            {isOpen && (
+                                                <div className="space-y-2 pb-4">
+                                                    {d.times.map((t) => {
+                                                        const on = date === d.date && time === t;
+                                                        return (
+                                                            <button key={t} type="button" onClick={() => { setDate(d.date); setTime(t); }}
+                                                                className={`flex w-full items-center gap-3 rounded-xl border p-3.5 text-left transition ${on ? 'border-slate-900 ring-1 ring-slate-900' : 'border-slate-200 hover:border-slate-400'}`}>
+                                                                <span className="min-w-0 flex-1">
+                                                                    <span className="block text-[15px] font-semibold text-slate-900">{prettyTime(t)}</span>
+                                                                    {item && <span className="mt-0.5 block text-xs text-slate-500">{priceEach}</span>}
+                                                                </span>
+                                                                <span className="flex-none text-right text-xs font-semibold text-emerald-700">Available</span>
+                                                            </button>
+                                                        );
+                                                    })}
+                                                </div>
+                                            )}
+                                        </div>
+                                    );
+                                })}
+                                {days.length > listDays.length && (
+                                    <button type="button" onClick={() => { setCalSel(null); setCalOpen(true); }}
+                                        className="mt-3 w-full rounded-xl border border-slate-200 px-4 py-3 text-sm font-semibold text-slate-700 hover:border-slate-400">
+                                        More dates
+                                    </button>
+                                )}
+                            </div>
 
-                    {isFood && (
-                        <label className="mt-4 block">
-                            <span className="text-xs font-semibold uppercase tracking-wide text-slate-500">Allergies or dietary needs <span className="font-normal normal-case tracking-normal text-slate-400">(optional)</span></span>
-                            <textarea value={allergy} onChange={(e) => setAllergy(e.target.value.slice(0, 500))} rows={2} placeholder="Anything they should cook around"
-                                className="mt-1 block w-full resize-y rounded-lg border border-slate-300 px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-emerald-600" />
-                        </label>
-                    )}
+                            {/* Address + allergy, shown only when they apply */}
+                            {(needsAddress || isFood) && (
+                                <div className="space-y-3 border-t border-slate-100 px-5 py-4">
+                                    {needsAddress && (
+                                        <label className="block">
+                                            <span className="text-xs font-semibold uppercase tracking-wide text-slate-500">Where should {who} come?</span>
+                                            <textarea value={address} onChange={(e) => setAddress(e.target.value.slice(0, 300))} rows={2} placeholder="The address for your booking"
+                                                className="mt-1 block w-full resize-y rounded-lg border border-slate-300 px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-emerald-600" />
+                                        </label>
+                                    )}
+                                    {isFood && (
+                                        <label className="block">
+                                            <span className="text-xs font-semibold uppercase tracking-wide text-slate-500">Allergies or dietary needs <span className="font-normal normal-case tracking-normal text-slate-400">(optional)</span></span>
+                                            <textarea value={allergy} onChange={(e) => setAllergy(e.target.value.slice(0, 500))} rows={2} placeholder="Anything they should cook around"
+                                                className="mt-1 block w-full resize-y rounded-lg border border-slate-300 px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-emerald-600" />
+                                        </label>
+                                    )}
+                                </div>
+                            )}
+                        </div>
+
+                        {/* Footer: total + Send request */}
+                        <div className="flex-none border-t border-slate-100 px-5 py-4">
+                            {error && <p className="mb-2 text-sm text-rose-700">{error}</p>}
+                            <div className="mb-3 flex items-baseline justify-between">
+                                <span className="text-sm font-medium text-slate-600">Total</span>
+                                <span className="text-lg font-semibold text-slate-900">£{total.toFixed(2)}</span>
+                            </div>
+                            <button type="button" onClick={submit} disabled={busy || !canBook}
+                                className="w-full rounded-xl bg-emerald-700 px-4 py-3 text-sm font-semibold text-white hover:bg-emerald-800 disabled:opacity-50">
+                                {busy ? 'Sending…' : 'Send request'}
+                            </button>
+                            <p className="mt-2 text-xs text-slate-400">Your card is held, not charged, until {who} confirms.</p>
+                        </div>
+                    </>
+                )}
+            </div>
+        </div>
+    );
+}
+
+// A DATE-ONLY picker dialog (made-to-order), the same shape as the slot dialog:
+// the next few available days listed, a calendar icon by the month heading that
+// opens the full month grid. Picking a day (in the list or the grid) sets it and
+// closes.
+export function DateOnlyDialog({ title, availableDays, selected, onSelect, onClose, listLimit = 14 }: {
+    title: string;
+    availableDays: Set<string>;
+    selected: string | null;
+    onSelect: (dateKey: string) => void;
+    onClose: () => void;
+    listLimit?: number;
+}) {
+    const [calOpen, setCalOpen] = useState(false);
+    const [calSel, setCalSel] = useState<string | null>(null);
+    const [headerMonth, setHeaderMonth] = useState('');
+    const today = londonDayKey();
+    const tomorrow = shiftDayKey(today, 1);
+    const allDays = useMemo(() => Array.from(availableDays).sort(), [availableDays]);
+    const listDays = useMemo(() => allDays.slice(0, listLimit), [allDays, listLimit]);
+
+    const listRef = useRef<HTMLDivElement | null>(null);
+    const dayEls = useRef<Map<string, HTMLDivElement>>(new Map());
+    useEffect(() => { if (listDays.length) setHeaderMonth(monthYearLabel(listDays[0])); }, [listDays]);
+    const onListScroll = () => {
+        const el = listRef.current; if (!el) return;
+        const top = el.scrollTop + 4;
+        let current = listDays[0];
+        for (const d of listDays) { const node = dayEls.current.get(d); if (node && node.offsetTop <= top) current = d; else break; }
+        if (current) setHeaderMonth(monthYearLabel(current));
+    };
+
+    useEffect(() => {
+        const onKey = (e: KeyboardEvent) => { if (e.key === 'Escape') { if (calOpen) setCalOpen(false); else onClose(); } };
+        document.addEventListener('keydown', onKey);
+        const prev = document.body.style.overflow; document.body.style.overflow = 'hidden';
+        return () => { document.removeEventListener('keydown', onKey); document.body.style.overflow = prev; };
+    }, [onClose, calOpen]);
+
+    return (
+        <div className="fixed inset-0 z-[60] flex items-start justify-center bg-black/40 px-4 pb-8 pt-20 sm:pt-28" role="dialog" aria-modal="true" aria-label={title}
+            onMouseDown={(e) => { if (e.target === e.currentTarget) onClose(); }}>
+            <div className="my-auto flex max-h-[calc(100dvh-7rem)] w-full max-w-md flex-col overflow-hidden rounded-2xl bg-white shadow-xl">
+                <div className="flex flex-none items-center justify-between border-b border-slate-100 px-5 py-4">
+                    <h2 className="text-lg font-bold text-slate-900">{calOpen ? 'Choose a date' : title}</h2>
+                    <button type="button" onClick={() => (calOpen ? setCalOpen(false) : onClose())} aria-label="Close" className="rounded-full p-1 text-slate-500 hover:bg-slate-100"><X className="h-5 w-5" /></button>
                 </div>
-
-                <div className="flex-none border-t border-slate-100 px-5 py-4">
-                    {error && <p className="mb-2 text-sm text-rose-700">{error}</p>}
-                    <div className="mb-3 flex items-baseline justify-between">
-                        <span className="text-sm font-medium text-slate-600">Total</span>
-                        <span className="text-lg font-semibold text-slate-900">£{total.toFixed(2)}</span>
-                    </div>
-                    <button type="button" onClick={submit} disabled={busy || !canBook}
-                        className="w-full rounded-xl bg-emerald-700 px-4 py-3 text-sm font-semibold text-white hover:bg-emerald-800 disabled:opacity-50">
-                        {busy ? 'Sending…' : 'Send request'}
-                    </button>
-                    <p className="mt-2 text-xs text-slate-400">Your card is held, not charged, until {who} confirms.</p>
-                </div>
+                {calOpen ? (
+                    <>
+                        <div className="min-h-0 flex-1 overflow-y-auto px-5 pb-4">
+                            <MonthCalendar availableDays={availableDays} selected={calSel} onSelect={setCalSel} today={today} />
+                        </div>
+                        <div className="border-t border-slate-100 px-5 py-4">
+                            <button type="button" onClick={() => { if (calSel) { onSelect(calSel); } }} disabled={!calSel}
+                                className="w-full rounded-xl bg-slate-900 px-6 py-3 text-sm font-bold text-white hover:bg-black disabled:opacity-40">
+                                Next
+                            </button>
+                        </div>
+                    </>
+                ) : (
+                    <>
+                        {listDays.length > 0 && (
+                            <div className="flex items-center justify-between border-b border-slate-100 px-5 py-3">
+                                <div className="text-base font-semibold text-slate-900">{headerMonth}</div>
+                                <button type="button" onClick={() => { setCalSel(null); setCalOpen(true); }} aria-label="Jump to a date"
+                                    className="rounded-full p-1.5 text-slate-700 hover:bg-slate-100"><Calendar className="h-5 w-5" /></button>
+                            </div>
+                        )}
+                        <div ref={listRef} onScroll={onListScroll} className="min-h-0 flex-1 overflow-y-auto px-5 py-4">
+                            {listDays.length === 0 ? (
+                                <p className="py-8 text-center text-sm text-slate-500">No dates available just now.</p>
+                            ) : listDays.map((d) => (
+                                <div key={d} ref={(el) => { if (el) dayEls.current.set(d, el); else dayEls.current.delete(d); }} className="border-b border-slate-100 last:border-b-0">
+                                    <button type="button" onClick={() => onSelect(d)}
+                                        className={`flex w-full items-center justify-between gap-3 py-3.5 text-left ${selected === d ? 'text-slate-900' : ''}`}>
+                                        <span className="text-[15px] font-semibold text-slate-900">{dayHeadingLabel(d, today, tomorrow)}</span>
+                                        <ChevronRight className="h-4 w-4 flex-none text-slate-400" aria-hidden />
+                                    </button>
+                                </div>
+                            ))}
+                            {allDays.length > listDays.length && (
+                                <button type="button" onClick={() => { setCalSel(null); setCalOpen(true); }}
+                                    className="mt-3 w-full rounded-xl border border-slate-200 px-4 py-3 text-sm font-semibold text-slate-700 hover:border-slate-400">
+                                    More dates
+                                </button>
+                            )}
+                        </div>
+                    </>
+                )}
             </div>
         </div>
     );

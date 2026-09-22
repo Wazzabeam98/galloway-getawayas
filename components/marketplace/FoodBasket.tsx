@@ -1,10 +1,10 @@
 'use client';
 
 import { useMemo, useState } from 'react';
-import { ShoppingBag, X } from 'lucide-react';
+import { ShoppingBag } from 'lucide-react';
 import { londonDayKey, shiftDayKey } from '@/lib/dayKey';
 import { dateLabel } from '@/components/marketplace/present';
-import MonthCalendar from '@/components/marketplace/MonthCalendar';
+import { DateOnlyDialog } from '@/components/marketplace/RequestBooking';
 import { useFoodCart } from '@/components/marketplace/FoodCart';
 
 const COMMON_ALLERGENS = ['Nuts', 'Peanuts', 'Gluten', 'Dairy', 'Eggs', 'Fish', 'Shellfish', 'Soya', 'Sesame'];
@@ -162,18 +162,13 @@ export default function FoodBasket({
             </div>
 
             {dateOpen && (
-                <div className="fixed inset-0 z-[60] flex items-start justify-center bg-black/40 px-4 pb-8 pt-20 sm:pt-28" role="dialog" aria-modal="true" aria-label="Choose a date"
-                    onMouseDown={(e) => { if (e.target === e.currentTarget) setDateOpen(false); }}>
-                    <div className="my-auto flex max-h-[calc(100dvh-7rem)] w-full max-w-md flex-col overflow-hidden rounded-2xl bg-white shadow-xl">
-                        <div className="flex flex-none items-center justify-between border-b border-slate-100 px-5 py-4">
-                            <h2 className="text-lg font-bold text-slate-900">Choose a {deliverWord} date</h2>
-                            <button type="button" onClick={() => setDateOpen(false)} aria-label="Close" className="rounded-full p-1 text-slate-500 hover:bg-slate-100"><X className="h-5 w-5" /></button>
-                        </div>
-                        <div className="min-h-0 flex-1 overflow-y-auto px-5 py-4">
-                            <MonthCalendar availableDays={availableDays} selected={date || null} onSelect={(d) => { setDate(d); setDateOpen(false); }} today={londonDayKey()} />
-                        </div>
-                    </div>
-                </div>
+                <DateOnlyDialog
+                    title={`Choose a ${deliverWord} date`}
+                    availableDays={availableDays}
+                    selected={date || null}
+                    onSelect={(d) => { setDate(d); setDateOpen(false); }}
+                    onClose={() => setDateOpen(false)}
+                />
             )}
         </div>
     );
