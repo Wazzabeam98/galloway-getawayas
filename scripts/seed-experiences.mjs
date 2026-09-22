@@ -291,7 +291,9 @@ async function main() {
             { title: 'On the night', detail: 'I arrive, cook, serve and clear — you just sit down.' },
             { title: 'After', detail: 'Kitchen left as I found it.' },
         ],
-        minAge: null, activityLevel: 'gentle', whatToBring: 'Just an appetite — everything else is provided.',
+        // A chef dinner has no "activity level" and nothing for the guest to bring,
+        // so both are left unset — the listing then shows no "Things to know".
+        minAge: null, activityLevel: null, whatToBring: null,
         amenities: [], accessibility: null, parking: null,
         dietaryNote: 'Vegetarian and gluten-free by arrangement; not a nut-free kitchen.', dietaryOptions: ['vegetarian', 'gluten_free'],
         items: [

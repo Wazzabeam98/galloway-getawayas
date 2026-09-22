@@ -230,31 +230,40 @@ export default function ExperienceListingBody({
                             </section>
                         )}
 
-                        {(p.minAge != null || p.activityLevel || p.whatToBring) ? (
-                            <section className="mt-8 border-t border-slate-200 pt-8">
-                                <h2 className="text-xl md:text-2xl font-bold text-slate-900">Things to know</h2>
-                                <div className="mt-4 space-y-4">
-                                    {p.minAge != null ? (
-                                        <div className="flex items-start gap-3">
-                                            <ShieldAlert className="mt-0.5 h-5 w-5 flex-none text-slate-500" aria-hidden />
-                                            <div><div className="font-semibold text-slate-900">Minimum age</div><p className="text-sm text-slate-600">{p.minAge} and over</p></div>
-                                        </div>
-                                    ) : null}
-                                    {p.activityLevel ? (
-                                        <div className="flex items-start gap-3">
-                                            <Activity className="mt-0.5 h-5 w-5 flex-none text-slate-500" aria-hidden />
-                                            <div><div className="font-semibold text-slate-900">Activity level</div><p className="text-sm capitalize text-slate-600">{p.activityLevel}</p></div>
-                                        </div>
-                                    ) : null}
-                                    {p.whatToBring ? (
-                                        <div className="flex items-start gap-3">
-                                            <Backpack className="mt-0.5 h-5 w-5 flex-none text-slate-500" aria-hidden />
-                                            <div><div className="font-semibold text-slate-900">What to bring</div><p className="whitespace-pre-line text-sm leading-relaxed text-slate-600">{p.whatToBring}</p></div>
-                                        </div>
-                                    ) : null}
-                                </div>
-                            </section>
-                        ) : null}
+                        {(() => {
+                            // Only the fields the provider actually filled in — a
+                            // whitespace-only value counts as empty — and the whole
+                            // section drops when none are set, so a chef (no activity
+                            // level, nothing to bring) shows no "Things to know" at all.
+                            const activity = (p.activityLevel || '').trim();
+                            const bring = (p.whatToBring || '').trim();
+                            if (p.minAge == null && !activity && !bring) return null;
+                            return (
+                                <section className="mt-8 border-t border-slate-200 pt-8">
+                                    <h2 className="text-xl md:text-2xl font-bold text-slate-900">Things to know</h2>
+                                    <div className="mt-4 space-y-4">
+                                        {p.minAge != null ? (
+                                            <div className="flex items-start gap-3">
+                                                <ShieldAlert className="mt-0.5 h-5 w-5 flex-none text-slate-500" aria-hidden />
+                                                <div><div className="font-semibold text-slate-900">Minimum age</div><p className="text-sm text-slate-600">{p.minAge} and over</p></div>
+                                            </div>
+                                        ) : null}
+                                        {activity ? (
+                                            <div className="flex items-start gap-3">
+                                                <Activity className="mt-0.5 h-5 w-5 flex-none text-slate-500" aria-hidden />
+                                                <div><div className="font-semibold text-slate-900">Activity level</div><p className="text-sm capitalize text-slate-600">{activity}</p></div>
+                                            </div>
+                                        ) : null}
+                                        {bring ? (
+                                            <div className="flex items-start gap-3">
+                                                <Backpack className="mt-0.5 h-5 w-5 flex-none text-slate-500" aria-hidden />
+                                                <div><div className="font-semibold text-slate-900">What to bring</div><p className="whitespace-pre-line text-sm leading-relaxed text-slate-600">{bring}</p></div>
+                                            </div>
+                                        ) : null}
+                                    </div>
+                                </section>
+                            );
+                        })()}
 
                         {(() => { const steps = experienceSteps(p.shape, p.fulfilment, p.itinerary); return (p.what_happens || steps.length > 0) ? (
                             <section className="mt-8 border-t border-slate-200 pt-8">
