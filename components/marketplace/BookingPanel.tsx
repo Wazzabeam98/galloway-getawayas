@@ -70,7 +70,7 @@ const maxKey = (a: string, b: string) => (a > b ? a : b);
 //     comes-to-you chef asks for an address.
 // Both shapes are compact — price, cancellation, a "Show dates" button and a few
 // suggested days — with the picking (guest count, calendar, time) in the dialog.
-export default function BookingPanel({ bookingId, checkIn, checkOut, cottageGuests, cottageAdults, cottageChildren, standalone: standaloneProp, provider }: {
+export default function BookingPanel({ bookingId, checkIn, checkOut, cottageAdults, cottageChildren, standalone: standaloneProp, provider }: {
     bookingId?: string; checkIn?: string; checkOut?: string; cottageGuests?: number;
     cottageAdults?: number | null; cottageChildren?: number | null;
     stay?: { title: string | null; town: string | null };
@@ -312,7 +312,6 @@ export default function BookingPanel({ bookingId, checkIn, checkOut, cottageGues
                     needsAddress={needsAddress}
                     calDays={calDays}
                     timesByDate={reqDialogTimes}
-                    cottageGuests={standalone ? undefined : cottageGuests}
                     providerMax={provider.maxGuests}
                     prefillAdults={cottageAdults}
                     prefillChildren={cottageChildren}

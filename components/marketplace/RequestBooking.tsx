@@ -88,7 +88,7 @@ export interface RequestBookArgs {
 // top, then a scrolling LIST of the next available days (a calendar icon by the
 // month heading opens the full month grid), each day expanding to its times.
 export function RequestBookingDialog({
-    who, items, minAge, isFood, needsAddress, calDays, timesByDate, cottageGuests, providerMax, prefillAdults, prefillChildren,
+    who, items, minAge, isFood, needsAddress, calDays, timesByDate, providerMax, prefillAdults, prefillChildren,
     initialDate, busy, error, onBook, onClose,
 }: {
     who: string;
@@ -98,7 +98,6 @@ export function RequestBookingDialog({
     needsAddress?: boolean;
     calDays: Set<string>;
     timesByDate: Record<string, string[]>;
-    cottageGuests?: number;
     providerMax?: number | null;
     prefillAdults?: number | null;
     prefillChildren?: number | null;
@@ -143,11 +142,14 @@ export function RequestBookingDialog({
     // count carries across an item switch (the whole point of one shared count).
     useEffect(() => { setAdults((a) => Math.max(a, minPeople - (kidsOk ? children : 0))); /* eslint-disable-next-line */ }, [minPeople]);
 
-    const stayCap = cottageGuests && cottageGuests > 0 ? cottageGuests : Infinity;
+    // The party is bounded by what the ITEM/provider takes, never by how many are
+    // staying — a comes-to-you dinner can be for visitors as well as the guests
+    // at the cottage (the same rule the order and change-count routes use). So the
+    // group-price plus is not pinned at the stay's guest count.
     const partyCap = isExtra
-        ? Math.min(partyCeiling(eg as any), stayCap)
+        ? partyCeiling(eg as any)
         : perPerson
-            ? Math.min(stayCap, providerMax && providerMax > 0 ? providerMax : MAX_ORDER_QUANTITY)
+            ? (providerMax && providerMax > 0 ? providerMax : MAX_ORDER_QUANTITY)
             : Infinity;
     const incDisabled = Number.isFinite(partyCap) && people >= (partyCap as number);
 

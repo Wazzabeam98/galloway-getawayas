@@ -303,12 +303,14 @@ export async function POST(request: Request) {
             ? Number((provider.guest_details as any).min_age) : null;
         const reqAdults = Math.max(0, Math.floor(Number(body && body.adults) || 0));
         const reqChildrenRaw = Math.max(0, Math.floor(Number(body && body.children) || 0));
-        // The party ceiling: the item's own maximum, and — when the booking sits on
-        // a stay — never more than are staying. A standalone booking has no stay, so
-        // it is bounded only by the item's / provider's own maximum.
+        // The party ceiling: the item's own maximum. A COMES-TO-YOU experience (a
+        // chef, a masseur coming to the cottage) can be for visitors as well as
+        // those staying, so it is NOT capped by the stay's guest count — the same
+        // rule the change-count route and the booking dialog use. Any other
+        // against-a-stay shape is still bounded by who is staying.
         const providerMax = provider && provider.guest_details && (provider.guest_details as any).max_guests != null
             ? Number((provider.guest_details as any).max_guests) : Infinity;
-        const stayCap = standalone ? Infinity : (Number(booking.guests) || Infinity);
+        const stayCap = (standalone || (provider && provider.shape === 'comes_to_you')) ? Infinity : (Number(booking.guests) || Infinity);
         let total: number;
         if (hasExtraGuests(item)) {
             const adults = Math.max(1, reqAdults || 1);
