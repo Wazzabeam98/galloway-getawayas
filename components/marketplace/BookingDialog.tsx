@@ -7,6 +7,7 @@ import { unitMultiplies, MAX_ORDER_QUANTITY } from '@/lib/serviceOrders';
 import { childrenAllowed } from '@/lib/guestAges';
 import { itemPriceLabel, timeLabel, monthYearLabel, dayHeadingLabel } from '@/components/marketplace/present';
 import { londonDayKey, shiftDayKey } from '@/lib/dayKey';
+import MonthCalendar from '@/components/marketplace/MonthCalendar';
 
 export interface DialogItem { id: string; name: string; price: number; unit: string; fulfilment?: string | null; capacity?: number | null; minPeople?: number | null; }
 export interface DialogOpenSession { date: string; time: string; row: { capacity: number; seats_taken: number; private: boolean } | null; }
@@ -20,11 +21,6 @@ interface Offering {
     key: string; date: string; time: string; kind: 'open' | 'declared';
     title: string | null; row: { capacity: number; seats_taken: number; private: boolean } | null;
 }
-
-const WEEKDAYS = ['M', 'T', 'W', 'T', 'F', 'S', 'S'];
-const mondayIndex = (d: Date) => (d.getUTCDay() + 6) % 7;
-const daysInMonth = (y: number, m0: number) => new Date(Date.UTC(y, m0 + 1, 0)).getUTCDate();
-const dayKey = (y: number, m0: number, d: number) => `${y}-${String(m0 + 1).padStart(2, '0')}-${String(d).padStart(2, '0')}`;
 
 // THE "SHOW DATES" DIALOG — the Airbnb-shaped availability picker, shared by both
 // booking panels. A guest sets how many people, then either scrolls the timetable
@@ -154,19 +150,6 @@ export default function BookingDialog({
         // eslint-disable-next-line react-hooks/exhaustive-deps
     }, [days, item, people]);
 
-    // The months the grid spans — first available day to last.
-    const months = useMemo(() => {
-        const keys = Array.from(availableDays).sort();
-        if (!keys.length) return [] as Array<{ y: number; m0: number }>;
-        const first = new Date(keys[0] + 'T00:00:00Z');
-        const last = new Date(keys[keys.length - 1] + 'T00:00:00Z');
-        const out: Array<{ y: number; m0: number }> = [];
-        let y = first.getUTCFullYear(), m0 = first.getUTCMonth();
-        const endY = last.getUTCFullYear(), endM = last.getUTCMonth();
-        while (y < endY || (y === endY && m0 <= endM)) { out.push({ y, m0 }); m0++; if (m0 > 11) { m0 = 0; y++; } }
-        return out;
-    }, [availableDays]);
-
     const selected = offerings.find((o) => o.key === selKey) || null;
     // Keep the selection valid as the party size / item changes.
     useEffect(() => { if (selected && !fits(selected)) setSelKey(null); /* eslint-disable-next-line */ }, [people, itemId]);
@@ -274,45 +257,10 @@ export default function BookingDialog({
 
                 {calOpen ? (
                     <>
-                        {/* Weekday header */}
-                        <div className="grid grid-cols-7 border-b border-slate-100 px-5 py-2 text-center text-xs font-medium text-slate-500">
-                            {WEEKDAYS.map((w, i) => <div key={i}>{w}</div>)}
-                        </div>
-                        {/* Scrollable month grid — the full month so a guest can jump to a date */}
-                        <div className="min-h-0 flex-1 overflow-y-auto px-5 py-4">
-                            {months.length === 0 ? (
-                                <p className="py-8 text-center text-sm text-slate-500">No dates available just now.</p>
-                            ) : months.map(({ y, m0 }) => {
-                                const lead = mondayIndex(new Date(Date.UTC(y, m0, 1)));
-                                const n = daysInMonth(y, m0);
-                                return (
-                                    <div key={y + '-' + m0} className="mb-6 last:mb-0">
-                                        <div className="mb-3 text-base font-semibold text-slate-900">{monthYearLabel(dayKey(y, m0, 1))}</div>
-                                        <div className="grid grid-cols-7 gap-y-1">
-                                            {Array.from({ length: lead }).map((_, i) => <div key={'b' + i} />)}
-                                            {Array.from({ length: n }).map((_, i) => {
-                                                const day = i + 1;
-                                                const key = dayKey(y, m0, day);
-                                                const avail = availableDays.has(key);
-                                                const isToday = key === today;
-                                                const isSel = key === calSel;
-                                                return (
-                                                    <div key={key} className="flex justify-center py-0.5">
-                                                        <button type="button" disabled={!avail} onClick={() => setCalSel(key)}
-                                                            className={`flex h-11 w-11 items-center justify-center rounded-full text-sm transition ${
-                                                                isSel ? 'bg-slate-900 font-bold text-white'
-                                                                : !avail ? 'cursor-default text-slate-300'
-                                                                : isToday ? 'font-semibold text-slate-900 ring-1 ring-slate-900 hover:bg-slate-100'
-                                                                : 'font-semibold text-slate-900 hover:bg-slate-100'}`}>
-                                                            {day}
-                                                        </button>
-                                                    </div>
-                                                );
-                                            })}
-                                        </div>
-                                    </div>
-                                );
-                            })}
+                        {/* Scrollable month grid — the full month so a guest can jump to a
+                            date. The same MonthCalendar the request shapes use inline. */}
+                        <div className="min-h-0 flex-1 overflow-y-auto px-5 pb-4">
+                            <MonthCalendar availableDays={availableDays} selected={calSel} onSelect={setCalSel} today={today} />
                         </div>
                         {/* Footer: confirm the picked date */}
                         <div className="border-t border-slate-100 px-5 py-4">
