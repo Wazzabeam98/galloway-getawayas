@@ -16,6 +16,7 @@ import { dateFromKey } from "@/lib/pricing";
 import { confirmationNumber, partyLabel, cancellationWords } from "@/lib/bookingDisplay";
 import BookingActions from "@/components/BookingActions";
 import DoorCode from "@/components/dashboard/DoorCode";
+import HostNotes from "@/components/dashboard/HostNotes";
 import {
     ArrowLeft, MessageSquare, Phone, CheckCircle2, Clock3, XCircle,
     CalendarDays, Users, ChevronRight, KeyRound,
@@ -160,6 +161,16 @@ export default async function BookingDetail({ params }: { params: { id: string }
         ? await admin.from('listing_access_codes').select('code').eq('listing_id', booking.listing_id).maybeSingle()
         : { data: null };
     const doorCode = access.can_listing ? (codeRow?.code || null) : null;
+
+    // The host's private note — its own table with no browser grants, so the
+    // guest can never read it. Read here via the service role; anyone who can
+    // manage the booking (can_bookings, already checked) may see and edit it.
+    const { data: noteRow } = await admin
+        .from('booking_host_notes')
+        .select('host_note')
+        .eq('booking_id', booking.id)
+        .maybeSingle();
+    const hostNote = noteRow?.host_note || null;
 
     const now = new Date();
     const started = stayHasStarted(booking.check_in, now);
@@ -421,6 +432,12 @@ export default async function BookingDetail({ params }: { params: { id: string }
                                     </div>
                                 )
                         )}
+
+                        {/* Private host notes — visible to anyone who manages the
+                            booking (can_bookings), never the guest (item 3). The
+                            note is walled at the database and saved through its own
+                            can_bookings-checked route. */}
+                        <HostNotes bookingId={booking.id} initial={hostNote} />
 
                         {/* Check-in / Check-out — two raised cards, the lifted-card
                             treatment reserved for surfaces you act on (item 4). */}
