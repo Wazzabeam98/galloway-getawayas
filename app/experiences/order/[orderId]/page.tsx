@@ -713,7 +713,7 @@ export default async function OrderPage({ params, searchParams }: { params: { or
                                         <>
                                             <div>{who}</div>
                                             <div className="mt-0.5 text-slate-500">
-                                                {prov.based_line}{charged ? '' : ' — the full address once your place is paid for'}
+                                                {prov.based_line}{charged ? '' : ' — the full address once your place is confirmed'}
                                             </div>
                                         </>
                                     ) : (

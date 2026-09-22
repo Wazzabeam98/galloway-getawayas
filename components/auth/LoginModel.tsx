@@ -155,7 +155,7 @@ const LoginModel = ({ next }: { next?: string } = {}) => {
                             <div>
                                 <input
                                     type="email"
-                                    placeholder="you@example.com"
+                                    placeholder="Enter email"
                                     value={email}
                                     onChange={(e) => setEmail(e.target.value)}
                                     className="w-full p-3 border rounded-xl text-sm"
@@ -165,7 +165,7 @@ const LoginModel = ({ next }: { next?: string } = {}) => {
                             <div>
                                 <input
                                     type="password"
-                                    placeholder="Your password"
+                                    placeholder="Enter password"
                                     value={password}
                                     onChange={(e) => setPassword(e.target.value)}
                                     className="w-full p-3 border rounded-xl text-sm"

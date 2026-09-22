@@ -58,7 +58,7 @@ export default function ExperienceListingBody({
     // One definition, shared with the order page (lib/orderLocation). This used
     // to be its own expression here, and the two disagreed about a null
     // fulfilment: this page promised "the exact address is shared once your
-    // booking is paid" and the order page then showed nothing.
+    // booking is confirmed" and the order page then showed nothing.
     const comesToYou = locationFromDirection(p.shape, p.fulfilment).comesToCottage;
     const where = whereLine(p);
     const tag = locationTag(p);
@@ -411,7 +411,7 @@ export default function ExperienceListingBody({
                                         ? (travelCoverage
                                             ? travelCoverage + ' — they come to your cottage, so there’s nothing for you to travel to.'
                                             : 'They come to your cottage — nothing for you to travel to.')
-                                        : 'The exact address is shared once your booking is paid.'}
+                                        : 'The exact address is shared once your booking is confirmed.'}
                                 </span>
                             </p>
                         ) : null}
