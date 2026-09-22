@@ -276,7 +276,11 @@ async function main() {
     const chefOwner = await ownerFor('chef', 'Rory (Solway Table)');
     const chef = await makeProvider({
         owner: chefOwner, business_name: 'Solway Table', provider_name: 'Rory', trade: 'chef', category: 'chef', mcc: '5811', shape: 'comes_to_you',
-        leadTimeDays: 3, cancelHours: 72, horizonDays: 120, maxGuests: 10, offeredTimes: ['18:00', '19:00', '19:30'],
+        leadTimeDays: 3, cancelHours: 72, horizonDays: 120, maxGuests: 10,
+        // Booking times come from the weekly OPENING HOURS now (the one place a
+        // provider sets the hours they work), not a separate offered-times list —
+        // dinner sittings Wed–Sun, 5pm to 9pm.
+        availability: { days: [3, 4, 5, 6, 0], open: '17:00', close: '21:00' },
         headshot: IMG('seed-assets/chef-face.png'), photos: [IMG('seed-assets/chef-1.jpg')],
         professional_title: 'Private chef, cooked in your cottage', years: 12,
         qualifications: 'Professional Cookery SVQ; 15 years in Scottish kitchens.', recognition: 'Ex-head chef, a Galloway harbour restaurant.',
@@ -304,7 +308,9 @@ async function main() {
     const bakerOwner = await ownerFor('baker', 'Nora (Galloway Bakehouse)');
     const baker = await makeProvider({
         owner: bakerOwner, business_name: 'Galloway Bakehouse', provider_name: 'Nora', trade: 'baker', category: 'food_order', mcc: '5462', shape: 'made_to_order',
-        leadTimeDays: 2, cancelHours: 48, horizonDays: 120, maxGuests: 1, offeredTimes: ['10:00', '13:00', '16:00'],
+        // Made-to-order is a DATE ONLY — the collection time is arranged by
+        // message afterwards, so no offered-times list.
+        leadTimeDays: 2, cancelHours: 48, horizonDays: 120, maxGuests: 1,
         fulfilment: 'collection', street: '12 King Street', town: 'Castle Douglas', postcode: 'DG7 1AA', mapLat: 54.9372, mapLng: -3.9210,
         headshot: IMG('seed-assets/baker-face.png'), photos: [IMG('seed-assets/baker-1.jpg')],
         professional_title: 'Cakes & bakes to order', years: 6,
