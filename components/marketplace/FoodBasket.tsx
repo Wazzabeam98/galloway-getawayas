@@ -1,7 +1,7 @@
 'use client';
 
 import { useMemo, useState } from 'react';
-import { ShoppingBag } from 'lucide-react';
+import { ShoppingBag, X } from 'lucide-react';
 import { londonDayKey, shiftDayKey } from '@/lib/dayKey';
 import { dateLabel } from '@/components/marketplace/present';
 import MonthCalendar from '@/components/marketplace/MonthCalendar';
@@ -27,6 +27,7 @@ export default function FoodBasket({
     const { lines, total, count, hasCustom } = useFoodCart();
     const standalone = standaloneProp ?? !bookingId;
     const [date, setDate] = useState('');
+    const [dateOpen, setDateOpen] = useState(false);
     const [address, setAddress] = useState('');
     const [allergy, setAllergy] = useState('');
     const [allergyTags, setAllergyTags] = useState<string[]>([]);
@@ -45,6 +46,7 @@ export default function FoodBasket({
     const delivers = fulfilment === 'delivery' || (fulfilment === 'both' && lines.some((l) => String(l.it.fulfilment) === 'delivery'));
     const needsAddress = standalone && delivers;
     const deliverWord = delivers ? 'delivery' : 'collection';
+    const suggested = useMemo(() => Array.from(availableDays).sort().slice(0, 4), [availableDays]);
 
     async function send() {
         setError(null);
@@ -98,10 +100,25 @@ export default function FoodBasket({
 
                 {lines.length > 0 && (
                     <>
-                        <div className="mt-4 text-xs font-semibold uppercase tracking-wide text-slate-500">Pick a {deliverWord} date</div>
-                        <div className="mt-1 rounded-xl border border-slate-200 px-3 pb-2">
-                            <MonthCalendar availableDays={availableDays} selected={date || null} onSelect={setDate} today={londonDayKey()} />
+                        {/* Compact date, like the slots: a "Show dates" button and a
+                            few suggested days; the full calendar opens in a dialog. */}
+                        <div className="mt-4 flex items-center justify-between gap-3">
+                            <span className="text-xs font-semibold uppercase tracking-wide text-slate-500">{deliverWord === 'delivery' ? 'Delivery' : 'Collection'} date</span>
+                            <button type="button" onClick={() => setDateOpen(true)}
+                                className="rounded-lg bg-slate-900 px-3 py-1.5 text-sm font-bold text-white hover:bg-black">
+                                {date ? dateLabel(date) : 'Show dates'}
+                            </button>
                         </div>
+                        {!date && suggested.length > 0 && (
+                            <div className="mt-2 flex flex-wrap gap-1.5">
+                                {suggested.map((d) => (
+                                    <button key={d} type="button" onClick={() => setDate(d)}
+                                        className="rounded-lg border border-slate-200 px-3 py-2 text-sm font-medium text-slate-700 hover:border-slate-400">
+                                        {dateLabel(d)}
+                                    </button>
+                                ))}
+                            </div>
+                        )}
                         <p className="mt-1.5 text-xs text-slate-400">The {deliverWord} time is arranged by message once your order is placed.</p>
 
                         {needsAddress && (
@@ -143,6 +160,21 @@ export default function FoodBasket({
                     ? `Your card is held, not charged, until ${who} accepts your made-to-order items.`
                     : 'You pay now and your order is confirmed straight away.'}</p>
             </div>
+
+            {dateOpen && (
+                <div className="fixed inset-0 z-[60] flex items-start justify-center bg-black/40 px-4 pb-8 pt-20 sm:pt-28" role="dialog" aria-modal="true" aria-label="Choose a date"
+                    onMouseDown={(e) => { if (e.target === e.currentTarget) setDateOpen(false); }}>
+                    <div className="my-auto flex max-h-[calc(100dvh-7rem)] w-full max-w-md flex-col overflow-hidden rounded-2xl bg-white shadow-xl">
+                        <div className="flex flex-none items-center justify-between border-b border-slate-100 px-5 py-4">
+                            <h2 className="text-lg font-bold text-slate-900">Choose a {deliverWord} date</h2>
+                            <button type="button" onClick={() => setDateOpen(false)} aria-label="Close" className="rounded-full p-1 text-slate-500 hover:bg-slate-100"><X className="h-5 w-5" /></button>
+                        </div>
+                        <div className="min-h-0 flex-1 overflow-y-auto px-5 py-4">
+                            <MonthCalendar availableDays={availableDays} selected={date || null} onSelect={(d) => { setDate(d); setDateOpen(false); }} today={londonDayKey()} />
+                        </div>
+                    </div>
+                </div>
+            )}
         </div>
     );
 }
