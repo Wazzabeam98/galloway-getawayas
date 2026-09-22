@@ -265,5 +265,34 @@ export async function createRequestOrderFromSession(admin: any, cs: any): Promis
         console.error('[requestOrder] service order notify failed', mailErr);
     }
 
+    // Tell the GUEST their request has gone in, straight away. The provider has
+    // up to 48 hours to answer, so without this the guest hears nothing after
+    // paying and reasonably fears their card was charged for a booking that
+    // isn't confirmed. States the held-not-charged posture plainly. Best-effort,
+    // like the provider notice.
+    try {
+        if (guestTo) {
+            const provName = (prov && prov.business_name) || 'the provider';
+            await sendEmail(
+                guestTo,
+                'Your request has gone to ' + provName,
+                emailLayout(
+                    '<p style="margin:0 0 16px;font-size:16px;">Thanks — your request has gone to <strong>' + escapeHtml(provName) + '</strong>'
+                    + whereWhen + '.</p>'
+                    + linesHtml
+                    + (md.item_name && !linesHtml ? '<p style="margin:0 0 16px;font-size:15px;">' + escapeHtml(String(md.item_name)) + '</p>' : '')
+                    + '<p style="margin:0 0 16px;font-size:16px;">Your card is <strong>held, not charged</strong>. '
+                    + escapeHtml(provName) + ' has 48 hours to confirm — you’re only charged if they do, and the hold is released if they can’t make it.</p>'
+                    + '<p style="margin:0 0 16px;font-size:16px;">Amount held: <strong>' + escapeHtml(totalStr) + '</strong>.</p>'
+                    + allergyCallout(md.allergy) + noteCallout(md.note)
+                    + button(SITE_URL + '/experiences/order/' + order.id, 'View your request'),
+                    'You’re receiving this because you booked through Galloway Getaways.'
+                )
+            );
+        }
+    } catch (guestMailErr) {
+        console.error('[requestOrder] guest request confirmation failed', guestMailErr);
+    }
+
     return { created: true, orderId: order.id };
 }
