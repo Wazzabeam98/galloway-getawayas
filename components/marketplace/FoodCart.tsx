@@ -11,6 +11,7 @@ import { MAX_ORDER_QUANTITY } from '@/lib/serviceOrders';
 export interface FoodMenuItem {
     id: string; name: string; description: string | null; price: number;
     unit: string; image: string | null; isCustom?: boolean; fulfilment?: string | null;
+    ingredients?: string | null; allergens?: string | null;
 }
 
 interface CartContextValue {

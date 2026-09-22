@@ -316,6 +316,10 @@ export async function POST(request: Request) {
                         // Made-to-order standard/custom. Only meaningful for that
                         // shape; harmless (false) elsewhere.
                         is_custom: p.shape === 'made_to_order' ? (it.is_custom === true) : false,
+                        // Per-item ingredient + allergen text (food listings). Free
+                        // text, capped; null when blank.
+                        ingredients: (it.ingredients ? String(it.ingredients) : '').slice(0, 1000).trim() || null,
+                        allergens: (it.allergens ? String(it.allergens) : '').slice(0, 1000).trim() || null,
                         // No per-item minimum: a shared session takes a single
                         // person by design. Cleared to null so the column falls back
                         // to its default of 1 (no floor); the control is gone.

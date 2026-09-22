@@ -240,7 +240,7 @@ export default function ProviderListingEditor({ provider }: { provider: EditorPr
     // The menu. Each row edits in place; prices are strings while typing. New rows
     // have no id (the save route inserts them); removed rows drop out (the route
     // deletes them). ids are preserved so an item keeps its photo and bookings.
-    type MenuRow = { id?: string; name: string; description: string; price: string; unit: string; image: string | null; duration: string; fulfilment: string | null; active: boolean; capacity: string; includedGuests: string; extraAdultFee: string; extraChildFee: string; maxParty: string; isCustom: boolean };
+    type MenuRow = { id?: string; name: string; description: string; price: string; unit: string; image: string | null; duration: string; fulfilment: string | null; active: boolean; capacity: string; includedGuests: string; extraAdultFee: string; extraChildFee: string; maxParty: string; isCustom: boolean; ingredients: string; allergens: string };
     const [menu, setMenu] = useState<MenuRow[]>(p.items.map((it) => ({
         id: it.id, name: it.name, description: it.description, price: String(it.price),
         unit: it.unit, image: it.image, duration: it.duration_minutes != null ? String(it.duration_minutes) : '',
@@ -254,6 +254,9 @@ export default function ProviderListingEditor({ provider }: { provider: EditorPr
         maxParty: (it as any).max_party != null ? String((it as any).max_party) : '',
         // Made-to-order: standard (instant) vs custom (a request the provider agrees).
         isCustom: !!(it as any).is_custom,
+        // Per-item ingredient + allergen detail, shown behind the menu's info icon.
+        ingredients: (it as any).ingredients || '',
+        allergens: (it as any).allergens || '',
     })));
     const setRow = (i: number, patch: Partial<MenuRow>) => setMenu(menu.map((r, j) => j === i ? { ...r, ...patch } : r));
 
@@ -621,6 +624,7 @@ export default function ProviderListingEditor({ provider }: { provider: EditorPr
                                     included_guests: r.includedGuests, extra_adult_fee: r.extraAdultFee,
                                     extra_child_fee: r.extraChildFee, max_party: r.maxParty,
                                     is_custom: r.isCustom,
+                                    ingredients: r.ingredients, allergens: r.allergens,
                                 })),
                             })}>
                             {/* Last-priced-item guard: a listing with no active priced
@@ -754,6 +758,16 @@ export default function ProviderListingEditor({ provider }: { provider: EditorPr
                                                     </div>
                                                 )}
                                                 <textarea className={inputCls} rows={2} placeholder="Description (optional)" value={r.description} onChange={(e) => setRow(i, { description: e.target.value })} />
+                                                {/* Ingredients + allergens — shown behind the menu's
+                                                    info icon on a food listing. Free text, written the
+                                                    way a home baker would on a label. */}
+                                                {p.shape === 'made_to_order' && (
+                                                    <div className="space-y-2 rounded-xl bg-slate-50 p-3">
+                                                        <span className="block text-xs font-semibold uppercase tracking-wide text-slate-500">Ingredients &amp; allergens <span className="font-normal normal-case tracking-normal text-slate-400">(optional — shown on the menu’s info icon)</span></span>
+                                                        <textarea className={inputCls} rows={2} placeholder="Ingredients, e.g. Wheat flour, butter, eggs, sugar, Galloway raspberries" value={r.ingredients} onChange={(e) => setRow(i, { ingredients: e.target.value })} />
+                                                        <textarea className={inputCls} rows={2} placeholder="Allergens, e.g. Contains wheat, egg, milk. Made in a kitchen that handles nuts." value={r.allergens} onChange={(e) => setRow(i, { allergens: e.target.value })} />
+                                                    </div>
+                                                )}
                                             </div>
                                         </div>
                                         <div className="mt-3 flex items-center justify-between">
@@ -766,7 +780,7 @@ export default function ProviderListingEditor({ provider }: { provider: EditorPr
                                     </div>
                                 ))}
                             </div>
-                            <button type="button" onClick={() => setMenu([...menu, { name: '', description: '', price: '', unit: 'flat', image: null, duration: p.isSlot ? '60' : '', fulfilment: (p.isSlot && fulfilment === 'both') ? 'collection' : null, active: true, capacity: '', includedGuests: '', extraAdultFee: '', extraChildFee: '', maxParty: '', isCustom: false }])}
+                            <button type="button" onClick={() => setMenu([...menu, { name: '', description: '', price: '', unit: 'flat', image: null, duration: p.isSlot ? '60' : '', fulfilment: (p.isSlot && fulfilment === 'both') ? 'collection' : null, active: true, capacity: '', includedGuests: '', extraAdultFee: '', extraChildFee: '', maxParty: '', isCustom: false, ingredients: '', allergens: '' }])}
                                 className="text-sm font-semibold text-emerald-700 hover:text-emerald-800">+ Add an item</button>
                         </SectionCard>
                     )}

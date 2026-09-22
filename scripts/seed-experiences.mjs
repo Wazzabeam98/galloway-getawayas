@@ -149,6 +149,7 @@ async function makeProvider(spec) {
             included_guests: it.includedGuests ?? null, extra_adult_fee: it.extraAdultFee ?? null,
             extra_child_fee: it.extraChildFee ?? null, max_party: it.maxParty ?? null,
             is_custom: it.isCustom ?? false,
+            ingredients: it.ingredients ?? null, allergens: it.allergens ?? null,
         });
     }
     if (spec.availability) {
@@ -330,11 +331,17 @@ async function main() {
         items: [
             // Custom — made to the guest's design, so it turns the order into a
             // request the baker approves. The other two are off-the-shelf (standard).
-            { name: 'Celebration cake (8–10)', description: 'A two-layer cake, your flavour and message.', price: 42, unit: 'flat', sort: 0, image: IMG('seed-assets/baker-1.jpg'), isCustom: true },
-            { name: 'Box of Galloway bakes', description: 'A dozen assorted traybakes and scones.', price: 24, unit: 'flat', sort: 1 },
+            { name: 'Celebration cake (8–10)', description: 'A two-layer cake, your flavour and message.', price: 42, unit: 'flat', sort: 0, image: IMG('seed-assets/baker-1.jpg'), isCustom: true,
+                ingredients: 'Wheat flour, butter, free-range eggs, sugar, Galloway raspberries, vanilla, double cream.',
+                allergens: 'Contains wheat (gluten), egg, milk. Made in a kitchen that also handles nuts and soya.' },
+            { name: 'Box of Galloway bakes', description: 'A dozen assorted traybakes and scones.', price: 24, unit: 'flat', sort: 1,
+                ingredients: 'Wheat flour, butter, oats, sugar, sultanas, free-range eggs, milk.',
+                allergens: 'Contains wheat (gluten), oats, egg, milk. May contain nuts.' },
             // A per-item line, so a made-to-order order can carry a real quantity
             // (three boxes) — the "guests means quantity" case for change-count.
-            { name: 'Traybake box', description: 'Six traybakes, boxed. Order as many as you like.', price: 8, unit: 'item', sort: 2 },
+            { name: 'Traybake box', description: 'Six traybakes, boxed. Order as many as you like.', price: 8, unit: 'item', sort: 2,
+                ingredients: 'Wheat flour, butter, sugar, cocoa, oats, golden syrup.',
+                allergens: 'Contains wheat (gluten), oats, milk. May contain nuts.' },
         ],
     });
     const bakerItemRows = await db.select('service_provider_items', '?select=id,unit,name&provider_id=eq.' + baker.id + '&order=sort_order');
